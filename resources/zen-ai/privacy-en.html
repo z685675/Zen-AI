@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Zen AI Privacy Policy</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      line-height: 1.7;
+      color: #333;
+      background: transparent;
+      padding: 0 10px 20px;
+    }
+    body.dark { color: rgba(255, 255, 255, 0.84); }
+    h1 { font-size: 24px; margin: 0 0 20px; color: #111; }
+    h2 { font-size: 18px; margin: 24px 0 12px; color: #222; }
+    p, li { margin: 10px 0; }
+    ul { padding-left: 22px; }
+    a { color: #0b66d1; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    body.dark h1, body.dark h2 { color: rgba(255, 255, 255, 0.95); }
+    body.dark a { color: #6fb1ff; }
+    .content-wrapper {
+      max-height: calc(100vh - 40px);
+      overflow-y: auto;
+      padding-right: 10px;
+    }
+  </style>
+  <script>
+    document.addEventListener('DOMContentLoaded', function () {
+      const theme = new URLSearchParams(window.location.search).get('theme')
+      if (theme === 'dark') {
+        document.documentElement.classList.add('dark')
+        document.body.classList.add('dark')
+      }
+    })
+  </script>
+</head>
+<body>
+  <div class="content-wrapper">
+    <h1>Privacy Policy</h1>
+
+    <p>
+      Zen AI is an independent desktop application based on the Cherry Studio open-source codebase.
+      We aim to keep the app local-first and minimize data collection.
+    </p>
+
+    <h2>1. What Zen AI stores locally</h2>
+    <ul>
+      <li>App settings and local preferences</li>
+      <li>Conversations, files, notes, and knowledge-base data that you create in the app</li>
+      <li>Optional local cache, logs, and backup files needed for normal operation</li>
+    </ul>
+
+    <h2>2. What Zen AI does not do by default</h2>
+    <ul>
+      <li>No built-in analytics reporting</li>
+      <li>No built-in automatic update checks</li>
+      <li>No automatic upload of your local conversations or API keys to Zen AI-operated servers</li>
+    </ul>
+
+    <h2>3. Third-party AI providers and services</h2>
+    <p>
+      When you configure model providers, web services, cloud backup, OAuth login, or similar integrations,
+      Zen AI will connect directly to those third-party services using the credentials and endpoints you provide.
+    </p>
+    <p>
+      Data sent to those services is governed by their own privacy policies and terms. Please review them before use.
+    </p>
+
+    <h2>4. Backups and exports</h2>
+    <p>
+      If you choose to export data or configure WebDAV, S3, Nutstore, or other backup destinations, your data will be
+      transferred to the destination you selected. Zen AI does not provide a hosted backup service.
+    </p>
+
+    <h2>5. Open-source distribution</h2>
+    <p>
+      Zen AI is distributed as open-source software. Source releases are published at the project repository so users
+      can inspect how the software works.
+    </p>
+
+    <h2>6. Contact</h2>
+    <ul>
+      <li>Repository: <a href="https://github.com/z685675/Zen-AI" target="_blank" rel="noopener noreferrer">https://github.com/z685675/Zen-AI</a></li>
+      <li>Email: <a href="mailto:yewanzz@qq.com">yewanzz@qq.com</a></li>
+    </ul>
+  </div>
+</body>
+</html>

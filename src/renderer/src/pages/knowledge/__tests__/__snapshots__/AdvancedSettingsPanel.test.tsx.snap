@@ -1,0 +1,128 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`AdvancedSettingsPanel > basic rendering > should match snapshot 1`] = `
+.c0 {
+  padding: 0 16px;
+}
+
+.c1 {
+  margin-bottom: 24px;
+}
+
+.c1 .settings-label {
+  font-size: 14px;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+<div
+  class="c0"
+>
+  <div
+    class="c1"
+  >
+    <div
+      class="settings-label"
+    >
+      文档预处�?      <div>
+        settings.tool.preprocess.tooltip
+      </div>
+    </div>
+    <select
+      data-testid="select"
+    >
+      <option
+        value=""
+      >
+        settings.tool.preprocess.provider_placeholder
+      </option>
+    </select>
+  </div>
+  <div
+    class="c1"
+  >
+    <div
+      class="settings-label"
+    >
+      重排模型
+      <div>
+        models.rerank_model_tooltip
+      </div>
+    </div>
+    <select
+      data-testid="model-selector"
+    >
+      <option
+        value=""
+      >
+        未选择
+      </option>
+    </select>
+  </div>
+  <div
+    class="c1"
+  >
+    <div
+      class="settings-label"
+    >
+      分块大小
+      <div>
+        knowledge.chunk_size_tooltip
+      </div>
+    </div>
+    <input
+      aria-label="分块大小"
+      data-testid="input-number"
+      placeholder="knowledge.chunk_size_placeholder"
+      style="width: 100%;"
+      type="number"
+      value="500"
+    />
+  </div>
+  <div
+    class="c1"
+  >
+    <div
+      class="settings-label"
+    >
+      分块重叠
+      <div>
+        knowledge.chunk_overlap_tooltip
+      </div>
+    </div>
+    <input
+      aria-label="分块重叠"
+      data-testid="input-number"
+      placeholder="knowledge.chunk_overlap_placeholder"
+      style="width: 100%;"
+      type="number"
+      value="200"
+    />
+  </div>
+  <div
+    class="c1"
+  >
+    <div
+      class="settings-label"
+    >
+      检索相似度阈�?      <div>
+        knowledge.threshold_tooltip
+      </div>
+    </div>
+    <input
+      aria-label="检索相似度阈�?
+      data-testid="input-number"
+      placeholder="knowledge.threshold_placeholder"
+      style="width: 100%;"
+      type="number"
+      value="0.5"
+    />
+  </div>
+  <div
+    role="alert"
+  >
+    避免修改这个高级设置�?  </div>
+</div>
+`;

@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Zen AI 隐私政策</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      line-height: 1.8;
+      color: #333;
+      background: transparent;
+      padding: 0 10px 20px;
+    }
+    body.dark { color: rgba(255, 255, 255, 0.84); }
+    h1 { font-size: 24px; margin: 0 0 20px; color: #111; }
+    h2 { font-size: 18px; margin: 24px 0 12px; color: #222; }
+    p, li { margin: 10px 0; }
+    ul { padding-left: 22px; }
+    a { color: #0b66d1; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    body.dark h1, body.dark h2 { color: rgba(255, 255, 255, 0.95); }
+    body.dark a { color: #6fb1ff; }
+    .content-wrapper {
+      max-height: calc(100vh - 40px);
+      overflow-y: auto;
+      padding-right: 10px;
+    }
+  </style>
+  <script>
+    document.addEventListener('DOMContentLoaded', function () {
+      const theme = new URLSearchParams(window.location.search).get('theme')
+      if (theme === 'dark') {
+        document.documentElement.classList.add('dark')
+        document.body.classList.add('dark')
+      }
+    })
+  </script>
+</head>
+<body>
+  <div class="content-wrapper">
+    <h1>隐私政策</h1>
+
+    <p>
+      Zen AI 是基于 Cherry Studio 开源代码修改而来的独立桌面应用。我们尽量保持本地优先，
+      并尽可能减少不必要的数据收集。
+    </p>
+
+    <h2>1. Zen AI 会在本地保存什么</h2>
+    <ul>
+      <li>应用设置和本地偏好</li>
+      <li>你在应用中创建的对话、文件、笔记和知识库数据</li>
+      <li>应用正常运行所需的本地缓存、日志和备份文件</li>
+    </ul>
+
+    <h2>2. Zen AI 默认不会做什么</h2>
+    <ul>
+      <li>不会内置上报 analytics 统计</li>
+      <li>不会内置自动检查更新</li>
+      <li>不会自动把你的本地对话或 API Key 上传到 Zen AI 自己运营的服务器</li>
+    </ul>
+
+    <h2>3. 第三方模型与服务</h2>
+    <p>
+      当你配置模型服务商、网络服务、云备份、OAuth 登录等第三方集成时，
+      Zen AI 会按照你的配置直接连接这些第三方服务。
+    </p>
+    <p>
+      发送给第三方服务的数据，受对应服务商自己的隐私政策和服务条款约束，请在使用前自行确认。
+    </p>
+
+    <h2>4. 备份与导出</h2>
+    <p>
+      如果你主动使用导出功能，或配置 WebDAV、S3、坚果云等备份目标，
+      数据会被传输到你自己选择的目标位置。Zen AI 不提供托管备份服务。
+    </p>
+
+    <h2>5. 开源分发</h2>
+    <p>
+      Zen AI 以开源软件形式发布。项目源码会在仓库中公开，以便用户了解软件的实际实现方式。
+    </p>
+
+    <h2>6. 联系方式</h2>
+    <ul>
+      <li>仓库：<a href="https://github.com/z685675/Zen-AI" target="_blank" rel="noopener noreferrer">https://github.com/z685675/Zen-AI</a></li>
+      <li>邮箱：<a href="mailto:yewanzz@qq.com">yewanzz@qq.com</a></li>
+    </ul>
+  </div>
+</body>
+</html>

@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title">
+  <title>Zen AI</title>
+  <defs>
+    <linearGradient id="zenGradient" x1="0%" x2="100%" y1="0%" y2="100%">
+      <stop offset="0%" stop-color="#14b8a6" />
+      <stop offset="100%" stop-color="#0f766e" />
+    </linearGradient>
+  </defs>
+  <rect width="128" height="128" rx="28" fill="url(#zenGradient)" />
+  <path d="M34 38h60v8L51 84h43v8H34v-8l43-38H34z" fill="#f8fafc" />
+</svg>

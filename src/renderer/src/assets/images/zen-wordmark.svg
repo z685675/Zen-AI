@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 440 96" role="img" aria-labelledby="title">
+  <title>Zen AI</title>
+  <defs>
+    <linearGradient id="wordmarkGradient" x1="0%" x2="100%" y1="0%" y2="100%">
+      <stop offset="0%" stop-color="#14b8a6" />
+      <stop offset="100%" stop-color="#0f766e" />
+    </linearGradient>
+  </defs>
+  <rect x="8" y="8" width="80" height="80" rx="18" fill="url(#wordmarkGradient)" />
+  <path d="M28 28h40v6L40 62h28v6H28v-6l28-28H28z" fill="#f8fafc" />
+  <text x="112" y="42" fill="#0f172a" font-family="Segoe UI, Arial, sans-serif" font-size="28" font-weight="700">
+    Zen AI
+  </text>
+</svg>
