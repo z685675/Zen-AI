@@ -1,6 +1,6 @@
 import { CheckOutlined, PlusOutlined } from '@ant-design/icons'
 import { nanoid } from '@reduxjs/toolkit'
-import logo from '@renderer/assets/images/zen-wordmark.svg'
+import logo from '@renderer/assets/images/zen-wordmark.png'
 import { Center, HStack } from '@renderer/components/Layout'
 import { useMCPServers } from '@renderer/hooks/useMCPServers'
 import type { MCPServer } from '@renderer/types'
