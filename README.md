@@ -4,6 +4,7 @@ Zen AI is an independent desktop AI workspace built from the Cherry Studio open-
 
 ## Project Status
 
+- Current public baseline: `v1.0.0`
 - Platforms: Windows and macOS only
 - macOS packages: `x64` for Intel Macs and `arm64` for Apple Silicon Macs
 - Update strategy: no in-app auto-update or manual update check
