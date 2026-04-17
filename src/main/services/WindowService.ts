@@ -25,8 +25,7 @@ const DEFAULT_MINIWINDOW_HEIGHT = 400
 // const logger = loggerService.withContext('WindowService')
 const logger = loggerService.withContext('WindowService')
 
-// Create nativeImage for Linux window icon (required for Wayland)
-const linuxIcon = isLinux ? nativeImage.createFromPath(iconPath) : undefined
+const appWindowIcon = nativeImage.createFromPath(iconPath)
 
 export class WindowService {
   private static instance: WindowService | null = null
@@ -92,7 +91,7 @@ export class WindowService {
       ...(windowsBackgroundMaterial ? { backgroundMaterial: windowsBackgroundMaterial } : {}),
       ...(mainWindowBackgroundColor ? { backgroundColor: mainWindowBackgroundColor } : {}),
       darkTheme: nativeTheme.shouldUseDarkColors,
-      ...(isLinux ? { icon: linuxIcon } : {}),
+      ...((isLinux || isWin) ? { icon: appWindowIcon } : {}),
       webPreferences: {
         preload: join(__dirname, '../preload/index.js'),
         sandbox: false,
@@ -554,6 +553,7 @@ export class WindowService {
       minimizable: false,
       maximizable: false,
       fullscreenable: false,
+      ...(isWin ? { icon: appWindowIcon } : {}),
       webPreferences: {
         preload: join(__dirname, '../preload/index.js'),
         sandbox: false,

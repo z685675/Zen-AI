@@ -3,7 +3,7 @@ import { SELECTION_FINETUNED_LIST, SELECTION_PREDEFINED_BLACKLIST } from '@main/
 import { isDev, isLinux, isMac, isWin } from '@main/constant'
 import { APP_BUNDLE_ID } from '@shared/config/constant'
 import { IpcChannel } from '@shared/IpcChannel'
-import { app, BrowserWindow, clipboard, ipcMain, screen, systemPreferences } from 'electron'
+import { app, BrowserWindow, clipboard, ipcMain, nativeImage, screen, systemPreferences } from 'electron'
 import { join } from 'path'
 import type {
   KeyboardEventData,
@@ -13,11 +13,13 @@ import type {
   TextSelectionData
 } from 'selection-hook'
 
+import iconPath from '../../../build/icon.png?asset'
 import type { ActionItem } from '../../renderer/src/types/selectionTypes'
 import { ConfigKeys, configManager } from './ConfigManager'
 import storeSyncService from './StoreSyncService'
 
 const logger = loggerService.withContext('SelectionService')
+const selectionWindowIcon = nativeImage.createFromPath(iconPath)
 
 let SelectionHook: SelectionHookConstructor | null = null
 try {
@@ -458,6 +460,7 @@ export class SelectionService {
       hasShadow: false,
       thickFrame: false,
       roundedCorners: true,
+      ...(isWin ? { icon: selectionWindowIcon } : {}),
 
       // Platform specific settings
       //   [macOS] DO NOT set focusable to false — it causes other windows to bring to front together.
@@ -1203,6 +1206,7 @@ export class SelectionService {
       hasShadow: false,
       thickFrame: false,
       show: false,
+      ...(isWin ? { icon: selectionWindowIcon } : {}),
       webPreferences: {
         preload: join(__dirname, '../preload/index.js'),
         contextIsolation: true,
