@@ -12,6 +12,7 @@ electronLanguages:
   - de
 directories:
   buildResources: build
+npmRebuild: false
 
 protocols:
   - name: Zen AI
