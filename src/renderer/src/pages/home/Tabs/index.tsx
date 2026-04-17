@@ -12,6 +12,7 @@ import { useTranslation } from 'react-i18next'
 import styled from 'styled-components'
 
 import Assistants from './AssistantsTab'
+import ConversationHistoryList from './components/ConversationHistoryList'
 import Topics from './TopicsTab'
 
 interface Props {
@@ -21,6 +22,9 @@ interface Props {
   setActiveTopic: (topic: Topic) => void
   position: 'left' | 'right'
   forceToSeeAllTab?: boolean
+  mode?: 'default' | 'conversations-only' | 'topics-only'
+  onOpenTopics?: () => void
+  onCreateConversation?: () => void
   style?: React.CSSProperties
 }
 
@@ -33,6 +37,8 @@ const HomeTabs: FC<Props> = ({
   setActiveTopic,
   position,
   forceToSeeAllTab,
+  mode = 'default',
+  onCreateConversation,
   style
 }) => {
   const { addAssistant } = useAssistants()
@@ -42,18 +48,23 @@ const HomeTabs: FC<Props> = ({
   const { isLeftNavbar } = useNavbarPosition()
   const { t } = useTranslation()
 
-  const [tab, setTab] = useState<Tab>(position === 'left' ? _tab || 'assistants' : 'topic')
+  const [tab, setTab] = useState<Tab>(
+    mode === 'topics-only' ? 'topic' : position === 'left' ? _tab || 'assistants' : 'topic'
+  )
   const borderStyle = '0.5px solid var(--color-border)'
-  const border =
+  const border = mode === 'conversations-only'
+    ? {}
+    : (
     position === 'left'
       ? { borderRight: isLeftNavbar ? borderStyle : 'none' }
       : { borderLeft: isLeftNavbar ? borderStyle : 'none', borderTopLeftRadius: 0 }
+      )
 
-  if (position === 'left' && topicPosition === 'left') {
+  if (mode === 'default' && position === 'left' && topicPosition === 'left') {
     _tab = tab
   }
 
-  const showTab = position === 'left' && topicPosition === 'left'
+  const showTab = mode === 'default' && position === 'left' && topicPosition === 'left'
 
   const onCreateAssistant = async () => {
     const assistant = await AddAssistantPopup.show()
@@ -97,9 +108,22 @@ const HomeTabs: FC<Props> = ({
 
   return (
     <Container
+      $isConversationOnly={mode === 'conversations-only'}
       style={{ ...border, ...style }}
       className={classNames('home-tabs', { right: position === 'right' && topicPosition === 'right' })}>
-      {position === 'left' && topicPosition === 'left' && (
+      {mode === 'conversations-only' && (
+        <PanelHeader>
+          <PanelTitle>对话记录</PanelTitle>
+        </PanelHeader>
+      )}
+
+      {mode === 'topics-only' && (
+        <PanelHeader>
+          <PanelTitle>{t('common.topics')}</PanelTitle>
+        </PanelHeader>
+      )}
+
+      {mode === 'default' && position === 'left' && topicPosition === 'left' && (
         <CustomTabs>
           <TabItem active={tab === 'assistants'} onClick={() => setTab('assistants')}>
             {t('assistants.abbr')}
@@ -111,15 +135,23 @@ const HomeTabs: FC<Props> = ({
       )}
 
       <TabContent className="home-tabs-content">
-        {tab === 'assistants' && (
-          <Assistants
-            activeAssistant={activeAssistant}
-            setActiveAssistant={setActiveAssistant}
-            onCreateAssistant={onCreateAssistant}
-            onCreateDefaultAssistant={onCreateDefaultAssistant}
-          />
+        {(mode === 'conversations-only' || tab === 'assistants') && mode !== 'topics-only' && (
+          mode === 'conversations-only' ? (
+            <ConversationHistoryList
+              activeTopic={activeTopic}
+              setActiveTopic={setActiveTopic}
+              onCreateConversation={onCreateConversation || onCreateDefaultAssistant}
+            />
+          ) : (
+            <Assistants
+              activeAssistant={activeAssistant}
+              setActiveAssistant={setActiveAssistant}
+              onCreateAssistant={onCreateAssistant}
+              onCreateDefaultAssistant={onCreateDefaultAssistant}
+            />
+          )
         )}
-        {tab === 'topic' && (
+        {(mode === 'topics-only' || tab === 'topic') && mode !== 'conversations-only' && (
           <Topics
             assistant={activeAssistant}
             activeTopic={activeTopic}
@@ -132,20 +164,22 @@ const HomeTabs: FC<Props> = ({
   )
 }
 
-const Container = styled.div`
+const Container = styled.div<{ $isConversationOnly: boolean }>`
   display: flex;
   flex-direction: column;
   width: var(--assistants-width);
   transition: width 0.3s;
   height: calc(100vh - var(--navbar-height));
   position: relative;
+  background: #ffffff;
+  box-shadow: -8px 0 24px rgba(15, 23, 42, 0.025);
 
   &.right {
     height: calc(100vh - var(--navbar-height));
   }
 
   [navbar-position='left'] & {
-    background-color: var(--color-background);
+    background-color: #ffffff;
   }
   [navbar-position='top'] & {
     height: calc(100vh - var(--navbar-height));
@@ -170,12 +204,26 @@ const CustomTabs = styled.div`
   display: flex;
   margin: 0 12px;
   padding: 6px 0;
-  border-bottom: 1px solid var(--color-border);
   background: transparent;
   -webkit-app-region: no-drag;
   [navbar-position='top'] & {
     padding-top: 2px;
   }
+`
+
+const PanelHeader = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0 12px;
+  padding: 10px 0 8px;
+  -webkit-app-region: no-drag;
+`
+
+const PanelTitle = styled.div`
+  font-size: 14px;
+  font-weight: 600;
+  color: #1f2329;
 `
 
 const TabItem = styled.button<{ active: boolean }>`

@@ -11,11 +11,12 @@ exports.default = async function notarizing(context) {
   }
 
   const appName = context.packager.appInfo.productFilename
+  const appBundleId = context.packager.appInfo.id
   const appPath = `${context.appOutDir}/${appName}.app`
 
   await notarize({
     appPath,
-    appBundleId: 'com.kangfenmao.CherryStudio',
+    appBundleId,
     appleId: process.env.APPLE_ID,
     appleIdPassword: process.env.APPLE_APP_SPECIFIC_PASSWORD,
     teamId: process.env.APPLE_TEAM_ID

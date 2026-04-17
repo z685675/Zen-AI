@@ -14,7 +14,6 @@ import { Import, Plus, Search, Settings2 } from 'lucide-react'
 import type { FC } from 'react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import ReactMarkdown from 'react-markdown'
 import styled from 'styled-components'
 
 import { groupByCategories, useSystemAssistantPresets } from '.'
@@ -22,6 +21,7 @@ import { groupTranslations } from './assistantPresetGroupTranslations'
 import AddAssistantPresetPopup from './components/AddAssistantPresetPopup'
 import AssistantPresetCard from './components/AssistantPresetCard'
 import { AssistantPresetGroupIcon } from './components/AssistantPresetGroupIcon'
+import AssistantPresetPreviewContent from './components/AssistantPresetPreviewContent'
 import ImportAssistantPresetPopup from './components/ImportAssistantPresetPopup'
 import ManageAssistantPresetsPopup from './components/ManageAssistantPresetsPopup'
 
@@ -70,17 +70,7 @@ const AssistantPresetsPage: FC = () => {
     (preset: AssistantPreset) => {
       window.modal.confirm({
         title: preset.name,
-        content: (
-          <Flex gap={16} vertical style={{ width: 'calc(100% + 12px)' }}>
-            {preset.description && <AgentDescription>{preset.description}</AgentDescription>}
-
-            {preset.prompt && (
-              <AgentPrompt className="markdown">
-                <ReactMarkdown>{preset.prompt}</ReactMarkdown>
-              </AgentPrompt>
-            )}
-          </Flex>
-        ),
+        content: <AssistantPresetPreviewContent preset={preset} />,
         width: 600,
         icon: null,
         closable: true,
@@ -373,19 +363,6 @@ const AgentsList = styled(Scrollbar)`
   grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
   grid-auto-rows: 160px;
   gap: 16px;
-`
-
-const AgentDescription = styled.div`
-  color: var(--color-text-2);
-  font-size: 12px;
-`
-
-const AgentPrompt = styled.div`
-  max-height: 60vh;
-  overflow-y: scroll;
-  background-color: var(--color-background-soft);
-  padding: 8px;
-  border-radius: 10px;
 `
 
 const EmptyView = styled.div`

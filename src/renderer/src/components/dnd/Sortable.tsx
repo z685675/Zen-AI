@@ -35,6 +35,8 @@ interface SortableProps<T> {
   items: T[]
   /** Function or key to get unique identifier for each item */
   itemKey: keyof T | ((item: T) => string | number)
+  /** Disable dragging for specific items */
+  isDragDisabled?: (item: T, index: number) => boolean
   /** Callback when sorting is complete, receives old and new indices */
   onSortEnd: (event: { oldIndex: number; newIndex: number }) => void
   /** Callback when drag starts, will be passed to dnd-kit's onDragStart */
@@ -75,6 +77,7 @@ interface SortableProps<T> {
 function Sortable<T>({
   items,
   itemKey,
+  isDragDisabled,
   onSortEnd,
   onDragStart: customOnDragStart,
   onDragEnd: customOnDragEnd,
@@ -191,6 +194,7 @@ function Sortable<T>({
               id={itemIds[index]}
               index={index}
               item={item}
+              disabled={isDragDisabled?.(item, index) ?? false}
               renderItem={renderItem}
               useDragOverlay={useDragOverlay}
               showGhost={showGhost}

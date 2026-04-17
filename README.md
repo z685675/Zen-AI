@@ -27,6 +27,7 @@ Zen AI is an independent desktop AI workspace built from the Cherry Studio open-
 - This project is based on Cherry Studio and keeps the required open-source obligations for redistributed builds.
 - Zen AI is released under AGPL-3.0.
 - If you distribute modified binaries, you must also provide the corresponding source code.
+- Zen AI bundles the unmodified HarmonyOS Sans font family. Keep the included font license notice with redistributed builds.
 
 ## Development
 

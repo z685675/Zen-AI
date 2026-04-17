@@ -16,6 +16,7 @@ import AssistantsDrawer from '../AssistantsDrawer'
 import ChatNavbarContent from './ChatNavbarContent'
 
 interface Props {
+  assistants: Assistant[]
   activeAssistant: Assistant
   activeTopic: Topic
   setActiveTopic: (topic: Topic) => void
@@ -23,7 +24,7 @@ interface Props {
   position: 'left' | 'right'
 }
 
-const HeaderNavbar: FC<Props> = ({ activeAssistant, setActiveAssistant, activeTopic, setActiveTopic }) => {
+const HeaderNavbar: FC<Props> = ({ assistants, activeAssistant, setActiveAssistant, activeTopic, setActiveTopic }) => {
   const { assistant } = useAssistant(activeAssistant.id)
   const { showAssistants, toggleShowAssistants } = useShowAssistants()
   const { isTopNavbar } = useNavbarPosition()
@@ -71,7 +72,7 @@ const HeaderNavbar: FC<Props> = ({ activeAssistant, setActiveAssistant, activeTo
             </motion.div>
           )}
         </AnimatePresence>
-        <ChatNavbarContent assistant={assistant} />
+        <ChatNavbarContent assistant={assistant} assistants={assistants} setActiveAssistant={setActiveAssistant} />
       </div>
     </NavbarHeader>
   )

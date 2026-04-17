@@ -11,7 +11,9 @@ const AssistantAddButton: FC<AssistantAddButtonProps> = ({ onCreateAssistant }) 
 
   return (
     <div className="-mt-0.5 mb-1.5">
-      <AddButton onClick={onCreateAssistant}>{t('chat.add.assistant.title')}</AddButton>
+      <AddButton onClick={onCreateAssistant}>
+        {t('chat.add.conversation.title', { defaultValue: '新建对话' })}
+      </AddButton>
     </div>
   )
 }

@@ -11,7 +11,7 @@ import WindowControls from '../WindowControls'
 
 type Props = PropsWithChildren & HTMLAttributes<HTMLDivElement>
 
-export const Navbar: FC<Props> = ({ children, ...props }) => {
+export const Navbar: FC<Props> = ({ children, style, ...props }) => {
   const backgroundColor = useNavBackgroundColor()
   const isFullscreen = useFullscreen()
   const { isTopNavbar } = useNavbarPosition()
@@ -22,7 +22,7 @@ export const Navbar: FC<Props> = ({ children, ...props }) => {
   }
 
   return (
-    <NavbarContainer {...props} style={{ backgroundColor }} $isFullScreen={isFullscreen}>
+    <NavbarContainer {...props} style={{ backgroundColor, ...style }} $isFullScreen={isFullscreen}>
       {children}
       {!minappShow && <WindowControls />}
     </NavbarContainer>

@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.web.json",
+  "exclude": [
+    "packages/aiCore/src/**/__tests__/**",
+    "**/__tests__/**",
+    "**/*.test.ts",
+    "**/*.test.tsx",
+    "**/*.spec.ts",
+    "**/*.spec.tsx",
+    "**/*.bench.ts",
+    "**/*.bench.tsx",
+    "tests/**"
+  ]
+}

@@ -60,6 +60,7 @@ const logger = loggerService.withContext('Inputbar')
 
 const INPUTBAR_DRAFT_CACHE_KEY = 'inputbar-draft'
 const DRAFT_CACHE_TTL = 24 * 60 * 60 * 1000 // 24 hours
+const HERO_PLACEHOLDER = 'Zen AI可以帮你写作、总结、翻译内容，也可以处理附件与文件。'
 
 const getMentionedModelsCacheKey = (assistantId: string) => `inputbar-mentioned-models-${assistantId}`
 
@@ -75,7 +76,7 @@ interface Props {
   topic: Topic
 }
 
-type ProviderActionHandlers = {
+export type ProviderActionHandlers = {
   resizeTextArea: () => void
   addNewTopic: () => void
   clearTopic: () => void
@@ -86,10 +87,22 @@ type ProviderActionHandlers = {
 
 interface InputbarInnerProps extends Props {
   actionsRef: React.RefObject<ProviderActionHandlers>
+  variant: 'default' | 'hero'
 }
 
-const Inputbar: FC<Props> = ({ assistant: initialAssistant, setActiveTopic, topic }) => {
-  const actionsRef = useRef<ProviderActionHandlers>({
+interface InputbarProps extends Props {
+  variant?: 'default' | 'hero'
+  actionsRef?: React.RefObject<ProviderActionHandlers>
+}
+
+const Inputbar: FC<InputbarProps> = ({
+  assistant: initialAssistant,
+  setActiveTopic,
+  topic,
+  variant = 'default',
+  actionsRef: externalActionsRef
+}) => {
+  const internalActionsRef = useRef<ProviderActionHandlers>({
     resizeTextArea: () => {},
     addNewTopic: () => {},
     clearTopic: () => {},
@@ -97,6 +110,7 @@ const Inputbar: FC<Props> = ({ assistant: initialAssistant, setActiveTopic, topi
     onTextChange: () => {},
     toggleExpanded: () => {}
   })
+  const actionsRef = externalActionsRef ?? internalActionsRef
 
   const [initialMentionedModels] = useState(() => getValidatedCachedModels(initialAssistant.id))
 
@@ -128,13 +142,21 @@ const Inputbar: FC<Props> = ({ assistant: initialAssistant, setActiveTopic, topi
         setActiveTopic={setActiveTopic}
         topic={topic}
         actionsRef={actionsRef}
+        variant={variant}
       />
     </InputbarToolsProvider>
   )
 }
 
-const InputbarInner: FC<InputbarInnerProps> = ({ assistant: initialAssistant, setActiveTopic, topic, actionsRef }) => {
+const InputbarInner: FC<InputbarInnerProps> = ({
+  assistant: initialAssistant,
+  setActiveTopic,
+  topic,
+  actionsRef,
+  variant
+}) => {
   const scope = topic.type ?? TopicType.Chat
+  const isHero = variant === 'hero'
   const config = getInputbarConfig(scope)
 
   const { files, mentionedModels, selectedKnowledgeBases } = useInputbarToolsState()
@@ -223,14 +245,16 @@ const InputbarInner: FC<InputbarInnerProps> = ({ assistant: initialAssistant, se
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [assistant.id])
 
-  const placeholderText = enableQuickPanelTriggers
-    ? t('chat.input.placeholder', { key: getSendMessageShortcutLabel(sendMessageShortcut) })
-    : t('chat.input.placeholder_without_triggers', {
-        key: getSendMessageShortcutLabel(sendMessageShortcut),
-        defaultValue: t('chat.input.placeholder', {
-          key: getSendMessageShortcutLabel(sendMessageShortcut)
+  const placeholderText = isHero
+    ? HERO_PLACEHOLDER
+    : enableQuickPanelTriggers
+      ? t('chat.input.placeholder', { key: getSendMessageShortcutLabel(sendMessageShortcut) })
+      : t('chat.input.placeholder_without_triggers', {
+          key: getSendMessageShortcutLabel(sendMessageShortcut),
+          defaultValue: t('chat.input.placeholder', {
+            key: getSendMessageShortcutLabel(sendMessageShortcut)
+          })
         })
-      })
 
   const sendMessage = useCallback(async () => {
     if (checkRateLimit(assistant)) {
@@ -462,7 +486,7 @@ const InputbarInner: FC<InputbarInnerProps> = ({ assistant: initialAssistant, se
   }
 
   // topContent: 所有顶部预览内容
-  const topContent = (
+  const topContent = isHero ? null : (
     <>
       {selectedKnowledgeBases.length > 0 && (
         <KnowledgeBaseInput
@@ -478,10 +502,40 @@ const InputbarInner: FC<InputbarInnerProps> = ({ assistant: initialAssistant, se
   )
 
   // leftToolbar: 左侧工具栏
-  const leftToolbar = config.showTools ? <InputbarTools scope={scope} assistant={assistant} model={model} /> : null
+  const leftToolbar = config.showTools ? (
+    <InputbarTools
+      scope={scope}
+      assistant={assistant}
+      model={model}
+      toolOrderOverride={
+        isHero
+          ? {
+              visible: ['attachment'],
+              hidden: [
+                'new_topic',
+                'thinking',
+                'web_search',
+                'url_context',
+                'knowledge_base',
+                'mcp_tools',
+                'generate_image',
+                'mention_models',
+                'quick_phrases',
+                'clear_topic',
+                'toggle_expand',
+                'new_context'
+              ]
+            }
+          : {
+              visible: [],
+              hidden: ['new_topic']
+            }
+      }
+    />
+  ) : null
 
   // rightToolbar: 右侧工具栏
-  const rightToolbar = (
+  const rightToolbar = isHero ? null : (
     <>
       {tokenCountProps && (
         <TokenCount
@@ -512,6 +566,8 @@ const InputbarInner: FC<InputbarInnerProps> = ({ assistant: initialAssistant, se
       leftToolbar={leftToolbar}
       rightToolbar={rightToolbar}
       topContent={topContent}
+      forceEnableQuickPanelTriggers={!isHero}
+      minimal={isHero}
     />
   )
 }

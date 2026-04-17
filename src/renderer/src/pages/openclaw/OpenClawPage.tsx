@@ -21,8 +21,6 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import useSWR from 'swr'
 
-import UpdateButton from './components/UpdateButton'
-
 const logger = loggerService.withContext('OpenClawPage')
 
 const DEFAULT_DOCS_URL = 'https://docs.openclaw.ai/'
@@ -87,7 +85,7 @@ const OpenClawPage: FC = () => {
   const [installLogs, setInstallLogs] = useState<Array<{ message: string; type: 'info' | 'warn' | 'error' }>>([])
   const [showLogs, setShowLogs] = useState(false)
   const [uninstallSuccess, setUninstallSuccess] = useState(false)
-  const [isOpenClawUpdating, setIsOpenClawUpdating] = useState(false)
+  const isOpenClawUpdating = false
 
   const noApiKeyProviders = ['ollama', 'lmstudio', 'gpustack']
   const availableProviders = providers.filter((p) => p.enabled && (p.apiKey || noApiKeyProviders.includes(p.type)))
@@ -412,7 +410,6 @@ const OpenClawPage: FC = () => {
                     }
                   }}
                 />
-                <UpdateButton onUpdateComplete={checkInstallation} onUpdatingChange={setIsOpenClawUpdating} />
               </div>
             </div>
             <span

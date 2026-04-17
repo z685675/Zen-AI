@@ -14,7 +14,6 @@ import {
   type ToolPermissionResultPayload,
   toolPermissionsActions
 } from '@renderer/store/toolPermissions'
-import { runAsyncFunction } from '@renderer/utils'
 import { checkDataLimit } from '@renderer/utils'
 import { sendToolApprovalNotification } from '@renderer/utils/userConfirmation'
 import { defaultLanguage } from '@shared/config/constant'

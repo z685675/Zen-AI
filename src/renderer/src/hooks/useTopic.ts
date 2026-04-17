@@ -13,7 +13,7 @@ import type { FileMessageBlock, ImageMessageBlock } from '@renderer/types/newMes
 import { MessageBlockType } from '@renderer/types/newMessage'
 import { findMainTextBlocks } from '@renderer/utils/messageUtils/find'
 import { truncateText } from '@renderer/utils/naming'
-import { find, isEmpty } from 'lodash'
+import { isEmpty } from 'lodash'
 import { type Dispatch, type SetStateAction, useEffect, useState } from 'react'
 
 import { useAssistant } from './useAssistant'
@@ -37,20 +37,6 @@ export function useActiveTopic(assistantId: string, topic?: Topic) {
       void EventEmitter.emit(EVENT_NAMES.CHANGE_TOPIC, activeTopic)
     }
   }, [activeTopic])
-
-  useEffect(() => {
-    // activeTopic not in assistant.topics
-    // 确保 assistant 和 assistant.topics 存在，避免在数据未完全加载时访问属性
-    if (
-      assistant &&
-      assistant.topics &&
-      Array.isArray(assistant.topics) &&
-      assistant.topics.length > 0 &&
-      !find(assistant.topics, { id: activeTopic?.id })
-    ) {
-      setActiveTopic(assistant.topics[0])
-    }
-  }, [activeTopic?.id, assistant])
 
   useEffect(() => {
     if (!assistant?.topics?.length || !activeTopic) {
@@ -77,14 +63,11 @@ export function getTopic(assistant: Assistant, topicId: string) {
 export async function getTopicById(topicId: string) {
   const assistants = store.getState().assistants.assistants
   const topics = assistants.map((assistant) => assistant.topics).flat()
-  const topic = topics.find((topic) => topic.id === topicId)
+  const topic = topics.find((item) => item.id === topicId)
   const messages = await TopicManager.getTopicMessages(topicId)
   return { ...topic, messages } as Topic
 }
 
-/**
- * 开始重命名指定话题
- */
 export const startTopicRenaming = (topicId: string) => {
   const currentIds = store.getState().runtime.chat.renamingTopics
   if (!currentIds.includes(topicId)) {
@@ -92,21 +75,14 @@ export const startTopicRenaming = (topicId: string) => {
   }
 }
 
-/**
- * 完成重命名指定话题
- */
 export const finishTopicRenaming = (topicId: string) => {
   const state = store.getState()
-
-  // 1. 立即从 renamingTopics 移除
   const currentRenaming = state.runtime.chat.renamingTopics
   store.dispatch(setRenamingTopics(currentRenaming.filter((id) => id !== topicId)))
 
-  // 2. 立即添加到 newlyRenamedTopics
   const currentNewlyRenamed = state.runtime.chat.newlyRenamedTopics
   store.dispatch(setNewlyRenamedTopics([...currentNewlyRenamed, topicId]))
 
-  // 3. 延迟从 newlyRenamedTopics 移除
   setTimeout(() => {
     const current = store.getState().runtime.chat.newlyRenamedTopics
     store.dispatch(setNewlyRenamedTopics(current.filter((id) => id !== topicId)))
@@ -190,8 +166,6 @@ export const autoRenameTopic = async (assistant: Assistant, topicId: string) => 
   }
 }
 
-// Convert class to object with functions since class only has static methods
-// 只有静态方法,没必要用class，可以export {}
 export const TopicManager = {
   async getTopic(id: string) {
     return await db.topics.get(id)
@@ -201,16 +175,12 @@ export const TopicManager = {
     return await db.topics.toArray()
   },
 
-  /**
-   * 加载并返回指定话题的消息
-   */
   async getTopicMessages(id: string) {
     const topic = await TopicManager.getTopic(id)
     if (!topic) return []
 
     await store.dispatch(loadTopicMessagesThunk(id))
 
-    // 获取更新后的话题
     const updatedTopic = await TopicManager.getTopic(id)
     return updatedTopic?.messages || []
   },
@@ -221,7 +191,6 @@ export const TopicManager = {
   },
 
   async clearTopicMessages(id: string): Promise<void> {
-    // 暂存需要删除的文件信息
     let filesToDelete: FileMetadata[] = []
 
     try {
@@ -235,10 +204,8 @@ export const TopicManager = {
         const blockIds = topic.messages.flatMap((message) => message.blocks || [])
 
         if (blockIds.length > 0) {
-          // 删除 block 之前先从 DB 里找出来
           const blocks = await db.message_blocks.where('id').anyOf(blockIds).toArray()
 
-          // 提取文件元数据
           filesToDelete = blocks
             .filter(
               (block): block is ImageMessageBlock | FileMessageBlock =>
@@ -257,7 +224,6 @@ export const TopicManager = {
       throw dbError
     }
 
-    // 删除文件
     if (filesToDelete.length > 0) {
       await safeDeleteFiles(filesToDelete)
     }

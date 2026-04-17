@@ -5,12 +5,14 @@ exports.default = async function (configuration) {
     const { path } = configuration
     if (configuration.path) {
       try {
-        const certPath = process.env.CHERRY_CERT_PATH
-        const keyContainer = process.env.CHERRY_CERT_KEY
-        const csp = process.env.CHERRY_CERT_CSP
+        const certPath = process.env.ZEN_AI_CERT_PATH || process.env.CHERRY_CERT_PATH
+        const keyContainer = process.env.ZEN_AI_CERT_KEY || process.env.CHERRY_CERT_KEY
+        const csp = process.env.ZEN_AI_CERT_CSP || process.env.CHERRY_CERT_CSP
 
         if (!certPath || !keyContainer || !csp) {
-          throw new Error('CHERRY_CERT_PATH, CHERRY_CERT_KEY or CHERRY_CERT_CSP is not set')
+          throw new Error(
+            'ZEN_AI_CERT_PATH, ZEN_AI_CERT_KEY or ZEN_AI_CERT_CSP is not set (CHERRY_CERT_* fallback is also supported)'
+          )
         }
 
         console.log('Start code signing...')

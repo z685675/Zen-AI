@@ -103,7 +103,6 @@ export async function locateToMessage(navigate: NavigateFunction, message: Messa
 
   navigate('/', { state: { assistant, topic } })
 
-  setTimeout(() => EventEmitter.emit(EVENT_NAMES.SHOW_TOPIC_SIDEBAR), 0)
   setTimeout(() => EventEmitter.emit(EVENT_NAMES.LOCATE_MESSAGE + ':' + message.id), 300)
 }
 

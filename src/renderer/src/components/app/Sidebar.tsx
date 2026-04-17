@@ -110,7 +110,7 @@ const Sidebar: FC = () => {
           </AppsContainer>
         )}
       </MainMenusContainer>
-      <Menus>
+      <BottomMenus>
         <SidebarMenuItem
           label={t('settings.theme.title')}
           onClick={toggleTheme}
@@ -134,7 +134,7 @@ const Sidebar: FC = () => {
           theme={theme}>
           <Settings size={18} className="icon" />
         </SidebarMenuItem>
-      </Menus>
+      </BottomMenus>
     </Container>
   )
 }
@@ -203,18 +203,19 @@ const Container = styled.div<{ $isFullscreen: boolean }>`
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  padding: 8px 0;
-  padding-bottom: 12px;
+  padding: 10px 0 14px;
   width: var(--sidebar-width);
   min-width: var(--sidebar-width);
   height: ${({ $isFullscreen }) => (isMac && !$isFullscreen ? 'calc(100vh - var(--navbar-height))' : '100vh')};
   -webkit-app-region: drag !important;
   margin-top: ${({ $isFullscreen }) => (isMac && !$isFullscreen ? 'env(titlebar-area-height)' : 0)};
+  border-right: 1px solid rgba(0, 0, 0, 0.05);
+  box-sizing: border-box;
 
   .sidebar-avatar {
     align-self: center;
-    margin-bottom: ${isMac ? '12px' : '12px'};
-    margin-top: ${isMac ? '0px' : '2px'};
+    margin-bottom: ${isMac ? '16px' : '16px'};
+    margin-top: ${isMac ? '2px' : '4px'};
     -webkit-app-region: none;
   }
 `
@@ -224,8 +225,8 @@ const AvatarImg = styled(Avatar)`
   height: 31px;
   align-self: center;
   background-color: var(--color-background-soft);
-  margin-bottom: ${isMac ? '12px' : '12px'};
-  margin-top: ${isMac ? '0px' : '2px'};
+  margin-bottom: ${isMac ? '16px' : '16px'};
+  margin-top: ${isMac ? '2px' : '4px'};
   border: none;
   cursor: pointer;
 `
@@ -242,16 +243,16 @@ const Menus = styled.div`
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 5px;
+  gap: 7px;
   width: 100%;
-  padding: 0 8px;
+  padding: 0 10px;
 `
 
 const MenuLabel = styled.span`
   flex: 1;
   min-width: 0;
   font-size: 13px;
-  color: var(--color-text-2);
+  color: #5b6472;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -265,55 +266,70 @@ const MenuIconWrapper = styled.div`
   align-items: center;
   justify-content: center;
   border-radius: 9px;
-  background: var(--color-background-soft);
-  border: 0.5px solid var(--color-border);
+  background: transparent;
+  border: none;
 `
 
 const MenuButton = styled.div<{ theme: string }>`
+  position: relative;
   width: 100%;
-  min-height: 38px;
+  min-height: 40px;
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 0 10px;
+  gap: 13px;
+  padding: 0 12px 0 16px;
   border-radius: 12px;
   box-sizing: border-box;
   -webkit-app-region: none;
-  border: 0.5px solid transparent;
+  border: none;
 
   .icon {
-    color: var(--color-icon);
+    color: #6b7280;
+    stroke-width: 1.85;
+  }
+
+  &::before {
+    content: '';
+    position: absolute;
+    left: 6px;
+    top: 8px;
+    bottom: 8px;
+    width: 3px;
+    border-radius: 999px;
+    background: transparent;
+    transition: background-color 0.18s ease;
   }
 
   &:hover {
-    background-color: ${({ theme }) => (theme === 'dark' ? 'var(--color-black)' : 'var(--color-white)')};
-    opacity: 0.8;
+    background-color: rgba(255, 255, 255, 0.72);
     cursor: pointer;
 
     .icon {
-      color: var(--color-icon-white);
+      color: #374151;
     }
 
     ${/* sc-selector */ MenuLabel} {
-      color: var(--color-text);
+      color: #374151;
     }
   }
 
   &.active {
-    background-color: ${({ theme }) => (theme === 'dark' ? 'var(--color-black)' : 'var(--color-white)')};
-    border: 0.5px solid var(--color-border);
+    background: var(--color-list-item);
+
+    &::before {
+      background: var(--color-primary);
+    }
 
     .icon {
-      color: var(--color-primary);
+      color: #1f2329;
     }
 
     ${/* sc-selector */ MenuIconWrapper} {
-      border-color: color-mix(in srgb, var(--color-primary) 18%, var(--color-border));
-      background: color-mix(in srgb, var(--color-primary) 12%, var(--color-background-soft));
+      background: transparent;
     }
 
     ${/* sc-selector */ MenuLabel} {
-      color: var(--color-text);
+      color: #1f2329;
       font-weight: 600;
     }
   }
@@ -342,6 +358,12 @@ const AppsContainer = styled.div`
   &::-webkit-scrollbar {
     display: none;
   }
+`
+
+const BottomMenus = styled(Menus)`
+  margin-top: auto;
+  padding-top: 26px;
+  padding-bottom: 4px;
 `
 
 const Divider = styled.div`

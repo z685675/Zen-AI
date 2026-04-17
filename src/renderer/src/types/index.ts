@@ -33,6 +33,7 @@ export type McpMode = 'disabled' | 'auto' | 'manual'
 
 export type Assistant = {
   id: string
+  presetId?: string
   name: string
   prompt: string
   knowledge_bases?: KnowledgeBase[]

@@ -37,6 +37,7 @@ export interface InputbarToolsNewProps {
   assistant: Assistant
   model: Model
   session?: ToolContext['session']
+  toolOrderOverride?: ToolOrderConfig
 }
 
 interface ToolConfig {
@@ -50,7 +51,7 @@ const DraggablePortal = ({ children, isDragging }: { children: React.ReactNode; 
   return isDragging ? createPortal(children, document.body) : children
 }
 
-const InputbarTools = ({ scope, assistant, model, session }: InputbarToolsNewProps) => {
+const InputbarTools = ({ scope, assistant, model, session, toolOrderOverride }: InputbarToolsNewProps) => {
   const { t } = useTranslation()
   const dispatch = useAppDispatch()
   const toolsContext = useInputbarTools()
@@ -85,9 +86,8 @@ const InputbarTools = ({ scope, assistant, model, session }: InputbarToolsNewPro
   }, [scope, assistant, model, session])
 
   // Get tool order for current scope
-  const toolOrder = useMemo(() => {
-    return reduxToolOrder
-  }, [reduxToolOrder])
+  const toolOrder = useMemo(() => toolOrderOverride ?? reduxToolOrder, [reduxToolOrder, toolOrderOverride])
+  const disableCustomization = !!toolOrderOverride
 
   // Build render context for tools
   const buildRenderContext = useCallback(
@@ -316,11 +316,59 @@ const InputbarTools = ({ scope, assistant, model, session }: InputbarToolsNewPro
       .filter((element): element is React.ReactElement => element !== null)
   }, [availableTools, buildRenderContext])
 
+  const renderTool = useCallback(
+    (toolConfig: ToolConfig, index: number, isHidden: boolean) => {
+      const context = buildRenderContext(toolConfig.tool)
+
+      if (disableCustomization) {
+        return (
+          <ToolWrapper
+            key={toolConfig.key}
+            data-key={toolConfig.key}
+            className={classNames({ 'is-collapsed': isHidden && isCollapse })}>
+            {toolConfig.tool.render?.(context)}
+          </ToolWrapper>
+        )
+      }
+
+      return (
+        <Draggable key={toolConfig.key} draggableId={toolConfig.key} index={index}>
+          {(provided, snapshot) => (
+            <DraggablePortal isDragging={snapshot.isDragging}>
+              <ToolWrapper
+                data-key={toolConfig.key}
+                className={classNames({ 'is-collapsed': isHidden && isCollapse })}
+                onContextMenu={() => setTargetTool(toolConfig)}
+                ref={provided.innerRef}
+                {...provided.draggableProps}
+                {...provided.dragHandleProps}
+                style={
+                  isHidden
+                    ? {
+                        ...provided.draggableProps.style,
+                        transitionDelay: `${index * 0.02}s`
+                      }
+                    : provided.draggableProps.style
+                }>
+                {toolConfig.tool.render?.(context)}
+              </ToolWrapper>
+            </DraggablePortal>
+          )}
+        </Draggable>
+      )
+    },
+    [buildRenderContext, disableCustomization, isCollapse]
+  )
+
   return (
     <>
-      <Dropdown menu={{ items: getMenuItems }} trigger={['contextMenu']}>
+      <Dropdown menu={{ items: getMenuItems }} trigger={disableCustomization ? [] : ['contextMenu']}>
         <ToolsContainer
           onContextMenu={(e) => {
+            if (disableCustomization) {
+              e.preventDefault()
+              return
+            }
             const target = e.target as HTMLElement
             const isToolButton = target.closest('[data-key]')
             if (!isToolButton) {
@@ -331,27 +379,8 @@ const InputbarTools = ({ scope, assistant, model, session }: InputbarToolsNewPro
             <Droppable droppableId="inputbar-tools-visible" direction="horizontal">
               {(provided) => (
                 <VisibleTools ref={provided.innerRef} {...provided.droppableProps}>
-                  {visibleTools.map((toolConfig, index) => {
-                    const context = buildRenderContext(toolConfig.tool)
-                    return (
-                      <Draggable key={toolConfig.key} draggableId={toolConfig.key} index={index}>
-                        {(provided, snapshot) => (
-                          <DraggablePortal isDragging={snapshot.isDragging}>
-                            <ToolWrapper
-                              data-key={toolConfig.key}
-                              onContextMenu={() => setTargetTool(toolConfig)}
-                              ref={provided.innerRef}
-                              {...provided.draggableProps}
-                              {...provided.dragHandleProps}
-                              style={provided.draggableProps.style}>
-                              {toolConfig.tool.render?.(context)}
-                            </ToolWrapper>
-                          </DraggablePortal>
-                        )}
-                      </Draggable>
-                    )
-                  })}
-                  {provided.placeholder}
+                  {visibleTools.map((toolConfig, index) => renderTool(toolConfig, index, false))}
+                  {!disableCustomization && provided.placeholder}
                 </VisibleTools>
               )}
             </Droppable>
@@ -361,31 +390,8 @@ const InputbarTools = ({ scope, assistant, model, session }: InputbarToolsNewPro
             <Droppable droppableId="inputbar-tools-hidden" direction="horizontal">
               {(provided) => (
                 <HiddenTools ref={provided.innerRef} {...provided.droppableProps}>
-                  {hiddenTools.map((toolConfig, index) => {
-                    const context = buildRenderContext(toolConfig.tool)
-                    return (
-                      <Draggable key={toolConfig.key} draggableId={toolConfig.key} index={index}>
-                        {(provided, snapshot) => (
-                          <DraggablePortal isDragging={snapshot.isDragging}>
-                            <ToolWrapper
-                              data-key={toolConfig.key}
-                              className={classNames({ 'is-collapsed': isCollapse })}
-                              onContextMenu={() => setTargetTool(toolConfig)}
-                              ref={provided.innerRef}
-                              {...provided.draggableProps}
-                              {...provided.dragHandleProps}
-                              style={{
-                                ...provided.draggableProps.style,
-                                transitionDelay: `${index * 0.02}s`
-                              }}>
-                              {toolConfig.tool.render?.(context)}
-                            </ToolWrapper>
-                          </DraggablePortal>
-                        )}
-                      </Draggable>
-                    )
-                  })}
-                  {provided.placeholder}
+                  {hiddenTools.map((toolConfig, index) => renderTool(toolConfig, index, true))}
+                  {!disableCustomization && provided.placeholder}
                 </HiddenTools>
               )}
             </Droppable>

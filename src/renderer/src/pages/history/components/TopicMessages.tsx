@@ -4,10 +4,8 @@ import SearchPopup from '@renderer/components/Popups/SearchPopup'
 import { MessageEditingProvider } from '@renderer/context/MessageEditingContext'
 import useScrollPosition from '@renderer/hooks/useScrollPosition'
 import { useSettings } from '@renderer/hooks/useSettings'
-import { useTimer } from '@renderer/hooks/useTimer'
 import { getTopicById } from '@renderer/hooks/useTopic'
 import { getAssistantById } from '@renderer/services/AssistantService'
-import { EVENT_NAMES, EventEmitter } from '@renderer/services/EventService'
 import { isGenerating, locateToMessage } from '@renderer/services/MessagesService'
 import NavigationService from '@renderer/services/NavigationService'
 import type { Topic } from '@renderer/types'
@@ -29,7 +27,6 @@ const TopicMessages: FC<Props> = ({ topic: _topic, ...props }) => {
   const navigate = NavigationService.navigate!
   const { handleScroll, containerRef } = useScrollPosition('TopicMessages')
   const { messageStyle } = useSettings()
-  const { setTimeoutTimer } = useTimer()
 
   const [topic, setTopic] = useState<Topic | undefined>(_topic)
 
@@ -53,7 +50,6 @@ const TopicMessages: FC<Props> = ({ topic: _topic, ...props }) => {
     SearchPopup.hide()
     const assistant = getAssistantById(topic.assistantId)
     navigate('/', { state: { assistant, topic } })
-    setTimeoutTimer('onContinueChat', () => EventEmitter.emit(EVENT_NAMES.SHOW_TOPIC_SIDEBAR), 100)
   }
 
   return (

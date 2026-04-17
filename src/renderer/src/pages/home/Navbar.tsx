@@ -51,7 +51,7 @@ const HeaderNavbar: FC<Props> = ({ activeAssistant, setActiveAssistant, activeTo
   }
 
   return (
-    <Navbar className="home-navbar">
+    <Navbar className="home-navbar" style={{ backgroundColor: '#f7f8fa' }}>
       <AnimatePresence initial={false}>
         {showAssistants && (
           <motion.div

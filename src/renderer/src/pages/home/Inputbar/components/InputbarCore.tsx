@@ -21,7 +21,7 @@ import { Tooltip } from 'antd'
 import TextArea from 'antd/es/input/TextArea'
 import type { TextAreaRef } from 'antd/lib/input/TextArea'
 import { CirclePause, Languages } from 'lucide-react'
-import type { CSSProperties, FC } from 'react'
+import type { FC } from 'react'
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import styled from 'styled-components'
@@ -72,11 +72,7 @@ export interface InputbarCoreProps {
 
   // Override the user preference for quick panel triggers
   forceEnableQuickPanelTriggers?: boolean
-}
-
-const TextareaStyle: CSSProperties = {
-  paddingLeft: 0,
-  padding: '6px 15px 0px'
+  minimal?: boolean
 }
 
 /**
@@ -121,7 +117,8 @@ export const InputbarCore: FC<InputbarCoreProps> = ({
   rightToolbar,
   topContent,
   pinnedContent,
-  forceEnableQuickPanelTriggers
+  forceEnableQuickPanelTriggers,
+  minimal = false
 }) => {
   const config = useMemo(() => getInputbarConfig(scope), [scope])
   const { files, isExpanded } = useInputbarToolsState()
@@ -644,10 +641,17 @@ export const InputbarCore: FC<InputbarCoreProps> = ({
         {quickPanelElement}
         <InputBarContainer
           id="inputbar"
-          className={classNames('inputbar-container', isDragging && 'file-dragging', isExpanded && 'expanded')}>
-          <DragHandle onMouseDown={handleDragStart}>
-            <HolderOutlined style={{ fontSize: 12 }} />
-          </DragHandle>
+          className={classNames(
+            'inputbar-container',
+            isDragging && 'file-dragging',
+            isExpanded && 'expanded',
+            minimal && 'minimal'
+          )}>
+          {!minimal && (
+            <DragHandle onMouseDown={handleDragStart}>
+              <HolderOutlined style={{ fontSize: 12 }} />
+            </DragHandle>
+          )}
           {files.length > 0 && (
             <AttachmentPreview files={files} setFiles={setFiles} onAttachmentContextMenu={appendTxtContentToInput} />
           )}
@@ -667,11 +671,16 @@ export const InputbarCore: FC<InputbarCoreProps> = ({
             spellCheck={enableSpellCheck}
             rows={2}
             autoSize={height ? false : { minRows: 2, maxRows: 20 }}
-            styles={{ textarea: TextareaStyle }}
+            styles={{
+              textarea: {
+                paddingLeft: 0,
+                padding: minimal ? '16px 22px 4px' : '6px 15px 0px'
+              }
+            }}
             style={{
-              fontSize,
+              fontSize: minimal ? fontSize + 1 : fontSize,
               height: height,
-              minHeight: '30px'
+              minHeight: minimal ? '84px' : '30px'
             }}
             disabled={isTranslating || searching}
             onClick={() => {
@@ -725,18 +734,29 @@ const Container = styled.div`
   position: relative;
   z-index: 2;
   padding: 0 18px 18px 18px;
+
   [navbar-position='top'] & {
     padding: 0 18px 10px 18px;
   }
 `
 
 const InputBarContainer = styled.div`
-  border: 0.5px solid var(--color-border);
   transition: all 0.2s ease;
   position: relative;
   border-radius: 17px;
   padding-top: 8px;
-  background-color: var(--color-background-opacity);
+  border: none;
+  background: #ffffff;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
+
+  &.minimal {
+    border-radius: 26px;
+    padding-top: 22px;
+    background: #ffffff;
+    box-shadow:
+      0 6px 20px rgba(0, 0, 0, 0.055),
+      0 1px 0 rgba(255, 255, 255, 0.75) inset;
+  }
 
   &.file-dragging {
     border: 2px dashed #2ecc71;
@@ -768,6 +788,17 @@ const Textarea = styled(TextArea)`
   &.ant-input {
     line-height: 1.4;
   }
+
+  .inputbar-container.minimal &.ant-input {
+    padding-top: 8px;
+    line-height: 1.72;
+    font-weight: 400;
+  }
+
+  &.ant-input::placeholder {
+    color: #a8afb8;
+  }
+
   &::-webkit-scrollbar {
     width: 3px;
   }
@@ -783,6 +814,11 @@ const BottomBar = styled.div`
   position: relative;
   z-index: 2;
   flex-shrink: 0;
+
+  .inputbar-container.minimal & {
+    height: 50px;
+    padding: 6px 14px 12px;
+  }
 `
 
 const LeftSection = styled.div`
@@ -790,6 +826,31 @@ const LeftSection = styled.div`
   align-items: center;
   flex: 1;
   min-width: 0;
+
+  .inputbar-container.minimal & {
+    gap: 0;
+  }
+
+  .inputbar-container.minimal & .ant-btn,
+  .inputbar-container.minimal & button {
+    transform: scale(0.92);
+    opacity: 0.86;
+  }
+
+  .ant-btn-text {
+    color: #c2c7cc;
+  }
+
+  .ant-btn-text .anticon,
+  .ant-btn-text .iconfont,
+  .ant-btn-text .lucide {
+    color: inherit !important;
+  }
+
+  .ant-btn-text:hover {
+    color: #4f5965;
+    background: rgba(15, 23, 42, 0.05);
+  }
 `
 
 const RightSection = styled.div`
@@ -797,4 +858,23 @@ const RightSection = styled.div`
   flex-direction: row;
   align-items: center;
   gap: 6px;
+
+  .inputbar-container.minimal & {
+    gap: 4px;
+  }
+
+  .ant-btn-text {
+    color: #c2c7cc;
+  }
+
+  .ant-btn-text .anticon,
+  .ant-btn-text .iconfont,
+  .ant-btn-text .lucide {
+    color: inherit !important;
+  }
+
+  .ant-btn-text:hover {
+    color: #4f5965;
+    background: rgba(15, 23, 42, 0.05);
+  }
 `

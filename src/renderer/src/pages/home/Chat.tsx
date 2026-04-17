@@ -9,6 +9,7 @@ import { QuickPanelProvider } from '@renderer/components/QuickPanel'
 import { isEmbeddingModel, isRerankModel, isWebSearchModel } from '@renderer/config/models'
 import { useAssistant } from '@renderer/hooks/useAssistant'
 import { useChatContext } from '@renderer/hooks/useChatContext'
+import { useTopicMessages } from '@renderer/hooks/useMessageOperations'
 import { useNavbarPosition, useSettings } from '@renderer/hooks/useSettings'
 import { useShortcut } from '@renderer/hooks/useShortcuts'
 import { useShowTopics } from '@renderer/hooks/useStore'
@@ -20,12 +21,16 @@ import { Flex } from 'antd'
 import { debounce } from 'lodash'
 import { AnimatePresence, motion } from 'motion/react'
 import type { FC } from 'react'
-import React, { useState } from 'react'
+import React, { useRef, useState } from 'react'
 import { useHotkeys } from 'react-hotkeys-hook'
 import { useTranslation } from 'react-i18next'
 import styled from 'styled-components'
 
+import AssistantSwitchButton from './components/AssistantSwitchButton'
 import ChatNavbar from './components/ChatNavBar'
+import QuickAssistantDeck from './components/QuickAssistantDeck'
+import SelectModelButton from './components/SelectModelButton'
+import type { ProviderActionHandlers } from './Inputbar/Inputbar'
 import Inputbar from './Inputbar/Inputbar'
 import ChatNavigation from './Messages/ChatNavigation'
 import Messages from './Messages/Messages'
@@ -34,24 +39,34 @@ import Tabs from './Tabs'
 const logger = loggerService.withContext('Chat')
 
 interface Props {
+  assistants: Assistant[]
   assistant: Assistant
   activeTopic: Topic
   setActiveTopic: (topic: Topic) => void
   setActiveAssistant: (assistant: Assistant) => void
 }
 
-const Chat: FC<Props> = (props) => {
-  const { assistant, updateAssistant, updateTopic } = useAssistant(props.assistant.id)
+const Chat: FC<Props> = ({ assistants, assistant: activeAssistant, activeTopic, setActiveTopic, setActiveAssistant }) => {
+  const { assistant, updateAssistant, updateTopic } = useAssistant(activeAssistant.id)
   const { t } = useTranslation()
   const { topicPosition, messageStyle, messageNavigation } = useSettings()
   const { showTopics } = useShowTopics()
-  const { isMultiSelectMode } = useChatContext(props.activeTopic)
+  const { isMultiSelectMode } = useChatContext(activeTopic)
   const { isTopNavbar } = useNavbarPosition()
+  const messages = useTopicMessages(activeTopic.id)
+  const isWelcomeState = messages.length === 0
 
   const mainRef = React.useRef<HTMLDivElement>(null)
   const contentSearchRef = React.useRef<ContentSearchRef>(null)
+  const welcomeInputActionsRef = useRef<ProviderActionHandlers>({
+    resizeTextArea: () => {},
+    addNewTopic: () => {},
+    clearTopic: () => {},
+    onNewContext: () => {},
+    onTextChange: () => {},
+    toggleExpanded: () => {}
+  })
   const [filterIncludeUser, setFilterIncludeUser] = useState(false)
-
   const { setTimeoutTimer } = useTimer()
 
   useHotkeys('esc', () => {
@@ -68,29 +83,30 @@ const Chat: FC<Props> = (props) => {
   })
 
   useShortcut('rename_topic', async () => {
-    const topic = props.activeTopic
-    if (!topic) return
+    if (!activeTopic) return
 
     void EventEmitter.emit(EVENT_NAMES.SHOW_TOPIC_SIDEBAR)
 
     const name = await PromptPopup.show({
       title: t('chat.topics.edit.title'),
       message: '',
-      defaultValue: topic.name || '',
+      defaultValue: activeTopic.name || '',
       extraNode: <div style={{ color: 'var(--color-text-3)', marginTop: 8 }}>{t('chat.topics.edit.title_tip')}</div>
     })
-    if (name && topic.name !== name) {
-      const updatedTopic = { ...topic, name, isNameManuallyEdited: true }
+
+    if (name && activeTopic.name !== name) {
+      const updatedTopic = { ...activeTopic, name, isNameManuallyEdited: true }
       updateTopic(updatedTopic as Topic)
     }
   })
 
   useShortcut('select_model', async () => {
-    const modelFilter = (m: Model) => !isEmbeddingModel(m) && !isRerankModel(m)
+    const modelFilter = (item: Model) => !isEmbeddingModel(item) && !isRerankModel(item)
     const selectedModel = await SelectChatModelPopup.show({
       model: assistant?.model,
       filter: modelFilter
     })
+
     if (selectedModel) {
       const enabledWebSearch = isWebSearchModel(selectedModel)
       updateAssistant({
@@ -111,9 +127,11 @@ const Chat: FC<Props> = (props) => {
       if (filterIncludeUser) {
         return NodeFilter.FILTER_ACCEPT
       }
+
       if (message.classList.contains('message-assistant')) {
         return NodeFilter.FILTER_ACCEPT
       }
+
       return NodeFilter.FILTER_REJECT
     }
   }
@@ -167,35 +185,71 @@ const Chat: FC<Props> = (props) => {
             justify="space-between"
             style={{ height: mainHeight, width: '100%' }}>
             <QuickPanelProvider>
-              <ChatNavbar
-                activeAssistant={props.assistant}
-                activeTopic={props.activeTopic}
-                setActiveTopic={props.setActiveTopic}
-                setActiveAssistant={props.setActiveAssistant}
-                position="left"
-              />
-              <div
-                className="flex flex-1 flex-col justify-between"
-                style={{ height: `calc(${mainHeight} - var(--navbar-height))` }}>
-                <Messages
-                  key={props.activeTopic.id}
-                  assistant={assistant}
-                  topic={props.activeTopic}
-                  setActiveTopic={props.setActiveTopic}
-                  onComponentUpdate={messagesComponentUpdateHandler}
-                  onFirstUpdate={messagesComponentFirstUpdateHandler}
+              {!isWelcomeState && (
+                <ChatNavbar
+                  assistants={assistants}
+                  activeAssistant={activeAssistant}
+                  activeTopic={activeTopic}
+                  setActiveTopic={setActiveTopic}
+                  setActiveAssistant={setActiveAssistant}
+                  position="left"
                 />
-                <ContentSearch
-                  ref={contentSearchRef}
-                  searchTarget={mainRef as React.RefObject<HTMLElement>}
-                  filter={contentSearchFilter}
-                  includeUser={filterIncludeUser}
-                  onIncludeUserChange={userOutlinedItemClickHandler}
-                />
-                {messageNavigation === 'buttons' && <ChatNavigation containerId="messages" />}
-                <Inputbar assistant={assistant} setActiveTopic={props.setActiveTopic} topic={props.activeTopic} />
-                {isMultiSelectMode && <MultiSelectActionPopup topic={props.activeTopic} />}
-              </div>
+              )}
+              {isWelcomeState ? (
+                <WelcomeState>
+                  <WelcomeInner>
+                    <WelcomeTitle>从一次更轻松的对话开始</WelcomeTitle>
+                    <WelcomeDescription>
+                      直接输入问题会使用默认助手。也可以先在下面选一个角色，让这一轮对话从一开始就带着明确风格。
+                    </WelcomeDescription>
+                    <WelcomeMeta>
+                      <AssistantSwitchButton
+                        assistant={assistant}
+                        assistants={assistants}
+                        onSelectAssistant={setActiveAssistant}
+                      />
+                      <SelectModelButton assistant={assistant} />
+                    </WelcomeMeta>
+                    <WelcomeComposer>
+                      <Inputbar
+                        assistant={assistant}
+                        setActiveTopic={setActiveTopic}
+                        topic={activeTopic}
+                        variant="hero"
+                        actionsRef={welcomeInputActionsRef}
+                      />
+                    </WelcomeComposer>
+                    <QuickAssistantDeck
+                      assistants={assistants}
+                      activeAssistant={assistant}
+                      onSelectAssistant={setActiveAssistant}
+                    />
+                  </WelcomeInner>
+                </WelcomeState>
+              ) : (
+                <div
+                  className="flex flex-1 flex-col justify-between"
+                  style={{ height: `calc(${mainHeight} - var(--navbar-height))` }}>
+                  <Messages
+                    key={activeTopic.id}
+                    assistant={assistant}
+                    topic={activeTopic}
+                    setActiveTopic={setActiveTopic}
+                    onComponentUpdate={messagesComponentUpdateHandler}
+                    onFirstUpdate={messagesComponentFirstUpdateHandler}
+                  />
+                  <ContentSearch
+                    ref={contentSearchRef}
+                    searchTarget={mainRef as React.RefObject<HTMLElement>}
+                    filter={contentSearchFilter}
+                    includeUser={filterIncludeUser}
+                    onIncludeUserChange={userOutlinedItemClickHandler}
+                  />
+                  {messageNavigation === 'buttons' && <ChatNavigation containerId="messages" />}
+                  <Inputbar assistant={assistant} setActiveTopic={setActiveTopic} topic={activeTopic} />
+                  {isMultiSelectMode && <MultiSelectActionPopup topic={activeTopic} />}
+                </div>
+              )}
             </QuickPanelProvider>
           </Main>
         </motion.div>
@@ -207,14 +261,12 @@ const Chat: FC<Props> = (props) => {
               animate={{ width: 'var(--assistants-width)', opacity: 1 }}
               exit={{ width: 0, opacity: 0 }}
               transition={{ duration: 0.3, ease: 'easeInOut' }}
-              style={{
-                overflow: 'hidden'
-              }}>
+              style={{ overflow: 'hidden' }}>
               <Tabs
                 activeAssistant={assistant}
-                activeTopic={props.activeTopic}
-                setActiveAssistant={props.setActiveAssistant}
-                setActiveTopic={props.setActiveTopic}
+                activeTopic={activeTopic}
+                setActiveAssistant={setActiveAssistant}
+                setActiveTopic={setActiveTopic}
                 position="right"
               />
             </motion.div>
@@ -231,9 +283,11 @@ const Container = styled.div`
   height: calc(100vh - var(--navbar-height));
   flex: 1;
   overflow: hidden;
+  background: #ffffff;
+
   [navbar-position='top'] & {
     height: calc(100vh - var(--navbar-height) - 6px);
-    background-color: var(--color-background);
+    background-color: #ffffff;
     border-top-left-radius: 10px;
     border-bottom-left-radius: 10px;
   }
@@ -243,8 +297,59 @@ const Main = styled(Flex)`
   [navbar-position='left'] & {
     height: calc(100vh - var(--navbar-height));
   }
+
   transform: translateZ(0);
   position: relative;
+`
+
+const WelcomeState = styled.div`
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 26px 30px;
+`
+
+const WelcomeInner = styled.div`
+  width: 100%;
+  max-width: 1140px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+`
+
+const WelcomeMeta = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
+  flex-wrap: wrap;
+  justify-content: center;
+`
+
+const WelcomeTitle = styled.h1`
+  margin: 0;
+  font-size: 26px;
+  line-height: 1.2;
+  font-weight: 500;
+  color: #333333;
+  text-align: center;
+  letter-spacing: -0.02em;
+`
+
+const WelcomeDescription = styled.p`
+  margin: 12px 0 0;
+  max-width: 720px;
+  font-size: 13px;
+  line-height: 1.7;
+  color: #8f959e;
+  text-align: center;
+`
+
+const WelcomeComposer = styled.div`
+  width: 100%;
+  max-width: 1100px;
+  margin-top: 10px;
 `
 
 export default Chat

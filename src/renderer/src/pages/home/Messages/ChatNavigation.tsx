@@ -282,8 +282,10 @@ const ChatNavigation: FC<ChatNavigationProps> = ({ containerId }) => {
       // Safe way to calculate position when using calc expressions
       let rightOffset = RIGHT_GAP // Default right offset
       if (showRightTopics) {
-        // When topics are shown on right, we need to account for topic list width
-        rightOffset += 275 // --topic-list-width
+        // Keep the trigger zone aligned with the actual topic drawer width.
+        const topicListWidth =
+          parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--topic-list-width')) || 275
+        rightOffset += topicListWidth
       }
 
       const rightPosition = window.innerWidth - rightOffset - triggerWidth

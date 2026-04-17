@@ -68,14 +68,14 @@ const SelectModelButton: FC<Props> = ({ assistant }) => {
 }
 
 const DropdownButton = styled(Button)`
+  height: 38px;
   font-size: 11px;
-  border-radius: 15px;
-  padding: 13px 5px;
+  border-radius: 999px;
+  padding: 0 14px;
   -webkit-app-region: none;
-  box-shadow: none;
-  background-color: transparent;
-  border: 1px solid transparent;
-  margin-top: 1px;
+  box-shadow: 0 8px 20px rgba(149, 157, 165, 0.1);
+  background: rgba(255, 255, 255, 0.94);
+  border: none;
 `
 
 const ButtonContent = styled.div`
@@ -88,6 +88,7 @@ const ModelName = styled.span`
   font-weight: 500;
   margin-right: -2px;
   font-size: 12px;
+  color: #1f2329;
 `
 
 export default SelectModelButton

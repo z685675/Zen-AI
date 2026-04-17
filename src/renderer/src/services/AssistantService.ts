@@ -270,6 +270,7 @@ export async function createAssistantFromAgent(agent: AssistantPreset) {
   const assistant: Assistant = {
     ...agent,
     id: assistantId,
+    presetId: agent.id,
     name: agent.name,
     emoji: agent.emoji,
     topics: [topic],

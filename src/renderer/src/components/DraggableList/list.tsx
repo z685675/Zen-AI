@@ -17,6 +17,7 @@ interface Props<T> {
   listProps?: HTMLAttributes<HTMLDivElement>
   children: (item: T, index: number) => React.ReactNode
   itemKey?: keyof T | ((item: T) => Key)
+  isDragDisabled?: (item: T, index: number) => boolean
   onUpdate: (list: T[]) => void
   onDragStart?: OnDragStartResponder
   onDragEnd?: OnDragEndResponder
@@ -30,6 +31,7 @@ function DraggableList<T>({
   listStyle,
   listProps,
   itemKey,
+  isDragDisabled,
   droppableProps,
   onDragStart,
   onUpdate,
@@ -67,7 +69,11 @@ function DraggableList<T>({
               {list.map((item, index) => {
                 const draggableId = String(getId(item) ?? index)
                 return (
-                  <Draggable key={`draggable_${draggableId}`} draggableId={draggableId} index={index}>
+                  <Draggable
+                    key={`draggable_${draggableId}`}
+                    draggableId={draggableId}
+                    index={index}
+                    isDragDisabled={isDragDisabled?.(item, index) ?? false}>
                     {(provided) => (
                       <div
                         ref={provided.innerRef}
@@ -84,8 +90,8 @@ function DraggableList<T>({
                   </Draggable>
                 )
               })}
+              {provided.placeholder}
             </div>
-            {provided.placeholder}
           </div>
         )}
       </Droppable>

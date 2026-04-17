@@ -12,10 +12,11 @@ const StyledButton = styled(Button)`
   border-radius: var(--list-item-border-radius);
   padding: 0 12px;
   font-size: 13px;
-  color: var(--color-text-2);
+  color: #6b7280;
 
   &:hover {
-    background-color: var(--color-list-item);
+    background-color: #f2f3f5;
+    color: #1f2329;
   }
 `
 

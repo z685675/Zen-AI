@@ -5,7 +5,7 @@
   --status-bar-height: 40px;
   --input-bar-height: 100px;
 
-  --assistants-width: 275px;
+  --assistants-width: 248px;
   --topic-list-width: 275px;
   --settings-width: 250px;
 }
@@ -19,7 +19,7 @@
 /* lg */
 @media (max-width: 1080px) {
   :root {
-    --assistants-width: 210px;
+    --assistants-width: 192px;
     --topic-list-width: 210px;
     --settings-width: 210px;
   }

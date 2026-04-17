@@ -31,6 +31,7 @@ export interface AssistantsState {
   tagsOrder: string[]
   collapsedTags: Record<string, boolean>
   presets: AssistantPreset[]
+  quickAssistantIds: string[]
   /** @deprecated should be removed in v2 */
   unifiedListOrder: Array<{ type: 'agent' | 'assistant'; id: string }>
 }
@@ -41,6 +42,7 @@ const initialState: AssistantsState = {
   tagsOrder: [],
   collapsedTags: {},
   presets: [],
+  quickAssistantIds: [],
   unifiedListOrder: []
 }
 
@@ -71,6 +73,7 @@ const assistantsSlice = createSlice({
     },
     removeAssistant: (state, action: PayloadAction<{ id: string }>) => {
       state.assistants = state.assistants.filter((c) => c.id !== action.payload.id)
+      state.quickAssistantIds = state.quickAssistantIds.filter((id) => id !== action.payload.id)
     },
     updateAssistant: (state, action: PayloadAction<Partial<Assistant> & { id: string }>) => {
       const { id, ...update } = action.payload
@@ -216,6 +219,17 @@ const assistantsSlice = createSlice({
     addAssistantPreset: (state, action: PayloadAction<AssistantPreset>) => {
       state.presets.push(action.payload)
     },
+    setQuickAssistantIds: (state, action: PayloadAction<string[]>) => {
+      state.quickAssistantIds = Array.from(new Set(action.payload))
+    },
+    addQuickAssistantId: (state, action: PayloadAction<string>) => {
+      if (!state.quickAssistantIds.includes(action.payload)) {
+        state.quickAssistantIds.push(action.payload)
+      }
+    },
+    removeQuickAssistantId: (state, action: PayloadAction<string>) => {
+      state.quickAssistantIds = state.quickAssistantIds.filter((id) => id !== action.payload)
+    },
     removeAssistantPreset: (state, action: PayloadAction<{ id: string }>) => {
       state.presets = state.presets.filter((c) => c.id !== action.payload.id)
     },
@@ -265,6 +279,9 @@ export const {
   setUnifiedListOrder,
   setAssistantPresets,
   addAssistantPreset,
+  setQuickAssistantIds,
+  addQuickAssistantId,
+  removeQuickAssistantId,
   removeAssistantPreset,
   updateAssistantPreset,
   updateAssistantPresetSettings

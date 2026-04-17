@@ -1,12 +1,13 @@
 import { SearchOutlined } from '@ant-design/icons'
 import { VStack } from '@renderer/components/Layout'
 import useScrollPosition from '@renderer/hooks/useScrollPosition'
+import { TopicManager } from '@renderer/hooks/useTopic'
 import { selectAllTopics } from '@renderer/store/assistants'
 import type { Topic } from '@renderer/types'
 import { Button, Divider, Empty, Segmented } from 'antd'
 import dayjs from 'dayjs'
 import { groupBy, isEmpty, orderBy } from 'lodash'
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useSelector } from 'react-redux'
 import styled from 'styled-components'
@@ -23,11 +24,40 @@ const TopicsHistory: React.FC<Props> = ({ keywords, onClick, onSearch, ...props 
   const { t } = useTranslation()
   const { handleScroll, containerRef } = useScrollPosition('TopicsHistory')
   const [sortType, setSortType] = useState<SortType>('createdAt')
+  const [nonEmptyTopicIds, setNonEmptyTopicIds] = useState<string[]>([])
 
-  // FIXME: db 中没有 topic.name 等信息，只能从 store 获取
   const topics = useSelector(selectAllTopics)
 
-  const filteredTopics = topics.filter((topic) => {
+  useEffect(() => {
+    let cancelled = false
+
+    const loadVisibility = async () => {
+      const dbTopics = await TopicManager.getAllTopics()
+      if (cancelled) {
+        return
+      }
+
+      const dbTopicMap = new Map(dbTopics.map((topic) => [topic.id, topic]))
+      const nextNonEmptyTopicIds = topics
+        .filter((topic) => (dbTopicMap.get(topic.id)?.messages?.length || 0) > 0)
+        .map((topic) => topic.id)
+
+      setNonEmptyTopicIds(nextNonEmptyTopicIds)
+    }
+
+    void loadVisibility()
+
+    return () => {
+      cancelled = true
+    }
+  }, [topics])
+
+  const visibleTopics = useMemo(
+    () => topics.filter((topic) => nonEmptyTopicIds.includes(topic.id)),
+    [nonEmptyTopicIds, topics]
+  )
+
+  const filteredTopics = visibleTopics.filter((topic) => {
     return topic.name.toLowerCase().includes(keywords.toLowerCase())
   })
 
