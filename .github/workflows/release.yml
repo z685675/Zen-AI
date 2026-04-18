@@ -95,7 +95,8 @@ jobs:
         if: matrix.os == 'macos-latest'
         run: |
           sudo -H pip install setuptools
-          pnpm build:mac
+          pnpm validate:release
+          pnpm exec electron-builder --mac --arm64 --x64 --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -108,7 +109,8 @@ jobs:
       - name: Build Windows
         if: matrix.os == 'windows-latest'
         run: |
-          pnpm build:win
+          pnpm validate:release
+          pnpm exec electron-builder --win --x64 --arm64 --publish never
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NODE_OPTIONS: --max-old-space-size=8192
