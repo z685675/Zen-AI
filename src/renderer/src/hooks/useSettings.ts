@@ -18,7 +18,6 @@ import store, { useAppDispatch, useAppSelector } from '@renderer/store'
 import type { AssistantIconType, SendMessageShortcut, SettingsState } from '@renderer/store/settings'
 import {
   setAssistantIconType,
-  setAutoCheckUpdate as _setAutoCheckUpdate,
   setDisableHardwareAcceleration,
   setEnableDeveloperMode,
   setLaunchOnBoot,
@@ -28,8 +27,6 @@ import {
   setSendMessageShortcut as _setSendMessageShortcut,
   setSidebarIcons,
   setTargetLanguage,
-  setTestChannel as _setTestChannel,
-  setTestPlan as _setTestPlan,
   setTheme,
   setTopicPosition,
   setTray as _setTray,
@@ -38,7 +35,6 @@ import {
   setWindowStyle
 } from '@renderer/store/settings'
 import type { SidebarIcon, ThemeMode, TranslateLanguageCode } from '@renderer/types'
-import type { UpgradeChannel } from '@shared/config/constant'
 
 export function useSettings() {
   const settings = useAppSelector((state) => state.settings)
@@ -71,21 +67,6 @@ export function useSettings() {
         dispatch(setTrayOnClose(isTrayOnClose))
         void window.api.setTrayOnClose(isTrayOnClose)
       }
-    },
-
-    setAutoCheckUpdate(isAutoUpdate: boolean) {
-      dispatch(_setAutoCheckUpdate(isAutoUpdate))
-      void window.api.setAutoUpdate(isAutoUpdate)
-    },
-
-    setTestPlan(isTestPlan: boolean) {
-      dispatch(_setTestPlan(isTestPlan))
-      void window.api.setTestPlan(isTestPlan)
-    },
-
-    setTestChannel(channel: UpgradeChannel) {
-      dispatch(_setTestChannel(channel))
-      void window.api.setTestChannel(channel)
     },
 
     setTheme(theme: ThemeMode) {

@@ -77,6 +77,7 @@ asarUnpack:
   - "node_modules/@img/sharp-libvips-*/**"
 
 win:
+  icon: icon.ico
   executableName: Zen AI
   artifactName: ${productName}-${version}-${arch}-setup.${ext}
   target:
@@ -87,6 +88,9 @@ win:
   verifyUpdateCodeSignature: false
 nsis:
   artifactName: ${productName}-${version}-${arch}-setup.${ext}
+  installerIcon: installer-icon.ico
+  uninstallerIcon: installer-icon.ico
+  installerHeaderIcon: installer-icon.ico
   shortcutName: ${productName}
   uninstallDisplayName: ${productName}
   createDesktopShortcut: always
