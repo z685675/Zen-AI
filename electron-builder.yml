@@ -79,7 +79,7 @@ asarUnpack:
 win:
   icon: icon.ico
   executableName: Zen AI
-  artifactName: ${productName}-${version}-${arch}-setup.${ext}
+  artifactName: ${productName}-${version}-windows-${arch}-setup.${ext}
   target:
     - target: nsis
     - target: portable
@@ -87,7 +87,7 @@ win:
     sign: scripts/win-sign.js
   verifyUpdateCodeSignature: false
 nsis:
-  artifactName: ${productName}-${version}-${arch}-setup.${ext}
+  artifactName: ${productName}-${version}-windows-${arch}-setup.${ext}
   installerIcon: installer-icon.ico
   uninstallerIcon: installer-icon.ico
   installerHeaderIcon: installer-icon.ico
@@ -100,12 +100,12 @@ nsis:
   buildUniversalInstaller: false
   differentialPackage: false
 portable:
-  artifactName: ${productName}-${version}-${arch}-portable.${ext}
+  artifactName: ${productName}-${version}-windows-${arch}-portable.${ext}
   buildUniversalInstaller: false
 mac:
   entitlementsInherit: build/entitlements.mac.plist
   notarize: false
-  artifactName: ${productName}-${version}-${arch}.${ext}
+  artifactName: ${productName}-${version}-macos-${arch}.${ext}
   extendInfo:
     - NSCameraUsageDescription: Application requests access to the device's camera.
     - NSMicrophoneUsageDescription: Application requests access to the device's microphone.
