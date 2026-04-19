@@ -1,13 +1,15 @@
-import { DynamicVirtualList } from '@renderer/components/VirtualList'
+﻿import { DynamicVirtualList } from '@renderer/components/VirtualList'
 import { useActiveNode } from '@renderer/hooks/useNotesQuery'
 import NotesSidebarHeader from '@renderer/pages/notes/NotesSidebarHeader'
+import RecycleBinService, { type RecycleBinNoteItem } from '@renderer/services/RecycleBinService'
 import { useAppSelector } from '@renderer/store'
 import { selectSortType } from '@renderer/store/note'
 import type { NotesSortType, NotesTreeNode } from '@renderer/types/note'
 import type { MenuProps } from 'antd'
-import { Dropdown } from 'antd'
-import { FilePlus, Folder, FolderUp, Loader2, Upload, X } from 'lucide-react'
-import type { FC } from 'react'
+import { Dropdown, Modal } from 'antd'
+import dayjs from 'dayjs'
+import { ChevronDown, ChevronRight, File, FilePlus, Folder, FolderClosed, FolderUp, Loader2, RotateCcw, Trash2, Upload, X } from 'lucide-react'
+import type { FC, ReactNode } from 'react'
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import styled from 'styled-components'
@@ -31,7 +33,8 @@ interface NotesSidebarProps {
   onCreateFolder: (name: string, targetFolderId?: string) => void
   onCreateNote: (name: string, targetFolderId?: string) => void
   onSelectNode: (node: NotesTreeNode) => void
-  onDeleteNode: (nodeId: string) => void
+  onDeleteNode: (nodeId: string) => Promise<void> | void
+  onDeleteNodes: (nodeIds: string[]) => Promise<void> | void
   onRenameNode: (nodeId: string, newName: string) => void
   onToggleExpanded: (nodeId: string) => void
   onToggleStar: (nodeId: string) => void
@@ -47,6 +50,7 @@ const NotesSidebar: FC<NotesSidebarProps> = ({
   onCreateNote,
   onSelectNode,
   onDeleteNode,
+  onDeleteNodes,
   onRenameNode,
   onToggleExpanded,
   onToggleStar,
@@ -65,11 +69,21 @@ const NotesSidebar: FC<NotesSidebarProps> = ({
   const [searchKeyword, setSearchKeyword] = useState('')
   const [isDragOverSidebar, setIsDragOverSidebar] = useState(false)
   const [openDropdownKey, setOpenDropdownKey] = useState<string | null>(null)
+  const [isManageMode, setIsManageMode] = useState(false)
+  const [selectedNodeIds, setSelectedNodeIds] = useState<Set<string>>(new Set())
+  const [recentDeletedNotes, setRecentDeletedNotes] = useState<RecycleBinNoteItem[]>([])
+  const [isRecycleBinOpen, setIsRecycleBinOpen] = useState(false)
+  const [expandedDeletedNoteIds, setExpandedDeletedNoteIds] = useState<Set<string>>(new Set())
 
   const notesTreeRef = useRef<NotesTreeNode[]>(notesTree)
   const virtualListRef = useRef<any>(null)
   const trimmedSearchKeyword = useMemo(() => searchKeyword.trim(), [searchKeyword])
   const hasSearchKeyword = trimmedSearchKeyword.length > 0
+
+  const loadRecentDeletedNotes = useCallback(async () => {
+    const items = await RecycleBinService.listNotes()
+    setRecentDeletedNotes(items)
+  }, [])
 
   const { editingNodeId, renamingNodeIds, newlyRenamedNodeIds, inPlaceEdit, handleStartEdit, handleAutoRename } =
     useNotesEditing({ onRenameNode })
@@ -90,17 +104,35 @@ const NotesSidebar: FC<NotesSidebarProps> = ({
     setIsDragOverSidebar
   })
 
+  const handleDeleteNodeWithRecycleRefresh = useCallback(
+    async (nodeId: string) => {
+      await onDeleteNode(nodeId)
+      await loadRecentDeletedNotes()
+    },
+    [loadRecentDeletedNotes, onDeleteNode]
+  )
+
+  const handleDeleteNodesWithRecycleRefresh = useCallback(
+    async (nodeIds: string[]) => {
+      await onDeleteNodes(nodeIds)
+      await loadRecentDeletedNotes()
+    },
+    [loadRecentDeletedNotes, onDeleteNodes]
+  )
+
   const { getMenuItems } = useNotesMenu({
     renamingNodeIds,
     onCreateNote,
     onCreateFolder,
     onRenameNode,
     onToggleStar,
-    onDeleteNode,
+    onDeleteNode: handleDeleteNodeWithRecycleRefresh,
+    onDeleteNodes: handleDeleteNodesWithRecycleRefresh,
     onSelectNode,
     handleStartEdit,
     handleAutoRename,
-    activeNode
+    activeNode,
+    selectedNodeIds
   })
 
   const searchOptions = useMemo(
@@ -129,6 +161,10 @@ const NotesSidebar: FC<NotesSidebarProps> = ({
   }, [notesTree])
 
   useEffect(() => {
+    void loadRecentDeletedNotes()
+  }, [loadRecentDeletedNotes])
+
+  useEffect(() => {
     if (!isShowSearch) {
       reset()
       return
@@ -152,12 +188,21 @@ const NotesSidebar: FC<NotesSidebarProps> = ({
   }, [onCreateNote, t])
 
   const handleToggleStarredView = useCallback(() => {
+    setIsManageMode(false)
+    setSelectedNodeIds(new Set())
     setIsShowStarred(!isShowStarred)
   }, [isShowStarred])
 
   const handleToggleSearchView = useCallback(() => {
+    setIsManageMode(false)
+    setSelectedNodeIds(new Set())
     setIsShowSearch(!isShowSearch)
   }, [isShowSearch])
+
+  const handleToggleManageMode = useCallback(() => {
+    setIsManageMode((prev) => !prev)
+    setSelectedNodeIds(new Set())
+  }, [])
 
   const handleSelectSortType = useCallback(
     (selectedSortType: NotesSortType) => {
@@ -235,7 +280,7 @@ const NotesSidebar: FC<NotesSidebarProps> = ({
       if (hasSearchKeyword) {
         return searchResults.map((result) => ({ node: result, depth: 0 }))
       }
-      return [] // 搜索关键词为空
+      return [] // 鎼滅储鍏抽敭璇嶄负绌?
     }
 
     if (isShowStarred) {
@@ -245,6 +290,117 @@ const NotesSidebar: FC<NotesSidebarProps> = ({
 
     return flattenForVirtualization(notesTree)
   }, [notesTree, isShowStarred, isShowSearch, hasSearchKeyword, searchResults])
+
+  const selectableNodeIds = useMemo(
+    () => flattenedNodes.map(({ node }) => node.id).filter((nodeId) => nodeId !== 'hint-node'),
+    [flattenedNodes]
+  )
+
+  const isAllSelected = useMemo(() => {
+    return selectableNodeIds.length > 0 && selectableNodeIds.every((nodeId) => selectedNodeIds.has(nodeId))
+  }, [selectableNodeIds, selectedNodeIds])
+
+  const handleToggleNodeSelection = useCallback((nodeId: string) => {
+    setSelectedNodeIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(nodeId)) {
+        next.delete(nodeId)
+      } else {
+        next.add(nodeId)
+      }
+      return next
+    })
+  }, [])
+
+  const handleSelectAllToggle = useCallback(() => {
+    setSelectedNodeIds(isAllSelected ? new Set() : new Set(selectableNodeIds))
+  }, [isAllSelected, selectableNodeIds])
+
+  const handleDeleteSelected = useCallback(() => {
+    if (selectedNodeIds.size === 0) {
+      return
+    }
+
+    window.modal.confirm({
+      title: t('common.batch_delete'),
+      content: t('common.selectedItems', { count: selectedNodeIds.size }),
+      centered: true,
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        await handleDeleteNodesWithRecycleRefresh(Array.from(selectedNodeIds))
+        setSelectedNodeIds(new Set())
+        setIsManageMode(false)
+      }
+    })
+  }, [handleDeleteNodesWithRecycleRefresh, selectedNodeIds, t])
+
+  const handleRestoreDeletedNote = useCallback(
+    async (entryId: string) => {
+      await RecycleBinService.restoreNote(entryId)
+      await loadRecentDeletedNotes()
+    },
+    [loadRecentDeletedNotes]
+  )
+
+  const handleDeleteRecentNotePermanently = useCallback(
+    async (entryId: string) => {
+      window.modal.confirm({
+        title: '彻底删除',
+        content: '此笔记将从最近删除中彻底移除，且无法恢复。',
+        centered: true,
+        okButtonProps: { danger: true },
+        onOk: async () => {
+          await RecycleBinService.permanentlyDeleteNote(entryId)
+          await loadRecentDeletedNotes()
+        }
+      })
+    },
+    [loadRecentDeletedNotes]
+  )
+
+  const handleToggleDeletedNoteExpanded = useCallback((entryId: string) => {
+    setExpandedDeletedNoteIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(entryId)) {
+        next.delete(entryId)
+      } else {
+        next.add(entryId)
+      }
+      return next
+    })
+  }, [])
+
+  const renderDeletedNoteChildren = useCallback(
+    (children: NonNullable<RecycleBinNoteItem['children']>, depth: number = 0): ReactNode => {
+      return children.map((child) => (
+        <DeletedNoteTreeNode key={`${child.type}-${child.id}`}>
+          <DeletedNoteTreeItem style={{ paddingLeft: `${12 + depth * 18}px` }}>
+            <DeletedNoteTreeLabel>
+              {child.type === 'folder' ? <FolderClosed size={12} /> : <File size={12} />}
+              <span>{child.name}</span>
+            </DeletedNoteTreeLabel>
+          </DeletedNoteTreeItem>
+          {child.children && child.children.length > 0 && renderDeletedNoteChildren(child.children, depth + 1)}
+        </DeletedNoteTreeNode>
+      ))
+    },
+    []
+  )
+
+  useEffect(() => {
+    setSelectedNodeIds((prev) => {
+      const next = new Set(Array.from(prev).filter((nodeId) => selectableNodeIds.includes(nodeId)))
+      const hasChanged = next.size !== prev.size || Array.from(next).some((nodeId) => !prev.has(nodeId))
+      return hasChanged ? next : prev
+    })
+  }, [selectableNodeIds])
+
+  useEffect(() => {
+    if (isManageMode && selectableNodeIds.length === 0) {
+      setIsManageMode(false)
+      setSelectedNodeIds(new Set())
+    }
+  }, [isManageMode, selectableNodeIds.length])
 
   // Scroll to active node
   useEffect(() => {
@@ -295,9 +451,12 @@ const NotesSidebar: FC<NotesSidebarProps> = ({
   const selectionValue = useMemo(
     () => ({
       selectedFolderId,
-      activeNodeId: activeNode?.id
+      activeNodeId: activeNode?.id,
+      isManageMode,
+      selectedNodeIds,
+      onToggleNodeSelection: handleToggleNodeSelection
     }),
-    [selectedFolderId, activeNode?.id]
+    [selectedFolderId, activeNode?.id, isManageMode, selectedNodeIds, handleToggleNodeSelection]
   )
 
   const editingValue = useMemo(
@@ -364,10 +523,16 @@ const NotesSidebar: FC<NotesSidebarProps> = ({
                   <NotesSidebarHeader
                     isShowStarred={isShowStarred}
                     isShowSearch={isShowSearch}
+                    isManageMode={isManageMode}
                     searchKeyword={searchKeyword}
+                    selectedCount={selectedNodeIds.size}
+                    isAllSelected={isAllSelected}
                     sortType={sortType}
                     onCreateFolder={handleCreateFolder}
                     onCreateNote={handleCreateNote}
+                    onDeleteSelected={handleDeleteSelected}
+                    onSelectAllToggle={handleSelectAllToggle}
+                    onToggleManageMode={handleToggleManageMode}
                     onToggleStarredView={handleToggleStarredView}
                     onToggleSearchView={handleToggleSearchView}
                     onSetSearchKeyword={setSearchKeyword}
@@ -411,7 +576,7 @@ const NotesSidebar: FC<NotesSidebarProps> = ({
                         {({ node, depth }) => <TreeNode node={node} depth={depth} renderChildren={false} />}
                       </DynamicVirtualList>
                     </Dropdown>
-                    {!isShowStarred && !isShowSearch && (
+                    {!isShowStarred && !isShowSearch && !isManageMode && (
                       <div style={{ padding: '0 8px', marginTop: '6px', marginBottom: '12px' }}>
                         <TreeNode
                           node={{
@@ -429,10 +594,131 @@ const NotesSidebar: FC<NotesSidebarProps> = ({
                         />
                       </div>
                     )}
+                    {recentDeletedNotes.length > 0 && (
+                      <RecycleBinEntryWrap>
+                        <RecycleBinEntryButton type="button" onClick={() => setIsRecycleBinOpen(true)}>
+                          最近删除 ({recentDeletedNotes.length})
+                        </RecycleBinEntryButton>
+                      </RecycleBinEntryWrap>
+                    )}
                   </NotesTreeContainer>
 
                   {isDragOverSidebar && <DragOverIndicator />}
                 </SidebarContainer>
+                <Modal
+                  title="最近删除"
+                  open={isRecycleBinOpen}
+                  onCancel={() => setIsRecycleBinOpen(false)}
+                  footer={null}
+                  width={520}
+                  transitionName="animation-move-down"
+                  centered>
+                  <RecycleBinModalList>
+                    {recentDeletedNotes.map((item) => (
+                      <RecentDeletedFolderGroup key={`tree-${item.entryId}`}>
+                        {item.nodeType === 'folder' ? (
+                          <>
+                            <RecentDeletedItem
+                              role="button"
+                              tabIndex={0}
+                              onClick={() => handleToggleDeletedNoteExpanded(item.entryId)}
+                              onKeyDown={(event) => {
+                                if (event.key === 'Enter' || event.key === ' ') {
+                                  event.preventDefault()
+                                  handleToggleDeletedNoteExpanded(item.entryId)
+                                }
+                              }}>
+                              <RecentDeletedMeta>
+                                <RecentDeletedFolderTitleWrap>
+                                  {expandedDeletedNoteIds.has(item.entryId) ? (
+                                    <ChevronDown size={14} />
+                                  ) : (
+                                    <ChevronRight size={14} />
+                                  )}
+                                  <FolderClosed size={14} />
+                                  <RecentDeletedName title={item.name}>{item.name}</RecentDeletedName>
+                                </RecentDeletedFolderTitleWrap>
+                                <RecentDeletedTime>{dayjs(item.deletedAt).format('MM/DD HH:mm')}</RecentDeletedTime>
+                              </RecentDeletedMeta>
+                              <RecentDeletedActions>
+                                <RecentDeletedActionButton
+                                  type="button"
+                                  title="恢复"
+                                  onClick={(event) => {
+                                    event.stopPropagation()
+                                    void handleRestoreDeletedNote(item.entryId)
+                                  }}>
+                                  <RotateCcw size={12} />
+                                </RecentDeletedActionButton>
+                                <RecentDeletedActionButton
+                                  type="button"
+                                  danger
+                                  title="彻底删除"
+                                  onClick={(event) => {
+                                    event.stopPropagation()
+                                    void handleDeleteRecentNotePermanently(item.entryId)
+                                  }}>
+                                  <Trash2 size={12} />
+                                </RecentDeletedActionButton>
+                              </RecentDeletedActions>
+                            </RecentDeletedItem>
+                            {expandedDeletedNoteIds.has(item.entryId) && item.children && item.children.length > 0 && (
+                              <RecentDeletedChildren>{renderDeletedNoteChildren(item.children)}</RecentDeletedChildren>
+                            )}
+                          </>
+                        ) : (
+                          <RecentDeletedItem key={`file-${item.entryId}`}>
+                            <RecentDeletedMeta>
+                              <RecentDeletedFolderTitleWrap>
+                                <File size={14} />
+                                <RecentDeletedName title={item.name}>{item.name}</RecentDeletedName>
+                              </RecentDeletedFolderTitleWrap>
+                              <RecentDeletedTime>{dayjs(item.deletedAt).format('MM/DD HH:mm')}</RecentDeletedTime>
+                            </RecentDeletedMeta>
+                            <RecentDeletedActions>
+                              <RecentDeletedActionButton
+                                type="button"
+                                title="恢复"
+                                onClick={() => void handleRestoreDeletedNote(item.entryId)}>
+                                <RotateCcw size={12} />
+                              </RecentDeletedActionButton>
+                              <RecentDeletedActionButton
+                                type="button"
+                                danger
+                                title="彻底删除"
+                                onClick={() => void handleDeleteRecentNotePermanently(item.entryId)}>
+                                <Trash2 size={12} />
+                              </RecentDeletedActionButton>
+                            </RecentDeletedActions>
+                          </RecentDeletedItem>
+                        )}
+                      </RecentDeletedFolderGroup>
+                    ))}
+                    {recentDeletedNotes.slice(0, 0).map((item) => (
+                      <RecentDeletedItem key={item.entryId}>
+                        <RecentDeletedMeta>
+                          <RecentDeletedName title={item.name}>{item.name}</RecentDeletedName>
+                          <RecentDeletedTime>{dayjs(item.deletedAt).format('MM/DD HH:mm')}</RecentDeletedTime>
+                        </RecentDeletedMeta>
+                        <RecentDeletedActions>
+                          <RecentDeletedActionButton
+                            type="button"
+                            title="鎭㈠"
+                            onClick={() => void handleRestoreDeletedNote(item.entryId)}>
+                            <RotateCcw size={12} />
+                          </RecentDeletedActionButton>
+                          <RecentDeletedActionButton
+                            type="button"
+                            danger
+                            title="褰诲簳鍒犻櫎"
+                            onClick={() => void handleDeleteRecentNotePermanently(item.entryId)}>
+                            <Trash2 size={12} />
+                          </RecentDeletedActionButton>
+                        </RecentDeletedActions>
+                      </RecentDeletedItem>
+                    ))}
+                  </RecycleBinModalList>
+                </Modal>
               </NotesUIContext>
             </NotesSearchContext>
           </NotesDragContext>
@@ -481,7 +767,7 @@ export const DropHintText = styled.div`
   font-style: italic;
 `
 
-// 搜索相关样式
+// 鎼滅储鐩稿叧鏍峰紡
 export const SearchStatusBar = styled.div`
   display: flex;
   align-items: center;
@@ -531,4 +817,141 @@ export const CancelButton = styled.button`
   }
 `
 
+const RecycleBinEntryWrap = styled.div`
+  margin: 0 8px 12px;
+`
+
+const RecycleBinEntryButton = styled.button`
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 12px;
+  background: var(--color-background-soft);
+  color: var(--color-text-2);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+
+  &:hover {
+    background: var(--color-background-mute);
+    color: var(--color-text);
+  }
+`
+
+const RecycleBinModalList = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 60vh;
+  overflow-y: auto;
+`
+
+const RecentDeletedFolderGroup = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+`
+
+const RecentDeletedItem = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--color-background-soft);
+`
+
+const RecentDeletedFolderTitleWrap = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+`
+
+const RecentDeletedMeta = styled.div`
+  flex: 1;
+  min-width: 0;
+`
+
+const RecentDeletedName = styled.div`
+  font-size: 12px;
+  color: var(--color-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+`
+
+const RecentDeletedTime = styled.div`
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--color-text-3);
+`
+
+const RecentDeletedChildren = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-left: 18px;
+`
+
+const RecentDeletedActions = styled.div`
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+`
+
+const DeletedNoteTreeNode = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+`
+
+const DeletedNoteTreeItem = styled.div`
+  display: flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 6px 10px;
+  border-radius: 10px;
+  background: var(--color-background);
+`
+
+const DeletedNoteTreeLabel = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--color-text-2);
+
+  span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+`
+
+const RecentDeletedActionButton = styled.button<{ danger?: boolean }>`
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: ${(props) => (props.danger ? 'var(--color-error)' : 'var(--color-text-2)')};
+  cursor: pointer;
+
+  &:hover {
+    background: var(--color-background-mute);
+    color: ${(props) => (props.danger ? 'var(--color-error)' : 'var(--color-text)')};
+  }
+`
+
 export default memo(NotesSidebar)
+

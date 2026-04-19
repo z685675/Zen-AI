@@ -11,7 +11,7 @@ import { EVENT_NAMES, EventEmitter } from '@renderer/services/EventService'
 import type { SearchMatch, SearchResult } from '@renderer/services/NotesSearchService'
 import type { NotesTreeNode } from '@renderer/types/note'
 import { Dropdown } from 'antd'
-import { ChevronDown, ChevronRight, File, FilePlus, Folder, FolderOpen } from 'lucide-react'
+import { CheckSquare, ChevronDown, ChevronRight, File, FilePlus, Folder, FolderOpen, Square } from 'lucide-react'
 import { memo, useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import styled from 'styled-components'
@@ -27,7 +27,7 @@ const TreeNode = memo<TreeNodeProps>(({ node, depth, renderChildren = true, onHi
   const { t } = useTranslation()
 
   // Use split contexts - only subscribe to what this node needs
-  const { selectedFolderId, activeNodeId } = useNotesSelection()
+  const { selectedFolderId, activeNodeId, isManageMode, selectedNodeIds, onToggleNodeSelection } = useNotesSelection()
   const { editingNodeId, renamingNodeIds, newlyRenamedNodeIds, inPlaceEdit } = useNotesEditing()
   const { draggedNodeId, dragOverNodeId, dragPosition, onDragStart, onDragOver, onDragLeave, onDrop, onDragEnd } =
     useNotesDrag()
@@ -58,12 +58,17 @@ const TreeNode = memo<TreeNodeProps>(({ node, depth, renderChildren = true, onHi
     [node]
   )
 
-  const isActive = selectedFolderId ? node.type === 'folder' && node.id === selectedFolderId : node.id === activeNodeId
+  const isSelected = selectedNodeIds.has(node.id)
+  const isActive = isManageMode
+    ? isSelected
+    : selectedFolderId
+      ? node.type === 'folder' && node.id === selectedFolderId
+      : node.id === activeNodeId
   const isEditing = editingNodeId === node.id && isInputEditing
   const isRenaming = renamingNodeIds.has(node.id)
   const isNewlyRenamed = newlyRenamedNodeIds.has(node.id)
   const hasChildren = node.children && node.children.length > 0
-  const isDragging = draggedNodeId === node.id
+  const isDragging = !isManageMode && draggedNodeId === node.id
   const isDragOver = dragOverNodeId === node.id
   const isDragBefore = isDragOver && dragPosition === 'before'
   const isDragInside = isDragOver && dragPosition === 'inside'
@@ -138,14 +143,21 @@ const TreeNode = memo<TreeNodeProps>(({ node, depth, renderChildren = true, onHi
             isDragBefore={isDragBefore}
             isDragInside={isDragInside}
             isDragAfter={isDragAfter}
-            draggable={!isEditing}
+            draggable={!isEditing && !isManageMode}
             data-node-id={node.id}
             onDragStart={(e) => onDragStart(e, node as NotesTreeNode)}
             onDragOver={(e) => onDragOver(e, node as NotesTreeNode)}
             onDragLeave={onDragLeave}
             onDrop={(e) => onDrop(e, node as NotesTreeNode)}
             onDragEnd={onDragEnd}>
-            <TreeNodeContent onClick={() => onSelectNode(node as NotesTreeNode)}>
+            <TreeNodeContent
+              onClick={() => {
+                if (isManageMode) {
+                  onToggleNodeSelection(node.id)
+                  return
+                }
+                onSelectNode(node as NotesTreeNode)
+              }}>
               <NodeIndent depth={depth} />
 
               {node.type === 'folder' && (
@@ -157,6 +169,16 @@ const TreeNode = memo<TreeNodeProps>(({ node, depth, renderChildren = true, onHi
                   title={node.expanded ? t('notes.collapse') : t('notes.expand')}>
                   {node.expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                 </ExpandIcon>
+              )}
+
+              {isManageMode && (
+                <SelectionIcon
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onToggleNodeSelection(node.id)
+                  }}>
+                  {isSelected ? <CheckSquare size={16} color="var(--color-primary)" /> : <Square size={16} />}
+                </SelectionIcon>
               )}
 
               <NodeIcon>
@@ -340,6 +362,15 @@ export const NodeIcon = styled.div`
   justify-content: center;
   margin-right: 8px;
   color: var(--color-text-2);
+  flex-shrink: 0;
+`
+
+export const SelectionIcon = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 8px;
+  color: var(--color-text-3);
   flex-shrink: 0;
 `
 

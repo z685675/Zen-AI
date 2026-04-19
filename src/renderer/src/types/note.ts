@@ -22,3 +22,10 @@ export interface NotesTreeNode {
   createdAt: string
   updatedAt: string
 }
+
+export interface RecycleBinNoteNodeSnapshot {
+  id: string
+  name: string
+  type: 'folder' | 'file'
+  children?: RecycleBinNoteNodeSnapshot[]
+}

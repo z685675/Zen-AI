@@ -20,7 +20,7 @@ import { createSelector, createSlice } from '@reduxjs/toolkit'
 import { DEFAULT_CONTEXTCOUNT, DEFAULT_TEMPERATURE } from '@renderer/config/constant'
 import { TopicManager } from '@renderer/hooks/useTopic'
 import { DEFAULT_ASSISTANT_SETTINGS, getDefaultAssistant, getDefaultTopic } from '@renderer/services/AssistantService'
-import type { Assistant, AssistantPreset, AssistantSettings, Model, Topic } from '@renderer/types'
+import type { Assistant, AssistantPreset, AssistantSettings, ConversationFolder, Model, Topic } from '@renderer/types'
 import { isEmpty, uniqBy } from 'lodash'
 
 import type { RootState } from '.'
@@ -32,6 +32,8 @@ export interface AssistantsState {
   collapsedTags: Record<string, boolean>
   presets: AssistantPreset[]
   quickAssistantIds: string[]
+  conversationFolders: ConversationFolder[]
+  collapsedConversationFolders: Record<string, boolean>
   /** @deprecated should be removed in v2 */
   unifiedListOrder: Array<{ type: 'agent' | 'assistant'; id: string }>
 }
@@ -43,10 +45,47 @@ const initialState: AssistantsState = {
   collapsedTags: {},
   presets: [],
   quickAssistantIds: [],
+  conversationFolders: [],
+  collapsedConversationFolders: {},
   unifiedListOrder: []
 }
 
 const normalizeTopics = (topics: unknown): Topic[] => (Array.isArray(topics) ? topics : [])
+const normalizeConversationFolders = (folders: unknown): ConversationFolder[] =>
+  Array.isArray(folders) ? folders : []
+
+const cleanupTouchedConversationFolders = (state: AssistantsState, previousFolders: ConversationFolder[]) => {
+  const nextFolders = normalizeConversationFolders(state.conversationFolders)
+  const previousFolderMap = new Map(previousFolders.map((folder) => [folder.id, folder]))
+  const touchedFolderIds = new Set<string>()
+
+  nextFolders.forEach((folder) => {
+    const previousFolder = previousFolderMap.get(folder.id)
+
+    if (!previousFolder) {
+      return
+    }
+
+    if (previousFolder.topicIds.join('::') !== folder.topicIds.join('::')) {
+      touchedFolderIds.add(folder.id)
+    }
+  })
+
+  const keptFolders = nextFolders.filter((folder) => !(touchedFolderIds.has(folder.id) && folder.topicIds.length === 0))
+  const nextFolderIds = new Set(keptFolders.map((folder) => folder.id))
+
+  state.conversationFolders = keptFolders
+
+  if (!state.collapsedConversationFolders) {
+    return
+  }
+
+  Object.keys(state.collapsedConversationFolders).forEach((folderId) => {
+    if (!nextFolderIds.has(folderId)) {
+      delete state.collapsedConversationFolders[folderId]
+    }
+  })
+}
 
 const assistantsSlice = createSlice({
   name: 'assistants',
@@ -72,8 +111,19 @@ const assistantsSlice = createSlice({
       state.assistants.splice(index, 0, assistant)
     },
     removeAssistant: (state, action: PayloadAction<{ id: string }>) => {
+      const previousFolders = normalizeConversationFolders(state.conversationFolders)
+      const removedAssistant = state.assistants.find((c) => c.id === action.payload.id)
+      const removedTopicIds = normalizeTopics(removedAssistant?.topics).map((topic) => topic.id)
       state.assistants = state.assistants.filter((c) => c.id !== action.payload.id)
       state.quickAssistantIds = state.quickAssistantIds.filter((id) => id !== action.payload.id)
+      if (removedTopicIds.length > 0) {
+        state.conversationFolders = normalizeConversationFolders(state.conversationFolders)
+          .map((folder) => ({
+            ...folder,
+            topicIds: folder.topicIds.filter((topicId) => !removedTopicIds.includes(topicId))
+          }))
+        cleanupTouchedConversationFolders(state, previousFolders)
+      }
     },
     updateAssistant: (state, action: PayloadAction<Partial<Assistant> & { id: string }>) => {
       const { id, ...update } = action.payload
@@ -139,6 +189,7 @@ const assistantsSlice = createSlice({
       )
     },
     removeTopic: (state, action: PayloadAction<{ assistantId: string; topic: Topic }>) => {
+      const previousFolders = normalizeConversationFolders(state.conversationFolders)
       state.assistants = state.assistants.map((assistant) =>
         assistant.id === action.payload.assistantId
           ? {
@@ -147,6 +198,12 @@ const assistantsSlice = createSlice({
             }
           : assistant
       )
+      state.conversationFolders = normalizeConversationFolders(state.conversationFolders)
+        .map((folder) => ({
+          ...folder,
+          topicIds: folder.topicIds.filter((topicId) => topicId !== action.payload.topic.id)
+        }))
+      cleanupTouchedConversationFolders(state, previousFolders)
     },
     updateTopic: (state, action: PayloadAction<{ assistantId: string; topic: Topic }>) => {
       const newTopic = action.payload.topic
@@ -177,9 +234,16 @@ const assistantsSlice = createSlice({
       )
     },
     removeAllTopics: (state, action: PayloadAction<{ assistantId: string }>) => {
+      const previousFolders = normalizeConversationFolders(state.conversationFolders)
       state.assistants = state.assistants.map((assistant) => {
         if (assistant.id === action.payload.assistantId) {
+          const removedTopicIds = normalizeTopics(assistant.topics).map((topic) => topic.id)
           normalizeTopics(assistant.topics).forEach((topic) => TopicManager.removeTopic(topic.id))
+          state.conversationFolders = normalizeConversationFolders(state.conversationFolders)
+            .map((folder) => ({
+              ...folder,
+              topicIds: folder.topicIds.filter((topicId) => !removedTopicIds.includes(topicId))
+            }))
           return {
             ...assistant,
             topics: [getDefaultTopic(assistant.id)]
@@ -187,6 +251,7 @@ const assistantsSlice = createSlice({
         }
         return assistant
       })
+      cleanupTouchedConversationFolders(state, previousFolders)
     },
     updateTopicUpdatedAt: (state, action: PayloadAction<{ topicId: string }>) => {
       outer: for (const assistant of state.assistants) {
@@ -255,6 +320,65 @@ const assistantsSlice = createSlice({
           }
         }
       }
+    },
+    createConversationFolder: (state, action: PayloadAction<{ id: string; name: string }>) => {
+      const timestamp = new Date().toISOString()
+      state.conversationFolders = [
+        ...normalizeConversationFolders(state.conversationFolders),
+        {
+          id: action.payload.id,
+          name: action.payload.name,
+          topicIds: [],
+          createdAt: timestamp,
+          updatedAt: timestamp
+        }
+      ]
+      state.collapsedConversationFolders = {
+        ...(state.collapsedConversationFolders || {}),
+        [action.payload.id]: false
+      }
+    },
+    renameConversationFolder: (state, action: PayloadAction<{ id: string; name: string }>) => {
+      state.conversationFolders = normalizeConversationFolders(state.conversationFolders).map((folder) =>
+        folder.id === action.payload.id
+          ? {
+              ...folder,
+              name: action.payload.name,
+              updatedAt: new Date().toISOString()
+            }
+          : folder
+      )
+    },
+    deleteConversationFolder: (state, action: PayloadAction<{ id: string }>) => {
+      state.conversationFolders = normalizeConversationFolders(state.conversationFolders).filter(
+        (folder) => folder.id !== action.payload.id
+      )
+      if (state.collapsedConversationFolders?.[action.payload.id] !== undefined) {
+        delete state.collapsedConversationFolders[action.payload.id]
+      }
+    },
+    toggleConversationFolderCollapsed: (state, action: PayloadAction<{ id: string }>) => {
+      state.collapsedConversationFolders = {
+        ...(state.collapsedConversationFolders || {}),
+        [action.payload.id]: !state.collapsedConversationFolders?.[action.payload.id]
+      }
+    },
+    moveTopicToConversationFolder: (state, action: PayloadAction<{ topicId: string; folderId?: string }>) => {
+      const previousFolders = normalizeConversationFolders(state.conversationFolders)
+      const { topicId, folderId } = action.payload
+      const timestamp = new Date().toISOString()
+      state.conversationFolders = normalizeConversationFolders(state.conversationFolders).map((folder) => {
+        const nextTopicIds = folder.topicIds.filter((id) => id !== topicId)
+        if (folder.id === folderId) {
+          nextTopicIds.push(topicId)
+        }
+        return {
+          ...folder,
+          topicIds: nextTopicIds,
+          updatedAt: folder.id === folderId || folder.topicIds.includes(topicId) ? timestamp : folder.updatedAt
+        }
+      })
+      cleanupTouchedConversationFolders(state, previousFolders)
     }
   }
 })
@@ -282,6 +406,11 @@ export const {
   setQuickAssistantIds,
   addQuickAssistantId,
   removeQuickAssistantId,
+  createConversationFolder,
+  renameConversationFolder,
+  deleteConversationFolder,
+  toggleConversationFolderCollapsed,
+  moveTopicToConversationFolder,
   removeAssistantPreset,
   updateAssistantPreset,
   updateAssistantPresetSettings
@@ -297,5 +426,10 @@ export const selectTopicsMap = createSelector([selectAllTopics], (topics) => {
     return map
   }, new Map())
 })
+
+export const selectConversationFolders = createSelector(
+  [(state: RootState) => state.assistants.conversationFolders],
+  (folders) => normalizeConversationFolders(folders)
+)
 
 export default assistantsSlice.reducer

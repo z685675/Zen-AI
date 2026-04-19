@@ -1,15 +1,21 @@
 import { DeleteIcon, EditIcon } from '@renderer/components/Icons'
 import CustomTag from '@renderer/components/Tags/CustomTag'
+import { useAssistants } from '@renderer/hooks/useAssistant'
 import { useAssistantPresets } from '@renderer/hooks/useAssistantPresets'
 import AssistantSettingsPopup from '@renderer/pages/settings/AssistantSettings'
-import { createAssistantFromAgent } from '@renderer/services/AssistantService'
+import {
+  createOrResolveAssistantFromPreset,
+  ensureAssistantInQuickDeck,
+  removeAssistantFromQuickDeck
+} from '@renderer/services/AssistantService'
+import { useAppSelector } from '@renderer/store'
 import type { AssistantPreset } from '@renderer/types'
 import { getLeadingEmoji } from '@renderer/utils'
 import { Button, Dropdown } from 'antd'
 import { t } from 'i18next'
 import { isArray } from 'lodash'
 import { Ellipsis, PlusIcon, Settings2, SquareArrowOutUpRight } from 'lucide-react'
-import { type FC, memo, useCallback, useEffect, useRef, useState } from 'react'
+import { type FC, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import styled from 'styled-components'
 
 import ManageAssistantPresetsPopup from './ManageAssistantPresetsPopup'
@@ -23,15 +29,31 @@ interface Props {
 
 const AssistantPresetCard: FC<Props> = ({ preset, onClick, activegroup, getLocalizedGroupName }) => {
   const { removeAssistantPreset } = useAssistantPresets()
+  const { assistants } = useAssistants()
+  const quickAssistantIds = useAppSelector((state) => state.assistants.quickAssistantIds ?? [])
   const [isVisible, setIsVisible] = useState(false)
   const cardRef = useRef<HTMLDivElement>(null)
 
+  const linkedAssistant = useMemo(
+    () =>
+      assistants.find((assistant) => {
+        if (preset.id && assistant.presetId === preset.id) {
+          return true
+        }
+
+        return assistant.name === preset.name && assistant.prompt === preset.prompt
+      }),
+    [assistants, preset.id, preset.name, preset.prompt]
+  )
+
+  const isInQuickDeck = linkedAssistant ? quickAssistantIds.includes(linkedAssistant.id) : false
+
   const handleDelete = useCallback(
-    (preset: AssistantPreset) => {
+    (targetPreset: AssistantPreset) => {
       window.modal.confirm({
         centered: true,
         content: t('assistants.presets.delete.popup.content'),
-        onOk: () => removeAssistantPreset(preset.id)
+        onOk: () => removeAssistantPreset(targetPreset.id)
       })
     },
     [removeAssistantPreset]
@@ -57,7 +79,36 @@ const AssistantPresetCard: FC<Props> = ({ preset, onClick, activegroup, getLocal
     })
   }, [preset])
 
+  const handleAddToQuickDeck = useCallback(async () => {
+    const assistant = await createOrResolveAssistantFromPreset(preset)
+    ensureAssistantInQuickDeck(assistant.id)
+  }, [preset])
+
+  const handleToggleQuickDeck = useCallback(
+    async (event?: React.MouseEvent<HTMLElement>) => {
+      event?.stopPropagation()
+      event?.preventDefault()
+
+      if (linkedAssistant && quickAssistantIds.includes(linkedAssistant.id)) {
+        removeAssistantFromQuickDeck(linkedAssistant.id)
+        return
+      }
+
+      await handleAddToQuickDeck()
+    },
+    [handleAddToQuickDeck, linkedAssistant, quickAssistantIds]
+  )
+
   const menuItems = [
+    {
+      key: 'toggle-quick-deck',
+      label: isInQuickDeck ? '取消添加' : t('assistants.presets.add.button'),
+      icon: <PlusIcon size={14} />,
+      onClick: (e: any) => {
+        e.domEvent.stopPropagation()
+        void handleToggleQuickDeck()
+      }
+    },
     {
       key: 'edit',
       label: t('assistants.presets.edit.title'),
@@ -65,15 +116,6 @@ const AssistantPresetCard: FC<Props> = ({ preset, onClick, activegroup, getLocal
       onClick: (e: any) => {
         e.domEvent.stopPropagation()
         void AssistantSettingsPopup.show({ assistant: preset })
-      }
-    },
-    {
-      key: 'create',
-      label: t('assistants.presets.add.button'),
-      icon: <PlusIcon size={14} />,
-      onClick: (e: any) => {
-        e.domEvent.stopPropagation()
-        void createAssistantFromAgent(preset)
       }
     },
     {
@@ -151,9 +193,14 @@ const AssistantPresetCard: FC<Props> = ({ preset, onClick, activegroup, getLocal
                   ))}
               </AgentCardHeaderInfoTags>
             </AgentCardHeaderInfo>
-            {activegroup === '我的' ? (
-              <AgentCardHeaderInfoAction>
-                {emoji && <HeaderInfoEmoji>{emoji}</HeaderInfoEmoji>}
+            <AgentCardHeaderInfoAction>
+              <QuickDeckButton
+                size="small"
+                type={isInQuickDeck ? 'default' : 'primary'}
+                onClick={(event) => void handleToggleQuickDeck(event)}>
+                {isInQuickDeck ? '取消添加' : '添加'}
+              </QuickDeckButton>
+              {activegroup === '我的' ? (
                 <Dropdown
                   menu={{
                     items: menuItems
@@ -171,10 +218,10 @@ const AssistantPresetCard: FC<Props> = ({ preset, onClick, activegroup, getLocal
                     icon={<Ellipsis size={14} color="var(--color-text-3)" />}
                   />
                 </Dropdown>
-              </AgentCardHeaderInfoAction>
-            ) : (
-              emoji && <HeaderInfoEmoji>{emoji}</HeaderInfoEmoji>
-            )}
+              ) : (
+                emoji && <HeaderInfoEmoji>{emoji}</HeaderInfoEmoji>
+              )}
+            </AgentCardHeaderInfoAction>
           </AgentCardHeader>
           <CardInfo>
             <AgentPrompt>{prompt}</AgentPrompt>
@@ -200,12 +247,19 @@ const AssistantPresetCard: FC<Props> = ({ preset, onClick, activegroup, getLocal
 }
 
 const AgentCardHeaderInfoAction = styled.div`
-  width: 45px;
-  height: 45px;
-  position: relative;
+  min-width: 96px;
   display: flex;
-  align-items: flex-start;
-  justify-content: flex-end;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  flex-shrink: 0;
+`
+
+const QuickDeckButton = styled(Button)`
+  min-width: 74px;
+  border-radius: 999px;
+  font-size: 12px;
+  padding-inline: 12px;
 `
 
 const HeaderInfoEmoji = styled.div`
@@ -224,7 +278,6 @@ const HeaderInfoEmoji = styled.div`
 `
 
 const MenuButton = styled(Button)`
-  position: absolute;
   opacity: 0;
   transition: opacity 0.2s ease;
 `
@@ -244,6 +297,7 @@ const AgentCardContainer = styled.div`
   box-shadow:
     0 5px 7px -3px var(--color-border-soft),
     0 2px 3px -4px var(--color-border-soft);
+
   &:hover {
     box-shadow:
       0 10px 15px -3px var(--color-border-soft),
@@ -253,10 +307,12 @@ const AgentCardContainer = styled.div`
     ${AgentCardHeaderInfoAction} ${HeaderInfoEmoji} {
       opacity: 0;
     }
+
     ${AgentCardHeaderInfoAction} ${MenuButton} {
       opacity: 1;
     }
   }
+
   body[theme-mode='dark'] & {
     --shadow-color: rgba(255, 255, 255, 0.02);
   }
@@ -271,6 +327,7 @@ const AgentCardBody = styled.div`
       opacity: 1;
     }
   }
+
   height: 100%;
   display: flex;
   flex-direction: column;

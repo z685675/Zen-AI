@@ -9,7 +9,6 @@ import { EVENT_NAMES, EventEmitter } from '@renderer/services/EventService'
 import {
   addDir,
   addNote,
-  delNode,
   loadTree,
   renameNode as renameEntry,
   resolveNotesPath,
@@ -27,6 +26,7 @@ import {
   replacePathEntries,
   updateTreeNode
 } from '@renderer/services/NotesTreeService'
+import RecycleBinService from '@renderer/services/RecycleBinService'
 import { useAppDispatch, useAppSelector, useAppStore } from '@renderer/store'
 import {
   selectActiveFilePath,
@@ -578,30 +578,88 @@ const NotesPage: FC = () => {
   )
 
   // 删除节点
-  const handleDeleteNode = useCallback(
-    async (nodeId: string) => {
+  const handleDeleteNodes = useCallback(
+    async (nodeIds: string[]) => {
       try {
-        const nodeToDelete = findNode(notesTree, nodeId)
-        if (!nodeToDelete) return
+        const resolvedNodes = nodeIds
+          .map((nodeId) => findNode(notesTree, nodeId))
+          .filter((node): node is NotesTreeNode => Boolean(node))
 
-        await delNode(nodeToDelete)
+        if (resolvedNodes.length === 0) {
+          return
+        }
 
-        updateStarredPaths((prev) => removePathEntries(prev, nodeToDelete.externalPath, nodeToDelete.type === 'folder'))
+        const uniqueNodes = resolvedNodes.filter(
+          (node, index, nodes) => nodes.findIndex((candidate) => candidate.id === node.id) === index
+        )
+
+        const sortedNodes = [...uniqueNodes].sort((a, b) => a.externalPath.length - b.externalPath.length)
+        const topLevelNodes = sortedNodes.filter((node, index, nodes) => {
+          const normalizedNodePath = normalizePathValue(node.externalPath)
+          return !nodes.slice(0, index).some((parentNode) => {
+            if (parentNode.type !== 'folder') {
+              return false
+            }
+
+            const normalizedParentPath = normalizePathValue(parentNode.externalPath)
+            return normalizedNodePath.startsWith(`${normalizedParentPath}/`)
+          })
+        })
+
+        for (const node of topLevelNodes) {
+          await RecycleBinService.moveNoteToRecycleBin(node)
+        }
+
+        updateStarredPaths((prev) =>
+          topLevelNodes.reduce(
+            (paths, node) => removePathEntries(paths, node.externalPath, node.type === 'folder'),
+            prev
+          )
+        )
         updateExpandedPaths((prev) =>
-          removePathEntries(prev, nodeToDelete.externalPath, nodeToDelete.type === 'folder')
+          topLevelNodes.reduce(
+            (paths, node) => removePathEntries(paths, node.externalPath, node.type === 'folder'),
+            prev
+          )
         )
 
         const normalizedActivePath = activeFilePath ? normalizePathValue(activeFilePath) : undefined
-        const normalizedDeletePath = normalizePathValue(nodeToDelete.externalPath)
-        const isActiveNode = normalizedActivePath === normalizedDeletePath
-        const isActiveDescendant =
-          nodeToDelete.type === 'folder' &&
-          normalizedActivePath &&
-          normalizedActivePath.startsWith(`${normalizedDeletePath}/`)
+        const selectedFolderNode = selectedFolderId ? findNode(notesTree, selectedFolderId) : null
+        const normalizedSelectedFolderPath = selectedFolderNode
+          ? normalizePathValue(selectedFolderNode.externalPath)
+          : undefined
 
-        if (isActiveNode || isActiveDescendant) {
+        const shouldClearActive = topLevelNodes.some((node) => {
+          if (!normalizedActivePath) {
+            return false
+          }
+
+          const normalizedDeletePath = normalizePathValue(node.externalPath)
+          return (
+            normalizedActivePath === normalizedDeletePath ||
+            (node.type === 'folder' && normalizedActivePath.startsWith(`${normalizedDeletePath}/`))
+          )
+        })
+
+        if (shouldClearActive) {
           dispatch(setActiveFilePath(undefined))
           editorRef.current?.clear()
+        }
+
+        const shouldClearSelectedFolder = topLevelNodes.some((node) => {
+          if (!normalizedSelectedFolderPath) {
+            return false
+          }
+
+          const normalizedDeletePath = normalizePathValue(node.externalPath)
+          return (
+            normalizedSelectedFolderPath === normalizedDeletePath ||
+            (node.type === 'folder' && normalizedSelectedFolderPath.startsWith(`${normalizedDeletePath}/`))
+          )
+        })
+
+        if (shouldClearSelectedFolder) {
+          setSelectedFolderId(null)
         }
 
         await refreshTree()
@@ -609,7 +667,14 @@ const NotesPage: FC = () => {
         logger.error('Failed to delete node:', error as Error)
       }
     },
-    [notesTree, activeFilePath, dispatch, refreshTree, updateStarredPaths, updateExpandedPaths]
+    [notesTree, activeFilePath, selectedFolderId, dispatch, refreshTree, updateStarredPaths, updateExpandedPaths]
+  )
+
+  const handleDeleteNode = useCallback(
+    async (nodeId: string) => {
+      await handleDeleteNodes([nodeId])
+    },
+    [handleDeleteNodes]
   )
 
   // 重命名节点
@@ -927,6 +992,7 @@ const NotesPage: FC = () => {
                 onCreateFolder={handleCreateFolder}
                 onCreateNote={handleCreateNote}
                 onDeleteNode={handleDeleteNode}
+                onDeleteNodes={handleDeleteNodes}
                 onRenameNode={handleRenameNode}
                 onToggleExpanded={handleToggleExpanded}
                 onToggleStar={handleToggleStar}

@@ -277,6 +277,14 @@ export type Topic = {
   isNameManuallyEdited?: boolean
 }
 
+export type ConversationFolder = {
+  id: string
+  name: string
+  topicIds: string[]
+  createdAt: string
+  updatedAt: string
+}
+
 export type User = {
   id: string
   name: string

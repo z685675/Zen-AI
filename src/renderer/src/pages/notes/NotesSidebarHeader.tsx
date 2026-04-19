@@ -2,7 +2,7 @@ import { CheckOutlined } from '@ant-design/icons'
 import type { NotesSortType } from '@renderer/types/note'
 import type { MenuProps } from 'antd'
 import { Dropdown, Input, Tooltip } from 'antd'
-import { ArrowLeft, ArrowUpNarrowWide, FilePlus2, FolderPlus, Search, Star } from 'lucide-react'
+import { ArrowLeft, ArrowUpNarrowWide, CheckSquare, FilePlus2, FolderPlus, Search, Square, Star, Trash2 } from 'lucide-react'
 import type { FC } from 'react'
 import { useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -11,10 +11,16 @@ import styled from 'styled-components'
 interface NotesSidebarHeaderProps {
   isShowStarred: boolean
   isShowSearch: boolean
+  isManageMode: boolean
   searchKeyword: string
+  selectedCount: number
+  isAllSelected: boolean
   sortType: NotesSortType
   onCreateFolder: () => void
   onCreateNote: () => void
+  onDeleteSelected: () => void
+  onSelectAllToggle: () => void
+  onToggleManageMode: () => void
   onToggleStarredView: () => void
   onToggleSearchView: () => void
   onSetSearchKeyword: (keyword: string) => void
@@ -24,10 +30,16 @@ interface NotesSidebarHeaderProps {
 const NotesSidebarHeader: FC<NotesSidebarHeaderProps> = ({
   isShowStarred,
   isShowSearch,
+  isManageMode,
   searchKeyword,
+  selectedCount,
+  isAllSelected,
   sortType,
   onCreateFolder,
   onCreateNote,
+  onDeleteSelected,
+  onSelectAllToggle,
+  onToggleManageMode,
   onToggleStarredView,
   onToggleSearchView,
   onSetSearchKeyword,
@@ -69,7 +81,7 @@ const NotesSidebarHeader: FC<NotesSidebarHeaderProps> = ({
   return (
     <SidebarHeader isStarView={isShowStarred} isSearchView={isShowSearch}>
       <HeaderActions>
-        {!isShowStarred && !isShowSearch && (
+        {!isShowStarred && !isShowSearch && !isManageMode && (
           <>
             <Tooltip title={t('notes.new_note')} mouseEnterDelay={0.8}>
               <ActionButton onClick={onCreateNote}>
@@ -105,6 +117,32 @@ const NotesSidebarHeader: FC<NotesSidebarHeaderProps> = ({
             <Tooltip title={t('common.search')} mouseEnterDelay={0.8}>
               <ActionButton onClick={onToggleSearchView}>
                 <Search size={18} />
+              </ActionButton>
+            </Tooltip>
+
+            <Tooltip title={t('common.batch_delete')} mouseEnterDelay={0.8}>
+              <ActionButton onClick={onToggleManageMode}>
+                <CheckSquare size={18} />
+              </ActionButton>
+            </Tooltip>
+          </>
+        )}
+        {isManageMode && (
+          <>
+            <Tooltip title={t('common.cancel')} mouseEnterDelay={0.8}>
+              <ActionButton onClick={onToggleManageMode}>
+                <ArrowLeft size={18} />
+              </ActionButton>
+            </Tooltip>
+            <SelectionSummary>{t('common.selectedItems', { count: selectedCount })}</SelectionSummary>
+            <Tooltip title={isAllSelected ? t('common.deselect_all') : t('common.select_all')} mouseEnterDelay={0.8}>
+              <ActionButton onClick={onSelectAllToggle}>
+                {isAllSelected ? <CheckSquare size={18} /> : <Square size={18} />}
+              </ActionButton>
+            </Tooltip>
+            <Tooltip title={t('common.delete_selected')} mouseEnterDelay={0.8}>
+              <ActionButton danger disabled={selectedCount === 0} onClick={onDeleteSelected}>
+                <Trash2 size={18} />
               </ActionButton>
             </Tooltip>
           </>
@@ -150,22 +188,47 @@ const HeaderActions = styled.div`
   display: flex;
   align-items: center;
   gap: 4px;
+  min-width: 0;
 `
 
-const ActionButton = styled.div`
+const ActionButton = styled.button.attrs({ type: 'button' })<{ danger?: boolean }>`
   width: 24px;
   height: 24px;
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 0;
+  border: none;
+  background: transparent;
   border-radius: 3px;
-  color: var(--color-text-2);
+  color: ${(props) => (props.danger ? 'var(--color-error)' : 'var(--color-text-2)')};
   cursor: pointer;
 
   &:hover {
     background-color: var(--color-background-soft);
-    color: var(--color-text);
+    color: ${(props) => (props.danger ? 'var(--color-error)' : 'var(--color-text)')};
   }
+
+  &:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  &:disabled:hover {
+    background-color: transparent;
+    color: ${(props) => (props.danger ? 'var(--color-error)' : 'var(--color-text-2)')};
+  }
+`
+
+const SelectionSummary = styled.div`
+  flex: 1;
+  min-width: 0;
+  padding: 0 6px;
+  font-size: 12px;
+  color: var(--color-text-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 `
 
 const SearchInput = styled(Input)`

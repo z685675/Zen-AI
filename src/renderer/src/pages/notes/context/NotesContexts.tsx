@@ -25,6 +25,9 @@ export const useNotesActions = () => {
 export interface NotesSelectionContextType {
   selectedFolderId?: string | null
   activeNodeId?: string
+  isManageMode: boolean
+  selectedNodeIds: Set<string>
+  onToggleNodeSelection: (nodeId: string) => void
 }
 
 export const NotesSelectionContext = createContext<NotesSelectionContextType | null>(null)

@@ -20,11 +20,13 @@ interface UseNotesMenuProps {
   onCreateFolder: (name: string, targetFolderId?: string) => void
   onRenameNode: (nodeId: string, newName: string) => void
   onToggleStar: (nodeId: string) => void
-  onDeleteNode: (nodeId: string) => void
+  onDeleteNode: (nodeId: string) => Promise<void> | void
+  onDeleteNodes: (nodeIds: string[]) => Promise<void> | void
   onSelectNode: (node: NotesTreeNode) => void
   handleStartEdit: (node: NotesTreeNode) => void
   handleAutoRename: (node: NotesTreeNode) => void
   activeNode?: NotesTreeNode | null
+  selectedNodeIds: Set<string>
 }
 
 export const useNotesMenu = ({
@@ -33,10 +35,12 @@ export const useNotesMenu = ({
   onCreateFolder,
   onToggleStar,
   onDeleteNode,
+  onDeleteNodes,
   onSelectNode,
   handleStartEdit,
   handleAutoRename,
-  activeNode
+  activeNode,
+  selectedNodeIds
 }: UseNotesMenuProps) => {
   const { t } = useTranslation()
   const { bases } = useKnowledgeBases()
@@ -82,6 +86,19 @@ export const useNotesMenu = ({
 
   const handleDeleteNodeWrapper = useCallback(
     (node: NotesTreeNode) => {
+      if (selectedNodeIds.size > 1 && selectedNodeIds.has(node.id)) {
+        window.modal.confirm({
+          title: t('common.batch_delete'),
+          content: t('common.selectedItems', { count: selectedNodeIds.size }),
+          centered: true,
+          okButtonProps: { danger: true },
+          onOk: () => {
+            onDeleteNodes(Array.from(selectedNodeIds))
+          }
+        })
+        return
+      }
+
       const confirmText =
         node.type === 'folder'
           ? t('notes.delete_folder_confirm', { name: node.name })
@@ -97,7 +114,7 @@ export const useNotesMenu = ({
         }
       })
     },
-    [onDeleteNode, t]
+    [onDeleteNode, onDeleteNodes, selectedNodeIds, t]
   )
 
   const getMenuItems = useCallback(

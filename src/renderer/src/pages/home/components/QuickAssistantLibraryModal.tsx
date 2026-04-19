@@ -187,7 +187,7 @@ const QuickAssistantLibraryModal: FC<Props> = ({ open, onClose }) => {
         onCancel={onClose}
         footer={null}
         width={960}
-        styles={{ body: { padding: 0 } }}>
+        styles={{ body: { padding: 0, overflow: 'hidden' } }}>
         <ModalShell>
           <ModalHeader>
             <HeaderLeft>
@@ -288,7 +288,9 @@ const QuickAssistantLibraryModal: FC<Props> = ({ open, onClose }) => {
 const ModalShell = styled.div`
   display: flex;
   flex-direction: column;
-  min-height: 72vh;
+  height: 72vh;
+  max-height: 72vh;
+  overflow: hidden;
   background:
     radial-gradient(circle at top left, rgba(0, 185, 107, 0.08), transparent 30%),
     linear-gradient(180deg, var(--color-background), var(--color-background-soft));
@@ -342,6 +344,7 @@ const LibraryBody = styled.div`
   grid-template-columns: 180px 1fr;
   min-height: 0;
   flex: 1;
+  overflow: hidden;
 `
 
 const CategoryRail = styled.div`
@@ -351,6 +354,16 @@ const CategoryRail = styled.div`
   flex-direction: column;
   gap: 8px;
   background: rgba(255, 255, 255, 0.35);
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+
+  &::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+  }
 `
 
 const CategoryItem = styled.button`
@@ -377,8 +390,11 @@ const CategoryItem = styled.button`
 
 const CategoryContent = styled.div`
   padding: 16px 18px 18px;
-  max-height: 56vh;
-  overflow: auto;
+  min-height: 0;
+  height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
 `
 
 const GroupHeader = styled.div`

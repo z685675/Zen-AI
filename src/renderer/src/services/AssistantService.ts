@@ -12,7 +12,7 @@ import { UNKNOWN } from '@renderer/config/translate'
 import { getStoreProviders } from '@renderer/hooks/useStore'
 import i18n from '@renderer/i18n'
 import store from '@renderer/store'
-import { addAssistant } from '@renderer/store/assistants'
+import { addAssistant, addQuickAssistantId, removeQuickAssistantId } from '@renderer/store/assistants'
 import type {
   Assistant,
   AssistantPreset,
@@ -263,6 +263,18 @@ export function getAssistantById(id: string) {
   return assistants.find((a) => a.id === id)
 }
 
+export function getAssistantByPreset(preset: AssistantPreset) {
+  const assistants = store.getState().assistants.assistants
+
+  return assistants.find((assistant) => {
+    if (preset.id && assistant.presetId === preset.id) {
+      return true
+    }
+
+    return assistant.name === preset.name && assistant.prompt === preset.prompt
+  })
+}
+
 export async function createAssistantFromAgent(agent: AssistantPreset) {
   const assistantId = uuid()
   const topic = getDefaultTopic(assistantId)
@@ -285,4 +297,22 @@ export async function createAssistantFromAgent(agent: AssistantPreset) {
   window.toast.success(i18n.t('message.assistant.added.content'))
 
   return assistant
+}
+
+export async function createOrResolveAssistantFromPreset(preset: AssistantPreset) {
+  const existingAssistant = getAssistantByPreset(preset)
+
+  if (existingAssistant) {
+    return existingAssistant
+  }
+
+  return await createAssistantFromAgent(preset)
+}
+
+export function ensureAssistantInQuickDeck(assistantId: string) {
+  store.dispatch(addQuickAssistantId(assistantId))
+}
+
+export function removeAssistantFromQuickDeck(assistantId: string) {
+  store.dispatch(removeQuickAssistantId(assistantId))
 }

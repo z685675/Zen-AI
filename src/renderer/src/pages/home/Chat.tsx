@@ -15,13 +15,14 @@ import { useShortcut } from '@renderer/hooks/useShortcuts'
 import { useShowTopics } from '@renderer/hooks/useStore'
 import { useTimer } from '@renderer/hooks/useTimer'
 import { EVENT_NAMES, EventEmitter } from '@renderer/services/EventService'
+import { useAppSelector } from '@renderer/store'
 import type { Assistant, Model, Topic } from '@renderer/types'
 import { classNames } from '@renderer/utils'
 import { Flex } from 'antd'
 import { debounce } from 'lodash'
 import { AnimatePresence, motion } from 'motion/react'
 import type { FC } from 'react'
-import React, { useRef, useState } from 'react'
+import React, { useMemo, useRef, useState } from 'react'
 import { useHotkeys } from 'react-hotkeys-hook'
 import { useTranslation } from 'react-i18next'
 import styled from 'styled-components'
@@ -51,10 +52,38 @@ const Chat: FC<Props> = ({ assistants, assistant: activeAssistant, activeTopic, 
   const { t } = useTranslation()
   const { topicPosition, messageStyle, messageNavigation } = useSettings()
   const { showTopics } = useShowTopics()
+  const quickAssistantIds = useAppSelector((state) => state.assistants.quickAssistantIds ?? [])
   const { isMultiSelectMode } = useChatContext(activeTopic)
   const { isTopNavbar } = useNavbarPosition()
   const messages = useTopicMessages(activeTopic.id)
   const isWelcomeState = messages.length === 0
+
+  const welcomeAssistants = useMemo(() => {
+    const defaultAssistant = assistants.find((item) => item.id === 'default') || assistants[0]
+    const visibleIds = new Set<string>()
+    const visibleAssistants: Assistant[] = []
+
+    if (defaultAssistant?.id) {
+      visibleIds.add(defaultAssistant.id)
+      visibleAssistants.push(defaultAssistant)
+    }
+
+    for (const assistantId of quickAssistantIds) {
+      const matchedAssistant = assistants.find((item) => item.id === assistantId)
+      if (!matchedAssistant || visibleIds.has(matchedAssistant.id)) {
+        continue
+      }
+
+      visibleIds.add(matchedAssistant.id)
+      visibleAssistants.push(matchedAssistant)
+    }
+
+    if (assistant?.id && !visibleIds.has(assistant.id)) {
+      visibleAssistants.push(assistant)
+    }
+
+    return visibleAssistants
+  }, [assistant, assistants, quickAssistantIds])
 
   const mainRef = React.useRef<HTMLDivElement>(null)
   const contentSearchRef = React.useRef<ContentSearchRef>(null)
@@ -205,7 +234,7 @@ const Chat: FC<Props> = ({ assistants, assistant: activeAssistant, activeTopic, 
                     <WelcomeMeta>
                       <AssistantSwitchButton
                         assistant={assistant}
-                        assistants={assistants}
+                        assistants={welcomeAssistants}
                         onSelectAssistant={setActiveAssistant}
                       />
                       <SelectModelButton assistant={assistant} />

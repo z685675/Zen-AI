@@ -55,13 +55,7 @@ const QuickAssistantDeck: FC<Props> = ({ assistants, activeAssistant, onSelectAs
 
   const resolvedRoleIds = useMemo(() => {
     const existingIds = roleCandidates.map((assistant) => assistant.id)
-    const filtered = quickAssistantIds.filter((id) => existingIds.includes(id))
-
-    if (filtered.length > 0) {
-      return filtered
-    }
-
-    return roleCandidates.slice(0, 8).map((assistant) => assistant.id)
+    return quickAssistantIds.filter((id) => existingIds.includes(id))
   }, [quickAssistantIds, roleCandidates])
 
   useEffect(() => {

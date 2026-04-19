@@ -5,7 +5,7 @@ import Scrollbar from '@renderer/components/Scrollbar'
 import CustomTag from '@renderer/components/Tags/CustomTag'
 import { useAssistantPresets } from '@renderer/hooks/useAssistantPresets'
 import { useNavbarPosition } from '@renderer/hooks/useSettings'
-import { createAssistantFromAgent } from '@renderer/services/AssistantService'
+import { createOrResolveAssistantFromPreset, ensureAssistantInQuickDeck } from '@renderer/services/AssistantService'
 import type { AssistantPreset } from '@renderer/types'
 import { uuid } from '@renderer/utils'
 import { Button, Empty, Flex, Input } from 'antd'
@@ -78,7 +78,10 @@ const AssistantPresetsPage: FC = () => {
         centered: true,
         okButtonProps: { type: 'primary' },
         okText: t('assistants.presets.add.button'),
-        onOk: () => createAssistantFromAgent(preset)
+        onOk: async () => {
+          const assistant = await createOrResolveAssistantFromPreset(preset)
+          ensureAssistantInQuickDeck(assistant.id)
+        }
       })
     },
     [t]
