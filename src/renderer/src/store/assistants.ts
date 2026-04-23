@@ -349,6 +349,24 @@ const assistantsSlice = createSlice({
           : folder
       )
     },
+    reorderConversationFolders: (state, action: PayloadAction<{ oldIndex: number; newIndex: number }>) => {
+      const folders = [...normalizeConversationFolders(state.conversationFolders)]
+      const { oldIndex, newIndex } = action.payload
+
+      if (
+        oldIndex === newIndex ||
+        oldIndex < 0 ||
+        newIndex < 0 ||
+        oldIndex >= folders.length ||
+        newIndex >= folders.length
+      ) {
+        return
+      }
+
+      const [movedFolder] = folders.splice(oldIndex, 1)
+      folders.splice(newIndex, 0, movedFolder)
+      state.conversationFolders = folders
+    },
     deleteConversationFolder: (state, action: PayloadAction<{ id: string }>) => {
       state.conversationFolders = normalizeConversationFolders(state.conversationFolders).filter(
         (folder) => folder.id !== action.payload.id
@@ -408,6 +426,7 @@ export const {
   removeQuickAssistantId,
   createConversationFolder,
   renameConversationFolder,
+  reorderConversationFolders,
   deleteConversationFolder,
   toggleConversationFolderCollapsed,
   moveTopicToConversationFolder,

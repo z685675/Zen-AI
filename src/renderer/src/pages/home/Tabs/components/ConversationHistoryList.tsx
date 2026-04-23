@@ -1,5 +1,6 @@
 ﻿import AddButton from '@renderer/components/AddButton'
 import AssistantAvatar from '@renderer/components/Avatar/AssistantAvatar'
+import { Sortable } from '@renderer/components/dnd'
 import { CopyIcon, DeleteIcon, EditIcon } from '@renderer/components/Icons'
 import ObsidianExportPopup from '@renderer/components/Popups/ObsidianExportPopup'
 import PromptPopup from '@renderer/components/Popups/PromptPopup'
@@ -25,6 +26,7 @@ import {
   moveTopicToConversationFolder,
   removeTopic as removeTopicAction,
   renameConversationFolder,
+  reorderConversationFolders,
   selectAllTopics,
   selectConversationFolders,
   toggleConversationFolderCollapsed,
@@ -34,8 +36,7 @@ import {
 import { newMessagesActions } from '@renderer/store/newMessage'
 import { setGenerating } from '@renderer/store/runtime'
 import type { Assistant, ConversationFolder, Topic } from '@renderer/types'
-import { classNames, removeSpecialCharactersForFileName } from '@renderer/utils'
-import { uuid } from '@renderer/utils'
+import { classNames, removeSpecialCharactersForFileName, uuid } from '@renderer/utils'
 import { copyTopicAsMarkdown, copyTopicAsPlainText } from '@renderer/utils/copy'
 import {
   exportMarkdownToJoplin,
@@ -52,6 +53,7 @@ import type { ItemType, MenuItemType } from 'antd/es/menu/interface'
 import dayjs from 'dayjs'
 import {
   BrushCleaning,
+  Check,
   ChevronDown,
   ChevronRight,
   FolderClosed,
@@ -103,6 +105,8 @@ const ConversationHistoryList: FC<Props> = ({ activeTopic, setActiveTopic, onCre
   const [recentDeletedFolders, setRecentDeletedFolders] = useState<RecycleBinConversationFolderItem[]>([])
   const [isRecycleBinOpen, setIsRecycleBinOpen] = useState(false)
   const [expandedDeletedFolderIds, setExpandedDeletedFolderIds] = useState<Set<string>>(new Set())
+  const [isRecycleBinManageMode, setIsRecycleBinManageMode] = useState(false)
+  const [selectedRecycleBinItemKeys, setSelectedRecycleBinItemKeys] = useState<Set<string>>(new Set())
 
   const assistantMap = useMemo(() => new Map(assistants.map((assistant) => [assistant.id, assistant])), [assistants])
 
@@ -168,6 +172,33 @@ const ConversationHistoryList: FC<Props> = ({ activeTopic, setActiveTopic, onCre
         (topic) => !topic.folderId || !recentDeletedFolders.some((folder) => folder.folder.id === topic.folderId)
       ),
     [recentDeletedFolders, recentDeletedTopics]
+  )
+
+  const visibleRecycleBinItemKeys = useMemo(() => {
+    const keys: string[] = []
+
+    recentDeletedFolders.forEach((item) => {
+      keys.push(`folder:${item.entryId}`)
+
+      if (expandedDeletedFolderIds.has(item.folder.id)) {
+        ;(deletedFolderTopicsMap.get(item.folder.id) || []).forEach((topicItem) => {
+          keys.push(`topic:${topicItem.entryId}`)
+        })
+      }
+    })
+
+    deletedRootTopics.forEach((item) => {
+      keys.push(`topic:${item.entryId}`)
+    })
+
+    return keys
+  }, [deletedFolderTopicsMap, deletedRootTopics, expandedDeletedFolderIds, recentDeletedFolders])
+
+  const isAllRecycleBinItemsSelected = useMemo(
+    () =>
+      visibleRecycleBinItemKeys.length > 0 &&
+      visibleRecycleBinItemKeys.every((itemKey) => selectedRecycleBinItemKeys.has(itemKey)),
+    [selectedRecycleBinItemKeys, visibleRecycleBinItemKeys]
   )
 
   const getAssistantByTopic = useCallback(
@@ -298,6 +329,59 @@ const ConversationHistoryList: FC<Props> = ({ activeTopic, setActiveTopic, onCre
       return next
     })
   }, [])
+
+  const handleToggleRecycleBinItemSelection = useCallback((itemKey: string) => {
+    setSelectedRecycleBinItemKeys((prev) => {
+      const next = new Set(prev)
+      if (next.has(itemKey)) {
+        next.delete(itemKey)
+      } else {
+        next.add(itemKey)
+      }
+      return next
+    })
+  }, [])
+
+  const handleToggleSelectAllRecycleBinItems = useCallback(() => {
+    setSelectedRecycleBinItemKeys((prev) =>
+      isAllRecycleBinItemsSelected ? new Set() : new Set(visibleRecycleBinItemKeys)
+    )
+  }, [isAllRecycleBinItemsSelected, visibleRecycleBinItemKeys])
+
+  const handleBatchDeleteRecycleBinItems = useCallback(() => {
+    if (selectedRecycleBinItemKeys.size === 0) {
+      return
+    }
+
+    const selectedFolderEntries = recentDeletedFolders.filter((item) =>
+      selectedRecycleBinItemKeys.has(`folder:${item.entryId}`)
+    )
+    const selectedFolderIds = new Set(selectedFolderEntries.map((item) => item.folder.id))
+    const selectedTopicEntries = recentDeletedTopics.filter(
+      (item) =>
+        selectedRecycleBinItemKeys.has(`topic:${item.entryId}`) && (!item.folderId || !selectedFolderIds.has(item.folderId))
+    )
+
+    window.modal.confirm({
+      title: '批量彻底删除',
+      content: `将彻底删除 ${selectedFolderEntries.length + selectedTopicEntries.length} 项，且无法恢复。`,
+      centered: true,
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        for (const item of selectedFolderEntries) {
+          await RecycleBinService.permanentlyDeleteConversationFolder(item.entryId)
+        }
+
+        for (const item of selectedTopicEntries) {
+          await RecycleBinService.permanentlyDeleteTopic(item.entryId)
+        }
+
+        setSelectedRecycleBinItemKeys(new Set())
+        setIsRecycleBinManageMode(false)
+        await loadRecentDeletedTopics()
+      }
+    })
+  }, [loadRecentDeletedTopics, recentDeletedFolders, recentDeletedTopics, selectedRecycleBinItemKeys])
 
   const handleCreateFolder = useCallback(async () => {
     const name = await PromptPopup.show({
@@ -885,6 +969,29 @@ const ConversationHistoryList: FC<Props> = ({ activeTopic, setActiveTopic, onCre
     ]
   )
 
+  const renderFolderSection = useCallback(
+    ({ folder, topics }: FolderWithTopics, dragging: boolean = false) => (
+      <FolderSection key={folder.id} className={classNames({ dragging })}>
+        <Dropdown menu={{ items: buildFolderMenuItems(folder) }} trigger={['contextMenu']}>
+          <FolderRow
+            className={classNames({ active: topics.some((topic) => topic.id === activeTopic?.id) })}
+            onClick={() => dispatch(toggleConversationFolderCollapsed({ id: folder.id }))}>
+            <FolderHeader>
+              <FolderTitleWrap>
+                {collapsedConversationFolders[folder.id] ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
+                {collapsedConversationFolders[folder.id] ? <FolderClosed size={14} /> : <FolderOpen size={14} />}
+                <FolderTitle title={folder.name}>{folder.name}</FolderTitle>
+              </FolderTitleWrap>
+              <FolderCount>{topics.length}</FolderCount>
+            </FolderHeader>
+          </FolderRow>
+        </Dropdown>
+        {!collapsedConversationFolders[folder.id] && topics.map((topic) => renderTopicItem(topic, true))}
+      </FolderSection>
+    ),
+    [activeTopic?.id, buildFolderMenuItems, collapsedConversationFolders, dispatch, renderTopicItem]
+  )
+
   return (
     <Container>
       <Header>
@@ -898,25 +1005,21 @@ const ConversationHistoryList: FC<Props> = ({ activeTopic, setActiveTopic, onCre
         </HeaderRow>
       </Header>
       <List>
-        {groupedFolders.map(({ folder, topics }) => (
-          <FolderSection key={folder.id}>
-            <Dropdown menu={{ items: buildFolderMenuItems(folder) }} trigger={['contextMenu']}>
-              <FolderRow
-                className={classNames({ active: topics.some((topic) => topic.id === activeTopic?.id) })}
-                onClick={() => dispatch(toggleConversationFolderCollapsed({ id: folder.id }))}>
-                <FolderHeader>
-                  <FolderTitleWrap>
-                    {collapsedConversationFolders[folder.id] ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
-                    {collapsedConversationFolders[folder.id] ? <FolderClosed size={14} /> : <FolderOpen size={14} />}
-                    <FolderTitle title={folder.name}>{folder.name}</FolderTitle>
-                  </FolderTitleWrap>
-                  <FolderCount>{topics.length}</FolderCount>
-                </FolderHeader>
-              </FolderRow>
-            </Dropdown>
-            {!collapsedConversationFolders[folder.id] && topics.map((topic) => renderTopicItem(topic, true))}
-          </FolderSection>
-        ))}
+        {groupedFolders.length > 0 && (
+          <Sortable
+            items={groupedFolders}
+            itemKey={(item) => item.folder.id}
+            layout="list"
+            gap="8px"
+            listStyle={{ width: '100%', alignItems: 'stretch' }}
+            itemStyle={{ width: '100%' }}
+            restrictions={{ scrollableAncestor: true }}
+            onSortEnd={({ oldIndex, newIndex }) => {
+              dispatch(reorderConversationFolders({ oldIndex, newIndex }))
+            }}
+            renderItem={(item, { dragging }) => renderFolderSection(item, dragging)}
+          />
+        )}
         {rootTopics.map((topic) => renderTopicItem(topic))}
         {sortedTopics.length === 0 && groupedFolders.length === 0 && <EmptyState>还没有历史对话</EmptyState>}
       </List>
@@ -930,11 +1033,39 @@ const ConversationHistoryList: FC<Props> = ({ activeTopic, setActiveTopic, onCre
       <Modal
         title="最近删除"
         open={isRecycleBinOpen}
-        onCancel={() => setIsRecycleBinOpen(false)}
+        onCancel={() => {
+          setIsRecycleBinOpen(false)
+          setIsRecycleBinManageMode(false)
+          setSelectedRecycleBinItemKeys(new Set())
+        }}
         footer={null}
         width={560}
         transitionName="animation-move-down"
         centered>
+        <RecycleBinToolbar>
+          <RecycleBinToolbarButton
+            type="button"
+            onClick={() => {
+              setIsRecycleBinManageMode((prev) => !prev)
+              setSelectedRecycleBinItemKeys(new Set())
+            }}>
+            {isRecycleBinManageMode ? '取消管理' : '批量删除'}
+          </RecycleBinToolbarButton>
+          {isRecycleBinManageMode && (
+            <>
+              <RecycleBinToolbarButton type="button" onClick={handleToggleSelectAllRecycleBinItems}>
+                {isAllRecycleBinItemsSelected ? '取消全选' : '全选可见项'}
+              </RecycleBinToolbarButton>
+              <RecycleBinToolbarButton
+                type="button"
+                danger
+                disabled={selectedRecycleBinItemKeys.size === 0}
+                onClick={handleBatchDeleteRecycleBinItems}>
+                彻底删除所选 ({selectedRecycleBinItemKeys.size})
+              </RecycleBinToolbarButton>
+            </>
+          )}
+        </RecycleBinToolbar>
         <RecycleBinModalList>
           {recentDeletedFolders.map((item) => (
             <RecentDeletedFolderGroup key={`tree-${item.entryId}`}>
@@ -948,6 +1079,17 @@ const ConversationHistoryList: FC<Props> = ({ activeTopic, setActiveTopic, onCre
                     handleToggleDeletedFolderExpanded(item.folder.id)
                   }
                 }}>
+                {isRecycleBinManageMode && (
+                  <RecentDeletedSelector
+                    type="button"
+                    aria-label="选择文件夹"
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      handleToggleRecycleBinItemSelection(`folder:${item.entryId}`)
+                    }}>
+                    {selectedRecycleBinItemKeys.has(`folder:${item.entryId}`) && <Check size={12} />}
+                  </RecentDeletedSelector>
+                )}
                 <RecentDeletedMeta>
                   <RecentDeletedFolderTitleWrap>
                     {expandedDeletedFolderIds.has(item.folder.id) ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
@@ -960,31 +1102,43 @@ const ConversationHistoryList: FC<Props> = ({ activeTopic, setActiveTopic, onCre
                   </RecentDeletedTime>
                 </RecentDeletedMeta>
                 <RecentDeletedActions>
-                  <RecentDeletedActionButton
-                    type="button"
-                    title="恢复"
-                    onClick={(event) => {
-                      event.stopPropagation()
-                      void handleRestoreDeletedFolder(item.entryId)
-                    }}>
-                    <RotateCcw size={12} />
-                  </RecentDeletedActionButton>
-                  <RecentDeletedActionButton
-                    type="button"
-                    danger
-                    title="彻底删除"
-                    onClick={(event) => {
-                      event.stopPropagation()
-                      void handleDeleteRecentFolderPermanently(item.entryId)
-                    }}>
-                    <Trash2 size={12} />
-                  </RecentDeletedActionButton>
+                  {!isRecycleBinManageMode && (
+                    <>
+                      <RecentDeletedActionButton
+                        type="button"
+                        title="恢复"
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          void handleRestoreDeletedFolder(item.entryId)
+                        }}>
+                        <RotateCcw size={12} />
+                      </RecentDeletedActionButton>
+                      <RecentDeletedActionButton
+                        type="button"
+                        danger
+                        title="彻底删除"
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          void handleDeleteRecentFolderPermanently(item.entryId)
+                        }}>
+                        <Trash2 size={12} />
+                      </RecentDeletedActionButton>
+                    </>
+                  )}
                 </RecentDeletedActions>
               </RecentDeletedItem>
               {expandedDeletedFolderIds.has(item.folder.id) && (
                 <RecentDeletedChildren>
                   {(deletedFolderTopicsMap.get(item.folder.id) || []).map((topicItem) => (
                     <RecentDeletedItem key={topicItem.entryId}>
+                      {isRecycleBinManageMode && (
+                        <RecentDeletedSelector
+                          type="button"
+                          aria-label="选择对话"
+                          onClick={() => handleToggleRecycleBinItemSelection(`topic:${topicItem.entryId}`)}>
+                          {selectedRecycleBinItemKeys.has(`topic:${topicItem.entryId}`) && <Check size={12} />}
+                        </RecentDeletedSelector>
+                      )}
                       <RecentDeletedMeta>
                         <RecentDeletedName title={topicItem.topic.name}>{topicItem.topic.name}</RecentDeletedName>
                         <RecentDeletedTime>
@@ -993,19 +1147,23 @@ const ConversationHistoryList: FC<Props> = ({ activeTopic, setActiveTopic, onCre
                         </RecentDeletedTime>
                       </RecentDeletedMeta>
                       <RecentDeletedActions>
-                        <RecentDeletedActionButton
-                          type="button"
-                          title="恢复"
-                          onClick={() => void handleRestoreDeletedTopic(topicItem.entryId)}>
-                          <RotateCcw size={12} />
-                        </RecentDeletedActionButton>
-                        <RecentDeletedActionButton
-                          type="button"
-                          danger
-                          title="彻底删除"
-                          onClick={() => void handleDeleteRecentTopicPermanently(topicItem.entryId)}>
-                          <Trash2 size={12} />
-                        </RecentDeletedActionButton>
+                        {!isRecycleBinManageMode && (
+                          <>
+                            <RecentDeletedActionButton
+                              type="button"
+                              title="恢复"
+                              onClick={() => void handleRestoreDeletedTopic(topicItem.entryId)}>
+                              <RotateCcw size={12} />
+                            </RecentDeletedActionButton>
+                            <RecentDeletedActionButton
+                              type="button"
+                              danger
+                              title="彻底删除"
+                              onClick={() => void handleDeleteRecentTopicPermanently(topicItem.entryId)}>
+                              <Trash2 size={12} />
+                            </RecentDeletedActionButton>
+                          </>
+                        )}
                       </RecentDeletedActions>
                     </RecentDeletedItem>
                   ))}
@@ -1015,27 +1173,39 @@ const ConversationHistoryList: FC<Props> = ({ activeTopic, setActiveTopic, onCre
           ))}
           {deletedRootTopics.map((item) => (
             <RecentDeletedItem key={item.entryId}>
+              {isRecycleBinManageMode && (
+                <RecentDeletedSelector
+                  type="button"
+                  aria-label="选择对话"
+                  onClick={() => handleToggleRecycleBinItemSelection(`topic:${item.entryId}`)}>
+                  {selectedRecycleBinItemKeys.has(`topic:${item.entryId}`) && <Check size={12} />}
+                </RecentDeletedSelector>
+              )}
               <RecentDeletedMeta>
                 <RecentDeletedName title={item.topic.name}>{item.topic.name}</RecentDeletedName>
                 <RecentDeletedTime>
-                  <span>{assistantMap.get(item.topic.assistantId)?.name || '榛樿鍔╂墜'}</span>
+                  <span>{assistantMap.get(item.topic.assistantId)?.name || '默认助手'}</span>
                   <span>{dayjs(item.deletedAt).format('MM/DD HH:mm')}</span>
                 </RecentDeletedTime>
               </RecentDeletedMeta>
               <RecentDeletedActions>
-                <RecentDeletedActionButton
-                  type="button"
-                  title="鎭㈠"
-                  onClick={() => void handleRestoreDeletedTopic(item.entryId)}>
-                  <RotateCcw size={12} />
-                </RecentDeletedActionButton>
-                <RecentDeletedActionButton
-                  type="button"
-                  danger
-                  title="褰诲簳鍒犻櫎"
-                  onClick={() => void handleDeleteRecentTopicPermanently(item.entryId)}>
-                  <Trash2 size={12} />
-                </RecentDeletedActionButton>
+                {!isRecycleBinManageMode && (
+                  <>
+                    <RecentDeletedActionButton
+                      type="button"
+                      title="恢复"
+                      onClick={() => void handleRestoreDeletedTopic(item.entryId)}>
+                      <RotateCcw size={12} />
+                    </RecentDeletedActionButton>
+                    <RecentDeletedActionButton
+                      type="button"
+                      danger
+                      title="彻底删除"
+                      onClick={() => void handleDeleteRecentTopicPermanently(item.entryId)}>
+                      <Trash2 size={12} />
+                    </RecentDeletedActionButton>
+                  </>
+                )}
               </RecentDeletedActions>
             </RecentDeletedItem>
           ))}
@@ -1093,19 +1263,28 @@ const FolderSection = styled.div`
   display: flex;
   flex-direction: column;
   gap: 6px;
+  width: 100%;
+
+  &.dragging {
+    z-index: 2;
+  }
 `
 
 const FolderRow = styled.div`
   width: 100%;
   border-radius: 14px;
-  padding: 10px 12px;
-  cursor: pointer;
+  padding: 8px 10px;
+  cursor: grab;
   background: var(--color-background-soft);
   transition: background-color 0.18s ease;
 
   &:hover,
   &.active {
     background: var(--color-list-item);
+  }
+
+  &:active {
+    cursor: grabbing;
   }
 `
 
@@ -1267,6 +1446,31 @@ const RecycleBinModalList = styled.div`
   overflow-y: auto;
 `
 
+const RecycleBinToolbar = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+`
+
+const RecycleBinToolbarButton = styled.button<{ danger?: boolean; disabled?: boolean }>`
+  border: none;
+  border-radius: 999px;
+  padding: 6px 12px;
+  background: ${({ danger }) => (danger ? 'rgba(220, 38, 38, 0.12)' : 'var(--color-background-soft)')};
+  color: ${({ danger }) => (danger ? '#dc2626' : 'var(--color-text-2)')};
+  font-size: 12px;
+  font-weight: 500;
+  cursor: ${({ disabled }) => (disabled ? 'not-allowed' : 'pointer')};
+  opacity: ${({ disabled }) => (disabled ? 0.45 : 1)};
+
+  &:hover {
+    background: ${({ danger }) => (danger ? 'rgba(220, 38, 38, 0.16)' : 'var(--color-background-mute)')};
+    color: ${({ danger }) => (danger ? '#b91c1c' : 'var(--color-text)')};
+  }
+`
+
 const RecentDeletedFolderGroup = styled.div`
   display: flex;
   flex-direction: column;
@@ -1280,6 +1484,20 @@ const RecentDeletedItem = styled.div`
   padding: 10px 12px;
   border-radius: 14px;
   background: var(--color-background-soft);
+`
+
+const RecentDeletedSelector = styled.button`
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  border: 1px solid rgba(15, 23, 42, 0.15);
+  border-radius: 6px;
+  background: #ffffff;
+  color: #16a34a;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
 `
 
 const RecentDeletedFolderTitleWrap = styled.div`

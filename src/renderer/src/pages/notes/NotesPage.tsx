@@ -31,14 +31,17 @@ import { useAppDispatch, useAppSelector, useAppStore } from '@renderer/store'
 import {
   selectActiveFilePath,
   selectExpandedPaths,
+  selectManualOrders,
   selectSortType,
   selectStarredPaths,
   setActiveFilePath,
   setExpandedPaths,
+  setManualOrders,
   setSortType,
   setStarredPaths
 } from '@renderer/store/note'
 import type { NotesSortType, NotesTreeNode } from '@renderer/types/note'
+import { getFileDirectory } from '@renderer/utils'
 import type { FileChangeEvent } from '@shared/config/types'
 import { message } from 'antd'
 import { debounce } from 'lodash'
@@ -63,6 +66,7 @@ const NotesPage: FC = () => {
   const store = useAppStore()
   const activeFilePath = useAppSelector(selectActiveFilePath)
   const sortType = useAppSelector(selectSortType)
+  const manualOrders = useAppSelector(selectManualOrders)
   const starredPaths = useAppSelector(selectStarredPaths)
   const expandedPaths = useAppSelector(selectExpandedPaths)
   const { settings, notesPath, updateNotesPath } = useNotesSettings()
@@ -117,6 +121,93 @@ const NotesPage: FC = () => {
     [dispatch, store]
   )
 
+  const updateManualOrders = useCallback(
+    (updater: (orders: Record<string, string[]>) => Record<string, string[]>) => {
+      const current = store.getState().note.manualOrders
+      const safeCurrent = current && typeof current === 'object' ? current : {}
+      const next = updater(safeCurrent) ?? {}
+
+      if (next !== safeCurrent) {
+        dispatch(setManualOrders(next))
+      }
+    },
+    [dispatch, store]
+  )
+
+  const removeManualOrderEntries = useCallback(
+    (orders: Record<string, string[]>, nodes: NotesTreeNode[]) => {
+      const nextEntries = Object.entries(orders)
+        .filter(([parentPath]) => {
+          const normalizedParentPath = normalizePathValue(parentPath)
+
+          return !nodes.some((node) => {
+            const normalizedNodePath = normalizePathValue(node.externalPath)
+            return (
+              normalizedParentPath === normalizedNodePath ||
+              (node.type === 'folder' && normalizedParentPath.startsWith(`${normalizedNodePath}/`))
+            )
+          })
+        })
+        .map(([parentPath, paths]) => [
+          parentPath,
+          nodes.reduce((acc, node) => removePathEntries(acc, node.externalPath, node.type === 'folder'), paths)
+        ] as const)
+        .filter(([, paths]) => paths.length > 0)
+
+      return Object.fromEntries(nextEntries)
+    },
+    []
+  )
+
+  const moveManualOrderEntries = useCallback(
+    (
+      orders: Record<string, string[]>,
+      params: {
+        oldPath: string
+        newPath: string
+        isFolder: boolean
+        sourceParentPath: string
+        targetParentPath: string
+      }
+    ) => {
+      const { oldPath, newPath, isFolder, sourceParentPath, targetParentPath } = params
+      const normalizedOldPath = normalizePathValue(oldPath)
+      const normalizedNewPath = normalizePathValue(newPath)
+      const normalizedSourceParentPath = normalizePathValue(sourceParentPath)
+      const normalizedTargetParentPath = normalizePathValue(targetParentPath)
+      const nextOrders: Record<string, string[]> = {}
+
+      Object.entries(orders).forEach(([parentPath, paths]) => {
+        const normalizedParentPath = normalizePathValue(parentPath)
+        let nextParentPath = normalizedParentPath
+
+        if (normalizedParentPath === normalizedOldPath) {
+          nextParentPath = normalizedNewPath
+        } else if (isFolder && normalizedParentPath.startsWith(`${normalizedOldPath}/`)) {
+          nextParentPath = `${normalizedNewPath}${normalizedParentPath.slice(normalizedOldPath.length)}`
+        }
+
+        let nextPaths = replacePathEntries(paths, oldPath, newPath, isFolder)
+
+        if (normalizedSourceParentPath !== normalizedTargetParentPath && normalizedParentPath === normalizedSourceParentPath) {
+          nextPaths = nextPaths.filter((path) => normalizePathValue(path) !== normalizedNewPath)
+        }
+
+        if (nextPaths.length > 0) {
+          nextOrders[nextParentPath] = Array.from(new Set(nextPaths))
+        }
+      })
+
+      const existingTargetOrder = nextOrders[normalizedTargetParentPath]
+      if (normalizedSourceParentPath !== normalizedTargetParentPath && existingTargetOrder) {
+        nextOrders[normalizedTargetParentPath] = Array.from(new Set([...existingTargetOrder, normalizedNewPath]))
+      }
+
+      return nextOrders
+    },
+    []
+  )
+
   const mergeTreeState = useCallback(
     (nodes: NotesTreeNode[]): NotesTreeNode[] => {
       return nodes.map((node) => {
@@ -146,12 +237,12 @@ const NotesPage: FC = () => {
 
     try {
       const rawTree = await loadTree(notesPath)
-      const sortedTree = sortTree(rawTree, sortType)
+      const sortedTree = sortTree(rawTree, sortType, manualOrders, normalizePathValue(notesPath))
       setNotesTree(mergeTreeState(sortedTree))
     } catch (error) {
       logger.error('Failed to refresh notes tree:', error as Error)
     }
-  }, [mergeTreeState, notesPath, sortType])
+  }, [manualOrders, mergeTreeState, notesPath, sortType])
 
   useEffect(() => {
     const updateCharCount = () => {
@@ -406,15 +497,26 @@ const NotesPage: FC = () => {
 
   useEffect(() => {
     const editor = editorRef.current
-    if (!editor || !currentContent) return
-    // 获取编辑器当前内容
-    const editorMarkdown = editor.getMarkdown()
+    if (!editor) return
 
-    // 只有当编辑器内容与期望内容不一致时才更新
-    // 这样既能处理初始化，也能处理后续的内容同步，还能避免光标跳动
-    if (editorMarkdown !== currentContent) {
-      editor.setMarkdown(currentContent)
+    const normalizeMarkdown = (value?: string) => (value || '').replace(/\r\n/g, '\n')
+    const editorMarkdown = normalizeMarkdown(editor.getMarkdown())
+    const nextContent = normalizeMarkdown(currentContent)
+    const lastLocalContent =
+      lastFilePathRef.current && activeFilePath && lastFilePathRef.current === activeFilePath
+        ? normalizeMarkdown(lastContentRef.current)
+        : undefined
+
+    if (editorMarkdown === nextContent) {
+      return
     }
+
+    // 本地输入后触发的缓存回流不应重新 setMarkdown，否则光标会跳到文末。
+    if (lastLocalContent !== undefined && nextContent === lastLocalContent) {
+      return
+    }
+
+    editor.setMarkdown(currentContent)
   }, [currentContent, activeFilePath])
 
   // Execute pending scroll after file switch
@@ -622,6 +724,7 @@ const NotesPage: FC = () => {
             prev
           )
         )
+        updateManualOrders((prev) => removeManualOrderEntries(prev, topLevelNodes))
 
         const normalizedActivePath = activeFilePath ? normalizePathValue(activeFilePath) : undefined
         const selectedFolderNode = selectedFolderId ? findNode(notesTree, selectedFolderId) : null
@@ -667,7 +770,17 @@ const NotesPage: FC = () => {
         logger.error('Failed to delete node:', error as Error)
       }
     },
-    [notesTree, activeFilePath, selectedFolderId, dispatch, refreshTree, updateStarredPaths, updateExpandedPaths]
+    [
+      notesTree,
+      activeFilePath,
+      selectedFolderId,
+      dispatch,
+      refreshTree,
+      removeManualOrderEntries,
+      updateExpandedPaths,
+      updateManualOrders,
+      updateStarredPaths
+    ]
   )
 
   const handleDeleteNode = useCallback(
@@ -705,6 +818,15 @@ const NotesPage: FC = () => {
 
         updateStarredPaths((prev) => replacePathEntries(prev, oldPath, renamed.path, node.type === 'folder'))
         updateExpandedPaths((prev) => replacePathEntries(prev, oldPath, renamed.path, node.type === 'folder'))
+        updateManualOrders((prev) =>
+          moveManualOrderEntries(prev, {
+            oldPath,
+            newPath: renamed.path,
+            isFolder: node.type === 'folder',
+            sourceParentPath: normalizePathValue(getFileDirectory(oldPath)),
+            targetParentPath: normalizePathValue(getFileDirectory(renamed.path))
+          })
+        )
 
         await refreshTree()
       } catch (error) {
@@ -715,7 +837,16 @@ const NotesPage: FC = () => {
         }, 500)
       }
     },
-    [activeFilePath, dispatch, notesTree, refreshTree, updateStarredPaths, updateExpandedPaths]
+    [
+      activeFilePath,
+      dispatch,
+      moveManualOrderEntries,
+      notesTree,
+      refreshTree,
+      updateExpandedPaths,
+      updateManualOrders,
+      updateStarredPaths
+    ]
   )
 
   // 处理文件上传
@@ -808,10 +939,15 @@ const NotesPage: FC = () => {
         const isManualReorder = position !== 'inside' && normalizedSourceParent === normalizedTargetParent
 
         if (isManualReorder) {
-          // For manual reordering within the same parent, we can optimize by only updating the affected parent
-          setNotesTree((prev) =>
-            reorderTreeNodes(prev, sourceNodeId, targetNodeId, position === 'before' ? 'before' : 'after')
-          )
+          const reorderedTree = reorderTreeNodes(notesTree, sourceNodeId, targetNodeId, position === 'before' ? 'before' : 'after')
+          const reorderedParentNode = sourceParentNode ? findNode(reorderedTree, sourceParentNode.id) : null
+          const reorderedSiblings = reorderedParentNode?.children || reorderedTree
+
+          setNotesTree(reorderedTree)
+          updateManualOrders((prev) => ({
+            ...prev,
+            [normalizedSourceParent]: reorderedSiblings.map((node) => normalizePathValue(node.externalPath))
+          }))
           return
         }
 
@@ -844,6 +980,15 @@ const NotesPage: FC = () => {
           next = addUniquePath(next, normalizedTargetParent)
           return next
         })
+        updateManualOrders((prev) =>
+          moveManualOrderEntries(prev, {
+            oldPath: sourceNode.externalPath,
+            newPath: destinationPath,
+            isFolder: sourceNode.type === 'folder',
+            sourceParentPath: normalizedSourceParent,
+            targetParentPath: normalizedTargetParent
+          })
+        )
 
         const normalizedActivePath = activeFilePath ? normalizePathValue(activeFilePath) : undefined
         if (normalizedActivePath) {
@@ -867,16 +1012,28 @@ const NotesPage: FC = () => {
         logger.error('Failed to move nodes:', error as Error)
       }
     },
-    [activeFilePath, dispatch, notesPath, notesTree, refreshTree, updateStarredPaths, updateExpandedPaths]
+    [
+      activeFilePath,
+      dispatch,
+      moveManualOrderEntries,
+      notesPath,
+      notesTree,
+      refreshTree,
+      updateExpandedPaths,
+      updateManualOrders,
+      updateStarredPaths
+    ]
   )
 
   // 处理节点排序
   const handleSortNodes = useCallback(
     async (newSortType: NotesSortType) => {
       dispatch(setSortType(newSortType))
-      setNotesTree((prev) => mergeTreeState(sortTree(prev, newSortType)))
+      setNotesTree((prev) =>
+        mergeTreeState(sortTree(prev, newSortType, manualOrders, normalizePathValue(notesPath || '__root__')))
+      )
     },
-    [dispatch, mergeTreeState]
+    [dispatch, manualOrders, mergeTreeState, notesPath]
   )
 
   const handleExpandPath = useCallback(

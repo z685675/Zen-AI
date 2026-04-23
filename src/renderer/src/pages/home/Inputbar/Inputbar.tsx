@@ -356,9 +356,7 @@ const InputbarInner: FC<InputbarInnerProps> = ({
 
     addTopic(newTopic)
     setActiveTopic(newTopic)
-
-    setTimeoutTimer('addNewTopic', () => EventEmitter.emit(EVENT_NAMES.SHOW_TOPIC_SIDEBAR), 0)
-  }, [addTopic, assistant.defaultModel, assistant.id, setActiveTopic, setModel, setTimeoutTimer])
+  }, [addTopic, assistant.defaultModel, assistant.id, setActiveTopic, setModel])
 
   const handleRemoveModel = useCallback(
     (modelToRemove: Model) => {
@@ -398,9 +396,12 @@ const InputbarInner: FC<InputbarInnerProps> = ({
 
   useShortcut(
     'new_topic',
-    () => {
+    (event) => {
+      if (event.repeat) {
+        return
+      }
+
       void addNewTopic()
-      void EventEmitter.emit(EVENT_NAMES.SHOW_TOPIC_SIDEBAR)
       focusTextarea()
     },
     { preventDefault: true, enableOnFormTags: true }

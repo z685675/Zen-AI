@@ -21,19 +21,42 @@ export async function loadTree(rootPath: string): Promise<NotesTreeNode[]> {
   return window.api.file.getDirectoryStructure(normalizePath(rootPath))
 }
 
-export function sortTree(nodes: NotesTreeNode[], sortType: NotesSortType): NotesTreeNode[] {
+export function sortTree(
+  nodes: NotesTreeNode[],
+  sortType: NotesSortType,
+  manualOrders: Record<string, string[]> = {},
+  parentPath: string = '__root__'
+): NotesTreeNode[] {
   const cloned = nodes.map((node) => ({
     ...node,
-    children: node.children ? sortTree(node.children, sortType) : undefined
+    children: node.children ? sortTree(node.children, sortType, manualOrders, normalizePath(node.externalPath)) : undefined
   }))
 
   const sorter = getSorter(sortType)
+  const manualOrder = manualOrders[parentPath] ?? []
+  const manualOrderIndex = new Map(manualOrder.map((path, index) => [normalizePath(path), index]))
 
   cloned.sort((a, b) => {
-    if (a.type === b.type) {
-      return sorter(a, b)
+    if (a.type !== b.type) {
+      return a.type === 'folder' ? -1 : 1
     }
-    return a.type === 'folder' ? -1 : 1
+
+    const aOrder = manualOrderIndex.get(normalizePath(a.externalPath))
+    const bOrder = manualOrderIndex.get(normalizePath(b.externalPath))
+
+    if (aOrder !== undefined && bOrder !== undefined) {
+      return aOrder - bOrder
+    }
+
+    if (aOrder !== undefined) {
+      return -1
+    }
+
+    if (bOrder !== undefined) {
+      return 1
+    }
+
+    return sorter(a, b)
   })
 
   return cloned
