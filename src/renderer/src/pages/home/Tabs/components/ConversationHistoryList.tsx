@@ -343,9 +343,7 @@ const ConversationHistoryList: FC<Props> = ({ activeTopic, setActiveTopic, onCre
   }, [])
 
   const handleToggleSelectAllRecycleBinItems = useCallback(() => {
-    setSelectedRecycleBinItemKeys((prev) =>
-      isAllRecycleBinItemsSelected ? new Set() : new Set(visibleRecycleBinItemKeys)
-    )
+    setSelectedRecycleBinItemKeys(isAllRecycleBinItemsSelected ? new Set() : new Set(visibleRecycleBinItemKeys))
   }, [isAllRecycleBinItemsSelected, visibleRecycleBinItemKeys])
 
   const handleBatchDeleteRecycleBinItems = useCallback(() => {

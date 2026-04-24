@@ -380,7 +380,7 @@ const NotesSidebar: FC<NotesSidebarProps> = ({
   }, [])
 
   const handleToggleSelectAllRecycleBinNotes = useCallback(() => {
-    setSelectedRecycleBinNoteEntryIds((prev) =>
+    setSelectedRecycleBinNoteEntryIds(
       isAllRecycleBinNotesSelected ? new Set() : new Set(recentDeletedNotes.map((item) => item.entryId))
     )
   }, [isAllRecycleBinNotesSelected, recentDeletedNotes])
