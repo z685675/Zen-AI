@@ -541,14 +541,16 @@ function buildGenericProviderOptions(
   model: Model,
   capabilities: Pick<ProviderCapabilities, 'enableReasoning' | 'enableWebSearch' | 'enableGenerateImage'>
 ): Record<string, any> {
-  const { enableWebSearch } = capabilities
+  const { enableReasoning, enableWebSearch } = capabilities
   let providerOptions: Record<string, any> = {}
 
-  const reasoningParams = getReasoningEffort(assistant, model)
-  logger.debug('reasoningParams', reasoningParams)
-  providerOptions = {
-    ...providerOptions,
-    ...reasoningParams
+  if (enableReasoning) {
+    const reasoningParams = getReasoningEffort(assistant, model)
+    logger.debug('reasoningParams', reasoningParams)
+    providerOptions = {
+      ...providerOptions,
+      ...reasoningParams
+    }
   }
 
   if (enableWebSearch) {
