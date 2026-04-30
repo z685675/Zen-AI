@@ -29,18 +29,16 @@ const UrlContextButton: FC<Props> = ({ assistantId }) => {
     setTimeoutTimer(
       'handleToggle',
       () => {
-        const update = { ...assistant }
         if (
           getEffectiveMcpMode(assistant) !== 'disabled' &&
           urlContentNewState === true &&
           isToolUseModeFunction(assistant)
         ) {
-          update.enableUrlContext = false
           window.toast.warning(t('chat.mcp.warning.url_context'))
+          updateAssistant({ enableUrlContext: false })
         } else {
-          update.enableUrlContext = urlContentNewState
+          updateAssistant({ enableUrlContext: urlContentNewState })
         }
-        updateAssistant(update)
       },
       100
     )

@@ -368,7 +368,7 @@ const InputbarInner: FC<InputbarInnerProps> = ({
   const handleRemoveKnowledgeBase = useCallback(
     (knowledgeBase: KnowledgeBase) => {
       const nextKnowledgeBases = assistant.knowledge_bases?.filter((kb) => kb.id !== knowledgeBase.id)
-      updateAssistant({ ...assistant, knowledge_bases: nextKnowledgeBases })
+      updateAssistant({ knowledge_bases: nextKnowledgeBases })
       setSelectedKnowledgeBases(nextKnowledgeBases ?? [])
     },
     [assistant, setSelectedKnowledgeBases, updateAssistant]
@@ -461,7 +461,7 @@ const InputbarInner: FC<InputbarInnerProps> = ({
   useEffect(() => {
     // Disable web search if model doesn't support it
     if (!isWebSearchModel(model) && assistant.enableWebSearch) {
-      updateAssistant({ ...assistant, enableWebSearch: false })
+      updateAssistant({ enableWebSearch: false })
     }
 
     // Clear web search provider if disabled or model has mandatory search
@@ -469,16 +469,16 @@ const InputbarInner: FC<InputbarInnerProps> = ({
       assistant.webSearchProviderId &&
       (!WebSearchService.isWebSearchEnabled(assistant.webSearchProviderId) || isMandatoryWebSearchModel(model))
     ) {
-      updateAssistant({ ...assistant, webSearchProviderId: undefined })
+      updateAssistant({ webSearchProviderId: undefined })
     }
 
     // Auto-enable/disable image generation based on model capabilities
     if (isGenerateImageModel(model)) {
       if (isAutoEnableImageGenerationModel(model) && !assistant.enableGenerateImage) {
-        updateAssistant({ ...assistant, enableGenerateImage: true })
+        updateAssistant({ enableGenerateImage: true })
       }
     } else if (assistant.enableGenerateImage) {
-      updateAssistant({ ...assistant, enableGenerateImage: false })
+      updateAssistant({ enableGenerateImage: false })
     }
   }, [assistant, model, updateAssistant])
 

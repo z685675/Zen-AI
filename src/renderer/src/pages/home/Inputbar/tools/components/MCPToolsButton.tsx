@@ -111,8 +111,7 @@ const MCPToolsButton: FC<Props> = ({ quickPanel, setInputValue, resizeTextArea, 
   const navigate = useNavigate()
   const [form] = Form.useForm()
 
-  const { assistant, updateAssistant } = useAssistant(assistantId)
-  const model = assistant.model
+  const { assistant, model, updateAssistant } = useAssistant(assistantId)
   const { setTimeoutTimer } = useTimer()
 
   const isMountedRef = useRef(true)
@@ -136,10 +135,7 @@ const MCPToolsButton: FC<Props> = ({ quickPanel, setInputValue, resizeTextArea, 
       setTimeoutTimer(
         'updateMcpMode',
         () => {
-          updateAssistant({
-            ...assistant,
-            mcpMode: mode
-          })
+          updateAssistant({ mcpMode: mode })
         },
         200
       )
@@ -149,30 +145,34 @@ const MCPToolsButton: FC<Props> = ({ quickPanel, setInputValue, resizeTextArea, 
 
   const handleMcpServerSelect = useCallback(
     (server: MCPServer) => {
-      const update = { ...assistant }
-      if (assistantMcpServers.some((s) => s.id === server.id)) {
-        update.mcpServers = mcpServers.filter((s) => s.id !== server.id)
-      } else {
-        update.mcpServers = [...mcpServers, server]
-      }
+      const nextMcpServers = assistantMcpServers.some((s) => s.id === server.id)
+        ? mcpServers.filter((s) => s.id !== server.id)
+        : [...mcpServers, server]
 
-      if (update.mcpServers.length > 0 && isGeminiModel(model) && isToolUseModeFunction(assistant)) {
+      let enableUrlContext = assistant.enableUrlContext
+      let enableWebSearch = assistant.enableWebSearch
+
+      if (nextMcpServers.length > 0 && isGeminiModel(model) && isToolUseModeFunction(assistant)) {
         const provider = getProviderByModel(model)
         if (isSupportUrlContextProvider(provider) && assistant.enableUrlContext) {
           window.toast.warning(t('chat.mcp.warning.url_context'))
-          update.enableUrlContext = false
+          enableUrlContext = false
         }
         // Gemini 3+ supports combining built-in tools with function calling
         if (isGeminiWebSearchProvider(provider) && assistant.enableWebSearch && !isGemini3Model(model)) {
           window.toast.warning(t('chat.mcp.warning.gemini_web_search'))
-          update.enableWebSearch = false
+          enableWebSearch = false
         }
       }
 
-      update.mcpMode = 'manual'
-      updateAssistant(update)
+      updateAssistant({
+        mcpServers: nextMcpServers,
+        mcpMode: 'manual',
+        enableUrlContext,
+        enableWebSearch
+      })
     },
-    [assistant, assistantMcpServers, mcpServers, model, t, updateAssistant]
+    [assistant.enableUrlContext, assistant.enableWebSearch, assistantMcpServers, mcpServers, model, t, updateAssistant]
   )
 
   const handleMcpServerSelectRef = useRef(handleMcpServerSelect)

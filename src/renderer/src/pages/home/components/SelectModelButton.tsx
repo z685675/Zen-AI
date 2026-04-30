@@ -21,6 +21,7 @@ const SelectModelButton: FC<Props> = ({ assistant }) => {
   const { model, updateAssistant } = useAssistant(assistant.id)
   const { t } = useTranslation()
   const timerRef = useRef<NodeJS.Timeout>(undefined)
+  const assistantRef = useRef(assistant)
   const provider = useProvider(model?.provider)
 
   const modelFilter = (model: Model) => !isEmbeddingModel(model) && !isRerankModel(model)
@@ -35,11 +36,15 @@ const SelectModelButton: FC<Props> = ({ assistant }) => {
         const enabledWebSearch = isWebSearchModel(selectedModel)
         updateAssistant({
           model: selectedModel,
-          enableWebSearch: enabledWebSearch && assistant.enableWebSearch
+          enableWebSearch: enabledWebSearch && assistantRef.current.enableWebSearch
         })
       }, 200)
     }
   }
+
+  useEffect(() => {
+    assistantRef.current = assistant
+  }, [assistant])
 
   useEffect(() => {
     return () => {

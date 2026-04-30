@@ -129,6 +129,7 @@ const SelectModelPopupView: React.FC<Props> = ({
       const modelId = getModelUniqId(model)
       const groupName = getFancyProviderName(provider)
       const isCherryAi = provider.id === 'cherryai'
+      const normalizedModel = model.provider ? model : { ...model, provider: provider.id }
 
       return {
         key: isPinned ? `${modelId}_pinned` : modelId,
@@ -159,7 +160,7 @@ const SelectModelPopupView: React.FC<Props> = ({
             {first(model.name) || 'M'}
           </Avatar>
         ),
-        model,
+        model: normalizedModel,
         isPinned,
         isSelected: modelId === currentModelId
       }

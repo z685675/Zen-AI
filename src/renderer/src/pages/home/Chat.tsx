@@ -22,7 +22,7 @@ import { Flex } from 'antd'
 import { debounce } from 'lodash'
 import { AnimatePresence, motion } from 'motion/react'
 import type { FC } from 'react'
-import React, { useMemo, useRef, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useHotkeys } from 'react-hotkeys-hook'
 import { useTranslation } from 'react-i18next'
 import styled from 'styled-components'
@@ -87,6 +87,7 @@ const Chat: FC<Props> = ({ assistants, assistant: activeAssistant, activeTopic, 
 
   const mainRef = React.useRef<HTMLDivElement>(null)
   const contentSearchRef = React.useRef<ContentSearchRef>(null)
+  const assistantRef = useRef(assistant)
   const welcomeInputActionsRef = useRef<ProviderActionHandlers>({
     resizeTextArea: () => {},
     addNewTopic: () => {},
@@ -97,6 +98,10 @@ const Chat: FC<Props> = ({ assistants, assistant: activeAssistant, activeTopic, 
   })
   const [filterIncludeUser, setFilterIncludeUser] = useState(false)
   const { setTimeoutTimer } = useTimer()
+
+  useEffect(() => {
+    assistantRef.current = assistant
+  }, [assistant])
 
   useHotkeys('esc', () => {
     contentSearchRef.current?.disable()
@@ -140,7 +145,7 @@ const Chat: FC<Props> = ({ assistants, assistant: activeAssistant, activeTopic, 
       const enabledWebSearch = isWebSearchModel(selectedModel)
       updateAssistant({
         model: selectedModel,
-        enableWebSearch: enabledWebSearch && assistant.enableWebSearch
+        enableWebSearch: enabledWebSearch && assistantRef.current.enableWebSearch
       })
     }
   })

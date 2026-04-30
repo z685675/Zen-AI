@@ -88,6 +88,12 @@ const OPENCLAW_API_TYPES = {
   OPENAI_RESPOSNE: 'openai-responses'
 } as const
 
+const OPENCLAW_PROVIDER_KEY_SUFFIX: Record<string, string> = {
+  [OPENCLAW_API_TYPES.OPENAI]: 'openai',
+  [OPENCLAW_API_TYPES.ANTHROPIC]: 'anthropic',
+  [OPENCLAW_API_TYPES.OPENAI_RESPOSNE]: 'responses'
+}
+
 /**
  * Placeholder API keys for providers that don't require authentication.
  * OpenClaw requires a non-empty apiKey value even for local providers.
@@ -115,6 +121,15 @@ const ANTHROPIC_ENDPOINT_TYPES = ['anthropic']
 function isAnthropicEndpointType(model: Model): boolean {
   const endpointType = model.endpoint_type
   return endpointType ? ANTHROPIC_ENDPOINT_TYPES.includes(endpointType) : false
+}
+
+function isOpenAIResponsesEndpointType(model: Model): boolean {
+  return model.endpoint_type === 'openai-response'
+}
+
+function isLikelyAnthropicModel(model: Model): boolean {
+  const modelId = model.id?.toLowerCase() ?? ''
+  return /(^|[/.])claude([-.]|$)/.test(modelId)
 }
 
 /**
@@ -767,13 +782,16 @@ class OpenClawService {
         }
       }
 
-      // Build provider key
-      const providerKey = `cherry-${provider.id}`
+      const legacyProviderKey = this.getLegacyProviderKey(provider.id)
+      const modelGroups = this.groupModelsByApiType(provider)
 
-      // Determine the API type based on model, not provider type
-      // Mixed providers (cherryin, aihubmix, etc.) can have both OpenAI and Anthropic endpoints
-      const apiType = this.determineApiType(provider, primaryModel)
-      const baseUrl = this.getBaseUrlForApiType(provider, apiType)
+      if (modelGroups.size === 0) {
+        modelGroups.set(this.determineApiType(provider, primaryModel), [primaryModel])
+      }
+
+      const isMixedProvider = modelGroups.size > 1
+      const primaryApiType = this.determineApiType(provider, primaryModel)
+      const primaryProviderKey = this.getProviderKey(provider.id, primaryApiType, isMixedProvider)
 
       // Get API key - for vertexai, get access token from VertexAIService
       // If multiple API keys are configured (comma-separated), use the first one
@@ -800,28 +818,38 @@ class OpenClawService {
         apiKey = NO_KEY_PLACEHOLDERS[provider.id] ?? NO_KEY_PLACEHOLDERS[provider.type] ?? 'no-key-required'
       }
 
-      // Build OpenClaw provider config
-      // Preserve existing model-level config that users may have modified in OpenClaw
-      // (e.g., vision, custom context window, extra parameters)
       config.models = config.models || { mode: 'merge', providers: {} }
       config.models.providers = config.models.providers || {}
-      const existingModels = config.models.providers[providerKey]?.models || []
-      const existingModelMap = new Map(existingModels.map((m) => [m.id, m]))
 
-      // Build OpenClaw provider config with merge strategy
-      const openclawProvider: OpenClawProviderConfig = {
-        baseUrl,
-        apiKey,
-        api: apiType,
-        models: provider.models.map((m) => {
-          const existing = existingModelMap.get(m.id)
-          return {
-            ...existing,
-            id: m.id,
-            name: m.name,
-            contextWindow: existing?.contextWindow ?? 128000
-          }
-        })
+      const existingProviderKeys = Object.keys(config.models.providers).filter(
+        (key) => key === legacyProviderKey || key.startsWith(`${legacyProviderKey}-`)
+      )
+      const existingModelMap = this.getExistingModelMap(config, [legacyProviderKey, ...existingProviderKeys])
+
+      for (const key of existingProviderKeys) {
+        delete config.models.providers[key]
+      }
+
+      for (const [apiType, models] of modelGroups) {
+        const providerKey = this.getProviderKey(provider.id, apiType, isMixedProvider)
+        const baseUrl = this.getBaseUrlForApiType(provider, apiType)
+
+        const openclawProvider: OpenClawProviderConfig = {
+          baseUrl,
+          apiKey,
+          api: apiType,
+          models: models.map((model) => {
+            const existing = existingModelMap.get(model.id)
+            return {
+              ...existing,
+              id: model.id,
+              name: model.name,
+              contextWindow: existing?.contextWindow ?? 128000
+            }
+          })
+        }
+
+        config.models.providers[providerKey] = openclawProvider
       }
 
       // Set gateway mode to local (required for gateway to start)
@@ -833,14 +861,11 @@ class OpenClawService {
       config.gateway.auth = { token }
       this.gatewayAuthToken = token
 
-      // Update config
-      config.models.providers[providerKey] = openclawProvider
-
       // Set primary model
       config.agents = config.agents || { defaults: {} }
       config.agents.defaults = config.agents.defaults || {}
       config.agents.defaults.model = {
-        primary: `${providerKey}/${primaryModel.id}`
+        primary: `${primaryProviderKey}/${primaryModel.id}`
       }
 
       // Write config file
@@ -1008,8 +1033,13 @@ class OpenClawService {
       return OPENCLAW_API_TYPES.ANTHROPIC
     }
 
-    // 3. Check if provider has anthropicApiHost configured
-    if (provider.anthropicApiHost) {
+    if (isOpenAIResponsesEndpointType(model)) {
+      return OPENCLAW_API_TYPES.OPENAI_RESPOSNE
+    }
+
+    // 3. Mixed providers may expose both OpenAI and Anthropic hosts.
+    // Only route Claude-like models to the Anthropic API in that case.
+    if (provider.anthropicApiHost && (provider.isAnthropicModel?.(model) || isLikelyAnthropicModel(model))) {
       return OPENCLAW_API_TYPES.ANTHROPIC
     }
 
@@ -1087,6 +1117,46 @@ class OpenClawService {
    */
   private formatAnthropicUrl(apiHost: string): string {
     return withoutTrailingSlash(apiHost)
+  }
+
+  private getLegacyProviderKey(providerId: string): string {
+    return `cherry-${providerId}`
+  }
+
+  private getProviderKey(providerId: string, apiType: string, splitByApiType = true): string {
+    if (!splitByApiType) {
+      return this.getLegacyProviderKey(providerId)
+    }
+    const suffix = OPENCLAW_PROVIDER_KEY_SUFFIX[apiType] || apiType
+    return `${this.getLegacyProviderKey(providerId)}-${suffix}`
+  }
+
+  private groupModelsByApiType(provider: Provider): Map<string, Model[]> {
+    const groups = new Map<string, Model[]>()
+
+    for (const model of provider.models) {
+      const apiType = this.determineApiType(provider, model)
+      const models = groups.get(apiType) || []
+      models.push(model)
+      groups.set(apiType, models)
+    }
+
+    return groups
+  }
+
+  private getExistingModelMap(config: OpenClawConfig, providerKeys: string[]): Map<string, OpenClawModelConfig> {
+    const existingModelMap = new Map<string, OpenClawModelConfig>()
+
+    for (const key of providerKeys) {
+      const models = config.models?.providers?.[key]?.models || []
+      for (const model of models) {
+        if (!existingModelMap.has(model.id)) {
+          existingModelMap.set(model.id, model)
+        }
+      }
+    }
+
+    return existingModelMap
   }
 }
 

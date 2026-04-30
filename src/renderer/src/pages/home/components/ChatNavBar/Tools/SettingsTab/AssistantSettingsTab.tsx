@@ -66,7 +66,8 @@ interface Props {
 
 const AssistantSettingsTab = (props: Props) => {
   const { assistant } = useAssistant(props.assistant.id)
-  const { provider } = useProvider(assistant.model.provider)
+  const model = assistant.model || getDefaultModel()
+  const { provider } = useProvider(model.provider)
 
   const { messageStyle, fontSize, language } = useSettings()
   const { theme } = useTheme()
@@ -136,8 +137,6 @@ const AssistantSettingsTab = (props: Props) => {
     },
     [dispatch, theme, codeEditor.enabled]
   )
-
-  const model = assistant.model || getDefaultModel()
 
   const showOpenAiSettings =
     isOpenAICompatibleProvider(provider) ||
