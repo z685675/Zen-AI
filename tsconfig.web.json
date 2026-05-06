@@ -12,7 +12,12 @@
     "packages/mcp-trace/**/*",
     "packages/shared/**/*"
   ],
-  "exclude": ["packages/aiCore/src/**/__tests__/**"],
+  "exclude": [
+    "**/__tests__/**",
+    "**/*.test.*",
+    "**/*.bench.*",
+    "packages/aiCore/src/**/__tests__/**"
+  ],
   "compilerOptions": {
     "composite": true,
     "incremental": true,

@@ -1,4 +1,5 @@
 import { CodeBlockView, HtmlArtifactsCard } from '@renderer/components/CodeBlockView'
+import { isWin } from '@renderer/config/constant'
 import { useSettings } from '@renderer/hooks/useSettings'
 import { ClickableFilePath } from '@renderer/pages/home/Messages/Tools/MessageAgentTools/ClickableFilePath'
 import { EVENT_NAMES, EventEmitter } from '@renderer/services/EventService'
@@ -67,7 +68,7 @@ const CodeBlock: React.FC<Props> = ({ children, className, node, blockId }) => {
   }
 
   // Detect inline code that looks like an absolute file path (e.g. /Users/foo/bar.tsx)
-  if (typeof children === 'string' && /^\/[\w.-]+(?:\/[\w.-]+)+$/.test(children)) {
+  if (!isWin && typeof children === 'string' && /^\/[\w.-]+(?:\/[\w.-]+)+$/.test(children)) {
     return (
       <code className={className} style={{ textWrap: 'wrap', fontSize: '95%', padding: '2px 4px' }}>
         <ClickableFilePath path={children} />

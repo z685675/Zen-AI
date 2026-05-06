@@ -14,6 +14,7 @@ interface ShowParams {
   baseUrl: string
   type?: ProviderType
   name?: string
+  disableOtherProviders?: boolean
 }
 
 interface PopupResult {
@@ -26,7 +27,7 @@ interface Props extends ShowParams {
   resolve: (result: PopupResult) => void
 }
 
-const PopupContainer = ({ id, apiKey: newApiKey, baseUrl, type, name, resolve }: Props) => {
+const PopupContainer = ({ id, apiKey: newApiKey, baseUrl, type, name, disableOtherProviders, resolve }: Props) => {
   const { t } = useTranslation()
   const providers = useAllProviders()
   const [open, setOpen] = useState(true)
@@ -126,6 +127,13 @@ const PopupContainer = ({ id, apiKey: newApiKey, baseUrl, type, name, resolve }:
           </Descriptions.Item>
         </Descriptions>
         <ConfirmMessage>{confirmMessage}</ConfirmMessage>
+        {disableOtherProviders && (
+          <ConfirmHint>
+            {t('settings.models.provider_import_disables_others', {
+              defaultValue: '导入后将自动禁用其他 Provider，仅保留当前导入的 Provider 为启用状态。'
+            })}
+          </ConfirmHint>
+        )}
       </Container>
     </Modal>
   )
@@ -139,6 +147,12 @@ const Container = styled.div`
 const ConfirmMessage = styled.div`
   color: var(--color-text);
   margin-top: 16px;
+`
+
+const ConfirmHint = styled.div`
+  color: var(--color-text-2);
+  margin-top: 8px;
+  line-height: 1.5;
 `
 
 const TopViewKey = 'UrlSchemaInfoPopup'

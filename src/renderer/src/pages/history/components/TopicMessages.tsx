@@ -4,8 +4,10 @@ import SearchPopup from '@renderer/components/Popups/SearchPopup'
 import { MessageEditingProvider } from '@renderer/context/MessageEditingContext'
 import useScrollPosition from '@renderer/hooks/useScrollPosition'
 import { useSettings } from '@renderer/hooks/useSettings'
+import { useTimer } from '@renderer/hooks/useTimer'
 import { getTopicById } from '@renderer/hooks/useTopic'
 import { getAssistantById } from '@renderer/services/AssistantService'
+import { EVENT_NAMES, EventEmitter } from '@renderer/services/EventService'
 import { isGenerating, locateToMessage } from '@renderer/services/MessagesService'
 import NavigationService from '@renderer/services/NavigationService'
 import type { Topic } from '@renderer/types'
@@ -27,16 +29,28 @@ const TopicMessages: FC<Props> = ({ topic: _topic, ...props }) => {
   const navigate = NavigationService.navigate!
   const { handleScroll, containerRef } = useScrollPosition('TopicMessages')
   const { messageStyle } = useSettings()
+  const { setTimeoutTimer } = useTimer()
 
   const [topic, setTopic] = useState<Topic | undefined>(_topic)
 
   useEffect(() => {
-    if (!_topic) return
+    let cancelled = false
+
+    if (!_topic) {
+      setTopic(undefined)
+      return
+    }
 
     void runAsyncFunction(async () => {
       const topic = await getTopicById(_topic.id)
-      setTopic(topic)
+      if (!cancelled) {
+        setTopic(topic || undefined)
+      }
     })
+
+    return () => {
+      cancelled = true
+    }
   }, [_topic])
 
   const isEmpty = (topic?.messages || []).length === 0
@@ -49,7 +63,12 @@ const TopicMessages: FC<Props> = ({ topic: _topic, ...props }) => {
     await isGenerating()
     SearchPopup.hide()
     const assistant = getAssistantById(topic.assistantId)
+    if (!assistant) {
+      window.toast.error(t('history.error.topic_not_found'))
+      return
+    }
     navigate('/', { state: { assistant, topic } })
+    setTimeoutTimer('onContinueChat', () => EventEmitter.emit(EVENT_NAMES.SHOW_TOPIC_SIDEBAR), 100)
   }
 
   return (

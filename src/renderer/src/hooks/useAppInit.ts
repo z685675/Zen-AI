@@ -19,9 +19,10 @@ import { sendToolApprovalNotification } from '@renderer/utils/userConfirmation'
 import { defaultLanguage } from '@shared/config/constant'
 import { IpcChannel } from '@shared/IpcChannel'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { showAppUpdateModal } from '../utils/appUpdate'
 import { useDefaultModel } from './useAssistant'
 import useFullScreenNotice from './useFullScreenNotice'
 import { useRuntime } from './useRuntime'
@@ -47,6 +48,7 @@ export function useAppInit() {
   const avatar = useLiveQuery(() => db.settings.get('image://avatar'))
   const { theme } = useTheme()
   const memoryConfig = useAppSelector(selectMemoryConfig)
+  const hasShownStartupUpdate = useRef(false)
 
   useEffect(() => {
     document.getElementById('spinner')?.remove()
@@ -235,6 +237,21 @@ export function useAppInit() {
   useEffect(() => {
     // TODO: init data collection
   }, [enableDataCollection])
+
+  useEffect(() => {
+    const removeAvailableListener = window.api.update.onAvailable((payload) => {
+      if (payload.source !== 'auto' || hasShownStartupUpdate.current) {
+        return
+      }
+
+      hasShownStartupUpdate.current = true
+      showAppUpdateModal(t, payload)
+    })
+
+    return () => {
+      removeAvailableListener()
+    }
+  }, [t])
 
   // Update memory service configuration when it changes
   useEffect(() => {

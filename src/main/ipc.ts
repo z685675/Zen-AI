@@ -18,7 +18,6 @@ import {
 } from '@main/utils/process'
 import { handleZoomFactor } from '@main/utils/zoom'
 import type { SpanEntity, TokenUsage } from '@mcp-trace/trace-core'
-import { APP_NAME } from '@shared/config/constant'
 import type { UpgradeChannel } from '@shared/config/constant'
 import { MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH } from '@shared/config/constant'
 import type { LocalTransferConnectPayload } from '@shared/config/types'
@@ -65,6 +64,7 @@ import * as NutstoreService from './services/NutstoreService'
 import ObsidianVaultService from './services/ObsidianVaultService'
 import { ocrService } from './services/ocr/OcrService'
 import { openClawService } from './services/OpenClawService'
+import { AppUpdateService } from './services/AppUpdateService'
 import { isOvmsSupported } from './services/OvmsManager'
 import powerMonitorService from './services/PowerMonitorService'
 import { proxyManager } from './services/ProxyManager'
@@ -118,6 +118,7 @@ const dxtService = new DxtService()
 
 export async function registerIpc(mainWindow: BrowserWindow, app: Electron.App) {
   const notificationService = new NotificationService()
+  const appUpdateService = new AppUpdateService(mainWindow, app.getVersion())
 
   // Register shutdown handlers
   powerMonitorService.registerShutdownHandler(() => {
@@ -226,6 +227,10 @@ export async function registerIpc(mainWindow: BrowserWindow, app: Electron.App) 
   ipcMain.handle(IpcChannel.App_SetAutoUpdate, (_, isActive: boolean) => {
     configManager.setAutoUpdate(isActive)
   })
+
+  if (configManager.getAutoUpdate()) {
+    appUpdateService.scheduleStartupCheck()
+  }
 
   ipcMain.handle(IpcChannel.App_SetTestPlan, async (_, isActive: boolean) => {
     logger.info(`set test plan: ${isActive}`)
@@ -483,11 +488,7 @@ export async function registerIpc(mainWindow: BrowserWindow, app: Electron.App) 
 
   // check for update
   ipcMain.handle(IpcChannel.App_CheckForUpdate, async () => {
-    return {
-      currentVersion: app.getVersion(),
-      updateInfo: null,
-      message: `${APP_NAME} uses manual package downloads instead of in-app updates.`
-    }
+    return appUpdateService.checkForUpdates('manual')
   })
 
   // notification

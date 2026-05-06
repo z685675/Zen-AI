@@ -153,11 +153,12 @@ export const TopicManagePanel: React.FC<TopicManagePanelProps> = ({
     )
 
     const actualRemainingTopics = assistant.topics.filter((topic) => !successfulIds.has(topic.id))
+    const nextActiveTopic = actualRemainingTopics[0]
     updateTopics(actualRemainingTopics)
 
     // Switch to first remaining topic if current topic was deleted
-    if (successfulIds.has(activeTopic.id) && actualRemainingTopics.length > 0) {
-      setActiveTopic(actualRemainingTopics[0])
+    if (successfulIds.has(activeTopic.id) && nextActiveTopic) {
+      setActiveTopic(nextActiveTopic)
     }
 
     if (successfulIds.size === idsArray.length) {
@@ -184,7 +185,8 @@ export const TopicManagePanel: React.FC<TopicManagePanelProps> = ({
       if (!targetAssistant) return
 
       const remainingTopics = assistant.topics.filter((topic) => !selectedIds.has(topic.id))
-      if (remainingTopics.length === 0) {
+      const nextActiveTopic = remainingTopics[0]
+      if (!nextActiveTopic) {
         window.toast.error(t('chat.topics.manage.error.at_least_one'))
         return
       }
@@ -201,7 +203,7 @@ export const TopicManagePanel: React.FC<TopicManagePanelProps> = ({
 
       // Switch to first remaining topic if current topic was moved
       if (selectedIds.has(activeTopic.id)) {
-        setActiveTopic(remainingTopics[0])
+        setActiveTopic(nextActiveTopic)
       }
 
       window.toast.success(t('chat.topics.manage.move.success', { count: movedCount }))

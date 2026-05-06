@@ -24,12 +24,23 @@ const SearchMessage: FC<Props> = ({ message, ...props }) => {
   const [topic, setTopic] = useState<Topic | null>(null)
 
   useEffect(() => {
+    let cancelled = false
+
+    if (!message?.topicId) {
+      setTopic(null)
+      return
+    }
+
     void runAsyncFunction(async () => {
-      if (message?.topicId) {
-        const topic = await getTopicById(message.topicId)
+      const topic = await getTopicById(message.topicId)
+      if (!cancelled) {
         setTopic(topic)
       }
     })
+
+    return () => {
+      cancelled = true
+    }
   }, [message])
 
   if (!message) {

@@ -18,6 +18,7 @@ import store, { useAppDispatch, useAppSelector } from '@renderer/store'
 import type { AssistantIconType, SendMessageShortcut, SettingsState } from '@renderer/store/settings'
 import {
   setAssistantIconType,
+  setAutoCheckUpdate as _setAutoCheckUpdate,
   setDisableHardwareAcceleration,
   setEnableDeveloperMode,
   setLaunchOnBoot,
@@ -95,6 +96,10 @@ export function useSettings() {
     },
     setAssistantIconType(assistantIconType: AssistantIconType) {
       dispatch(setAssistantIconType(assistantIconType))
+    },
+    setAutoCheckUpdate(autoCheckUpdate: boolean) {
+      dispatch(_setAutoCheckUpdate(autoCheckUpdate))
+      void window.api.setAutoUpdate(autoCheckUpdate)
     },
     setDisableHardwareAcceleration(disableHardwareAcceleration: boolean) {
       dispatch(setDisableHardwareAcceleration(disableHardwareAcceleration))

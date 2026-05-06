@@ -47,6 +47,10 @@ const HomePage: FC = () => {
     state?.assistant || _activeAssistant || defaultConversationAssistant
   )
   const { activeTopic, setActiveTopic: _setActiveTopic } = useActiveTopic(activeAssistant?.id ?? '', state?.topic)
+  const latestActiveAssistant = useMemo(
+    () => assistants.find((assistant) => assistant.id === activeAssistant?.id),
+    [activeAssistant?.id, assistants]
+  )
 
   _activeAssistant = activeAssistant
 
@@ -216,6 +220,12 @@ const HomePage: FC = () => {
   }, [activeAssistant, defaultConversationAssistant])
 
   useEffect(() => {
+    if (latestActiveAssistant && latestActiveAssistant !== activeAssistant) {
+      _setActiveAssistant(latestActiveAssistant)
+    }
+  }, [activeAssistant, latestActiveAssistant])
+
+  useEffect(() => {
     if (activeTopic || !activeAssistant) {
       return
     }
@@ -248,7 +258,7 @@ const HomePage: FC = () => {
   useEffect(() => {
     const unsubscribes = [
       EventEmitter.on(EVENT_NAMES.SHOW_TOPIC_SIDEBAR, () => {
-        if (!isLeftNavbar) return
+        if (!isLeftNavbar || !activeAssistant || !activeTopic) return
         void TopicsDrawer.show({
           activeAssistant,
           setActiveAssistant,
@@ -257,7 +267,7 @@ const HomePage: FC = () => {
         })
       }),
       EventEmitter.on(EVENT_NAMES.SWITCH_TOPIC_SIDEBAR, () => {
-        if (!isLeftNavbar) return
+        if (!isLeftNavbar || !activeAssistant || !activeTopic) return
         void TopicsDrawer.show({
           activeAssistant,
           setActiveAssistant,
@@ -287,7 +297,7 @@ const HomePage: FC = () => {
 
   return (
     <Container id="home-page">
-      {isLeftNavbar && (
+      {isLeftNavbar && activeAssistant && activeTopic && (
         <Navbar
           activeAssistant={activeAssistant}
           activeTopic={activeTopic}
@@ -298,7 +308,7 @@ const HomePage: FC = () => {
       )}
       <ContentContainer id={isLeftNavbar ? 'content-container' : undefined}>
         <AnimatePresence initial={false}>
-          {showAssistants && (
+          {showAssistants && activeAssistant && activeTopic && (
             <ErrorBoundary>
               <motion.div
                 initial={{ width: 0, opacity: 0 }}

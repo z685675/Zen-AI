@@ -73,36 +73,25 @@ export const QuickPanelView: React.FC<Props> = ({ setInputText }) => {
   const prevSearchTextRef = useRef('')
   const prevSymbolRef = useRef('')
   const { setTimeoutTimer } = useTimer()
+  const clampIndex = useCallback((nextIndex: number, length: number) => {
+    if (length <= 0) {
+      return -1
+    }
+    return Math.min(Math.max(nextIndex, -1), length - 1)
+  }, [])
 
   // Use injected filter and sort functions, or fall back to defaults
   const filterFn = ctx.filterFn || defaultFilterFn
   const sortFn = ctx.sortFn || defaultSortFn
   // 处理搜索，过滤列表（始终保留 alwaysVisible 项在顶部）
   const list = useMemo(() => {
-    if (!ctx.isVisible && !ctx.symbol) return []
+    if (!ctx.isVisible && !ctx.symbol) {
+      return []
+    }
 
     const baseList = (ctx.list || []).filter((item) => !item.hidden)
 
     if (ctx.manageListExternally) {
-      const combinedLength = baseList.length
-      const isSymbolChanged = prevSymbolRef.current !== ctx.symbol
-      if (isSymbolChanged) {
-        const maxIndex = combinedLength > 0 ? combinedLength - 1 : -1
-        const desiredIndex =
-          typeof ctx.defaultIndex === 'number' ? Math.min(Math.max(ctx.defaultIndex, -1), maxIndex) : -1
-        setIndex(desiredIndex)
-      } else {
-        setIndex((prevIndex) => {
-          if (prevIndex >= combinedLength) {
-            return combinedLength > 0 ? combinedLength - 1 : -1
-          }
-          return prevIndex
-        })
-      }
-
-      prevSearchTextRef.current = ''
-      prevSymbolRef.current = ctx.symbol
-
       return baseList
     }
 
@@ -114,7 +103,7 @@ export const QuickPanelView: React.FC<Props> = ({ setInputText }) => {
       .join('.*')
     const fuzzyRegex = new RegExp(fuzzyPattern, 'ig')
 
-    // 拆分：固定显示项（不参与过滤）与普通项
+    // ???????????????????
     const pinnedItems = baseList.filter((item) => item.alwaysVisible)
     const normalItems = baseList.filter((item) => !item.alwaysVisible)
 
@@ -126,37 +115,50 @@ export const QuickPanelView: React.FC<Props> = ({ setInputText }) => {
     // Sort filtered items using injected sort function
     const sortedNormalItems = sortFn(filteredNormalItems, _searchText)
 
-    // 只有在搜索文本变化或面板符号变化时才重置index
-    const isSearchChanged = prevSearchTextRef.current !== searchText
+    // ????? + ???????
+    return [...pinnedItems, ...sortedNormalItems]
+  }, [ctx.isVisible, ctx.symbol, ctx.manageListExternally, ctx.list, ctx.defaultIndex, searchText, filterFn, sortFn])
+
+  useEffect(() => {
+    if (!ctx.isVisible && !ctx.symbol) {
+      prevSymbolRef.current = ''
+      prevSearchTextRef.current = ''
+      setIndex(-1)
+      return
+    }
+
+    const listLength = list.length
     const isSymbolChanged = prevSymbolRef.current !== ctx.symbol
 
-    if (isSearchChanged || isSymbolChanged) {
-      const combinedLength = pinnedItems.length + sortedNormalItems.length
+    if (ctx.manageListExternally) {
       if (isSymbolChanged) {
-        const maxIndex = combinedLength > 0 ? combinedLength - 1 : -1
-        const desiredIndex =
-          typeof ctx.defaultIndex === 'number' ? Math.min(Math.max(ctx.defaultIndex, -1), maxIndex) : -1
+        const desiredIndex = typeof ctx.defaultIndex === 'number' ? clampIndex(ctx.defaultIndex, listLength) : -1
         setIndex(desiredIndex)
       } else {
-        setIndex(-1) // 搜索文本变化时不默认高亮
+        setIndex((prevIndex) => clampIndex(prevIndex, listLength))
+      }
+
+      prevSearchTextRef.current = ''
+      prevSymbolRef.current = ctx.symbol
+      return
+    }
+
+    const isSearchChanged = prevSearchTextRef.current !== searchText
+
+    if (isSearchChanged || isSymbolChanged) {
+      if (isSymbolChanged) {
+        const desiredIndex = typeof ctx.defaultIndex === 'number' ? clampIndex(ctx.defaultIndex, listLength) : -1
+        setIndex(desiredIndex)
+      } else {
+        setIndex(-1)
       }
     } else {
-      // 如果当前index超出范围，调整到有效范围内
-      setIndex((prevIndex) => {
-        const combinedLength = pinnedItems.length + sortedNormalItems.length
-        if (prevIndex >= combinedLength) {
-          return combinedLength > 0 ? combinedLength - 1 : -1
-        }
-        return prevIndex
-      })
+      setIndex((prevIndex) => clampIndex(prevIndex, listLength))
     }
 
     prevSearchTextRef.current = searchText
     prevSymbolRef.current = ctx.symbol
-
-    // 固定项置顶 + 排序后的普通项
-    return [...pinnedItems, ...sortedNormalItems]
-  }, [ctx.isVisible, ctx.symbol, ctx.manageListExternally, ctx.list, ctx.defaultIndex, searchText, filterFn, sortFn])
+  }, [clampIndex, ctx.defaultIndex, ctx.isVisible, ctx.manageListExternally, ctx.symbol, list.length, searchText])
 
   const canForwardAndBackward = useMemo(() => {
     return list.some((item) => item.isMenu) || historyPanel.length > 0
@@ -574,8 +576,9 @@ export const QuickPanelView: React.FC<Props> = ({ setInputText }) => {
           scrollTriggerRef.current = 'initial'
           clearSearchText(false)
           if (historyPanel.length > 0) {
-            const lastPanel = historyPanel.pop()
+            const lastPanel = historyPanel[historyPanel.length - 1]
             if (lastPanel) {
+              setHistoryPanel((prev) => prev.slice(0, -1))
               ctx.open(lastPanel)
             }
           }

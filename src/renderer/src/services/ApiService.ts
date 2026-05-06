@@ -38,7 +38,6 @@ import {
   getQuickModel
 } from './AssistantService'
 import { ConversationService } from './ConversationService'
-import FileManager from './FileManager'
 import { injectUserMessageWithKnowledgeSearchPrompt } from './KnowledgeService'
 import type { BlockManager } from './messageStreaming'
 import type { StreamProcessorCallbacks } from './StreamProcessingService'
@@ -54,6 +53,7 @@ import type { StreamProcessorCallbacks } from './StreamProcessingService'
 // FIXME: 这里太多重复逻辑，需要重构
 
 const logger = loggerService.withContext('ApiService')
+const SUMMARY_REQUEST_TIMEOUT_MS = 15_000
 
 /**
  * Get the MCP servers to use based on the assistant's MCP mode.
@@ -314,9 +314,8 @@ async function collectImagesFromMessages(userMessage: Message, assistantMessage?
   const userImageBlocks = findImageBlocks(userMessage)
   for (const block of userImageBlocks) {
     if (block.file) {
-      const base64 = await FileManager.readBase64File(block.file)
-      const mimeType = block.file.type || 'image/png'
-      images.push(`data:${mimeType};base64,${base64}`)
+      const { data } = await window.api.file.base64Image(block.file.name)
+      images.push(data)
     }
   }
 
@@ -400,16 +399,18 @@ export async function fetchImageGeneration({
       image: { type: imageType, images }
     })
 
+    const imageResponse = {
+      usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+      metrics: {
+        completion_tokens: 0,
+        time_first_token_millsec: 0,
+        time_completion_millsec: Date.now() - startTime
+      }
+    }
+    onChunkReceived({ type: ChunkType.BLOCK_COMPLETE, response: imageResponse })
     onChunkReceived({
       type: ChunkType.LLM_RESPONSE_COMPLETE,
-      response: {
-        usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
-        metrics: {
-          completion_tokens: 0,
-          time_first_token_millsec: 0,
-          time_completion_millsec: Date.now() - startTime
-        }
-      }
+      response: imageResponse
     })
   } catch (error) {
     onChunkReceived({ type: ChunkType.ERROR, error: error as Error })
@@ -493,7 +494,9 @@ export async function fetchMessagesSummary({
     system: prompt,
     prompt: conversation,
     providerOptions,
-    ...standardParams
+    ...standardParams,
+    abortSignal: AbortSignal.timeout(SUMMARY_REQUEST_TIMEOUT_MS),
+    maxRetries: 0
   }
 
   const middlewareConfig: AiSdkMiddlewareConfig = {
@@ -575,7 +578,9 @@ export async function fetchNoteSummary({ content, assistant }: { content: string
 
   const llmMessages = {
     system: prompt,
-    prompt: purifiedContent
+    prompt: purifiedContent,
+    abortSignal: AbortSignal.timeout(SUMMARY_REQUEST_TIMEOUT_MS),
+    maxRetries: 0
   }
 
   const middlewareConfig: AiSdkMiddlewareConfig = {

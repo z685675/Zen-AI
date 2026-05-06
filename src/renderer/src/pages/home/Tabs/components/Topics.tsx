@@ -147,6 +147,27 @@ export const Topics: React.FC<Props> = ({ assistant: _assistant, activeTopic, se
     void EventEmitter.emit(EVENT_NAMES.CLEAR_MESSAGES, topic)
   }, [])
 
+  const getReplacementTopic = useCallback(
+    (topicId: string) => {
+      if (assistant.topics.length <= 1) {
+        return null
+      }
+
+      const index = findIndex(assistant.topics, (t) => t.id === topicId)
+      if (index === -1) {
+        return assistant.topics[0] ?? null
+      }
+
+      return (
+        assistant.topics[index + 1] ??
+        assistant.topics[index - 1] ??
+        assistant.topics.find((t) => t.id !== topicId) ??
+        null
+      )
+    },
+    [assistant.topics]
+  )
+
   const handleConfirmDelete = useCallback(
     async (topic: Topic, e: React.MouseEvent) => {
       e.stopPropagation()
@@ -156,16 +177,16 @@ export const Topics: React.FC<Props> = ({ assistant: _assistant, activeTopic, se
         addTopic(newTopic)
         setActiveTopic(newTopic)
       } else {
-        const index = findIndex(assistant.topics, (t) => t.id === topic.id)
-        if (topic.id === activeTopic.id) {
-          setActiveTopic(assistant.topics[index + 1 === assistant.topics.length ? index - 1 : index + 1])
+        const replacementTopic = getReplacementTopic(topic.id)
+        if (topic.id === activeTopic.id && replacementTopic) {
+          setActiveTopic(replacementTopic)
         }
       }
       await modelGenerating()
       removeTopic(topic)
       setDeletingTopicId(null)
     },
-    [activeTopic.id, addTopic, assistant.id, assistant.topics, removeTopic, setActiveTopic]
+    [activeTopic.id, addTopic, assistant.id, assistant.topics.length, getReplacementTopic, removeTopic, setActiveTopic]
   )
 
   const onPinTopic = useCallback(
@@ -210,22 +231,28 @@ export const Topics: React.FC<Props> = ({ assistant: _assistant, activeTopic, se
     async (topic: Topic) => {
       await modelGenerating()
       if (topic.id === activeTopic?.id) {
-        const index = findIndex(assistant.topics, (t) => t.id === topic.id)
-        setActiveTopic(assistant.topics[index + 1 === assistant.topics.length ? index - 1 : index + 1])
+        const replacementTopic = getReplacementTopic(topic.id)
+        if (replacementTopic) {
+          setActiveTopic(replacementTopic)
+        }
       }
       removeTopic(topic)
     },
-    [assistant.topics, removeTopic, setActiveTopic, activeTopic]
+    [activeTopic, getReplacementTopic, removeTopic, setActiveTopic]
   )
 
   const onMoveTopic = useCallback(
     async (topic: Topic, toAssistant: Assistant) => {
       await modelGenerating()
-      const index = findIndex(assistant.topics, (t) => t.id === topic.id)
-      setActiveTopic(assistant.topics[index + 1 === assistant.topics.length ? 0 : index + 1])
+      if (topic.id === activeTopic.id) {
+        const replacementTopic = getReplacementTopic(topic.id)
+        if (replacementTopic) {
+          setActiveTopic(replacementTopic)
+        }
+      }
       moveTopic(topic, toAssistant)
     },
-    [assistant.topics, moveTopic, setActiveTopic]
+    [activeTopic.id, getReplacementTopic, moveTopic, setActiveTopic]
   )
 
   const onSwitchTopic = useCallback(

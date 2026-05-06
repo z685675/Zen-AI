@@ -1,16 +1,13 @@
 import { loggerService } from '@logger'
-import { isMac } from '@main/constant'
 
-import { windowService } from '../WindowService'
+import { isProviderImportPayload, navigateToProviderImport } from './provider-import'
 const logger = loggerService.withContext('URLSchema:handleProvidersProtocolUrl')
 
 function ParseData(data: string) {
   try {
-    const result = JSON.parse(
+    return JSON.parse(
       Buffer.from(data, 'base64').toString('utf-8').replaceAll("'", '"').replaceAll('(', '').replaceAll(')', '')
     )
-
-    return JSON.stringify(result)
   } catch (error) {
     logger.error('ParseData error:', error as Error)
     return null
@@ -35,37 +32,18 @@ export async function handleProvidersProtocolUrl(url: URL) {
       const params = new URLSearchParams(processedSearch)
       const data = ParseData(params.get('data')?.replaceAll('_', '+').replaceAll('-', '/') || '')
 
-      if (!data) {
+      if (!data || !isProviderImportPayload(data)) {
         logger.error('handleProvidersProtocolUrl data is null or invalid')
         return
       }
 
-      const mainWindow = windowService.getMainWindow()
       const version = params.get('v')
       if (version == '1') {
         // TODO: handle different version
         logger.debug('handleProvidersProtocolUrl', { data, version })
       }
 
-      // add check there is window.navigate function in mainWindow
-      if (
-        mainWindow &&
-        !mainWindow.isDestroyed() &&
-        (await mainWindow.webContents.executeJavaScript(`typeof window.navigate === 'function'`))
-      ) {
-        void mainWindow.webContents.executeJavaScript(
-          `window.navigate('/settings/provider?addProviderData=${encodeURIComponent(data)}')`
-        )
-
-        if (isMac) {
-          windowService.showMainWindow()
-        }
-      } else {
-        setTimeout(() => {
-          logger.debug('handleProvidersProtocolUrl timeout', { data, version })
-          void handleProvidersProtocolUrl(url)
-        }, 1000)
-      }
+      await navigateToProviderImport(data)
       break
     }
     default:

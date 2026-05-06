@@ -7,15 +7,16 @@ import {
 } from '@renderer/components/DraggableList'
 import { DeleteIcon, EditIcon } from '@renderer/components/Icons'
 import { ProviderAvatar } from '@renderer/components/ProviderAvatar'
-import { useProviders, useSystemProviders, useUserProviders } from '@renderer/hooks/useProvider'
+import { useAllProviders, useProviders, useSystemProviders, useUserProviders } from '@renderer/hooks/useProvider'
 import { useTimer } from '@renderer/hooks/useTimer'
+import { fetchModels } from '@renderer/services/ApiService'
 import ImageStorage from '@renderer/services/ImageStorage'
 import type { Provider, ProviderType } from '@renderer/types'
 import { getFancyProviderName, matchKeywordsInModel, matchKeywordsInProvider, uuid } from '@renderer/utils'
 import { isAnthropicSupportedProvider } from '@renderer/utils/provider'
 import type { MenuProps } from 'antd'
 import { Button, Dropdown, Input, Tag } from 'antd'
-import { Check, Filter, GripVertical, PlusIcon, Search, UserPen } from 'lucide-react'
+import { Check, FileUp, Filter, GripVertical, PlusIcon, Search, UserPen } from 'lucide-react'
 import type { FC } from 'react'
 import { startTransition, useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -31,6 +32,7 @@ import UrlSchemaInfoPopup from './UrlSchemaInfoPopup'
 const logger = loggerService.withContext('ProviderList')
 
 const BUTTON_WRAPPER_HEIGHT = 50
+const FOOTER_BUTTON_WRAPPER_HEIGHT = 96
 
 const getIsOvmsSupported = async (): Promise<boolean> => {
   try {
@@ -47,9 +49,35 @@ interface ProviderListProps {
   isOnboarding?: boolean
 }
 
+type ProviderImportPayload = {
+  id: string
+  apiKey: string
+  baseUrl: string
+  type?: ProviderType
+  name?: string
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0
+}
+
+function isProviderImportPayload(value: unknown): value is ProviderImportPayload {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return false
+  }
+
+  const payload = value as Record<string, unknown>
+  return (
+    isNonEmptyString(payload.id) &&
+    isNonEmptyString(payload.apiKey) &&
+    isNonEmptyString(payload.baseUrl)
+  )
+}
+
 const ProviderList: FC<ProviderListProps> = ({ isOnboarding = false }) => {
   const [searchParams, setSearchParams] = useSearchParams()
   const providers = useUserProviders()
+  const allProviders = useAllProviders()
   const systemProviders = useSystemProviders()
   const { updateProviders, addProvider, removeProvider, updateProvider } = useProviders()
   const { setTimeoutTimer } = useTimer()
@@ -137,32 +165,83 @@ const ProviderList: FC<ProviderListProps> = ({ isOnboarding = false }) => {
     }
   }, [providers, searchParams, setSearchParams, setSelectedProvider, setTimeoutTimer])
 
-  useEffect(() => {
-    const handleProviderAddKey = async (data: {
-      id: string
-      apiKey: string
-      baseUrl: string
-      type?: ProviderType
-      name?: string
-    }) => {
+  const syncImportedProvider = useCallback(
+    async (data: ProviderImportPayload, options?: { disableOtherProviders?: boolean }) => {
       const { id } = data
-
-      const { updatedProvider, isNew, displayName } = await UrlSchemaInfoPopup.show(data)
+      const { updatedProvider, displayName } = await UrlSchemaInfoPopup.show({
+        ...data,
+        disableOtherProviders: options?.disableOtherProviders
+      })
       window.navigate(`/settings/provider?id=${id}`)
 
       if (!updatedProvider) {
         return
       }
 
-      if (isNew) {
-        addProvider(updatedProvider)
-      } else {
-        updateProvider(updatedProvider)
+      let finalProvider = updatedProvider
+      const models = await fetchModels(updatedProvider)
+      if (models.length > 0) {
+        finalProvider = {
+          ...updatedProvider,
+          models
+        }
       }
 
-      setSelectedProvider(updatedProvider)
+      const disableOtherProviders = options?.disableOtherProviders === true
+      const nextProviders = allProviders.map((provider) => ({
+        ...provider,
+        enabled: disableOtherProviders ? provider.id === finalProvider.id : provider.enabled
+      }))
+
+      const existingIndex = nextProviders.findIndex((provider) => provider.id === finalProvider.id)
+      if (existingIndex === -1) {
+        nextProviders.unshift({
+          ...finalProvider,
+          enabled: true
+        })
+      } else {
+        nextProviders[existingIndex] = {
+          ...nextProviders[existingIndex],
+          ...finalProvider,
+          enabled: true
+        }
+      }
+
+      updateProviders(nextProviders)
+      setSelectedProvider({
+        ...finalProvider,
+        enabled: true
+      })
+      window.navigate(`/settings/provider?id=${encodeURIComponent(finalProvider.id)}`)
       window.toast.success(t('settings.models.provider_key_added', { provider: displayName }))
-    }
+
+      if (models.length > 0) {
+        window.toast.success(
+          t('settings.models.provider_models_synced', {
+            provider: displayName,
+            count: models.length
+          })
+        )
+      } else {
+        window.toast.warning(
+          t('settings.models.provider_models_sync_empty', {
+            provider: displayName
+          })
+        )
+      }
+
+      if (disableOtherProviders) {
+        window.toast.success(
+          t('settings.models.provider_import_disabled_others', {
+            defaultValue: '已自动禁用其他 Provider，仅保留当前导入的 Provider 为启用状态。'
+          })
+        )
+      }
+    },
+    [allProviders, setSelectedProvider, t, updateProviders]
+  )
+
+  useEffect(() => {
 
     const addProviderData = searchParams.get('addProviderData')
     if (!addProviderData) {
@@ -177,13 +256,13 @@ const ProviderList: FC<ProviderListProps> = ({ isOnboarding = false }) => {
         return
       }
 
-      void handleProviderAddKey({ id, apiKey: newApiKey, baseUrl, type, name })
+      void syncImportedProvider({ id, apiKey: newApiKey, baseUrl, type, name })
     } catch (error) {
       window.toast.error(t('settings.models.provider_key_add_failed_by_invalid_data'))
       window.navigate('/settings/provider')
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchParams])
+  }, [searchParams, syncImportedProvider, t])
 
   const onAddProvider = async () => {
     const { name: providerName, type, logo } = await AddProviderPopup.show()
@@ -221,6 +300,47 @@ const ProviderList: FC<ProviderListProps> = ({ isOnboarding = false }) => {
     addProvider(provider)
     setSelectedProvider(provider)
   }
+
+  const onImportProvider = useCallback(async () => {
+    try {
+      const selected = await window.api.file.select({
+        title: t('settings.models.provider_import_file_title', {
+          defaultValue: '选择 Provider 导入文件'
+        }),
+        filters: [
+          {
+            name: t('settings.models.provider_import_file_filter', {
+              defaultValue: 'JSON 文件'
+            }),
+            extensions: ['json']
+          }
+        ],
+        properties: ['openFile']
+      })
+
+      if (!selected || selected.length === 0) {
+        return
+      }
+
+      const [file] = selected
+      const content = await window.api.fs.readText(file.path)
+      const parsed = JSON.parse(content) as unknown
+
+      if (!isProviderImportPayload(parsed)) {
+        window.toast.error(t('settings.models.provider_key_add_failed_by_invalid_data'))
+        return
+      }
+
+      await syncImportedProvider(parsed, { disableOtherProviders: true })
+    } catch (error) {
+      logger.error('Failed to import provider from file', error as Error)
+      window.toast.error(
+        t('settings.models.provider_import_failed', {
+          defaultValue: '导入 Provider 失败，请检查 JSON 文件格式。'
+        })
+      )
+    }
+  }, [syncImportedProvider, t])
 
   const getDropdownMenus = (provider: Provider): MenuProps['items'] => {
     const noteMenu = {
@@ -407,7 +527,7 @@ const ProviderList: FC<ProviderListProps> = ({ isOnboarding = false }) => {
               itemKey={itemKey}
               overscan={3}
               style={{
-                height: `calc(100% - 2 * ${BUTTON_WRAPPER_HEIGHT}px)`
+                height: `calc(100% - ${BUTTON_WRAPPER_HEIGHT + FOOTER_BUTTON_WRAPPER_HEIGHT}px)`
               }}
               scrollerStyle={{
                 padding: 8,
@@ -443,15 +563,24 @@ const ProviderList: FC<ProviderListProps> = ({ isOnboarding = false }) => {
             </DraggableVirtualList>
           </>
         )}
-        <AddButtonWrapper>
-          <Button
-            style={{ width: '100%', borderRadius: 'var(--list-item-border-radius)' }}
-            icon={<PlusIcon size={16} />}
-            onClick={onAddProvider}
-            disabled={dragging}>
-            {t('button.add')}
-          </Button>
-        </AddButtonWrapper>
+        <FooterActionWrapper>
+          <FooterButtonGroup>
+            <Button
+              style={{ width: '100%', borderRadius: 'var(--list-item-border-radius)' }}
+              icon={<FileUp size={16} />}
+              onClick={() => void onImportProvider()}
+              disabled={dragging}>
+              {t('settings.models.provider_import_button', { defaultValue: '导入' })}
+            </Button>
+            <Button
+              style={{ width: '100%', borderRadius: 'var(--list-item-border-radius)' }}
+              icon={<PlusIcon size={16} />}
+              onClick={onAddProvider}
+              disabled={dragging}>
+              {t('button.add')}
+            </Button>
+          </FooterButtonGroup>
+        </FooterActionWrapper>
       </ProviderListContainer>
       {selectedProvider ? (
         <ProviderSetting providerId={selectedProvider.id} key={selectedProvider.id} isOnboarding={isOnboarding} />
@@ -539,6 +668,18 @@ const AddButtonWrapper = styled.div`
   justify-content: center;
   align-items: center;
   padding: 10px 8px;
+`
+
+const FooterActionWrapper = styled.div`
+  min-height: ${FOOTER_BUTTON_WRAPPER_HEIGHT}px;
+  padding: 10px 8px;
+`
+
+const FooterButtonGroup = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
 `
 
 const FilterButton = styled.div`

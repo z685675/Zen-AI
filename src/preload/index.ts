@@ -112,6 +112,7 @@ const api = {
   setLaunchToTray: (isActive: boolean) => ipcRenderer.invoke(IpcChannel.App_SetLaunchToTray, isActive),
   setTray: (isActive: boolean) => ipcRenderer.invoke(IpcChannel.App_SetTray, isActive),
   setTrayOnClose: (isActive: boolean) => ipcRenderer.invoke(IpcChannel.App_SetTrayOnClose, isActive),
+  setAutoUpdate: (isActive: boolean) => ipcRenderer.invoke(IpcChannel.App_SetAutoUpdate, isActive),
   setTheme: (theme: ThemeMode) => ipcRenderer.invoke(IpcChannel.App_SetTheme, theme),
   handleZoomFactor: (delta: number, reset: boolean = false) =>
     ipcRenderer.invoke(IpcChannel.App_HandleZoomFactor, delta, reset),
@@ -130,6 +131,7 @@ const api = {
   relaunchApp: (options?: Electron.RelaunchOptions) => ipcRenderer.invoke(IpcChannel.App_RelaunchApp, options),
   resetData: () => ipcRenderer.invoke(IpcChannel.App_ResetData),
   openWebsite: (url: string) => ipcRenderer.invoke(IpcChannel.Open_Website, url),
+  checkForUpdate: () => ipcRenderer.invoke(IpcChannel.App_CheckForUpdate),
   getCacheSize: () => ipcRenderer.invoke(IpcChannel.App_GetCacheSize),
   clearCache: () => ipcRenderer.invoke(IpcChannel.App_ClearCache),
   logToMain: (source: LogSourceWithContext, level: LogLevel, message: string, data: any[]) =>
@@ -760,6 +762,57 @@ const api = {
       return () => {
         ipcRenderer.removeListener(IpcChannel.ApiServer_Ready, listener)
       }
+    }
+  },
+  update: {
+    onAvailable: (
+      callback: (payload: {
+        version: string
+        releaseDate?: string
+        releaseNotes?: string
+        downloadPage: string
+        mandatory?: boolean
+        currentVersion: string
+        source: 'auto' | 'manual'
+      }) => void
+    ): (() => void) => {
+      const channel = IpcChannel.UpdateAvailable
+      const listener = (
+        _: Electron.IpcRendererEvent,
+        payload: {
+          version: string
+          releaseDate?: string
+          releaseNotes?: string
+          downloadPage: string
+          mandatory?: boolean
+          currentVersion: string
+          source: 'auto' | 'manual'
+        }
+      ) => callback(payload)
+      ipcRenderer.on(channel, listener)
+      return () => ipcRenderer.removeListener(channel, listener)
+    },
+    onNotAvailable: (
+      callback: (payload: { currentVersion: string; source: 'auto' | 'manual'; latestVersion?: string }) => void
+    ): (() => void) => {
+      const channel = IpcChannel.UpdateNotAvailable
+      const listener = (
+        _: Electron.IpcRendererEvent,
+        payload: { currentVersion: string; source: 'auto' | 'manual'; latestVersion?: string }
+      ) => callback(payload)
+      ipcRenderer.on(channel, listener)
+      return () => ipcRenderer.removeListener(channel, listener)
+    },
+    onError: (
+      callback: (payload: { currentVersion: string; source: 'auto' | 'manual'; message: string }) => void
+    ): (() => void) => {
+      const channel = IpcChannel.UpdateError
+      const listener = (
+        _: Electron.IpcRendererEvent,
+        payload: { currentVersion: string; source: 'auto' | 'manual'; message: string }
+      ) => callback(payload)
+      ipcRenderer.on(channel, listener)
+      return () => ipcRenderer.removeListener(channel, listener)
     }
   },
   skill: {

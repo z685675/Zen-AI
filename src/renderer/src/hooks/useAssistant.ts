@@ -7,7 +7,7 @@ import {
   MODEL_SUPPORTED_REASONING_EFFORT
 } from '@renderer/config/models'
 import { db } from '@renderer/databases'
-import { getDefaultTopic } from '@renderer/services/AssistantService'
+import { getDefaultAssistant, getDefaultTopic } from '@renderer/services/AssistantService'
 import { useAppDispatch, useAppSelector } from '@renderer/store'
 import {
   addAssistant,
@@ -74,9 +74,13 @@ export function useAssistants() {
 }
 
 export function useAssistant(id: string) {
-  const assistant = useAppSelector((state) => state.assistants.assistants.find((a) => a.id === id) as Assistant)
+  const assistants = useAppSelector((state) => state.assistants.assistants)
   const dispatch = useAppDispatch()
   const { defaultModel } = useDefaultModel()
+  const assistant = useMemo(
+    () => assistants.find((item) => item.id === id) || assistants[0] || getDefaultAssistant(),
+    [assistants, id]
+  )
 
   const model = useMemo(() => assistant?.model ?? assistant?.defaultModel ?? defaultModel, [assistant, defaultModel])
   if (!model) {

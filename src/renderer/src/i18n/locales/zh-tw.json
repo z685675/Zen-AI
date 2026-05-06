@@ -5163,6 +5163,8 @@
       "provider_key_add_failed_by_empty_data": "新增提供者 API 金鑰失敗，資料為空",
       "provider_key_add_failed_by_invalid_data": "新增提供者 API 金鑰失敗，資料格式錯誤",
       "provider_key_added": "成功為 {{provider}} 新增 API 金鑰",
+      "provider_models_synced": "{{provider}} 匯入成功，已同步 {{count}} 個模型",
+      "provider_models_sync_empty": "{{provider}} 已匯入，但暫時未抓取到模型，請稍後手動重新整理",
       "provider_key_already_exists": "{{provider}} 已存在相同 API 金鑰，不會重複新增",
       "provider_key_confirm_title": "為{{provider}}新增 API 金鑰",
       "provider_key_no_change": "{{provider}} 的 API 金鑰沒有變化",

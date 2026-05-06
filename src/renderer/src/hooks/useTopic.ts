@@ -19,14 +19,14 @@ import { type Dispatch, type SetStateAction, useEffect, useState } from 'react'
 import { useAssistant } from './useAssistant'
 import { getStoreSetting } from './useSettings'
 
-let _activeTopic: Topic
-let _setActiveTopic: Dispatch<SetStateAction<Topic>>
+let _activeTopic: Topic | undefined
+let _setActiveTopic: Dispatch<SetStateAction<Topic | undefined>> | undefined
 
 const logger = loggerService.withContext('useTopic')
 
 export function useActiveTopic(assistantId: string, topic?: Topic) {
   const { assistant } = useAssistant(assistantId)
-  const [activeTopic, setActiveTopic] = useState(topic || _activeTopic || assistant?.topics[0])
+  const [activeTopic, setActiveTopic] = useState<Topic | undefined>(topic || _activeTopic || assistant?.topics[0])
 
   _activeTopic = activeTopic
   _setActiveTopic = setActiveTopic
@@ -37,6 +37,12 @@ export function useActiveTopic(assistantId: string, topic?: Topic) {
       void EventEmitter.emit(EVENT_NAMES.CHANGE_TOPIC, activeTopic)
     }
   }, [activeTopic])
+
+  useEffect(() => {
+    if (assistant?.topics?.length && (!activeTopic || !assistant.topics.find((item) => item.id === activeTopic.id))) {
+      setActiveTopic(assistant.topics[0])
+    }
+  }, [activeTopic, assistant])
 
   useEffect(() => {
     if (!assistant?.topics?.length || !activeTopic) {
@@ -64,8 +70,15 @@ export async function getTopicById(topicId: string) {
   const assistants = store.getState().assistants.assistants
   const topics = assistants.map((assistant) => assistant.topics).flat()
   const topic = topics.find((item) => item.id === topicId)
+  const dbTopic = await TopicManager.getTopic(topicId)
   const messages = await TopicManager.getTopicMessages(topicId)
-  return { ...topic, messages } as Topic
+  const baseTopic = topic || dbTopic
+
+  if (!baseTopic) {
+    return null
+  }
+
+  return { ...baseTopic, messages } as Topic
 }
 
 export const startTopicRenaming = (topicId: string) => {
@@ -100,6 +113,10 @@ export const autoRenameTopic = async (assistant: Assistant, topicId: string) => 
     topicRenamingLocks.add(topicId)
 
     const topic = await getTopicById(topicId)
+    if (!topic) {
+      return
+    }
+
     const enableTopicNaming = getStoreSetting('enableTopicNaming')
 
     if (isEmpty(topic.messages)) {
@@ -112,7 +129,8 @@ export const autoRenameTopic = async (assistant: Assistant, topicId: string) => 
 
     const applyTopicName = (name: string) => {
       const data = { ...topic, name } as Topic
-      if (topic.id === _activeTopic.id) {
+      const currentActiveTopic = store.getState().runtime.chat.activeTopic
+      if (currentActiveTopic?.id === topic.id && _setActiveTopic) {
         _setActiveTopic(data)
       }
       store.dispatch(updateTopic({ assistantId: assistant.id, topic: data }))

@@ -1,0 +1,7 @@
+{
+  "version": "1.0.1",
+  "releaseDate": "2026-05-02",
+  "releaseNotes": "修复对话页切换模型偶发崩溃，提升会话稳定性。",
+  "downloadPage": "https://share.fnnas.net/s/9ab3d188a0184370b9",
+  "mandatory": false
+}

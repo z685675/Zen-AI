@@ -4651,7 +4651,7 @@
     },
     "general": {
       "auto_check_update": {
-        "title": "自动更新"
+        "title": "启动时自动检查更新"
       },
       "avatar": {
         "builtin": "内置头像",
@@ -5163,6 +5163,8 @@
       "provider_key_add_failed_by_empty_data": "添加服务商 API 密钥失败，数据为空",
       "provider_key_add_failed_by_invalid_data": "添加服务商 API 密钥失败，数据格式错误",
       "provider_key_added": "成功为 {{provider}} 添加 API 密钥",
+      "provider_models_synced": "{{provider}} 导入成功，已同步 {{count}} 个模型",
+      "provider_models_sync_empty": "{{provider}} 已导入，但暂未拉取到模型，请稍后手动刷新",
       "provider_key_already_exists": "{{provider}} 已存在相同API 密钥，不会重复添加",
       "provider_key_confirm_title": "为{{provider}}添加 API 密钥",
       "provider_key_no_change": "{{provider}} 的 API 密钥没有变化",
@@ -6016,9 +6018,9 @@
     "show_window": "显示窗口"
   },
   "update": {
-    "install": "立即安装",
+    "install": "前往下载",
     "later": "稍后",
-    "message": "发现新版本 {{version}}，是否立即安装？",
+    "message": "发现新版本 {{version}}，是否现在打开下载页面？",
     "noReleaseNotes": "暂无更新日志",
     "saveDataError": "保存数据失败，请重试",
     "title": "更新提示"

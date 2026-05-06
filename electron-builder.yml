@@ -18,6 +18,11 @@ protocols:
   - name: Zen AI
     schemes:
       - zenai
+fileAssociations:
+  - ext: zenai-provider.json
+    name: Zen AI Provider Import
+    description: Zen AI provider import file
+    role: Viewer
 files:
   - "**/*"
   - "!**/{.vscode,.yarn,.yarn-lock,.github,.cursorrules,.prettierrc}"

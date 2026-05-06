@@ -38,6 +38,7 @@ export default class AiProvider {
   private config?: ProviderConfig
   private actualProvider: Provider
   private model?: Model
+  private readonly sessionAwareProviderIds = new Set(['openai-compatible', 'newapi', 'cherryin', 'aihubmix'])
 
   /**
    * Constructor for AiProvider
@@ -89,6 +90,37 @@ export default class AiProvider {
       // 传入的是 Provider
       this.actualProvider = adaptProvider({ provider: modelOrProvider })
       // model为可选，某些操作（如fetchModels）不需要model
+    }
+  }
+
+  private attachSessionId(
+    params: StreamTextParams,
+    topicId: string | undefined,
+    providerId: string
+  ): StreamTextParams {
+    if (!topicId || !this.sessionAwareProviderIds.has(providerId)) {
+      return params
+    }
+
+    const providerOptions = params.providerOptions || {}
+    const providerScopedOptions = (providerOptions[providerId] as Record<string, unknown> | undefined) || {}
+    const extraBody =
+      typeof providerScopedOptions.extra_body === 'object' && providerScopedOptions.extra_body
+        ? (providerScopedOptions.extra_body as Record<string, unknown>)
+        : {}
+
+    return {
+      ...params,
+      providerOptions: {
+        ...providerOptions,
+        [providerId]: {
+          ...providerScopedOptions,
+          extra_body: {
+            ...extraBody,
+            session_id: topicId
+          }
+        }
+      }
     }
   }
 
@@ -255,6 +287,7 @@ export default class AiProvider {
       providerConfig.providerSettings,
       plugins
     )
+    const requestParams = this.attachSessionId(params, middlewareConfig.topicId, providerConfig.providerId)
 
     // 创建带有中间件的执行器
     if (middlewareConfig.onChunk) {
@@ -270,9 +303,12 @@ export default class AiProvider {
       )
 
       const streamResult = await executor.streamText({
-        ...params,
+        ...requestParams,
         model: modelId,
-        experimental_context: { onChunk: middlewareConfig.onChunk }
+        experimental_context: {
+          ...(requestParams.experimental_context || {}),
+          onChunk: middlewareConfig.onChunk
+        }
       })
 
       const finalText = await adapter.processStream(streamResult)
@@ -289,7 +325,7 @@ export default class AiProvider {
       let streamError: unknown = undefined
 
       const streamResult = await executor.streamText({
-        ...params,
+        ...requestParams,
         model: modelId,
         onError({ error }) {
           streamError = error

@@ -1,6 +1,7 @@
 import { HStack } from '@renderer/components/Layout'
 import { APP_NAME, AppLogo } from '@renderer/config/env'
 import { useTheme } from '@renderer/context/ThemeProvider'
+import { showAppUpdateModal } from '@renderer/utils/appUpdate'
 import { runAsyncFunction } from '@renderer/utils'
 import {
   APP_DOWNLOADS_URL,
@@ -21,6 +22,7 @@ import { SettingContainer, SettingDivider, SettingGroup, SettingRow, SettingTitl
 const AboutSettings: FC = () => {
   const [version, setVersion] = useState('')
   const [isPortable, setIsPortable] = useState(false)
+  const [checkingUpdate, setCheckingUpdate] = useState(false)
   const { t } = useTranslation()
   const { theme } = useTheme()
 
@@ -35,6 +37,30 @@ const AboutSettings: FC = () => {
       setIsPortable(appInfo.isPortable)
     })
   }, [])
+
+  const onCheckForUpdate = async () => {
+    setCheckingUpdate(true)
+
+    try {
+      const result = await window.api.checkForUpdate()
+
+      if (result.status === 'available') {
+        showAppUpdateModal(t, result.updateInfo)
+        return
+      }
+
+      if (result.status === 'up-to-date') {
+        window.toast.success(t('settings.about.updateNotAvailable'))
+        return
+      }
+
+      window.toast.error(result.message || t('settings.about.updateError'))
+    } catch (error) {
+      window.toast.error(error instanceof Error ? error.message : t('settings.about.updateError'))
+    } finally {
+      setCheckingUpdate(false)
+    }
+  }
 
   return (
     <SettingContainer theme={theme}>
@@ -68,7 +94,17 @@ const AboutSettings: FC = () => {
         <SettingRow>
           <SettingRowTitle>
             <Download size={18} />
-            下载最新软件包
+            {t('settings.about.checkUpdate.label')}
+          </SettingRowTitle>
+          <Button loading={checkingUpdate} onClick={() => void onCheckForUpdate()}>
+            {checkingUpdate ? t('settings.about.checkingUpdate') : t('settings.about.checkUpdate.label')}
+          </Button>
+        </SettingRow>
+        <SettingDivider />
+        <SettingRow>
+          <SettingRowTitle>
+            <Download size={18} />
+            {t('settings.about.releases.title')}
           </SettingRowTitle>
           <Button onClick={() => onOpenWebsite(APP_DOWNLOADS_URL)}>{t('settings.about.releases.button')}</Button>
         </SettingRow>

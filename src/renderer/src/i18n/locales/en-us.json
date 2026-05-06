@@ -4651,7 +4651,7 @@
     },
     "general": {
       "auto_check_update": {
-        "title": "Auto Update"
+        "title": "Check for updates on startup"
       },
       "avatar": {
         "builtin": "Builtin avatar",
@@ -5163,6 +5163,8 @@
       "provider_key_add_failed_by_empty_data": "Failed to add provider API key, data is empty",
       "provider_key_add_failed_by_invalid_data": "Failed to add provider API key, data format error",
       "provider_key_added": "Successfully added API key for {{provider}}",
+      "provider_models_synced": "{{provider}} imported successfully, synced {{count}} models",
+      "provider_models_sync_empty": "{{provider}} was imported, but no models were fetched yet. Please refresh manually later.",
       "provider_key_already_exists": "{{provider}} already has an API key ({{existingKey}}). Do not add it again.",
       "provider_key_confirm_title": "Add Provider API Key",
       "provider_key_no_change": "API key for {{provider}} has not changed",
@@ -6016,9 +6018,9 @@
     "show_window": "Show Window"
   },
   "update": {
-    "install": "Install",
+    "install": "Open Download Page",
     "later": "Later",
-    "message": "New version {{version}} is ready, do you want to install it now?",
+    "message": "Found new version {{version}}. Do you want to open the download page now?",
     "noReleaseNotes": "No release notes",
     "saveDataError": "Failed to save data, please try again.",
     "title": "Update"

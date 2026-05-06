@@ -60,9 +60,11 @@ const GeneralSettings: FC = () => {
     trayOnClose,
     tray,
     proxyMode: storeProxyMode,
+    autoCheckUpdate,
     enableSpellCheck,
     disableHardwareAcceleration,
-    setDisableHardwareAcceleration
+    setDisableHardwareAcceleration,
+    setAutoCheckUpdate
   } = useSettings()
   const [proxyUrl, setProxyUrl] = useState<string | undefined>(storeProxyUrl)
   const [proxyBypassRules, setProxyBypassRules] = useState<string | undefined>(storeProxyBypassRules)
@@ -111,6 +113,10 @@ const GeneralSettings: FC = () => {
   const handleSpellCheckChange = (checked: boolean) => {
     dispatch(setEnableSpellCheck(checked))
     void window.api.setEnableSpellCheck(checked)
+  }
+
+  const handleAutoCheckUpdateChange = (checked: boolean) => {
+    setAutoCheckUpdate(checked)
   }
 
   const onSetProxyUrl = () => {
@@ -287,6 +293,11 @@ const GeneralSettings: FC = () => {
         <SettingRow>
           <SettingRowTitle>{t('settings.hardware_acceleration.title')}</SettingRowTitle>
           <Switch checked={disableHardwareAcceleration} onChange={handleHardwareAccelerationChange} />
+        </SettingRow>
+        <SettingDivider />
+        <SettingRow>
+          <SettingRowTitle>{t('settings.general.auto_check_update.title')}</SettingRowTitle>
+          <Switch checked={autoCheckUpdate} onChange={handleAutoCheckUpdateChange} />
         </SettingRow>
       </SettingGroup>
       <SettingGroup theme={theme}>

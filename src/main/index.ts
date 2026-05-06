@@ -37,6 +37,7 @@ import {
   registerProtocolClient,
   setupAppImageDeepLink
 } from './services/ProtocolClient'
+import { importProviderFromFile, isProviderImportFilePath } from './services/urlschema/provider-import'
 import selectionService, { initSelectionService } from './services/SelectionService'
 import { registerShortcuts } from './services/ShortcutService'
 import { TrayService } from './services/TrayService'
@@ -256,13 +257,28 @@ if (!app.requestSingleInstanceLock()) {
     handleProtocolUrl(url)
   })
 
+  app.on('open-file', (event, filePath) => {
+    event.preventDefault()
+    if (isProviderImportFilePath(filePath)) {
+      void importProviderFromFile(filePath)
+    }
+  })
+
   const handleOpenUrl = (args: string[]) => {
     const url = args.find((arg) => arg.startsWith(CHERRY_STUDIO_PROTOCOL + '://'))
     if (url) handleProtocolUrl(url)
   }
 
+  const handleOpenProviderImportFile = (args: string[]) => {
+    const filePath = args.find((arg) => isProviderImportFilePath(arg))
+    if (filePath) {
+      void importProviderFromFile(filePath)
+    }
+  }
+
   // for windows to start with url
   handleOpenUrl(process.argv)
+  handleOpenProviderImportFile(process.argv)
 
   // Listen for second instance
   app.on('second-instance', (_event, argv) => {
@@ -271,6 +287,7 @@ if (!app.requestSingleInstanceLock()) {
     // Protocol handler for Windows/Linux
     // The commandLine is an array of strings where the last item might be the URL
     handleOpenUrl(argv)
+    handleOpenProviderImportFile(argv)
   })
 
   app.on('browser-window-created', (_, window) => {
