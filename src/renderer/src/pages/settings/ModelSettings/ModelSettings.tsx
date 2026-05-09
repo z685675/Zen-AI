@@ -38,7 +38,8 @@ const ModelSettings: FC<ModelSettingsProps> = ({
   const { defaultModel, quickModel, translateModel, setDefaultModel, setQuickModel, setTranslateModel } =
     useDefaultModel()
   const providers = useUserProviders()
-  const allModels = providers.map((p) => p.models).flat()
+  const enabledProviders = useMemo(() => providers.filter((provider) => provider.enabled), [providers])
+  const enabledModels = useMemo(() => enabledProviders.map((provider) => provider.models).flat(), [enabledProviders])
   const { theme } = useTheme()
   const { t } = useTranslation()
   const { translateModelPrompt } = useSettings()
@@ -51,8 +52,9 @@ const ModelSettings: FC<ModelSettingsProps> = ({
   )
 
   const hasAvailableModel = useCallback(
-    (model?: Model) => !!model && hasModel(model) && allModels.some((item) => item.id === model.id && item.provider === model.provider),
-    [allModels]
+    (model?: Model) =>
+      !!model && hasModel(model) && enabledModels.some((item) => item.id === model.id && item.provider === model.provider),
+    [enabledModels]
   )
 
   const defaultModelValue = useMemo(
@@ -88,13 +90,13 @@ const ModelSettings: FC<ModelSettingsProps> = ({
         </SettingTitle>
         <HStack alignItems="center">
           <ModelSelector
-            providers={providers}
+            providers={enabledProviders}
             predicate={modelPredicate}
             value={defaultModelValue}
             defaultValue={defaultModelValue}
             style={{ width: compact ? '100%' : 360 }}
             size={compact ? 'large' : 'middle'}
-            onChange={(value) => setDefaultModel(find(allModels, JSON.parse(value)) as Model)}
+            onChange={(value) => setDefaultModel(find(enabledModels, JSON.parse(value)) as Model)}
             placeholder={t('settings.models.empty')}
           />
           {showSettingsButton && (
@@ -115,13 +117,13 @@ const ModelSettings: FC<ModelSettingsProps> = ({
         </SettingTitle>
         <HStack alignItems="center">
           <ModelSelector
-            providers={providers}
+            providers={enabledProviders}
             predicate={modelPredicate}
             value={defaultQuickModel}
             defaultValue={defaultQuickModel}
             style={{ width: compact ? '100%' : 360 }}
             size={compact ? 'large' : 'middle'}
-            onChange={(value) => setQuickModel(find(allModels, JSON.parse(value)) as Model)}
+            onChange={(value) => setQuickModel(find(enabledModels, JSON.parse(value)) as Model)}
             placeholder={t('settings.models.empty')}
           />
           {showSettingsButton && (
@@ -139,13 +141,13 @@ const ModelSettings: FC<ModelSettingsProps> = ({
         </SettingTitle>
         <HStack alignItems="center">
           <ModelSelector
-            providers={providers}
+            providers={enabledProviders}
             predicate={modelPredicate}
             value={defaultTranslateModel}
             defaultValue={defaultTranslateModel}
             style={{ width: compact ? '100%' : 360 }}
             size={compact ? 'large' : 'middle'}
-            onChange={(value) => setTranslateModel(find(allModels, JSON.parse(value)) as Model)}
+            onChange={(value) => setTranslateModel(find(enabledModels, JSON.parse(value)) as Model)}
             placeholder={t('settings.models.empty')}
           />
           {showSettingsButton && (

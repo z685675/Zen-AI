@@ -7,11 +7,12 @@ import {
 } from '@renderer/components/DraggableList'
 import { DeleteIcon, EditIcon } from '@renderer/components/Icons'
 import { ProviderAvatar } from '@renderer/components/ProviderAvatar'
+import { useAssistants, useDefaultAssistant, useDefaultModel } from '@renderer/hooks/useAssistant'
 import { useAllProviders, useProviders, useSystemProviders, useUserProviders } from '@renderer/hooks/useProvider'
 import { useTimer } from '@renderer/hooks/useTimer'
 import { fetchModels } from '@renderer/services/ApiService'
 import ImageStorage from '@renderer/services/ImageStorage'
-import type { Provider, ProviderType } from '@renderer/types'
+import type { Assistant, Model, Provider, ProviderType } from '@renderer/types'
 import { getFancyProviderName, matchKeywordsInModel, matchKeywordsInProvider, uuid } from '@renderer/utils'
 import { isAnthropicSupportedProvider } from '@renderer/utils/provider'
 import type { MenuProps } from 'antd'
@@ -74,12 +75,45 @@ function isProviderImportPayload(value: unknown): value is ProviderImportPayload
   )
 }
 
+function remapModelToImportedProvider(
+  model: Model | undefined,
+  importedProvider: Provider,
+  disabledProviderIds: Set<string>
+): Model | undefined {
+  if (!model) {
+    return undefined
+  }
+
+  const matchedModel = importedProvider.models.find((item) => item.id === model.id)
+  if (model.provider === importedProvider.id || disabledProviderIds.has(model.provider)) {
+    return matchedModel
+  }
+
+  return model
+}
+
+function remapAssistantModels(
+  assistant: Assistant,
+  importedProvider: Provider,
+  disabledProviderIds: Set<string>
+): Assistant {
+  return {
+    ...assistant,
+    model: remapModelToImportedProvider(assistant.model, importedProvider, disabledProviderIds),
+    defaultModel: remapModelToImportedProvider(assistant.defaultModel, importedProvider, disabledProviderIds)
+  }
+}
+
 const ProviderList: FC<ProviderListProps> = ({ isOnboarding = false }) => {
   const [searchParams, setSearchParams] = useSearchParams()
   const providers = useUserProviders()
   const allProviders = useAllProviders()
   const systemProviders = useSystemProviders()
   const { updateProviders, addProvider, removeProvider, updateProvider } = useProviders()
+  const { assistants, updateAssistants } = useAssistants()
+  const { defaultAssistant, updateDefaultAssistant } = useDefaultAssistant()
+  const { defaultModel, quickModel, translateModel, setDefaultModel, setQuickModel, setTranslateModel } =
+    useDefaultModel()
   const { setTimeoutTimer } = useTimer()
   const [selectedProvider, _setSelectedProvider] = useState<Provider | undefined>(providers[0])
   const { t } = useTranslation()
@@ -208,6 +242,19 @@ const ProviderList: FC<ProviderListProps> = ({ isOnboarding = false }) => {
       }
 
       updateProviders(nextProviders)
+
+      if (disableOtherProviders) {
+        const disabledProviderIds = new Set(
+          nextProviders.filter((provider) => provider.id !== finalProvider.id && !provider.enabled).map((provider) => provider.id)
+        )
+
+        setDefaultModel(remapModelToImportedProvider(defaultModel, finalProvider, disabledProviderIds) as Model)
+        setQuickModel(remapModelToImportedProvider(quickModel, finalProvider, disabledProviderIds) as Model)
+        setTranslateModel(remapModelToImportedProvider(translateModel, finalProvider, disabledProviderIds) as Model)
+        updateAssistants(assistants.map((assistant) => remapAssistantModels(assistant, finalProvider, disabledProviderIds)))
+        updateDefaultAssistant(remapAssistantModels(defaultAssistant, finalProvider, disabledProviderIds))
+      }
+
       setSelectedProvider({
         ...finalProvider,
         enabled: true
@@ -238,7 +285,22 @@ const ProviderList: FC<ProviderListProps> = ({ isOnboarding = false }) => {
         )
       }
     },
-    [allProviders, setSelectedProvider, t, updateProviders]
+    [
+      allProviders,
+      assistants,
+      defaultAssistant,
+      defaultModel,
+      quickModel,
+      setDefaultModel,
+      setQuickModel,
+      setSelectedProvider,
+      setTranslateModel,
+      t,
+      translateModel,
+      updateAssistants,
+      updateDefaultAssistant,
+      updateProviders
+    ]
   )
 
   useEffect(() => {
@@ -262,7 +324,7 @@ const ProviderList: FC<ProviderListProps> = ({ isOnboarding = false }) => {
       window.navigate('/settings/provider')
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchParams, syncImportedProvider, t])
+  }, [searchParams, t])
 
   const onAddProvider = async () => {
     const { name: providerName, type, logo } = await AddProviderPopup.show()

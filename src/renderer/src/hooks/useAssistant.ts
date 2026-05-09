@@ -75,6 +75,9 @@ export function useAssistants() {
 
 export function useAssistant(id: string) {
   const assistants = useAppSelector((state) => state.assistants.assistants)
+  const fallbackModel = useAppSelector((state) =>
+    state.llm.providers.filter((provider) => provider.enabled).flatMap((provider) => provider.models)[0]
+  )
   const dispatch = useAppDispatch()
   const { defaultModel } = useDefaultModel()
   const assistant = useMemo(
@@ -82,7 +85,10 @@ export function useAssistant(id: string) {
     [assistants, id]
   )
 
-  const model = useMemo(() => assistant?.model ?? assistant?.defaultModel ?? defaultModel, [assistant, defaultModel])
+  const model = useMemo(
+    () => assistant?.model ?? assistant?.defaultModel ?? defaultModel ?? fallbackModel,
+    [assistant, defaultModel, fallbackModel]
+  )
   if (!model) {
     throw new Error(`Assistant model is not set for assistant with name: ${assistant?.name ?? 'unknown'}`)
   }

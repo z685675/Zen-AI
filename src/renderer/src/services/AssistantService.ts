@@ -177,7 +177,13 @@ export function getDefaultProvider() {
 }
 
 export function getDefaultModel() {
-  return store.getState().llm.defaultModel
+  return (
+    store.getState().llm.defaultModel ||
+    store
+      .getState()
+      .llm.providers.filter((provider) => provider.enabled)
+      .flatMap((provider) => provider.models)[0]
+  )
 }
 
 export function getQuickModel() {
