@@ -14,11 +14,21 @@ function readJson(filePath) {
   return JSON.parse(fs.readFileSync(filePath, 'utf8'))
 }
 
+function normalizeRelease(release) {
+  return {
+    tagName: release.tagName || release.tag_name || '',
+    name: release.name || '',
+    body: release.body || '',
+    publishedAt: release.publishedAt || release.published_at || '',
+    createdAt: release.createdAt || release.created_at || ''
+  }
+}
+
 function findReleaseNotes(release) {
   if (typeof release.body === 'string' && release.body.trim()) {
     return release.body.trim()
   }
-  return `Release notes for ${release.tag_name} are not provided yet.`
+  return `Release notes for ${release.tagName} are not provided yet.`
 }
 
 function collectMetadataFiles(dirPath) {
@@ -32,9 +42,9 @@ function patchMetadataFile(filePath, release) {
   const raw = fs.readFileSync(filePath, 'utf8')
   const data = YAML.parse(raw) || {}
 
-  data.version = release.tag_name.replace(/^v/, '')
-  data.releaseDate = release.published_at || release.created_at || new Date().toISOString()
-  data.releaseName = release.name?.trim() || `Zen AI ${release.tag_name}`
+  data.version = release.tagName.replace(/^v/, '')
+  data.releaseDate = release.publishedAt || release.createdAt || new Date().toISOString()
+  data.releaseName = release.name?.trim() || `Zen AI ${release.tagName}`
   data.releaseNotes = findReleaseNotes(release)
 
   fs.writeFileSync(filePath, YAML.stringify(data), 'utf8')
@@ -52,7 +62,7 @@ function main() {
   const releaseJsonPath = requiredEnv('RELEASE_JSON_PATH')
   const assetsDir = requiredEnv('RELEASE_ASSETS_DIR')
 
-  const release = readJson(path.resolve(workDir, releaseJsonPath))
+  const release = normalizeRelease(readJson(path.resolve(workDir, releaseJsonPath)))
   const metadataFiles = collectMetadataFiles(path.resolve(workDir, assetsDir))
 
   if (metadataFiles.length === 0) {
