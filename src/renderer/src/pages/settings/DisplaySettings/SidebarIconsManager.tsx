@@ -2,6 +2,8 @@ import { CloseOutlined } from '@ant-design/icons'
 import type { DraggableProvided, DroppableProvided, DropResult } from '@hello-pangea/dnd'
 import { DragDropContext, Draggable, Droppable } from '@hello-pangea/dnd'
 import { OpenClawSidebarIcon } from '@renderer/components/Icons/SVGIcon'
+import { researchWorkspace } from '@renderer/config/researchWorkspace'
+import { getAvailableSidebarIcons } from '@renderer/config/sidebar'
 import { getSidebarIconLabel } from '@renderer/i18n/label'
 import { useAppDispatch } from '@renderer/store'
 import { setSidebarIcons } from '@renderer/store/settings'
@@ -11,6 +13,7 @@ import {
   Code,
   FileSearch,
   Folder,
+  GraduationCap,
   Languages,
   LayoutGrid,
   MessageSquareQuote,
@@ -40,6 +43,9 @@ const SidebarIconsManager: FC<SidebarIconsManagerProps> = ({
   const { t } = useTranslation()
 
   const dispatch = useAppDispatch()
+  const availableDisabledIcons = researchWorkspace.enabled
+    ? disabledIcons
+    : disabledIcons.filter((icon) => icon !== 'research')
 
   const onDragEnd = useCallback(
     (result: DropResult) => {
@@ -125,6 +131,7 @@ const SidebarIconsManager: FC<SidebarIconsManagerProps> = ({
         minapp: <LayoutGrid size={16} />,
         knowledge: <FileSearch size={16} />,
         files: <Folder size={16} />,
+        research: <GraduationCap size={16} />,
         notes: <NotepadText size={16} />,
         code_tools: <Code size={16} />,
         openclaw: <OpenClawSidebarIcon style={{ width: 16, height: 16 }} />
@@ -142,7 +149,7 @@ const SidebarIconsManager: FC<SidebarIconsManagerProps> = ({
           <Droppable droppableId="visible">
             {(provided: DroppableProvided) => (
               <IconList ref={provided.innerRef} {...provided.droppableProps}>
-                {visibleIcons.map((icon, index) => (
+                {getAvailableSidebarIcons(visibleIcons, disabledIcons).map((icon, index) => (
                   <Draggable key={icon} draggableId={icon} index={index}>
                     {(provided: DraggableProvided) => (
                       <IconItem ref={provided.innerRef} {...provided.draggableProps} {...provided.dragHandleProps}>
@@ -169,10 +176,10 @@ const SidebarIconsManager: FC<SidebarIconsManagerProps> = ({
           <Droppable droppableId="disabled">
             {(provided: DroppableProvided) => (
               <IconList ref={provided.innerRef} {...provided.droppableProps}>
-                {disabledIcons.length === 0 ? (
+                {availableDisabledIcons.length === 0 ? (
                   <EmptyPlaceholder>{t('settings.display.sidebar.empty')}</EmptyPlaceholder>
                 ) : (
-                  disabledIcons.map((icon, index) => (
+                  availableDisabledIcons.map((icon, index) => (
                     <Draggable key={icon} draggableId={icon} index={index}>
                       {(provided: DraggableProvided) => (
                         <IconItem ref={provided.innerRef} {...provided.draggableProps} {...provided.dragHandleProps}>

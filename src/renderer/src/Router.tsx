@@ -1,5 +1,6 @@
 import '@renderer/databases'
 
+import { researchWorkspace } from '@renderer/config/researchWorkspace'
 import type { FC } from 'react'
 import { useMemo } from 'react'
 import { HashRouter, Route, Routes } from 'react-router-dom'
@@ -22,6 +23,7 @@ import NotesPage from './pages/notes/NotesPage'
 import { OnboardingPage } from './pages/onboarding'
 import OpenClawPage from './pages/openclaw/OpenClawPage'
 import PaintingsRoutePage from './pages/paintings/PaintingsRoutePage'
+import ResearchPage from './pages/research/ResearchPage'
 import SettingsPage from './pages/settings/SettingsPage'
 import AssistantPresetsPage from './pages/store/assistants/presets/AssistantPresetsPage'
 import TranslatePage from './pages/translate/TranslatePage'
@@ -45,6 +47,7 @@ const Router: FC = () => {
           <Route path="/apps/:appId" element={<MinAppPage />} />
           <Route path="/apps" element={<MinAppsPage />} />
           <Route path="/code" element={<CodeToolsPage />} />
+          {researchWorkspace.enabled && <Route path="/research" element={<ResearchPage />} />}
           <Route path="/openclaw" element={<OpenClawPage />} />
           <Route path="/settings/*" element={<SettingsPage />} />
           <Route path="/launchpad" element={<LaunchpadPage />} />

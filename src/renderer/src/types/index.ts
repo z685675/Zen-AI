@@ -694,6 +694,7 @@ export type SidebarIcon =
   | 'minapp'
   | 'knowledge'
   | 'files'
+  | 'research'
   | 'code_tools'
   | 'notes'
   | 'openclaw'
