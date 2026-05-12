@@ -1,8 +1,10 @@
 import EmojiAvatar from '@renderer/components/Avatar/EmojiAvatar'
 import { isMac } from '@renderer/config/constant'
 import { UserAvatar } from '@renderer/config/env'
+import { getAvailableSidebarIcons } from '@renderer/config/sidebar'
 import { useTheme } from '@renderer/context/ThemeProvider'
 import useAvatar from '@renderer/hooks/useAvatar'
+import { useEnableDeveloperMode } from '@renderer/hooks/useSettings'
 import { useFullscreen } from '@renderer/hooks/useFullscreen'
 import { useMinappPopup } from '@renderer/hooks/useMinappPopup'
 import { useMinapps } from '@renderer/hooks/useMinapps'
@@ -17,6 +19,7 @@ import {
   Code,
   FileSearch,
   Folder,
+  GraduationCap,
   Languages,
   LayoutGrid,
   MessageSquare,
@@ -143,6 +146,7 @@ const MainMenus: FC = () => {
   const { hideMinappPopup } = useMinappPopup()
   const { pathname } = useLocation()
   const { sidebarIcons, defaultPaintingProvider } = useSettings()
+  const { enableDeveloperMode } = useEnableDeveloperMode()
   const { minappShow } = useRuntime()
   const navigate = useNavigate()
   const { theme } = useTheme()
@@ -159,6 +163,7 @@ const MainMenus: FC = () => {
     minapp: <LayoutGrid size={18} className="icon" />,
     knowledge: <FileSearch size={18} className="icon" />,
     files: <Folder size={18} className="icon" />,
+    research: <GraduationCap size={18} className="icon" />,
     notes: <NotepadText size={18} className="icon" />,
     code_tools: <Code size={18} className="icon" />,
     openclaw: <OpenClawSidebarIcon style={{ width: 18, height: 18 }} className="icon" />
@@ -173,12 +178,13 @@ const MainMenus: FC = () => {
     minapp: '/apps',
     knowledge: '/knowledge',
     files: '/files',
+    research: '/research',
     code_tools: '/code',
     notes: '/notes',
     openclaw: '/openclaw'
   }
 
-  return sidebarIcons.visible.map((icon) => {
+  return getAvailableSidebarIcons(sidebarIcons.visible, sidebarIcons.disabled, enableDeveloperMode).map((icon) => {
     const path = pathMap[icon]
     const isActive = path === '/' ? isRoute(path) : isRoutes(path)
 
