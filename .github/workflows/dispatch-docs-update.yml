@@ -1,8 +1,7 @@
 name: Dispatch Docs Update on Release
 
 on:
-  release:
-    types: [released]
+  workflow_dispatch:
 
 permissions:
   contents: write
