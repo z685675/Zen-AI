@@ -39,6 +39,7 @@ export default class AiProvider {
   private actualProvider: Provider
   private model?: Model
   private readonly sessionAwareProviderIds = new Set(['openai-compatible', 'newapi', 'cherryin', 'aihubmix'])
+  private readonly promptCacheKeyProviderIds = new Set(['openai', 'azure', 'openai-compatible', 'newapi', 'aihubmix'])
 
   /**
    * Constructor for AiProvider
@@ -124,9 +125,74 @@ export default class AiProvider {
     }
   }
 
+  private buildPromptCacheKey(topicId: string, modelId: string): string {
+    return `${topicId}:${this.actualProvider.id}:${modelId}`
+  }
+
+  private attachPromptCacheKey(
+    params: StreamTextParams,
+    topicId: string | undefined,
+    modelId: string,
+    providerId: string
+  ): StreamTextParams {
+    if (!topicId || !this.promptCacheKeyProviderIds.has(providerId)) {
+      return params
+    }
+
+    const promptCacheKey = this.buildPromptCacheKey(topicId, modelId)
+    const providerOptions = params.providerOptions || {}
+    const providerScopedOptions = (providerOptions[providerId] as Record<string, unknown> | undefined) || {}
+
+    return {
+      ...params,
+      providerOptions: {
+        ...providerOptions,
+        [providerId]: {
+          ...providerScopedOptions,
+          promptCacheKey
+        }
+      }
+    }
+  }
+
   /**
    * 类型守卫函数：通过 provider 属性区分 Model 和 Provider
    */
+  private logPromptCacheDecision(
+    topicId: string | undefined,
+    modelId: string,
+    providerId: string,
+    requestParams: StreamTextParams
+  ): void {
+    const providerOptions = requestParams.providerOptions || {}
+    const providerScopedOptions = (providerOptions[providerId] as Record<string, unknown> | undefined) || {}
+    const promptCacheKey =
+      typeof providerScopedOptions.promptCacheKey === 'string' ? providerScopedOptions.promptCacheKey : undefined
+
+    if (promptCacheKey) {
+      logger.info(
+        'Prompt cache key attached to request',
+        {
+          topicId,
+          modelId,
+          providerId,
+          actualProviderId: this.actualProvider.id,
+          promptCacheKey
+        },
+        { logToMain: true }
+      )
+      return
+    }
+
+    logger.debug('Prompt cache key not attached to request', {
+      topicId,
+      modelId,
+      providerId,
+      actualProviderId: this.actualProvider.id,
+      reason: !topicId ? 'missing_topic_id' : 'provider_not_supported_or_not_mapped'
+    })
+  }
+
   private isModel(obj: Model | Provider): obj is Model {
     return 'provider' in obj && typeof obj.provider === 'string'
   }
@@ -287,10 +353,17 @@ export default class AiProvider {
       providerConfig.providerSettings,
       plugins
     )
-    const requestParams = this.attachSessionId(params, middlewareConfig.topicId, providerConfig.providerId)
+    const paramsWithSession = this.attachSessionId(params, middlewareConfig.topicId, providerConfig.providerId)
+    const requestParams = this.attachPromptCacheKey(
+      paramsWithSession,
+      middlewareConfig.topicId,
+      modelId,
+      providerConfig.providerId
+    )
 
     // 创建带有中间件的执行器
     if (middlewareConfig.onChunk) {
+      this.logPromptCacheDecision(middlewareConfig.topicId, modelId, providerConfig.providerId, requestParams)
       const accumulate = this.model!.supported_text_delta !== false // true and undefined
       const adapter = new AiSdkToChunkAdapter(
         middlewareConfig.onChunk,
@@ -322,6 +395,7 @@ export default class AiProvider {
       // generic NoTextGeneratedError ("No output generated. Check the stream
       // for errors.") that AI SDK raises when streamResult.text is accessed
       // after a failed stream.
+      this.logPromptCacheDecision(middlewareConfig.topicId, modelId, providerConfig.providerId, requestParams)
       let streamError: unknown = undefined
 
       const streamResult = await executor.streamText({

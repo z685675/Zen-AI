@@ -23,6 +23,20 @@ import type {
 import type { ProviderSpecificError } from './provider-specific-error'
 import type { Serializable } from './serialize'
 
+export type SerializedConnectivityProbeResult = {
+  ok: boolean
+  reachable: boolean
+  status?: number
+  durationMs?: number
+  error?: string
+}
+
+export type SerializedClientConnectivityCheck = {
+  checkedAt: string
+  serviceStatus?: SerializedConnectivityProbeResult
+  modelsApi?: SerializedConnectivityProbeResult
+}
+
 /** i18n key used when a streaming response is paused/aborted by the user. */
 export const ERROR_I18N_KEY_STREAM_PAUSED = 'stream_paused'
 
@@ -43,7 +57,10 @@ export interface SerializedError {
   name: string | null
   message: string | null
   stack: string | null
-  [key: string]: Serializable
+  zenTraceId?: string
+  zenRequestUrl?: string
+  zenConnectivityCheck?: SerializedClientConnectivityCheck
+  [key: string]: unknown
 }
 export const isSerializedError = (error: Record<string, unknown>): error is SerializedError => {
   return 'name' in error && 'message' in error && 'stack' in error

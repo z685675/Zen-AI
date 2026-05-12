@@ -3,22 +3,19 @@ import { showErrorDetailPopup } from '@renderer/components/ErrorDetailModal'
 import { useTimer } from '@renderer/hooks/useTimer'
 import { getHttpMessageLabel, getProviderLabel } from '@renderer/i18n/label'
 import type { DiagnosisResult } from '@renderer/services/ErrorDiagnosisService'
-import { classifyErrorByAI } from '@renderer/services/ErrorDiagnosisService'
 import { getProviderById } from '@renderer/services/ProviderService'
 import { useAppDispatch } from '@renderer/store'
 import { removeBlocksThunk } from '@renderer/store/thunk/messageThunk'
 import type { ErrorMessageBlock, Message } from '@renderer/types/newMessage'
+import { diagnoseClientError } from '@renderer/utils/clientErrorDiagnosis'
 import { classifyError } from '@renderer/utils/errorClassifier'
 import { Button } from 'antd'
 import { AlertTriangle, ChevronRight, X } from 'lucide-react'
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useMemo } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
 import { Link, useNavigate } from 'react-router-dom'
 
 const HTTP_ERROR_CODES = [400, 401, 403, 404, 429, 500, 502, 503, 504]
-
-// Module-level cache for AI classification to avoid duplicate API calls
-const aiClassifyCache = new Map<string, Promise<string>>()
 
 interface Props {
   block: ErrorMessageBlock
@@ -78,36 +75,21 @@ const ErrorMessage: React.FC<{ block: ErrorMessageBlock }> = ({ block }) => {
 const MessageErrorInfo: React.FC<{ block: ErrorMessageBlock; message: Message }> = ({ block, message }) => {
   const dispatch = useAppDispatch()
   const { setTimeoutTimer } = useTimer()
-  const { t, i18n } = useTranslation()
+  const { t } = useTranslation()
   const navigate = useNavigate()
-  const [aiSummary, setAiSummary] = useState<string>('')
 
   const providerId = message.model?.provider ?? (block.error?.providerId as string | undefined)
   const classification = useMemo(() => classifyError(block.error, providerId), [block.error, providerId])
-
-  // AI fallback: when rule-based classification returns 'unknown', ask AI for a one-line summary
-  const errorForAI = block.error
-  useEffect(() => {
-    if (classification.category !== 'unknown' || !errorForAI?.message) return
-    let cancelled = false
-    const cacheKey = `${errorForAI.message}:${i18n.language}`
-    const cached = aiClassifyCache.get(cacheKey)
-    const promise =
-      cached ??
-      classifyErrorByAI(errorForAI, i18n.language).then((summary) => {
-        if (!summary) aiClassifyCache.delete(cacheKey)
-        return summary
-      })
-    if (!cached) aiClassifyCache.set(cacheKey, promise)
-    promise
-      .then((summary) => {
-        if (!cancelled && summary) setAiSummary(summary)
-      })
-      .catch(() => {})
-    return () => {
-      cancelled = true
-    }
-  }, [classification.category, errorForAI, i18n.language])
+  const clientDiagnosis = useMemo(
+    () =>
+      diagnoseClientError(block.error, {
+        model: message.model,
+        blockId: block.id,
+        messageId: message.id,
+        createdAt: block.createdAt || message.createdAt
+      }),
+    [block.error, block.id, block.createdAt, message.model, message.id, message.createdAt]
+  )
 
   const diagnosisContext = useMemo(
     () => ({
@@ -130,6 +112,9 @@ const MessageErrorInfo: React.FC<{ block: ErrorMessageBlock; message: Message }>
     showErrorDetailPopup({
       error: block.error,
       blockId: block.id,
+      messageId: message.id,
+      model: message.model,
+      createdAt: block.createdAt || message.createdAt,
       cachedDiagnosis: block.metadata?.diagnosis as DiagnosisResult | undefined,
       diagnosisContext
     })
@@ -166,7 +151,7 @@ const MessageErrorInfo: React.FC<{ block: ErrorMessageBlock; message: Message }>
           <AlertTriangle size={15} />
         </div>
         <div className="pr-5 font-semibold text-[13px] leading-[1.4]" style={{ color: 'var(--color-error)' }}>
-          {aiSummary || t(classification.i18nKey)}
+          {clientDiagnosis.title}
         </div>
       </div>
 
@@ -174,7 +159,7 @@ const MessageErrorInfo: React.FC<{ block: ErrorMessageBlock; message: Message }>
       <div
         className="wrap-break-word ml-5.75 line-clamp-3 text-xs leading-normal [&_a]:text-(--color-link)"
         style={{ color: 'var(--color-text-2)' }}>
-        {block.error?.message || <ErrorMessage block={block} />}
+        {clientDiagnosis.summary || <ErrorMessage block={block} />}
       </div>
 
       {/* Footer */}

@@ -3,6 +3,7 @@ import GeneralPopup from '@renderer/components/Popups/GeneralPopup'
 import { useCodeStyle } from '@renderer/context/CodeStyleProvider'
 import i18n from '@renderer/i18n'
 import type { DiagnosisContext, DiagnosisResult } from '@renderer/services/ErrorDiagnosisService'
+import type { Model } from '@renderer/types'
 import type { SerializedAiSdkError, SerializedAiSdkErrorUnion, SerializedError } from '@renderer/types/error'
 import {
   isSerializedAiSdkAPICallError,
@@ -28,6 +29,7 @@ import {
   isSerializedAiSdkUnsupportedFunctionalityError,
   isSerializedError
 } from '@renderer/types/error'
+import { diagnoseClientError, formatClientErrorDiagnosis } from '@renderer/utils/clientErrorDiagnosis'
 import { formatAiSdkError, formatError, safeToString } from '@renderer/utils/error'
 import { parseDataUrl } from '@shared/utils'
 import { Button } from 'antd'
@@ -43,6 +45,9 @@ interface ErrorDetailContentProps {
   error?: SerializedError
   diagnosisContext?: DiagnosisContext
   blockId?: string
+  messageId?: string
+  model?: Model
+  createdAt?: string
   cachedDiagnosis?: DiagnosisResult
 }
 
@@ -135,6 +140,55 @@ const TruncatedBadge = styled.span`
   border-radius: 4px;
 `
 
+const DiagnosisPanel = styled.div`
+  border: 1px solid color-mix(in srgb, var(--color-error) 18%, transparent);
+  background: color-mix(in srgb, var(--color-error) 4%, transparent);
+  border-radius: 8px;
+  padding: 14px 16px;
+  margin-bottom: 16px;
+`
+
+const DiagnosisTitle = styled.div`
+  font-weight: 700;
+  color: var(--color-error);
+  font-size: 14px;
+  margin-bottom: 6px;
+`
+
+const DiagnosisSummary = styled.div`
+  color: var(--color-text-2);
+  font-size: 13px;
+  line-height: 1.6;
+  margin-bottom: 12px;
+`
+
+const DiagnosisGrid = styled.div`
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 12px;
+`
+
+const DiagnosisField = styled.div`
+  min-width: 0;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--color-background-soft) 80%, transparent);
+  border: 1px solid var(--color-border);
+  padding: 8px 10px;
+`
+
+const DiagnosisFieldLabel = styled.div`
+  color: var(--color-text-3);
+  font-size: 11px;
+  margin-bottom: 4px;
+`
+
+const DiagnosisFieldValue = styled.div`
+  color: var(--color-text);
+  font-size: 12px;
+  line-height: 1.45;
+  word-break: break-word;
+`
+
 // --- Sub-Components ---
 
 const BuiltinError = memo(({ error }: { error: SerializedError }) => {
@@ -164,6 +218,56 @@ const BuiltinError = memo(({ error }: { error: SerializedError }) => {
     </>
   )
 })
+
+const ClientDiagnosisSection = memo(
+  ({
+    error,
+    blockId,
+    messageId,
+    model,
+    createdAt
+  }: {
+    error?: SerializedError
+    blockId?: string
+    messageId?: string
+    model?: Model
+    createdAt?: string
+  }) => {
+    const diagnosis = diagnoseClientError(error, { blockId, messageId, model, createdAt })
+    const fields = [
+      ['发生阶段', diagnosis.stage],
+      ['错误类型', diagnosis.errorType],
+      ['HTTP 状态', diagnosis.httpStatus],
+      ['服务连通性', diagnosis.serviceConnectivity],
+      ['服务地址检测', diagnosis.serviceStatusCheck],
+      ['模型接口检测', diagnosis.modelApiCheck],
+      ['服务是否收到请求', diagnosis.serviceReceived],
+      ['是否开始生成', diagnosis.startedGenerating],
+      ['模型', diagnosis.model],
+      ['服务地址', diagnosis.serviceAddress],
+      ['发生时间', diagnosis.occurredAt],
+      ['诊断编号', diagnosis.diagnosticId]
+    ]
+
+    return (
+      <DiagnosisPanel>
+        <DiagnosisTitle>{diagnosis.title}</DiagnosisTitle>
+        <DiagnosisSummary>{diagnosis.summary}</DiagnosisSummary>
+        <DiagnosisGrid>
+          {fields.map(([label, value]) => (
+            <DiagnosisField key={label}>
+              <DiagnosisFieldLabel>{label}</DiagnosisFieldLabel>
+              <DiagnosisFieldValue className="selectable">{value}</DiagnosisFieldValue>
+            </DiagnosisField>
+          ))}
+        </DiagnosisGrid>
+        <DiagnosisSummary style={{ marginTop: 12, marginBottom: 0 }}>
+          建议操作：{diagnosis.suggestion}
+        </DiagnosisSummary>
+      </DiagnosisPanel>
+    )
+  }
+)
 
 const AiSdkErrorBase = memo(({ error }: { error: SerializedAiSdkError }) => {
   const { t } = useTranslation()
@@ -510,6 +614,9 @@ const ErrorDetailContent: React.FC<ErrorDetailContentProps> = ({
   error,
   diagnosisContext,
   blockId,
+  messageId,
+  model,
+  createdAt,
   cachedDiagnosis
 }) => {
   const { t } = useTranslation()
@@ -546,9 +653,12 @@ const ErrorDetailContent: React.FC<ErrorDetailContentProps> = ({
       errorText = safeToString(error)
     }
 
-    void navigator.clipboard.writeText(errorText)
+    const diagnosis = diagnoseClientError(error, { blockId, messageId, model, createdAt })
+    const copyText = `${formatClientErrorDiagnosis(diagnosis)}\n\n【技术详情】\n${errorText}`
+
+    void navigator.clipboard.writeText(copyText)
     window.toast.success(t('message.copied'))
-  }, [error, t])
+  }, [blockId, createdAt, error, messageId, model, t])
 
   const renderErrorDetails = (error?: SerializedError) => {
     if (!error) {
@@ -586,6 +696,7 @@ const ErrorDetailContent: React.FC<ErrorDetailContentProps> = ({
   return (
     <>
       <ErrorDetailContainer ref={containerRef}>
+        <ClientDiagnosisSection error={error} blockId={blockId} messageId={messageId} model={model} createdAt={createdAt} />
         {renderErrorDetails(error)}
         {diagStatus !== 'idle' && (
           <AIDiagnosisSectionWithStatus

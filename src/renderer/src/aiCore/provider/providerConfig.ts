@@ -32,6 +32,7 @@ import {
 import { defaultAppHeaders } from '@shared/utils'
 import { cloneDeep, isEmpty } from 'lodash'
 
+import { createZenTraceId, runClientConnectivityCheck, ZEN_TRACE_HEADER } from '../../utils/clientErrorDiagnosis'
 import type { ProviderConfig } from '../types'
 import { COPILOT_DEFAULT_HEADERS } from './constants'
 import { getAiSdkProviderId } from './factory'
@@ -166,12 +167,46 @@ function buildCommonOptions(ctx: BuilderContext) {
     headers: {
       ...defaultAppHeaders(),
       ...ctx.actualProvider.extra_headers
-    }
+    },
+    fetch: withZenTraceFetch()
   }
   if (ctx.aiSdkProviderId === 'openai') {
     options.headers['X-Api-Key'] = ctx.baseConfig.apiKey
   }
   return options
+}
+
+function withZenTraceFetch(baseFetch: typeof fetch = fetch): typeof fetch {
+  return async (input: RequestInfo | URL, init?: RequestInit) => {
+    const traceId = createZenTraceId()
+    const headers = new Headers(init?.headers)
+    headers.set(ZEN_TRACE_HEADER, traceId)
+
+    try {
+      const response = await baseFetch(input, { ...init, headers })
+      return response
+    } catch (error) {
+      if (error && typeof error === 'object') {
+        ;(error as Record<string, unknown>).zenTraceId = traceId
+        ;(error as Record<string, unknown>).zenRequestUrl =
+          typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
+        if (!isAbortLikeError(error)) {
+          ;(error as Record<string, unknown>).zenConnectivityCheck = await runClientConnectivityCheck(
+            input,
+            { ...init, headers },
+            baseFetch
+          )
+        }
+      }
+      throw error
+    }
+  }
+}
+
+function isAbortLikeError(error: unknown): boolean {
+  if (error instanceof DOMException && error.name === 'AbortError') return true
+  const message = error instanceof Error ? error.message : String(error)
+  return message.toLowerCase().includes('aborted')
 }
 
 async function buildCopilotConfig(ctx: BuilderContext): Promise<ProviderConfig<'github-copilot-openai-compatible'>> {
@@ -272,13 +307,35 @@ async function buildCherryAIConfig(ctx: BuilderContext): Promise<ProviderConfig<
       name: ctx.actualProvider.id,
       headers: { ...defaultAppHeaders(), ...ctx.actualProvider.extra_headers },
       fetch: async (input: RequestInfo | URL, init?: RequestInit) => {
+        const traceId = createZenTraceId()
+        const headers = new Headers(init?.headers)
+        headers.set(ZEN_TRACE_HEADER, traceId)
         const signature = await window.api.cherryai.generateSignature({
           method: 'POST',
           path: '/chat/completions',
           query: '',
           body: init?.body && typeof init.body === 'string' ? JSON.parse(init.body) : undefined
         })
-        return fetch(input, { ...init, headers: { ...init?.headers, ...signature } })
+        for (const [key, value] of Object.entries(signature as Record<string, string>)) {
+          headers.set(key, value)
+        }
+        try {
+          return await fetch(input, { ...init, headers })
+        } catch (error) {
+          if (error && typeof error === 'object') {
+            ;(error as Record<string, unknown>).zenTraceId = traceId
+            ;(error as Record<string, unknown>).zenRequestUrl =
+              typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
+            if (!isAbortLikeError(error)) {
+              ;(error as Record<string, unknown>).zenConnectivityCheck = await runClientConnectivityCheck(
+                input,
+                { ...init, headers },
+                fetch
+              )
+            }
+          }
+          throw error
+        }
       }
     }
   }
@@ -403,7 +460,8 @@ function buildNewApiConfig(ctx: BuilderContext): ProviderConfig<'newapi'> {
       ...ctx.baseConfig,
       baseURL,
       endpointType: ctx.model.endpoint_type,
-      headers: { ...defaultAppHeaders(), ...ctx.actualProvider.extra_headers }
+      headers: { ...defaultAppHeaders(), ...ctx.actualProvider.extra_headers },
+      fetch: withZenTraceFetch()
     }
   }
 }

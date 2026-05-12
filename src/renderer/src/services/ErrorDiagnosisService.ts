@@ -58,7 +58,6 @@ function buildContextHint(errorInfo: Record<string, unknown>, context?: Diagnosi
   const status = Number(errorInfo.status) || 0
   const source = context?.errorSource || String(errorInfo.source || '')
 
-  // Auth / API key issues
   if (
     status === 401 ||
     status === 403 ||
@@ -66,23 +65,18 @@ function buildContextHint(errorInfo: Record<string, unknown>, context?: Diagnosi
     msg.includes('unauthorized') ||
     msg.includes('forbidden')
   ) {
-    const provider = errorInfo.provider || context?.providerName || 'the provider'
-    return `## Context\nThe user is calling ${provider} API and got an authentication error. Zen AI lets users configure API keys per provider in provider settings.\n`
+    return `## 背景提示\n当前账号在使用所选模型时被拒绝。请使用中性的产品表达，例如：账号状态、可用额度、模型权限、服务地址。\n`
   }
 
-  // Quota / rate limit
   if (status === 429 || msg.includes('quota') || msg.includes('rate_limit') || msg.includes('insufficient')) {
-    const provider = errorInfo.provider || context?.providerName || 'the provider'
-    return `## Context\nThe user hit a rate limit or quota issue with ${provider}. Users can check billing/quota on the provider's website or switch to a different model.\n`
+    return `## 背景提示\n本次请求可能因为额度、账号限制或请求频率较高而被拒绝。请使用中性的产品表达，例如：账号状态、可用额度、请求频率。\n`
   }
 
-  // Model not found
   if (status === 404 || msg.includes('model_not_found') || msg.includes('model not found')) {
     const model = errorInfo.modelId || context?.modelId || 'unknown'
-    return `## Context\nModel "${model}" was not found. The model may be deprecated, the ID may be wrong, or the user's API plan may not include this model.\n`
+    return `## 背景提示\n模型 "${model}" 暂时无法使用。可能原因包括模型名称不可用、模型已关闭，或当前账号没有该模型权限。\n`
   }
 
-  // Network / proxy
   if (
     msg.includes('econnrefused') ||
     msg.includes('timeout') ||
@@ -90,21 +84,18 @@ function buildContextHint(errorInfo: Record<string, unknown>, context?: Diagnosi
     msg.includes('proxy') ||
     msg.includes('certificate')
   ) {
-    return `## Context\nNetwork or proxy error. Zen AI supports HTTP/SOCKS proxy configuration in general settings. The user may be behind a firewall or using a custom API endpoint.\n`
+    return `## 背景提示\n当前设备未能稳定连接模型服务。常见原因包括网络不稳定、代理、VPN、DNS、防火墙或证书异常。\n`
   }
 
-  // MCP
   if (msg.includes('mcp')) {
-    return `## Context\nMCP (Model Context Protocol) server error. Users manage MCP servers in MCP settings. Common issues: server not started, wrong configuration, connection timeout.\n`
+    return `## 背景提示\n本地工具服务出现异常。常见原因包括服务未启动、配置不正确或连接超时。\n`
   }
 
-  // Knowledge base
   if (msg.includes('embedding') || msg.includes('knowledge base')) {
-    return `## Context\nKnowledge base / embedding error. Users create knowledge bases with documents and use embedding models for retrieval.\n`
+    return `## 背景提示\n知识库或文档检索环节出现异常。常见原因包括文档解析、向量化或模型权限问题。\n`
   }
 
-  // Generic
-  return `## Context\nZen AI is an AI chat app connecting to LLM providers (OpenAI, Anthropic, Google, Ollama, etc.) with API keys. Error occurred during ${source || 'chat'}.\n`
+  return `## 背景提示\nZen AI 是一款 AI 对话应用。本次错误发生在 ${source || 'chat'} 环节。请使用中性的产品表达，避免暴露内部服务结构。\n`
 }
 
 function parseResponse(raw: string): DiagnosisResult {
@@ -147,7 +138,6 @@ export async function diagnoseError(
   if (status) errorInfo.status = status
 
   if (context?.errorSource) errorInfo.source = context.errorSource
-  if (context?.providerName) errorInfo.provider = context.providerName
   if (context?.modelId) errorInfo.modelId = context.modelId
 
   const cause = (error as Record<string, unknown>).cause
@@ -169,21 +159,27 @@ export async function diagnoseError(
   // Build context hint based on error source
   const contextHint = buildContextHint(errorInfo, context)
 
-  const prompt = `You are an error diagnosis assistant for Zen AI, an AI chat desktop app.
-Analyze the error and return a JSON diagnosis in ${language}.
+  const prompt = `你是 Zen AI 的错误诊断助手。你的任务是根据错误信息，生成一份给普通用户和管理员都能看懂的诊断结果。
+请使用 ${language} 输出。
 
 ${contextHint}
-## Output
-Return ONLY valid JSON (no markdown, no code blocks):
+## 输出格式
+只返回合法 JSON，不要返回 Markdown，不要返回代码块，不要添加 JSON 以外的解释文字：
 {"summary":"one-line","category":"auth|quota|model|network|proxy|content|server|context_length|payload|stream|parse|mcp|knowledge|ocr|deprecated|unknown","explanation":"2-3 sentences why this happened","steps":[{"text":"step 1"},{"text":"step 2"}]}
 
-## Rules
-- 2-4 concrete steps, reference actual provider/model name from error
-- No URLs, no links, no restart suggestion, plain text only
+## 写作规则
+- 如果输出语言是中文，请使用自然、克制、用户能理解的中文产品表达。
+- 不要暴露内部架构、商业结构或服务转发关系。
+- 不要使用这些词：relay、upstream、channel、provider、proxy service、panel、Docker、container、trace id、上游、渠道、中转、面板、容器。
+- 优先使用这些词：当前应用、当前设备、模型服务、服务地址、诊断编号、账号状态、可用额度、模型权限、网络、代理、VPN、响应超时、连接中断。
+- 不要说“肯定是某原因”，要使用“可能、通常、常见原因”等概率表达。
+- steps 给出 2 到 4 个具体操作建议，只在有帮助时提到模型名称。
+- 不要输出网址、链接、重启建议，也不要让普通用户去抓日志。
+- category 字段必须从给定枚举中选择，保持英文枚举值不翻译。
 
-## Example
-Input: {"name":"APICallError","message":"invalid_api_key","status":401,"provider":"openai","modelId":"gpt-4"}
-Output: {"summary":"OpenAI API key is invalid or expired","category":"auth","explanation":"The OpenAI server rejected the request because the API key is invalid, expired, or has been revoked.","steps":[{"text":"Open provider settings and check your OpenAI API key is correct"},{"text":"Verify the API key is still active in your OpenAI dashboard"}]}`
+## 示例
+输入：{"name":"APICallError","message":"unauthorized","status":401,"modelId":"gpt-4"}
+输出：{"summary":"账号权限异常，当前账号暂时无法使用该模型","category":"auth","explanation":"模型服务拒绝了本次请求，常见原因是账号状态、可用额度或模型权限不满足要求。请联系管理员核对相关配置。","steps":[{"text":"确认当前账号状态是否正常"},{"text":"确认可用额度和模型权限是否覆盖所选模型"}]}`
 
   const content = JSON.stringify(errorInfo)
 
@@ -215,7 +211,7 @@ Output: {"summary":"OpenAI API key is invalid or expired","category":"auth","exp
  * Returns a one-line summary in the user's language, or empty string on failure.
  */
 export async function classifyErrorByAI(error: SerializedError, language: string): Promise<string> {
-  const prompt = `You are an error diagnosis assistant for Zen AI. Summarize this error in one sentence (max 30 words) in ${language}. Return ONLY the summary text, no JSON, no markdown, no quotes.`
+  const prompt = `你是 Zen AI 的错误诊断助手。请用 ${language} 将这个错误总结成一句普通用户能理解的话，最多 30 个词。只返回摘要文本，不要返回 JSON、Markdown、引号或额外解释。请使用中性的产品表达，不要出现这些词：relay、upstream、channel、provider、panel、Docker、container、trace id、上游、渠道、中转、面板、容器。`
   const content = `Error: ${error.name}: ${error.message}`
 
   const modelsToTry = await buildModelsToTry()

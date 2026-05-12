@@ -20,6 +20,7 @@ import { t } from 'i18next'
 import type * as z from 'zod'
 import { ZodError } from 'zod'
 
+import { ZEN_TRACE_HEADER } from './clientErrorDiagnosis'
 import { parseJSON } from './json'
 
 const logger = loggerService.withContext('Utils:error')
@@ -228,6 +229,22 @@ export const serializeError = (error: AiSdkErrorUnion): SerializedError => {
       : serializeNoSuchToolError(error.originalError)
   if ('functionality' in error) serializedError.functionality = error.functionality
   if ('provider' in error) serializedError.provider = error.provider
+  if ('zenTraceId' in error && typeof error.zenTraceId === 'string') {
+    serializedError.zenTraceId = error.zenTraceId
+  }
+  if ('zenRequestUrl' in error && typeof error.zenRequestUrl === 'string') {
+    serializedError.zenRequestUrl = error.zenRequestUrl
+  }
+  if ('zenConnectivityCheck' in error && error.zenConnectivityCheck) {
+    const serialized = safeSerialize(error.zenConnectivityCheck, { pretty: false })
+    if (serialized) {
+      serializedError.zenConnectivityCheck = JSON.parse(serialized)
+    }
+  }
+  if (!serializedError.zenTraceId && serializedError.responseHeaders && typeof serializedError.responseHeaders === 'object') {
+    const headers = serializedError.responseHeaders as Record<string, string>
+    serializedError.zenTraceId = headers[ZEN_TRACE_HEADER] || headers[ZEN_TRACE_HEADER.toLowerCase()]
+  }
 
   return serializedError
 }
