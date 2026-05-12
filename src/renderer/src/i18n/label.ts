@@ -152,6 +152,7 @@ const titleKeyMap = {
   memories: 'title.memories',
   notes: 'title.notes',
   paintings: 'title.paintings',
+  research: 'research.title',
   settings: 'title.settings',
   translate: 'title.translate',
   openclaw: 'openclaw.title',
@@ -193,6 +194,7 @@ const sidebarIconKeyMap = {
   minapp: 'minapp.title',
   knowledge: 'knowledge.title',
   files: 'files.title',
+  research: 'research.title',
   code_tools: 'code.title',
   notes: 'notes.title',
   openclaw: 'openclaw.title'

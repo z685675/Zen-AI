@@ -3456,6 +3456,58 @@
     "zhinao": "360 智脑",
     "zhipu": "智谱开放平台"
   },
+  "research": {
+    "actions": {
+      "create_project": "新建课题",
+      "import_pdf": "导入 PDF"
+    },
+    "assistant": {
+      "evidence_placeholder": "证据模式将把回答连接到文献来源和页码级片段。",
+      "next_step_placeholder": "下一步建议会帮助推进选题、阅读和写作。",
+      "review_placeholder": "综述框架会把选中的证据整理成文献综述写作大纲。",
+      "title": "科研助手"
+    },
+    "modules": {
+      "cards": "论文卡片",
+      "literatures": "文献库",
+      "matrix": "文献矩阵",
+      "overview": "概览",
+      "review": "综述框架"
+    },
+    "projects": {
+      "empty_description": "先创建一个课题空间，后续可导入 PDF、生成论文卡片、整理文献矩阵。",
+      "empty_title": "还没有课题",
+      "title": "课题空间"
+    },
+    "stage": {
+      "cards": {
+        "description": "论文卡片将保存每篇论文的结构化摘要、方法、结论、局限和证据片段。",
+        "title": "论文卡片工作区"
+      },
+      "literatures": {
+        "description": "文献库将管理当前课题下的 PDF、元数据、标签、阅读状态和来源链接。",
+        "title": "文献库"
+      },
+      "matrix": {
+        "description": "文献矩阵将按研究问题、方法、样本、结论和研究空白对比多篇文献。",
+        "title": "文献矩阵"
+      },
+      "overview": {
+        "description": "课题概览将汇总研究问题、核心资料、阅读进度和当前写作方向。",
+        "title": "课题概览"
+      },
+      "review": {
+        "description": "综述框架将基于选中的论文卡片和证据项生成并迭代综述大纲。",
+        "title": "综述框架"
+      }
+    },
+    "title": "科研工作台",
+    "workspace": {
+      "description": "围绕一个研究课题组织文献、笔记、证据、写作和进度。",
+      "eyebrow": "AI Research Workspace",
+      "title": "从一个课题空间开始"
+    }
+  },
   "restore": {
     "confirm": {
       "button": "选择备份文件",
@@ -5163,13 +5215,13 @@
       "provider_key_add_failed_by_empty_data": "添加服务商 API 密钥失败，数据为空",
       "provider_key_add_failed_by_invalid_data": "添加服务商 API 密钥失败，数据格式错误",
       "provider_key_added": "成功为 {{provider}} 添加 API 密钥",
-      "provider_models_synced": "{{provider}} 导入成功，已同步 {{count}} 个模型",
-      "provider_models_sync_empty": "{{provider}} 已导入，但暂未拉取到模型，请稍后手动刷新",
       "provider_key_already_exists": "{{provider}} 已存在相同API 密钥，不会重复添加",
       "provider_key_confirm_title": "为{{provider}}添加 API 密钥",
       "provider_key_no_change": "{{provider}} 的 API 密钥没有变化",
       "provider_key_overridden": "成功更新 {{provider}} 的 API 密钥",
       "provider_key_override_confirm": "{{provider}} 已存在相同 API 密钥，是否覆盖？",
+      "provider_models_sync_empty": "{{provider}} 已导入，但暂未拉取到模型，请稍后手动刷新",
+      "provider_models_synced": "{{provider}} 导入成功，已同步 {{count}} 个模型",
       "provider_name": "服务商名称",
       "quick_assistant_default_tag": "默认",
       "quick_assistant_model": "快捷助手模型",
@@ -6018,12 +6070,16 @@
     "show_window": "显示窗口"
   },
   "update": {
-    "install": "前往下载",
+    "available": "发现新版本 {{version}}，你可以稍后在“检查更新”里手动下载安装。",
+    "downloading": "正在后台下载新版本 {{version}}，下载完成后会提示你安装。",
+    "install": "立即更新",
     "later": "稍后",
-    "message": "发现新版本 {{version}}，是否现在打开下载页面？",
+    "message": "新版本 {{version}} 已下载完成，是否立即重启并安装？",
     "noReleaseNotes": "暂无更新日志",
+    "releaseDate": "发布日期",
     "saveDataError": "保存数据失败，请重试",
-    "title": "更新提示"
+    "title": "更新提示",
+    "version": "版本"
   },
   "warning": {
     "missing_provider": "供应商不存在，已回退到默认供应商 {{provider}}。这可能导致问题。"

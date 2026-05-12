@@ -91,6 +91,28 @@ jobs:
       - name: Install Dependencies
         run: pnpm install
 
+      - name: Prepare release notes
+        shell: bash
+        run: |
+          TAG="${{ steps.get-tag.outputs.tag }}"
+          VERSION="${TAG#v}"
+          RELEASE_NOTES_FILE="release-notes/${TAG}.md"
+          if [ ! -f "$RELEASE_NOTES_FILE" ]; then
+            RELEASE_NOTES_FILE="release-notes/${VERSION}.md"
+          fi
+          if [ -f "$RELEASE_NOTES_FILE" ]; then
+            cp "$RELEASE_NOTES_FILE" .release-body.md
+          else
+            git tag -l "$TAG" --format='%(contents)' > .release-body.md
+          fi
+          if [ ! -s .release-body.md ]; then
+            echo "Release notes for $TAG are not provided yet." > .release-body.md
+          fi
+          {
+            echo "RELEASE_TAG=$TAG"
+            echo "RELEASE_NOTES_FILE=.release-body.md"
+          } >> "$GITHUB_ENV"
+
       - name: Build Mac
         if: matrix.os == 'macos-latest'
         run: |
@@ -127,7 +149,8 @@ jobs:
           allowUpdates: true
           makeLatest: false
           tag: ${{ steps.get-tag.outputs.tag }}
-          artifacts: "dist/*.exe"
+          bodyFile: .release-body.md
+          artifacts: "dist/*.exe,dist/latest*.yml,dist/*.blockmap"
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Release Mac
@@ -138,5 +161,6 @@ jobs:
           allowUpdates: true
           makeLatest: false
           tag: ${{ steps.get-tag.outputs.tag }}
-          artifacts: "dist/*.zip,dist/*.dmg"
+          bodyFile: .release-body.md
+          artifacts: "dist/*.zip,dist/*.dmg,dist/latest*.yml,dist/*.blockmap"
           token: ${{ secrets.GITHUB_TOKEN }}

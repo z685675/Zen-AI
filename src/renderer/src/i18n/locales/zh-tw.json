@@ -3456,6 +3456,58 @@
     "zhinao": "360 智腦",
     "zhipu": "智譜開放平台"
   },
+  "research": {
+    "actions": {
+      "create_project": "新增課題",
+      "import_pdf": "匯入 PDF"
+    },
+    "assistant": {
+      "evidence_placeholder": "證據模式會把回答連接到文獻來源與頁碼級片段。",
+      "next_step_placeholder": "下一步建議會協助推進選題、閱讀與寫作。",
+      "review_placeholder": "綜述框架會把選取的證據整理成文獻綜述寫作大綱。",
+      "title": "科研助手"
+    },
+    "modules": {
+      "cards": "論文卡片",
+      "literatures": "文獻庫",
+      "matrix": "文獻矩陣",
+      "overview": "概覽",
+      "review": "綜述框架"
+    },
+    "projects": {
+      "empty_description": "先建立一個課題空間，後續可匯入 PDF、生成論文卡片、整理文獻矩陣。",
+      "empty_title": "尚無課題",
+      "title": "課題空間"
+    },
+    "stage": {
+      "cards": {
+        "description": "論文卡片會保存每篇論文的結構化摘要、方法、結論、限制與證據片段。",
+        "title": "論文卡片工作區"
+      },
+      "literatures": {
+        "description": "文獻庫會管理目前課題下的 PDF、後設資料、標籤、閱讀狀態與來源連結。",
+        "title": "文獻庫"
+      },
+      "matrix": {
+        "description": "文獻矩陣會依研究問題、方法、樣本、結論與研究空白比較多篇文獻。",
+        "title": "文獻矩陣"
+      },
+      "overview": {
+        "description": "課題概覽會彙整研究問題、核心資料、閱讀進度與目前寫作方向。",
+        "title": "課題概覽"
+      },
+      "review": {
+        "description": "綜述框架會根據選取的論文卡片與證據項生成並迭代綜述大綱。",
+        "title": "綜述框架"
+      }
+    },
+    "title": "科研工作台",
+    "workspace": {
+      "description": "圍繞一個研究課題組織文獻、筆記、證據、寫作與進度。",
+      "eyebrow": "AI Research Workspace",
+      "title": "從一個課題空間開始"
+    }
+  },
   "restore": {
     "confirm": {
       "button": "選擇備份檔案",
@@ -5163,13 +5215,13 @@
       "provider_key_add_failed_by_empty_data": "新增提供者 API 金鑰失敗，資料為空",
       "provider_key_add_failed_by_invalid_data": "新增提供者 API 金鑰失敗，資料格式錯誤",
       "provider_key_added": "成功為 {{provider}} 新增 API 金鑰",
-      "provider_models_synced": "{{provider}} 匯入成功，已同步 {{count}} 個模型",
-      "provider_models_sync_empty": "{{provider}} 已匯入，但暫時未抓取到模型，請稍後手動重新整理",
       "provider_key_already_exists": "{{provider}} 已存在相同 API 金鑰，不會重複新增",
       "provider_key_confirm_title": "為{{provider}}新增 API 金鑰",
       "provider_key_no_change": "{{provider}} 的 API 金鑰沒有變化",
       "provider_key_overridden": "成功更新 {{provider}} 的 API 金鑰",
       "provider_key_override_confirm": "{{provider}} 已存在相同 API 金鑰，是否覆蓋？",
+      "provider_models_sync_empty": "{{provider}} 已匯入，但暫時未抓取到模型，請稍後手動重新整理",
+      "provider_models_synced": "{{provider}} 匯入成功，已同步 {{count}} 個模型",
       "provider_name": "提供者名稱",
       "quick_assistant_default_tag": "預設",
       "quick_assistant_model": "快捷助手模型",
@@ -6018,12 +6070,16 @@
     "show_window": "顯示視窗"
   },
   "update": {
+    "available": "發現新版本 {{version}}，你可以稍後在「檢查更新」中手動下載安裝。",
+    "downloading": "正在背景下載新版本 {{version}}，下載完成後會提示你安裝。",
     "install": "立即安裝",
     "later": "稍後",
-    "message": "新版本 {{version}} 已準備就緒，是否立即安裝？",
+    "message": "新版本 {{version}} 已下載完成，是否立即重新啟動並安裝？",
     "noReleaseNotes": "暫無更新日誌",
+    "releaseDate": "發布日期",
     "saveDataError": "儲存資料失敗，請重試",
-    "title": "更新提示"
+    "title": "更新提示",
+    "version": "版本"
   },
   "warning": {
     "missing_provider": "供應商不存在，已改用預設供應商 {{provider}}。這可能導致問題。"

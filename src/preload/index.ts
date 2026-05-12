@@ -132,6 +132,7 @@ const api = {
   resetData: () => ipcRenderer.invoke(IpcChannel.App_ResetData),
   openWebsite: (url: string) => ipcRenderer.invoke(IpcChannel.Open_Website, url),
   checkForUpdate: () => ipcRenderer.invoke(IpcChannel.App_CheckForUpdate),
+  quitAndInstallUpdate: () => ipcRenderer.invoke(IpcChannel.App_QuitAndInstall),
   getCacheSize: () => ipcRenderer.invoke(IpcChannel.App_GetCacheSize),
   clearCache: () => ipcRenderer.invoke(IpcChannel.App_ClearCache),
   logToMain: (source: LogSourceWithContext, level: LogLevel, message: string, data: any[]) =>
@@ -770,8 +771,6 @@ const api = {
         version: string
         releaseDate?: string
         releaseNotes?: string
-        downloadPage: string
-        mandatory?: boolean
         currentVersion: string
         source: 'auto' | 'manual'
       }) => void
@@ -783,8 +782,6 @@ const api = {
           version: string
           releaseDate?: string
           releaseNotes?: string
-          downloadPage: string
-          mandatory?: boolean
           currentVersion: string
           source: 'auto' | 'manual'
         }
@@ -810,6 +807,40 @@ const api = {
       const listener = (
         _: Electron.IpcRendererEvent,
         payload: { currentVersion: string; source: 'auto' | 'manual'; message: string }
+      ) => callback(payload)
+      ipcRenderer.on(channel, listener)
+      return () => ipcRenderer.removeListener(channel, listener)
+    },
+    onDownloadProgress: (
+      callback: (payload: { percent: number; transferred: number; total: number; bytesPerSecond: number }) => void
+    ): (() => void) => {
+      const channel = IpcChannel.DownloadProgress
+      const listener = (
+        _: Electron.IpcRendererEvent,
+        payload: { percent: number; transferred: number; total: number; bytesPerSecond: number }
+      ) => callback(payload)
+      ipcRenderer.on(channel, listener)
+      return () => ipcRenderer.removeListener(channel, listener)
+    },
+    onDownloaded: (
+      callback: (payload: {
+        version: string
+        releaseDate?: string
+        releaseNotes?: string
+        currentVersion: string
+        source: 'auto' | 'manual'
+      }) => void
+    ): (() => void) => {
+      const channel = IpcChannel.UpdateDownloaded
+      const listener = (
+        _: Electron.IpcRendererEvent,
+        payload: {
+          version: string
+          releaseDate?: string
+          releaseNotes?: string
+          currentVersion: string
+          source: 'auto' | 'manual'
+        }
       ) => callback(payload)
       ipcRenderer.on(channel, listener)
       return () => ipcRenderer.removeListener(channel, listener)

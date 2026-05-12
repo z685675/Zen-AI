@@ -118,7 +118,7 @@ const dxtService = new DxtService()
 
 export async function registerIpc(mainWindow: BrowserWindow, app: Electron.App) {
   const notificationService = new NotificationService()
-  const appUpdateService = new AppUpdateService(mainWindow, app.getVersion())
+  const appUpdateService = new AppUpdateService(mainWindow, app.getVersion(), () => configManager.getAutoUpdate())
 
   // Register shutdown handlers
   powerMonitorService.registerShutdownHandler(() => {
@@ -175,7 +175,7 @@ export async function registerIpc(mainWindow: BrowserWindow, app: Electron.App) 
   })
 
   // Update
-  ipcMain.handle(IpcChannel.App_QuitAndInstall, () => false)
+  ipcMain.handle(IpcChannel.App_QuitAndInstall, () => appUpdateService.quitAndInstall())
 
   // language
   ipcMain.handle(IpcChannel.App_SetLanguage, (_, language) => {
@@ -228,9 +228,7 @@ export async function registerIpc(mainWindow: BrowserWindow, app: Electron.App) 
     configManager.setAutoUpdate(isActive)
   })
 
-  if (configManager.getAutoUpdate()) {
-    appUpdateService.scheduleStartupCheck()
-  }
+  appUpdateService.scheduleStartupCheck()
 
   ipcMain.handle(IpcChannel.App_SetTestPlan, async (_, isActive: boolean) => {
     logger.info(`set test plan: ${isActive}`)

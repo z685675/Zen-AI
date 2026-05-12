@@ -22,7 +22,7 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import { showAppUpdateModal } from '../utils/appUpdate'
+import { showAppUpdateAvailableToast, showAppUpdateDownloadedModal, showAppUpdateDownloadingToast } from '../utils/appUpdate'
 import { useDefaultModel } from './useAssistant'
 import useFullScreenNotice from './useFullScreenNotice'
 import { useRuntime } from './useRuntime'
@@ -40,7 +40,8 @@ export function useAppInit() {
     windowStyle,
     proxyMode,
     customCss,
-    enableDataCollection
+    enableDataCollection,
+    autoCheckUpdate
   } = useSettings()
   const { isLeftNavbar } = useNavbarPosition()
   const { minappShow } = useRuntime()
@@ -49,6 +50,7 @@ export function useAppInit() {
   const { theme } = useTheme()
   const memoryConfig = useAppSelector(selectMemoryConfig)
   const hasShownStartupUpdate = useRef(false)
+  const hasShownDownloadedUpdate = useRef(false)
 
   useEffect(() => {
     document.getElementById('spinner')?.remove()
@@ -245,11 +247,25 @@ export function useAppInit() {
       }
 
       hasShownStartupUpdate.current = true
-      showAppUpdateModal(t, payload)
+      if (autoCheckUpdate) {
+        showAppUpdateDownloadingToast(t, payload.version)
+      } else {
+        showAppUpdateAvailableToast(t, payload.version)
+      }
+    })
+
+    const removeDownloadedListener = window.api.update.onDownloaded((payload) => {
+      if (hasShownDownloadedUpdate.current) {
+        return
+      }
+
+      hasShownDownloadedUpdate.current = true
+      showAppUpdateDownloadedModal(t, payload)
     })
 
     return () => {
       removeAvailableListener()
+      removeDownloadedListener()
     }
   }, [t])
 
