@@ -1,6 +1,6 @@
 import type { SidebarIcon } from '@renderer/types'
 
-import { researchWorkspace } from './researchWorkspace'
+import { isResearchWorkspaceEnabled } from './researchWorkspace'
 
 /**
  * 默认显示的侧边栏图标
@@ -27,8 +27,12 @@ export const DEFAULT_SIDEBAR_ICONS: SidebarIcon[] = [
  */
 export const REQUIRED_SIDEBAR_ICONS: SidebarIcon[] = ['assistants']
 
-export const getAvailableSidebarIcons = (visibleIcons: SidebarIcon[], disabledIcons: SidebarIcon[] = []) => {
-  if (!researchWorkspace.enabled) {
+export const getAvailableSidebarIcons = (
+  visibleIcons: SidebarIcon[],
+  disabledIcons: SidebarIcon[] = [],
+  enableDeveloperMode = false
+) => {
+  if (!isResearchWorkspaceEnabled(enableDeveloperMode)) {
     return visibleIcons.filter((icon) => icon !== 'research')
   }
 

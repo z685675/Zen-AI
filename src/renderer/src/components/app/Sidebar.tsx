@@ -4,6 +4,7 @@ import { UserAvatar } from '@renderer/config/env'
 import { getAvailableSidebarIcons } from '@renderer/config/sidebar'
 import { useTheme } from '@renderer/context/ThemeProvider'
 import useAvatar from '@renderer/hooks/useAvatar'
+import { useEnableDeveloperMode } from '@renderer/hooks/useSettings'
 import { useFullscreen } from '@renderer/hooks/useFullscreen'
 import { useMinappPopup } from '@renderer/hooks/useMinappPopup'
 import { useMinapps } from '@renderer/hooks/useMinapps'
@@ -145,6 +146,7 @@ const MainMenus: FC = () => {
   const { hideMinappPopup } = useMinappPopup()
   const { pathname } = useLocation()
   const { sidebarIcons, defaultPaintingProvider } = useSettings()
+  const { enableDeveloperMode } = useEnableDeveloperMode()
   const { minappShow } = useRuntime()
   const navigate = useNavigate()
   const { theme } = useTheme()
@@ -182,7 +184,7 @@ const MainMenus: FC = () => {
     openclaw: '/openclaw'
   }
 
-  return getAvailableSidebarIcons(sidebarIcons.visible, sidebarIcons.disabled).map((icon) => {
+  return getAvailableSidebarIcons(sidebarIcons.visible, sidebarIcons.disabled, enableDeveloperMode).map((icon) => {
     const path = pathMap[icon]
     const isActive = path === '/' ? isRoute(path) : isRoutes(path)
 

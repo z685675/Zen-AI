@@ -2,8 +2,9 @@ import { CloseOutlined } from '@ant-design/icons'
 import type { DraggableProvided, DroppableProvided, DropResult } from '@hello-pangea/dnd'
 import { DragDropContext, Draggable, Droppable } from '@hello-pangea/dnd'
 import { OpenClawSidebarIcon } from '@renderer/components/Icons/SVGIcon'
-import { researchWorkspace } from '@renderer/config/researchWorkspace'
+import { isResearchWorkspaceEnabled } from '@renderer/config/researchWorkspace'
 import { getAvailableSidebarIcons } from '@renderer/config/sidebar'
+import { useEnableDeveloperMode } from '@renderer/hooks/useSettings'
 import { getSidebarIconLabel } from '@renderer/i18n/label'
 import { useAppDispatch } from '@renderer/store'
 import { setSidebarIcons } from '@renderer/store/settings'
@@ -41,9 +42,10 @@ const SidebarIconsManager: FC<SidebarIconsManagerProps> = ({
   setDisabledIcons
 }) => {
   const { t } = useTranslation()
+  const { enableDeveloperMode } = useEnableDeveloperMode()
 
   const dispatch = useAppDispatch()
-  const availableDisabledIcons = researchWorkspace.enabled
+  const availableDisabledIcons = isResearchWorkspaceEnabled(enableDeveloperMode)
     ? disabledIcons
     : disabledIcons.filter((icon) => icon !== 'research')
 
@@ -149,7 +151,7 @@ const SidebarIconsManager: FC<SidebarIconsManagerProps> = ({
           <Droppable droppableId="visible">
             {(provided: DroppableProvided) => (
               <IconList ref={provided.innerRef} {...provided.droppableProps}>
-                {getAvailableSidebarIcons(visibleIcons, disabledIcons).map((icon, index) => (
+                {getAvailableSidebarIcons(visibleIcons, disabledIcons, enableDeveloperMode).map((icon, index) => (
                   <Draggable key={icon} draggableId={icon} index={index}>
                     {(provided: DraggableProvided) => (
                       <IconItem ref={provided.innerRef} {...provided.draggableProps} {...provided.dragHandleProps}>

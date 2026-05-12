@@ -1,9 +1,10 @@
 import '@renderer/databases'
 
-import { researchWorkspace } from '@renderer/config/researchWorkspace'
+import { isResearchWorkspaceEnabled } from '@renderer/config/researchWorkspace'
+import { useEnableDeveloperMode } from '@renderer/hooks/useSettings'
 import type { FC } from 'react'
 import { useMemo } from 'react'
-import { HashRouter, Route, Routes } from 'react-router-dom'
+import { HashRouter, Navigate, Route, Routes } from 'react-router-dom'
 
 import Sidebar from './components/app/Sidebar'
 import { ErrorBoundary } from './components/ErrorBoundary'
@@ -31,6 +32,8 @@ import TranslatePage from './pages/translate/TranslatePage'
 const Router: FC = () => {
   const { onboardingCompleted, completeOnboarding } = useOnboardingState()
   const { navbarPosition } = useNavbarPosition()
+  const { enableDeveloperMode } = useEnableDeveloperMode()
+  const researchWorkspaceEnabled = isResearchWorkspaceEnabled(enableDeveloperMode)
 
   const routes = useMemo(() => {
     return (
@@ -47,14 +50,17 @@ const Router: FC = () => {
           <Route path="/apps/:appId" element={<MinAppPage />} />
           <Route path="/apps" element={<MinAppsPage />} />
           <Route path="/code" element={<CodeToolsPage />} />
-          {researchWorkspace.enabled && <Route path="/research" element={<ResearchPage />} />}
+          <Route
+            path="/research"
+            element={researchWorkspaceEnabled ? <ResearchPage /> : <Navigate to="/" replace />}
+          />
           <Route path="/openclaw" element={<OpenClawPage />} />
           <Route path="/settings/*" element={<SettingsPage />} />
           <Route path="/launchpad" element={<LaunchpadPage />} />
         </Routes>
       </ErrorBoundary>
     )
-  }, [])
+  }, [researchWorkspaceEnabled])
 
   if (!onboardingCompleted) {
     return <OnboardingPage onComplete={completeOnboarding} />

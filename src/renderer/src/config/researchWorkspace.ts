@@ -1,3 +1,7 @@
 export const researchWorkspace = {
-  enabled: false
+  enabled: true
+}
+
+export const isResearchWorkspaceEnabled = (enableDeveloperMode: boolean) => {
+  return researchWorkspace.enabled && enableDeveloperMode
 }
