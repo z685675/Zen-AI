@@ -3,18 +3,22 @@ set -euo pipefail
 
 required_env() {
   local name="$1"
-  if [[ -z "${!name:-}" ]]; then
+  local value="${!name:-}"
+  value="${value//$'\r'/}"
+  value="$(printf '%s' "$value")"
+  if [[ -z "$value" ]]; then
     echo "Missing required environment variable: $name" >&2
     exit 1
   fi
+  printf '%s' "$value"
 }
 
-required_env ALI_SSH_HOST
-required_env ALI_SSH_USER
-required_env ALI_DEPLOY_PATH
-required_env RELEASE_ASSETS_DIR
+ALI_SSH_HOST="$(required_env ALI_SSH_HOST)"
+ALI_SSH_USER="$(required_env ALI_SSH_USER)"
+ALI_DEPLOY_PATH="$(required_env ALI_DEPLOY_PATH)"
+RELEASE_ASSETS_DIR="$(required_env RELEASE_ASSETS_DIR)"
 
-PORT="${ALI_SSH_PORT:-22}"
+PORT="$(printf '%s' "${ALI_SSH_PORT:-22}" | tr -d '\r\n')"
 SOURCE_DIR="${RELEASE_ASSETS_DIR%/}"
 
 if [[ ! -d "$SOURCE_DIR" ]]; then
