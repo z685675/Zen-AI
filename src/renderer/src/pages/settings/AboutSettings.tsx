@@ -1,7 +1,7 @@
 import { HStack } from '@renderer/components/Layout'
 import { APP_NAME, AppLogo } from '@renderer/config/env'
 import { useTheme } from '@renderer/context/ThemeProvider'
-import { showAppUpdateDownloadedModal, showAppUpdateDownloadingToast } from '@renderer/utils/appUpdate'
+import { showAppUpdateAvailableModal, showAppUpdateDownloadedModal } from '@renderer/utils/appUpdate'
 import { runAsyncFunction } from '@renderer/utils'
 import {
   APP_DOWNLOADS_URL,
@@ -45,7 +45,7 @@ const AboutSettings: FC = () => {
       const result = await window.api.checkForUpdate()
 
       if (result.status === 'available') {
-        showAppUpdateDownloadingToast(t, result.updateInfo.version)
+        showAppUpdateAvailableModal(t, result.updateInfo)
         return
       }
 

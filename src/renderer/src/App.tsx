@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Provider } from 'react-redux'
 import { PersistGate } from 'redux-persist/integration/react'
 
+import { ErrorBoundary } from './components/ErrorBoundary'
 import TopViewContainer from './components/TopView'
 import AntdProvider from './context/AntdProvider'
 import { CodeStyleProvider } from './context/CodeStyleProvider'
@@ -30,25 +31,27 @@ function App(): React.ReactElement {
   logger.info('App initialized')
 
   return (
-    <Provider store={store}>
-      <QueryClientProvider client={queryClient}>
-        <StyleSheetManager>
-          <ThemeProvider>
-            <AntdProvider>
-              <NotificationProvider>
-                <CodeStyleProvider>
-                  <PersistGate loading={null} persistor={persistor}>
-                    <TopViewContainer>
-                      <Router />
-                    </TopViewContainer>
-                  </PersistGate>
-                </CodeStyleProvider>
-              </NotificationProvider>
-            </AntdProvider>
-          </ThemeProvider>
-        </StyleSheetManager>
-      </QueryClientProvider>
-    </Provider>
+    <ErrorBoundary>
+      <Provider store={store}>
+        <QueryClientProvider client={queryClient}>
+          <StyleSheetManager>
+            <ThemeProvider>
+              <AntdProvider>
+                <NotificationProvider>
+                  <CodeStyleProvider>
+                    <PersistGate loading={null} persistor={persistor}>
+                      <TopViewContainer>
+                        <Router />
+                      </TopViewContainer>
+                    </PersistGate>
+                  </CodeStyleProvider>
+                </NotificationProvider>
+              </AntdProvider>
+            </ThemeProvider>
+          </StyleSheetManager>
+        </QueryClientProvider>
+      </Provider>
+    </ErrorBoundary>
   )
 }
 

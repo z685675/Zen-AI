@@ -94,7 +94,7 @@ export class AppUpdateService {
 
   async checkForUpdates(source: AppUpdateCheckSource = 'manual'): Promise<AppUpdateCheckResult> {
     this.currentSource = source
-    autoUpdater.autoDownload = source === 'manual' ? true : this.shouldAutoDownload()
+    autoUpdater.autoDownload = source === 'manual' ? false : this.shouldAutoDownload()
 
     if (!app.isPackaged) {
       return this.handleUpdateError(source, `${APP_NAME} only supports auto update after installation packaging.`)
@@ -161,6 +161,63 @@ export class AppUpdateService {
       return this.handleUpdateError(source, error instanceof Error ? error.message : String(error))
     } finally {
       this.checking = false
+    }
+  }
+
+  async downloadUpdate(): Promise<AppUpdateCheckResult> {
+    this.currentSource = 'manual'
+    autoUpdater.autoDownload = false
+
+    if (!app.isPackaged) {
+      return this.handleUpdateError('manual', `${APP_NAME} only supports auto update after installation packaging.`)
+    }
+
+    if (isPortable) {
+      return this.handleUpdateError(
+        'manual',
+        'Portable builds do not support automatic in-place updates. Please use the installer build.'
+      )
+    }
+
+    if (this.downloadedUpdateInfo) {
+      return {
+        status: 'downloaded',
+        currentVersion: this.currentVersion,
+        source: 'manual',
+        updateInfo: this.downloadedUpdateInfo
+      }
+    }
+
+    if (this.downloading) {
+      return {
+        status: 'downloading',
+        currentVersion: this.currentVersion,
+        source: 'manual',
+        updateInfo: this.latestUpdateInfo
+      }
+    }
+
+    if (!this.latestUpdateInfo) {
+      const result = await this.checkForUpdates('manual')
+      if (result.status !== 'available') {
+        return result
+      }
+    }
+
+    try {
+      this.downloading = true
+      autoUpdater.autoDownload = true
+      await autoUpdater.downloadUpdate()
+
+      return {
+        status: 'downloading',
+        currentVersion: this.currentVersion,
+        source: 'manual',
+        updateInfo: this.latestUpdateInfo
+      }
+    } catch (error) {
+      this.downloading = false
+      return this.handleUpdateError('manual', error instanceof Error ? error.message : String(error))
     }
   }
 

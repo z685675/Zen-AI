@@ -132,6 +132,7 @@ const api = {
   resetData: () => ipcRenderer.invoke(IpcChannel.App_ResetData),
   openWebsite: (url: string) => ipcRenderer.invoke(IpcChannel.Open_Website, url),
   checkForUpdate: () => ipcRenderer.invoke(IpcChannel.App_CheckForUpdate),
+  downloadUpdate: () => ipcRenderer.invoke(IpcChannel.App_DownloadUpdate),
   quitAndInstallUpdate: () => ipcRenderer.invoke(IpcChannel.App_QuitAndInstall),
   getCacheSize: () => ipcRenderer.invoke(IpcChannel.App_GetCacheSize),
   clearCache: () => ipcRenderer.invoke(IpcChannel.App_ClearCache),

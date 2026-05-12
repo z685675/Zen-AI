@@ -6073,6 +6073,7 @@
     "available": "A new version {{version}} is available. Click Check for Updates any time to download it.",
     "downloading": "Downloading version {{version}} in the background. You will be prompted when it is ready.",
     "install": "Update Now",
+    "installNow": "Install Now",
     "later": "Later",
     "message": "Version {{version}} has been downloaded. Restart and install now?",
     "noReleaseNotes": "No release notes",
