@@ -490,6 +490,7 @@ export const APP_WEBSITE_URL = APP_REPO_URL
 export const APP_SOURCE_URL = APP_REPO_URL
 export const APP_DOWNLOADS_URL = APP_RELEASES_URL
 export const APP_UPDATE_METADATA_URL = ''
+export const APP_UPDATE_FEED_URL = ''
 export const APP_CAREERS_URL = APP_WEBSITE_URL
 
 // resources/scripts should be maintained manually

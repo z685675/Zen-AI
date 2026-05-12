@@ -120,7 +120,10 @@ mac:
     - target: dmg
     - target: zip
 dmg:
-  writeUpdateInfo: false
+  writeUpdateInfo: true
+publish:
+  provider: generic
+  url: https://download.925636.xyz/zen-ai/
 electronDownload:
   mirror: https://npmmirror.com/mirrors/electron/
 beforePack: scripts/before-pack.js
