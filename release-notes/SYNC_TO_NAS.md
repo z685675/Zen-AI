@@ -9,11 +9,11 @@ Recommended release flow:
 
 Required GitHub Actions secrets:
 
-- `NAS_SSH_HOST`
-- `NAS_SSH_PORT`
-- `NAS_SSH_USER`
-- `NAS_SSH_KEY`
-- `NAS_DEPLOY_PATH`
+- `ALI_SSH_HOST`
+- `ALI_SSH_PORT`
+- `ALI_SSH_USER`
+- `ALI_SSH_KEY`
+- `ALI_DEPLOY_PATH`
 
 Expected NAS deploy path example:
 

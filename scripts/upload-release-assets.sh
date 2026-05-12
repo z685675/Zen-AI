@@ -9,12 +9,12 @@ required_env() {
   fi
 }
 
-required_env NAS_SSH_HOST
-required_env NAS_SSH_USER
-required_env NAS_DEPLOY_PATH
+required_env ALI_SSH_HOST
+required_env ALI_SSH_USER
+required_env ALI_DEPLOY_PATH
 required_env RELEASE_ASSETS_DIR
 
-PORT="${NAS_SSH_PORT:-22}"
+PORT="${ALI_SSH_PORT:-22}"
 SOURCE_DIR="${RELEASE_ASSETS_DIR%/}"
 
 if [[ ! -d "$SOURCE_DIR" ]]; then
@@ -22,11 +22,11 @@ if [[ ! -d "$SOURCE_DIR" ]]; then
   exit 1
 fi
 
-ssh -p "$PORT" -o StrictHostKeyChecking=accept-new "${NAS_SSH_USER}@${NAS_SSH_HOST}" "mkdir -p '${NAS_DEPLOY_PATH}'"
+ssh -p "$PORT" -o StrictHostKeyChecking=accept-new "${ALI_SSH_USER}@${ALI_SSH_HOST}" "mkdir -p '${ALI_DEPLOY_PATH}'"
 
 rsync -av --delete \
   -e "ssh -p ${PORT} -o StrictHostKeyChecking=accept-new" \
   "${SOURCE_DIR}/" \
-  "${NAS_SSH_USER}@${NAS_SSH_HOST}:${NAS_DEPLOY_PATH}/"
+  "${ALI_SSH_USER}@${ALI_SSH_HOST}:${ALI_DEPLOY_PATH}/"
 
-echo "Uploaded release assets to ${NAS_SSH_USER}@${NAS_SSH_HOST}:${NAS_DEPLOY_PATH}"
+echo "Uploaded release assets to ${ALI_SSH_USER}@${ALI_SSH_HOST}:${ALI_DEPLOY_PATH}"

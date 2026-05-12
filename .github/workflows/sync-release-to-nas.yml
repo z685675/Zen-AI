@@ -56,17 +56,17 @@ jobs:
 
       - name: Prepare SSH key
         env:
-          NAS_SSH_KEY: ${{ secrets.NAS_SSH_KEY }}
+          ALI_SSH_KEY: ${{ secrets.ALI_SSH_KEY }}
         run: |
           mkdir -p ~/.ssh
-          printf '%s\n' "$NAS_SSH_KEY" > ~/.ssh/id_rsa
+          printf '%s\n' "$ALI_SSH_KEY" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
 
       - name: Upload assets to Ali server
         env:
-          NAS_SSH_HOST: ${{ secrets.NAS_SSH_HOST }}
-          NAS_SSH_PORT: ${{ secrets.NAS_SSH_PORT }}
-          NAS_SSH_USER: ${{ secrets.NAS_SSH_USER }}
-          NAS_DEPLOY_PATH: ${{ secrets.NAS_DEPLOY_PATH }}
+          ALI_SSH_HOST: ${{ secrets.ALI_SSH_HOST }}
+          ALI_SSH_PORT: ${{ secrets.ALI_SSH_PORT }}
+          ALI_SSH_USER: ${{ secrets.ALI_SSH_USER }}
+          ALI_DEPLOY_PATH: ${{ secrets.ALI_DEPLOY_PATH }}
           RELEASE_ASSETS_DIR: release-assets
         run: bash scripts/upload-release-assets.sh
