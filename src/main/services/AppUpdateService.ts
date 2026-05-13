@@ -14,6 +14,38 @@ export interface AppUpdateInfo {
   releaseNotes?: string
 }
 
+function normalizeReleaseDate(value: unknown): string | undefined {
+  if (!value) {
+    return undefined
+  }
+
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? undefined : value.toISOString()
+  }
+
+  if (typeof value === 'string') {
+    return value
+  }
+
+  if (typeof value === 'number') {
+    const date = new Date(value)
+    return Number.isNaN(date.getTime()) ? String(value) : date.toISOString()
+  }
+
+  if (typeof value === 'object' && 'toISOString' in (value as Record<string, unknown>)) {
+    const maybeDate = value as { toISOString?: () => string }
+    if (typeof maybeDate.toISOString === 'function') {
+      try {
+        return maybeDate.toISOString()
+      } catch {
+        return String(value)
+      }
+    }
+  }
+
+  return String(value)
+}
+
 export interface AppUpdateCheckResultAvailable {
   status: 'available'
   currentVersion: string
@@ -323,7 +355,7 @@ export class AppUpdateService {
 
     return {
       version: info?.version ?? this.currentVersion,
-      releaseDate: info?.releaseDate,
+      releaseDate: normalizeReleaseDate(info?.releaseDate),
       releaseNotes: releaseNotes ?? undefined
     }
   }

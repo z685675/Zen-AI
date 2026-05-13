@@ -6,16 +6,26 @@ export interface UpdateInfo {
   releaseNotes?: string
 }
 
+function formatReleaseDate(value?: string) {
+  if (!value) {
+    return undefined
+  }
+
+  return typeof value === 'string' ? value : String(value)
+}
+
 function renderUpdateContent(t: Translate, updateInfo: UpdateInfo) {
+  const releaseDate = formatReleaseDate(updateInfo.releaseDate)
+
   return (
     <div style={{ display: 'grid', gap: 12, lineHeight: 1.6 }}>
       <div style={{ fontWeight: 500 }}>{t('update.message', { version: updateInfo.version })}</div>
       <div>
         <strong>{t('update.version')}:</strong> {updateInfo.version}
       </div>
-      {updateInfo.releaseDate && (
+      {releaseDate && (
         <div>
-          <strong>{t('update.releaseDate')}:</strong> {updateInfo.releaseDate}
+          <strong>{t('update.releaseDate')}:</strong> {releaseDate}
         </div>
       )}
       <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>
