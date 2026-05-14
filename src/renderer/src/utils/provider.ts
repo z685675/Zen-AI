@@ -1,7 +1,16 @@
-import type { AzureOpenAIProvider, ProviderType } from '@renderer/types'
+import type {
+  AnthropicCacheControlSettings,
+  AzureOpenAIProvider,
+  EndpointType,
+  GeminiCacheControlSettings,
+  Model,
+  ProviderType
+} from '@renderer/types'
 import { isSystemProvider, type Provider, type SystemProviderId, SystemProviderIds } from '@renderer/types'
 import { isAzureOpenAIProvider } from '@shared/aiCore/provider/utils'
 import { CLAUDE_SUPPORTED_PROVIDERS } from '@shared/config/providers'
+
+import { getLowerBaseModelName } from './naming'
 
 export const isAzureResponsesEndpoint = (provider: AzureOpenAIProvider) => {
   return provider.apiVersion === 'preview' || provider.apiVersion === 'v1'
@@ -200,4 +209,158 @@ export const isSupportAnthropicPromptCacheProvider = (provider: Provider) => {
     provider.id === SystemProviderIds.openrouter ||
     isAzureOpenAIProvider(provider)
   )
+}
+
+function resolveModelEndpointType(model?: Pick<Model, 'endpoint_type'>): EndpointType | undefined {
+  return model?.endpoint_type
+}
+
+export function getModelCachePathLabel(
+  model?: Pick<Model, 'id' | 'endpoint_type'>
+): 'OpenAI' | 'Anthropic' | 'Gemini' | undefined {
+  const endpointType = resolveModelEndpointType(model as Pick<Model, 'endpoint_type'> | undefined)
+
+  if (endpointType === 'anthropic') {
+    return 'Anthropic'
+  }
+
+  if (endpointType === 'gemini') {
+    return 'Gemini'
+  }
+
+  if (endpointType === 'openai' || endpointType === 'openai-response') {
+    return 'OpenAI'
+  }
+
+  const normalizedModelId = model?.id ? getLowerBaseModelName(model.id).toLowerCase() : ''
+
+  if (normalizedModelId.startsWith('claude') || normalizedModelId.includes('claude')) {
+    return 'Anthropic'
+  }
+
+  if (
+    normalizedModelId.startsWith('gemini') ||
+    normalizedModelId.startsWith('google/gemini') ||
+    normalizedModelId.includes('gemini')
+  ) {
+    return 'Gemini'
+  }
+
+  if (
+    normalizedModelId.startsWith('gpt') ||
+    normalizedModelId.startsWith('o1') ||
+    normalizedModelId.startsWith('o3') ||
+    normalizedModelId.startsWith('o4') ||
+    normalizedModelId.startsWith('chatgpt') ||
+    normalizedModelId.startsWith('openai/')
+  ) {
+    return 'OpenAI'
+  }
+
+  return undefined
+}
+
+const DEFAULT_ANTHROPIC_CACHE_LAST_N_MESSAGES = 1
+const DEFAULT_ANTHROPIC_CACHE_SYSTEM_MESSAGE = true
+const DEFAULT_GEMINI_CACHE_TTL_SECONDS = 3600
+const DEFAULT_GEMINI_CACHE_EARLY_MESSAGES = 2
+const DEFAULT_GEMINI_CACHE_SYSTEM_MESSAGE = true
+
+const ANTHROPIC_CACHE_4096_PATTERNS = [
+  'claude-opus-4-7',
+  'claude-opus-4.7',
+  'claude-opus-4-6',
+  'claude-opus-4.6',
+  'claude-opus-4-5',
+  'claude-opus-4.5',
+  'claude-haiku-4-5',
+  'claude-haiku-4.5',
+  'claude-mythos'
+]
+
+const ANTHROPIC_CACHE_2048_PATTERNS = [
+  'claude-sonnet-4-6',
+  'claude-sonnet-4.6',
+  'claude-haiku-3-5',
+  'claude-haiku-3.5',
+  'claude-haiku-3'
+]
+
+export const getRecommendedAnthropicCacheThreshold = (model?: Pick<Model, 'id'>): number => {
+  const normalizedModelId = model?.id ? getLowerBaseModelName(model.id).toLowerCase() : ''
+
+  if (ANTHROPIC_CACHE_4096_PATTERNS.some((pattern) => normalizedModelId.includes(pattern))) {
+    return 4096
+  }
+
+  if (ANTHROPIC_CACHE_2048_PATTERNS.some((pattern) => normalizedModelId.includes(pattern))) {
+    return 2048
+  }
+
+  return 1024
+}
+
+export const getEffectiveAnthropicCacheControl = (
+  provider: Provider,
+  model?: Pick<Model, 'id'>
+): AnthropicCacheControlSettings | undefined => {
+  const endpointType = resolveModelEndpointType(model as Pick<Model, 'endpoint_type'> | undefined)
+
+  if (endpointType && endpointType !== 'anthropic') {
+    return undefined
+  }
+
+  if (!endpointType && !isSupportAnthropicPromptCacheProvider(provider)) {
+    return undefined
+  }
+
+  return {
+    tokenThreshold: provider.anthropicCacheControl?.tokenThreshold ?? getRecommendedAnthropicCacheThreshold(model),
+    cacheSystemMessage: provider.anthropicCacheControl?.cacheSystemMessage ?? DEFAULT_ANTHROPIC_CACHE_SYSTEM_MESSAGE,
+    cacheLastNMessages: provider.anthropicCacheControl?.cacheLastNMessages ?? DEFAULT_ANTHROPIC_CACHE_LAST_N_MESSAGES
+  }
+}
+
+export const getRecommendedGeminiCacheThreshold = (model?: Pick<Model, 'id'>): number => {
+  const normalizedModelId = model?.id ? getLowerBaseModelName(model.id).toLowerCase() : ''
+
+  if (normalizedModelId.includes('gemini-2.5-pro') || normalizedModelId.includes('gemini-3-pro')) {
+    return 4096
+  }
+
+  return 2048
+}
+
+export const isSupportGeminiPromptCacheProvider = (provider: Provider) => {
+  return provider.type === 'gemini'
+}
+
+export const getEffectiveGeminiCacheControl = (
+  provider: Provider,
+  model?: Pick<Model, 'id'>
+): GeminiCacheControlSettings | undefined => {
+  const endpointType = resolveModelEndpointType(model as Pick<Model, 'endpoint_type'> | undefined)
+
+  if (endpointType && endpointType !== 'gemini') {
+    return undefined
+  }
+
+  if (!endpointType && !isSupportGeminiPromptCacheProvider(provider)) {
+    return undefined
+  }
+
+  const providerSettings = provider.geminiCacheControl
+  const enabled = providerSettings?.enabled ?? true
+
+  if (!enabled) {
+    return undefined
+  }
+
+  return {
+    enabled,
+    tokenThreshold: providerSettings?.tokenThreshold ?? getRecommendedGeminiCacheThreshold(model),
+    cacheSystemMessage: providerSettings?.cacheSystemMessage ?? DEFAULT_GEMINI_CACHE_SYSTEM_MESSAGE,
+    cacheEarlyMessages: providerSettings?.cacheEarlyMessages ?? DEFAULT_GEMINI_CACHE_EARLY_MESSAGES,
+    ttlSeconds: providerSettings?.ttlSeconds ?? DEFAULT_GEMINI_CACHE_TTL_SECONDS
+  }
 }

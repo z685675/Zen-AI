@@ -4,12 +4,10 @@ import { describe, expect, it } from 'vitest'
 
 import { getReactStyleFromToken } from '../shiki'
 
-// FontStyle 常量，避免类型错�?const FS_ITALIC = 1
+const FS_ITALIC = 1
 const FS_BOLD = 2
 const FS_UNDERLINE = 4
 
-/**
- * 创建 ThemedToken 对象的辅助函�? * 只需提供测试所需的字段，其余字段使用默认�? */
 function createThemedToken(partial: Partial<ThemedToken> = {}): ThemedToken {
   return {
     content: 'default-content',
@@ -20,39 +18,33 @@ function createThemedToken(partial: Partial<ThemedToken> = {}): ThemedToken {
 
 describe('shiki', () => {
   describe('splitToSubTrunks', () => {
-    it('should return the original string when there is no newline', () => {
+    it('returns the original string when there is no newline', () => {
       const chunk = 'console.log("Hello world")'
-      const result = splitToSubTrunks(chunk)
-      expect(result).toEqual([chunk])
+      expect(splitToSubTrunks(chunk)).toEqual([chunk])
     })
 
-    it('should split string with one newline into two parts', () => {
-      const chunk = 'const x = 5;\nconsole.log(x)'
-      const result = splitToSubTrunks(chunk)
-      expect(result).toEqual(['const x = 5;', 'console.log(x)'])
+    it('splits a string with one newline into two parts', () => {
+      expect(splitToSubTrunks('const x = 5;\nconsole.log(x)')).toEqual(['const x = 5;', 'console.log(x)'])
     })
 
-    it('should split by the last newline when multiple newlines exist', () => {
-      const chunk = 'const x = 5;\nconst y = 10;\nconsole.log(x + y)'
-      const result = splitToSubTrunks(chunk)
-      expect(result).toEqual(['const x = 5;\nconst y = 10;', 'console.log(x + y)'])
+    it('splits by the last newline when multiple newlines exist', () => {
+      expect(splitToSubTrunks('const x = 5;\nconst y = 10;\nconsole.log(x + y)')).toEqual([
+        'const x = 5;\nconst y = 10;',
+        'console.log(x + y)'
+      ])
     })
 
-    it('should handle string ending with a newline', () => {
-      const chunk = 'const x = 5;\nconst y = 10;\n'
-      const result = splitToSubTrunks(chunk)
-      expect(result).toEqual(['const x = 5;\nconst y = 10;', ''])
+    it('handles strings ending with a newline', () => {
+      expect(splitToSubTrunks('const x = 5;\nconst y = 10;\n')).toEqual(['const x = 5;\nconst y = 10;', ''])
     })
 
-    it('should handle empty string', () => {
-      const chunk = ''
-      const result = splitToSubTrunks(chunk)
-      expect(result).toEqual([''])
+    it('handles an empty string', () => {
+      expect(splitToSubTrunks('')).toEqual([''])
     })
   })
 
   describe('getReactStyleFromToken', () => {
-    it('should get styles from token htmlStyle', () => {
+    it('uses token htmlStyle when available', () => {
       const token = createThemedToken({
         content: 'test',
         htmlStyle: {
@@ -64,9 +56,7 @@ describe('shiki', () => {
         }
       })
 
-      const result = getReactStyleFromToken(token)
-
-      expect(result).toEqual({
+      expect(getReactStyleFromToken(token)).toEqual({
         fontStyle: 'italic',
         fontWeight: 'bold',
         backgroundColor: '#f5f5f5',
@@ -75,22 +65,20 @@ describe('shiki', () => {
       })
     })
 
-    it('should use getTokenStyleObject when htmlStyle is not available', () => {
+    it('falls back to getTokenStyleObject when htmlStyle is absent', () => {
       const token = createThemedToken({
         content: 'test',
         color: '#ff0000',
         fontStyle: FS_ITALIC
       })
 
-      const result = getReactStyleFromToken(token)
-
-      expect(result).toEqual({
+      expect(getReactStyleFromToken(token)).toEqual({
         fontStyle: 'italic',
         color: '#ff0000'
       })
     })
 
-    it('should properly convert all CSS properties to React style', () => {
+    it('converts supported CSS properties to React style names', () => {
       const token = createThemedToken({
         content: 'test',
         htmlStyle: {
@@ -103,9 +91,8 @@ describe('shiki', () => {
           'border-radius': '2px'
         }
       })
-      const result = getReactStyleFromToken(token)
 
-      expect(result).toEqual({
+      expect(getReactStyleFromToken(token)).toEqual({
         fontStyle: 'italic',
         fontWeight: 'bold',
         backgroundColor: '#f5f5f5',
@@ -116,7 +103,7 @@ describe('shiki', () => {
       })
     })
 
-    it('should keep other CSS property names unchanged', () => {
+    it('keeps unrelated CSS property names unchanged', () => {
       const token = createThemedToken({
         content: 'const',
         offset: 0,
@@ -127,16 +114,14 @@ describe('shiki', () => {
         }
       })
 
-      const result = getReactStyleFromToken(token)
-
-      expect(result).toEqual({
+      expect(getReactStyleFromToken(token)).toEqual({
         color: '#FF0000',
         opacity: '0.8',
         border: '1px solid black'
       })
     })
 
-    it('should handle complex style combinations', () => {
+    it('handles complex style combinations', () => {
       const token = createThemedToken({
         content: 'const',
         offset: 0,
@@ -151,9 +136,7 @@ describe('shiki', () => {
         }
       })
 
-      const result = getReactStyleFromToken(token)
-
-      expect(result).toEqual({
+      expect(getReactStyleFromToken(token)).toEqual({
         color: '#FF0000',
         fontStyle: 'italic',
         fontWeight: 'bold',
@@ -164,7 +147,7 @@ describe('shiki', () => {
       })
     })
 
-    it('should handle multiple fontStyle values', () => {
+    it('handles combined font style flags', () => {
       const token = createThemedToken({
         content: 'const',
         offset: 0,
@@ -172,24 +155,22 @@ describe('shiki', () => {
         fontStyle: FS_BOLD | FS_UNDERLINE
       })
 
-      const result = getReactStyleFromToken(token)
-
-      expect(result).toEqual({
+      expect(getReactStyleFromToken(token)).toEqual({
         color: '#0000FF',
         fontWeight: 'bold',
         textDecoration: 'underline'
       })
     })
 
-    it('should handle tokens with no style', () => {
-      const token = createThemedToken({
-        content: 'const',
-        offset: 0
-      })
-
-      const result = getReactStyleFromToken(token)
-
-      expect(result).toEqual({})
+    it('returns an empty object for tokens without style data', () => {
+      expect(
+        getReactStyleFromToken(
+          createThemedToken({
+            content: 'const',
+            offset: 0
+          })
+        )
+      ).toEqual({})
     })
   })
 })

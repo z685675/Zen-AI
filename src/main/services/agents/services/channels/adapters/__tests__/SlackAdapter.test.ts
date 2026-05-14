@@ -20,7 +20,7 @@ vi.mock('electron', () => ({
   net: { fetch: (...args: unknown[]) => mockNetFetch(...args) }
 }))
 
-// Mock WebSocket �?create a fake class that emits events like a real WS
+// Mock WebSocket 鈥?create a fake class that emits events like a real WS
 class MockWebSocket extends EventEmitter {
   static OPEN = 1
   static CONNECTING = 0
@@ -158,14 +158,14 @@ describe('SlackAdapter', () => {
     mockWsInstance!.emit('message', Buffer.from(JSON.stringify(envelope)))
   }
 
-  // ─── Registration ─────────────────────────────────────────
+  // 鈹?鈹?鈹? Registration 鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?
 
   it('registers itself as a slack adapter factory', () => {
     const calls = vi.mocked(registerAdapterFactory).mock.calls
     expect(calls.some((c) => c[0] === 'slack')).toBe(true)
   })
 
-  // ─── Constructor & Config ─────────────────────────────────
+  // 鈹?鈹?鈹? Constructor & Config 鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?
 
   it('sets notifyChatIds from allowed_channel_ids', () => {
     const adapter = createAdapter({ allowed_channel_ids: ['C1', 'C2'] })
@@ -177,7 +177,7 @@ describe('SlackAdapter', () => {
     expect(adapter.notifyChatIds).toEqual([])
   })
 
-  // ─── Connection Lifecycle ─────────────────────────────────
+  // 鈹?鈹?鈹? Connection Lifecycle 鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?
 
   it('connect() calls auth.test and apps.connections.open, then opens WebSocket', async () => {
     await connectAdapter()
@@ -217,7 +217,7 @@ describe('SlackAdapter', () => {
     expect(wsRef.close).toHaveBeenCalled()
   })
 
-  // ─── Message Sending ──────────────────────────────────────
+  // 鈹?鈹?鈹? Message Sending 鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?
 
   it('sendMessage() calls chat.postMessage with correct params', async () => {
     const adapter = await connectAdapter()
@@ -243,7 +243,7 @@ describe('SlackAdapter', () => {
     await sendPromise
 
     const postCalls = mockNetFetch.mock.calls.filter((c: unknown[]) => (c[0] as string).includes('chat.postMessage'))
-    // 5000 chars > 4000 max �?should be split into 2 chunks
+    // 5000 chars > 4000 max 鈫?should be split into 2 chunks
     expect(postCalls.length).toBeGreaterThanOrEqual(2)
   })
 
@@ -252,7 +252,7 @@ describe('SlackAdapter', () => {
     await expect(adapter.sendTypingIndicator('C0ALLOWED')).resolves.toBeUndefined()
   })
 
-  // ─── Incoming Messages ────────────────────────────────────
+  // 鈹?鈹?鈹? Incoming Messages 鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?
 
   it('emits message event for incoming text messages', async () => {
     const adapter = await connectAdapter()
@@ -393,7 +393,7 @@ describe('SlackAdapter', () => {
     expect(messageSpy).not.toHaveBeenCalled()
   })
 
-  // ─── Slash Commands (from text) ───────────────────────────
+  // 鈹?鈹?鈹? Slash Commands (from text) 鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?
 
   it('emits command event for /new text message', async () => {
     const adapter = await connectAdapter()
@@ -426,7 +426,7 @@ describe('SlackAdapter', () => {
     expect(commandSpy).not.toHaveBeenCalled()
   })
 
-  // ─── Slash Commands (from Socket Mode slash_commands) ─────
+  // 鈹?鈹?鈹? Slash Commands (from Socket Mode slash_commands) 鈹?鈹?鈹?鈹?鈹?
 
   it('emits command event for slash_commands envelope', async () => {
     const adapter = await connectAdapter()
@@ -483,7 +483,7 @@ describe('SlackAdapter', () => {
     expect(commandSpy).not.toHaveBeenCalled()
   })
 
-  // ─── Disconnect Envelope ──────────────────────────────────
+  // 鈹?鈹?鈹? Disconnect Envelope 鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?
 
   it('closes WebSocket when disconnect envelope is received', async () => {
     await connectAdapter()
@@ -497,7 +497,7 @@ describe('SlackAdapter', () => {
     })
   })
 
-  // ─── File Attachments ─────────────────────────────────────
+  // 鈹?鈹?鈹? File Attachments 鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?
 
   it('downloads image attachments with bot token auth', async () => {
     const adapter = await connectAdapter()
@@ -542,7 +542,7 @@ describe('SlackAdapter', () => {
     expect(fileFetchCall![1]).toEqual({ headers: { Authorization: 'Bearer xoxb-test-token' } })
   })
 
-  // ─── Streaming ────────────────────────────────────────────
+  // 鈹?鈹?鈹? Streaming 鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?
 
   it('onTextUpdate() creates a message then edits it on subsequent updates', async () => {
     const adapter = await connectAdapter()
@@ -600,7 +600,7 @@ describe('SlackAdapter', () => {
     expect(lastUpdateBody.text).toContain('*Error*')
   })
 
-  // ─── API Error Handling ───────────────────────────────────
+  // 鈹?鈹?鈹? API Error Handling 鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?
 
   it('sendMessage() throws when Slack API returns ok=false', async () => {
     const adapter = await connectAdapter()
@@ -628,7 +628,7 @@ describe('SlackAdapter', () => {
     await expect(adapter.sendMessage('C0ALLOWED', 'Hello')).rejects.toThrow('HTTP 500')
   })
 
-  // ─── Reaction Acknowledgment ─────────────────────────────
+  // 鈹?鈹?鈹? Reaction Acknowledgment 鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?
 
   it('adds eyes reaction when receiving a message', async () => {
     await connectAdapter()
@@ -684,7 +684,7 @@ describe('SlackAdapter', () => {
     expect(removeCalls).toHaveLength(0)
   })
 
-  // ─── User Name Resolution ────────────────────────────────
+  // 鈹?鈹?鈹? User Name Resolution 鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?鈹?
 
   it('caches user names across messages', async () => {
     const adapter = await connectAdapter()

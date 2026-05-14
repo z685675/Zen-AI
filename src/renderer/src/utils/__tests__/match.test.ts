@@ -79,7 +79,7 @@ describe('match', () => {
     it('should match i18n name, id, and name for system provider', () => {
       expect(matchKeywordsInProvider('dashscope', sysProvider)).toBe(true)
       expect(matchKeywordsInProvider('Alibaba', sysProvider)).toBe(true)
-      // system provider 现在也可以通过 name 字段匹配
+      // system provider 鐜板湪涔熷彲浠ラ?氳繃 name 瀛楁鍖归厤
       expect(matchKeywordsInProvider('doesnt matter', sysProvider)).toBe(true)
     })
   })
@@ -106,7 +106,7 @@ describe('match', () => {
     it('should match model name and i18n provider name for system provider', () => {
       expect(matchKeywordsInModel('gpt-4.1 dashscope', model, sysProvider)).toBe(true)
       expect(matchKeywordsInModel('dashscope', model, sysProvider)).toBe(true)
-      // system provider 现在也可以通过 name 字段检�?      expect(matchKeywordsInModel('doesnt matter', model, sysProvider)).toBe(true)
+      // system provider 鐜板湪涔熷彲浠ラ?氳繃 name 瀛楁妫?绱?      expect(matchKeywordsInModel('doesnt matter', model, sysProvider)).toBe(true)
       expect(matchKeywordsInModel('Alibaba', model, sysProvider)).toBe(true)
     })
 

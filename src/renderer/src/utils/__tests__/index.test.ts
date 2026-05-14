@@ -15,16 +15,17 @@ vi.mock('@renderer/store', () => ({
 
 describe('Unclassified Utils', () => {
   describe('runAsyncFunction', () => {
-    it('should execute async function', async () => {
-      // 验证异步函数被执�?      let called = false
+    it('executes an async function', async () => {
+      let called = false
+
       await runAsyncFunction(async () => {
         called = true
       })
+
       expect(called).toBe(true)
     })
 
-    it('should throw error if async function fails', async () => {
-      // 验证异步函数抛出错误
+    it('rethrows errors from the async function', async () => {
       await expect(
         runAsyncFunction(async () => {
           throw new Error('Test error')
@@ -34,71 +35,70 @@ describe('Unclassified Utils', () => {
   })
 
   describe('removeQuotes', () => {
-    it('should remove all single and double quotes', () => {
+    it('removes single and double quotes', () => {
       expect(removeQuotes('"hello"')).toBe('hello')
       expect(removeQuotes("'hello'")).toBe('hello')
-      expect(removeQuotes('"hello"')).toBe('hello')
       expect(removeQuotes('noquotes')).toBe('noquotes')
     })
 
-    it('should handle empty string', () => {
+    it('handles an empty string', () => {
       expect(removeQuotes('')).toBe('')
     })
 
-    it('should handle string with only quotes', () => {
+    it('handles strings containing only quotes', () => {
       expect(removeQuotes('""')).toBe('')
       expect(removeQuotes("''")).toBe('')
     })
   })
 
   describe('removeSpecialCharacters', () => {
-    it('should remove newlines, quotes, and special characters', () => {
+    it('removes newlines, quotes, and punctuation', () => {
       expect(removeSpecialCharacters('hello\nworld!')).toBe('helloworld')
       expect(removeSpecialCharacters('"hello, world!"')).toBe('hello world')
-      expect(removeSpecialCharacters('你好，世界！')).toBe('你好世界')
+      expect(removeSpecialCharacters('测试，内容！')).toBe('测试内容')
     })
 
-    it('should handle empty string', () => {
+    it('handles an empty string', () => {
       expect(removeSpecialCharacters('')).toBe('')
     })
 
-    it('should handle string with only special characters', () => {
+    it('returns an empty string when the input is only special characters', () => {
       expect(removeSpecialCharacters('"\n!,.')).toBe('')
     })
   })
 
   describe('isValidProxyUrl', () => {
-    it('should return true for string containing "://"', () => {
+    it('returns true for strings containing a protocol separator', () => {
       expect(isValidProxyUrl('http://localhost')).toBe(true)
       expect(isValidProxyUrl('socks5://127.0.0.1:1080')).toBe(true)
     })
 
-    it('should return false for string not containing "://"', () => {
+    it('returns false for strings without a protocol separator', () => {
       expect(isValidProxyUrl('localhost')).toBe(false)
       expect(isValidProxyUrl('127.0.0.1:1080')).toBe(false)
     })
 
-    it('should handle empty string', () => {
+    it('handles an empty string', () => {
       expect(isValidProxyUrl('')).toBe(false)
     })
 
-    it('should return true for only "://"', () => {
+    it('returns true for a bare protocol separator', () => {
       expect(isValidProxyUrl('://')).toBe(true)
     })
   })
 
   describe('hasPath', () => {
-    it('should return true if url has path', () => {
+    it('returns true when a URL has a real path segment', () => {
       expect(hasPath('http://a.com/path')).toBe(true)
       expect(hasPath('http://a.com/path/to')).toBe(true)
     })
 
-    it('should return false if url has no path or only root', () => {
+    it('returns false when a URL has no path or only root', () => {
       expect(hasPath('http://a.com/')).toBe(false)
       expect(hasPath('http://a.com')).toBe(false)
     })
 
-    it('should return false for invalid url', () => {
+    it('returns false for invalid URLs', () => {
       expect(hasPath('not a url')).toBe(false)
       expect(hasPath('')).toBe(false)
     })

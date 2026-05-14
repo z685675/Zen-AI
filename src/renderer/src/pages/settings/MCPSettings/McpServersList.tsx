@@ -54,7 +54,7 @@ const McpServersList: FC = () => {
     })
   }, [mcpServers, searchText])
 
-  const { onSortEnd } = useDndReorder({
+  const { onSortEnd } = useDndReorder<MCPServer>({
     originalList: mcpServers,
     filteredList: filteredMcpServers,
     onUpdate: updateMcpServers,
@@ -241,7 +241,7 @@ const McpServersList: FC = () => {
           </Dropdown>
         </ButtonGroup>
       </ListHeader>
-      <Sortable
+      <Sortable<MCPServer>
         items={filteredMcpServers}
         itemKey="id"
         onSortEnd={onSortEnd}
@@ -253,7 +253,7 @@ const McpServersList: FC = () => {
         restrictions={{ scrollableAncestor: true }}
         useDragOverlay
         showGhost
-        renderItem={(server) => (
+        renderItem={(server: MCPServer) => (
           <McpServerCard
             server={server}
             version={serverVersions[server.id]}

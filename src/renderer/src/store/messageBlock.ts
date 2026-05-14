@@ -47,8 +47,7 @@ const initialState = messageBlocksAdapter.getInitialState({
 })
 
 // 3. 创建 Slice
-// @ts-ignore ignore
-export const messageBlocksSlice = createSlice({
+const messageBlocksSliceInternal: any = createSlice({
   name: 'messageBlocks',
   initialState,
   reducers: {
@@ -95,7 +94,15 @@ export const {
   setMessageBlocksLoading,
   setMessageBlocksError,
   updateOneBlock
-} = messageBlocksSlice.actions
+} = messageBlocksSliceInternal.actions
+
+export const messageBlocksSlice: {
+  reducer: typeof messageBlocksSliceInternal.reducer
+  actions: Record<string, (...args: any[]) => any>
+} = {
+  reducer: messageBlocksSliceInternal.reducer,
+  actions: messageBlocksSliceInternal.actions
+}
 
 export const messageBlocksSelectors = messageBlocksAdapter.getSelectors<RootState>(
   (state) => state.messageBlocks // Ensure this matches the key in the root reducer
@@ -457,4 +464,4 @@ export const selectActiveTodoInfo = createSelector(
 
 // --- Selector Integration --- END
 
-export default messageBlocksSlice.reducer
+export default messageBlocksSliceInternal.reducer

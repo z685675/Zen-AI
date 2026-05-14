@@ -10,6 +10,7 @@ import { validatePath } from '../types'
 
 describe('filesystem MCP security', () => {
   const tempDirs: string[] = []
+  let symlinkSupported = true
 
   async function createTempDir(prefix: string) {
     const tempRoot = path.join(process.cwd(), '.context', 'vitest-temp')
@@ -23,6 +24,21 @@ describe('filesystem MCP security', () => {
     vi.restoreAllMocks()
     await Promise.all(tempDirs.splice(0).map((tempDir) => fs.rm(tempDir, { recursive: true, force: true })))
   })
+
+  async function createSymlinkOrDetect(target: string, symlinkPath: string) {
+    try {
+      await fs.symlink(target, symlinkPath)
+      symlinkSupported = true
+      return true
+    } catch (error) {
+      const code = error && typeof error === 'object' && 'code' in error ? error.code : undefined
+      if (code === 'EPERM' || code === 'EACCES' || code === 'UNKNOWN') {
+        symlinkSupported = false
+        return false
+      }
+      throw error
+    }
+  }
 
   it('prefers WORKSPACE_ROOT and falls back to args for filesystem root', () => {
     expect(resolveFilesystemBaseDir(['C:/args-root'], {})).toBe('C:/args-root')
@@ -50,7 +66,9 @@ describe('filesystem MCP security', () => {
     const symlinkPath = path.join(workspaceRoot, 'escape-link')
 
     await fs.writeFile(outsideFile, 'top-secret')
-    await fs.symlink(outsideFile, symlinkPath)
+    if (!(await createSymlinkOrDetect(outsideFile, symlinkPath))) {
+      return
+    }
 
     await expect(validatePath(symlinkPath, workspaceRoot)).rejects.toThrow('outside the configured workspace root')
   })
@@ -97,7 +115,9 @@ describe('filesystem MCP security', () => {
     await fs.writeFile(secretFile, 'secret')
 
     // Create a symlink inside workspace pointing to the outside directory
-    await fs.symlink(outsideRoot, path.join(workspaceRoot, 'escape-dir'))
+    if (!(await createSymlinkOrDetect(outsideRoot, path.join(workspaceRoot, 'escape-dir')))) {
+      return
+    }
 
     // Mock ripgrep to return both files (simulating --follow traversing the symlink)
     vi.spyOn(types, 'runRipgrep').mockResolvedValue({
@@ -122,7 +142,9 @@ describe('filesystem MCP security', () => {
     await fs.writeFile(path.join(outsideRoot, 'private', 'secret.txt'), 'secret')
 
     // Create a symlink inside workspace pointing to the outside directory
-    await fs.symlink(outsideRoot, path.join(workspaceRoot, 'escape-dir'))
+    if (!(await createSymlinkOrDetect(outsideRoot, path.join(workspaceRoot, 'escape-dir')))) {
+      return
+    }
 
     const result = await handleLsTool({ recursive: true }, workspaceRoot)
     const text = result.content[0].text
@@ -130,5 +152,9 @@ describe('filesystem MCP security', () => {
     expect(text).toContain('legit.txt')
     // The symlink entry itself may appear, but its children should not be listed
     expect(text).not.toContain('secret.txt')
+  })
+
+  it('detects whether symlink creation is available in the current environment', () => {
+    expect(typeof symlinkSupported).toBe('boolean')
   })
 })

@@ -3,10 +3,10 @@ import type { HighlighterCore } from 'shiki/core'
 import { getTokenStyleObject, stringifyTokenStyle, type ThemedToken } from 'shiki/core'
 
 /**
- * 使用 ShikiStreamTokenizer 获取流式高亮代码
- * @param chunks 代码块数组，模拟流式响应
- * @param tokenizer tokenizer 实例
- * @returns 高亮后的 HTML
+ * 浣跨敤 ShikiStreamTokenizer 鑾峰彇娴佸紡楂樹寒浠ｇ爜
+ * @param chunks 浠ｇ爜鍧楁暟缁勶紝妯℃嫙娴佸紡鍝嶅簲
+ * @param tokenizer tokenizer 瀹炰緥
+ * @returns 楂樹寒鍚庣殑 HTML
  */
 export async function highlightCode(chunks: string[], tokenizer: ShikiStreamTokenizer): Promise<string> {
   let tokenLines: ThemedToken[][] = []
@@ -14,22 +14,22 @@ export async function highlightCode(chunks: string[], tokenizer: ShikiStreamToke
   for (const chunk of chunks) {
     const result = await tokenizer.enqueue(chunk)
 
-    // 根据 recall 值移除可能需要重新处理的�?    if (result.recall > 0 && tokenLines.length > 0) {
+    // 鏍规嵁 recall 鍊肩Щ闄ゅ彲鑳介渶瑕侀噸鏂板鐞嗙殑琛?    if (result.recall > 0 && tokenLines.length > 0) {
       tokenLines = tokenLines.slice(0, Math.max(0, tokenLines.length - result.recall))
     }
 
-    // 添加稳定的行和不稳定的行
+    // 娣诲姞绋冲畾鐨勮鍜屼笉绋冲畾鐨勮
     tokenLines = [...tokenLines, ...result.stable, ...result.unstable]
   }
 
-  // 这里就不获取返回值了，因为最后一行应该已经处理完�?  tokenizer.close()
+  // 杩欓噷灏变笉鑾峰彇杩斿洖鍊间簡锛屽洜涓烘渶鍚庝竴琛屽簲璇ュ凡缁忓鐞嗗畬浜?  tokenizer.close()
 
   return tokenLinesToHtml(tokenLines)
 }
 
 /**
- * 使用 shiki codeToTokens 获取正确的高亮代�? * @param code 代码
- * @param highlighter 高亮�? * @returns 预期�?html
+ * 浣跨敤 shiki codeToTokens 鑾峰彇姝ｇ‘鐨勯珮浜唬鐮? * @param code 浠ｇ爜
+ * @param highlighter 楂樹寒鍣? * @returns 棰勬湡鐨?html
  */
 export function getExpectedHighlightedCode(code: string, highlighter: HighlighterCore | null) {
   const expected = highlighter?.codeToTokens(code, {
@@ -41,7 +41,7 @@ export function getExpectedHighlightedCode(code: string, highlighter: Highlighte
 }
 
 /**
- * 将单�?token 转换�?html
+ * 灏嗗崟涓?token 杞崲涓?html
  * @param token
  * @returns span
  */
@@ -50,8 +50,8 @@ export function tokenToHtml(token: ThemedToken): string {
 }
 
 /**
- * 将单�?token 转换�?html
- * @param tokenLine token 数组
+ * 灏嗗崟琛?token 杞崲涓?html
+ * @param tokenLine token 鏁扮粍
  * @returns span with className line
  */
 export function tokenLineToHtml(tokenLine: ThemedToken[]): string {
@@ -59,8 +59,8 @@ export function tokenLineToHtml(tokenLine: ThemedToken[]): string {
 }
 
 /**
- * 将多�?token 转换�?html
- * @param tokenLines token 数组
+ * 灏嗗琛?token 杞崲涓?html
+ * @param tokenLines token 鏁扮粍
  * @returns spans with className line
  */
 export function tokenLinesToHtml(tokenLines: ThemedToken[][]): string {
@@ -68,17 +68,17 @@ export function tokenLinesToHtml(tokenLines: ThemedToken[][]): string {
 }
 
 /**
- * 转义 html
+ * 杞箟 html
  * @param html html
- * @returns 转义后的 html
+ * @returns 杞箟鍚庣殑 html
  */
 export function escapeHtml(html: string): string {
   return html.replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
 
 /**
- * 将字符串按指定长�?n 切分为字符串数组
- * @param code 原始字符�? * @param n 每个元素的长�? * @returns 切分后的字符串数�? */
+ * 灏嗗瓧绗︿覆鎸夋寚瀹氶暱搴?n 鍒囧垎涓哄瓧绗︿覆鏁扮粍
+ * @param code 鍘熷瀛楃涓? * @param n 姣忎釜鍏冪礌鐨勯暱搴? * @returns 鍒囧垎鍚庣殑瀛楃涓叉暟缁? */
 export function generateEqualLengthChunks(code: string, n: number): string[] {
   if (n <= 0) throw new Error('n must be greater than 0')
   const result: string[] = []

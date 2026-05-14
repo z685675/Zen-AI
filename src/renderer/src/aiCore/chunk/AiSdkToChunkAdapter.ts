@@ -11,6 +11,7 @@ import { ProviderSpecificError } from '@renderer/types/provider-specific-error'
 import { formatErrorMessage, isAbortError } from '@renderer/utils/error'
 import type { IdleTimeoutHandle } from '@renderer/utils/IdleTimeoutController'
 import { convertLinks, flushLinkConverterBuffer } from '@renderer/utils/linkConverter'
+import { normalizeUsage } from '@renderer/utils/usage'
 import type { ClaudeCodeRawValue } from '@shared/agents/claudecode/types'
 import { AISDKError, type TextStreamPart, type ToolSet } from 'ai'
 
@@ -364,11 +365,7 @@ export class AiSdkToChunkAdapter {
           final.text = clearMessage
         }
 
-        const usage = {
-          completion_tokens: chunk.totalUsage?.outputTokens || 0,
-          prompt_tokens: chunk.totalUsage?.inputTokens || 0,
-          total_tokens: chunk.totalUsage?.totalTokens || 0
-        }
+        const usage = normalizeUsage(chunk.totalUsage)
         const metrics = this.buildMetrics(chunk.totalUsage)
         const baseResponse = {
           text: final.text || '',
@@ -379,7 +376,7 @@ export class AiSdkToChunkAdapter {
           type: ChunkType.BLOCK_COMPLETE,
           response: {
             ...baseResponse,
-            usage: { ...usage },
+            usage: usage ? { ...usage } : undefined,
             metrics: metrics ? { ...metrics } : undefined
           }
         })
@@ -387,7 +384,7 @@ export class AiSdkToChunkAdapter {
           type: ChunkType.LLM_RESPONSE_COMPLETE,
           response: {
             ...baseResponse,
-            usage: { ...usage },
+            usage: usage ? { ...usage } : undefined,
             metrics: metrics ? { ...metrics } : undefined
           }
         })
@@ -466,4 +463,3 @@ export class AiSdkToChunkAdapter {
 }
 
 export default AiSdkToChunkAdapter
-

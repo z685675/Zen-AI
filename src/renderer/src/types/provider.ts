@@ -85,6 +85,14 @@ export type AnthropicCacheControlSettings = {
   cacheLastNMessages: number
 }
 
+export type GeminiCacheControlSettings = {
+  enabled: boolean
+  tokenThreshold: number
+  cacheSystemMessage: boolean
+  cacheEarlyMessages: number
+  ttlSeconds: number
+}
+
 export function isServiceTier(tier: string | null | undefined): tier is ServiceTier {
   return isGroqServiceTier(tier) || isOpenAIServiceTier(tier)
 }
@@ -136,6 +144,8 @@ export type Provider = {
 
   // Anthropic prompt caching settings
   anthropicCacheControl?: AnthropicCacheControlSettings
+  // Gemini explicit prompt caching settings
+  geminiCacheControl?: GeminiCacheControlSettings
 }
 
 export const SystemProviderIdSchema = z.enum([

@@ -91,7 +91,7 @@ describe('HubServer Integration', () => {
     vi.clearAllMocks()
   })
 
-  describe('full list â†?exec flow', () => {
+  describe('full list éˆ«?exec flow', () => {
     it('lists tools and executes them', async () => {
       const listResult = await (hubServer as any).handleList({ limit: 100, offset: 0 })
 

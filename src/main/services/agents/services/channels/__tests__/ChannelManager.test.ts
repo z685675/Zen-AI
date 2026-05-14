@@ -158,7 +158,7 @@ describe('ChannelManager', () => {
 
     expect(createdAdapters[0].disconnect).toHaveBeenCalledTimes(1)
     expect(createdAdapters[1].disconnect).not.toHaveBeenCalled()
-    // No new adapter created â€?disconnect only
+    // No new adapter created éˆ¥?disconnect only
     expect(createdAdapters).toHaveLength(2)
   })
 
@@ -171,7 +171,7 @@ describe('ChannelManager', () => {
     await channelManager.start()
     expect(createdAdapters).toHaveLength(2)
 
-    // Toggle ch-1 inactive â€?syncChannel should only disconnect ch-1
+    // Toggle ch-1 inactive éˆ¥?syncChannel should only disconnect ch-1
     vi.mocked(channelService.getChannel).mockResolvedValueOnce(makeChannelRow({ id: 'ch-1', isActive: false }))
 
     await channelManager.syncChannel('ch-1')
@@ -192,7 +192,7 @@ describe('ChannelManager', () => {
     await channelManager.start()
     expect(createdAdapters).toHaveLength(2)
 
-    // Toggle ch-1 with updated config â€?syncChannel reconnects only ch-1
+    // Toggle ch-1 with updated config éˆ¥?syncChannel reconnects only ch-1
     vi.mocked(channelService.getChannel).mockResolvedValueOnce(
       makeChannelRow({ id: 'ch-1', isActive: true, config: { bot_token: 'new-tok' } })
     )

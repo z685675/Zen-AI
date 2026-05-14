@@ -39,7 +39,15 @@ export default class AiProvider {
   private actualProvider: Provider
   private model?: Model
   private readonly sessionAwareProviderIds = new Set(['openai-compatible', 'newapi', 'cherryin', 'aihubmix'])
-  private readonly promptCacheKeyProviderIds = new Set(['openai', 'azure', 'openai-compatible', 'newapi', 'aihubmix'])
+  private readonly promptCacheKeyProviderIds = new Set([
+    'openai',
+    'azure',
+    'azure-responses',
+    'openai-compatible',
+    'newapi',
+    'new-api',
+    'aihubmix'
+  ])
 
   /**
    * Constructor for AiProvider
@@ -375,13 +383,21 @@ export default class AiProvider {
         providerConfig.providerId
       )
 
+      const existingExperimentalContext = requestParams.experimental_context
+      const experimentalContext =
+        existingExperimentalContext && typeof existingExperimentalContext === 'object'
+          ? {
+              ...existingExperimentalContext,
+              onChunk: middlewareConfig.onChunk
+            }
+          : {
+              onChunk: middlewareConfig.onChunk
+            }
+
       const streamResult = await executor.streamText({
         ...requestParams,
         model: modelId,
-        experimental_context: {
-          ...(requestParams.experimental_context || {}),
-          onChunk: middlewareConfig.onChunk
-        }
+        experimental_context: experimentalContext
       })
 
       const finalText = await adapter.processStream(streamResult)

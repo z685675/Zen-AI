@@ -1,4 +1,4 @@
-﻿import { DynamicVirtualList } from '@renderer/components/VirtualList'
+import { DynamicVirtualList } from '@renderer/components/VirtualList'
 import { useActiveNode } from '@renderer/hooks/useNotesQuery'
 import NotesSidebarHeader from '@renderer/pages/notes/NotesSidebarHeader'
 import RecycleBinService, { type RecycleBinNoteItem } from '@renderer/services/RecycleBinService'

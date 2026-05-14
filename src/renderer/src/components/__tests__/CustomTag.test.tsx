@@ -28,7 +28,7 @@ describe('CustomTag', () => {
         reasoning
       </CustomTag>
     )
-    // 鼠标悬停触发 Tooltip
+    // 榧犳爣鎮仠瑙﹀彂 Tooltip
     await userEvent.hover(screen.getByText('reasoning'))
     expect(await screen.findByText('reasoning model')).toBeInTheDocument()
   })
@@ -37,7 +37,7 @@ describe('CustomTag', () => {
     render(<CustomTag color="#ff0000">no tooltip</CustomTag>)
 
     expect(screen.getByText('no tooltip')).toBeInTheDocument()
-    // 不应�?tooltip 相关内容
+    // 涓嶅簲鏈?tooltip 鐩稿叧鍐呭
     expect(document.querySelector('.ant-tooltip')).toBeNull()
     expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
   })

@@ -1,10 +1,31 @@
+import { createRequire } from 'node:module'
+
 import { loggerService } from '@logger'
 import { isLinux, isMac, isWin } from '@main/constant'
-import ElectronShutdownHandler from '@paymoapp/electron-shutdown-handler'
 import { BrowserWindow } from 'electron'
 import { powerMonitor } from 'electron'
 
 const logger = loggerService.withContext('PowerMonitorService')
+const require = createRequire(import.meta.url)
+
+type ElectronShutdownHandlerModule = {
+  setWindowHandle: (handle: Buffer) => void
+  on: (event: 'shutdown', listener: () => void | Promise<void>) => void
+  releaseShutdown: () => boolean
+}
+
+let electronShutdownHandler: ElectronShutdownHandlerModule | null = null
+
+if (isWin) {
+  try {
+    const module = require('@paymoapp/electron-shutdown-handler')
+    electronShutdownHandler = (module.default || module) as ElectronShutdownHandlerModule
+  } catch (error) {
+    logger.warn('Windows shutdown handler native module unavailable, falling back to standard power monitor', {
+      error: error instanceof Error ? error.message : String(error)
+    })
+  }
+}
 
 type ShutdownHandler = () => void | Promise<void>
 
@@ -70,18 +91,24 @@ export class PowerMonitorService {
    * Initialize shutdown handler for Windows using @paymoapp/electron-shutdown-handler
    */
   private initWindowsShutdownHandler(): void {
+    if (!electronShutdownHandler) {
+      logger.warn('Skipping native Windows shutdown handler because addon is unavailable')
+      this.initElectronPowerMonitor()
+      return
+    }
+
     try {
       const zeroMemoryWindow = new BrowserWindow({ show: false })
       // Set the window handle for the shutdown handler
-      ElectronShutdownHandler.setWindowHandle(zeroMemoryWindow.getNativeWindowHandle())
+      electronShutdownHandler.setWindowHandle(zeroMemoryWindow.getNativeWindowHandle())
 
       // Listen for shutdown event
-      ElectronShutdownHandler.on('shutdown', async () => {
+      electronShutdownHandler.on('shutdown', async () => {
         logger.info('System shutdown event detected (Windows)')
         // Execute all registered shutdown handlers
         await this.executeShutdownHandlers()
         // Release the shutdown block to allow the system to shut down
-        ElectronShutdownHandler.releaseShutdown()
+        electronShutdownHandler?.releaseShutdown()
       })
 
       logger.info('Windows shutdown handler registered')

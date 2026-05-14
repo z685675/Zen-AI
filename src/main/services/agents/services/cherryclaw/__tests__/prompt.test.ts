@@ -28,11 +28,14 @@ const baseConfig: CherryClawConfiguration = {
 const mockedStat = vi.mocked(stat)
 const mockedReadFile = vi.mocked(readFile)
 const mockedReaddir = vi.mocked(readdir)
+const normalizePath = (value: string) => value.replace(/\\/g, '/')
 
 function setupFiles(files: Record<string, string>) {
+  const normalizedFiles = Object.fromEntries(Object.entries(files).map(([key, value]) => [normalizePath(key), value]))
+
   // Build directory listing from file paths
   const dirs = new Map<string, string[]>()
-  for (const filePath of Object.keys(files)) {
+  for (const filePath of Object.keys(normalizedFiles)) {
     const dir = filePath.substring(0, filePath.lastIndexOf('/'))
     const name = filePath.substring(filePath.lastIndexOf('/') + 1)
     if (!dirs.has(dir)) dirs.set(dir, [])
@@ -40,21 +43,21 @@ function setupFiles(files: Record<string, string>) {
   }
 
   mockedStat.mockImplementation(async (filePath) => {
-    const p = typeof filePath === 'string' ? filePath : filePath.toString()
-    if (files[p] !== undefined) {
+    const p = normalizePath(typeof filePath === 'string' ? filePath : filePath.toString())
+    if (normalizedFiles[p] !== undefined) {
       return { mtimeMs: 1000 } as any
     }
     throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' })
   })
   mockedReadFile.mockImplementation(async (filePath) => {
-    const p = typeof filePath === 'string' ? filePath : filePath.toString()
-    if (files[p] !== undefined) {
-      return files[p]
+    const p = normalizePath(typeof filePath === 'string' ? filePath : filePath.toString())
+    if (normalizedFiles[p] !== undefined) {
+      return normalizedFiles[p]
     }
     throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' })
   })
   mockedReaddir.mockImplementation(async (dirPath) => {
-    const p = typeof dirPath === 'string' ? dirPath : dirPath.toString()
+    const p = normalizePath(typeof dirPath === 'string' ? dirPath : dirPath.toString())
     return (dirs.get(p) ?? []) as any
   })
 }
@@ -90,7 +93,7 @@ describe('PromptBuilder', () => {
 
   it('includes soul.md in memories section', async () => {
     setupFiles({
-      '/workspace/soul.md': 'Warm but direct. Lead with answers.'
+      '/workspace/SOUL.md': 'Warm but direct. Lead with answers.'
     })
 
     const result = await builder.buildSystemPrompt('/workspace')
@@ -104,7 +107,7 @@ describe('PromptBuilder', () => {
 
   it('includes user.md in memories section', async () => {
     setupFiles({
-      '/workspace/user.md': 'Name: V\nTimezone: UTC+8'
+      '/workspace/USER.md': 'Name: V\nTimezone: UTC+8'
     })
 
     const result = await builder.buildSystemPrompt('/workspace')
@@ -130,8 +133,8 @@ describe('PromptBuilder', () => {
 
   it('includes all memory files when all exist', async () => {
     setupFiles({
-      '/workspace/soul.md': 'Be concise.',
-      '/workspace/user.md': 'Name: V',
+      '/workspace/SOUL.md': 'Be concise.',
+      '/workspace/USER.md': 'Name: V',
       '/workspace/memory/FACT.md': 'Project: CherryClaw'
     })
 
@@ -147,7 +150,7 @@ describe('PromptBuilder', () => {
   it('combines system.md override with memories', async () => {
     setupFiles({
       '/workspace/system.md': 'You are CustomBot.',
-      '/workspace/soul.md': 'Sharp and efficient.'
+      '/workspace/SOUL.md': 'Sharp and efficient.'
     })
 
     const result = await builder.buildSystemPrompt('/workspace')
@@ -177,7 +180,7 @@ describe('PromptBuilder', () => {
 
   it('uses mtime cache for repeated reads', async () => {
     setupFiles({
-      '/workspace/soul.md': 'Cached soul'
+      '/workspace/SOUL.md': 'Cached soul'
     })
 
     await builder.buildSystemPrompt('/workspace')
@@ -185,7 +188,7 @@ describe('PromptBuilder', () => {
 
     // readFile should only be called once per unique file due to caching
     const soulReadCalls = mockedReadFile.mock.calls.filter(
-      (call) => typeof call[0] === 'string' && call[0].includes('soul.md')
+      (call) => typeof call[0] === 'string' && call[0].toLowerCase().includes('soul.md')
     )
     expect(soulReadCalls).toHaveLength(1)
   })
@@ -242,7 +245,7 @@ describe('PromptBuilder', () => {
     it('includes memories section alongside bootstrap instructions', async () => {
       setupFiles({
         '/workspace/SOUL.md': '# Soul\n\n> This file defines who you are.\n\n## Personality\n\n\n## Tone\n\n',
-        '/workspace/user.md': 'Name: V'
+        '/workspace/USER.md': 'Name: V'
       })
 
       const result = await builder.buildSystemPrompt('/workspace')

@@ -240,7 +240,7 @@ const QuickAssistantDeck: FC<Props> = ({ assistants, activeAssistant, onSelectAs
 
       <DeckScroller>
         {currentRoles.length > 0 ? (
-          <Sortable
+          <Sortable<Assistant>
             items={currentRoles}
             itemKey="id"
             isDragDisabled={(assistant) => assistant.id === defaultAssistant?.id}
@@ -261,7 +261,7 @@ const QuickAssistantDeck: FC<Props> = ({ assistants, activeAssistant, onSelectAs
             itemStyle={{ width: 'fit-content' }}
             useDragOverlay
             showGhost
-            renderItem={(assistant) => (
+            renderItem={(assistant: Assistant) => (
               <Dropdown key={assistant.id} menu={{ items: buildRoleMenu(assistant) }} trigger={['contextMenu']}>
                 <RoleCard
                   type="button"

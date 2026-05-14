@@ -249,11 +249,11 @@ describe('markdownConverter', () => {
     })
 
     it('should handle heading and img', () => {
-      const markdown = `# 🌠 Screenshot
+      const markdown = `# 馃尃 Screenshot
 
 ![](https://example.com/image.png)`
       const result = stripLineNumbers(markdownToHtml(markdown))
-      expect(result).toBe('<h1>🌠 Screenshot</h1>\n<p><img src="https://example.com/image.png" alt="" /></p>\n')
+      expect(result).toBe('<h1>馃尃 Screenshot</h1>\n<p><img src="https://example.com/image.png" alt="" /></p>\n')
     })
 
     it('should handle heading and paragraph', () => {
@@ -316,7 +316,7 @@ describe('markdownConverter', () => {
   })
 
   describe('Task List Round Trip', () => {
-    it('should maintain task list structure through markdown �?html �?markdown conversion', () => {
+    it('should maintain task list structure through markdown 鈫?html 鈫?markdown conversion', () => {
       const originalMarkdown = '- [ ] abcd\n\n- [x] efgh'
       const html = markdownToHtml(originalMarkdown)
       const backToMarkdown = htmlToMarkdown(html)
@@ -324,7 +324,7 @@ describe('markdownConverter', () => {
       expect(backToMarkdown).toBe(originalMarkdown)
     })
 
-    it('should maintain task list structure through html �?markdown �?html conversion', () => {
+    it('should maintain task list structure through html 鈫?markdown 鈫?html conversion', () => {
       const originalHtml =
         '<ul data-type="taskList" class="task-list"><li data-type="taskItem" class="task-list-item" data-checked="false"><label><input type="checkbox" disabled></label><div><p></p></div></li></ul>'
       const markdown = htmlToMarkdown(originalHtml)
@@ -335,7 +335,7 @@ describe('markdownConverter', () => {
       )
     })
 
-    it('should maintain task list structure through html �?markdown �?html conversion2', () => {
+    it('should maintain task list structure through html 鈫?markdown 鈫?html conversion2', () => {
       const originalHtml =
         '<ul data-type="taskList" class="task-list">\n<li data-type="taskItem" class="task-list-item" data-checked="false">\n<label><input type="checkbox" disabled></label><div><p>123</p></div>\n</li>\n<li data-type="taskItem" class="task-list-item" data-checked="false">\n<label><input type="checkbox" disabled></label><div><p></p></div>\n</li>\n</ul>\n'
       const markdown = htmlToMarkdown(originalHtml)
@@ -500,7 +500,7 @@ describe('markdownConverter', () => {
     it('should keep YAML front matter', () => {
       const markdown = `---
 tags:
-  - 你好
+  - 浣犲ソ
 aliases:
   - "1111"
   - "222"

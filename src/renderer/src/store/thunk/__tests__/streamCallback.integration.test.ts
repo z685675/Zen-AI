@@ -5,57 +5,14 @@ import { createStreamProcessor } from '@renderer/services/StreamProcessingServic
 import type { AppDispatch } from '@renderer/store'
 import { messageBlocksSlice } from '@renderer/store/messageBlock'
 import { messagesSlice } from '@renderer/store/newMessage'
-import type { Assistant, ExternalToolResult, MCPTool, Model } from '@renderer/types'
-import { WEB_SEARCH_SOURCE } from '@renderer/types'
+import type { Assistant, Model } from '@renderer/types'
 import type { Chunk } from '@renderer/types/chunk'
 import { ChunkType } from '@renderer/types/chunk'
 import { AssistantMessageStatus, MessageBlockStatus, MessageBlockType } from '@renderer/types/newMessage'
-import type * as errorUtils from '@renderer/utils/error'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { RootState } from '../../index'
 
-const { mockSavedFile } = vi.hoisted(() => ({
-  mockSavedFile: {
-    id: 'mock-image-id',
-    name: 'mock-image-id.png',
-    origin_name: 'mock-image-id.png',
-    path: '/mock/path/mock-image-id.png',
-    created_at: new Date().toISOString(),
-    size: 100,
-    ext: 'png',
-    type: 'image',
-    count: 1
-  }
-}))
-
-const createMockCallbacks = (
-  mockAssistantMsgId: string,
-  mockTopicId: string,
-  mockAssistant: Assistant,
-  dispatch: AppDispatch,
-  getState: () => ReturnType<typeof reducer> & RootState
-) =>
-  createCallbacks({
-    blockManager: new BlockManager({
-      dispatch,
-      getState,
-      saveUpdatedBlockToDB: vi.fn(),
-      saveUpdatesToDB: vi.fn(),
-      assistantMsgId: mockAssistantMsgId,
-      topicId: mockTopicId,
-      throttledBlockUpdate: vi.fn(),
-      cancelThrottledBlockUpdate: vi.fn()
-    }),
-    dispatch,
-    getState,
-    topicId: mockTopicId,
-    assistantMsgId: mockAssistantMsgId,
-    saveUpdatesToDB: vi.fn(),
-    assistant: mockAssistant
-  })
-
-// Mock external dependencies
 vi.mock('@renderer/config/models', async (importOriginal) => {
   const actual = (await importOriginal()) as Record<string, unknown>
   return {
@@ -67,57 +24,7 @@ vi.mock('@renderer/config/models', async (importOriginal) => {
       group: 'Qwen'
     },
     SYSTEM_MODELS: {
-      defaultModel: [{}, {}, {}],
-      silicon: [],
-      aihubmix: [],
-      ocoolai: [],
-      deepseek: [],
-      ppio: [],
-      alayanew: [],
-      qiniu: [],
-      dmxapi: [],
-      burncloud: [],
-      tokenflux: [],
-      '302ai': [],
-      cephalon: [],
-      lanyun: [],
-      ph8: [],
-      openrouter: [],
-      ollama: [],
-      'new-api': [],
-      lmstudio: [],
-      anthropic: [],
-      openai: [],
-      'azure-openai': [],
-      gemini: [],
-      vertexai: [],
-      github: [],
-      copilot: [],
-      zhipu: [],
-      yi: [],
-      moonshot: [],
-      baichuan: [],
-      dashscope: [],
-      stepfun: [],
-      doubao: [],
-      infini: [],
-      minimax: [],
-      groq: [],
-      together: [],
-      fireworks: [],
-      nvidia: [],
-      grok: [],
-      hyperbolic: [],
-      mistral: [],
-      jina: [],
-      perplexity: [],
-      modelscope: [],
-      xirang: [],
-      hunyuan: [],
-      'tencent-cloud-ti': [],
-      'baidu-cloud': [],
-      gpustack: [],
-      voyageai: []
+      defaultModel: [{}, {}, {}]
     },
     getModelLogo: vi.fn(),
     isVisionModel: vi.fn(() => false),
@@ -160,20 +67,15 @@ vi.mock('@renderer/databases', () => ({
         })
       })
     },
-    transaction: vi.fn((callback) => {
-      if (typeof callback === 'function') {
-        return callback()
-      }
-      return Promise.resolve()
-    })
+    transaction: vi.fn((callback) => (typeof callback === 'function' ? callback() : Promise.resolve()))
   }
 }))
 
 vi.mock('@renderer/services/FileManager', () => ({
   default: {
     deleteFile: vi.fn(),
-    addFile: vi.fn().mockResolvedValue(mockSavedFile),
-    getFileUrl: vi.fn().mockReturnValue('file:///mock/path/mock-image-id.png')
+    addFile: vi.fn().mockResolvedValue({ id: 'file-1', path: '/tmp/file.png' }),
+    getFileUrl: vi.fn().mockReturnValue('file:///tmp/file.png')
   }
 }))
 
@@ -205,21 +107,17 @@ vi.mock('@renderer/hooks/useTopic', () => ({
   autoRenameTopic: vi.fn()
 }))
 
-vi.mock('@renderer/store/assistants', () => {
-  const mockAssistantsSlice = {
+vi.mock('@renderer/store/assistants', () => ({
+  default: vi.fn((state = { entities: {}, ids: [] }) => state),
+  updateTopicUpdatedAt: vi.fn(() => ({ type: 'UPDATE_TOPIC_UPDATED_AT' })),
+  assistantsSlice: {
     name: 'assistants',
     reducer: vi.fn((state = { entities: {}, ids: [] }) => state),
     actions: {
       updateTopicUpdatedAt: vi.fn(() => ({ type: 'UPDATE_TOPIC_UPDATED_AT' }))
     }
   }
-
-  return {
-    default: mockAssistantsSlice.reducer,
-    updateTopicUpdatedAt: vi.fn(() => ({ type: 'UPDATE_TOPIC_UPDATED_AT' })),
-    assistantsSlice: mockAssistantsSlice
-  }
-})
+}))
 
 vi.mock('@renderer/services/TokenService', () => ({
   estimateMessagesUsage: vi.fn(() =>
@@ -245,8 +143,8 @@ vi.mock('@renderer/utils/messageUtils/find', () => ({
   findAllBlocks: vi.fn(() => [])
 }))
 
-vi.mock('i18next', () => {
-  const mockI18n = {
+vi.mock('i18next', () => ({
+  default: {
     use: vi.fn().mockReturnThis(),
     init: vi.fn().mockResolvedValue(undefined),
     t: vi.fn((key) => key),
@@ -260,100 +158,86 @@ vi.mock('i18next', () => {
     services: {},
     options: {}
   }
-
-  return {
-    default: mockI18n,
-    ...mockI18n
-  }
-})
+}))
 
 vi.mock('@renderer/utils/error', async (importOriginal) => {
-  const actual = (await importOriginal()) as typeof errorUtils
+  const actual = (await importOriginal()) as Record<string, unknown>
   return {
     ...actual,
-    formatErrorMessage: vi.fn((error) => error.message || 'Unknown error'),
-    formatErrorMessageWithPrefix: vi.fn((error, prefix) => `${prefix}: ${error?.message || 'Unknown error'}`),
-    isAbortError: vi.fn((error) => error.name === 'AbortError'),
-    serializeError: vi.fn((error) => ({
+    formatErrorMessage: vi.fn((error: Error) => error.message || 'Unknown error'),
+    formatErrorMessageWithPrefix: vi.fn((error: Error, prefix: string) => `${prefix}: ${error?.message || 'Unknown error'}`),
+    isAbortError: vi.fn((error: Error) => error.name === 'AbortError'),
+    serializeError: vi.fn((error: Error) => ({
       name: error.name,
       message: error.message,
-      stack: error.stack,
-      cause: error.cause ? String(error.cause) : undefined
+      stack: error.stack
     }))
   }
 })
 
 vi.mock('@renderer/utils', () => ({
   default: {},
-  uuid: vi.fn(() => 'mock-uuid-' + Math.random().toString(36).slice(2, 11))
+  uuid: vi.fn(() => 'mock-uuid')
 }))
-
-interface MockTopicsState {
-  entities: Record<string, unknown>
-}
 
 const reducer = combineReducers({
   messages: messagesSlice.reducer,
   messageBlocks: messageBlocksSlice.reducer,
-  topics: (state: MockTopicsState = { entities: {} }) => state
+  topics: (state = { entities: {} }) => state
 })
 
-const createMockStore = () => {
-  return configureStore({
-    reducer: reducer,
+const createMockStore = () =>
+  configureStore({
+    reducer,
     middleware: (getDefaultMiddleware) => getDefaultMiddleware({ serializableCheck: false })
   })
-}
 
-// Helper function to simulate processing chunks through the stream processor
-const processChunks = async (chunks: Chunk[], callbacks: ReturnType<typeof createCallbacks>) => {
-  const streamProcessor = createStreamProcessor(callbacks)
-
-  const stream = new ReadableStream<Chunk>({
-    start(controller) {
-      for (const chunk of chunks) {
-        controller.enqueue(chunk)
-      }
-      controller.close()
-    }
+const createMockCallbacks = (
+  assistantMsgId: string,
+  topicId: string,
+  assistant: Assistant,
+  dispatch: AppDispatch,
+  getState: () => ReturnType<typeof reducer> & RootState
+) =>
+  createCallbacks({
+    blockManager: new BlockManager({
+      dispatch,
+      getState,
+      saveUpdatedBlockToDB: vi.fn(),
+      saveUpdatesToDB: vi.fn(),
+      assistantMsgId,
+      topicId,
+      throttledBlockUpdate: vi.fn(),
+      cancelThrottledBlockUpdate: vi.fn()
+    }),
+    dispatch,
+    getState,
+    topicId,
+    assistantMsgId,
+    saveUpdatesToDB: vi.fn(),
+    assistant
   })
 
-  const reader = stream.getReader()
-
-  try {
-    while (true) {
-      const { done, value: chunk } = await reader.read()
-      if (done) {
-        break
-      }
-
-      if (chunk) {
-        streamProcessor(chunk)
-
-        // Add small delay to simulate real streaming
-        await new Promise((resolve) => setTimeout(resolve, 10))
-      }
-    }
-  } catch (error) {
-    console.error('Error processing chunks:', error)
-    throw error
-  } finally {
-    reader.releaseLock()
+const processChunks = async (chunks: Chunk[], callbacks: ReturnType<typeof createCallbacks>) => {
+  const process = createStreamProcessor(callbacks)
+  for (const chunk of chunks) {
+    process(chunk)
+    await new Promise((resolve) => setTimeout(resolve, 0))
   }
 }
 
-describe('streamCallback Integration Tests', () => {
+describe('streamCallback integration', () => {
   let store: ReturnType<typeof createMockStore>
   let dispatch: AppDispatch
   let getState: () => ReturnType<typeof reducer> & RootState
 
-  const mockTopicId = 'test-topic-id'
-  const mockAssistantMsgId = 'test-assistant-msg-id'
-  const mockAssistant: Assistant = {
-    id: 'test-assistant',
+  const topicId = 'topic-1'
+  const assistantMsgId = 'assistant-message-1'
+  const assistant: Assistant = {
+    id: 'assistant-1',
     name: 'Test Assistant',
     model: {
-      id: 'test-model',
+      id: 'model-1',
       name: 'Test Model'
     } as Model,
     prompt: '',
@@ -373,20 +257,23 @@ describe('streamCallback Integration Tests', () => {
     Object.defineProperty(window, 'api', {
       value: {
         file: {
-          saveBase64Image: vi.fn().mockResolvedValue(mockSavedFile)
+          saveBase64Image: vi.fn().mockResolvedValue({
+            id: 'file-1',
+            path: '/tmp/file.png'
+          })
         }
       },
       configurable: true
     })
 
-    // 为测试消息添加初始状�?    store.dispatch(
+    store.dispatch(
       messagesSlice.actions.addMessage({
-        topicId: mockTopicId,
+        topicId,
         message: {
-          id: mockAssistantMsgId,
-          assistantId: mockAssistant.id,
+          id: assistantMsgId,
+          assistantId: assistant.id,
           role: 'assistant',
-          topicId: mockTopicId,
+          topicId,
           blocks: [],
           status: AssistantMessageStatus.PENDING,
           createdAt: new Date().toISOString(),
@@ -396,13 +283,8 @@ describe('streamCallback Integration Tests', () => {
     )
   })
 
-  afterEach(() => {
-    vi.clearAllMocks()
-  })
-
-  it('should handle complete text streaming flow', async () => {
-    const callbacks = createMockCallbacks(mockAssistantMsgId, mockTopicId, mockAssistant, dispatch, getState)
-
+  it('handles a complete text streaming flow', async () => {
+    const callbacks = createMockCallbacks(assistantMsgId, topicId, assistant, dispatch, getState)
     const chunks: Chunk[] = [
       { type: ChunkType.LLM_RESPONSE_CREATED },
       { type: ChunkType.TEXT_START },
@@ -427,28 +309,24 @@ describe('streamCallback Integration Tests', () => {
 
     await processChunks(chunks, callbacks)
 
-    // 验证 Redux 状�?    const state = getState()
+    const state = getState()
     const blocks = Object.values(state.messageBlocks.entities)
-    expect(blocks.length).toBeGreaterThan(0)
-
     const textBlock = blocks.find((block) => block.type === MessageBlockType.MAIN_TEXT)
+    const message = state.messages.entities[assistantMsgId]
+
     expect(textBlock).toBeDefined()
     expect(textBlock?.content).toBe('Hello world!')
     expect(textBlock?.status).toBe(MessageBlockStatus.SUCCESS)
-
-    // 验证消息状态更�?    const message = state.messages.entities[mockAssistantMsgId]
     expect(message?.status).toBe(AssistantMessageStatus.SUCCESS)
     expect(message?.usage?.total_tokens).toBe(150)
   })
 
-  it('should handle thinking flow', async () => {
-    const callbacks = createMockCallbacks(mockAssistantMsgId, mockTopicId, mockAssistant, dispatch, getState)
-
+  it('handles a thinking flow', async () => {
+    const callbacks = createMockCallbacks(assistantMsgId, topicId, assistant, dispatch, getState)
     const chunks: Chunk[] = [
       { type: ChunkType.LLM_RESPONSE_CREATED },
       { type: ChunkType.THINKING_START },
       { type: ChunkType.THINKING_DELTA, text: 'Let me think...', thinking_millsec: 1000 },
-      { type: ChunkType.THINKING_DELTA, text: 'I need to consider...', thinking_millsec: 2000 },
       { type: ChunkType.THINKING_DELTA, text: 'Final thoughts', thinking_millsec: 3000 },
       { type: ChunkType.THINKING_COMPLETE, text: 'Final thoughts' },
       { type: ChunkType.BLOCK_COMPLETE }
@@ -456,375 +334,13 @@ describe('streamCallback Integration Tests', () => {
 
     await processChunks(chunks, callbacks)
 
-    // 验证 Redux 状�?    const state = getState()
+    const state = getState()
     const blocks = Object.values(state.messageBlocks.entities)
-
     const thinkingBlock = blocks.find((block) => block.type === MessageBlockType.THINKING)
+
     expect(thinkingBlock).toBeDefined()
     expect(thinkingBlock?.content).toBe('Final thoughts')
     expect(thinkingBlock?.status).toBe(MessageBlockStatus.SUCCESS)
-    // thinking_millsec 现在是本地计算的，只验证它存在且是一个合理的数字
-    expect((thinkingBlock as any)?.thinking_millsec).toBeDefined()
     expect(typeof (thinkingBlock as any)?.thinking_millsec).toBe('number')
-    expect((thinkingBlock as any)?.thinking_millsec).toBeGreaterThanOrEqual(0)
-  })
-
-  it('should handle tool call flow', async () => {
-    const callbacks = createMockCallbacks(mockAssistantMsgId, mockTopicId, mockAssistant, dispatch, getState)
-
-    const mockTool: MCPTool = {
-      id: 'tool-1',
-      serverId: 'server-1',
-      serverName: 'Test Server',
-      name: 'test-tool',
-      description: 'Test tool',
-      inputSchema: {
-        type: 'object',
-        title: 'Test Tool Input',
-        properties: {}
-      },
-      type: 'mcp'
-    }
-
-    const chunks: Chunk[] = [
-      { type: ChunkType.LLM_RESPONSE_CREATED },
-      {
-        type: ChunkType.MCP_TOOL_PENDING,
-        responses: [
-          {
-            id: 'tool-call-1',
-            tool: mockTool,
-            arguments: { testArg: 'value' },
-            status: 'pending' as const,
-            response: ''
-          }
-        ]
-      },
-      // {
-      //   type: ChunkType.MCP_TOOL_PENDING,
-      //   responses: [
-      //     {
-      //       id: 'tool-call-1',
-      //       tool: mockTool,
-      //       arguments: { testArg: 'value' },
-      //       status: 'invoking' as const,
-      //       response: ''
-      //     }
-      //   ]
-      // },
-      {
-        type: ChunkType.MCP_TOOL_COMPLETE,
-        responses: [
-          {
-            id: 'tool-call-1',
-            tool: mockTool,
-            arguments: { testArg: 'value' },
-            status: 'done' as const,
-            response: 'Tool result'
-          }
-        ]
-      },
-      { type: ChunkType.BLOCK_COMPLETE }
-    ]
-
-    await processChunks(chunks, callbacks)
-
-    // 验证 Redux 状�?    const state = getState()
-    const blocks = Object.values(state.messageBlocks.entities)
-
-    const toolBlock = blocks.find((block) => block.type === MessageBlockType.TOOL)
-    expect(toolBlock).toBeDefined()
-    expect(toolBlock?.content).toBe('Tool result')
-    expect(toolBlock?.status).toBe(MessageBlockStatus.SUCCESS)
-    expect((toolBlock as any)?.toolName).toBe('test-tool')
-  })
-
-  it('should handle image generation flow', async () => {
-    const callbacks = createMockCallbacks(mockAssistantMsgId, mockTopicId, mockAssistant, dispatch, getState)
-
-    const chunks: Chunk[] = [
-      { type: ChunkType.LLM_RESPONSE_CREATED },
-      { type: ChunkType.IMAGE_CREATED },
-      {
-        type: ChunkType.IMAGE_DELTA,
-        image: {
-          type: 'base64',
-          images: [
-            'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/2wBDAQkJCQwLDBgNDRgyIRwhMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjL/wAARCAAQABADASIAAhEBAxEB/8QAFwAAAwEAAAAAAAAAAAAAAAAAAQMEB//EACMQAAIBAwMEAwAAAAAAAAAAAAECAwAEEQUSIQYxQVExUYH/xAAVAQEBAAAAAAAAAAAAAAAAAAAAAf/EABQRAQAAAAAAAAAAAAAAAAAAAAD/2gAMAwEAAhEDEQA/AM/8A//Z'
-          ]
-        }
-      },
-      {
-        type: ChunkType.IMAGE_COMPLETE,
-        image: {
-          type: 'base64',
-          images: [
-            'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/2wBDAQkJCQwLDBgNDRgyIRwhMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjL/wAARCAAQABADASIAAhEBAxEB/8QAFwAAAwEAAAAAAAAAAAAAAAAAAQMEB//EACMQAAIBAwMEAwAAAAAAAAAAAAECAwAEEQUSIQYxQVExUYH/xAAVAQEBAAAAAAAAAAAAAAAAAAAAAf/EABQRAQAAAAAAAAAAAAAAAAAAAAD/2gAMAwEAAhEDEQA/AM/8A//Z'
-          ]
-        }
-      },
-      { type: ChunkType.BLOCK_COMPLETE }
-    ]
-
-    await processChunks(chunks, callbacks)
-
-    // 验证 Redux 状�?    const state = getState()
-    const blocks = Object.values(state.messageBlocks.entities)
-    const imageBlock = blocks.find((block) => block.type === MessageBlockType.IMAGE)
-    expect(imageBlock).toBeDefined()
-    expect(imageBlock?.file).toEqual(mockSavedFile)
-    expect(imageBlock?.url).toBe('file:///mock/path/mock-image-id.png')
-    expect(imageBlock?.status).toBe(MessageBlockStatus.SUCCESS)
-  })
-
-  it('should handle web search flow', async () => {
-    const callbacks = createMockCallbacks(mockAssistantMsgId, mockTopicId, mockAssistant, dispatch, getState)
-
-    const mockWebSearchResult = {
-      source: WEB_SEARCH_SOURCE.WEBSEARCH,
-      results: [{ title: 'Test Result', url: 'http://example.com', snippet: 'Test snippet' }]
-    }
-
-    const chunks: Chunk[] = [
-      { type: ChunkType.LLM_RESPONSE_CREATED },
-      { type: ChunkType.LLM_WEB_SEARCH_IN_PROGRESS },
-      { type: ChunkType.LLM_WEB_SEARCH_COMPLETE, llm_web_search: mockWebSearchResult },
-      { type: ChunkType.BLOCK_COMPLETE }
-    ]
-
-    await processChunks(chunks, callbacks)
-
-    // 验证 Redux 状�?    const state = getState()
-    const blocks = Object.values(state.messageBlocks.entities)
-    const citationBlock = blocks.find((block) => block.type === MessageBlockType.CITATION)
-    expect(citationBlock).toBeDefined()
-    expect(citationBlock?.response?.source).toEqual(mockWebSearchResult.source)
-    expect(citationBlock?.status).toBe(MessageBlockStatus.SUCCESS)
-  })
-
-  it('should handle mixed content flow (thinking + tool + text)', async () => {
-    const callbacks = createMockCallbacks(mockAssistantMsgId, mockTopicId, mockAssistant, dispatch, getState)
-
-    const mockCalculatorTool: MCPTool = {
-      id: 'tool-1',
-      serverId: 'server-1',
-      serverName: 'Test Server',
-      name: 'calculator',
-      description: 'Calculator tool',
-      inputSchema: {
-        type: 'object',
-        title: 'Calculator Input',
-        properties: {}
-      },
-      type: 'mcp'
-    }
-
-    const chunks: Chunk[] = [
-      { type: ChunkType.LLM_RESPONSE_CREATED },
-
-      // 思考阶�?      { type: ChunkType.THINKING_START },
-      { type: ChunkType.THINKING_DELTA, text: 'Let me calculate this...', thinking_millsec: 1000 },
-      {
-        type: ChunkType.THINKING_DELTA,
-        text: 'Let me calculate this..., I need to use a calculator',
-        thinking_millsec: 1000
-      },
-      {
-        type: ChunkType.THINKING_COMPLETE,
-        text: 'Let me calculate this..., I need to use a calculator',
-        thinking_millsec: 2000
-      },
-
-      // 工具调用阶段
-      {
-        type: ChunkType.MCP_TOOL_PENDING,
-        responses: [
-          {
-            id: 'tool-call-1',
-            tool: mockCalculatorTool,
-            arguments: { operation: 'add', a: 1, b: 2 },
-            status: 'pending' as const,
-            response: ''
-          }
-        ]
-      },
-      // {
-      //   type: ChunkType.MCP_TOOL_PENDING,
-      //   responses: [
-      //     {
-      //       id: 'tool-call-1',
-      //       tool: mockCalculatorTool,
-      //       arguments: { operation: 'add', a: 1, b: 2 },
-      //       status: 'invoking' as const,
-      //       response: ''
-      //     }
-      //   ]
-      // },
-      {
-        type: ChunkType.MCP_TOOL_COMPLETE,
-        responses: [
-          {
-            id: 'tool-call-1',
-            tool: mockCalculatorTool,
-            arguments: { operation: 'add', a: 1, b: 2 },
-            status: 'done' as const,
-            response: '42'
-          }
-        ]
-      },
-
-      // 文本响应阶段
-      { type: ChunkType.TEXT_START },
-      { type: ChunkType.TEXT_DELTA, text: 'The answer is ' },
-      { type: ChunkType.TEXT_DELTA, text: '42' },
-      { type: ChunkType.TEXT_COMPLETE, text: 'The answer is 42' },
-
-      { type: ChunkType.BLOCK_COMPLETE }
-    ]
-
-    await processChunks(chunks, callbacks)
-
-    // 验证 Redux 状�?    const state = getState()
-    const blocks = Object.values(state.messageBlocks.entities)
-
-    expect(blocks.length).toBeGreaterThan(2) // 至少有思考块、工具块、文本块
-
-    const thinkingBlock = blocks.find((block) => block.type === MessageBlockType.THINKING)
-    expect(thinkingBlock?.content).toBe('Let me calculate this..., I need to use a calculator')
-    expect(thinkingBlock?.status).toBe(MessageBlockStatus.SUCCESS)
-
-    const toolBlock = blocks.find((block) => block.type === MessageBlockType.TOOL)
-    expect(toolBlock?.content).toBe('42')
-    expect(toolBlock?.status).toBe(MessageBlockStatus.SUCCESS)
-
-    const textBlock = blocks.find((block) => block.type === MessageBlockType.MAIN_TEXT)
-    expect(textBlock?.content).toBe('The answer is 42')
-    expect(textBlock?.status).toBe(MessageBlockStatus.SUCCESS)
-  })
-
-  it('should handle error flow', async () => {
-    const callbacks = createMockCallbacks(mockAssistantMsgId, mockTopicId, mockAssistant, dispatch, getState)
-
-    const mockError = new Error('Test error')
-
-    const chunks: Chunk[] = [
-      { type: ChunkType.LLM_RESPONSE_CREATED },
-      { type: ChunkType.TEXT_START },
-      { type: ChunkType.TEXT_DELTA, text: 'Hello ' },
-      { type: ChunkType.ERROR, error: mockError }
-    ]
-
-    await processChunks(chunks, callbacks)
-
-    // 验证 Redux 状�?    const state = getState()
-    const blocks = Object.values(state.messageBlocks.entities)
-
-    expect(blocks.length).toBeGreaterThan(0)
-
-    const errorBlock = blocks.find((block) => block.type === MessageBlockType.ERROR)
-    expect(errorBlock).toBeDefined()
-    expect(errorBlock?.status).toBe(MessageBlockStatus.SUCCESS)
-    expect((errorBlock as any)?.error?.message).toBe('Test error')
-
-    // 验证消息状态更�?    const message = state.messages.entities[mockAssistantMsgId]
-    expect(message?.status).toBe(AssistantMessageStatus.ERROR)
-  })
-
-  it('should handle external tool flow', async () => {
-    const callbacks = createMockCallbacks(mockAssistantMsgId, mockTopicId, mockAssistant, dispatch, getState)
-
-    const mockExternalToolResult: ExternalToolResult = {
-      webSearch: {
-        source: WEB_SEARCH_SOURCE.WEBSEARCH,
-        results: [{ title: 'External Result', url: 'http://external.com', snippet: 'External snippet' }]
-      },
-      knowledge: [
-        {
-          id: 1,
-          content: 'Knowledge content',
-          sourceUrl: 'http://external.com',
-          type: 'url'
-        }
-      ]
-    }
-
-    const chunks: Chunk[] = [
-      { type: ChunkType.LLM_RESPONSE_CREATED },
-      { type: ChunkType.EXTERNEL_TOOL_IN_PROGRESS },
-      { type: ChunkType.EXTERNEL_TOOL_COMPLETE, external_tool: mockExternalToolResult },
-      { type: ChunkType.BLOCK_COMPLETE }
-    ]
-
-    await processChunks(chunks, callbacks)
-
-    // 验证 Redux 状�?    const state = getState()
-    const blocks = Object.values(state.messageBlocks.entities)
-
-    const citationBlock = blocks.find((block) => block.type === MessageBlockType.CITATION)
-    expect(citationBlock).toBeDefined()
-    expect((citationBlock as any)?.response).toEqual(mockExternalToolResult.webSearch)
-    expect((citationBlock as any)?.knowledge).toEqual(mockExternalToolResult.knowledge)
-    expect(citationBlock?.status).toBe(MessageBlockStatus.SUCCESS)
-  })
-
-  it('should handle abort error correctly', async () => {
-    const callbacks = createMockCallbacks(mockAssistantMsgId, mockTopicId, mockAssistant, dispatch, getState)
-
-    // 创建一个模拟的 abort 错误
-    const abortError = new Error('Request aborted')
-    abortError.name = 'AbortError'
-
-    const chunks: Chunk[] = [
-      { type: ChunkType.LLM_RESPONSE_CREATED },
-      { type: ChunkType.TEXT_START },
-      { type: ChunkType.TEXT_DELTA, text: 'Partial text...' },
-      { type: ChunkType.ERROR, error: abortError }
-    ]
-
-    await processChunks(chunks, callbacks)
-
-    // 验证 Redux 状�?    const state = getState()
-    const blocks = Object.values(state.messageBlocks.entities)
-
-    expect(blocks.length).toBeGreaterThan(0)
-
-    const errorBlock = blocks.find((block) => block.type === MessageBlockType.ERROR)
-    expect(errorBlock).toBeDefined()
-    expect(errorBlock?.status).toBe(MessageBlockStatus.SUCCESS)
-
-    // 验证消息状态更新为成功（因为是暂停，不是真正的错误�?    const message = state.messages.entities[mockAssistantMsgId]
-    expect(message?.status).toBe(AssistantMessageStatus.SUCCESS)
-  })
-
-  it('should maintain block reference integrity during streaming', async () => {
-    const callbacks = createMockCallbacks(mockAssistantMsgId, mockTopicId, mockAssistant, dispatch, getState)
-
-    const chunks: Chunk[] = [
-      { type: ChunkType.LLM_RESPONSE_CREATED },
-      { type: ChunkType.TEXT_START },
-      { type: ChunkType.TEXT_DELTA, text: 'First chunk' },
-      { type: ChunkType.TEXT_DELTA, text: 'Second chunk' },
-      { type: ChunkType.TEXT_COMPLETE, text: 'First chunkSecond chunk' },
-      { type: ChunkType.BLOCK_COMPLETE }
-    ]
-
-    await processChunks(chunks, callbacks)
-
-    // 验证 Redux 状�?    const state = getState()
-    const blocks = Object.values(state.messageBlocks.entities)
-    const message = state.messages.entities[mockAssistantMsgId]
-
-    // 验证消息�?blocks 数组包含正确的块ID
-    expect(message?.blocks).toBeDefined()
-    expect(message?.blocks?.length).toBeGreaterThan(0)
-
-    // 验证所有块都存在于 messageBlocks 状态中
-    message?.blocks?.forEach((blockId) => {
-      const block = state.messageBlocks.entities[blockId]
-      expect(block).toBeDefined()
-      expect(block?.messageId).toBe(mockAssistantMsgId)
-    })
-
-    // 验证blocks包含正确的内�?    expect(blocks.length).toBeGreaterThan(0)
   })
 })

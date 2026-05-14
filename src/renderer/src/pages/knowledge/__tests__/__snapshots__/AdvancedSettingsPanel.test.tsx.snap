@@ -26,7 +26,7 @@ exports[`AdvancedSettingsPanel > basic rendering > should match snapshot 1`] = `
     <div
       class="settings-label"
     >
-      文档预处�?      <div>
+      文档预处�?      <div>
         settings.tool.preprocess.tooltip
       </div>
     </div>
@@ -107,12 +107,12 @@ exports[`AdvancedSettingsPanel > basic rendering > should match snapshot 1`] = `
     <div
       class="settings-label"
     >
-      检索相似度阈�?      <div>
+      检索相似度阈�?      <div>
         knowledge.threshold_tooltip
       </div>
     </div>
     <input
-      aria-label="检索相似度阈�?
+      aria-label="检索相似度阈�?
       data-testid="input-number"
       placeholder="knowledge.threshold_placeholder"
       style="width: 100%;"
@@ -123,6 +123,148 @@ exports[`AdvancedSettingsPanel > basic rendering > should match snapshot 1`] = `
   <div
     role="alert"
   >
-    避免修改这个高级设置�?  </div>
+    避免修改这个高级设置�?  </div>
+</div>
+`;
+
+exports[`AdvancedSettingsPanel > matches snapshot 1`] = `
+.c0 {
+  padding: 0 16px;
+}
+
+.c1 {
+  margin-bottom: 24px;
+}
+
+.c1 .settings-label {
+  font-size: 14px;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+<div
+  class="c0"
+>
+  <div
+    class="c1"
+  >
+    <div
+      class="settings-label"
+    >
+      settings.tool.preprocess.title
+      <div
+        data-testid="tooltip"
+      >
+        settings.tool.preprocess.tooltip
+      </div>
+    </div>
+    <select
+      data-testid="doc-preprocess-select"
+    >
+      <option
+        value=""
+      >
+        settings.tool.preprocess.provider_placeholder
+      </option>
+    </select>
+  </div>
+  <div
+    class="c1"
+  >
+    <div
+      class="settings-label"
+    >
+      models.rerank_model
+      <div
+        data-testid="tooltip"
+      >
+        models.rerank_model_tooltip
+      </div>
+    </div>
+    <select
+      data-testid="model-selector"
+    >
+      <option
+        value=""
+      >
+        settings.models.empty
+      </option>
+      <option
+        value="rerank-model"
+      >
+        rerank-model
+      </option>
+    </select>
+  </div>
+  <div
+    class="c1"
+  >
+    <div
+      class="settings-label"
+    >
+      knowledge.chunk_size
+      <div
+        data-testid="tooltip"
+      >
+        knowledge.chunk_size_tooltip
+      </div>
+    </div>
+    <input
+      aria-label="knowledge.chunk_size"
+      data-testid="knowledge.chunk_size"
+      placeholder="knowledge.chunk_size_placeholder"
+      type="number"
+      value="500"
+    />
+  </div>
+  <div
+    class="c1"
+  >
+    <div
+      class="settings-label"
+    >
+      knowledge.chunk_overlap
+      <div
+        data-testid="tooltip"
+      >
+        knowledge.chunk_overlap_tooltip
+      </div>
+    </div>
+    <input
+      aria-label="knowledge.chunk_overlap"
+      data-testid="knowledge.chunk_overlap"
+      placeholder="knowledge.chunk_overlap_placeholder"
+      type="number"
+      value="200"
+    />
+  </div>
+  <div
+    class="c1"
+  >
+    <div
+      class="settings-label"
+    >
+      knowledge.threshold
+      <div
+        data-testid="tooltip"
+      >
+        knowledge.threshold_tooltip
+      </div>
+    </div>
+    <input
+      aria-label="knowledge.threshold"
+      data-testid="knowledge.threshold"
+      placeholder="knowledge.threshold_placeholder"
+      type="number"
+      value="0.5"
+    />
+  </div>
+  <div
+    role="alert"
+  >
+    knowledge.chunk_size_change_warning
+  </div>
 </div>
 `;

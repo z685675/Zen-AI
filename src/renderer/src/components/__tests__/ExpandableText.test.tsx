@@ -21,11 +21,11 @@ describe('ExpandableText', () => {
   it('should toggle expand/collapse when button is clicked', async () => {
     render(<ExpandableText text={TEXT} />)
     const button = screen.getByRole('button')
-    // 初始为收起状�?    expect(button).toHaveTextContent('common.expand')
-    // 点击展开
+    // 鍒濆涓烘敹璧风姸鎬?    expect(button).toHaveTextContent('common.expand')
+    // 鐐瑰嚮灞曞紑
     await userEvent.click(button)
     expect(button).toHaveTextContent('common.collapse')
-    // 再次点击收起
+    // 鍐嶆鐐瑰嚮鏀惰捣
     await userEvent.click(button)
     expect(button).toHaveTextContent('common.expand')
   })

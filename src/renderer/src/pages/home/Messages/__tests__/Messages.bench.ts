@@ -2,9 +2,9 @@ import { AssistantMessageStatus, type Message, UserMessageStatus } from '@render
 import { bench, describe, expect, test } from 'vitest'
 
 // ============================================================================
-// 1. 编写用于对比的算�?// ============================================================================
+// 1. 缂栧啓鐢ㄤ簬瀵规瘮鐨勭畻娉?// ============================================================================
 
-// 旧版本作为基线：包含 [...messages].reverse()
+// 鏃х増鏈綔涓哄熀绾匡細鍖呭惈 [...messages].reverse()
 const baseline = (messages: Message[], startIndex: number, displayCount: number) => {
   const reversedMessages = [...messages].reverse()
 
@@ -36,7 +36,7 @@ const baseline = (messages: Message[], startIndex: number, displayCount: number)
   return displayMessages
 }
 
-// 新版本：直接使用原生索引倒序遍历
+// 鏂扮増鏈細鐩存帴浣跨敤鍘熺敓绱㈠紩鍊掑簭閬嶅巻
 const byBackwardIndex = (messages: Message[], startIndex: number, displayCount: number) => {
   if (messages.length - startIndex <= displayCount) {
     const result: Message[] = []
@@ -71,9 +71,9 @@ const byBackwardIndex = (messages: Message[], startIndex: number, displayCount: 
 }
 
 // ============================================================================
-// 2. 构造测试数据，并验证算法结果一致�?// ============================================================================
+// 2. 鏋勯?犳祴璇曟暟鎹紝骞堕獙璇佺畻娉曠粨鏋滀竴鑷存??// ============================================================================
 
-// 使用固定时间�?const generateMockMessages = (count: number): Message[] => {
+// 浣跨敤鍥哄畾鏃堕棿鎴?const generateMockMessages = (count: number): Message[] => {
   const BASE_TIMESTAMP = 1700000000000
   const messages: Message[] = []
 
@@ -95,22 +95,22 @@ const byBackwardIndex = (messages: Message[], startIndex: number, displayCount: 
   return messages
 }
 
-// 场景：不同消息数�?const SCENARIOS = [100, 1000, 10000] as const
+// 鍦烘櫙锛氫笉鍚屾秷鎭暟閲?const SCENARIOS = [100, 1000, 10000] as const
 const mockDataMap = Object.fromEntries(SCENARIOS.map((n) => [n, generateMockMessages(n)])) as Record<
   (typeof SCENARIOS)[number],
   Message[]
 >
 
-// 测试结果是否一�?test('computeOld and computeNew should produce identical results', () => {
+// 娴嬭瘯缁撴灉鏄惁涓?鑷?test('computeOld and computeNew should produce identical results', () => {
   const sample = mockDataMap[100]
   expect(baseline(sample, 0, 20)).toEqual(byBackwardIndex(sample, 0, 20))
 })
 
 // ============================================================================
-// 3. 基准测试
+// 3. 鍩哄噯娴嬭瘯
 // ============================================================================
 
-// Benchmark 配置
+// Benchmark 閰嶇疆
 const benchOptions = (overrides = {}) => ({
   iterations: 1000,
   warmupIterations: 200,

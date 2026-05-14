@@ -332,6 +332,121 @@ export function formatError(error: SerializedError): string {
   return `${t('error.name')}: ${error.name}\n${t('error.message')}: ${error.message}\n${t('error.stack')}: ${error.stack}`
 }
 
+const CLIPBOARD_FIELD_MAX_LENGTH = 400
+const CLIPBOARD_TOTAL_MAX_LENGTH = 3000
+
+function truncateClipboardValue(value: string, maxLength = CLIPBOARD_FIELD_MAX_LENGTH): string {
+  const normalized = value.replace(/\r\n/g, '\n').trim()
+  if (!normalized) {
+    return ''
+  }
+
+  if (normalized.length <= maxLength) {
+    return normalized
+  }
+
+  return `${normalized.slice(0, maxLength)}… [已截断，共 ${normalized.length} 个字符]`
+}
+
+function summarizeClipboardValue(value: unknown): string | undefined {
+  if (value === null || value === undefined) {
+    return undefined
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    if (!trimmed) {
+      return undefined
+    }
+
+    const parsed = parseJSON(trimmed)
+    if (parsed && parsed !== value) {
+      const parsedSummary = summarizeClipboardValue(parsed)
+      if (parsedSummary) {
+        return parsedSummary
+      }
+    }
+
+    return truncateClipboardValue(trimmed)
+  }
+
+  if (typeof value !== 'object') {
+    return truncateClipboardValue(safeToString(value))
+  }
+
+  if (Array.isArray(value)) {
+    const summary = value
+      .map((item) => summarizeClipboardValue(item))
+      .filter(Boolean)
+      .join('; ')
+    return summary ? truncateClipboardValue(summary) : undefined
+  }
+
+  const record = value as Record<string, unknown>
+  const nestedError =
+    typeof record.error === 'object' && record.error !== null && !Array.isArray(record.error)
+      ? (record.error as Record<string, unknown>)
+      : undefined
+  const candidates = [nestedError, record].filter(Boolean) as Record<string, unknown>[]
+  const knownKeys = ['message', 'msg', 'detail', 'error_description', 'type', 'code', 'param', 'status', 'statusCode']
+
+  for (const candidate of candidates) {
+    const parts = knownKeys
+      .map((key) => {
+        const candidateValue = candidate[key]
+        if (candidateValue === null || candidateValue === undefined || candidateValue === '') {
+          return null
+        }
+        return `${key}: ${safeToString(candidateValue)}`
+      })
+      .filter(Boolean)
+
+    if (parts.length > 0) {
+      return truncateClipboardValue(parts.join('; '))
+    }
+  }
+
+  return truncateClipboardValue(safeToString(record))
+}
+
+export function formatErrorForClipboard(error: SerializedError): string {
+  const lines = ['【技术摘要】']
+  const pushLine = (label: string, value: unknown) => {
+    const summary = summarizeClipboardValue(value)
+    if (summary) {
+      lines.push(`${label}: ${summary}`)
+    }
+  }
+
+  pushLine('错误类型', error.name)
+  pushLine('错误消息', error.message)
+  pushLine('原因', 'cause' in error ? error.cause : undefined)
+  pushLine('状态码', 'statusCode' in error ? error.statusCode : ('status' in error ? error.status : undefined))
+  pushLine('状态文本', 'statusText' in error ? error.statusText : undefined)
+  pushLine('Provider', error.providerId)
+  pushLine('模型', error.modelId)
+  pushLine('Trace ID', error.zenTraceId)
+  pushLine('请求地址', error.zenRequestUrl || ('url' in error ? error.url : undefined))
+
+  const serviceResponseSummary =
+    summarizeClipboardValue('responseBody' in error ? error.responseBody : undefined) ||
+    summarizeClipboardValue('data' in error ? error.data : undefined) ||
+    summarizeClipboardValue('response' in error ? error.response : undefined) ||
+    summarizeClipboardValue('lastError' in error ? error.lastError : undefined) ||
+    summarizeClipboardValue('errors' in error ? error.errors : undefined)
+
+  if (serviceResponseSummary) {
+    lines.push(`服务返回: ${serviceResponseSummary}`)
+  }
+
+  const text = lines.join('\n')
+  if (text.length <= CLIPBOARD_TOTAL_MAX_LENGTH) {
+    return text
+  }
+
+  return `${text.slice(0, CLIPBOARD_TOTAL_MAX_LENGTH)}\n… [技术摘要已截断，共 ${text.length} 个字符]`
+}
+
 export function formatAiSdkError(error: SerializedAiSdkError): string {
   let text = formatError(error) + '\n'
   if (error.cause) {

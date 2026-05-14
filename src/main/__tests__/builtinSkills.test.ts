@@ -60,6 +60,7 @@ vi.mock('../utils/markdownParser', () => ({
 
 const resourceSkillsPath = '/app/resources/skills'
 const globalSkillsPath = '/userData/Data/Skills'
+const normalizePath = (value: string) => value.replace(/\\/g, '/')
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -77,14 +78,14 @@ describe('installBuiltinSkills', () => {
 
     await installBuiltinSkills()
 
-    expect(fs.access).toHaveBeenCalledWith(resourceSkillsPath)
+    expect(normalizePath(vi.mocked(fs.access).mock.calls[0][0] as string)).toBe(resourceSkillsPath)
     expect(fs.readdir).not.toHaveBeenCalled()
   })
 
   it('should copy skills that do not exist at destination', async () => {
     vi.mocked(fs.access).mockResolvedValueOnce(undefined) // resourceSkillsPath exists
     vi.mocked(fs.readdir).mockResolvedValueOnce([{ name: 'my-skill', isDirectory: () => true }] as any)
-    // Destination .version read fails â†?skill not installed yet
+    // Destination .version read fails éˆ«?skill not installed yet
     vi.mocked(fs.readFile).mockRejectedValueOnce(new Error('ENOENT'))
     vi.mocked(fs.mkdir).mockResolvedValue(undefined as any)
     vi.mocked(fs.cp).mockResolvedValue(undefined)

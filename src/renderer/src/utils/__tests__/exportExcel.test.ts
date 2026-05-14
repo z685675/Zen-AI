@@ -67,15 +67,15 @@ describe('parseMarkdownTable', () => {
   it('should handle cells with special characters', () => {
     const markdown = `| Feature | Status |
 |---------|--------|
-| $100.00 | �?Done |
-| v2.0 (beta) | ⚠️ WIP |`
+| $100.00 | 鉁?Done |
+| v2.0 (beta) | 鈿狅笍 WIP |`
 
     const result = parseMarkdownTable(markdown)
 
     expect(result).toEqual([
       ['Feature', 'Status'],
-      ['$100.00', '�?Done'],
-      ['v2.0 (beta)', '⚠️ WIP']
+      ['$100.00', '鉁?Done'],
+      ['v2.0 (beta)', '鈿狅笍 WIP']
     ])
   })
 

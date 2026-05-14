@@ -306,7 +306,7 @@ describe('ChannelMessageHandler', () => {
       command: 'new'
     })
 
-    // Now send a message â€?should use the tracked session
+    // Now send a message éˆ¥?should use the tracked session
     vi.mocked(sessionService.getSession).mockResolvedValueOnce(newSession as any)
     vi.mocked(sessionMessageService.createSessionMessage).mockResolvedValueOnce(
       createMockStream([{ type: 'text-delta', text: 'OK' }]) as any

@@ -12,6 +12,7 @@ import { useDefaultModel } from '@renderer/hooks/useAssistant'
 import { useDrag } from '@renderer/hooks/useDrag'
 import { useFiles } from '@renderer/hooks/useFiles'
 import { useOcr } from '@renderer/hooks/useOcr'
+import { useProviders } from '@renderer/hooks/useProvider'
 import { useTemporaryValue } from '@renderer/hooks/useTemporaryValue'
 import { useTimer } from '@renderer/hooks/useTimer'
 import useTranslate from '@renderer/hooks/useTranslate'
@@ -63,6 +64,7 @@ const TranslatePage: FC = () => {
   // hooks
   const { t } = useTranslation()
   const { translateModel, setTranslateModel } = useDefaultModel()
+  const { providers } = useProviders()
   const { prompt, getLanguageByLangcode, settings } = useTranslate()
   const { autoCopy } = settings
   const { shikiMarkdownIt } = useCodeStyle()
@@ -211,6 +213,38 @@ const TranslatePage: FC = () => {
     [autoCopy, copy, dispatch, setTimeoutTimer, setTranslatedContent, setTranslating, t, translating]
   )
 
+  const availableTranslateModels = useMemo(
+    () =>
+      providers
+        .flatMap((provider) => provider.models)
+        .filter((model) => !isEmbeddingModel(model) && !isRerankModel(model) && !isTextToImageModel(model)),
+    [providers]
+  )
+
+  const activeTranslateModel = useMemo(() => {
+    if (!translateModel) {
+      return availableTranslateModels[0]
+    }
+
+    return (
+      availableTranslateModels.find(
+        (model) => model.id === translateModel.id && model.provider === translateModel.provider
+      ) || availableTranslateModels[0]
+    )
+  }, [availableTranslateModels, translateModel])
+
+  useEffect(() => {
+    if (
+      activeTranslateModel &&
+      (!translateModel ||
+        translateModel.id !== activeTranslateModel.id ||
+        translateModel.provider !== activeTranslateModel.provider)
+    ) {
+      setTranslateModel(activeTranslateModel)
+      void db.settings.put({ id: 'translate:model', value: activeTranslateModel.id })
+    }
+  }, [activeTranslateModel, setTranslateModel, translateModel])
+
   // 控制翻译按钮是否可用
   const couldTranslate = useMemo(() => {
     return !(
@@ -227,7 +261,7 @@ const TranslatePage: FC = () => {
   const onTranslate = useCallback(async () => {
     if (!couldTranslate) return
     if (!text.trim()) return
-    if (!translateModel) {
+    if (!activeTranslateModel) {
       window.toast.error(t('translate.error.not_configured'))
       return
     }
@@ -281,7 +315,7 @@ const TranslatePage: FC = () => {
     targetLanguage,
     text,
     translate,
-    translateModel
+    activeTranslateModel
   ])
 
   // 控制停止翻译
@@ -765,7 +799,7 @@ const TranslatePage: FC = () => {
           </InnerOperationBar>
           <InnerOperationBar style={{ justifyContent: 'flex-end' }}>
             <ModelSelectButton
-              model={translateModel}
+              model={activeTranslateModel}
               onSelectModel={handleModelChange}
               modelFilter={modelPredicate}
               tooltipProps={{ placement: 'bottom' }}
@@ -852,7 +886,7 @@ const TranslatePage: FC = () => {
         setEnableMarkdown={setEnableMarkdown}
         bidirectionalPair={bidirectionalPair}
         setBidirectionalPair={setBidirectionalPair}
-        translateModel={translateModel}
+        translateModel={activeTranslateModel}
         autoDetectionMethod={autoDetectionMethod}
         setAutoDetectionMethod={updateAutoDetectionMethod}
       />

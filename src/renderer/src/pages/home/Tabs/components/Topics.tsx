@@ -153,7 +153,7 @@ export const Topics: React.FC<Props> = ({ assistant: _assistant, activeTopic, se
         return null
       }
 
-      const index = findIndex(assistant.topics, (t) => t.id === topicId)
+      const index = findIndex(assistant.topics, (t: Topic) => t.id === topicId)
       if (index === -1) {
         return assistant.topics[0] ?? null
       }
@@ -588,7 +588,7 @@ export const Topics: React.FC<Props> = ({ assistant: _assistant, activeTopic, se
 
   return (
     <>
-      <DraggableVirtualList
+      <DraggableVirtualList<Topic>
         ref={listRef}
         className="topics-tab"
         list={filteredTopics}
@@ -610,7 +610,7 @@ export const Topics: React.FC<Props> = ({ assistant: _assistant, activeTopic, se
           </HeaderRow>
         }
         disabled={isManageMode}>
-        {(topic) => {
+        {(topic: Topic) => {
           const isActive = topic.id === activeTopic?.id
           const topicName = topic.name.replace('`', '')
           const topicPrompt = topic.prompt

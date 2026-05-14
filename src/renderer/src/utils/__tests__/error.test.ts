@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { formatErrorMessage, getErrorDetails, isAbortError, isTimeoutError } from '../error'
+import { formatErrorForClipboard, formatErrorMessage, getErrorDetails, isAbortError, isTimeoutError } from '../error'
 
 describe('error', () => {
   describe('getErrorDetails', () => {
@@ -165,6 +165,58 @@ describe('error', () => {
       const wrappedError = new Error('Wrapped error') as Error & { cause: unknown }
       wrappedError.cause = abortError
       expect(isTimeoutError(wrappedError)).toBe(false)
+    })
+  })
+
+  describe('formatErrorForClipboard', () => {
+    it('keeps clipboard output concise for API errors with huge payloads', () => {
+      const result = formatErrorForClipboard({
+        name: 'AI_APICallError',
+        message: 'Request failed',
+        stack: 'stack',
+        providerId: 'openai',
+        modelId: 'gpt-4.1',
+        statusCode: 400,
+        zenTraceId: 'trace_123',
+        responseBody: JSON.stringify({
+          error: {
+            message: 'context length exceeded',
+            type: 'invalid_request_error',
+            code: 'context_length_exceeded'
+          },
+          huge: 'x'.repeat(10000)
+        }),
+        requestBodyValues: {
+          messages: new Array(500).fill('very long prompt')
+        }
+      })
+
+      expect(result).toContain('错误消息: Request failed')
+      expect(result).toContain('状态码: 400')
+      expect(result).toContain('Provider: openai')
+      expect(result).toContain('模型: gpt-4.1')
+      expect(result).toContain('Trace ID: trace_123')
+      expect(result).toContain('服务返回:')
+      expect(result).not.toContain('very long prompt')
+      expect(result.length).toBeLessThanOrEqual(3100)
+    })
+
+    it('extracts nested service error summaries instead of dumping raw json', () => {
+      const result = formatErrorForClipboard({
+        name: 'AI_APICallError',
+        message: 'Upstream failed',
+        stack: null,
+        data: {
+          error: {
+            message: 'insufficient_quota',
+            code: 'quota_exceeded',
+            type: 'billing_error'
+          }
+        }
+      })
+
+      expect(result).toContain('错误消息: Upstream failed')
+      expect(result).toContain('服务返回: message: insufficient_quota; type: billing_error; code: quota_exceeded')
     })
   })
 })

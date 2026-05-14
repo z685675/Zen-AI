@@ -1746,7 +1746,7 @@ export const cloneMessagesToNewTopicThunk =
       await db.transaction('rw', db.topics, db.message_blocks, db.files, async () => {
         // Update the NEW topic with the cloned messages
         // Assumes topic entry was added by caller, so we UPDATE.
-        await db.topics.put({ id: newTopic.id, messages: clonedMessages })
+        await db.topics.put({ ...newTopic, messages: clonedMessages })
 
         // Add the NEW blocks
         if (clonedBlocks.length > 0) {

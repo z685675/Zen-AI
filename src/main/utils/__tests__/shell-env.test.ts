@@ -32,7 +32,7 @@ const HKCU_KEY = 'HKCU\\Environment'
 // Tests
 // ---------------------------------------------------------------------------
 
-describe('shell-env â€?Windows registry PATH', () => {
+describe('shell-env éˆ¥?Windows registry PATH', () => {
   const savedEnv = process.env
 
   beforeEach(() => {

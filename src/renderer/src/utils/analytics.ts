@@ -1,5 +1,6 @@
 import { getProviderById } from '@renderer/services/ProviderService'
 import { isSystemProvider, type Model, type Usage } from '@renderer/types'
+import { normalizeUsage } from '@renderer/utils/usage'
 import type { LanguageModelUsage } from 'ai'
 
 /** Token usage from streaming (OpenAI format) or non-streaming (AI SDK format) */
@@ -55,9 +56,12 @@ function getProviderTrackId(id: string): string {
 export function trackTokenUsage({ usage, model, source = 'chat' }: TokenUsageParams): void {
   if (!usage || !model?.provider || !model?.id) return
 
-  const [inputTokens, outputTokens] = isAiSdkUsage(usage)
-    ? [usage.inputTokens ?? 0, usage.outputTokens ?? 0]
-    : [usage.prompt_tokens ?? 0, usage.completion_tokens ?? 0]
+  const normalizedUsage = normalizeUsage(usage)
+  const [inputTokens, outputTokens] = normalizedUsage
+    ? [normalizedUsage.prompt_tokens ?? 0, normalizedUsage.completion_tokens ?? 0]
+    : isAiSdkUsage(usage)
+      ? [usage.inputTokens ?? 0, usage.outputTokens ?? 0]
+      : [usage.prompt_tokens ?? 0, usage.completion_tokens ?? 0]
 
   if (inputTokens > 0 || outputTokens > 0) {
     void window.api.analytics.trackTokenUsage({

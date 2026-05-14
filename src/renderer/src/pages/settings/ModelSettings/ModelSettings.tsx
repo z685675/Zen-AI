@@ -96,7 +96,12 @@ const ModelSettings: FC<ModelSettingsProps> = ({
             defaultValue={defaultModelValue}
             style={{ width: compact ? '100%' : 360 }}
             size={compact ? 'large' : 'middle'}
-            onChange={(value) => setDefaultModel(find(enabledModels, JSON.parse(value)) as Model)}
+            onChange={(value) => {
+              const nextModel = find(enabledModels, JSON.parse(value))
+              if (nextModel) {
+                setDefaultModel(nextModel)
+              }
+            }}
             placeholder={t('settings.models.empty')}
           />
           {showSettingsButton && (
@@ -123,7 +128,12 @@ const ModelSettings: FC<ModelSettingsProps> = ({
             defaultValue={defaultQuickModel}
             style={{ width: compact ? '100%' : 360 }}
             size={compact ? 'large' : 'middle'}
-            onChange={(value) => setQuickModel(find(enabledModels, JSON.parse(value)) as Model)}
+            onChange={(value) => {
+              const nextModel = find(enabledModels, JSON.parse(value))
+              if (nextModel) {
+                setQuickModel(nextModel)
+              }
+            }}
             placeholder={t('settings.models.empty')}
           />
           {showSettingsButton && (
@@ -147,7 +157,12 @@ const ModelSettings: FC<ModelSettingsProps> = ({
             defaultValue={defaultTranslateModel}
             style={{ width: compact ? '100%' : 360 }}
             size={compact ? 'large' : 'middle'}
-            onChange={(value) => setTranslateModel(find(enabledModels, JSON.parse(value)) as Model)}
+            onChange={(value) => {
+              const nextModel = find(enabledModels, JSON.parse(value))
+              if (nextModel) {
+                setTranslateModel(nextModel)
+              }
+            }}
             placeholder={t('settings.models.empty')}
           />
           {showSettingsButton && (

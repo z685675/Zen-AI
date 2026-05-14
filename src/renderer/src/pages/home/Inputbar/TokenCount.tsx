@@ -1,6 +1,9 @@
 import { HStack, VStack } from '@renderer/components/Layout'
 import MaxContextCount from '@renderer/components/MaxContextCount'
 import { useSettings } from '@renderer/hooks/useSettings'
+import type { Model } from '@renderer/types'
+import { getModelCachePathLabel } from '@renderer/utils/provider'
+import { formatTokenCount, formatTokenCountCompact, type UsageCacheStats } from '@renderer/utils/usage'
 import { Divider, Popover } from 'antd'
 import { ArrowUp, MenuIcon } from 'lucide-react'
 import type { FC } from 'react'
@@ -11,11 +14,14 @@ type Props = {
   estimateTokenCount: number
   inputTokenCount: number
   contextCount: { current: number; max: number }
+  cacheStats?: UsageCacheStats
+  model?: Model
 } & React.HTMLAttributes<HTMLDivElement>
 
-const TokenCount: FC<Props> = ({ estimateTokenCount, inputTokenCount, contextCount }) => {
+const TokenCount: FC<Props> = ({ estimateTokenCount, inputTokenCount, contextCount, cacheStats, model }) => {
   const { t } = useTranslation()
   const { showInputEstimatedTokens } = useSettings()
+  const cachePath = getModelCachePathLabel(model)
 
   if (!showInputEstimatedTokens) {
     return null
@@ -39,6 +45,33 @@ const TokenCount: FC<Props> = ({ estimateTokenCount, inputTokenCount, contextCou
           <Text>{t('chat.input.estimated_tokens.tip')}</Text>
           <Text>{estimateTokenCount}</Text>
         </HStack>
+        {cacheStats?.hasCache && (
+          <>
+            <Divider style={{ margin: '5px 0' }} />
+            {cachePath && (
+              <HStack justifyContent="space-between" w="100%">
+                <Text>Cache Path</Text>
+                <Text>{cachePath}</Text>
+              </HStack>
+            )}
+            <HStack justifyContent="space-between" w="100%">
+              <Text>Cache Hit</Text>
+              <Text>{formatTokenCount(cacheStats.hitTokens)}</Text>
+            </HStack>
+            {cacheStats.cacheWriteTokens > 0 && (
+              <HStack justifyContent="space-between" w="100%">
+                <Text>Cache Write</Text>
+                <Text>{formatTokenCount(cacheStats.cacheWriteTokens)}</Text>
+              </HStack>
+            )}
+            {cacheStats.hitRate !== undefined && (
+              <HStack justifyContent="space-between" w="100%">
+                <Text>Hit Rate</Text>
+                <Text>{`${Math.round(cacheStats.hitRate * 100)}%`}</Text>
+              </HStack>
+            )}
+          </>
+        )}
       </VStack>
     )
   }
@@ -60,6 +93,18 @@ const TokenCount: FC<Props> = ({ estimateTokenCount, inputTokenCount, contextCou
             <SlashSeparatorSpan>/</SlashSeparatorSpan>
             {estimateTokenCount}
           </HStack>
+          {cachePath && (
+            <>
+              <Divider type="vertical" style={{ marginTop: 3, marginLeft: 5, marginRight: 3 }} />
+              <HStack style={{ alignItems: 'center' }}>{cachePath}</HStack>
+            </>
+          )}
+          {cacheStats?.hasCache && (
+            <>
+              <Divider type="vertical" style={{ marginTop: 3, marginLeft: 5, marginRight: 3 }} />
+              <HStack style={{ alignItems: 'center' }}>Cache {formatTokenCountCompact(cacheStats.hitTokens)}</HStack>
+            </>
+          )}
         </HStack>
       </Popover>
     </Container>

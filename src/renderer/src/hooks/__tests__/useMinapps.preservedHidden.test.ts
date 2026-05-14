@@ -16,7 +16,7 @@ const createGlobalApp = (id: string): MinAppType => createApp(id, { supportedReg
 
 const createCnOnlyApp = (id: string): MinAppType => createApp(id, { supportedRegions: ['CN'] as MinAppRegion[] })
 
-describe('setPinnedMinApps â€?no preservedHidden re-append', () => {
+describe('setPinnedMinApps éˆ¥?no preservedHidden re-append', () => {
   // Core fix: setPinnedMinApps replaces the list directly,
   // so removing a CN-only app from the pinned list stays removed.
   it('should remove CN-only pinned app without re-append', () => {

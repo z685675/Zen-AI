@@ -36,11 +36,11 @@ describe('IdleTimeoutController', () => {
 
     controller.reset()
 
-    // Advance another 4 seconds â€?should NOT abort (timer was reset)
+    // Advance another 4 seconds éˆ¥?should NOT abort (timer was reset)
     vi.advanceTimersByTime(4000)
     expect(controller.signal.aborted).toBe(false)
 
-    // Advance 1 more second (5 total since reset) â€?should abort
+    // Advance 1 more second (5 total since reset) éˆ¥?should abort
     vi.advanceTimersByTime(1000)
     expect(controller.signal.aborted).toBe(true)
   })

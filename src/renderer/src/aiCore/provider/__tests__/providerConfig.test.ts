@@ -239,7 +239,7 @@ describe('formatProviderApiHost', () => {
 
       const result = formatProviderApiHost(provider)
 
-      // Copilot uses formatApiHost(host, false) â€?no /v1 appended
+      // Copilot uses formatApiHost(host, false) éˆ¥?no /v1 appended
       expect(result.apiHost).toBe('https://api.githubcopilot.com')
     })
 
@@ -951,7 +951,7 @@ describe('providerToAiSdkConfig', () => {
 
       const settings = config.providerSettings
       expect(settings.headers).toBeDefined()
-      expect(settings.headers!['HTTP-Referer']).toBe('https://github.com/zen-ai-lab/zen-ai')
+      expect(settings.headers!['HTTP-Referer']).toBe('https://github.com/z685675/Zen-AI')
       expect(settings.headers!['X-Title']).toBe('Zen AI')
     })
 

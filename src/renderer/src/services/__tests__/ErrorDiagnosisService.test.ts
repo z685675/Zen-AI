@@ -173,7 +173,7 @@ describe('ErrorDiagnosisService', () => {
       })
 
       const callArgs = mockFetchGenerate.mock.calls[0][0]
-      expect(callArgs.content).toContain('openai')
+      expect(callArgs.content).toContain('chat')
       expect(callArgs.content).toContain('gpt-4')
       expect(callArgs.content).toContain('401')
     })

@@ -115,7 +115,7 @@ describe('TelegramAdapter', () => {
     const call = mockBot.api.sendMessage.mock.calls[0]
     expect(call[0]).toBe('123')
     expect(call[2]).toEqual({ parse_mode: 'MarkdownV2' })
-    // The library converts the text â€?special chars should be escaped
+    // The library converts the text éˆ¥?special chars should be escaped
     expect(call[1]).not.toBe('Price is 10.5!')
   })
 

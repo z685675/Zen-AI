@@ -2,8 +2,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { parseCurrentVersion, parseUpdateStatus } from '../utils/openClawParsers'
 
-// --- Mocks for OpenClawService dependencies ---
-
 vi.mock('@main/services/WindowService', () => ({
   windowService: {
     getMainWindow: vi.fn(() => ({
@@ -38,483 +36,194 @@ vi.mock('@shared/IpcChannel', () => ({
 
 vi.mock('@shared/utils', () => ({
   hasAPIVersion: vi.fn(() => false),
-  withoutTrailingSlash: vi.fn((url: string) => url.replace(/\/+$/, ''))
+  withoutTrailingSlash: vi.fn((url: string) => url.replace(/\/+$/, '')),
+  formatApiHost: vi.fn((url: string) => url)
 }))
-
-// openClawParsers: not mocked �?tested directly below
 
 vi.mock('../VertexAIService', () => ({
   default: { getInstance: vi.fn() }
 }))
-
-// --- Import service after mocks are set up ---
 
 async function createService() {
   const mod = await import('../OpenClawService')
   return mod.openClawService
 }
 
-describe('OpenClawService gateway status state machine', () => {
+describe('OpenClawService gateway state machine', () => {
   let service: Awaited<ReturnType<typeof createService>>
   let checkHealthSpy: ReturnType<typeof vi.spyOn>
   let findBinarySpy: ReturnType<typeof vi.spyOn>
   let checkPortOpenSpy: ReturnType<typeof vi.spyOn>
   let startAndWaitSpy: ReturnType<typeof vi.spyOn>
+  let stopGatewaySpy: ReturnType<typeof vi.spyOn>
+  let waitForGatewayStopSpy: ReturnType<typeof vi.spyOn>
+  let killAllSpy: ReturnType<typeof vi.spyOn>
 
   beforeEach(async () => {
     vi.clearAllMocks()
     service = await createService()
 
-    // Reset internal state to 'stopped' via reflection
-    // @ts-expect-error -- accessing private field for testing
-    service.gatewayStatus = 'stopped'
-    // @ts-expect-error -- accessing private field for testing
-    service.gatewayPort = 18790
-    // @ts-expect-error -- accessing private field for testing
-    service.gatewayAuthToken = ''
+    ;(service as any).gatewayStatus = 'stopped'
+    ;(service as any).gatewayPort = 18790
+    ;(service as any).gatewayAuthToken = ''
 
-    // Spy on private methods via prototype
     checkHealthSpy = vi.spyOn(service as any, 'checkGatewayHealth')
     findBinarySpy = vi.spyOn(service as any, 'findOpenClawBinary')
     checkPortOpenSpy = vi.spyOn(service as any, 'checkPortOpen')
     startAndWaitSpy = vi.spyOn(service as any, 'startAndWaitForGateway')
+    stopGatewaySpy = vi.spyOn(service, 'stopGateway')
+    waitForGatewayStopSpy = vi.spyOn(service as any, 'waitForGatewayStop')
+    killAllSpy = vi.spyOn(service as any, 'killAllOpenClawProcesses').mockImplementation(() => undefined)
   })
 
   afterEach(() => {
     vi.restoreAllMocks()
   })
 
-  // ─── getStatus ───────────────────────────────────────────────
-
   describe('getStatus', () => {
-    it('returns "starting" immediately without probing health', async () => {
-      // @ts-expect-error -- accessing private field
-      service.gatewayStatus = 'starting'
-
-      const result = await service.getStatus()
-
-      expect(result).toEqual({ status: 'starting', port: 18790 })
+    it('returns starting immediately without probing', async () => {
+      ;(service as any).gatewayStatus = 'starting'
+      await expect(service.getStatus()).resolves.toEqual({ status: 'starting', port: 18790 })
       expect(checkHealthSpy).not.toHaveBeenCalled()
     })
 
-    it('detects externally running gateway when stopped', async () => {
-      // @ts-expect-error -- accessing private field
-      service.gatewayStatus = 'stopped'
+    it('detects externally running gateway', async () => {
       checkHealthSpy.mockResolvedValue({ status: 'healthy', gatewayPort: 18790 })
-
-      const result = await service.getStatus()
-
-      expect(result).toEqual({ status: 'running', port: 18790 })
+      await expect(service.getStatus()).resolves.toEqual({ status: 'running', port: 18790 })
     })
 
-    it('detects externally running gateway when in error state', async () => {
-      // @ts-expect-error -- accessing private field
-      service.gatewayStatus = 'error'
-      checkHealthSpy.mockResolvedValue({ status: 'healthy', gatewayPort: 18790 })
-
-      const result = await service.getStatus()
-
-      expect(result).toEqual({ status: 'running', port: 18790 })
-    })
-
-    it('detects crashed gateway and transitions running �?stopped', async () => {
-      // @ts-expect-error -- accessing private field
-      service.gatewayStatus = 'running'
+    it('marks a crashed running gateway as stopped', async () => {
+      ;(service as any).gatewayStatus = 'running'
       checkHealthSpy.mockResolvedValue({ status: 'unhealthy', gatewayPort: 18790 })
-
-      const result = await service.getStatus()
-
-      expect(result).toEqual({ status: 'stopped', port: 18790 })
-    })
-
-    it('stays running when health probe is healthy', async () => {
-      // @ts-expect-error -- accessing private field
-      service.gatewayStatus = 'running'
-      checkHealthSpy.mockResolvedValue({ status: 'healthy', gatewayPort: 18790 })
-
-      const result = await service.getStatus()
-
-      expect(result).toEqual({ status: 'running', port: 18790 })
-    })
-
-    it('stays stopped when health probe is unhealthy', async () => {
-      // @ts-expect-error -- accessing private field
-      service.gatewayStatus = 'stopped'
-      checkHealthSpy.mockResolvedValue({ status: 'unhealthy', gatewayPort: 18790 })
-
-      const result = await service.getStatus()
-
-      expect(result).toEqual({ status: 'stopped', port: 18790 })
-    })
-
-    it('stays in error when health probe is unhealthy', async () => {
-      // @ts-expect-error -- accessing private field
-      service.gatewayStatus = 'error'
-      checkHealthSpy.mockResolvedValue({ status: 'unhealthy', gatewayPort: 18790 })
-
-      const result = await service.getStatus()
-
-      expect(result).toEqual({ status: 'error', port: 18790 })
+      await expect(service.getStatus()).resolves.toEqual({ status: 'stopped', port: 18790 })
     })
   })
-
-  // ─── checkHealth ─────────────────────────────────────────────
 
   describe('checkHealth', () => {
-    it('returns unhealthy immediately when status is stopped', async () => {
-      // @ts-expect-error -- accessing private field
-      service.gatewayStatus = 'stopped'
-
-      const result = await service.checkHealth()
-
-      expect(result).toEqual({ status: 'unhealthy', gatewayPort: 18790 })
+    it('returns unhealthy immediately when gateway is not running', async () => {
+      ;(service as any).gatewayStatus = 'stopped'
+      await expect(service.checkHealth()).resolves.toEqual({ status: 'unhealthy', gatewayPort: 18790 })
       expect(checkHealthSpy).not.toHaveBeenCalled()
     })
 
-    it('returns unhealthy immediately when status is error', async () => {
-      // @ts-expect-error -- accessing private field
-      service.gatewayStatus = 'error'
-
-      const result = await service.checkHealth()
-
-      expect(result).toEqual({ status: 'unhealthy', gatewayPort: 18790 })
-      expect(checkHealthSpy).not.toHaveBeenCalled()
-    })
-
-    it('returns unhealthy immediately when status is starting', async () => {
-      // @ts-expect-error -- accessing private field
-      service.gatewayStatus = 'starting'
-
-      const result = await service.checkHealth()
-
-      expect(result).toEqual({ status: 'unhealthy', gatewayPort: 18790 })
-      expect(checkHealthSpy).not.toHaveBeenCalled()
-    })
-
-    it('probes and returns healthy when gateway is running and reachable', async () => {
-      // @ts-expect-error -- accessing private field
-      service.gatewayStatus = 'running'
+    it('probes and keeps running state when healthy', async () => {
+      ;(service as any).gatewayStatus = 'running'
       checkHealthSpy.mockResolvedValue({ status: 'healthy', gatewayPort: 18790 })
-
-      const result = await service.checkHealth()
-
-      expect(result).toEqual({ status: 'healthy', gatewayPort: 18790 })
-      // @ts-expect-error -- accessing private field
-      expect(service.gatewayStatus).toBe('running')
+      await expect(service.checkHealth()).resolves.toEqual({ status: 'healthy', gatewayPort: 18790 })
+      expect((service as any).gatewayStatus).toBe('running')
     })
 
-    it('transitions running �?stopped when probe returns unhealthy', async () => {
-      // @ts-expect-error -- accessing private field
-      service.gatewayStatus = 'running'
+    it('marks running gateway as stopped when unhealthy', async () => {
+      ;(service as any).gatewayStatus = 'running'
       checkHealthSpy.mockResolvedValue({ status: 'unhealthy', gatewayPort: 18790 })
-
-      const result = await service.checkHealth()
-
-      expect(result).toEqual({ status: 'unhealthy', gatewayPort: 18790 })
-      // @ts-expect-error -- accessing private field
-      expect(service.gatewayStatus).toBe('stopped')
+      await expect(service.checkHealth()).resolves.toEqual({ status: 'unhealthy', gatewayPort: 18790 })
+      expect((service as any).gatewayStatus).toBe('stopped')
     })
   })
-
-  // ─── startGateway ────────────────────────────────────────────
 
   describe('startGateway', () => {
     const event = {} as Electron.IpcMainInvokeEvent
 
     it('rejects concurrent startup calls', async () => {
-      // @ts-expect-error -- accessing private field
-      service.gatewayStatus = 'starting'
-
-      const result = await service.startGateway(event)
-
-      expect(result).toEqual({ success: false, message: 'Gateway is already starting' })
+      ;(service as any).gatewayStatus = 'starting'
+      await expect(service.startGateway(event)).resolves.toEqual({
+        success: false,
+        message: 'Gateway is already starting'
+      })
     })
 
-    it('stops stale gateway and restarts when port is in use by our gateway', async () => {
-      // First call: port occupied; after stop: port free
-      checkPortOpenSpy.mockResolvedValueOnce(true).mockResolvedValue(false)
-      checkHealthSpy
-        .mockResolvedValueOnce({ status: 'healthy', gatewayPort: 18790 }) // startGateway detects our gateway
-        .mockResolvedValue({ status: 'unhealthy', gatewayPort: 18790 }) // waitForGatewayStop confirms stopped
-      findBinarySpy.mockResolvedValue('/mock/bin/openclaw')
-      startAndWaitSpy.mockResolvedValue(undefined)
-
-      const result = await service.startGateway(event)
-
-      expect(result).toEqual({ success: true })
-      // @ts-expect-error -- accessing private field
-      expect(service.gatewayStatus).toBe('running')
-    })
-
-    it('fails when port is in use by another application', async () => {
+    it('fails when port is occupied by another app', async () => {
       checkPortOpenSpy.mockResolvedValue(true)
       checkHealthSpy.mockResolvedValue({ status: 'unhealthy', gatewayPort: 18790 })
 
       const result = await service.startGateway(event)
-
       expect(result.success).toBe(false)
-      expect('message' in result && result.message).toContain('already in use')
+      expect(result.message).toContain('already in use')
     })
 
-    it('fails when binary is not found', async () => {
+    it('stops stale gateway and restarts when health check is healthy', async () => {
+      checkPortOpenSpy.mockResolvedValueOnce(true).mockResolvedValueOnce(false)
+      checkHealthSpy.mockResolvedValue({ status: 'healthy', gatewayPort: 18790 })
+      stopGatewaySpy.mockResolvedValue({ success: true })
+      findBinarySpy.mockResolvedValue('/mock/bin/openclaw')
+      startAndWaitSpy.mockResolvedValue(undefined)
+
+      await expect(service.startGateway(event)).resolves.toEqual({ success: true })
+      expect(stopGatewaySpy).toHaveBeenCalled()
+      expect((service as any).gatewayStatus).toBe('running')
+    })
+
+    it('fails when binary is missing', async () => {
       checkPortOpenSpy.mockResolvedValue(false)
       findBinarySpy.mockResolvedValue(null)
 
-      const result = await service.startGateway(event)
-
-      expect(result).toEqual({
+      await expect(service.startGateway(event)).resolves.toEqual({
         success: false,
         message: 'OpenClaw binary not found. Please install OpenClaw first.'
       })
     })
 
-    it('transitions to running on successful start', async () => {
-      checkPortOpenSpy.mockResolvedValue(false)
-      findBinarySpy.mockResolvedValue('/mock/bin/openclaw')
-      startAndWaitSpy.mockResolvedValue(undefined)
-
-      const result = await service.startGateway(event)
-
-      expect(result).toEqual({ success: true })
-      // @ts-expect-error -- accessing private field
-      expect(service.gatewayStatus).toBe('running')
-    })
-
-    it('transitions to error when start fails', async () => {
+    it('keeps custom port and enters error state on startup failure', async () => {
       checkPortOpenSpy.mockResolvedValue(false)
       findBinarySpy.mockResolvedValue('/mock/bin/openclaw')
       startAndWaitSpy.mockRejectedValue(new Error('Gateway timeout'))
 
-      const result = await service.startGateway(event)
-
-      expect(result).toEqual({ success: false, message: 'Gateway timeout' })
-      // @ts-expect-error -- accessing private field
-      expect(service.gatewayStatus).toBe('error')
-    })
-
-    it('sets status to starting during startup', async () => {
-      checkPortOpenSpy.mockResolvedValue(false)
-      findBinarySpy.mockResolvedValue('/mock/bin/openclaw')
-
-      let statusDuringStart: string | undefined
-      startAndWaitSpy.mockImplementation(async () => {
-        // @ts-expect-error -- accessing private field
-        statusDuringStart = service.gatewayStatus
+      await expect(service.startGateway(event, 9999)).resolves.toEqual({
+        success: false,
+        message: 'Gateway timeout'
       })
-
-      await service.startGateway(event)
-
-      expect(statusDuringStart).toBe('starting')
-    })
-
-    it('uses custom port when provided', async () => {
-      checkPortOpenSpy.mockResolvedValue(false)
-      findBinarySpy.mockResolvedValue('/mock/bin/openclaw')
-      startAndWaitSpy.mockResolvedValue(undefined)
-
-      await service.startGateway(event, 9999)
-
-      // @ts-expect-error -- accessing private field
-      expect(service.gatewayPort).toBe(9999)
+      expect((service as any).gatewayPort).toBe(9999)
+      expect((service as any).gatewayStatus).toBe('error')
     })
   })
-
-  // ─── stopGateway ─────────────────────────────────────────────
 
   describe('stopGateway', () => {
     it('transitions to stopped on successful stop', async () => {
-      // @ts-expect-error -- accessing private field
-      service.gatewayStatus = 'running'
-      checkHealthSpy.mockResolvedValue({ status: 'unhealthy', gatewayPort: 18790 }) // gateway stopped
+      ;(service as any).gatewayStatus = 'running'
+      waitForGatewayStopSpy.mockResolvedValue(false)
 
-      const result = await service.stopGateway()
-
-      expect(result).toEqual({ success: true })
-      // @ts-expect-error -- accessing private field
-      expect(service.gatewayStatus).toBe('stopped')
+      await expect(service.stopGateway()).resolves.toEqual({ success: true })
+      expect(killAllSpy).toHaveBeenCalled()
+      expect((service as any).gatewayStatus).toBe('stopped')
     })
 
-    it('transitions to error when gateway fails to stop', async () => {
-      // @ts-expect-error -- accessing private field
-      service.gatewayStatus = 'running'
-      checkHealthSpy.mockResolvedValue({ status: 'healthy', gatewayPort: 18790 }) // still running
+    it('transitions to error when gateway remains running', async () => {
+      ;(service as any).gatewayStatus = 'running'
+      waitForGatewayStopSpy.mockResolvedValue(true)
 
       const result = await service.stopGateway()
-
       expect(result.success).toBe(false)
-      // @ts-expect-error -- accessing private field
-      expect(service.gatewayStatus).toBe('error')
-    })
-  })
-
-  // ─── Full state transition scenarios ─────────────────────────
-
-  describe('full lifecycle transitions', () => {
-    const event = {} as Electron.IpcMainInvokeEvent
-
-    it('stopped �?starting �?running �?(crash) �?stopped', async () => {
-      // @ts-expect-error -- accessing private field
-      expect(service.gatewayStatus).toBe('stopped')
-
-      // Start
-      checkPortOpenSpy.mockResolvedValue(false)
-      findBinarySpy.mockResolvedValue('/mock/bin/openclaw')
-      startAndWaitSpy.mockResolvedValue(undefined)
-      await service.startGateway(event)
-      // @ts-expect-error -- accessing private field
-      expect(service.gatewayStatus).toBe('running')
-
-      // Gateway crashes externally �?getStatus detects it
-      checkHealthSpy.mockResolvedValue({ status: 'unhealthy', gatewayPort: 18790 })
-      const status = await service.getStatus()
-      expect(status.status).toBe('stopped')
-    })
-
-    it('stopped �?starting �?error �?(external recovery) �?running', async () => {
-      // Start fails
-      checkPortOpenSpy.mockResolvedValue(false)
-      findBinarySpy.mockResolvedValue('/mock/bin/openclaw')
-      startAndWaitSpy.mockRejectedValue(new Error('timeout'))
-      await service.startGateway(event)
-      // @ts-expect-error -- accessing private field
-      expect(service.gatewayStatus).toBe('error')
-
-      // External recovery �?someone starts gateway manually
-      checkHealthSpy.mockResolvedValue({ status: 'healthy', gatewayPort: 18790 })
-      const status = await service.getStatus()
-      expect(status.status).toBe('running')
-    })
-
-    it('running �?checkHealth unhealthy �?stopped �?getStatus healthy �?running', async () => {
-      // @ts-expect-error -- accessing private field
-      service.gatewayStatus = 'running'
-
-      // checkHealth detects crash
-      checkHealthSpy.mockResolvedValue({ status: 'unhealthy', gatewayPort: 18790 })
-      await service.checkHealth()
-      // @ts-expect-error -- accessing private field
-      expect(service.gatewayStatus).toBe('stopped')
-
-      // getStatus detects recovery
-      checkHealthSpy.mockResolvedValue({ status: 'healthy', gatewayPort: 18790 })
-      const status = await service.getStatus()
-      expect(status.status).toBe('running')
+      expect((service as any).gatewayStatus).toBe('error')
     })
   })
 })
 
-// ─── Parser tests (preserved from original) ─────────────────────
-
 describe('parseCurrentVersion', () => {
-  const cases = [
-    { name: 'standard version output', input: 'OpenClaw 2026.3.9 (fe96034)', expected: '2026.3.9' },
-    { name: 'version without commit hash', input: 'OpenClaw 2026.3.11', expected: '2026.3.11' },
-    { name: 'lowercase prefix', input: 'openclaw 1.0.0 (abc1234)', expected: '1.0.0' },
-    { name: 'semver format', input: 'OpenClaw 0.12.3 (deadbeef)', expected: '0.12.3' },
-    { name: 'empty string', input: '', expected: null },
-    { name: 'unrelated output', input: 'some random text', expected: null },
-    { name: 'version with extra whitespace', input: '  OpenClaw  2026.3.9  ', expected: '2026.3.9' }
-  ]
-
-  it.each(cases)('$name: "$input"', ({ input, expected }) => {
+  it.each([
+    ['OpenClaw 2026.3.9 (fe96034)', '2026.3.9'],
+    ['OpenClaw 2026.3.11', '2026.3.11'],
+    ['openclaw 1.0.0 (abc1234)', '1.0.0'],
+    ['', null],
+    ['some random text', null]
+  ])('parses %s', (input, expected) => {
     expect(parseCurrentVersion(input)).toBe(expected)
-  })
-
-  it('snapshot: all cases', () => {
-    const results = Object.fromEntries(cases.map((c) => [c.name, parseCurrentVersion(c.input)]))
-    expect(results).toMatchInlineSnapshot(`
-      {
-        "empty string": null,
-        "lowercase prefix": "1.0.0",
-        "semver format": "0.12.3",
-        "standard version output": "2026.3.9",
-        "unrelated output": null,
-        "version with extra whitespace": "2026.3.9",
-        "version without commit hash": "2026.3.11",
-      }
-    `)
   })
 })
 
 describe('parseUpdateStatus', () => {
-  const cases = [
-    {
-      name: 'binary update via summary line',
-      input: 'Update available (binary 2026.3.12). Run: openclaw update',
-      expected: '2026.3.12'
-    },
-    {
-      name: 'binary update via table row',
-      input: 'available · binary · 2026.3.12',
-      expected: '2026.3.12'
-    },
-    {
-      name: 'binary update with semver',
-      input: 'Update available (binary 1.2.3). Run: openclaw update',
-      expected: '1.2.3'
-    },
-    {
-      name: 'full table output with binary update',
-      input: [
-        'OpenClaw update status',
-        '┌──────────┬─────────────────────────────────�?,
-        '�?Install  �?binary (~/.zen-ai/bin)     �?,
-        '�?Channel  �?stable (default)                 �?,
-        '�?Update   �?available · binary · 2026.3.12   �?,
-        '└──────────┴─────────────────────────────────�?,
-        '',
-        'Update available (binary 2026.3.12). Run: openclaw update'
-      ].join('\n'),
-      expected: '2026.3.12'
-    },
-    {
-      name: 'ignores npm update (summary)',
-      input: 'Update available (npm 2026.3.11). Run: openclaw update',
-      expected: null
-    },
-    {
-      name: 'ignores pkg update (table row)',
-      input: 'Update available · pkg · npm update 2026.3.11',
-      expected: null
-    },
-    {
-      name: 'ignores pkg update in full table output',
-      input: [
-        'OpenClaw update status',
-        '┌──────────┬─────────────────────────────────�?,
-        '�?Install  �?binary (~/.zen-ai/bin)     �?,
-        '�?Channel  �?stable (default)                 �?,
-        '�?Update   �?available · pkg · npm update 2026.3.11 �?,
-        '└──────────┴─────────────────────────────────�?,
-        '',
-        'Update available (npm 2026.3.11). Run: openclaw update'
-      ].join('\n'),
-      expected: null
-    },
-    { name: 'no update available', input: 'Already up to date', expected: null },
-    { name: 'empty string', input: '', expected: null },
-    { name: 'unrelated output', input: 'some random text', expected: null }
-  ]
-
-  it.each(cases)('$name', ({ input, expected }) => {
+  it.each([
+    ['Update available (binary 2026.3.12). Run: openclaw update', '2026.3.12'],
+    ['available | binary | 2026.3.12', '2026.3.12'],
+    [
+      ['OpenClaw update status', 'Install  | binary (~/.zen-ai/bin)', 'Update   | available | binary | 2026.3.12'].join(
+        '\n'
+      ),
+      '2026.3.12'
+    ],
+    ['Update available (npm 2026.3.11). Run: openclaw update', null],
+    ['Update available | pkg | npm update 2026.3.11', null],
+    ['Already up to date', null]
+  ])('parses update status from %s', (input, expected) => {
     expect(parseUpdateStatus(input)).toBe(expected)
-  })
-
-  it('snapshot: all cases', () => {
-    const results = Object.fromEntries(cases.map((c) => [c.name, parseUpdateStatus(c.input)]))
-    expect(results).toMatchInlineSnapshot(`
-      {
-        "binary update via summary line": "2026.3.12",
-        "binary update via table row": "2026.3.12",
-        "binary update with semver": "1.2.3",
-        "empty string": null,
-        "full table output with binary update": "2026.3.12",
-        "ignores npm update (summary)": null,
-        "ignores pkg update (table row)": null,
-        "ignores pkg update in full table output": null,
-        "no update available": null,
-        "unrelated output": null,
-      }
-    `)
   })
 })

@@ -39,6 +39,7 @@ import type {
   Model,
   Provider,
   ProviderApiOptions,
+  SidebarIcon,
   TranslateLanguageCode,
   WebSearchProvider
 } from '@renderer/types'
@@ -1517,7 +1518,6 @@ const migrateConfig = {
   '102': (state: RootState) => {
     try {
       state.settings.openAI = {
-        // @ts-expect-error it's a removed type. migrated on 177
         summaryText: 'off',
         serviceTier: 'auto',
         verbosity: 'medium'
@@ -1611,7 +1611,6 @@ const migrateConfig = {
       addMiniApp(state, 'google')
       if (!state.settings.openAI) {
         state.settings.openAI = {
-          // @ts-expect-error it's a removed type. migrated on 177
           summaryText: 'off',
           serviceTier: 'auto',
           verbosity: 'medium'
@@ -2254,10 +2253,10 @@ const migrateConfig = {
   },
   '136': (state: RootState) => {
     try {
-      state.settings.sidebarIcons.visible = [...new Set(state.settings.sidebarIcons.visible)].filter((icon) =>
+      state.settings.sidebarIcons.visible = [...new Set<SidebarIcon>(state.settings.sidebarIcons.visible)].filter((icon) =>
         DEFAULT_SIDEBAR_ICONS.includes(icon)
       )
-      state.settings.sidebarIcons.disabled = [...new Set(state.settings.sidebarIcons.disabled)].filter((icon) =>
+      state.settings.sidebarIcons.disabled = [...new Set<SidebarIcon>(state.settings.sidebarIcons.disabled)].filter((icon) =>
         DEFAULT_SIDEBAR_ICONS.includes(icon)
       )
       return state
@@ -2873,7 +2872,6 @@ const migrateConfig = {
   },
   '177': (state: RootState) => {
     try {
-      // @ts-expect-error it's a removed type
       if (state.settings.openAI.summaryText === 'off') {
         state.settings.openAI.summaryText = 'auto'
       }
@@ -3025,11 +3023,9 @@ const migrateConfig = {
       if (state.settings.apiServer) {
         state.settings.apiServer.host = API_SERVER_DEFAULTS.HOST
       }
-      // @ts-expect-error
       if (state.settings.openAI.summaryText === 'undefined') {
         state.settings.openAI.summaryText = undefined
       }
-      // @ts-expect-error
       if (state.settings.openAI.verbosity === 'undefined') {
         state.settings.openAI.verbosity = undefined
       }
@@ -3433,6 +3429,28 @@ const migrateConfig = {
       return state
     } catch (error) {
       logger.error('migrate 208 error', error as Error)
+      return state
+    }
+  },
+  '209': (state: RootState) => {
+    try {
+      const previousDefaultContextCount = 5
+      const nextDefaultContextCount = DEFAULT_CONTEXTCOUNT
+
+      if (state.assistants?.defaultAssistant?.settings?.contextCount === previousDefaultContextCount) {
+        state.assistants.defaultAssistant.settings.contextCount = nextDefaultContextCount
+      }
+
+      state.assistants?.assistants?.forEach((assistant) => {
+        if (assistant.settings?.contextCount === previousDefaultContextCount) {
+          assistant.settings.contextCount = nextDefaultContextCount
+        }
+      })
+
+      logger.info('migrate 209 success')
+      return state
+    } catch (error) {
+      logger.error('migrate 209 error', error as Error)
       return state
     }
   }

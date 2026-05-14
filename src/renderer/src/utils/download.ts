@@ -85,7 +85,7 @@ export const download = (url: string, filename?: string) => {
       logger.error('Download failed:', error)
       // 显示用户友好的错误提示
       if (error.message) {
-        window.toast?.error(`${i18n.t('message.download.failed')}：${error.message}`)
+        window.toast?.error(`${i18n.t('message.download.failed')}: ${error.message}`)
       } else {
         window.toast?.error(i18n.t('message.download.failed'))
       }

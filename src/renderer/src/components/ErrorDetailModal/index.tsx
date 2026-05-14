@@ -30,7 +30,7 @@ import {
   isSerializedError
 } from '@renderer/types/error'
 import { diagnoseClientError, formatClientErrorDiagnosis } from '@renderer/utils/clientErrorDiagnosis'
-import { formatAiSdkError, formatError, safeToString } from '@renderer/utils/error'
+import { formatErrorForClipboard, safeToString } from '@renderer/utils/error'
 import { parseDataUrl } from '@shared/utils'
 import { Button } from 'antd'
 import { CheckCircle, Copy, Loader2, Stethoscope } from 'lucide-react'
@@ -646,15 +646,15 @@ const ErrorDetailContent: React.FC<ErrorDetailContentProps> = ({
 
     let errorText: string
     if (isSerializedAiSdkError(error)) {
-      errorText = formatAiSdkError(error)
+      errorText = formatErrorForClipboard(error)
     } else if (isSerializedError(error)) {
-      errorText = formatError(error)
+      errorText = formatErrorForClipboard(error)
     } else {
       errorText = safeToString(error)
     }
 
     const diagnosis = diagnoseClientError(error, { blockId, messageId, model, createdAt })
-    const copyText = `${formatClientErrorDiagnosis(diagnosis)}\n\n【技术详情】\n${errorText}`
+    const copyText = `${formatClientErrorDiagnosis(diagnosis)}\n\n${errorText}`
 
     void navigator.clipboard.writeText(copyText)
     window.toast.success(t('message.copied'))

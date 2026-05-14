@@ -52,14 +52,14 @@ vi.mock('antd', () => ({
 vi.mock('@ant-design/icons', () => ({
   CheckOutlined: ({ style }: any) => (
     <span data-testid="check-icon" style={style}>
-      �?    </span>
+      鉁?    </span>
   )
 }))
 
 vi.mock('lucide-react', () => ({
   Lightbulb: ({ size }: any) => (
     <span data-testid="lightbulb-icon" data-size={size}>
-      💡
+      馃挕
     </span>
   ),
   ChevronRight: (props: any) => <svg data-testid="chevron-right-icon" {...props} />

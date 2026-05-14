@@ -2,12 +2,13 @@ import type { Model } from '@renderer/types'
 import type { TooltipProps } from 'antd'
 import { Button, Tooltip } from 'antd'
 import { useCallback, useMemo } from 'react'
+import { useTranslation } from 'react-i18next'
 
 import ModelAvatar from './Avatar/ModelAvatar'
 import { SelectChatModelPopup } from './Popups/SelectModelPopup'
 
 type Props = {
-  model: Model
+  model?: Model
   onSelectModel: (model: Model) => void
   modelFilter?: (model: Model) => boolean
   noTooltip?: boolean
@@ -15,6 +16,8 @@ type Props = {
 }
 
 const ModelSelectButton = ({ model, onSelectModel, modelFilter, noTooltip, tooltipProps }: Props) => {
+  const { t } = useTranslation()
+
   const onClick = useCallback(async () => {
     const selectedModel = await SelectChatModelPopup.show({ model, filter: modelFilter })
     if (selectedModel) {
@@ -30,7 +33,7 @@ const ModelSelectButton = ({ model, onSelectModel, modelFilter, noTooltip, toolt
     return button
   } else {
     return (
-      <Tooltip title={model.name} {...tooltipProps}>
+      <Tooltip title={model?.name || t('button.select_model')} {...tooltipProps}>
         {button}
       </Tooltip>
     )

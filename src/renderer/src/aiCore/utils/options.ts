@@ -183,7 +183,7 @@ export function buildProviderOptions(
       break
     case 'google':
     case 'google-vertex':
-      providerSpecificOptions = buildGeminiProviderOptions(assistant, model, capabilities)
+      providerSpecificOptions = buildGeminiProviderOptions(assistant, model, capabilities, actualProvider)
       break
     case 'xai':
     case 'xai-responses':
@@ -411,7 +411,8 @@ function buildAnthropicProviderOptions(
 function buildGeminiProviderOptions(
   assistant: Assistant,
   model: Model,
-  capabilities: Pick<ProviderCapabilities, 'enableReasoning' | 'enableWebSearch' | 'enableGenerateImage'>
+  capabilities: Pick<ProviderCapabilities, 'enableReasoning' | 'enableWebSearch' | 'enableGenerateImage'>,
+  _actualProvider?: Provider
 ): Record<string, GoogleGenerativeAIProviderOptions> {
   const { enableReasoning, enableGenerateImage } = capabilities
   let providerOptions: GoogleGenerativeAIProviderOptions = {}
@@ -478,7 +479,7 @@ function buildCherryInProviderOptions(
     case 'anthropic':
       return buildAnthropicProviderOptions(assistant, model, capabilities)
     case 'gemini':
-      return buildGeminiProviderOptions(assistant, model, capabilities)
+      return buildGeminiProviderOptions(assistant, model, capabilities, actualProvider)
 
     default:
       return buildGenericProviderOptions('cherryin', assistant, model, capabilities)
@@ -585,7 +586,8 @@ function buildAIGatewayOptions(
   model: Model,
   capabilities: Pick<ProviderCapabilities, 'enableReasoning' | 'enableWebSearch' | 'enableGenerateImage'>,
   serviceTier: OpenAIServiceTier,
-  textVerbosity?: OpenAIVerbosity
+  textVerbosity?: OpenAIVerbosity,
+  actualProvider?: Provider
 ): Record<
   string,
   | OpenAIResponsesProviderOptions
@@ -598,7 +600,7 @@ function buildAIGatewayOptions(
   } else if (isOpenAIModel(model)) {
     return buildOpenAIProviderOptions(assistant, model, capabilities, serviceTier, textVerbosity)
   } else if (isGeminiModel(model)) {
-    return buildGeminiProviderOptions(assistant, model, capabilities)
+    return buildGeminiProviderOptions(assistant, model, capabilities, actualProvider)
   } else if (isGrokModel(model)) {
     return buildXAIProviderOptions(assistant, model, capabilities)
   } else {

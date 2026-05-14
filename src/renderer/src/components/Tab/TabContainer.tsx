@@ -235,7 +235,7 @@ const TabsContainer: React.FC<TabsContainerProps> = ({ children }) => {
     <Container>
       <TabsBar $isFullscreen={isFullscreen}>
         <HorizontalScrollContainer dependencies={[tabs]} gap="6px" className="tab-scroll-container">
-          <Sortable
+          <Sortable<Tab>
             items={visibleTabs}
             itemKey="id"
             layout="list"
@@ -243,7 +243,7 @@ const TabsContainer: React.FC<TabsContainerProps> = ({ children }) => {
             gap={'6px'}
             onSortEnd={onSortEnd}
             className="tabs-sortable"
-            renderItem={(tab) => {
+            renderItem={(tab: Tab) => {
               const isClosable = tab.id !== 'home' && tab.id !== 'agents'
               return (
                 <Tab

@@ -28,7 +28,7 @@ describe('stripLocalCommandTags', () => {
   })
 })
 
-describe('Claude â†?AiSDK transform', () => {
+describe('Claude éˆ«?AiSDK transform', () => {
   it('handles tool call streaming lifecycle', () => {
     const state = new ClaudeStreamState({ agentSessionId: baseStreamMetadata.session_id })
     const parts: ReturnType<typeof transformSDKMessageToStreamParts>[number][] = []

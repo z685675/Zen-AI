@@ -40,7 +40,13 @@ export function useActiveTopic(assistantId: string, topic?: Topic) {
 
   useEffect(() => {
     if (assistant?.topics?.length && (!activeTopic || !assistant.topics.find((item) => item.id === activeTopic.id))) {
-      setActiveTopic(assistant.topics[0])
+      const newestTopic = [...assistant.topics].sort((a, b) => {
+        const bTime = new Date(b.updatedAt || b.createdAt || 0).getTime()
+        const aTime = new Date(a.updatedAt || a.createdAt || 0).getTime()
+        return bTime - aTime
+      })[0]
+
+      setActiveTopic(newestTopic || assistant.topics[0])
     }
   }, [activeTopic, assistant])
 

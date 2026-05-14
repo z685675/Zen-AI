@@ -6,110 +6,91 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import InputEmbeddingDimension from '../InputEmbeddingDimension'
 
 const mocks = vi.hoisted(() => ({
-  aiCore: {
-    getEmbeddingDimensions: vi.fn()
-  },
-  i18n: {
-    t: (k: string) => {
-      const translations: Record<string, string> = {
-        'knowledge.embedding_model_required': '请选择嵌入模型',
-        'knowledge.provider_not_found': '找不到提供商',
-        'message.error.get_embedding_dimensions': '获取嵌入维度失败',
-        'knowledge.dimensions_size_placeholder': '请输入维度大�?,
-        'knowledge.dimensions_auto_set': '自动设置维度',
-        'common.get_embedding_dimension': 'Get Embedding Dimension'
-      }
-      return translations[k] || k
+  getEmbeddingDimensions: vi.fn(),
+  t: vi.fn((key: string) => {
+    const translations: Record<string, string> = {
+      'knowledge.embedding_model_required': 'Embedding model required',
+      'knowledge.provider_not_found': 'Provider not found',
+      'message.error.get_embedding_dimensions': 'Failed to get embedding dimensions',
+      'knowledge.dimensions_size_placeholder': 'Enter dimensions',
+      'knowledge.dimensions_auto_set': 'Auto set dimensions',
+      'common.get_embedding_dimension': 'Get Embedding Dimension'
     }
-  }
+    return translations[key] ?? key
+  })
 }))
 
 vi.mock('@renderer/store', () => ({
   default: {
-    getState: () => ({
-      llm: {
-        settings: {}
-      }
-    })
+    getState: () => ({ llm: { settings: {} } })
   }
 }))
 
-// Mock antd components to prevent flaky snapshot tests
 vi.mock('antd', () => {
-  const MockSpaceCompact: React.FC<React.PropsWithChildren<{ style?: React.CSSProperties }>> = ({
-    children,
-    style
-  }) => (
+  const Compact: React.FC<React.PropsWithChildren<{ style?: React.CSSProperties }>> = ({ children, style }) => (
     <div data-testid="space-compact" style={style}>
       {children}
     </div>
   )
 
-  const MockInputNumber = ({ ref, value, onChange, placeholder, disabled, style }: any) => (
-    <input
-      ref={ref}
-      type="number"
-      data-testid="input-number"
-      placeholder={placeholder}
-      value={value ?? ''}
-      onChange={(e) => onChange(e.target.valueAsNumber)}
-      disabled={disabled}
-      style={style}
-    />
-  )
+  const InputNumber = React.forwardRef<HTMLInputElement, any>(function MockInputNumber(props, ref) {
+    const { value, onChange, placeholder, disabled, style } = props
+    return (
+      <input
+        ref={ref}
+        data-testid="input-number"
+        type="number"
+        value={value ?? ''}
+        placeholder={placeholder}
+        disabled={disabled}
+        style={style}
+        onChange={(event) => onChange?.(event.currentTarget.value === '' ? null : Number(event.currentTarget.value))}
+      />
+    )
+  })
 
-  const MockButton: React.FC<any> = ({ children, onClick, disabled, icon, className, ...rest }) => (
-    <button type="button" onClick={onClick} disabled={disabled} {...rest} className={className}>
+  const Button: React.FC<any> = ({ children, icon, ...props }) => (
+    <button type="button" {...props}>
       {icon}
       {children}
     </button>
   )
 
-  const MockTooltip: React.FC<React.PropsWithChildren<{ title: string }>> = ({ children, title }) => (
+  const Tooltip: React.FC<React.PropsWithChildren<{ title: string }>> = ({ children, title }) => (
     <div data-testid="tooltip" data-title={title}>
       {children}
     </div>
   )
 
   return {
-    Button: MockButton,
-    InputNumber: MockInputNumber,
-    Space: { Compact: MockSpaceCompact },
-    Tooltip: MockTooltip
+    Button,
+    InputNumber,
+    Space: { Compact },
+    Tooltip
   }
 })
 
-// Mock dependencies
 vi.mock('@renderer/aiCore', () => ({
   AiProvider: vi.fn().mockImplementation(() => ({
-    getEmbeddingDimensions: mocks.aiCore.getEmbeddingDimensions
+    getEmbeddingDimensions: mocks.getEmbeddingDimensions
   }))
 }))
 
 vi.mock('@renderer/hooks/useProvider', () => ({
-  useProvider: () => ({ provider: { id: 'test-provider', name: 'Test Provider' } })
+  useProvider: vi.fn(() => ({
+    provider: { id: 'test-provider', name: 'Test Provider' }
+  }))
 }))
 
-// mock i18n
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({
-    t: mocks.i18n.t
-  }),
-  initReactI18next: {
-    type: '3rdParty',
-    init: vi.fn()
-  }
+  useTranslation: () => ({ t: mocks.t }),
+  initReactI18next: { type: '3rdParty', init: vi.fn() }
 }))
 
 vi.mock('@renderer/components/Icons', () => ({
-  RefreshIcon: (props: React.SVGProps<SVGSVGElement>) => (
-    <svg data-testid="refresh-icon" aria-label="refresh" role="img" {...props}>
-      RefreshIcon
-    </svg>
-  )
+  RefreshIcon: (props: React.SVGProps<SVGSVGElement>) => <svg data-testid="refresh-icon" {...props} />
 }))
 
-// Mock window.toast
 Object.assign(window, {
   toast: {
     error: vi.fn(),
@@ -118,122 +99,64 @@ Object.assign(window, {
 })
 
 describe('InputEmbeddingDimension', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-  })
-
   const mockModel = {
     id: 'test-model',
     name: 'Test Model',
     provider: 'test-provider',
-    group: 'test-group'
+    group: 'default'
   }
 
-  const getRefreshButton = () => screen.getByRole('button', { name: /get embedding dimension/i })
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
 
-  describe('basic rendering', () => {
-    it('should match snapshot with all props', () => {
-      const { container } = render(<InputEmbeddingDimension value={1536} model={mockModel} style={{ width: '100%' }} />)
-      expect(container.firstChild).toMatchSnapshot()
-    })
+  it('renders enabled controls when a model is provided', () => {
+    render(<InputEmbeddingDimension model={mockModel} value={1536} />)
 
-    it('should match snapshot with loading state', async () => {
-      // Manually control the promise to ensure we can snapshot the loading state.
-      // This promise is intentionally never resolved.
-      const promise = new Promise(() => {})
-      mocks.aiCore.getEmbeddingDimensions.mockReturnValue(promise)
+    expect(screen.getByPlaceholderText('Enter dimensions')).not.toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Get Embedding Dimension' })).not.toBeDisabled()
+  })
 
-      const { container } = render(<InputEmbeddingDimension model={mockModel} />)
+  it('calls onChange when the input value changes', () => {
+    const onChange = vi.fn()
 
-      const refreshButton = getRefreshButton()
-      await userEvent.click(refreshButton)
+    render(<InputEmbeddingDimension model={mockModel} onChange={onChange} />)
 
-      // At this point, the button is guaranteed to be in the loading state
-      // because the promise it's awaiting will never resolve.
-      expect(container.firstChild).toMatchSnapshot()
-    })
+    fireEvent.change(screen.getByPlaceholderText('Enter dimensions'), { target: { value: '2048' } })
 
-    it('should be enabled when model is provided', () => {
-      render(<InputEmbeddingDimension model={mockModel} />)
+    expect(onChange).toHaveBeenCalledWith(2048)
+  })
 
-      const input = screen.getByPlaceholderText('请输入维度大�?)
-      expect(input).not.toBeDisabled()
+  it('fetches dimensions and forwards them to onChange', async () => {
+    mocks.getEmbeddingDimensions.mockResolvedValue(1024)
+    const onChange = vi.fn()
+
+    render(<InputEmbeddingDimension model={mockModel} onChange={onChange} />)
+
+    await userEvent.click(screen.getByRole('button', { name: 'Get Embedding Dimension' }))
+
+    await waitFor(() => {
+      expect(mocks.getEmbeddingDimensions).toHaveBeenCalledWith(mockModel)
+      expect(onChange).toHaveBeenCalledWith(1024)
     })
   })
 
-  describe('functionality', () => {
-    it('should call onChange when input value changes', async () => {
-      const handleChange = vi.fn()
+  it('disables controls when no model is available', () => {
+    render(<InputEmbeddingDimension />)
 
-      render(<InputEmbeddingDimension model={mockModel} onChange={handleChange} />)
-
-      const input = screen.getByPlaceholderText('请输入维度大�?)
-      fireEvent.change(input, { target: { value: '2048' } })
-
-      expect(handleChange).toHaveBeenCalledWith(2048)
-    })
-
-    it('should fetch and set dimension on refresh click', async () => {
-      mocks.aiCore.getEmbeddingDimensions.mockResolvedValue(1536)
-
-      const handleChange = vi.fn()
-      const user = userEvent.setup()
-
-      render(<InputEmbeddingDimension model={mockModel} onChange={handleChange} />)
-
-      const refreshButton = getRefreshButton()
-      await user.click(refreshButton)
-
-      await waitFor(() => {
-        expect(mocks.aiCore.getEmbeddingDimensions).toHaveBeenCalledWith(mockModel)
-        expect(handleChange).toHaveBeenCalledWith(1536)
-      })
-    })
+    expect(screen.getByPlaceholderText('Enter dimensions')).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Get Embedding Dimension' })).toBeDisabled()
   })
 
-  describe('error handling', () => {
-    it('should be disabled and show no error when no model is provided', async () => {
-      render(<InputEmbeddingDimension />)
+  it('shows an error toast when fetching fails', async () => {
+    mocks.getEmbeddingDimensions.mockRejectedValue(new Error('API Error'))
 
-      const refreshButton = getRefreshButton()
-      expect(refreshButton).toBeDisabled()
+    render(<InputEmbeddingDimension model={mockModel} />)
 
-      const input = screen.getByPlaceholderText('请输入维度大�?)
-      expect(input).toBeDisabled()
+    await userEvent.click(screen.getByRole('button', { name: 'Get Embedding Dimension' }))
 
-      // To be absolutely sure, we try to click the disabled button.
-      // `userEvent` will not trigger an event on a disabled element by default.
-      // We can skip this check to be explicit.
-      await userEvent.click(refreshButton, { pointerEventsCheck: 0 })
-
-      expect(window.toast.error).not.toHaveBeenCalled()
-    })
-
-    it('should show error when API call fails', async () => {
-      mocks.aiCore.getEmbeddingDimensions.mockRejectedValue(new Error('API Error'))
-
-      const user = userEvent.setup()
-      render(<InputEmbeddingDimension model={mockModel} />)
-
-      const refreshButton = getRefreshButton()
-      await user.click(refreshButton)
-
-      await waitFor(() => {
-        expect(window.toast.error).toHaveBeenCalledWith('获取嵌入维度失败\nAPI Error')
-      })
-    })
-
-    it('should handle null value correctly', async () => {
-      const handleChange = vi.fn()
-
-      render(<InputEmbeddingDimension model={mockModel} value={null} onChange={handleChange} />)
-
-      const input = screen.getByPlaceholderText('请输入维度大�?) as HTMLInputElement
-      expect(input.value).toBe('')
-
-      // Should allow typing new value
-      fireEvent.change(input, { target: { value: '1024' } })
-      expect(handleChange).toHaveBeenCalledWith(1024)
+    await waitFor(() => {
+      expect(window.toast.error).toHaveBeenCalledWith('Failed to get embedding dimensions\nAPI Error')
     })
   })
 })

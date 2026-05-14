@@ -1,4 +1,5 @@
 import { EventEmitter } from 'events'
+import { LOCAL_TRANSFER_SERVICE_TYPE } from '@shared/config/constant'
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest'
 
 // Create mock objects before vi.mock calls
@@ -76,7 +77,7 @@ describe('LocalTransferService', () => {
 
       expect(state.isScanning).toBe(true)
       expect(state.lastScanStartedAt).toBeDefined()
-      expect(mockBonjour.find).toHaveBeenCalledWith({ type: 'cherrystudio', protocol: 'tcp' })
+      expect(mockBonjour.find).toHaveBeenCalledWith({ type: LOCAL_TRANSFER_SERVICE_TYPE, protocol: 'tcp' })
       expect(mockBrowser.start).toHaveBeenCalled()
     })
 
@@ -172,7 +173,7 @@ describe('LocalTransferService', () => {
         port: 12345,
         addresses: ['192.168.1.100'],
         fqdn: 'test.local',
-        type: 'cherrystudio',
+        type: LOCAL_TRANSFER_SERVICE_TYPE,
         protocol: 'tcp'
       })
 

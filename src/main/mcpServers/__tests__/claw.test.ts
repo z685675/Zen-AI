@@ -93,13 +93,17 @@ vi.mock('@main/services/WindowService', () => ({
   }
 }))
 
-// Import after mocks â€?electron is mocked globally in main.setup.ts
+// Import after mocks éˆ¥?electron is mocked globally in main.setup.ts
 // Override net.fetch with our local mock
 const electron = await import('electron')
 vi.mocked(electron.net.fetch).mockImplementation(mockNetFetch)
 
 const { default: ClawServer } = await import('../claw')
 type ClawServerInstance = InstanceType<typeof ClawServer>
+
+function normalizePathForAssert(value: unknown) {
+  return typeof value === 'string' ? value.replace(/\\/g, '/') : value
+}
 
 function createServer(agentId = 'agent_test') {
   return new ClawServer(agentId)
@@ -500,7 +504,8 @@ describe('ClawServer', () => {
       const server = createServer('agent_1')
       const result = await callTool(server, { action: 'update', content: '# Facts\n\nNew knowledge' }, 'memory')
 
-      expect(mockMkdir).toHaveBeenCalledWith('/workspace/test/memory', { recursive: true })
+      expect(normalizePathForAssert(mockMkdir.mock.calls[0]?.[0])).toBe('/workspace/test/memory')
+      expect(mockMkdir.mock.calls[0]?.[1]).toEqual({ recursive: true })
       expect(mockWriteFile).toHaveBeenCalledWith(
         expect.stringContaining('FACT.md.'),
         '# Facts\n\nNew knowledge',
@@ -526,11 +531,9 @@ describe('ClawServer', () => {
         'memory'
       )
 
-      expect(mockAppendFile).toHaveBeenCalledWith(
-        '/workspace/test/memory/JOURNAL.jsonl',
-        expect.stringContaining('"text":"Deployed v2.0"'),
-        'utf-8'
-      )
+      expect(normalizePathForAssert(mockAppendFile.mock.calls[0]?.[0])).toBe('/workspace/test/memory/JOURNAL.jsonl')
+      expect(mockAppendFile.mock.calls[0]?.[1]).toEqual(expect.stringContaining('"text":"Deployed v2.0"'))
+      expect(mockAppendFile.mock.calls[0]?.[2]).toBe('utf-8')
       expect(result.content[0].text).toContain('Journal entry added')
     })
 

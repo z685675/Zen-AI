@@ -5,7 +5,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import GeneralSettingsPanel from '../components/KnowledgeSettings/GeneralSettingsPanel'
 
-// Mock dependencies
 const mocks = vi.hoisted(() => ({
   t: vi.fn((key: string) => key),
   providers: [
@@ -28,19 +27,16 @@ const mocks = vi.hoisted(() => ({
   }
 }))
 
-// Mock InfoTooltip component
 vi.mock('@renderer/components/TooltipIcons', () => ({
   InfoTooltip: ({ title, placement }: { title: string; placement: string }) => (
     <span data-testid="info-tooltip" title={title} data-placement={placement}>
-      ℹ️
+      i
     </span>
   )
 }))
 
-// Mock ModelSelector component
 vi.mock('@renderer/components/ModelSelector', () => ({
   default: ({ value, onChange, placeholder, allowClear, providers }: any) => {
-    // Use providers parameter to avoid lint error
     const hasProviders = providers && providers.length > 0
 
     return (
@@ -59,7 +55,6 @@ vi.mock('@renderer/components/ModelSelector', () => ({
   }
 }))
 
-// Mock InputEmbeddingDimension component
 vi.mock('@renderer/components/InputEmbeddingDimension', () => ({
   default: ({ value, onChange, model, disabled }: any) => (
     <input
@@ -73,61 +68,45 @@ vi.mock('@renderer/components/InputEmbeddingDimension', () => ({
   )
 }))
 
-// Mock useProviders hook
 vi.mock('@renderer/hooks/useProvider', () => ({
   useProviders: () => ({ providers: mocks.providers })
 }))
 
-// Mock ModelService
 vi.mock('@renderer/services/ModelService', () => ({
   getModelUniqId: (model: Model | undefined) => (model ? `${model.provider}/${model.id}` : undefined)
 }))
 
-// Mock model predicates
 vi.mock('@renderer/config/models', () => ({
   isEmbeddingModel: (model: Model) => model.group === 'embedding'
 }))
 
-// Mock constant
 vi.mock('@renderer/config/constant', () => ({
   DEFAULT_KNOWLEDGE_DOCUMENT_COUNT: 6
 }))
 
-// Mock react-i18next
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: mocks.t })
 }))
 
-// Mock antd components
 vi.mock('antd', () => ({
   Input: ({ value, onChange, placeholder }: any) => (
     <input data-testid="name-input" value={value} onChange={onChange} placeholder={placeholder} />
   ),
-  Slider: ({ value, onChange, min, max, step, marks, style }: any) => {
-    // Determine test ID based on slider characteristics
-    const isWeightSlider = min === 0 && max === 1 && step === 0.1
-    const testId = isWeightSlider ? 'weight-slider' : 'document-count-slider'
-
-    return (
-      <input
-        data-testid={testId}
-        type="range"
-        value={value}
-        onChange={(e) => onChange?.(Number(e.target.value))}
-        min={min}
-        max={max}
-        step={step}
-        style={style}
-        data-marks={JSON.stringify(marks)}
-      />
-    )
-  }
+  Slider: ({ value, onChange, min, max, step, marks, style }: any) => (
+    <input
+      data-testid="document-count-slider"
+      type="range"
+      value={value}
+      onChange={(e) => onChange?.(Number(e.target.value))}
+      min={min}
+      max={max}
+      step={step}
+      style={style}
+      data-marks={JSON.stringify(marks)}
+    />
+  )
 }))
 
-/**
- * 创建测试用的 KnowledgeBase 对象
- * @param overrides - 可选的属性覆�? * @returns 完整�?KnowledgeBase 对象
- */
 function createKnowledgeBase(overrides: Partial<KnowledgeBase> = {}): KnowledgeBase {
   const defaultModel: Model = {
     id: 'text-embedding-3-small',
@@ -152,7 +131,6 @@ describe('GeneralSettingsPanel', () => {
   const mockBase = createKnowledgeBase()
   const mockSetNewBase = vi.fn()
 
-  // 提取公共渲染函数
   const renderComponent = (props: Partial<any> = {}) => {
     return render(
       <GeneralSettingsPanel newBase={mockBase} setNewBase={mockSetNewBase} handlers={mocks.handlers} {...props} />
@@ -163,59 +141,31 @@ describe('GeneralSettingsPanel', () => {
     vi.clearAllMocks()
   })
 
-  describe('basic rendering', () => {
-    it('should match snapshot', () => {
-      const { container } = renderComponent()
-      expect(container.firstChild).toMatchSnapshot()
-    })
+  it('matches snapshot', () => {
+    const { container } = renderComponent()
+    expect(container.firstChild).toMatchSnapshot()
   })
 
-  describe('functionality', () => {
+  it('handles name, model, dimension and document count changes', async () => {
     const user = userEvent.setup()
+    renderComponent()
 
-    it('should handle name input change', async () => {
-      renderComponent()
+    await user.type(screen.getByTestId('name-input'), 'New Knowledge Base Name')
+    expect(mockSetNewBase).toHaveBeenCalledWith(expect.any(Function))
 
-      const nameInput = screen.getByTestId('name-input')
-      await user.type(nameInput, 'New Knowledge Base Name')
+    await user.selectOptions(screen.getByTestId('model-selector'), 'openai/text-embedding-ada-002')
+    expect(mocks.handlers.handleEmbeddingModelChange).toHaveBeenCalledWith('openai/text-embedding-ada-002')
 
-      expect(mockSetNewBase).toHaveBeenCalledWith(expect.any(Function))
-    })
+    fireEvent.change(screen.getByTestId('embedding-dimension-input'), { target: { value: '1536' } })
+    expect(mocks.handlers.handleDimensionChange).toHaveBeenCalledWith(1536)
 
-    it('should handle model selection changes', async () => {
-      renderComponent()
+    fireEvent.change(screen.getByTestId('document-count-slider'), { target: { value: '10' } })
+    expect(mockSetNewBase).toHaveBeenCalledWith(expect.any(Function))
+  })
 
-      const modelSelector = screen.getByTestId('model-selector')
-
-      // Test embedding model change
-      await user.selectOptions(modelSelector, 'openai/text-embedding-ada-002')
-      expect(mocks.handlers.handleEmbeddingModelChange).toHaveBeenCalledWith('openai/text-embedding-ada-002')
-    })
-
-    it('should handle dimension change', async () => {
-      renderComponent()
-
-      const dimensionInput = screen.getByTestId('embedding-dimension-input')
-      fireEvent.change(dimensionInput, { target: { value: '1536' } })
-
-      expect(mocks.handlers.handleDimensionChange).toHaveBeenCalledWith(1536)
-    })
-
-    it('should handle document count change', async () => {
-      renderComponent()
-
-      const documentCountSlider = screen.getByTestId('document-count-slider')
-      fireEvent.change(documentCountSlider, { target: { value: '10' } })
-
-      expect(mockSetNewBase).toHaveBeenCalledWith(expect.any(Function))
-    })
-
-    it('should disable dimension input when no model is selected', () => {
-      const baseWithoutModel = createKnowledgeBase({ model: undefined as any })
-      renderComponent({ newBase: baseWithoutModel })
-
-      const dimensionInput = screen.getByTestId('embedding-dimension-input')
-      expect(dimensionInput).toBeDisabled()
-    })
+  it('disables dimension input when no model is selected', () => {
+    const baseWithoutModel = createKnowledgeBase({ model: undefined as any })
+    renderComponent({ newBase: baseWithoutModel })
+    expect(screen.getByTestId('embedding-dimension-input')).toBeDisabled()
   })
 })

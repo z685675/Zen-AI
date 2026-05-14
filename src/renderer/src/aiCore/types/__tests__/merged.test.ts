@@ -13,8 +13,8 @@ import { appProviderIds } from '../merged'
 describe('Unified Provider Types', () => {
   describe('appProviderIds literal access', () => {
     it('should return canonical IDs with literal types', () => {
-      // 别名 �?基础�?      expectTypeOf(appProviderIds.vertexai).toEqualTypeOf<'google-vertex'>()
-      // 变体 �?自身（自反映射）
+      // 鍒悕 鈫?鍩虹鍚?      expectTypeOf(appProviderIds.vertexai).toEqualTypeOf<'google-vertex'>()
+      // 鍙樹綋 鈫?鑷韩锛堣嚜鍙嶆槧灏勶級
       expectTypeOf(appProviderIds['openai-chat']).toEqualTypeOf<'openai-chat'>()
     })
   })

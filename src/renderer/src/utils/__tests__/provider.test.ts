@@ -4,6 +4,10 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   getAnthropicSupportedProviders,
   getClaudeSupportedProviders,
+  getEffectiveAnthropicCacheControl,
+  getEffectiveGeminiCacheControl,
+  getRecommendedAnthropicCacheThreshold,
+  getRecommendedGeminiCacheThreshold,
   isAIGatewayProvider,
   isAnthropicProvider,
   isAnthropicSupportedProvider,
@@ -15,10 +19,12 @@ import {
   isOpenAICompatibleProvider,
   isOpenAIProvider,
   isPerplexityProvider,
+  isSupportAnthropicPromptCacheProvider,
   isSupportAPIVersionProvider,
   isSupportArrayContentProvider,
   isSupportDeveloperRoleProvider,
   isSupportEnableThinkingProvider,
+  isSupportGeminiPromptCacheProvider,
   isSupportServiceTierProvider,
   isSupportStreamOptionsProvider,
   isSupportUrlContextProvider,
@@ -87,6 +93,117 @@ describe('provider utils', () => {
     ).toBe(true)
     expect(isAnthropicSupportedProvider(createProvider({ id: 'aihubmix' }))).toBe(false)
     expect(isAnthropicSupportedProvider(createProvider({ id: 'other' }))).toBe(false)
+  })
+
+  it('detects Anthropic prompt cache support', () => {
+    expect(isSupportAnthropicPromptCacheProvider(createProvider({ type: 'anthropic' }))).toBe(true)
+    expect(isSupportAnthropicPromptCacheProvider(createProvider({ id: SystemProviderIds['new-api'], type: 'new-api' }))).toBe(
+      true
+    )
+    expect(isSupportAnthropicPromptCacheProvider(createProvider({ id: SystemProviderIds.openrouter }))).toBe(true)
+    expect(isSupportAnthropicPromptCacheProvider(createProvider())).toBe(false)
+  })
+
+  it('recommends cache thresholds by Claude model family', () => {
+    expect(getRecommendedAnthropicCacheThreshold({ id: 'claude-sonnet-4-20250514' } as any)).toBe(1024)
+    expect(getRecommendedAnthropicCacheThreshold({ id: 'claude-sonnet-4-6' } as any)).toBe(2048)
+    expect(getRecommendedAnthropicCacheThreshold({ id: 'claude-opus-4-5-20251101' } as any)).toBe(4096)
+  })
+
+  it('builds effective Anthropic cache defaults for supported providers', () => {
+    expect(getEffectiveAnthropicCacheControl(createProvider())).toBeUndefined()
+
+    expect(getEffectiveAnthropicCacheControl(createProvider({ type: 'anthropic' }), { id: 'claude-sonnet-4-6' } as any)).toEqual({
+      tokenThreshold: 2048,
+      cacheSystemMessage: true,
+      cacheLastNMessages: 1
+    })
+
+    expect(
+      getEffectiveAnthropicCacheControl(
+        createProvider({
+          type: 'anthropic',
+          anthropicCacheControl: {
+            tokenThreshold: 0,
+            cacheSystemMessage: false,
+            cacheLastNMessages: 3
+          }
+        }),
+        { id: 'claude-opus-4-5' } as any
+      )
+    ).toEqual({
+      tokenThreshold: 0,
+      cacheSystemMessage: false,
+      cacheLastNMessages: 3
+    })
+
+    expect(
+      getEffectiveAnthropicCacheControl(
+        createProvider({
+          id: SystemProviderIds['new-api'],
+          type: 'new-api'
+        }),
+        { id: 'claude-sonnet-4-6', endpoint_type: 'anthropic' } as any
+      )
+    ).toEqual({
+      tokenThreshold: 2048,
+      cacheSystemMessage: true,
+      cacheLastNMessages: 1
+    })
+  })
+
+  it('detects Gemini prompt cache support and computes effective defaults', () => {
+    expect(isSupportGeminiPromptCacheProvider(createProvider({ type: 'gemini' }))).toBe(true)
+    expect(isSupportGeminiPromptCacheProvider(createProvider({ type: 'vertexai' }))).toBe(false)
+    expect(getRecommendedGeminiCacheThreshold({ id: 'gemini-2.5-pro' } as any)).toBe(4096)
+    expect(getRecommendedGeminiCacheThreshold({ id: 'gemini-2.5-flash' } as any)).toBe(2048)
+    expect(getEffectiveGeminiCacheControl(createProvider())).toBeUndefined()
+
+    expect(getEffectiveGeminiCacheControl(createProvider({ type: 'gemini' }), { id: 'gemini-2.5-pro' } as any)).toEqual({
+      enabled: true,
+      tokenThreshold: 4096,
+      cacheSystemMessage: true,
+      cacheEarlyMessages: 2,
+      ttlSeconds: 3600
+    })
+
+    expect(
+      getEffectiveGeminiCacheControl(
+        createProvider({
+          type: 'gemini',
+          geminiCacheControl: {
+            enabled: true,
+            tokenThreshold: 3000,
+            cacheSystemMessage: false,
+            cacheEarlyMessages: 3,
+            ttlSeconds: 1800
+          }
+        }),
+        { id: 'gemini-2.5-pro' } as any
+      )
+    ).toEqual({
+      enabled: true,
+      tokenThreshold: 3000,
+      cacheSystemMessage: false,
+      cacheEarlyMessages: 3,
+      ttlSeconds: 1800
+    })
+
+    expect(
+      getEffectiveGeminiCacheControl(
+        createProvider({
+          id: SystemProviderIds['new-api'],
+          type: 'new-api'
+        }),
+        { id: 'gemini-2.5-pro', endpoint_type: 'gemini' } as any
+      )
+    ).toEqual({
+      enabled: true,
+      tokenThreshold: 4096,
+      cacheSystemMessage: true,
+      cacheEarlyMessages: 2,
+      ttlSeconds: 3600
+    })
   })
 
   it('evaluates message array content support', () => {

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-// Mock 外部依赖
+// Mock 澶栭儴渚濊禆
 vi.mock('turndown', () => ({
   default: vi.fn(() => ({
     turndown: vi.fn(() => '# Test content')
@@ -21,7 +21,7 @@ vi.mock('@reduxjs/toolkit', () => ({
 
 import { fetchRedirectUrl, fetchWebContent, fetchWebContents } from '../fetch'
 
-// 设置基础 mocks
+// 璁剧疆鍩虹 mocks
 global.DOMParser = vi.fn().mockImplementation(() => ({
   parseFromString: vi.fn(() => ({}))
 })) as any
@@ -34,7 +34,7 @@ global.window = {
   }
 } as any
 
-// 辅助函数
+// 杈呭姪鍑芥暟
 const createMockResponse = (overrides = {}) =>
   ({
     ok: true,
@@ -45,14 +45,14 @@ const createMockResponse = (overrides = {}) =>
 
 describe('fetch', () => {
   beforeEach(() => {
-    // Mock fetch �?AbortSignal
+    // Mock fetch 鍜?AbortSignal
     global.fetch = vi.fn()
     global.AbortSignal = {
       timeout: vi.fn(() => ({})),
       any: vi.fn(() => ({}))
     } as any
 
-    // 清理 mock 调用历史
+    // 娓呯悊 mock 璋冪敤鍘嗗彶
     vi.clearAllMocks()
   })
 
@@ -84,11 +84,11 @@ describe('fetch', () => {
     it('should handle errors gracefully', async () => {
       const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
 
-      // 无效 URL
+      // 鏃犳晥 URL
       const invalidResult = await fetchWebContent('not-a-url')
       expect(invalidResult.content).toBe('No content found')
 
-      // 网络错误
+      // 缃戠粶閿欒
       vi.mocked(global.fetch).mockRejectedValueOnce(new Error('Network error'))
       const networkResult = await fetchWebContent('https://example.com')
       expect(networkResult.content).toBe('No content found')
@@ -125,7 +125,7 @@ describe('fetch', () => {
 
       await fetchWebContent('https://example.com')
 
-      // 验证 AbortSignal.timeout 是否被调用，并传�?30000ms
+      // 楠岃瘉 AbortSignal.timeout 鏄惁琚皟鐢紝骞朵紶鍏?30000ms
       expect(global.AbortSignal.timeout).toHaveBeenCalledWith(30000)
 
       vi.spyOn(global.AbortSignal, 'timeout').mockRestore()
@@ -146,7 +146,7 @@ describe('fetch', () => {
         signal: userController.signal
       })
 
-      // 验证 AbortSignal.any 是否被调用，并传入两个信�?      expect(mockAnyCalls).toHaveLength(1)
+      // 楠岃瘉 AbortSignal.any 鏄惁琚皟鐢紝骞朵紶鍏ヤ袱涓俊鍙?      expect(mockAnyCalls).toHaveLength(1)
       expect(mockAnyCalls[0]).toHaveLength(2)
       expect(mockAnyCalls[0]).toContain(userController.signal)
 

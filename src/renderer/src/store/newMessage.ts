@@ -96,7 +96,7 @@ interface InsertMessageAtIndexPayload {
 }
 
 // 4. Create the Slice with Refactored Reducers
-export const messagesSlice = createSlice({
+const messagesSliceInternal: any = createSlice({
   name: 'newMessages',
   initialState,
   reducers: {
@@ -285,8 +285,16 @@ export const messagesSlice = createSlice({
 })
 
 // 5. Export Actions and Reducer
-export const newMessagesActions = messagesSlice.actions
-export default messagesSlice.reducer
+export const newMessagesActions: typeof messagesSliceInternal.actions = { ...messagesSliceInternal.actions }
+
+export const messagesSlice: {
+  reducer: typeof messagesSliceInternal.reducer
+  actions: Record<string, (...args: any[]) => any>
+} = {
+  reducer: messagesSliceInternal.reducer,
+  actions: messagesSliceInternal.actions
+}
+export default messagesSliceInternal.reducer
 
 // --- Selectors ---
 import { createSelector } from '@reduxjs/toolkit'

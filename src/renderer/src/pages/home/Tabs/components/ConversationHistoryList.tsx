@@ -1,4 +1,4 @@
-﻿import AddButton from '@renderer/components/AddButton'
+import AddButton from '@renderer/components/AddButton'
 import AssistantAvatar from '@renderer/components/Avatar/AssistantAvatar'
 import { Sortable } from '@renderer/components/dnd'
 import { CopyIcon, DeleteIcon, EditIcon } from '@renderer/components/Icons'
@@ -108,7 +108,10 @@ const ConversationHistoryList: FC<Props> = ({ activeTopic, setActiveTopic, onCre
   const [isRecycleBinManageMode, setIsRecycleBinManageMode] = useState(false)
   const [selectedRecycleBinItemKeys, setSelectedRecycleBinItemKeys] = useState<Set<string>>(new Set())
 
-  const assistantMap = useMemo(() => new Map(assistants.map((assistant) => [assistant.id, assistant])), [assistants])
+  const assistantMap = useMemo<Map<string, Assistant>>(
+    () => new Map<string, Assistant>(assistants.map((assistant) => [assistant.id, assistant])),
+    [assistants]
+  )
 
   const loadRecentDeletedTopics = useCallback(async () => {
     const [topicItems, folderItems] = await Promise.all([
@@ -120,8 +123,11 @@ const ConversationHistoryList: FC<Props> = ({ activeTopic, setActiveTopic, onCre
   }, [])
 
   const visibleTopics = useMemo(
-    () => topics.filter((topic) => nonEmptyTopicIds.includes(topic.id)),
-    [nonEmptyTopicIds, topics]
+    () =>
+      topics.filter(
+        (topic) => nonEmptyTopicIds.includes(topic.id) || topic.id === activeTopic?.id || topic.isNameManuallyEdited
+      ),
+    [activeTopic?.id, nonEmptyTopicIds, topics]
   )
 
   const sortedTopics = useMemo(
@@ -150,7 +156,7 @@ const ConversationHistoryList: FC<Props> = ({ activeTopic, setActiveTopic, onCre
       }))
   }, [conversationFolders, sortedTopics])
 
-  const rootTopics = useMemo(
+  const rootTopics = useMemo<Topic[]>(
     () => sortedTopics.filter((topic) => !topicFolderMap.has(topic.id)),
     [sortedTopics, topicFolderMap]
   )
@@ -166,7 +172,7 @@ const ConversationHistoryList: FC<Props> = ({ activeTopic, setActiveTopic, onCre
     return map
   }, [recentDeletedFolders, recentDeletedTopics])
 
-  const deletedRootTopics = useMemo(
+  const deletedRootTopics = useMemo<RecycleBinTopicItem[]>(
     () =>
       recentDeletedTopics.filter(
         (topic) => !topic.folderId || !recentDeletedFolders.some((folder) => folder.folder.id === topic.folderId)
@@ -174,7 +180,7 @@ const ConversationHistoryList: FC<Props> = ({ activeTopic, setActiveTopic, onCre
     [recentDeletedFolders, recentDeletedTopics]
   )
 
-  const visibleRecycleBinItemKeys = useMemo(() => {
+  const visibleRecycleBinItemKeys = useMemo<string[]>(() => {
     const keys: string[] = []
 
     recentDeletedFolders.forEach((item) => {
@@ -201,10 +207,7 @@ const ConversationHistoryList: FC<Props> = ({ activeTopic, setActiveTopic, onCre
     [selectedRecycleBinItemKeys, visibleRecycleBinItemKeys]
   )
 
-  const getAssistantByTopic = useCallback(
-    (topic: Topic) => assistantMap.get(topic.assistantId),
-    [assistantMap]
-  )
+  const getAssistantByTopic = useCallback((topic: Topic): Assistant | undefined => assistantMap.get(topic.assistantId), [assistantMap])
 
   useEffect(() => {
     void loadRecentDeletedTopics()
@@ -1004,7 +1007,7 @@ const ConversationHistoryList: FC<Props> = ({ activeTopic, setActiveTopic, onCre
       </Header>
       <List>
         {groupedFolders.length > 0 && (
-          <Sortable
+          <Sortable<FolderWithTopics>
             items={groupedFolders}
             itemKey={(item) => item.folder.id}
             layout="list"
@@ -1015,7 +1018,7 @@ const ConversationHistoryList: FC<Props> = ({ activeTopic, setActiveTopic, onCre
             onSortEnd={({ oldIndex, newIndex }) => {
               dispatch(reorderConversationFolders({ oldIndex, newIndex }))
             }}
-            renderItem={(item, { dragging }) => renderFolderSection(item, dragging)}
+            renderItem={(item: FolderWithTopics, { dragging }) => renderFolderSection(item, dragging)}
           />
         )}
         {rootTopics.map((topic) => renderTopicItem(topic))}
@@ -1573,4 +1576,3 @@ const RecentDeletedActionButton = styled.button<{ danger?: boolean }>`
 `
 
 export default ConversationHistoryList
-

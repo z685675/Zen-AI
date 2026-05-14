@@ -9,7 +9,6 @@ import useScrollPosition from '@renderer/hooks/useScrollPosition'
 import { useSettings } from '@renderer/hooks/useSettings'
 import { useShortcut } from '@renderer/hooks/useShortcuts'
 import { useTimer } from '@renderer/hooks/useTimer'
-import { autoRenameTopic } from '@renderer/hooks/useTopic'
 import SelectionBox from '@renderer/pages/home/Messages/SelectionBox'
 import { getDefaultTopic } from '@renderer/services/AssistantService'
 import { EVENT_NAMES, EventEmitter } from '@renderer/services/EventService'
@@ -32,7 +31,8 @@ import { updateCodeBlock } from '@renderer/utils/markdown'
 import { getMainTextContent } from '@renderer/utils/messageUtils/find'
 import { isTextLikeBlock } from '@renderer/utils/messageUtils/is'
 import { last } from 'lodash'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { GitBranch } from 'lucide-react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import InfiniteScroll from 'react-infinite-scroll-component'
 import styled from 'styled-components'
@@ -171,25 +171,31 @@ const Messages: React.FC<MessagesProps> = ({ assistant, topic, setActiveTopic, o
       }),
       EventEmitter.on(EVENT_NAMES.NEW_BRANCH, async (index: number) => {
         const newTopic = getDefaultTopic(assistant.id)
-        newTopic.name = topic.name
+        newTopic.name = `${topic.name} - 新分支`
+        newTopic.isNameManuallyEdited = true
         const currentMessages = messagesRef.current
+        const inheritedMessageCount = currentMessages.length - index
 
         if (index < 0 || index > currentMessages.length) {
           logger.error(`[NEW_BRANCH] Invalid branch index: ${index}`)
           return
         }
 
+        newTopic.branchSource = {
+          topicId: topic.id,
+          topicName: topic.name,
+          inheritedMessageCount
+        }
+
         // 1. Add the new topic to Redux store FIRST
         addTopic(newTopic)
+        setActiveTopic(newTopic)
 
         // 2. Call the thunk to clone messages and update DB
-        const success = await createTopicBranch(topic.id, currentMessages.length - index, newTopic)
+        const success = await createTopicBranch(topic.id, inheritedMessageCount, newTopic)
 
         if (success) {
-          // 3. Set the new topic as active
-          setActiveTopic(newTopic)
-          // 4. Trigger auto-rename for the new topic
-          void autoRenameTopic(assistant, newTopic.id)
+          // Keep the explicit branch label so users can see it immediately.
         } else {
           // Optional: Handle cloning failure (e.g., show an error message)
           // You might want to remove the added topic if cloning fails
@@ -268,7 +274,7 @@ const Messages: React.FC<MessagesProps> = ({ assistant, topic, setActiveTopic, o
   }, [displayMessages.length, hasMore, isLoadingMore, messages, setTimeoutTimer])
 
   useShortcut('copy_last_message', () => {
-    const lastMessage = last(messages)
+    const lastMessage: Message | undefined = last(messages)
     if (lastMessage) {
       void navigator.clipboard.writeText(getMainTextContent(lastMessage))
       window.toast.success(t('message.copy.success'))
@@ -300,6 +306,29 @@ const Messages: React.FC<MessagesProps> = ({ assistant, topic, setActiveTopic, o
     return Object.entries(newGrouped)
   }, [displayMessages])
 
+  const branchDividerDisplayIndex = useMemo(() => {
+    const inheritedMessageCount = topic.branchSource?.inheritedMessageCount
+    if (!inheritedMessageCount || inheritedMessageCount <= 0) {
+      return null
+    }
+
+    const nativeMessageCount = Math.max(messages.length - inheritedMessageCount, 0)
+    if (nativeMessageCount > displayMessages.length) {
+      return null
+    }
+
+    return nativeMessageCount
+  }, [displayMessages.length, messages.length, topic.branchSource?.inheritedMessageCount])
+
+  const branchDividerText = useMemo(() => {
+    const sourceTopicName = topic.branchSource?.topicName
+    if (!sourceTopicName) {
+      return null
+    }
+
+    return `从${sourceTopicName}话题分支出的新话题`
+  }, [topic.branchSource?.topicName])
+
   return (
     <MessagesContainer
       id="messages"
@@ -319,13 +348,36 @@ const Messages: React.FC<MessagesProps> = ({ assistant, topic, setActiveTopic, o
           <ContextMenu>
             <ScrollContainer>
               {groupedMessages.map(([key, groupMessages]) => (
-                <MessageGroup
-                  key={key}
-                  messages={groupMessages}
-                  topic={topic}
-                  registerMessageElement={registerMessageElement}
-                />
+                <Fragment key={key}>
+                  {branchDividerText &&
+                    branchDividerDisplayIndex !== null &&
+                    groupMessages[0]?.index === branchDividerDisplayIndex && (
+                      <BranchDivider>
+                        <BranchDividerLine />
+                        <BranchDividerLabel>
+                          <GitBranch size={12} />
+                          <span>{branchDividerText}</span>
+                        </BranchDividerLabel>
+                        <BranchDividerLine />
+                      </BranchDivider>
+                    )}
+                  <MessageGroup
+                    messages={groupMessages}
+                    topic={topic}
+                    registerMessageElement={registerMessageElement}
+                  />
+                </Fragment>
               ))}
+              {branchDividerText && branchDividerDisplayIndex === 0 && groupedMessages.length === 0 && (
+                <BranchDivider>
+                  <BranchDividerLine />
+                  <BranchDividerLabel>
+                    <GitBranch size={12} />
+                    <span>{branchDividerText}</span>
+                  </BranchDividerLabel>
+                  <BranchDividerLine />
+                </BranchDivider>
+              )}
               {isLoadingMore && (
                 <LoaderContainer>
                   <LoadingIcon color="var(--color-text-2)" />
@@ -392,6 +444,28 @@ const LoaderContainer = styled.div`
   width: 100%;
   background: var(--color-background);
   pointer-events: none;
+`
+
+const BranchDivider = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 8px 0 14px;
+`
+
+const BranchDividerLine = styled.div`
+  flex: 1;
+  height: 1px;
+  background: var(--color-border);
+`
+
+const BranchDividerLabel = styled.div`
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--color-primary);
+  white-space: nowrap;
 `
 
 export default Messages

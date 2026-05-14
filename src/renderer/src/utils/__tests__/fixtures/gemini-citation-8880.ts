@@ -1,8 +1,8 @@
 /**
- * Fixture data for issue #8880 �?Gemini citation over-matching.
+ * Fixture data for issue #8880 鈥?Gemini citation over-matching.
  *
  * groundingMetadata sourced from a real Gemini 3 Pro response to the query
- * "请搜索二氧化硫能否燃�? (Can sulfur dioxide burn?).
+ * "璇锋悳绱簩姘у寲纭兘鍚︾噧鐑? (Can sulfur dioxide burn?).
  *
  * The content is reconstructed so that segment byte offsets align exactly
  * with the groundingSupports data; gaps between segments are filled with
@@ -24,7 +24,7 @@ export const groundingSupports: GroundingSupport[] = [
   {
     segment: {
       endIndex: 99,
-      text: '**二氧化硫�?SO_2$）不能燃�?*，它是一�?*不可�?*且通常**不助�?*的气�?
+      text: '**浜屾哀鍖栫～锛?SO_2$锛変笉鑳界噧鐑?*锛屽畠鏄竴绉?*涓嶅彲鐕?*涓旈?氬父**涓嶅姪鐕?*鐨勬皵浣?
     },
     groundingChunkIndices: [0, 1, 2]
   },
@@ -32,7 +32,7 @@ export const groundingSupports: GroundingSupport[] = [
     segment: {
       startIndex: 184,
       endIndex: 275,
-      text: '**不可燃�?*：在日常和消防标准中，二氧化硫被明确归类为不燃气�?
+      text: '**涓嶅彲鐕冩??*锛氬湪鏃ュ父鍜屾秷闃叉爣鍑嗕腑锛屼簩姘у寲纭鏄庣‘褰掔被涓轰笉鐕冩皵浣?
     },
     groundingChunkIndices: [0, 3, 4]
   },
@@ -40,7 +40,7 @@ export const groundingSupports: GroundingSupport[] = [
     segment: {
       startIndex: 278,
       endIndex: 332,
-      text: '它本身就是硫或含硫化合物燃烧后的产物'
+      text: '瀹冩湰韬氨鏄～鎴栧惈纭寲鍚堢墿鐕冪儳鍚庣殑浜х墿'
     },
     groundingChunkIndices: [2, 5]
   },
@@ -48,7 +48,7 @@ export const groundingSupports: GroundingSupport[] = [
     segment: {
       startIndex: 861,
       endIndex: 1097,
-      text: '**安全警告**：虽然二氧化硫本身不会燃烧，但需要注意的是，如果装有高压液态二氧化硫的钢瓶或储罐被卷入火灾中，受热会导致容器内压力急剧上升，有**发生物理爆炸**的危�?
+      text: '**瀹夊叏璀﹀憡**锛氳櫧鐒朵簩姘у寲纭湰韬笉浼氱噧鐑э紝浣嗛渶瑕佹敞鎰忕殑鏄紝濡傛灉瑁呮湁楂樺帇娑叉?佷簩姘у寲纭殑閽㈢摱鎴栧偍缃愯鍗峰叆鐏伨涓紝鍙楃儹浼氬鑷村鍣ㄥ唴鍘嬪姏鎬ュ墽涓婂崌锛屾湁**鍙戠敓鐗╃悊鐖嗙偢**鐨勫嵄闄?
     },
     groundingChunkIndices: [0, 6]
   },
@@ -56,7 +56,7 @@ export const groundingSupports: GroundingSupport[] = [
     segment: {
       startIndex: 1100,
       endIndex: 1226,
-      text: '此外，二氧化硫是一种具有强烈刺激性和腐蚀性的有毒气体，吸入会对人体呼吸道造成严重伤害'
+      text: '姝ゅ锛屼簩姘у寲纭槸涓?绉嶅叿鏈夊己鐑堝埡婵?鎬у拰鑵愯殌鎬х殑鏈夋瘨姘斾綋锛屽惛鍏ヤ細瀵逛汉浣撳懠鍚搁亾閫犳垚涓ラ噸浼ゅ'
     },
     groundingChunkIndices: [0, 6, 4]
   },
@@ -64,7 +64,7 @@ export const groundingSupports: GroundingSupport[] = [
     segment: {
       startIndex: 1231,
       endIndex: 1286,
-      text: '总结来说，二氧化硫自身绝�?*不能燃烧**'
+      text: '鎬荤粨鏉ヨ锛屼簩姘у寲纭嚜韬粷瀵?*涓嶈兘鐕冪儳**'
     },
     groundingChunkIndices: [0, 6]
   }
@@ -73,7 +73,7 @@ export const groundingSupports: GroundingSupport[] = [
 export const groundingMetadata: GroundingMetadata = {
   groundingChunks,
   groundingSupports,
-  webSearchQueries: ['Is sulfur dioxide flammable', '"二氧化硫" 能否燃烧']
+  webSearchQueries: ['Is sulfur dioxide flammable', '"浜屾哀鍖栫～" 鑳藉惁鐕冪儳']
 }
 
 /**

@@ -7,10 +7,10 @@ describe('AsyncInitializer', () => {
     const mockFactory = vi.fn().mockResolvedValue('test-value')
     const initializer = new AsyncInitializer(mockFactory)
 
-    // factory 不应该在构造时调用
+    // factory 涓嶅簲璇ュ湪鏋勯?犳椂璋冪敤
     expect(mockFactory).not.toHaveBeenCalled()
 
-    // 第一次调�?get
+    // 绗竴娆¤皟鐢?get
     const result = await initializer.get()
 
     expect(mockFactory).toHaveBeenCalledTimes(1)
@@ -21,14 +21,14 @@ describe('AsyncInitializer', () => {
     const mockFactory = vi.fn().mockResolvedValue('test-value')
     const initializer = new AsyncInitializer(mockFactory)
 
-    // 多次调用 get
+    // 澶氭璋冪敤 get
     const result1 = await initializer.get()
     const result2 = await initializer.get()
     const result3 = await initializer.get()
 
-    // factory 只应该被调用一�?    expect(mockFactory).toHaveBeenCalledTimes(1)
+    // factory 鍙簲璇ヨ璋冪敤涓?娆?    expect(mockFactory).toHaveBeenCalledTimes(1)
 
-    // 所有结果应该相�?    expect(result1).toBe('test-value')
+    // 鎵?鏈夌粨鏋滃簲璇ョ浉鍚?    expect(result1).toBe('test-value')
     expect(result2).toBe('test-value')
     expect(result3).toBe('test-value')
   })
@@ -42,14 +42,14 @@ describe('AsyncInitializer', () => {
 
     const initializer = new AsyncInitializer(mockFactory)
 
-    // 同时调用多次 get
+    // 鍚屾椂璋冪敤澶氭 get
     const promise1 = initializer.get()
     const promise2 = initializer.get()
     const promise3 = initializer.get()
 
-    // factory 只应该被调用一�?    expect(mockFactory).toHaveBeenCalledTimes(1)
+    // factory 鍙簲璇ヨ璋冪敤涓?娆?    expect(mockFactory).toHaveBeenCalledTimes(1)
 
-    // 解析 promise
+    // 瑙ｆ瀽 promise
     resolveFactory!('concurrent-value')
 
     const results = await Promise.all([promise1, promise2, promise3])
@@ -61,24 +61,24 @@ describe('AsyncInitializer', () => {
     const mockFactory = vi.fn().mockRejectedValue(error)
     const initializer = new AsyncInitializer(mockFactory)
 
-    // 多次调用都应该返回相同的错误
+    // 澶氭璋冪敤閮藉簲璇ヨ繑鍥炵浉鍚岀殑閿欒
     await expect(initializer.get()).rejects.toThrow('Factory error')
     await expect(initializer.get()).rejects.toThrow('Factory error')
 
-    // factory 只应该被调用一�?    expect(mockFactory).toHaveBeenCalledTimes(1)
+    // factory 鍙簲璇ヨ璋冪敤涓?娆?    expect(mockFactory).toHaveBeenCalledTimes(1)
   })
 
   it('should not retry after failure', async () => {
-    // 确认错误被缓存，不会重试
+    // 纭閿欒琚紦瀛橈紝涓嶄細閲嶈瘯
     const error = new Error('Initialization failed')
     const mockFactory = vi.fn().mockRejectedValue(error)
     const initializer = new AsyncInitializer(mockFactory)
 
-    // 第一次失�?    await expect(initializer.get()).rejects.toThrow('Initialization failed')
+    // 绗竴娆″け璐?    await expect(initializer.get()).rejects.toThrow('Initialization failed')
 
-    // 第二次调用不应该重试
+    // 绗簩娆¤皟鐢ㄤ笉搴旇閲嶈瘯
     await expect(initializer.get()).rejects.toThrow('Initialization failed')
 
-    // factory 只被调用一�?    expect(mockFactory).toHaveBeenCalledTimes(1)
+    // factory 鍙璋冪敤涓?娆?    expect(mockFactory).toHaveBeenCalledTimes(1)
   })
 })

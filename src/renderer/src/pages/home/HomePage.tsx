@@ -26,6 +26,13 @@ import HomeTabs from './Tabs'
 
 let _activeAssistant: Assistant
 
+const sortTopicsByUpdatedAtDesc = (topics: Topic[]) =>
+  [...topics].sort((a, b) => {
+    const bTime = new Date(b.updatedAt || b.createdAt || 0).getTime()
+    const aTime = new Date(a.updatedAt || a.createdAt || 0).getTime()
+    return bTime - aTime
+  })
+
 const HomePage: FC = () => {
   const { assistants } = useAssistants()
   const navigate = useNavigate()
@@ -66,7 +73,7 @@ const HomePage: FC = () => {
 
   const getOrCreateEmptyTopicForAssistant = useCallback(
     async (assistant: Assistant) => {
-      for (const topic of assistant.topics) {
+      for (const topic of sortTopicsByUpdatedAtDesc(assistant.topics || [])) {
         const dbTopic = await db.topics.get(topic.id)
         if ((dbTopic?.messages?.length || 0) === 0) {
           return topic
@@ -82,7 +89,7 @@ const HomePage: FC = () => {
     async (newAssistant: Assistant) => {
       if (!newAssistant || newAssistant.id === activeAssistant?.id) return
 
-      const nextTopic = newAssistant.topics[0] || (await getOrCreateEmptyTopicForAssistant(newAssistant))
+      const nextTopic = await getOrCreateEmptyTopicForAssistant(newAssistant)
       if (!nextTopic) return
 
       startTransition(() => {
@@ -130,6 +137,17 @@ const HomePage: FC = () => {
       const dbTopic = await db.topics.get(activeTopic.id)
       const isDraftTopic = (dbTopic?.messages?.length || 0) === 0
 
+      if (isDraftTopic) {
+        const nextTopic = await getOrCreateEmptyTopicForAssistant(targetAssistant)
+
+        startTransition(() => {
+          _setActiveAssistant(targetAssistant)
+          _setActiveTopic(nextTopic)
+        })
+
+        return
+      }
+
       const nextTopic: Topic = {
         ...activeTopic,
         assistantId: targetAssistant.id,
@@ -159,7 +177,7 @@ const HomePage: FC = () => {
           })
       }
     },
-    [_setActiveTopic, activeAssistant, activeTopic, assistants, dispatch]
+    [_setActiveTopic, activeAssistant, activeTopic, assistants, dispatch, getOrCreateEmptyTopicForAssistant]
   )
 
   const createConversation = useCallback(async () => {

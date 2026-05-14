@@ -1,5 +1,5 @@
 /**
- * ExtensionRegistry 单元测试
+ * ExtensionRegistry 鍗曞厓娴嬭瘯
  */
 
 import type { ProviderV3 } from '@ai-sdk/provider'
@@ -43,7 +43,7 @@ describe('ExtensionRegistry', () => {
       expect(registry.has('or')).toBe(true)
       expect(registry.has('open-router')).toBe(true)
 
-      // 别名应该指向同一�?extension
+      // 鍒悕搴旇鎸囧悜鍚屼竴涓?extension
       expect(registry.get('or')).toBe(extension)
       expect(registry.get('open-router')).toBe(extension)
     })
@@ -423,7 +423,7 @@ describe('ExtensionRegistry', () => {
 
   describe('resolveProviderIdWithMode', () => {
     beforeEach(() => {
-      // 注册带变体的 extension
+      // 娉ㄥ唽甯﹀彉浣撶殑 extension
       registry.register(
         new ProviderExtension({
           name: 'openai',
@@ -459,7 +459,7 @@ describe('ExtensionRegistry', () => {
           name: 'google',
           aliases: ['gemini'],
           create: createMockProviderV3
-          // 没有 variants
+          // 娌℃湁 variants
         })
       )
     })
@@ -633,7 +633,7 @@ describe('ExtensionRegistry', () => {
 
   describe('Variant Query Methods', () => {
     beforeEach(() => {
-      // 注册带变体的 extensions
+      // 娉ㄥ唽甯﹀彉浣撶殑 extensions
       registry.register(
         new ProviderExtension({
           name: 'openai',
@@ -683,7 +683,7 @@ describe('ExtensionRegistry', () => {
         new ProviderExtension({
           name: 'xai',
           create: createMockProviderV3
-          // 没有 variants
+          // 娌℃湁 variants
         })
       )
     })

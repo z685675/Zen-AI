@@ -19,6 +19,7 @@ import { seedWorkspaceTemplates } from '../seedWorkspace'
 const mockedMkdir = vi.mocked(mkdir)
 const mockedStat = vi.mocked(stat)
 const mockedWriteFile = vi.mocked(writeFile)
+const normalizePath = (value: string) => value.replace(/\\/g, '/')
 
 describe('seedWorkspaceTemplates', () => {
   beforeEach(() => {
@@ -32,20 +33,22 @@ describe('seedWorkspaceTemplates', () => {
 
     await seedWorkspaceTemplates('/workspace')
 
-    expect(mockedMkdir).toHaveBeenCalledWith('/workspace', { recursive: true })
-    expect(mockedMkdir).toHaveBeenCalledWith('/workspace/memory', { recursive: true })
+    expect(normalizePath(mockedMkdir.mock.calls[0][0] as string)).toBe('/workspace')
+    expect(normalizePath(mockedMkdir.mock.calls[1][0] as string)).toBe('/workspace/memory')
+    expect(mockedMkdir.mock.calls[0][1]).toEqual({ recursive: true })
+    expect(mockedMkdir.mock.calls[1][1]).toEqual({ recursive: true })
 
     expect(mockedWriteFile).toHaveBeenCalledTimes(2)
-    const writeCalls = mockedWriteFile.mock.calls.map((c) => c[0])
+    const writeCalls = mockedWriteFile.mock.calls.map((c) => normalizePath(c[0] as string))
     expect(writeCalls).toContain('/workspace/SOUL.md')
     expect(writeCalls).toContain('/workspace/USER.md')
 
     // Verify template content
-    const soulCall = mockedWriteFile.mock.calls.find((c) => c[0] === '/workspace/SOUL.md')
+    const soulCall = mockedWriteFile.mock.calls.find((c) => normalizePath(c[0] as string) === '/workspace/SOUL.md')
     expect(soulCall![1]).toContain('# Soul')
     expect(soulCall![1]).toContain('## Personality')
 
-    const userCall = mockedWriteFile.mock.calls.find((c) => c[0] === '/workspace/USER.md')
+    const userCall = mockedWriteFile.mock.calls.find((c) => normalizePath(c[0] as string) === '/workspace/USER.md')
     expect(userCall![1]).toContain('# User Profile')
     expect(userCall![1]).toContain('## Name')
   })
@@ -70,6 +73,6 @@ describe('seedWorkspaceTemplates', () => {
     await seedWorkspaceTemplates('/workspace')
 
     expect(mockedWriteFile).toHaveBeenCalledTimes(1)
-    expect(mockedWriteFile.mock.calls[0][0]).toBe('/workspace/USER.md')
+    expect(normalizePath(mockedWriteFile.mock.calls[0][0] as string)).toBe('/workspace/USER.md')
   })
 })

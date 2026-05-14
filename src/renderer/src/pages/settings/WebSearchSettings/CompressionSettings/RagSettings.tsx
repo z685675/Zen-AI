@@ -7,11 +7,10 @@ import { useProviders } from '@renderer/hooks/useProvider'
 import { useWebSearchSettings } from '@renderer/hooks/useWebSearchProviders'
 import { SettingDivider, SettingRow, SettingRowTitle } from '@renderer/pages/settings'
 import { getModelUniqId } from '@renderer/services/ModelService'
-import type { Model } from '@renderer/types'
 import { Slider, Tooltip } from 'antd'
 import { find } from 'lodash'
 import { Info } from 'lucide-react'
-import { useMemo } from 'react'
+import { useEffect, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 
 const INPUT_BOX_WIDTH = 'min(350px, 60%)'
@@ -34,12 +33,14 @@ const RagSettings = () => {
   }, [providers])
 
   const handleEmbeddingModelChange = (modelValue: string) => {
-    const selectedModel = find(embeddingModels, JSON.parse(modelValue)) as Model
-    updateCompressionConfig({ embeddingModel: selectedModel })
+    const selectedModel = find(embeddingModels, JSON.parse(modelValue))
+    if (selectedModel) {
+      updateCompressionConfig({ embeddingModel: selectedModel })
+    }
   }
 
   const handleRerankModelChange = (modelValue?: string) => {
-    const selectedModel = modelValue ? (find(rerankModels, JSON.parse(modelValue)) as Model) : undefined
+    const selectedModel = modelValue ? find(rerankModels, JSON.parse(modelValue)) : undefined
     updateCompressionConfig({ rerankModel: selectedModel })
   }
 
@@ -50,6 +51,38 @@ const RagSettings = () => {
   const handleDocumentCountChange = (value: number) => {
     updateCompressionConfig({ documentCount: value })
   }
+
+  useEffect(() => {
+    const nextConfig: Partial<NonNullable<typeof compressionConfig>> = {}
+    let shouldSync = false
+
+    if (
+      compressionConfig?.embeddingModel &&
+      !embeddingModels.some(
+        (model) =>
+          model.id === compressionConfig.embeddingModel?.id && model.provider === compressionConfig.embeddingModel?.provider
+      )
+    ) {
+      nextConfig.embeddingModel = undefined
+      nextConfig.embeddingDimensions = undefined
+      shouldSync = true
+    }
+
+    if (
+      compressionConfig?.rerankModel &&
+      !rerankModels.some(
+        (model) =>
+          model.id === compressionConfig.rerankModel?.id && model.provider === compressionConfig.rerankModel?.provider
+      )
+    ) {
+      nextConfig.rerankModel = undefined
+      shouldSync = true
+    }
+
+    if (shouldSync) {
+      updateCompressionConfig(nextConfig)
+    }
+  }, [compressionConfig, embeddingModels, rerankModels, updateCompressionConfig])
 
   return (
     <>

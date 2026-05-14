@@ -3,7 +3,7 @@ import TextEditPopup from '@renderer/components/Popups/TextEditPopup'
 import db from '@renderer/databases'
 import FileManager from '@renderer/services/FileManager'
 import store from '@renderer/store'
-import type { FileMetadata } from '@renderer/types'
+import type { FileMetadata, PaintingParams, PaintingsState } from '@renderer/types'
 import type { Message } from '@renderer/types/newMessage'
 import dayjs from 'dayjs'
 
@@ -46,10 +46,10 @@ export async function handleDelete(fileId: string, t: (key: string) => string) {
   const file = await FileManager.getFile(fileId)
   if (!file) return
 
-  const paintings = store.getState().paintings
-  const paintingsFiles = Object.values(paintings)
+  const paintings = store.getState().paintings as PaintingsState
+  const paintingsFiles = (Object.values(paintings) as PaintingParams[][])
     .flat()
-    .filter((painting) => painting?.files?.length > 0)
+    .filter((painting) => painting.files.length > 0)
     .flatMap((painting) => painting.files)
 
   if (paintingsFiles.some((p) => p.id === fileId)) {

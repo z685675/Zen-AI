@@ -116,7 +116,7 @@ describe('FeishuAdapter', () => {
   it('connect() with missing app_id starts background registration instead of WebSocket', async () => {
     const adapter = createAdapter({ app_id: '' })
     await adapter.connect()
-    // checkReady() returns false â†?performConnect runs in background,
+    // checkReady() returns false éˆ«?performConnect runs in background,
     // starts registration flow instead of WebSocket
     expect(mockWsStart).not.toHaveBeenCalled()
   })
@@ -188,7 +188,7 @@ describe('FeishuAdapter', () => {
       }
     })
 
-    // Flush is deferred (long-gap batching) â€?advance timers to trigger it
+    // Flush is deferred (long-gap batching) éˆ¥?advance timers to trigger it
     await vi.advanceTimersByTimeAsync(500)
 
     expect(mockElementContent).toHaveBeenCalledWith({

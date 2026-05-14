@@ -1,5 +1,5 @@
 /**
- * ProviderExtension 单元测试
+ * ProviderExtension 鍗曞厓娴嬭瘯
  */
 
 import type { ProviderV3 } from '@ai-sdk/provider'
@@ -141,14 +141,16 @@ describe('ProviderExtension', () => {
 
       const configured = original.configure({ baseURL: 'https://api.test.com' })
 
-      // 原实例不�?      expect(original.config.defaultOptions).toEqual({ apiKey: 'original-key' })
+      // Original instance should stay unchanged.
+      expect(original.config.defaultOptions).toEqual({ apiKey: 'original-key' })
 
-      // 新实例合并配�?      expect(configured.config.defaultOptions).toEqual({
+      // New instance should contain merged options.
+      expect(configured.config.defaultOptions).toEqual({
         apiKey: 'original-key',
         baseURL: 'https://api.test.com'
       })
 
-      // 是新实例
+      // A new instance should be returned.
       expect(configured).not.toBe(original)
     })
 
@@ -753,7 +755,7 @@ describe('ProviderExtension', () => {
       const instance1 = await extension.createProvider(settings1)
       const instance2 = await extension.createProvider(settings2)
 
-      // Same function reference �?same serialization �?same cache hit
+      // Same function reference 鈫?same serialization 鈫?same cache hit
       expect(instance1).toBe(instance2)
       expect(createFn).toHaveBeenCalledTimes(1)
     })

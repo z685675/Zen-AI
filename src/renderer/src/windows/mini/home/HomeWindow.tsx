@@ -16,6 +16,7 @@ import type { Topic } from '@renderer/types'
 import { ThemeMode } from '@renderer/types'
 import type { Chunk } from '@renderer/types/chunk'
 import { ChunkType } from '@renderer/types/chunk'
+import type { Message } from '@renderer/types/newMessage'
 import { AssistantMessageStatus, MessageBlockStatus } from '@renderer/types/newMessage'
 import { abortCompletion } from '@renderer/utils/abortController'
 import { isAbortError } from '@renderer/utils/error'
@@ -491,7 +492,7 @@ const HomeWindow: FC<{ draggable?: boolean }> = ({ draggable = true }) => {
     if (!currentTopic.current) return
 
     const messages = selectMessagesForTopic(store.getState(), currentTopic.current.id)
-    const lastMessage = last(messages)
+    const lastMessage: Message | undefined = last(messages)
 
     if (lastMessage) {
       const content = getMainTextContent(lastMessage)

@@ -184,14 +184,14 @@ function generate(): string {
 
 function check(content: string): void {
   if (!fs.existsSync(OUTPUT_FILE)) {
-    console.error(`openapi:check failed â€?${OUTPUT_FILE} does not exist (run pnpm generate:openapi)`)
+    console.error(`openapi:check failed éˆ¥?${OUTPUT_FILE} does not exist (run pnpm generate:openapi)`)
     process.exit(1)
   }
 
   const existing = JSON.parse(fs.readFileSync(OUTPUT_FILE, 'utf-8'))
   const generated = JSON.parse(content)
   if (JSON.stringify(existing) !== JSON.stringify(generated)) {
-    console.error('openapi:check failed â€?openapi-spec.json is out of date (run pnpm generate:openapi)')
+    console.error('openapi:check failed éˆ¥?openapi-spec.json is out of date (run pnpm generate:openapi)')
     process.exit(1)
   }
 

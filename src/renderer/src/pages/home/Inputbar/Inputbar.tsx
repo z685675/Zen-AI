@@ -31,6 +31,7 @@ import { spanManagerService } from '@renderer/services/SpanManagerService'
 import { estimateTextTokens as estimateTxtTokens, estimateUserPromptUsage } from '@renderer/services/TokenService'
 import WebSearchService from '@renderer/services/WebSearchService'
 import { useAppDispatch, useAppSelector } from '@renderer/store'
+import { selectMessagesForTopic } from '@renderer/store/newMessage'
 import { sendMessage as _sendMessage } from '@renderer/store/thunk/messageThunk'
 import {
   type Assistant,
@@ -43,6 +44,7 @@ import {
 import type { MessageInputBaseParams } from '@renderer/types/newMessage'
 import { delay } from '@renderer/utils'
 import { getSendMessageShortcutLabel } from '@renderer/utils/input'
+import { aggregateUsageCacheStats } from '@renderer/utils/usage'
 import { documentExts, imageExts, textExts } from '@shared/config/constant'
 import { debounce } from 'lodash'
 import type { FC } from 'react'
@@ -188,11 +190,13 @@ const InputbarInner: FC<InputbarInnerProps> = ({
   const { t } = useTranslation()
   const { pauseMessages } = useMessageOperations(topic)
   const loading = useTopicLoading(topic)
+  const topicMessages = useAppSelector((state) => selectMessagesForTopic(state, topic.id))
   const dispatch = useAppDispatch()
   const isVisionAssistant = useMemo(() => isVisionModel(model), [model])
   const isGenerateImageAssistant = useMemo(() => isGenerateImageModel(model), [model])
   const { setTimeoutTimer } = useTimer()
   const isMultiSelectMode = useAppSelector((state) => state.runtime.chat.isMultiSelectMode)
+  const cacheStats = useMemo(() => aggregateUsageCacheStats(topicMessages.map((message) => message.usage)), [topicMessages])
 
   const isVisionSupported = useMemo(
     () =>
@@ -319,9 +323,11 @@ const InputbarInner: FC<InputbarInnerProps> = ({
     return {
       estimateTokenCount,
       inputTokenCount: estimateTokenCount,
-      contextCount
+      contextCount,
+      cacheStats,
+      model
     }
-  }, [config.showTokenCount, contextCount, estimateTokenCount, showInputEstimatedTokens])
+  }, [cacheStats, config.showTokenCount, contextCount, estimateTokenCount, model, showInputEstimatedTokens])
 
   const onPause = useCallback(async () => {
     await pauseMessages()
@@ -543,6 +549,8 @@ const InputbarInner: FC<InputbarInnerProps> = ({
           estimateTokenCount={tokenCountProps.estimateTokenCount}
           inputTokenCount={tokenCountProps.inputTokenCount}
           contextCount={tokenCountProps.contextCount}
+          cacheStats={tokenCountProps.cacheStats}
+          model={tokenCountProps.model}
           onClick={onNewContext}
         />
       )}

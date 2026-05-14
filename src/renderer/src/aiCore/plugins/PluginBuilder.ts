@@ -5,11 +5,17 @@ import { isGemini3Model, isQwen35to39Model, isSupportedThinkingTokenQwenModel } 
 import { getEnableDeveloperMode } from '@renderer/hooks/useSettings'
 import type { Assistant, Model, Provider } from '@renderer/types'
 import { SystemProviderIds } from '@renderer/types'
-import { isOllamaProvider, isSupportEnableThinkingProvider } from '@renderer/utils/provider'
+import {
+  getEffectiveAnthropicCacheControl,
+  getEffectiveGeminiCacheControl,
+  isOllamaProvider,
+  isSupportEnableThinkingProvider
+} from '@renderer/utils/provider'
 
 import type { AiSdkMiddlewareConfig } from '../types/middlewareConfig'
 import { getReasoningTagName } from '../utils/reasoning'
 import { createAnthropicCachePlugin } from './anthropicCachePlugin'
+import { createGeminiCachePlugin } from './geminiCachePlugin'
 import { createNoThinkPlugin } from './noThinkPlugin'
 import { createOpenrouterReasoningPlugin } from './openrouterReasoningPlugin'
 import { createPdfCompatibilityPlugin } from './pdfCompatibilityPlugin'
@@ -75,8 +81,14 @@ export function buildPlugins({ provider, model, config }: BuildPluginsContext): 
     plugins.push(createSimulateStreamingPlugin())
   }
 
-  if (provider.anthropicCacheControl?.tokenThreshold) {
-    plugins.push(createAnthropicCachePlugin(provider))
+  const anthropicCacheControl = getEffectiveAnthropicCacheControl(provider, model)
+  if (anthropicCacheControl?.tokenThreshold) {
+    plugins.push(createAnthropicCachePlugin(anthropicCacheControl))
+  }
+
+  const geminiCacheControl = getEffectiveGeminiCacheControl(provider, model)
+  if (geminiCacheControl?.tokenThreshold) {
+    plugins.push(createGeminiCachePlugin(geminiCacheControl))
   }
 
   // 0.3 OpenRouter reasoning redaction

@@ -642,8 +642,9 @@ export async function fetchGenerate({
   content: string
   model?: Model
 }): Promise<string> {
+  model ??= getDefaultModel()
   if (!model) {
-    model = getDefaultModel()
+    return ''
   }
   const provider = getProviderByModel(model)
 

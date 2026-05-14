@@ -1194,7 +1194,7 @@ describe('options utils', () => {
           enableGenerateImage: false
         })
 
-        // buildProviderOptions converts reasoning_effort â†?reasoningEffort for openai-compatible
+        // buildProviderOptions converts reasoning_effort éˆ«?reasoningEffort for openai-compatible
         expect(result.providerOptions['openai-compatible']).toHaveProperty('reasoningEffort')
         expect(result.providerOptions['openai-compatible'].reasoningEffort).toBe('high')
         expect(result.providerOptions['openai-compatible']).not.toHaveProperty('reasoning_effort')

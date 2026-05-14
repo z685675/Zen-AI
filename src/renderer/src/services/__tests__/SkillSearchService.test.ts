@@ -224,7 +224,7 @@ describe('Skill search normalizers', () => {
       // cp-001 has sourceUrl in the API response
       expect(results[0].sourceUrl).toBe('https://github.com/anthropic/skills/tree/main/code-review')
 
-      // cp-003 has no sourceUrl but has metadata â€?should reconstruct
+      // cp-003 has no sourceUrl but has metadata éˆ¥?should reconstruct
       expect(results[2].sourceUrl).toBe('https://github.com/devtools-org/claude-skills')
     })
   })

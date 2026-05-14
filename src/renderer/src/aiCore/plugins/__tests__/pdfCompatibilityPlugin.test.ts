@@ -208,7 +208,7 @@ describe('pdfCompatibilityPlugin', () => {
     expect(mockExtractPdfText).not.toHaveBeenCalled()
   })
 
-  it('should handle mixed content: text + PDF + image â€?only PDF converted', async () => {
+  it('should handle mixed content: text + PDF + image éˆ¥?only PDF converted', async () => {
     const provider = makeProvider('ollama', 'ollama')
     mockExtractPdfText.mockResolvedValue('PDF text content')
 

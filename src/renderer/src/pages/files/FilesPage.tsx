@@ -8,7 +8,7 @@ import { getFileFieldLabel } from '@renderer/i18n/label'
 import { handleDelete, handleRename, sortFiles, tempFilesSort } from '@renderer/services/FileAction'
 import FileManager from '@renderer/services/FileManager'
 import store from '@renderer/store'
-import type { FileMetadata, FileType } from '@renderer/types'
+import type { FileMetadata, FileType, PaintingParams, PaintingsState } from '@renderer/types'
 import { FILE_TYPE } from '@renderer/types'
 import { formatFileSize } from '@renderer/utils'
 import { Button, Checkbox, Dropdown, Empty, Flex, Popconfirm } from 'antd'
@@ -58,10 +58,10 @@ const FilesPage: FC = () => {
     const selectedFiles = await Promise.all(selectedFileIds.map((id) => FileManager.getFile(id)))
     const validFiles = selectedFiles.filter((file) => file !== null && file !== undefined)
 
-    const paintings = store.getState().paintings
-    const paintingsFiles = Object.values(paintings)
+    const paintings = store.getState().paintings as PaintingsState
+    const paintingsFiles = (Object.values(paintings) as PaintingParams[][])
       .flat()
-      .filter((painting) => painting?.files?.length > 0)
+      .filter((painting) => painting.files.length > 0)
       .flatMap((painting) => painting.files)
 
     const filesInPaintings = validFiles.filter((file) => paintingsFiles.some((p) => p.id === file.id))

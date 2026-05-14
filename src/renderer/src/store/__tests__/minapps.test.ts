@@ -10,7 +10,7 @@ const createApp = (id: string, name?: string): MinAppType => ({
   logo: `logo-${id}`
 })
 
-describe('minApps slice â€?setPinnedMinApps', () => {
+describe('minApps slice éˆ¥?setPinnedMinApps', () => {
   const buildState = (pinned: MinAppType[]): MinAppsState =>
     ({
       enabled: [],

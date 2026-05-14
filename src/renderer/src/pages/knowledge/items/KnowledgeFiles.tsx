@@ -174,13 +174,13 @@ const KnowledgeFiles: FC<KnowledgeContentProps> = ({ selectedBase, progressMap, 
         {fileItems.length === 0 ? (
           <KnowledgeEmptyView />
         ) : (
-          <DynamicVirtualList
+          <DynamicVirtualList<KnowledgeItem>
             list={fileItems.reverse()}
             estimateSize={estimateSize}
             overscan={2}
             scrollerStyle={{ height: windowHeight - 270 }}
             autoHideScrollbar>
-            {(item) => {
+            {(item: KnowledgeItem) => {
               if (!isKnowledgeFileItem(item)) {
                 return null
               }

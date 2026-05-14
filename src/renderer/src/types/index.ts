@@ -250,6 +250,13 @@ export type Usage = OpenAI.Completions.CompletionUsage & {
   thoughts_tokens?: number
   // OpenRouter specific fields
   cost?: number
+  prompt_tokens_details?: {
+    cached_tokens?: number
+  }
+  cache_read_tokens?: number
+  cache_write_tokens?: number
+  no_cache_tokens?: number
+  cached_tokens?: number
 }
 
 export type Metrics = {
@@ -275,6 +282,11 @@ export type Topic = {
   pinned?: boolean
   prompt?: string
   isNameManuallyEdited?: boolean
+  branchSource?: {
+    topicId: string
+    topicName: string
+    inheritedMessageCount: number
+  }
 }
 
 export type ConversationFolder = {

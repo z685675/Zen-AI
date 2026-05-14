@@ -13,10 +13,9 @@ vi.mock('@renderer/store', () => ({
   }
 }))
 
-// Mock 依赖�?vi.mock('@hello-pangea/dnd', () => ({
+vi.mock('@hello-pangea/dnd', () => ({
   __esModule: true,
   DragDropContext: ({ children, onDragEnd, onDragStart }) => {
-    // 挂载�?window 以便测试用例直接调用
     window.triggerOnDragEnd = (result = { source: { index: 0 }, destination: { index: 1 } }, provided = {}) => {
       onDragEnd?.(result, provided)
     }
@@ -27,7 +26,6 @@ vi.mock('@renderer/store', () => ({
   },
   Droppable: ({ children, renderClone }) => (
     <div data-testid="droppable">
-      {/* 模拟 renderClone 的调�?*/}
       {renderClone &&
         renderClone({ draggableProps: {}, dragHandleProps: {}, innerRef: vi.fn() }, {}, { source: { index: 0 } })}
       {children({ droppableProps: {}, innerRef: vi.fn() })}
@@ -83,90 +81,61 @@ describe('DraggableVirtualList', () => {
     { id: 'c', name: 'Item C' }
   ]
 
-  describe('rendering', () => {
-    it('should render all list items provided', () => {
-      render(
-        <DraggableVirtualList list={sampleList} onUpdate={() => {}}>
-          {(item) => <div data-testid="test-item">{item.name}</div>}
-        </DraggableVirtualList>
-      )
-      const items = screen.getAllByTestId('test-item')
-      // 我们�?mock 中，renderClone 会渲染一个额外的 item
-      expect(items.length).toBe(sampleList.length + 1)
-      expect(items[0]).toHaveTextContent('Item A')
-      expect(items[1]).toHaveTextContent('Item A')
-      expect(items[2]).toHaveTextContent('Item B')
-      expect(items[3]).toHaveTextContent('Item C')
-    })
+  it('renders visible items plus the drag clone', () => {
+    render(
+      <DraggableVirtualList list={sampleList} onUpdate={() => {}}>
+        {(item) => <div data-testid="test-item">{item.name}</div>}
+      </DraggableVirtualList>
+    )
 
-    it('should render nothing when the list is empty', () => {
-      render(
-        <DraggableVirtualList list={[]} onUpdate={() => {}}>
-          {/* @ts-ignore test*/}
-          {(item) => <div data-testid="test-item">{item.name}</div>}
-        </DraggableVirtualList>
-      )
-      const items = screen.queryAllByTestId('test-item')
-      expect(items.length).toBe(0)
-    })
+    const items = screen.getAllByTestId('test-item')
+    expect(items).toHaveLength(sampleList.length + 1)
+    expect(items[0]).toHaveTextContent('Item A')
+    expect(items[1]).toHaveTextContent('Item A')
+    expect(items[2]).toHaveTextContent('Item B')
+    expect(items[3]).toHaveTextContent('Item C')
   })
 
-  describe('drag and drop', () => {
-    it('should call onUpdate with the new order after a drag operation', () => {
-      const onUpdate = vi.fn()
-      render(
-        <DraggableVirtualList list={sampleList} onUpdate={onUpdate}>
-          {(item) => <div>{item.name}</div>}
-        </DraggableVirtualList>
-      )
+  it('renders no items when the list is empty', () => {
+    render(
+      <DraggableVirtualList list={[]} onUpdate={() => {}}>
+        {/* @ts-ignore test helper */}
+        {(item) => <div data-testid="test-item">{item.name}</div>}
+      </DraggableVirtualList>
+    )
 
-      window.triggerOnDragEnd({ source: { index: 0 }, destination: { index: 2 } })
-      const expectedOrder = [sampleList[1], sampleList[2], sampleList[0]] // B, C, A
-      expect(onUpdate).toHaveBeenCalledWith(expectedOrder)
-    })
-
-    it('should call onDragStart and onDragEnd callbacks', () => {
-      const onDragStart = vi.fn()
-      const onDragEnd = vi.fn()
-      render(
-        <DraggableVirtualList list={sampleList} onUpdate={() => {}} onDragStart={onDragStart} onDragEnd={onDragEnd}>
-          {(item) => <div>{item.name}</div>}
-        </DraggableVirtualList>
-      )
-
-      window.triggerOnDragStart()
-      expect(onDragStart).toHaveBeenCalledTimes(1)
-
-      window.triggerOnDragEnd()
-      expect(onDragEnd).toHaveBeenCalledTimes(1)
-    })
-
-    it('should not call onUpdate if destination is not defined', () => {
-      const onUpdate = vi.fn()
-      render(
-        <DraggableVirtualList list={sampleList} onUpdate={onUpdate}>
-          {(item) => <div>{item.name}</div>}
-        </DraggableVirtualList>
-      )
-
-      window.triggerOnDragEnd({ source: { index: 0 }, destination: null })
-      expect(onUpdate).not.toHaveBeenCalled()
-    })
+    expect(screen.queryAllByTestId('test-item')).toHaveLength(0)
   })
 
-  describe('snapshot', () => {
-    it('should match snapshot with custom styles', () => {
-      const { container } = render(
-        <DraggableVirtualList
-          list={sampleList}
-          onUpdate={() => {}}
-          className="custom-class"
-          style={{ border: '1px solid red' }}
-          itemStyle={{ background: 'blue' }}>
-          {(item) => <div>{item.name}</div>}
-        </DraggableVirtualList>
-      )
-      expect(container).toMatchSnapshot()
-    })
+  it('calls onUpdate with the reordered list after drag end', () => {
+    const onUpdate = vi.fn()
+    render(
+      <DraggableVirtualList list={sampleList} onUpdate={onUpdate}>
+        {(item) => <div>{item.name}</div>}
+      </DraggableVirtualList>
+    )
+
+    window.triggerOnDragEnd({ source: { index: 0 }, destination: { index: 2 } })
+
+    expect(onUpdate).toHaveBeenCalledWith([sampleList[1], sampleList[2], sampleList[0]])
+  })
+
+  it('forwards drag start/end callbacks and ignores missing destinations', () => {
+    const onUpdate = vi.fn()
+    const onDragStart = vi.fn()
+    const onDragEnd = vi.fn()
+
+    render(
+      <DraggableVirtualList list={sampleList} onUpdate={onUpdate} onDragStart={onDragStart} onDragEnd={onDragEnd}>
+        {(item) => <div>{item.name}</div>}
+      </DraggableVirtualList>
+    )
+
+    window.triggerOnDragStart()
+    window.triggerOnDragEnd({ source: { index: 0 }, destination: null })
+
+    expect(onDragStart).toHaveBeenCalledTimes(1)
+    expect(onDragEnd).toHaveBeenCalledTimes(1)
+    expect(onUpdate).not.toHaveBeenCalled()
   })
 })

@@ -357,16 +357,16 @@ describe('Collection Utils', () => {
 
       // The following would cause TypeScript compilation errors:
       //
-      // â?Error: Type '{ id: number; name: string; }' does not satisfy the constraint 'string | number | boolean | null | undefined'
+      // é‰‚?Error: Type '{ id: number; name: string; }' does not satisfy the constraint 'string | number | boolean | null | undefined'
       // getIntersection(obj1, obj2)
       //
-      // â?Error: Expected 3 arguments, but got 2. Object types require a comparator.
+      // é‰‚?Error: Expected 3 arguments, but got 2. Object types require a comparator.
       // getDifference(obj1, obj2)
       //
-      // â?Error: Expected 3 arguments, but got 2. Object types require a comparator.
+      // é‰‚?Error: Expected 3 arguments, but got 2. Object types require a comparator.
       // getUnion(obj1, obj2)
 
-      // âœ?Correct usage with key selector
+      // é‰?Correct usage with key selector
       const intersection = getIntersection(obj1, obj2, (item) => item.id)
       const difference = getDifference(obj1, obj2, (item) => item.id)
       const union = getUnion(obj1, obj2, (item) => item.id)

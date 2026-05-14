@@ -92,6 +92,27 @@ function remapModelToImportedProvider(
   return model
 }
 
+function resolveImportedProviderModelFallback(
+  model: Model | undefined,
+  importedProvider: Provider,
+  disabledProviderIds: Set<string>
+): Model | undefined {
+  if (!model) {
+    return undefined
+  }
+
+  const remappedModel = remapModelToImportedProvider(model, importedProvider, disabledProviderIds)
+  if (remappedModel) {
+    return remappedModel
+  }
+
+  if (model.provider === importedProvider.id || disabledProviderIds.has(model.provider)) {
+    return importedProvider.models[0]
+  }
+
+  return model
+}
+
 function remapAssistantModels(
   assistant: Assistant,
   importedProvider: Provider,
@@ -222,7 +243,7 @@ const ProviderList: FC<ProviderListProps> = ({ isOnboarding = false }) => {
       }
 
       const disableOtherProviders = options?.disableOtherProviders === true
-      const nextProviders = allProviders.map((provider) => ({
+      const nextProviders: Provider[] = allProviders.map((provider) => ({
         ...provider,
         enabled: disableOtherProviders ? provider.id === finalProvider.id : provider.enabled
       }))
@@ -244,13 +265,23 @@ const ProviderList: FC<ProviderListProps> = ({ isOnboarding = false }) => {
       updateProviders(nextProviders)
 
       if (disableOtherProviders) {
-        const disabledProviderIds = new Set(
+        const disabledProviderIds = new Set<string>(
           nextProviders.filter((provider) => provider.id !== finalProvider.id && !provider.enabled).map((provider) => provider.id)
         )
 
-        setDefaultModel(remapModelToImportedProvider(defaultModel, finalProvider, disabledProviderIds) as Model)
-        setQuickModel(remapModelToImportedProvider(quickModel, finalProvider, disabledProviderIds) as Model)
-        setTranslateModel(remapModelToImportedProvider(translateModel, finalProvider, disabledProviderIds) as Model)
+        const nextDefaultModel = resolveImportedProviderModelFallback(defaultModel, finalProvider, disabledProviderIds)
+        const nextQuickModel = resolveImportedProviderModelFallback(quickModel, finalProvider, disabledProviderIds)
+        const nextTranslateModel = resolveImportedProviderModelFallback(translateModel, finalProvider, disabledProviderIds)
+
+        if (nextDefaultModel) {
+          setDefaultModel(nextDefaultModel)
+        }
+        if (nextQuickModel) {
+          setQuickModel(nextQuickModel)
+        }
+        if (nextTranslateModel) {
+          setTranslateModel(nextTranslateModel)
+        }
         updateAssistants(assistants.map((assistant) => remapAssistantModels(assistant, finalProvider, disabledProviderIds)))
         updateDefaultAssistant(remapAssistantModels(defaultAssistant, finalProvider, disabledProviderIds))
       }
@@ -509,7 +540,7 @@ const ProviderList: FC<ProviderListProps> = ({ isOnboarding = false }) => {
     [systemProviders, updateProviders]
   )
 
-  const { onDragEnd: handleReorder, itemKey } = useDraggableReorder({
+  const { onDragEnd: handleReorder, itemKey } = useDraggableReorder<Provider>({
     originalList: providers,
     filteredList: filteredProviders,
     onUpdate: handleProviderOrderChange,
@@ -580,7 +611,7 @@ const ProviderList: FC<ProviderListProps> = ({ isOnboarding = false }) => {
                 disabled={dragging}
               />
             </AddButtonWrapper>
-            <DraggableVirtualList
+            <DraggableVirtualList<Provider>
               ref={listRef}
               list={filteredProviders}
               onDragStart={handleDragStart}
@@ -596,7 +627,7 @@ const ProviderList: FC<ProviderListProps> = ({ isOnboarding = false }) => {
                 paddingRight: 5
               }}
               itemContainerStyle={{ paddingBottom: 5 }}>
-              {(provider) => (
+              {(provider: Provider) => (
                 <Dropdown menu={{ items: getDropdownMenus(provider) }} trigger={['contextMenu']}>
                   <ProviderListItem
                     key={provider.id}

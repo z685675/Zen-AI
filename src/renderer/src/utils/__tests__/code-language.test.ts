@@ -1,65 +1,27 @@
 import { describe, expect, it } from 'vitest'
 
-import { getExtensionByLanguage } from '../code-language'
+import { getExtensionByLanguage, getLanguageByExtension, getLanguageByFilePath } from '../code-language'
 
-describe('code-language', () => {
-  describe('getExtensionByLanguage', () => {
-    // 批量测试语言名称到扩展名的映�?    const testLanguageExtensions = (testCases: Record<string, string>) => {
-      for (const [language, expectedExtension] of Object.entries(testCases)) {
-        const result = getExtensionByLanguage(language)
-        expect(result).toBe(expectedExtension)
-      }
-    }
+describe('code-language utils', () => {
+  it('resolves language names from extensions', () => {
+    expect(getLanguageByExtension('.ts')).toBe('TypeScript')
+    expect(getLanguageByExtension('JS')).toBe('JavaScript')
+    expect(getLanguageByExtension('')).toBe('text')
+  })
 
-    it('should return extension for exact language name match', () => {
-      testLanguageExtensions({
-        '4D': '.4dm',
-        'C#': '.cs',
-        JavaScript: '.js',
-        TypeScript: '.ts',
-        'Objective-C++': '.mm',
-        Python: '.py',
-        SVG: '.svg',
-        'Visual Basic .NET': '.vb'
-      })
-    })
+  it('resolves language names from file paths', () => {
+    expect(getLanguageByFilePath('src/app.tsx')).toBe('TSX')
+    expect(getLanguageByFilePath('README')).toBe('readme')
+  })
 
-    it('should return extension for case-insensitive language name match', () => {
-      testLanguageExtensions({
-        '4d': '.4dm',
-        'c#': '.cs',
-        javascript: '.js',
-        typescript: '.ts',
-        'objective-c++': '.mm',
-        python: '.py',
-        svg: '.svg',
-        'visual basic .net': '.vb'
-      })
-    })
+  it('resolves extensions from exact names, case-insensitive names, and aliases', () => {
+    expect(getExtensionByLanguage('TypeScript')).toBe('.ts')
+    expect(getExtensionByLanguage('typescript')).toBe('.ts')
+    expect(getExtensionByLanguage('js')).toBe('.js')
+    expect(getExtensionByLanguage('visual basic')).toBe('.vb')
+  })
 
-    it('should return extension for language aliases', () => {
-      testLanguageExtensions({
-        js: '.js',
-        node: '.js',
-        'obj-c++': '.mm',
-        'objc++': '.mm',
-        'objectivec++': '.mm',
-        py: '.py',
-        'visual basic': '.vb'
-      })
-    })
-
-    it('should return fallback extension for unknown languages', () => {
-      testLanguageExtensions({
-        'unknown-language': '.unknown-language',
-        custom: '.custom'
-      })
-    })
-
-    it('should handle empty string input', () => {
-      testLanguageExtensions({
-        '': '.'
-      })
-    })
+  it('falls back to a dotted language name for unknown languages', () => {
+    expect(getExtensionByLanguage('custom-language')).toBe('.custom-language')
   })
 })

@@ -2,7 +2,7 @@ import { HStack } from '@renderer/components/Layout'
 import { InfoTooltip } from '@renderer/components/TooltipIcons'
 import { useProvider } from '@renderer/hooks/useProvider'
 import { type AnthropicCacheControlSettings, type Provider } from '@renderer/types'
-import { isSupportAnthropicPromptCacheProvider } from '@renderer/utils/provider'
+import { getEffectiveAnthropicCacheControl, isSupportAnthropicPromptCacheProvider } from '@renderer/utils/provider'
 import { Divider, Flex, InputNumber, Switch } from 'antd'
 import { startTransition, useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -119,12 +119,12 @@ const ApiOptionsSettings = ({ providerId }: Props) => {
 
   const cacheSettings = useMemo(
     () =>
-      provider.anthropicCacheControl ?? {
+      getEffectiveAnthropicCacheControl(provider) ?? {
         tokenThreshold: 0,
         cacheSystemMessage: true,
         cacheLastNMessages: 0
       },
-    [provider.anthropicCacheControl]
+    [provider]
   )
 
   const updateCacheSettings = useCallback(

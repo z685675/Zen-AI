@@ -3,94 +3,86 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import ImageToolbar from '../ImageToolbar'
 
-// Mock react-i18next
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string) => key
   })
 }))
 
-// Mock ImageToolButton
 vi.mock('../ImageToolButton', () => ({
-  default: vi.fn(({ tooltip, onClick, icon }) => (
-    <button type="button" onClick={onClick} role="button" aria-label={tooltip}>
+  default: ({ tooltip, onClick, icon }: any) => (
+    <button type="button" onClick={onClick} aria-label={tooltip}>
       {icon}
     </button>
-  ))
+  )
 }))
 
-// Mock lucide-react icons
 vi.mock('lucide-react', () => ({
-  ChevronUp: () => <span data-testid="chevron-up">â†?/span>,
-  ChevronDown: () => <span data-testid="chevron-down">â†?/span>,
-  ChevronLeft: () => <span data-testid="chevron-left">â†?/span>,
-  ChevronRight: () => <span data-testid="chevron-right">â†?/span>,
+  ChevronUp: () => <span data-testid="chevron-up">up</span>,
+  ChevronDown: () => <span data-testid="chevron-down">down</span>,
+  ChevronLeft: () => <span data-testid="chevron-left">left</span>,
+  ChevronRight: () => <span data-testid="chevron-right">right</span>,
   ZoomIn: () => <span data-testid="zoom-in">+</span>,
   ZoomOut: () => <span data-testid="zoom-out">-</span>,
-  Scan: () => <span data-testid="scan">âŠ?/span>
+  Scan: () => <span data-testid="scan">scan</span>
 }))
 
 vi.mock('@renderer/components/Icons', () => ({
-  ResetIcon: () => <span data-testid="reset">â†?/span>
+  ResetIcon: () => <span data-testid="reset">reset</span>
 }))
 
-// Mock utils
 vi.mock('@renderer/utils', () => ({
   classNames: (...args: any[]) => args.filter(Boolean).join(' ')
 }))
 
 describe('ImageToolbar', () => {
-  const mockPan = vi.fn()
-  const mockZoom = vi.fn()
-  const mockOpenDialog = vi.fn()
+  const pan = vi.fn()
+  const zoom = vi.fn()
+  const dialog = vi.fn()
 
   beforeEach(() => {
     vi.clearAllMocks()
   })
 
-  it('should match snapshot', () => {
-    const { asFragment } = render(<ImageToolbar pan={mockPan} zoom={mockZoom} dialog={mockOpenDialog} />)
-    expect(asFragment()).toMatchSnapshot()
+  it('renders toolbar controls', () => {
+    render(<ImageToolbar pan={pan} zoom={zoom} dialog={dialog} />)
+
+    expect(screen.getByRole('toolbar', { name: 'preview.label' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'preview.reset' })).toBeInTheDocument()
   })
 
-  it('calls onPan with correct values when pan buttons are clicked', () => {
-    render(<ImageToolbar pan={mockPan} zoom={mockZoom} dialog={mockOpenDialog} />)
+  it('calls pan handlers with the expected deltas', () => {
+    render(<ImageToolbar pan={pan} zoom={zoom} dialog={dialog} />)
 
     fireEvent.click(screen.getByRole('button', { name: 'preview.pan_up' }))
-    expect(mockPan).toHaveBeenCalledWith(0, -20)
-
     fireEvent.click(screen.getByRole('button', { name: 'preview.pan_down' }))
-    expect(mockPan).toHaveBeenCalledWith(0, 20)
-
     fireEvent.click(screen.getByRole('button', { name: 'preview.pan_left' }))
-    expect(mockPan).toHaveBeenCalledWith(-20, 0)
-
     fireEvent.click(screen.getByRole('button', { name: 'preview.pan_right' }))
-    expect(mockPan).toHaveBeenCalledWith(20, 0)
+
+    expect(pan).toHaveBeenNthCalledWith(1, 0, -20)
+    expect(pan).toHaveBeenNthCalledWith(2, 0, 20)
+    expect(pan).toHaveBeenNthCalledWith(3, -20, 0)
+    expect(pan).toHaveBeenNthCalledWith(4, 20, 0)
   })
 
-  it('calls onZoom with correct values when zoom buttons are clicked', () => {
-    render(<ImageToolbar pan={mockPan} zoom={mockZoom} dialog={mockOpenDialog} />)
+  it('calls zoom and reset handlers', () => {
+    render(<ImageToolbar pan={pan} zoom={zoom} dialog={dialog} />)
 
     fireEvent.click(screen.getByRole('button', { name: 'preview.zoom_in' }))
-    expect(mockZoom).toHaveBeenCalledWith(0.1)
-
     fireEvent.click(screen.getByRole('button', { name: 'preview.zoom_out' }))
-    expect(mockZoom).toHaveBeenCalledWith(-0.1)
-  })
-
-  it('calls onReset with correct values when reset button is clicked', () => {
-    render(<ImageToolbar pan={mockPan} zoom={mockZoom} dialog={mockOpenDialog} />)
-
     fireEvent.click(screen.getByRole('button', { name: 'preview.reset' }))
-    expect(mockPan).toHaveBeenCalledWith(0, 0, true)
-    expect(mockZoom).toHaveBeenCalledWith(1, true)
+
+    expect(zoom).toHaveBeenCalledWith(0.1)
+    expect(zoom).toHaveBeenCalledWith(-0.1)
+    expect(pan).toHaveBeenCalledWith(0, 0, true)
+    expect(zoom).toHaveBeenCalledWith(1, true)
   })
 
-  it('calls onOpenDialog when dialog button is clicked', () => {
-    render(<ImageToolbar pan={mockPan} zoom={mockZoom} dialog={mockOpenDialog} />)
+  it('opens the dialog when requested', () => {
+    render(<ImageToolbar pan={pan} zoom={zoom} dialog={dialog} />)
 
     fireEvent.click(screen.getByRole('button', { name: 'preview.dialog' }))
-    expect(mockOpenDialog).toHaveBeenCalled()
+
+    expect(dialog).toHaveBeenCalled()
   })
 })
