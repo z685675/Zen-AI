@@ -296,6 +296,7 @@ if (!app.requestSingleInstanceLock()) {
 
   app.on('before-quit', () => {
     app.isQuitting = true
+    app.isInstallingUpdate = app.isInstallingUpdate ?? false
 
     // quit selection service
     if (selectionService) {

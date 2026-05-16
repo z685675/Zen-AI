@@ -37,13 +37,14 @@ const logger = loggerService.withContext('PluginBuilder')
 export interface BuildPluginsContext {
   provider: Provider
   model: Model
+  runtimeProviderId?: string
   config: AiSdkMiddlewareConfig & { assistant: Assistant; topicId?: string }
 }
 
 /**
  * 根据条件构建插件数组
  */
-export function buildPlugins({ provider, model, config }: BuildPluginsContext): AiPlugin[] {
+export function buildPlugins({ provider, model, runtimeProviderId, config }: BuildPluginsContext): AiPlugin[] {
   const plugins: AiPlugin<any, any>[] = []
 
   if (config.topicId && getEnableDeveloperMode()) {
@@ -60,7 +61,7 @@ export function buildPlugins({ provider, model, config }: BuildPluginsContext): 
   // === PDF Compatibility ===
   // Must run before other plugins (e.g., Anthropic cache token estimation)
   // so that PDF FileParts are converted to TextParts for unsupported providers.
-  plugins.push(createPdfCompatibilityPlugin(provider, model))
+  plugins.push(createPdfCompatibilityPlugin(provider, model, runtimeProviderId))
 
   // === AI SDK Middleware Plugins ===
   // 注意：wrapLanguageModel 会 .reverse() middleware 数组，

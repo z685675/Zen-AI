@@ -43,8 +43,8 @@ function makeProvider(id: string, type: ProviderType): Provider {
   return { id, name: id, type, apiKey: 'test', apiHost: 'https://test.com', isSystem: false, models: [] } as Provider
 }
 
-function makeModel(): Model {
-  return { id: 'test-model', provider: 'test', name: 'Test', group: 'test' } as Model
+function makeModel(overrides: Partial<Model> = {}): Model {
+  return { id: 'test-model', provider: 'test', name: 'Test', group: 'test', ...overrides } as Model
 }
 
 function makePdfFilePart(filename = 'test.pdf') {
@@ -69,8 +69,13 @@ function makeTextPart(text: string) {
   return { type: 'text' as const, text }
 }
 
-async function runMiddleware(provider: Provider, params: LanguageModelV3CallOptions, model: Model = makeModel()) {
-  const plugin = createPdfCompatibilityPlugin(provider, model)
+async function runMiddleware(
+  provider: Provider,
+  params: LanguageModelV3CallOptions,
+  model: Model = makeModel(),
+  runtimeProviderId?: string
+) {
+  const plugin = createPdfCompatibilityPlugin(provider, model, runtimeProviderId)
   const context: {
     middlewares: Array<{ transformParams: (opts: Record<string, unknown>) => Promise<LanguageModelV3CallOptions> }>
   } = { middlewares: [] }
@@ -95,9 +100,30 @@ describe('pdfCompatibilityPlugin', () => {
       prompt: [{ role: 'user' as const, content: [makeTextPart('Hello'), makePdfFilePart()] }]
     } as unknown as LanguageModelV3CallOptions
 
-    const result = await runMiddleware(provider, params)
+    const result = await runMiddleware(provider, params, makeModel(), 'openai')
     expect(result).toEqual(params)
     expect(mockExtractPdfText).not.toHaveBeenCalled()
+  })
+
+  it('should convert PDF for openai-compatible providers when model family matches but endpoint type is not native', async () => {
+    vi.mocked(isOpenAILLMModel).mockReturnValue(true)
+    const provider = makeProvider('moonshot', 'openai')
+    const model = makeModel({ endpoint_type: 'openai' as Model['endpoint_type'] })
+    mockExtractPdfText.mockResolvedValue('Extracted PDF content')
+
+    const params = {
+      prompt: [{ role: 'user' as const, content: [makeTextPart('Hello'), makePdfFilePart('report.pdf')] }]
+    } as unknown as LanguageModelV3CallOptions
+
+    const result = await runMiddleware(provider, params, model, 'openai-compatible')
+    expect(mockExtractPdfText).toHaveBeenCalledWith('base64pdfdata')
+    expect(result.prompt[0]).toMatchObject({
+      role: 'user',
+      content: [
+        { type: 'text', text: 'Hello' },
+        { type: 'text', text: 'report.pdf\nExtracted PDF content' }
+      ]
+    })
   })
 
   it('should pass through for Claude model on any provider type', async () => {
@@ -108,7 +134,7 @@ describe('pdfCompatibilityPlugin', () => {
       prompt: [{ role: 'user' as const, content: [makeTextPart('Hello'), makePdfFilePart()] }]
     } as unknown as LanguageModelV3CallOptions
 
-    const result = await runMiddleware(provider, params)
+    const result = await runMiddleware(provider, params, makeModel(), 'anthropic')
     expect(result).toEqual(params)
     expect(mockExtractPdfText).not.toHaveBeenCalled()
   })
@@ -121,7 +147,7 @@ describe('pdfCompatibilityPlugin', () => {
       prompt: [{ role: 'user' as const, content: [makeTextPart('Hello'), makePdfFilePart()] }]
     } as unknown as LanguageModelV3CallOptions
 
-    const result = await runMiddleware(provider, params)
+    const result = await runMiddleware(provider, params, makeModel(), 'google')
     expect(result).toEqual(params)
     expect(mockExtractPdfText).not.toHaveBeenCalled()
   })

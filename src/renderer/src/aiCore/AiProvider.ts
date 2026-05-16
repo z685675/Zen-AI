@@ -352,6 +352,7 @@ export default class AiProvider {
     const plugins = buildPlugins({
       provider: this.actualProvider,
       model: this.model!,
+      runtimeProviderId: providerConfig.providerId,
       config: middlewareConfig
     })
 

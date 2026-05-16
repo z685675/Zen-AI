@@ -18,6 +18,19 @@ import { getFileSizeLimit, supportsImageInput, supportsLargeFileUpload } from '.
 
 const logger = loggerService.withContext('fileProcessor')
 
+function buildTextPartFromContent(fileName: string, rawContent: string | null | undefined): TextPart | null {
+  const fileContent = rawContent?.trim()
+
+  if (!fileContent) {
+    return null
+  }
+
+  return {
+    type: 'text',
+    text: `${fileName}\n${fileContent}`
+  }
+}
+
 /**
  * 提取文件内容
  */
@@ -52,27 +65,27 @@ export async function extractFileContent(message: Message): Promise<string> {
 export async function convertFileBlockToTextPart(fileBlock: FileMessageBlock): Promise<TextPart | null> {
   const file = fileBlock.file
 
-  // 处理文本文件
+  // Handle plain text files.
   if (file.type === FILE_TYPE.TEXT) {
     try {
       const fileContent = await window.api.file.read(file.id + file.ext)
-      return {
-        type: 'text',
-        text: `${file.origin_name}\n${fileContent.trim()}`
-      }
+      return buildTextPartFromContent(file.origin_name, fileContent)
     } catch (error) {
       logger.warn('Failed to read text file:', error as Error)
     }
   }
 
-  // 处理文档文件（PDF、Word、Excel等）- 提取为文本内容
+  // Handle document files by extracting text content.
   if (file.type === FILE_TYPE.DOCUMENT) {
     try {
-      const fileContent = await window.api.file.read(file.id + file.ext, true) // true表示强制文本提取
-      return {
-        type: 'text',
-        text: `${file.origin_name}\n${fileContent.trim()}`
+      const fileContent = await window.api.file.read(file.id + file.ext, true) // force text extraction
+      const textPart = buildTextPartFromContent(file.origin_name, fileContent)
+
+      if (!textPart) {
+        throw new Error('Extracted document content is empty')
       }
+
+      return textPart
     } catch (error) {
       logger.warn(`Failed to extract text from document ${file.origin_name}:`, error as Error)
       window.toast.error(i18n.t('message.error.file.text_extraction_failed', { name: file.origin_name }))
@@ -81,7 +94,6 @@ export async function convertFileBlockToTextPart(fileBlock: FileMessageBlock): P
 
   return null
 }
-
 /**
  * 处理Gemini大文件上传
  */

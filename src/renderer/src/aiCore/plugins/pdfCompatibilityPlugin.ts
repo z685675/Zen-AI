@@ -38,23 +38,42 @@ function isPdfFilePart(part: ContentPart): part is LanguageModelV3FilePart & { m
   return part.type === 'file' && part.mediaType === 'application/pdf'
 }
 
-function supportsNativePdf(provider: Provider, model: Model): boolean {
-  // OpenAI, Claude, and Gemini models always support native PDF regardless of provider
-  if (isOpenAILLMModel(model) || isAnthropicModel(model) || isGeminiModel(model)) {
+function supportsNativePdf(provider: Provider, model: Model, runtimeProviderId?: string): boolean {
+  // Prefer the resolved runtime provider id when available because aggregators and OpenAI-compatible
+  // providers can route the same model family to different SDK implementations.
+  if (runtimeProviderId === 'openai' || runtimeProviderId === 'google' || runtimeProviderId === 'anthropic') {
+    return true
+  }
+  if (runtimeProviderId === 'google-vertex' && isGeminiModel(model)) {
+    return true
+  }
+  if (runtimeProviderId === 'google-vertex-anthropic' && isAnthropicModel(model)) {
     return true
   }
   if (PDF_NATIVE_PROVIDER_TYPES.has(provider.type)) {
+    return true
+  }
+  if (model.endpoint_type === 'openai-response' || model.endpoint_type === 'anthropic' || model.endpoint_type === 'gemini') {
+    return true
+  }
+  if ((provider.type === 'openai-response' || provider.type === 'azure-openai') && isOpenAILLMModel(model)) {
+    return true
+  }
+  if (provider.type === 'vertex-anthropic' && isAnthropicModel(model)) {
+    return true
+  }
+  if (provider.type === 'vertexai' && isGeminiModel(model)) {
     return true
   }
   // TODO: allow user to configure native pdf compatibility for provider/model
   return false
 }
 
-function pdfCompatibilityMiddleware(provider: Provider, model: Model): LanguageModelMiddleware {
+function pdfCompatibilityMiddleware(provider: Provider, model: Model, runtimeProviderId?: string): LanguageModelMiddleware {
   return {
     specificationVersion: 'v3',
     transformParams: async ({ params }) => {
-      if (supportsNativePdf(provider, model)) {
+      if (supportsNativePdf(provider, model, runtimeProviderId)) {
         return params
       }
 
@@ -103,12 +122,12 @@ function pdfCompatibilityMiddleware(provider: Provider, model: Model): LanguageM
   }
 }
 
-export const createPdfCompatibilityPlugin = (provider: Provider, model: Model) =>
+export const createPdfCompatibilityPlugin = (provider: Provider, model: Model, runtimeProviderId?: string) =>
   definePlugin({
     name: 'pdfCompatibility',
     enforce: 'pre',
     configureContext: (context) => {
       context.middlewares = context.middlewares || []
-      context.middlewares.push(pdfCompatibilityMiddleware(provider, model))
+      context.middlewares.push(pdfCompatibilityMiddleware(provider, model, runtimeProviderId))
     }
   })

@@ -258,6 +258,8 @@ export class AppUpdateService {
       return false
     }
 
+    app.isInstallingUpdate = true
+    app.isQuitting = true
     autoUpdater.quitAndInstall(false, true)
     return true
   }

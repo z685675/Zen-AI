@@ -366,6 +366,10 @@ export async function registerIpc(mainWindow: BrowserWindow, app: Electron.App) 
       // Only add listener if not already added
       if (!preventQuitListener) {
         preventQuitListener = (event: Electron.Event) => {
+          if (app.isInstallingUpdate) {
+            return
+          }
+
           event.preventDefault()
           void notificationService.sendNotification({
             title: reason,
