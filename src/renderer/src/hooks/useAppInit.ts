@@ -22,11 +22,8 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import {
-  showAppUpdateAvailableModal,
-  showAppUpdateDownloadedModal,
-  showAppUpdateDownloadingToast
-} from '../utils/appUpdate'
+import { showAppUpdateAvailableModal, showAppUpdateDownloadedModal } from '../utils/appUpdate'
+import { useAppUpdateState } from './useAppUpdateState'
 import { useDefaultModel } from './useAssistant'
 import useFullScreenNotice from './useFullScreenNotice'
 import { useRuntime } from './useRuntime'
@@ -55,6 +52,7 @@ export function useAppInit() {
   const memoryConfig = useAppSelector(selectMemoryConfig)
   const hasShownStartupUpdate = useRef(false)
   const hasShownDownloadedUpdate = useRef(false)
+  const { updateState } = useAppUpdateState()
 
   useEffect(() => {
     document.getElementById('spinner')?.remove()
@@ -245,15 +243,22 @@ export function useAppInit() {
   }, [enableDataCollection])
 
   useEffect(() => {
+    if (updateState.status !== 'downloaded' || !updateState.updateInfo || hasShownDownloadedUpdate.current) {
+      return
+    }
+
+    hasShownDownloadedUpdate.current = true
+    showAppUpdateDownloadedModal(t, updateState.updateInfo)
+  }, [t, updateState.status, updateState.updateInfo])
+
+  useEffect(() => {
     const removeAvailableListener = window.api.update.onAvailable((payload) => {
       if (payload.source !== 'auto' || hasShownStartupUpdate.current) {
         return
       }
 
       hasShownStartupUpdate.current = true
-      if (autoCheckUpdate) {
-        showAppUpdateDownloadingToast(t, payload.version)
-      } else {
+      if (!autoCheckUpdate) {
         showAppUpdateAvailableModal(t, payload)
       }
     })
@@ -271,7 +276,7 @@ export function useAppInit() {
       removeAvailableListener()
       removeDownloadedListener()
     }
-  }, [t])
+  }, [autoCheckUpdate, t])
 
   // Update memory service configuration when it changes
   useEffect(() => {

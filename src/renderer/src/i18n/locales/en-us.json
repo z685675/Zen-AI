@@ -3933,7 +3933,10 @@
         "title": "Careers"
       },
       "checkUpdate": {
-        "available": "Update",
+        "available": "Install Now",
+        "download": "Download Now",
+        "downloading": "Downloading",
+        "downloadingProgress": "Downloading {{percent}}%",
         "label": "Check Update"
       },
       "checkingUpdate": "Checking for updates...",
@@ -4681,7 +4684,7 @@
     },
     "general": {
       "auto_check_update": {
-        "title": "Check for updates on startup"
+        "title": "Automatic Updates"
       },
       "avatar": {
         "builtin": "Builtin avatar",
@@ -6049,6 +6052,7 @@
   },
   "update": {
     "available": "A new version {{version}} is available. Click Check for Updates any time to download it.",
+    "downloadNow": "Download Now",
     "downloading": "Downloading version {{version}} in the background. You will be prompted when it is ready.",
     "install": "Update Now",
     "installNow": "Install Now",

@@ -1,6 +1,7 @@
 import { HStack } from '@renderer/components/Layout'
 import { APP_NAME, AppLogo } from '@renderer/config/env'
 import { useTheme } from '@renderer/context/ThemeProvider'
+import { useAppUpdateState } from '@renderer/hooks/useAppUpdateState'
 import { runAsyncFunction } from '@renderer/utils'
 import { showAppUpdateAvailableModal, showAppUpdateDownloadedModal } from '@renderer/utils/appUpdate'
 import {
@@ -25,6 +26,7 @@ const AboutSettings: FC = () => {
   const [checkingUpdate, setCheckingUpdate] = useState(false)
   const { t } = useTranslation()
   const { theme } = useTheme()
+  const { updateState } = useAppUpdateState()
 
   const onOpenWebsite = (url: string) => {
     void window.api.openWebsite(url)
@@ -39,6 +41,16 @@ const AboutSettings: FC = () => {
   }, [])
 
   const onCheckForUpdate = async () => {
+    if (updateState.status === 'downloaded' && updateState.updateInfo) {
+      showAppUpdateDownloadedModal(t, updateState.updateInfo)
+      return
+    }
+
+    if (updateState.status === 'available' && updateState.updateInfo) {
+      showAppUpdateAvailableModal(t, updateState.updateInfo)
+      return
+    }
+
     setCheckingUpdate(true)
 
     try {
@@ -70,6 +82,29 @@ const AboutSettings: FC = () => {
     } finally {
       setCheckingUpdate(false)
     }
+  }
+
+  const getUpdateButtonLabel = () => {
+    if (checkingUpdate || updateState.status === 'checking') {
+      return t('settings.about.checkingUpdate')
+    }
+
+    if (updateState.status === 'downloaded') {
+      return t('settings.about.checkUpdate.available')
+    }
+
+    if (updateState.status === 'downloading') {
+      const percent = updateState.progress?.percent
+      return percent && percent > 0
+        ? t('settings.about.checkUpdate.downloadingProgress', { percent: Math.round(percent) })
+        : t('settings.about.checkUpdate.downloading')
+    }
+
+    if (updateState.status === 'available') {
+      return t('settings.about.checkUpdate.download')
+    }
+
+    return t('settings.about.checkUpdate.label')
   }
 
   return (
@@ -110,7 +145,7 @@ const AboutSettings: FC = () => {
             {t('settings.about.checkUpdate.label')}
           </SettingRowTitle>
           <Button loading={checkingUpdate} onClick={() => void onCheckForUpdate()}>
-            {checkingUpdate ? t('settings.about.checkingUpdate') : t('settings.about.checkUpdate.label')}
+            {getUpdateButtonLabel()}
           </Button>
         </SettingRow>
         <SettingDivider />

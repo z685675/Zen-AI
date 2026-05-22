@@ -1,10 +1,12 @@
 import { loggerService } from '@logger'
 import { isPortable } from '@main/constant'
+import { configManager } from '@main/services/ConfigManager'
 import { APP_NAME, APP_UPDATE_FEED_URL } from '@shared/config/constant'
 import { IpcChannel } from '@shared/IpcChannel'
 import { app, type BrowserWindow } from 'electron'
 import type { ProgressInfo, UpdateDownloadedEvent, UpdateInfo } from 'electron-updater'
 import { autoUpdater } from 'electron-updater'
+import semver from 'semver'
 
 export type AppUpdateCheckSource = 'auto' | 'manual'
 
@@ -12,6 +14,24 @@ export interface AppUpdateInfo {
   version: string
   releaseDate?: string
   releaseNotes?: string
+}
+
+export interface AppUpdateProgressInfo {
+  percent: number
+  transferred: number
+  total: number
+  bytesPerSecond: number
+}
+
+export interface AppUpdateState {
+  status: 'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'up-to-date' | 'error'
+  source: AppUpdateCheckSource
+  autoUpdateEnabled: boolean
+  currentVersion: string
+  updateInfo: AppUpdateInfo | null
+  progress: AppUpdateProgressInfo | null
+  latestVersion?: string
+  message?: string
 }
 
 function normalizeReleaseDate(value: unknown): string | undefined {
@@ -97,36 +117,64 @@ export class AppUpdateService {
   private readonly feedUrl = APP_UPDATE_FEED_URL.trim()
   private latestUpdateInfo: AppUpdateInfo | null = null
   private downloadedUpdateInfo: AppUpdateInfo | null = null
+  private progressInfo: AppUpdateProgressInfo | null = null
   private checking = false
   private downloading = false
-  private startupTimer: NodeJS.Timeout | null = null
+  private startupTimeout: NodeJS.Timeout | null = null
+  private periodicTimer: NodeJS.Timeout | null = null
   private currentSource: AppUpdateCheckSource = 'auto'
+  private currentState: AppUpdateState
 
   constructor(
     private readonly mainWindow: BrowserWindow,
     private readonly currentVersion: string,
     private readonly shouldAutoDownload: () => boolean
   ) {
+    this.downloadedUpdateInfo = this.restorePendingUpdateInfo()
+    this.currentState = {
+      status: this.downloadedUpdateInfo ? 'downloaded' : 'idle',
+      source: 'auto',
+      autoUpdateEnabled: this.shouldAutoDownload(),
+      currentVersion: this.currentVersion,
+      updateInfo: this.downloadedUpdateInfo,
+      progress: null
+    }
     this.configureUpdater()
     this.registerUpdaterEvents()
   }
 
   scheduleStartupCheck(delayMs = 5000) {
-    if (this.startupTimer) {
-      clearTimeout(this.startupTimer)
+    if (this.startupTimeout) {
+      clearTimeout(this.startupTimeout)
     }
 
-    this.startupTimer = setTimeout(() => {
+    if (this.periodicTimer) {
+      clearInterval(this.periodicTimer)
+    }
+
+    const runAutoCheck = () => {
+      if (!this.shouldAutoDownload()) {
+        return
+      }
+
       void this.checkForUpdates('auto')
-      this.startupTimer = setInterval(() => {
-        void this.checkForUpdates('auto')
-      }, STARTUP_CHECK_INTERVAL_MS)
-    }, delayMs)
+    }
+
+    this.startupTimeout = setTimeout(runAutoCheck, delayMs)
+    this.periodicTimer = setInterval(runAutoCheck, STARTUP_CHECK_INTERVAL_MS)
   }
 
   async checkForUpdates(source: AppUpdateCheckSource = 'manual'): Promise<AppUpdateCheckResult> {
     this.currentSource = source
     autoUpdater.autoDownload = source === 'manual' ? false : this.shouldAutoDownload()
+    this.setState({
+      status: 'checking',
+      source,
+      autoUpdateEnabled: this.shouldAutoDownload(),
+      currentVersion: this.currentVersion,
+      updateInfo: this.downloadedUpdateInfo ?? this.latestUpdateInfo,
+      progress: this.progressInfo
+    })
 
     if (!app.isPackaged) {
       return this.handleUpdateError(source, `${APP_NAME} only supports auto update after installation packaging.`)
@@ -140,6 +188,14 @@ export class AppUpdateService {
     }
 
     if (this.downloadedUpdateInfo) {
+      this.setState({
+        status: 'downloaded',
+        source,
+        autoUpdateEnabled: this.shouldAutoDownload(),
+        currentVersion: this.currentVersion,
+        updateInfo: this.downloadedUpdateInfo,
+        progress: null
+      })
       return {
         status: 'downloaded',
         currentVersion: this.currentVersion,
@@ -149,6 +205,14 @@ export class AppUpdateService {
     }
 
     if (this.downloading) {
+      this.setState({
+        status: 'downloading',
+        source,
+        autoUpdateEnabled: this.shouldAutoDownload(),
+        currentVersion: this.currentVersion,
+        updateInfo: this.latestUpdateInfo,
+        progress: this.progressInfo
+      })
       return {
         status: 'downloading',
         currentVersion: this.currentVersion,
@@ -158,12 +222,19 @@ export class AppUpdateService {
     }
 
     if (this.checking) {
-      return {
-        status: 'downloading',
-        currentVersion: this.currentVersion,
-        source,
-        updateInfo: this.latestUpdateInfo
-      }
+      return this.latestUpdateInfo
+        ? {
+            status: 'available',
+            currentVersion: this.currentVersion,
+            source,
+            updateInfo: this.latestUpdateInfo
+          }
+        : {
+            status: 'downloading',
+            currentVersion: this.currentVersion,
+            source,
+            updateInfo: this.latestUpdateInfo
+          }
     }
 
     try {
@@ -172,6 +243,17 @@ export class AppUpdateService {
       const updateInfo = this.normalizeUpdateInfo(result?.updateInfo)
 
       if (!result?.isUpdateAvailable) {
+        this.latestUpdateInfo = null
+        this.progressInfo = null
+        this.setState({
+          status: 'up-to-date',
+          source,
+          autoUpdateEnabled: this.shouldAutoDownload(),
+          currentVersion: this.currentVersion,
+          updateInfo: null,
+          progress: null,
+          latestVersion: updateInfo.version
+        })
         return {
           status: 'up-to-date',
           currentVersion: this.currentVersion,
@@ -182,6 +264,14 @@ export class AppUpdateService {
       }
 
       this.latestUpdateInfo = updateInfo
+      this.setState({
+        status: 'available',
+        source,
+        autoUpdateEnabled: this.shouldAutoDownload(),
+        currentVersion: this.currentVersion,
+        updateInfo,
+        progress: null
+      })
 
       return {
         status: 'available',
@@ -212,6 +302,14 @@ export class AppUpdateService {
     }
 
     if (this.downloadedUpdateInfo) {
+      this.setState({
+        status: 'downloaded',
+        source: 'manual',
+        autoUpdateEnabled: this.shouldAutoDownload(),
+        currentVersion: this.currentVersion,
+        updateInfo: this.downloadedUpdateInfo,
+        progress: null
+      })
       return {
         status: 'downloaded',
         currentVersion: this.currentVersion,
@@ -221,6 +319,14 @@ export class AppUpdateService {
     }
 
     if (this.downloading) {
+      this.setState({
+        status: 'downloading',
+        source: 'manual',
+        autoUpdateEnabled: this.shouldAutoDownload(),
+        currentVersion: this.currentVersion,
+        updateInfo: this.latestUpdateInfo,
+        progress: this.progressInfo
+      })
       return {
         status: 'downloading',
         currentVersion: this.currentVersion,
@@ -238,6 +344,14 @@ export class AppUpdateService {
 
     try {
       this.downloading = true
+      this.setState({
+        status: 'downloading',
+        source: 'manual',
+        autoUpdateEnabled: this.shouldAutoDownload(),
+        currentVersion: this.currentVersion,
+        updateInfo: this.latestUpdateInfo,
+        progress: this.progressInfo
+      })
       autoUpdater.autoDownload = true
       await autoUpdater.downloadUpdate()
 
@@ -258,10 +372,18 @@ export class AppUpdateService {
       return false
     }
 
+    this.clearPendingUpdateInfo()
     app.isInstallingUpdate = true
     app.isQuitting = true
     autoUpdater.quitAndInstall(false, true)
     return true
+  }
+
+  getState(): AppUpdateState {
+    return {
+      ...this.currentState,
+      autoUpdateEnabled: this.shouldAutoDownload()
+    }
   }
 
   private configureUpdater() {
@@ -290,6 +412,15 @@ export class AppUpdateService {
       const updateInfo = this.normalizeUpdateInfo(info)
       this.latestUpdateInfo = updateInfo
       this.downloading = autoUpdater.autoDownload
+      this.progressInfo = null
+      this.setState({
+        status: autoUpdater.autoDownload ? 'downloading' : 'available',
+        source: this.currentSource,
+        autoUpdateEnabled: this.shouldAutoDownload(),
+        currentVersion: this.currentVersion,
+        updateInfo,
+        progress: this.progressInfo
+      })
 
       const payload = { ...updateInfo, currentVersion: this.currentVersion, source: this.currentSource }
       this.sendEvent(IpcChannel.UpdateAvailable, payload)
@@ -297,6 +428,17 @@ export class AppUpdateService {
     })
 
     autoUpdater.on('update-not-available', (info) => {
+      this.latestUpdateInfo = null
+      this.progressInfo = null
+      this.setState({
+        status: 'up-to-date',
+        source: this.currentSource,
+        autoUpdateEnabled: this.shouldAutoDownload(),
+        currentVersion: this.currentVersion,
+        updateInfo: null,
+        progress: null,
+        latestVersion: this.normalizeUpdateInfo(info).version
+      })
       const payload = {
         currentVersion: this.currentVersion,
         source: this.currentSource,
@@ -308,7 +450,16 @@ export class AppUpdateService {
 
     autoUpdater.on('download-progress', (progress) => {
       this.downloading = true
-      this.sendEvent(IpcChannel.DownloadProgress, this.normalizeProgressInfo(progress))
+      this.progressInfo = this.normalizeProgressInfo(progress)
+      this.setState({
+        status: 'downloading',
+        source: this.currentSource,
+        autoUpdateEnabled: this.shouldAutoDownload(),
+        currentVersion: this.currentVersion,
+        updateInfo: this.latestUpdateInfo,
+        progress: this.progressInfo
+      })
+      this.sendEvent(IpcChannel.DownloadProgress, this.progressInfo)
     })
 
     autoUpdater.on('update-downloaded', (event) => {
@@ -316,6 +467,16 @@ export class AppUpdateService {
       const updateInfo = this.normalizeUpdateInfo(event)
       this.latestUpdateInfo = updateInfo
       this.downloadedUpdateInfo = updateInfo
+      this.progressInfo = null
+      this.persistPendingUpdateInfo(updateInfo)
+      this.setState({
+        status: 'downloaded',
+        source: this.currentSource,
+        autoUpdateEnabled: this.shouldAutoDownload(),
+        currentVersion: this.currentVersion,
+        updateInfo,
+        progress: null
+      })
 
       const payload = { ...updateInfo, currentVersion: this.currentVersion, source: this.currentSource }
       this.sendEvent(IpcChannel.UpdateDownloaded, payload)
@@ -325,11 +486,21 @@ export class AppUpdateService {
     autoUpdater.on('error', (error) => {
       this.checking = false
       this.downloading = false
+      this.progressInfo = null
       this.handleUpdateError(this.currentSource, error instanceof Error ? error.message : String(error))
     })
   }
 
   private handleUpdateError(source: AppUpdateCheckSource, message: string): AppUpdateCheckResultError {
+    this.setState({
+      status: 'error',
+      source,
+      autoUpdateEnabled: this.shouldAutoDownload(),
+      currentVersion: this.currentVersion,
+      updateInfo: this.downloadedUpdateInfo ?? this.latestUpdateInfo,
+      progress: null,
+      message
+    })
     const payload = {
       currentVersion: this.currentVersion,
       source,
@@ -369,6 +540,40 @@ export class AppUpdateService {
       total: progress.total,
       bytesPerSecond: progress.bytesPerSecond
     }
+  }
+
+  private setState(state: AppUpdateState) {
+    this.currentState = state
+  }
+
+  private restorePendingUpdateInfo(): AppUpdateInfo | null {
+    const pending = configManager.getPendingUpdateInfo<AppUpdateInfo>()
+
+    if (!pending?.version) {
+      return null
+    }
+
+    const pendingVersion = semver.coerce(pending.version)
+    const currentVersion = semver.coerce(this.currentVersion)
+
+    if (!pendingVersion || !currentVersion) {
+      return pending
+    }
+
+    if (semver.lte(pendingVersion, currentVersion)) {
+      this.clearPendingUpdateInfo()
+      return null
+    }
+
+    return pending
+  }
+
+  private persistPendingUpdateInfo(updateInfo: AppUpdateInfo) {
+    configManager.setPendingUpdateInfo(updateInfo)
+  }
+
+  private clearPendingUpdateInfo() {
+    configManager.setPendingUpdateInfo(null)
   }
 
   private sendEvent(channel: IpcChannel, payload: unknown) {

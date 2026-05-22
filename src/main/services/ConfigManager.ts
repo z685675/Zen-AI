@@ -35,6 +35,7 @@ export enum ConfigKeys {
   ClickTrayToShowQuickAssistant = 'clickTrayToShowQuickAssistant',
   EnableQuickAssistant = 'enableQuickAssistant',
   AutoUpdate = 'autoUpdate',
+  PendingUpdateInfo = 'pendingUpdateInfo',
   TestPlan = 'testPlan',
   TestChannel = 'testChannel',
   EnableDataCollection = 'enableDataCollection',
@@ -162,11 +163,19 @@ export class ConfigManager {
   }
 
   getAutoUpdate(): boolean {
-    return this.get<boolean>(ConfigKeys.AutoUpdate, false)
+    return this.get<boolean>(ConfigKeys.AutoUpdate, true)
   }
 
   setAutoUpdate(value: boolean) {
     this.set(ConfigKeys.AutoUpdate, value)
+  }
+
+  getPendingUpdateInfo<T>(): T | null {
+    return this.get<T | null>(ConfigKeys.PendingUpdateInfo, null)
+  }
+
+  setPendingUpdateInfo<T>(value: T | null) {
+    this.set(ConfigKeys.PendingUpdateInfo, value)
   }
 
   getTestPlan(): boolean {

@@ -175,6 +175,7 @@ export async function registerIpc(mainWindow: BrowserWindow, app: Electron.App) 
   })
 
   // Update
+  ipcMain.handle(IpcChannel.App_GetUpdateState, () => appUpdateService.getState())
   ipcMain.handle(IpcChannel.App_QuitAndInstall, () => appUpdateService.quitAndInstall())
   ipcMain.handle(IpcChannel.App_DownloadUpdate, () => appUpdateService.downloadUpdate())
 
