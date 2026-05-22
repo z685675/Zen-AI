@@ -36,7 +36,16 @@ describe('naming utils', () => {
 
   it('sanitizes topic and provider names', () => {
     expect(removeSpecialCharactersForTopicName('Hello\nWorld')).toBe('Hello World')
-    expect(sanitizeProviderName('My Provider <test>:name')).toBe('My-Provider-_test__name')
+    expect(sanitizeProviderName('My Provider <test>:name')).toBe('My-Provider-testname')
+  })
+
+  it('sanitizes provider names for env vars with non-ASCII fallback', () => {
+    expect(sanitizeProviderName('Provider/Name')).toBe('ProviderName')
+    expect(sanitizeProviderName('测试')).toMatch(/^p_[a-z0-9]+$/)
+    expect(sanitizeProviderName('🎉provider')).toBe('provider')
+    expect(sanitizeProviderName('日本語Provider')).toBe('Provider')
+    expect(sanitizeProviderName('foo@bar+baz(test)')).toBe('foobarbaztest')
+    expect(sanitizeProviderName('my.provider')).toBe('my.provider')
   })
 
   it('extracts default group names across provider rules', () => {
@@ -101,8 +110,8 @@ describe('naming utils', () => {
     expect(truncateText('First sentence. Second sentence. Third sentence.', { minLength: 10, maxLength: 40 })).toBe(
       'First sentence. Second sentence.'
     )
-    expect(truncateText('This is a very long sentence without punctuation markers', { minLength: 10, maxLength: 30 })).toBe(
-      'This is a very long sentence'
-    )
+    expect(
+      truncateText('This is a very long sentence without punctuation markers', { minLength: 10, maxLength: 30 })
+    ).toBe('This is a very long sentence')
   })
 })

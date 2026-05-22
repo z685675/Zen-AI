@@ -3162,6 +3162,19 @@
     "go_to_settings": "去设置",
     "guidance_scale": "引导比例",
     "guidance_scale_tip": "无分类器指导。控制模型在寻找相关图像时对提示词的遵循程度",
+    "help": {
+      "background": {
+        "default": "用于控制图片背景的渲染方式。只有模型明确支持时才会提供透明背景。",
+        "gpt_image_2": "gpt-image-2 当前仅显示官方支持的背景模式，因此这里会隐藏透明背景选项。"
+      },
+      "image_size": {
+        "default": "可选分辨率会根据当前图片模型动态变化。",
+        "experimental": "这些更高分辨率预设仍在官方支持范围内，只是通常生成更慢、消耗也更高。",
+        "gpt_image_2": "gpt-image-2 在此页已支持更高的官方预设分辨率，也支持 auto 自动模式。选择 auto 时，会优先根据提示词中的横图、竖图、方图、2K、3K、4K 等描述智能匹配更合适的预设尺寸。"
+      },
+      "moderation": "敏感度控制的是内容审核强度，不是画质。auto 使用默认审核策略，low 会相对更宽松。",
+      "quality": "质量用于控制速度、成本和细节之间的平衡。low 更快更省，high 细节更多，auto 则交由模型自动决定。"
+    },
     "image": {
       "size": "图片尺寸"
     },
@@ -3171,8 +3184,25 @@
     "image_mix_failed": "图像混合失败",
     "image_placeholder": "暂无图片",
     "image_retry": "重试",
+    "image_size_auto": {
+      "conflict": "检测到横图/竖图/方图意图冲突，已回退为官方 Auto。",
+      "fallback": "未识别到明确尺寸意图，已回退为官方 Auto。",
+      "matched": "已识别尺寸意图：{{target}}"
+    },
     "image_size_options": {
-      "auto": "自动"
+      "1024x1024": "方图 · 1024 × 1024",
+      "1024x1536": "竖图 · 1024 × 1536",
+      "1440x2560": "2K 竖图 · 1440 × 2560",
+      "1536x1024": "横图 · 1536 × 1024",
+      "2048x2048": "2K 方图 · 2048 × 2048",
+      "2048x3072": "3K 竖图 · 2048 × 3072",
+      "2048x3840": "4K级竖图 · 2048 × 3840",
+      "2560x1440": "2K 横图 · 2560 × 1440",
+      "2880x2880": "高分方图 · 2880 × 2880",
+      "3072x2048": "3K 横图 · 3072 × 2048",
+      "3840x2048": "4K级横图 · 3840 × 2048",
+      "auto": "自动（智能匹配）",
+      "experimental_badge": "(高成本)"
     },
     "inference_steps": "推理步数",
     "inference_steps_tip": "要执行的推理步数。步数越多，质量越高但耗时越长",
@@ -3455,58 +3485,6 @@
     "zai": "Z.ai",
     "zhinao": "360 智脑",
     "zhipu": "智谱开放平台"
-  },
-  "research": {
-    "actions": {
-      "create_project": "新建课题",
-      "import_pdf": "导入 PDF"
-    },
-    "assistant": {
-      "evidence_placeholder": "证据模式将把回答连接到文献来源和页码级片段。",
-      "next_step_placeholder": "下一步建议会帮助推进选题、阅读和写作。",
-      "review_placeholder": "综述框架会把选中的证据整理成文献综述写作大纲。",
-      "title": "科研助手"
-    },
-    "modules": {
-      "cards": "论文卡片",
-      "literatures": "文献库",
-      "matrix": "文献矩阵",
-      "overview": "概览",
-      "review": "综述框架"
-    },
-    "projects": {
-      "empty_description": "先创建一个课题空间，后续可导入 PDF、生成论文卡片、整理文献矩阵。",
-      "empty_title": "还没有课题",
-      "title": "课题空间"
-    },
-    "stage": {
-      "cards": {
-        "description": "论文卡片将保存每篇论文的结构化摘要、方法、结论、局限和证据片段。",
-        "title": "论文卡片工作区"
-      },
-      "literatures": {
-        "description": "文献库将管理当前课题下的 PDF、元数据、标签、阅读状态和来源链接。",
-        "title": "文献库"
-      },
-      "matrix": {
-        "description": "文献矩阵将按研究问题、方法、样本、结论和研究空白对比多篇文献。",
-        "title": "文献矩阵"
-      },
-      "overview": {
-        "description": "课题概览将汇总研究问题、核心资料、阅读进度和当前写作方向。",
-        "title": "课题概览"
-      },
-      "review": {
-        "description": "综述框架将基于选中的论文卡片和证据项生成并迭代综述大纲。",
-        "title": "综述框架"
-      }
-    },
-    "title": "科研工作台",
-    "workspace": {
-      "description": "围绕一个研究课题组织文献、笔记、证据、写作和进度。",
-      "eyebrow": "AI Research Workspace",
-      "title": "从一个课题空间开始"
-    }
   },
   "restore": {
     "confirm": {

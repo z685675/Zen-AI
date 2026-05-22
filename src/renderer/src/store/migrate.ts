@@ -27,7 +27,7 @@ import { isFunctionCallingModel, isNotSupportTextDeltaModel, qwenModel, SYSTEM_M
 import { BUILTIN_OCR_PROVIDERS, BUILTIN_OCR_PROVIDERS_MAP, DEFAULT_OCR_PROVIDER } from '@renderer/config/ocr'
 import { TRANSLATE_PROMPT } from '@renderer/config/prompts'
 import { SYSTEM_PROVIDERS } from '@renderer/config/providers'
-import { DEFAULT_SIDEBAR_ICONS } from '@renderer/config/sidebar'
+import { ALL_SIDEBAR_ICONS, DEFAULT_DISABLED_SIDEBAR_ICONS, DEFAULT_SIDEBAR_ICONS } from '@renderer/config/sidebar'
 import db from '@renderer/databases'
 import { getModel } from '@renderer/hooks/useModel'
 import i18n from '@renderer/i18n'
@@ -864,7 +864,7 @@ const migrateConfig = {
       }
       state.settings.sidebarIcons = {
         visible: DEFAULT_SIDEBAR_ICONS,
-        disabled: []
+        disabled: DEFAULT_DISABLED_SIDEBAR_ICONS
       }
       return state
     } catch (error) {
@@ -876,7 +876,7 @@ const migrateConfig = {
       if (!state.settings.sidebarIcons) {
         state.settings.sidebarIcons = {
           visible: DEFAULT_SIDEBAR_ICONS,
-          disabled: []
+          disabled: DEFAULT_DISABLED_SIDEBAR_ICONS
         }
       }
       return state
@@ -2253,11 +2253,11 @@ const migrateConfig = {
   },
   '136': (state: RootState) => {
     try {
-      state.settings.sidebarIcons.visible = [...new Set<SidebarIcon>(state.settings.sidebarIcons.visible)].filter((icon) =>
-        DEFAULT_SIDEBAR_ICONS.includes(icon)
+      state.settings.sidebarIcons.visible = [...new Set<SidebarIcon>(state.settings.sidebarIcons.visible)].filter(
+        (icon) => ALL_SIDEBAR_ICONS.includes(icon)
       )
-      state.settings.sidebarIcons.disabled = [...new Set<SidebarIcon>(state.settings.sidebarIcons.disabled)].filter((icon) =>
-        DEFAULT_SIDEBAR_ICONS.includes(icon)
+      state.settings.sidebarIcons.disabled = [...new Set<SidebarIcon>(state.settings.sidebarIcons.disabled)].filter(
+        (icon) => ALL_SIDEBAR_ICONS.includes(icon)
       )
       return state
     } catch (error) {
@@ -2442,8 +2442,8 @@ const migrateConfig = {
   '147': (state: RootState) => {
     try {
       state.knowledge.bases.forEach((base) => {
-        if ((base as any).framework) {
-          delete (base as any).framework
+        if (base.framework) {
+          delete base.framework
         }
       })
       return state
@@ -2464,8 +2464,8 @@ const migrateConfig = {
   '149': (state: RootState) => {
     try {
       state.knowledge.bases.forEach((base) => {
-        if ((base as any).framework) {
-          delete (base as any).framework
+        if (base.framework) {
+          delete base.framework
         }
       })
       return state
@@ -2533,8 +2533,8 @@ const migrateConfig = {
   '155': (state: RootState) => {
     try {
       state.knowledge.bases.forEach((base) => {
-        if ((base as any).framework) {
-          delete (base as any).framework
+        if (base.framework) {
+          delete base.framework
         }
       })
       return state
@@ -3451,6 +3451,24 @@ const migrateConfig = {
       return state
     } catch (error) {
       logger.error('migrate 209 error', error as Error)
+      return state
+    }
+  },
+  '210': (state: RootState) => {
+    try {
+      const hiddenByDefault = new Set<SidebarIcon>(DEFAULT_DISABLED_SIDEBAR_ICONS)
+      const visibleIcons = state.settings.sidebarIcons?.visible ?? []
+      const disabledIcons = state.settings.sidebarIcons?.disabled ?? []
+
+      state.settings.sidebarIcons = {
+        visible: visibleIcons.filter((icon) => !hiddenByDefault.has(icon)),
+        disabled: [...new Set<SidebarIcon>([...disabledIcons, ...DEFAULT_DISABLED_SIDEBAR_ICONS])]
+      }
+
+      logger.info('migrate 210 success')
+      return state
+    } catch (error) {
+      logger.error('migrate 210 error', error as Error)
       return state
     }
   }

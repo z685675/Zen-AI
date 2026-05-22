@@ -2,7 +2,17 @@ import { CheckOutlined } from '@ant-design/icons'
 import type { NotesSortType } from '@renderer/types/note'
 import type { MenuProps } from 'antd'
 import { Dropdown, Input, Tooltip } from 'antd'
-import { ArrowLeft, ArrowUpNarrowWide, CheckSquare, FilePlus2, FolderPlus, Search, Square, Star, Trash2 } from 'lucide-react'
+import {
+  ArrowLeft,
+  ArrowUpNarrowWide,
+  CheckSquare,
+  FilePlus2,
+  FolderPlus,
+  Search,
+  Square,
+  Star,
+  Trash2
+} from 'lucide-react'
 import type { FC } from 'react'
 import { useCallback } from 'react'
 import { useTranslation } from 'react-i18next'

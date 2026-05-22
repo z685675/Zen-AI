@@ -102,7 +102,15 @@ const QuickAssistantLibraryModal: FC<Props> = ({ open, onClose }) => {
       label: key === ADDED_GROUP_KEY ? '已添加角色' : localizedGroupName(key),
       presets
     }))
-  }, [assistants, localizedGroupName, matchesAssistant, quickAssistantIds, systemPresets, toPresetFromAssistant, userPresets])
+  }, [
+    assistants,
+    localizedGroupName,
+    matchesAssistant,
+    quickAssistantIds,
+    systemPresets,
+    toPresetFromAssistant,
+    userPresets
+  ])
 
   const filteredGroups = useMemo(() => {
     const keyword = search.trim().toLowerCase()

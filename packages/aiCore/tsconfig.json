@@ -20,12 +20,6 @@
       "@test-utils/*": ["./test_utils/*"]
     }
   },
-  "exclude": [
-    "node_modules",
-    "dist",
-    "**/__tests__/**",
-    "**/*.test.*",
-    "**/*.bench.*"
-  ],
+  "exclude": ["node_modules", "dist", "**/__tests__/**", "**/*.test.*", "**/*.bench.*"],
   "include": ["src/**/*", "test_utils/**/*"]
 }

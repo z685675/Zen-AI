@@ -1,5 +1,5 @@
-import { app } from 'electron'
 import { APP_NAME } from '@shared/config/constant'
+import { app } from 'electron'
 import macosRelease from 'macos-release'
 import os from 'os'
 

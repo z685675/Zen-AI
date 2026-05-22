@@ -196,7 +196,10 @@ const InputbarInner: FC<InputbarInnerProps> = ({
   const isGenerateImageAssistant = useMemo(() => isGenerateImageModel(model), [model])
   const { setTimeoutTimer } = useTimer()
   const isMultiSelectMode = useAppSelector((state) => state.runtime.chat.isMultiSelectMode)
-  const cacheStats = useMemo(() => aggregateUsageCacheStats(topicMessages.map((message) => message.usage)), [topicMessages])
+  const cacheStats = useMemo(
+    () => aggregateUsageCacheStats(topicMessages.map((message) => message.usage)),
+    [topicMessages]
+  )
 
   const isVisionSupported = useMemo(
     () =>

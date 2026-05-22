@@ -6,19 +6,13 @@ vi.mock('@renderer/services/TokenService', () => ({
   estimateTextTokens: (text: string) => text.length
 }))
 
-import {
-  applyAnthropicPromptCaching,
-  selectAnthropicCacheBreakpointIndices
-} from '../anthropicCachePlugin'
+import { applyAnthropicPromptCaching, selectAnthropicCacheBreakpointIndices } from '../anthropicCachePlugin'
 
 function getCachedContentPart(message: LanguageModelV3Message) {
   return Array.isArray(message.content) ? message.content[0] : undefined
 }
 
-function makeTextMessage(
-  role: LanguageModelV3Message['role'],
-  text: string
-): LanguageModelV3Message {
+function makeTextMessage(role: LanguageModelV3Message['role'], text: string): LanguageModelV3Message {
   return {
     role,
     content: [{ type: 'text', text }]
@@ -45,8 +39,14 @@ describe('anthropicCachePlugin', () => {
     const cachedPrompt = applyAnthropicPromptCaching(prompt, makeSettings({ cacheLastNMessages: 0 }))
 
     expect(cachedPrompt[0]).toHaveProperty('providerOptions.anthropic.cacheControl.type', 'ephemeral')
-    expect(getCachedContentPart(cachedPrompt[1])).toHaveProperty('providerOptions.anthropic.cacheControl.type', 'ephemeral')
-    expect(getCachedContentPart(cachedPrompt[2])).toHaveProperty('providerOptions.anthropic.cacheControl.type', 'ephemeral')
+    expect(getCachedContentPart(cachedPrompt[1])).toHaveProperty(
+      'providerOptions.anthropic.cacheControl.type',
+      'ephemeral'
+    )
+    expect(getCachedContentPart(cachedPrompt[2])).toHaveProperty(
+      'providerOptions.anthropic.cacheControl.type',
+      'ephemeral'
+    )
   })
 
   it('reserves one stable-prefix breakpoint when recent-message caching is large', () => {

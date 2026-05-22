@@ -45,6 +45,10 @@ const selectUserProviders = createSelector(selectProviders, (providers) =>
   providers.filter((p) => !isSystemProvider(p)).map(normalizeProvider)
 )
 
+const selectPaintingProviders = createSelector(selectProviders, (providers) =>
+  providers.filter((p) => !isSystemProvider(p)).map(normalizeProvider)
+)
+
 const selectAllProviders = createSelector(selectProviders, (providers) => providers.map(normalizeProvider))
 
 const selectAllProvidersWithCherryAI = createSelector(selectProviders, (providers) =>
@@ -70,6 +74,10 @@ export function useSystemProviders() {
 
 export function useUserProviders() {
   return useAppSelector(selectUserProviders)
+}
+
+export function usePaintingProviders() {
+  return useAppSelector(selectPaintingProviders)
 }
 
 export function useAllProviders() {

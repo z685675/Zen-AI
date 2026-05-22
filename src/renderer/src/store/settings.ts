@@ -18,7 +18,7 @@ import type { PayloadAction } from '@reduxjs/toolkit'
 import { createSlice } from '@reduxjs/toolkit'
 import { DEFAULT_STREAM_OPTIONS_INCLUDE_USAGE, isMac } from '@renderer/config/constant'
 import { TRANSLATE_PROMPT } from '@renderer/config/prompts'
-import { DEFAULT_SIDEBAR_ICONS } from '@renderer/config/sidebar'
+import { DEFAULT_DISABLED_SIDEBAR_ICONS, DEFAULT_SIDEBAR_ICONS } from '@renderer/config/sidebar'
 import type {
   ApiServerConfig,
   AssistantsSortType,
@@ -343,7 +343,7 @@ export const initialState: SettingsState = {
   topicNamingPrompt: '',
   sidebarIcons: {
     visible: DEFAULT_SIDEBAR_ICONS,
-    disabled: []
+    disabled: DEFAULT_DISABLED_SIDEBAR_ICONS
   },
   narrowMode: false,
   enableQuickAssistant: false,

@@ -3162,6 +3162,19 @@
     "go_to_settings": "Πηγαίνετε στις ρυθμίσεις",
     "guidance_scale": "Κλίμακα προσαρμογής",
     "guidance_scale_tip": "Χωρίς κλάσικο προσαρμογής. Ελέγχει την προσαρμογή του μοντέλου στην αναζήτηση παρόμοιων εικόνων για το σχόλιο.",
+    "help": {
+      "background": {
+        "default": "Choose how the image background is rendered. Transparent background is only available on models that explicitly support it.",
+        "gpt_image_2": "gpt-image-2 currently supports only supported background modes from the official API, so transparent background is hidden here."
+      },
+      "image_size": {
+        "default": "Available sizes depend on the selected image model.",
+        "experimental": "Higher-resolution presets above the 2560x1440 class are slower and usually cost more.",
+        "gpt_image_2": "gpt-image-2 supports higher official preset resolutions on this page. This round exposes curated presets only, not arbitrary width and height input."
+      },
+      "moderation": "Moderation controls content safety filtering strength, not image quality. Auto uses the default review policy, while low is more permissive.",
+      "quality": "Quality controls the speed, cost, and detail trade-off. Low is faster and cheaper, high gives more detail, and auto lets the model decide."
+    },
     "image": {
       "size": "Μέγεθος εικόνας"
     },
@@ -3171,8 +3184,25 @@
     "image_mix_failed": "Αποτυχία ανάμειξης εικόνων",
     "image_placeholder": "Δεν υπάρχει εικόνα για τη στιγμή",
     "image_retry": "Δοκιμάστε ξανά",
+    "image_size_auto": {
+      "conflict": "Conflicting landscape/portrait/square cues detected. Falling back to official Auto.",
+      "fallback": "No clear size intent was detected. Falling back to official Auto.",
+      "matched": "Detected size intent: {{target}}"
+    },
     "image_size_options": {
-      "auto": "Αυτόματο"
+      "1024x1024": "1024 × 1024 · Square",
+      "1024x1536": "1024 × 1536 · Portrait",
+      "1440x2560": "1440 × 2560 · 2K Portrait",
+      "1536x1024": "1536 × 1024 · Landscape",
+      "2048x2048": "2048 × 2048 · 2K Square",
+      "2048x3072": "2048 × 3072 · 3K Portrait",
+      "2048x3840": "2048 × 3840 · 4K-class Portrait",
+      "2560x1440": "2560 × 1440 · 2K Landscape",
+      "2880x2880": "High-res Square · 2880 × 2880",
+      "3072x2048": "3072 × 2048 · 3K Landscape",
+      "3840x2048": "3840 × 2048 · 4K-class Landscape",
+      "auto": "Αυτόματο",
+      "experimental_badge": "(Experimental)"
     },
     "inference_steps": "Βήματα επεξεργασίας",
     "inference_steps_tip": "Το πλήθος των βημάτων επεξεργασίας που πρέπει να εκτελεστούν. Περισσότερα βήματα = χαμηλότερη ποιότητα και μεγαλύτερος χρόνος εκτέλεσης",
@@ -5168,6 +5198,8 @@
       "provider_key_no_change": "Το κλειδί API του {{provider}} δεν άλλαξε",
       "provider_key_overridden": "Επιτυχής ενημέρωση του κλειδιού API για τον {{provider}}",
       "provider_key_override_confirm": "Το κλειδί API για τον {{provider}} υπάρχει ήδη, θέλετε να το αντικαταστήσετε;",
+      "provider_models_sync_empty": "{{provider}} was imported, but no models were fetched yet. Please refresh manually later.",
+      "provider_models_synced": "{{provider}} imported successfully, synced {{count}} models",
       "provider_name": "Όνομα Παρόχου",
       "quick_assistant_default_tag": "Προεπιλογή",
       "quick_assistant_model": "Μοντέλο Γρήγορου Βοηθού",
@@ -6016,12 +6048,17 @@
     "show_window": "Εμφάνιση παραθύρου"
   },
   "update": {
+    "available": "A new version {{version}} is available. Click Check for Updates any time to download it.",
+    "downloading": "Downloading version {{version}} in the background. You will be prompted when it is ready.",
     "install": "Εγκατάσταση",
+    "installNow": "Install Now",
     "later": "Μετά",
     "message": "Νέα έκδοση {{version}} είναι έτοιμη, θέλετε να την εγκαταστήσετε τώρα;",
     "noReleaseNotes": "Χωρίς σημειώσεις",
+    "releaseDate": "Release Date",
     "saveDataError": "Η αποθήκευση των δεδομένων απέτυχε, δοκιμάστε ξανά",
-    "title": "Ενημέρωση"
+    "title": "Ενημέρωση",
+    "version": "Version"
   },
   "warning": {
     "missing_provider": "Ο προμηθευτής δεν υπάρχει, έγινε επαναφορά στον προεπιλεγμένο προμηθευτή {{provider}}. Αυτό μπορεί να προκαλέσει προβλήματα."

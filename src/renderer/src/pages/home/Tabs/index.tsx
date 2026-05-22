@@ -52,13 +52,12 @@ const HomeTabs: FC<Props> = ({
     mode === 'topics-only' ? 'topic' : position === 'left' ? _tab || 'assistants' : 'topic'
   )
   const borderStyle = '0.5px solid var(--color-border)'
-  const border = mode === 'conversations-only'
-    ? {}
-    : (
-    position === 'left'
-      ? { borderRight: isLeftNavbar ? borderStyle : 'none' }
-      : { borderLeft: isLeftNavbar ? borderStyle : 'none', borderTopLeftRadius: 0 }
-      )
+  const border =
+    mode === 'conversations-only'
+      ? {}
+      : position === 'left'
+        ? { borderRight: isLeftNavbar ? borderStyle : 'none' }
+        : { borderLeft: isLeftNavbar ? borderStyle : 'none', borderTopLeftRadius: 0 }
 
   if (mode === 'default' && position === 'left' && topicPosition === 'left') {
     _tab = tab
@@ -135,8 +134,9 @@ const HomeTabs: FC<Props> = ({
       )}
 
       <TabContent className="home-tabs-content">
-        {(mode === 'conversations-only' || tab === 'assistants') && mode !== 'topics-only' && (
-          mode === 'conversations-only' ? (
+        {(mode === 'conversations-only' || tab === 'assistants') &&
+          mode !== 'topics-only' &&
+          (mode === 'conversations-only' ? (
             <ConversationHistoryList
               activeTopic={activeTopic}
               setActiveTopic={setActiveTopic}
@@ -149,8 +149,7 @@ const HomeTabs: FC<Props> = ({
               onCreateAssistant={onCreateAssistant}
               onCreateDefaultAssistant={onCreateDefaultAssistant}
             />
-          )
-        )}
+          ))}
         {(mode === 'topics-only' || tab === 'topic') && mode !== 'conversations-only' && (
           <Topics
             assistant={activeAssistant}

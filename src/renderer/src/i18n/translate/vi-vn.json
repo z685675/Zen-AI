@@ -490,6 +490,7 @@
       },
       "prompt": "Cài đặt lời nhắc",
       "skills": {
+        "addMore": "Add More Skills",
         "builtin": "Tích hợp sẵn",
         "noFilterResults": "Không có kỹ năng phù hợp",
         "noSkills": "Chưa cài đặt kỹ năng nào. Cài đặt kỹ năng từ Cài đặt > Kỹ năng.",
@@ -3161,6 +3162,19 @@
     "go_to_settings": "Đi tới Cài đặt",
     "guidance_scale": "Thang đo hướng dẫn",
     "guidance_scale_tip": "Hướng dẫn Không Phân loại. Mức độ bạn muốn mô hình tuân thủ sát prompt của bạn khi tìm kiếm một hình ảnh liên quan để hiển thị cho bạn",
+    "help": {
+      "background": {
+        "default": "Choose how the image background is rendered. Transparent background is only available on models that explicitly support it.",
+        "gpt_image_2": "gpt-image-2 currently supports only supported background modes from the official API, so transparent background is hidden here."
+      },
+      "image_size": {
+        "default": "Available sizes depend on the selected image model.",
+        "experimental": "Higher-resolution presets above the 2560x1440 class are slower and usually cost more.",
+        "gpt_image_2": "gpt-image-2 supports higher official preset resolutions on this page. This round exposes curated presets only, not arbitrary width and height input."
+      },
+      "moderation": "Moderation controls content safety filtering strength, not image quality. Auto uses the default review policy, while low is more permissive.",
+      "quality": "Quality controls the speed, cost, and detail trade-off. Low is faster and cheaper, high gives more detail, and auto lets the model decide."
+    },
     "image": {
       "size": "Kích thước hình ảnh"
     },
@@ -3170,8 +3184,25 @@
     "image_mix_failed": "Không thể trộn các hình ảnh",
     "image_placeholder": "Không có hình ảnh",
     "image_retry": "Thử lại",
+    "image_size_auto": {
+      "conflict": "Conflicting landscape/portrait/square cues detected. Falling back to official Auto.",
+      "fallback": "No clear size intent was detected. Falling back to official Auto.",
+      "matched": "Detected size intent: {{target}}"
+    },
     "image_size_options": {
-      "auto": "Tự động"
+      "1024x1024": "1024 × 1024 · Square",
+      "1024x1536": "1024 × 1536 · Portrait",
+      "1440x2560": "1440 × 2560 · 2K Portrait",
+      "1536x1024": "1536 × 1024 · Landscape",
+      "2048x2048": "2048 × 2048 · 2K Square",
+      "2048x3072": "2048 × 3072 · 3K Portrait",
+      "2048x3840": "2048 × 3840 · 4K-class Portrait",
+      "2560x1440": "2560 × 1440 · 2K Landscape",
+      "2880x2880": "High-res Square · 2880 × 2880",
+      "3072x2048": "3072 × 2048 · 3K Landscape",
+      "3840x2048": "3840 × 2048 · 4K-class Landscape",
+      "auto": "Tự động",
+      "experimental_badge": "(Experimental)"
     },
     "inference_steps": "Bước Suy Luận",
     "inference_steps_tip": "Số bước suy luận cần thực hiện. Nhiều bước hơn sẽ tạo ra chất lượng cao hơn nhưng mất nhiều thời gian hơn",
@@ -5167,6 +5198,8 @@
       "provider_key_no_change": "Khóa API cho {{provider}} chưa thay đổi",
       "provider_key_overridden": "Đã cập nhật thành công khóa API cho {{provider}}",
       "provider_key_override_confirm": "{{provider}} đã có một khóa API ({{existingKey}}). Bạn có muốn ghi đè bằng khóa mới ({{newKey}}) không?",
+      "provider_models_sync_empty": "{{provider}} was imported, but no models were fetched yet. Please refresh manually later.",
+      "provider_models_synced": "{{provider}} imported successfully, synced {{count}} models",
       "provider_name": "Tên nhà cung cấp",
       "quick_assistant_default_tag": "Mặc định",
       "quick_assistant_model": "Mô hình Trợ lý Nhanh",
@@ -6015,12 +6048,17 @@
     "show_window": "Hiển thị cửa sổ"
   },
   "update": {
+    "available": "A new version {{version}} is available. Click Check for Updates any time to download it.",
+    "downloading": "Downloading version {{version}} in the background. You will be prompted when it is ready.",
     "install": "Cài đặt",
+    "installNow": "Install Now",
     "later": "Sau đó",
     "message": "Phiên bản mới {{version}} đã sẵn sàng, bạn có muốn cài đặt ngay bây giờ không?",
     "noReleaseNotes": "Không có ghi chú phát hành",
+    "releaseDate": "Release Date",
     "saveDataError": "Không lưu được dữ liệu, vui lòng thử lại.",
-    "title": "Cập nhật"
+    "title": "Cập nhật",
+    "version": "Version"
   },
   "warning": {
     "missing_provider": "Nhà cung cấp không tồn tại; đã chuyển về nhà cung cấp mặc định {{provider}}. Điều này có thể gây ra sự cố."

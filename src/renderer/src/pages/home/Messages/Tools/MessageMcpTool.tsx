@@ -78,16 +78,16 @@ const MessageMcpTool: FC<Props> = ({ block }) => {
     }
   }, [id])
 
-  // Auto-expand when streaming, auto-collapse when done
+  // Auto-expand when pending approval or streaming, auto-collapse when done
   useEffect(() => {
-    if (isStreaming) {
-      // Expand when streaming starts
+    if (isStreaming || isPending) {
+      // Expand when streaming starts or when the user needs to approve the tool
       setActiveKeys((prev) => (prev.includes(id) ? prev : [...prev, id]))
     } else if (isDone || isError) {
       // Collapse when streaming ends
       setActiveKeys((prev) => prev.filter((key) => key !== id))
     }
-  }, [isStreaming, isDone, isError, id])
+  }, [isStreaming, isPending, isDone, isError, id])
 
   if (!toolResponse) {
     return null

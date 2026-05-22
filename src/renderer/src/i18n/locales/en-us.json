@@ -3162,6 +3162,19 @@
     "go_to_settings": "Go to Settings",
     "guidance_scale": "Guidance Scale",
     "guidance_scale_tip": "Classifier Free Guidance. How close you want the model to stick to your prompt when looking for a related image to show you",
+    "help": {
+      "background": {
+        "default": "Choose how the image background is rendered. Transparent background is only available on models that explicitly support it.",
+        "gpt_image_2": "gpt-image-2 currently supports only supported background modes from the official API, so transparent background is hidden here."
+      },
+      "image_size": {
+        "default": "Available sizes depend on the selected image model.",
+        "experimental": "These higher-resolution presets are still within official support, but they are usually slower and more expensive to generate.",
+        "gpt_image_2": "gpt-image-2 supports higher official preset resolutions on this page and also supports auto mode. When auto is selected, the app will first use prompt cues like landscape, portrait, square, 2K, 3K, and 4K to smart-match a more suitable preset size."
+      },
+      "moderation": "Moderation controls content safety filtering strength, not image quality. Auto uses the default review policy, while low is more permissive.",
+      "quality": "Quality controls the speed, cost, and detail trade-off. Low is faster and cheaper, high gives more detail, and auto lets the model decide."
+    },
     "image": {
       "size": "Image Size"
     },
@@ -3171,8 +3184,25 @@
     "image_mix_failed": "Failed to mix images",
     "image_placeholder": "No image available",
     "image_retry": "Retry",
+    "image_size_auto": {
+      "conflict": "Conflicting landscape/portrait/square cues detected. Falling back to official Auto.",
+      "fallback": "No clear size intent was detected. Falling back to official Auto.",
+      "matched": "Detected size intent: {{target}}"
+    },
     "image_size_options": {
-      "auto": "Auto"
+      "1024x1024": "Square · 1024 × 1024",
+      "1024x1536": "Portrait · 1024 × 1536",
+      "1440x2560": "2K Portrait · 1440 × 2560",
+      "1536x1024": "Landscape · 1536 × 1024",
+      "2048x2048": "2K Square · 2048 × 2048",
+      "2048x3072": "3K Portrait · 2048 × 3072",
+      "2048x3840": "4K-class Portrait · 2048 × 3840",
+      "2560x1440": "2K Landscape · 2560 × 1440",
+      "2880x2880": "High-res Square · 2880 × 2880",
+      "3072x2048": "3K Landscape · 3072 × 2048",
+      "3840x2048": "4K-class Landscape · 3840 × 2048",
+      "auto": "Auto (smart match)",
+      "experimental_badge": "(High cost)"
     },
     "inference_steps": "Inference Steps",
     "inference_steps_tip": "The number of inference steps to perform. More steps produce higher quality but take longer",
@@ -3455,58 +3485,6 @@
     "zai": "Z.ai",
     "zhinao": "360AI",
     "zhipu": "BigModel"
-  },
-  "research": {
-    "actions": {
-      "create_project": "New Project",
-      "import_pdf": "Import PDF"
-    },
-    "assistant": {
-      "evidence_placeholder": "Evidence mode will connect answers to literature sources and page-level snippets.",
-      "next_step_placeholder": "Next-step suggestions will help keep topic exploration, reading, and writing moving.",
-      "review_placeholder": "Review builder will turn selected evidence into an outline for literature review writing.",
-      "title": "Research Assistant"
-    },
-    "modules": {
-      "cards": "Paper Cards",
-      "literatures": "Literature",
-      "matrix": "Matrix",
-      "overview": "Overview",
-      "review": "Review"
-    },
-    "projects": {
-      "empty_description": "Create a topic space first, then import PDFs, generate paper cards, and organize a literature matrix.",
-      "empty_title": "No research projects yet",
-      "title": "Topic Spaces"
-    },
-    "stage": {
-      "cards": {
-        "description": "Paper cards will save structured summaries, methods, conclusions, limitations, and evidence snippets for each paper.",
-        "title": "Paper card workspace"
-      },
-      "literatures": {
-        "description": "The literature library will manage PDFs, metadata, tags, reading status, and source links for the current topic.",
-        "title": "Literature library"
-      },
-      "matrix": {
-        "description": "The literature matrix will compare studies by question, method, sample, conclusion, and research gap.",
-        "title": "Literature matrix"
-      },
-      "overview": {
-        "description": "The topic overview will collect research questions, core materials, reading progress, and current writing direction.",
-        "title": "Topic overview"
-      },
-      "review": {
-        "description": "The review builder will generate and refine a review outline from selected paper cards and evidence items.",
-        "title": "Review outline"
-      }
-    },
-    "title": "Research Workspace",
-    "workspace": {
-      "description": "Organize literature, notes, evidence, writing, and progress around one research topic.",
-      "eyebrow": "AI Research Workspace",
-      "title": "Start with a topic space"
-    }
   },
   "restore": {
     "confirm": {

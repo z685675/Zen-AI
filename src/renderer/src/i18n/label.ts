@@ -152,7 +152,6 @@ const titleKeyMap = {
   memories: 'title.memories',
   notes: 'title.notes',
   paintings: 'title.paintings',
-  research: 'research.title',
   settings: 'title.settings',
   translate: 'title.translate',
   openclaw: 'openclaw.title',
@@ -194,7 +193,6 @@ const sidebarIconKeyMap = {
   minapp: 'minapp.title',
   knowledge: 'knowledge.title',
   files: 'files.title',
-  research: 'research.title',
   code_tools: 'code.title',
   notes: 'notes.title',
   openclaw: 'openclaw.title'
@@ -252,11 +250,28 @@ export const getSelectionDescriptionLabel = (key: string): string => {
 }
 
 const paintingsImageSizeOptionsKeyMap = {
-  auto: 'paintings.image_size_options.auto'
+  auto: 'paintings.image_size_options.auto',
+  '1024x1024': 'paintings.image_size_options.1024x1024',
+  '1536x1024': 'paintings.image_size_options.1536x1024',
+  '1024x1536': 'paintings.image_size_options.1024x1536',
+  '2048x2048': 'paintings.image_size_options.2048x2048',
+  '2560x1440': 'paintings.image_size_options.2560x1440',
+  '1440x2560': 'paintings.image_size_options.1440x2560',
+  '2880x2880': 'paintings.image_size_options.2880x2880',
+  '3072x2048': 'paintings.image_size_options.3072x2048',
+  '2048x3072': 'paintings.image_size_options.2048x3072',
+  '3840x2048': 'paintings.image_size_options.3840x2048',
+  '2048x3840': 'paintings.image_size_options.2048x3840'
 } as const
 
-export const getPaintingsImageSizeOptionsLabel = (key: string): string => {
-  return paintingsImageSizeOptionsKeyMap[key] ? getLabel(paintingsImageSizeOptionsKeyMap, key) : key
+export const getPaintingsImageSizeOptionsLabel = (key: string, fallback?: string, isExperimental?: boolean): string => {
+  const label = paintingsImageSizeOptionsKeyMap[key]
+    ? getLabel(paintingsImageSizeOptionsKeyMap, key)
+    : fallback?.startsWith('paintings.')
+      ? t(fallback)
+      : (fallback ?? key)
+
+  return isExperimental ? `${label} ${t('paintings.image_size_options.experimental_badge')}` : label
 }
 
 const paintingsQualityOptionsKeyMap = {

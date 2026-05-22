@@ -47,4 +47,3 @@ export {
   RecursiveDepthError,
   TemplateLoadError
 } from './core/errors'
-

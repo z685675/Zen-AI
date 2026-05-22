@@ -22,7 +22,11 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import { showAppUpdateAvailableModal, showAppUpdateDownloadedModal, showAppUpdateDownloadingToast } from '../utils/appUpdate'
+import {
+  showAppUpdateAvailableModal,
+  showAppUpdateDownloadedModal,
+  showAppUpdateDownloadingToast
+} from '../utils/appUpdate'
 import { useDefaultModel } from './useAssistant'
 import useFullScreenNotice from './useFullScreenNotice'
 import { useRuntime } from './useRuntime'

@@ -1,8 +1,8 @@
 /**
- * Fixture data for issue #8880 鈥?Gemini citation over-matching.
+ * Fixture data for issue #8880 鈥� Gemini citation over-matching.
  *
  * groundingMetadata sourced from a real Gemini 3 Pro response to the query
- * "璇锋悳绱簩姘у寲纭兘鍚︾噧鐑? (Can sulfur dioxide burn?).
+ * "璇锋悳绱簩姘у寲纭兘鍚︾噧鐑� (Can sulfur dioxide burn?).
  *
  * The content is reconstructed so that segment byte offsets align exactly
  * with the groundingSupports data; gaps between segments are filled with
@@ -24,7 +24,7 @@ export const groundingSupports: GroundingSupport[] = [
   {
     segment: {
       endIndex: 99,
-      text: '**浜屾哀鍖栫～锛?SO_2$锛変笉鑳界噧鐑?*锛屽畠鏄竴绉?*涓嶅彲鐕?*涓旈?氬父**涓嶅姪鐕?*鐨勬皵浣?
+      text: '**浜屾哀鍖栫～锛?SO_2$锛変笉鑳界噧鐑?*锛屽畠鏄竴绉?*涓嶅彲鐕?*涓旈€氬父**涓嶅姪鐕?*鐨勬皵浣�'
     },
     groundingChunkIndices: [0, 1, 2]
   },
@@ -32,7 +32,7 @@ export const groundingSupports: GroundingSupport[] = [
     segment: {
       startIndex: 184,
       endIndex: 275,
-      text: '**涓嶅彲鐕冩??*锛氬湪鏃ュ父鍜屾秷闃叉爣鍑嗕腑锛屼簩姘у寲纭鏄庣‘褰掔被涓轰笉鐕冩皵浣?
+      text: '**涓嶅彲鐕冩€?*锛氬湪鏃ュ父鍜屾秷闃叉爣鍑嗕腑锛屼簩姘у寲纭鏄庣‘褰掔被涓轰笉鐕冩皵浣�'
     },
     groundingChunkIndices: [0, 3, 4]
   },
@@ -48,7 +48,7 @@ export const groundingSupports: GroundingSupport[] = [
     segment: {
       startIndex: 861,
       endIndex: 1097,
-      text: '**瀹夊叏璀﹀憡**锛氳櫧鐒朵簩姘у寲纭湰韬笉浼氱噧鐑э紝浣嗛渶瑕佹敞鎰忕殑鏄紝濡傛灉瑁呮湁楂樺帇娑叉?佷簩姘у寲纭殑閽㈢摱鎴栧偍缃愯鍗峰叆鐏伨涓紝鍙楃儹浼氬鑷村鍣ㄥ唴鍘嬪姏鎬ュ墽涓婂崌锛屾湁**鍙戠敓鐗╃悊鐖嗙偢**鐨勫嵄闄?
+      text: '**瀹夊叏璀﹀憡**锛氳櫧鐒朵簩姘у寲纭湰韬笉浼氱噧鐑э紝浣嗛渶瑕佹敞鎰忕殑鏄紝濡傛灉瑁呮湁楂樺帇娑叉€佷簩姘у寲纭殑閽㈢摱鎴栧偍缃愯鍗峰叆鐏伨涓紝鍙楃儹浼氬鑷村鍣ㄥ唴鍘嬪姏鎬ュ墽涓婂崌锛屾湁**鍙戠敓鐗╃悊鐖嗙偢**鐨勫嵄闄�'
     },
     groundingChunkIndices: [0, 6]
   },
@@ -56,7 +56,7 @@ export const groundingSupports: GroundingSupport[] = [
     segment: {
       startIndex: 1100,
       endIndex: 1226,
-      text: '姝ゅ锛屼簩姘у寲纭槸涓?绉嶅叿鏈夊己鐑堝埡婵?鎬у拰鑵愯殌鎬х殑鏈夋瘨姘斾綋锛屽惛鍏ヤ細瀵逛汉浣撳懠鍚搁亾閫犳垚涓ラ噸浼ゅ'
+      text: '姝ゅ锛屼簩姘у寲纭槸涓€绉嶅叿鏈夊己鐑堝埡婵€鎬у拰鑵愯殌鎬х殑鏈夋瘨姘斾綋锛屽惛鍏ヤ細瀵逛汉浣撳懠鍚搁亾閫犳垚涓ラ噸浼ゅ'
     },
     groundingChunkIndices: [0, 6, 4]
   },

@@ -1,6 +1,6 @@
+import { APP_BACKUP_PREFIX, APP_REPO_URL } from '@shared/config/constant'
 import { net } from 'electron'
 import WebSocket from 'ws'
-import { APP_BACKUP_PREFIX, APP_REPO_URL } from '@shared/config/constant'
 
 import {
   ChannelAdapter,

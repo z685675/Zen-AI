@@ -202,8 +202,14 @@ async function main() {
 
   await writeFile(path.join(projectRoot, 'build', 'icon.png'), generatedAppBuffers.get(1024))
   await writeFile(path.join(projectRoot, 'build', 'logo.png'), generatedAppBuffers.get(1024))
-  await writeFile(path.join(projectRoot, 'src', 'renderer', 'src', 'assets', 'images', 'zen-logo.png'), generatedAppBuffers.get(1024))
-  await writeFile(path.join(projectRoot, 'src', 'renderer', 'src', 'assets', 'images', 'logo.png'), generatedAppBuffers.get(1024))
+  await writeFile(
+    path.join(projectRoot, 'src', 'renderer', 'src', 'assets', 'images', 'zen-logo.png'),
+    generatedAppBuffers.get(1024)
+  )
+  await writeFile(
+    path.join(projectRoot, 'src', 'renderer', 'src', 'assets', 'images', 'logo.png'),
+    generatedAppBuffers.get(1024)
+  )
 
   for (const size of appSizes) {
     await writeFile(path.join(buildIconsDir, `${size}x${size}.png`), generatedAppBuffers.get(size))

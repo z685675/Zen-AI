@@ -52,7 +52,8 @@ vi.mock('antd', () => ({
 vi.mock('@ant-design/icons', () => ({
   CheckOutlined: ({ style }: any) => (
     <span data-testid="check-icon" style={style}>
-      鉁?    </span>
+      鉁?{' '}
+    </span>
   )
 }))
 

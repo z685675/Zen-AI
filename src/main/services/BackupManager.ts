@@ -15,8 +15,8 @@
  * --------------------------------------------------------------------------
  */
 import { loggerService } from '@logger'
-import { APP_BACKUP_PREFIX, APP_NAME, APP_TEMP_DIR_NAME } from '@shared/config/constant'
 import { isWin } from '@main/constant'
+import { APP_BACKUP_PREFIX, APP_NAME, APP_TEMP_DIR_NAME } from '@shared/config/constant'
 import { IpcChannel } from '@shared/IpcChannel'
 import type { WebDavConfig } from '@types'
 import type { S3Config } from '@types'
@@ -30,6 +30,7 @@ import type { CreateDirectoryOptions, FileStat } from 'webdav'
 import { getDataPath } from '../utils'
 import { resolveAndValidatePath } from '../utils/file'
 import S3Storage from './S3Storage'
+import selectionService from './SelectionService'
 import WebDav from './WebDav'
 import { windowService } from './WindowService'
 
@@ -629,6 +630,7 @@ class BackupManager {
       logger.info('[restoreDirect] Restore completed successfully, relaunching app...')
 
       // Relaunch app to load restored data
+      selectionService?.quit()
       app.relaunch()
       app.exit(0)
     } catch (error) {

@@ -261,9 +261,7 @@ const ClientDiagnosisSection = memo(
             </DiagnosisField>
           ))}
         </DiagnosisGrid>
-        <DiagnosisSummary style={{ marginTop: 12, marginBottom: 0 }}>
-          建议操作：{diagnosis.suggestion}
-        </DiagnosisSummary>
+        <DiagnosisSummary style={{ marginTop: 12, marginBottom: 0 }}>建议操作：{diagnosis.suggestion}</DiagnosisSummary>
       </DiagnosisPanel>
     )
   }
@@ -696,7 +694,13 @@ const ErrorDetailContent: React.FC<ErrorDetailContentProps> = ({
   return (
     <>
       <ErrorDetailContainer ref={containerRef}>
-        <ClientDiagnosisSection error={error} blockId={blockId} messageId={messageId} model={model} createdAt={createdAt} />
+        <ClientDiagnosisSection
+          error={error}
+          blockId={blockId}
+          messageId={messageId}
+          model={model}
+          createdAt={createdAt}
+        />
         {renderErrorDetails(error)}
         {diagStatus !== 'idle' && (
           <AIDiagnosisSectionWithStatus

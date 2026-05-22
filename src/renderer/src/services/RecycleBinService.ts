@@ -102,7 +102,13 @@ const extractFilesFromBlocks = (blocks: MessageBlock[]) => {
   const files = blocks
     .filter((block) => block.type === MessageBlockType.IMAGE || block.type === MessageBlockType.FILE)
     .map((block) => ('file' in block ? block.file : undefined))
-    .filter((file): file is NonNullable<(typeof blocks)[number] extends infer T ? T extends { file?: infer F } ? F : never : never> => Boolean(file))
+    .filter(
+      (
+        file
+      ): file is NonNullable<
+        (typeof blocks)[number] extends infer T ? (T extends { file?: infer F } ? F : never) : never
+      > => Boolean(file)
+    )
 
   return dedupeFiles(files)
 }
@@ -190,7 +196,9 @@ const RecycleBinService = {
 
   async listConversationFolders(): Promise<RecycleBinConversationFolderItem[]> {
     const state = await cleanupExpiredEntries()
-    return [...state.conversationFolders].sort((a, b) => new Date(b.deletedAt).getTime() - new Date(a.deletedAt).getTime())
+    return [...state.conversationFolders].sort(
+      (a, b) => new Date(b.deletedAt).getTime() - new Date(a.deletedAt).getTime()
+    )
   },
 
   async moveConversationFolderToRecycleBin(folder: ConversationFolder): Promise<void> {
@@ -226,10 +234,7 @@ const RecycleBinService = {
         },
         ...state.conversationFolders.filter((item) => item.folder.id !== folder.id)
       ],
-      topics: [
-        ...folderTopicEntries,
-        ...state.topics.filter((item) => !folder.topicIds.includes(item.topic.id))
-      ]
+      topics: [...folderTopicEntries, ...state.topics.filter((item) => !folder.topicIds.includes(item.topic.id))]
     })
 
     await db.transaction('rw', [db.topics, db.message_blocks], async () => {
@@ -267,9 +272,8 @@ const RecycleBinService = {
           messages,
           blocks,
           folderId:
-            store
-              .getState()
-              .assistants.conversationFolders?.find((folder) => folder.topicIds.includes(topic.id))?.id || undefined
+            store.getState().assistants.conversationFolders?.find((folder) => folder.topicIds.includes(topic.id))?.id ||
+            undefined
         },
         ...state.topics.filter((item) => item.topic.id !== topic.id)
       ]
@@ -361,7 +365,9 @@ const RecycleBinService = {
       return null
     }
 
-    const folderExists = store.getState().assistants.conversationFolders.some((folder) => folder.id === folderEntry.folder.id)
+    const folderExists = store
+      .getState()
+      .assistants.conversationFolders.some((folder) => folder.id === folderEntry.folder.id)
     const nextFolderId = folderExists ? uuid() : folderEntry.folder.id
 
     store.dispatch(

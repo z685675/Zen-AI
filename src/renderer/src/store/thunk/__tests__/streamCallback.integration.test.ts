@@ -165,7 +165,9 @@ vi.mock('@renderer/utils/error', async (importOriginal) => {
   return {
     ...actual,
     formatErrorMessage: vi.fn((error: Error) => error.message || 'Unknown error'),
-    formatErrorMessageWithPrefix: vi.fn((error: Error, prefix: string) => `${prefix}: ${error?.message || 'Unknown error'}`),
+    formatErrorMessageWithPrefix: vi.fn(
+      (error: Error, prefix: string) => `${prefix}: ${error?.message || 'Unknown error'}`
+    ),
     isAbortError: vi.fn((error: Error) => error.name === 'AbortError'),
     serializeError: vi.fn((error: Error) => ({
       name: error.name,

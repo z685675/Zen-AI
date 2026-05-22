@@ -266,4 +266,3 @@ export class ChatGPTImporter implements ConversationImporter {
     return { topic, messages, blocks }
   }
 }
-

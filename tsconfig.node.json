@@ -11,11 +11,7 @@
     "packages/mcp-trace/**/*",
     "packages/shared/**/*"
   ],
-  "exclude": [
-    "**/__tests__/**",
-    "**/*.test.*",
-    "**/*.bench.*"
-  ],
+  "exclude": ["**/__tests__/**", "**/*.test.*", "**/*.bench.*"],
   "compilerOptions": {
     "composite": true,
     "incremental": true,

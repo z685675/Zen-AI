@@ -219,7 +219,7 @@ export function resetAssistantMessage(message: Message, model?: Model): Message 
 export async function getMessageTitle(message: Message, length = 30): Promise<string> {
   const content = getMainTextContent(message)
 
-  if ((store.getState().settings as any).useTopicNamingForMessageTitle) {
+  if (store.getState().settings.useTopicNamingForMessageTitle) {
     try {
       const tempMessage = resetMessage(message, {
         status: AssistantMessageStatus.SUCCESS,

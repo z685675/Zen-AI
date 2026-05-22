@@ -19,7 +19,10 @@ const ref = (sourceUrl: string, content: string, id: number): KnowledgeReference
 describe('websearch utils', () => {
   it('consolidates references by URL', () => {
     expect(
-      consolidateReferencesByUrl([raw('https://a.com', 'A')], [ref('https://a.com', 'part 1', 1), ref('https://a.com', 'part 2', 2)])
+      consolidateReferencesByUrl(
+        [raw('https://a.com', 'A')],
+        [ref('https://a.com', 'part 1', 1), ref('https://a.com', 'part 2', 2)]
+      )
     ).toEqual([
       {
         title: 'A',

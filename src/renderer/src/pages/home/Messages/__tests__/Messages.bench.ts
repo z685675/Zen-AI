@@ -2,7 +2,8 @@ import { AssistantMessageStatus, type Message, UserMessageStatus } from '@render
 import { bench, describe, expect, test } from 'vitest'
 
 // ============================================================================
-// 1. 缂栧啓鐢ㄤ簬瀵规瘮鐨勭畻娉?// ============================================================================
+// 1. 缂栧啓鐢ㄤ簬瀵规瘮鐨勭畻娉�
+// ============================================================================
 
 // 鏃х増鏈綔涓哄熀绾匡細鍖呭惈 [...messages].reverse()
 const baseline = (messages: Message[], startIndex: number, displayCount: number) => {
@@ -21,8 +22,8 @@ const baseline = (messages: Message[], startIndex: number, displayCount: number)
     const idSet = message.role === 'user' ? userIdSet : assistantIdSet
     const messageId = message.role === 'user' ? message.id : message.askId
 
-    if (!idSet.has(messageId!)) {
-      idSet.add(messageId!)
+    if (!idSet.has(messageId)) {
+      idSet.add(messageId)
       displayMessages.push(message)
       return
     }
@@ -55,8 +56,8 @@ const byBackwardIndex = (messages: Message[], startIndex: number, displayCount: 
     const idSet = message.role === 'user' ? userIdSet : assistantIdSet
     const messageId = message.role === 'user' ? message.id : message.askId
 
-    if (!idSet.has(messageId!)) {
-      idSet.add(messageId!)
+    if (!idSet.has(messageId)) {
+      idSet.add(messageId)
       displayMessages.push(message)
       return
     }
@@ -71,9 +72,11 @@ const byBackwardIndex = (messages: Message[], startIndex: number, displayCount: 
 }
 
 // ============================================================================
-// 2. 鏋勯?犳祴璇曟暟鎹紝骞堕獙璇佺畻娉曠粨鏋滀竴鑷存??// ============================================================================
+// 2. 鏋勯€犳祴璇曟暟鎹紝骞堕獙璇佺畻娉曠粨鏋滀竴鑷存€�
+// ============================================================================
 
-// 浣跨敤鍥哄畾鏃堕棿鎴?const generateMockMessages = (count: number): Message[] => {
+// 浣跨敤鍥哄畾鏃堕棿鎴�
+const generateMockMessages = (count: number): Message[] => {
   const BASE_TIMESTAMP = 1700000000000
   const messages: Message[] = []
 
@@ -86,7 +89,6 @@ const byBackwardIndex = (messages: Message[], startIndex: number, displayCount: 
       topicId: 'mock-topic',
       createdAt: new Date(BASE_TIMESTAMP + i * 1000).toISOString(),
       status: isUser ? UserMessageStatus.SUCCESS : AssistantMessageStatus.SUCCESS,
-
       blocks: [],
       askId: isUser ? undefined : `msg-${i - 1}`
     } satisfies Message)
@@ -95,13 +97,15 @@ const byBackwardIndex = (messages: Message[], startIndex: number, displayCount: 
   return messages
 }
 
-// 鍦烘櫙锛氫笉鍚屾秷鎭暟閲?const SCENARIOS = [100, 1000, 10000] as const
+// 鍦烘櫙锛氫笉鍚屾秷鎭暟閲�
+const SCENARIOS = [100, 1000, 10000] as const
 const mockDataMap = Object.fromEntries(SCENARIOS.map((n) => [n, generateMockMessages(n)])) as Record<
   (typeof SCENARIOS)[number],
   Message[]
 >
 
-// 娴嬭瘯缁撴灉鏄惁涓?鑷?test('computeOld and computeNew should produce identical results', () => {
+// 娴嬭瘯缁撴灉鏄惁涓€鑷�
+test('computeOld and computeNew should produce identical results', () => {
   const sample = mockDataMap[100]
   expect(baseline(sample, 0, 20)).toEqual(byBackwardIndex(sample, 0, 20))
 })

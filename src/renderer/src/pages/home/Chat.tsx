@@ -47,7 +47,13 @@ interface Props {
   setActiveAssistant: (assistant: Assistant) => void
 }
 
-const Chat: FC<Props> = ({ assistants, assistant: activeAssistant, activeTopic, setActiveTopic, setActiveAssistant }) => {
+const Chat: FC<Props> = ({
+  assistants,
+  assistant: activeAssistant,
+  activeTopic,
+  setActiveTopic,
+  setActiveAssistant
+}) => {
   const { assistant, updateAssistant, updateTopic } = useAssistant(activeAssistant.id)
   const { t } = useTranslation()
   const { topicPosition, messageStyle, messageNavigation } = useSettings()

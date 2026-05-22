@@ -15,7 +15,7 @@ function createTestProject() {
   return new Project({
     skipAddingFilesFromTsConfig: true,
     skipFileDependencyResolution: true,
-    compilerOptions: { jsx: 2 } // React JSX
+    compilerOptions: { jsx: 2 }
   })
 }
 
@@ -41,7 +41,6 @@ function findTemplateLiteral(project: Project, code: string): Node | undefined {
   return found
 }
 
-// Mock fs module
 vi.mock('fs')
 
 describe('check-hardcoded-strings', () => {
@@ -57,20 +56,20 @@ describe('check-hardcoded-strings', () => {
 
   describe('hasCJK', () => {
     it('should detect Chinese characters', () => {
-      expect(hasCJK('娴嬭瘯鏂囨湰')).toBe(true)
-      expect(hasCJK('Hello 涓栫晫')).toBe(true)
-      expect(hasCJK('涓枃')).toBe(true)
+      expect(hasCJK('\u6d4b\u8bd5\u6587\u672c')).toBe(true)
+      expect(hasCJK('Hello \u4e16\u754c')).toBe(true)
+      expect(hasCJK('\u4e2d\u6587')).toBe(true)
     })
 
     it('should detect Japanese characters', () => {
-      expect(hasCJK('銇撱倱銇仭銇?)).toBe(true) // Hiragana
-      expect(hasCJK('銈偪銈儕')).toBe(true) // Katakana
-      expect(hasCJK('鏃ユ湰瑾?)).toBe(true) // Kanji
+      expect(hasCJK('\u3053\u3093\u306b\u3061\u306f')).toBe(true)
+      expect(hasCJK('\u30ab\u30bf\u30ab\u30ca')).toBe(true)
+      expect(hasCJK('\u65e5\u672c\u8a9e')).toBe(true)
     })
 
     it('should detect Korean characters', () => {
-      expect(hasCJK('頃滉淡鞏?)).toBe(true) // Hangul
-      expect(hasCJK('鞎堧厱頃橃劯鞖?)).toBe(true)
+      expect(hasCJK('\uc548\ub155\ud558\uc138\uc694')).toBe(true)
+      expect(hasCJK('\ud55c\uad6d\uc5b4 \ud14c\uc2a4\ud2b8')).toBe(true)
     })
 
     it('should return false for non-CJK text', () => {
@@ -116,14 +115,12 @@ describe('check-hardcoded-strings', () => {
     it('should not mark regular UI text as non-UI', () => {
       expect(isNonUIString('Hello World')).toBe(false)
       expect(isNonUIString('Save')).toBe(false)
-      expect(isNonUIString('纭')).toBe(false)
-      expect(isNonUIString('璇疯緭鍏ュ唴瀹?)).toBe(false)
-      expect(isNonUIString('-')).toBe(false) // Even short strings may be UI in specific contexts
+      expect(isNonUIString('\u4fdd\u5b58')).toBe(false)
+      expect(isNonUIString('\u914d\u7f6e\u7ba1\u7406')).toBe(false)
+      expect(isNonUIString('-')).toBe(false)
     })
 
     it('should not filter technical strings (now handled by AST context)', () => {
-      // With AST-based detection, these are no longer filtered
-      // because we only check specific UI contexts where they rarely appear
       expect(isNonUIString('./path/to/file')).toBe(false)
       expect(isNonUIString('https://example.com')).toBe(false)
       expect(isNonUIString('#fff')).toBe(false)
@@ -184,9 +181,6 @@ describe('check-hardcoded-strings', () => {
   })
 
   describe('HardcodedStringDetector', () => {
-    // These are integration tests that would require actual files
-    // For unit testing, we test the exported utility functions instead
-
     it('should be instantiable', () => {
       const detector = new HardcodedStringDetector()
       expect(detector).toBeDefined()
@@ -194,7 +188,6 @@ describe('check-hardcoded-strings', () => {
   })
 
   describe('Legacy pattern compatibility (regex patterns for reference)', () => {
-    // Keep legacy pattern tests for backward compatibility reference
     const CHINESE_PATTERNS = [
       { regex: />([^<]*[\u4e00-\u9fff][^<]*)</g, name: 'JSX text content' },
       {
@@ -204,19 +197,19 @@ describe('check-hardcoded-strings', () => {
     ]
 
     it('should detect Chinese characters in JSX text content (regex)', () => {
-      const testLine = '<span>娴嬭瘯鏂囨湰</span>'
+      const testLine = '<span>\u6d4b\u8bd5\u6587\u672c</span>'
       const matches = testLine.match(CHINESE_PATTERNS[0].regex)
       expect(matches).not.toBeNull()
     })
 
     it('should detect Chinese characters in placeholder attribute (regex)', () => {
-      const testLine = 'placeholder="璇疯緭鍏ュ唴瀹?'
+      const testLine = 'placeholder="\u914d\u7f6e\u7ba1\u7406"'
       const matches = testLine.match(CHINESE_PATTERNS[1].regex)
       expect(matches).not.toBeNull()
     })
 
     it('should detect Chinese characters in title attribute (regex)', () => {
-      const testLine = 'title="鎻愮ず淇℃伅"'
+      const testLine = 'title="\u6dfb\u52a0\u52a9\u624b"'
       const matches = testLine.match(CHINESE_PATTERNS[1].regex)
       expect(matches).not.toBeNull()
     })
@@ -242,13 +235,15 @@ describe('check-hardcoded-strings', () => {
     })
 
     it('should skip logger calls', () => {
-      const node = findStringLiteral(project, `logger.info('娴嬭瘯鏃ュ織')`, '娴嬭瘯鏃ュ織')
+      const text = '\u8c03\u8bd5\u65e5\u5fd7'
+      const node = findStringLiteral(project, `logger.info('${text}')`, text)
       expect(node).toBeDefined()
       expect(shouldSkipNode(node!)).toBe(true)
     })
 
     it('should skip console calls', () => {
-      const node = findStringLiteral(project, `console.log('娴嬭瘯鏃ュ織')`, '娴嬭瘯鏃ュ織')
+      const text = '\u63a7\u5236\u53f0\u65e5\u5fd7'
+      const node = findStringLiteral(project, `console.log('${text}')`, text)
       expect(node).toBeDefined()
       expect(shouldSkipNode(node!)).toBe(true)
     })
@@ -260,31 +255,36 @@ describe('check-hardcoded-strings', () => {
     })
 
     it('should skip type alias declarations', () => {
-      const node = findStringLiteral(project, `type Status = '鎴愬姛' | '澶辫触'`, '鎴愬姛')
+      const text = '\u6210\u529f'
+      const node = findStringLiteral(project, `type Status = '${text}' | 'failed'`, text)
       expect(node).toBeDefined()
       expect(shouldSkipNode(node!)).toBe(true)
     })
 
     it('should skip interface declarations', () => {
-      const node = findStringLiteral(project, `interface Foo { status: '鎴愬姛' }`, '鎴愬姛')
+      const text = '\u6210\u529f'
+      const node = findStringLiteral(project, `interface Foo { status: '${text}' }`, text)
       expect(node).toBeDefined()
       expect(shouldSkipNode(node!)).toBe(true)
     })
 
     it('should skip enum members', () => {
-      const node = findStringLiteral(project, `enum Status { Success = '鎴愬姛' }`, '鎴愬姛')
+      const text = '\u6210\u529f'
+      const node = findStringLiteral(project, `enum Status { Success = '${text}' }`, text)
       expect(node).toBeDefined()
       expect(shouldSkipNode(node!)).toBe(true)
     })
 
     it('should skip language/locale variable declarations', () => {
-      const node = findStringLiteral(project, `const languageOptions = ['涓枃', 'English']`, '涓枃')
+      const text = '\u4e2d\u6587'
+      const node = findStringLiteral(project, `const languageOptions = ['${text}', 'English']`, text)
       expect(node).toBeDefined()
       expect(shouldSkipNode(node!)).toBe(true)
     })
 
     it('should NOT skip regular string literals', () => {
-      const node = findStringLiteral(project, `const message = '娴嬭瘯娑堟伅'`, '娴嬭瘯娑堟伅')
+      const text = '\u6b22\u8fce\u4f7f\u7528'
+      const node = findStringLiteral(project, `const message = '${text}'`, text)
       expect(node).toBeDefined()
       expect(shouldSkipNode(node!)).toBe(false)
     })
@@ -352,7 +352,8 @@ describe('check-hardcoded-strings', () => {
     })
 
     it('should NOT detect regular strings', () => {
-      const node = findStringLiteral(project, `const message = '鏅?氭秷鎭?`, '鏅?氭秷鎭?)
+      const text = '\u8fd9\u662f\u666e\u901a\u6587\u672c'
+      const node = findStringLiteral(project, `const message = '${text}'`, text)
       expect(node).toBeDefined()
       expect(isInCodeContext(node!)).toBe(false)
     })

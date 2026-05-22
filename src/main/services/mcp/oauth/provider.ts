@@ -2,13 +2,13 @@ import path from 'node:path'
 
 import { loggerService } from '@logger'
 import { getConfigDir } from '@main/utils/file'
-import { APP_NAME, APP_REPO_URL } from '@shared/config/constant'
 import type { OAuthClientProvider } from '@modelcontextprotocol/sdk/client/auth'
 import type {
   OAuthClientInformation,
   OAuthClientInformationMixed,
   OAuthTokens
 } from '@modelcontextprotocol/sdk/shared/auth'
+import { APP_NAME, APP_REPO_URL } from '@shared/config/constant'
 import open from 'open'
 import { sanitizeUrl } from 'strict-url-sanitise'
 

@@ -102,11 +102,7 @@ export default class AiProvider {
     }
   }
 
-  private attachSessionId(
-    params: StreamTextParams,
-    topicId: string | undefined,
-    providerId: string
-  ): StreamTextParams {
+  private attachSessionId(params: StreamTextParams, topicId: string | undefined, providerId: string): StreamTextParams {
     if (!topicId || !this.sessionAwareProviderIds.has(providerId)) {
       return params
     }
@@ -381,7 +377,8 @@ export default class AiProvider {
         middlewareConfig.enableWebSearch,
         undefined,
         undefined,
-        providerConfig.providerId
+        providerConfig.providerId,
+        middlewareConfig.idleTimeout
       )
 
       const existingExperimentalContext = requestParams.experimental_context

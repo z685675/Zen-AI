@@ -75,8 +75,8 @@ export function useAssistants() {
 
 export function useAssistant(id: string) {
   const assistants = useAppSelector((state) => state.assistants.assistants)
-  const fallbackModel = useAppSelector((state) =>
-    state.llm.providers.filter((provider) => provider.enabled).flatMap((provider) => provider.models)[0]
+  const fallbackModel = useAppSelector(
+    (state) => state.llm.providers.filter((provider) => provider.enabled).flatMap((provider) => provider.models)[0]
   )
   const dispatch = useAppDispatch()
   const { defaultModel } = useDefaultModel()

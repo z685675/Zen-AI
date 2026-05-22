@@ -66,7 +66,9 @@ const QuickAssistantDeck: FC<Props> = ({ assistants, activeAssistant, onSelectAs
     hasBootstrappedDefaultsRef.current = true
 
     const findPresetByKeywords = (keywords: string[]) =>
-      systemPresets.find((preset) => keywords.some((keyword) => preset.name === keyword || preset.name.includes(keyword)))
+      systemPresets.find((preset) =>
+        keywords.some((keyword) => preset.name === keyword || preset.name.includes(keyword))
+      )
 
     const bootstrapDefaults = async () => {
       const matchedPresets = DEFAULT_QUICK_ASSISTANT_KEYWORDS.map(findPresetByKeywords).filter(
@@ -123,7 +125,8 @@ const QuickAssistantDeck: FC<Props> = ({ assistants, activeAssistant, onSelectAs
 
   const roleMap = useMemo(() => new Map(roleCandidates.map((assistant) => [assistant.id, assistant])), [roleCandidates])
   const visibleRoles = useMemo(
-    () => resolvedRoleIds.map((id) => roleMap.get(id)).filter((assistant): assistant is Assistant => Boolean(assistant)),
+    () =>
+      resolvedRoleIds.map((id) => roleMap.get(id)).filter((assistant): assistant is Assistant => Boolean(assistant)),
     [resolvedRoleIds, roleMap]
   )
 

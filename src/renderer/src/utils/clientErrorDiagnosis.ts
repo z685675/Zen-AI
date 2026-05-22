@@ -108,10 +108,7 @@ function formatProbeResult(result?: ConnectivityProbeResult): string {
   return result.error ? `失败：${result.error}` : '失败：无响应'
 }
 
-function serviceConnectivityFromCheck(
-  check: ClientConnectivityCheck | undefined,
-  fallback: string
-): string {
+function serviceConnectivityFromCheck(check: ClientConnectivityCheck | undefined, fallback: string): string {
   if (!check?.serviceStatus) return fallback
   if (check.serviceStatus.reachable && check.serviceStatus.ok) return '正常'
   if (check.serviceStatus.reachable) return '可访问'
@@ -134,7 +131,11 @@ function formatTime(value?: string): string {
 
 function buildDiagnosticId(blockId?: string, messageId?: string, createdAt?: string): string {
   const source = blockId || messageId || Math.random().toString(36).slice(2)
-  const suffix = source.replace(/[^a-z0-9]/gi, '').slice(-6).toUpperCase().padStart(6, '0')
+  const suffix = source
+    .replace(/[^a-z0-9]/gi, '')
+    .slice(-6)
+    .toUpperCase()
+    .padStart(6, '0')
   const date = createdAt ? new Date(createdAt) : new Date()
   const time = Number.isNaN(date.getTime()) ? new Date() : date
   const stamp = `${time.getFullYear()}${String(time.getMonth() + 1).padStart(2, '0')}${String(time.getDate()).padStart(
@@ -420,10 +421,7 @@ export function diagnoseClientError(error?: SerializedError, options: DiagnoseOp
     }
   }
 
-  if (
-    status === 400 &&
-    (msg.includes('content_filter') || msg.includes('safety') || msg.includes('content_policy'))
-  ) {
+  if (status === 400 && (msg.includes('content_filter') || msg.includes('safety') || msg.includes('content_policy'))) {
     return {
       ...base,
       category: 'content',

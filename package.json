@@ -51,7 +51,7 @@
     "skills:sync": "tsx scripts/skills-sync.ts",
     "skills:check": "tsx scripts/skills-check.ts",
     "update:languages": "tsx scripts/update-languages.ts",
-    "test": "vitest run --silent",
+    "test": "vitest run --silent --maxWorkers=1",
     "test:main": "vitest run --project main",
     "test:renderer": "vitest run --project renderer",
     "test:aicore": "vitest run --project aiCore",
@@ -496,7 +496,8 @@
       "@openrouter/ai-sdk-provider": "patches/@openrouter__ai-sdk-provider.patch",
       "@opeoginni/github-copilot-openai-compatible@1.0.0": "patches/@opeoginni__github-copilot-openai-compatible@1.0.0.patch",
       "@ai-sdk/openai-compatible@2.0.37": "patches/@ai-sdk__openai-compatible@2.0.37.patch",
-      "@ai-sdk/google@3.0.55": "patches/@ai-sdk__google@3.0.55.patch"
+      "@ai-sdk/google@3.0.55": "patches/@ai-sdk__google@3.0.55.patch",
+      "@cherrystudio/embedjs-loader-web@0.1.31": "patches/@cherrystudio__embedjs-loader-web@0.1.31.patch"
     },
     "onlyBuiltDependencies": [
       "@j178/prek",

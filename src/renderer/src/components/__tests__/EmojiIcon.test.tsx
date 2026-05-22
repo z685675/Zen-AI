@@ -19,9 +19,7 @@ describe('EmojiIcon', () => {
   })
 
   it('applies custom styles and class name', () => {
-    const { container } = render(
-      <EmojiIcon emoji={'\u{1F3AF}'} size={40} fontSize={24} className="custom-emoji" />
-    )
+    const { container } = render(<EmojiIcon emoji={'\u{1F3AF}'} size={40} fontSize={24} className="custom-emoji" />)
     const root = container.firstChild as HTMLElement
 
     expect(root).toHaveClass('custom-emoji')

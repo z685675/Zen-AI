@@ -97,9 +97,9 @@ describe('provider utils', () => {
 
   it('detects Anthropic prompt cache support', () => {
     expect(isSupportAnthropicPromptCacheProvider(createProvider({ type: 'anthropic' }))).toBe(true)
-    expect(isSupportAnthropicPromptCacheProvider(createProvider({ id: SystemProviderIds['new-api'], type: 'new-api' }))).toBe(
-      true
-    )
+    expect(
+      isSupportAnthropicPromptCacheProvider(createProvider({ id: SystemProviderIds['new-api'], type: 'new-api' }))
+    ).toBe(true)
     expect(isSupportAnthropicPromptCacheProvider(createProvider({ id: SystemProviderIds.openrouter }))).toBe(true)
     expect(isSupportAnthropicPromptCacheProvider(createProvider())).toBe(false)
   })
@@ -113,7 +113,9 @@ describe('provider utils', () => {
   it('builds effective Anthropic cache defaults for supported providers', () => {
     expect(getEffectiveAnthropicCacheControl(createProvider())).toBeUndefined()
 
-    expect(getEffectiveAnthropicCacheControl(createProvider({ type: 'anthropic' }), { id: 'claude-sonnet-4-6' } as any)).toEqual({
+    expect(
+      getEffectiveAnthropicCacheControl(createProvider({ type: 'anthropic' }), { id: 'claude-sonnet-4-6' } as any)
+    ).toEqual({
       tokenThreshold: 2048,
       cacheSystemMessage: true,
       cacheLastNMessages: 1
@@ -159,13 +161,15 @@ describe('provider utils', () => {
     expect(getRecommendedGeminiCacheThreshold({ id: 'gemini-2.5-flash' } as any)).toBe(2048)
     expect(getEffectiveGeminiCacheControl(createProvider())).toBeUndefined()
 
-    expect(getEffectiveGeminiCacheControl(createProvider({ type: 'gemini' }), { id: 'gemini-2.5-pro' } as any)).toEqual({
-      enabled: true,
-      tokenThreshold: 4096,
-      cacheSystemMessage: true,
-      cacheEarlyMessages: 2,
-      ttlSeconds: 3600
-    })
+    expect(getEffectiveGeminiCacheControl(createProvider({ type: 'gemini' }), { id: 'gemini-2.5-pro' } as any)).toEqual(
+      {
+        enabled: true,
+        tokenThreshold: 4096,
+        cacheSystemMessage: true,
+        cacheEarlyMessages: 2,
+        ttlSeconds: 3600
+      }
+    )
 
     expect(
       getEffectiveGeminiCacheControl(

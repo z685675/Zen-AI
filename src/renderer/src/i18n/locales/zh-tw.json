@@ -3162,6 +3162,19 @@
     "go_to_settings": "前往設定",
     "guidance_scale": "引導比例",
     "guidance_scale_tip": "無分類器指導。控制模型在尋找相關影像時對提示詞的遵循程度",
+    "help": {
+      "background": {
+        "default": "Choose how the image background is rendered. Transparent background is only available on models that explicitly support it.",
+        "gpt_image_2": "gpt-image-2 currently supports only supported background modes from the official API, so transparent background is hidden here."
+      },
+      "image_size": {
+        "default": "Available sizes depend on the selected image model.",
+        "experimental": "Higher-resolution presets above the 2560x1440 class are slower and usually cost more.",
+        "gpt_image_2": "gpt-image-2 supports higher official preset resolutions on this page. This round exposes curated presets only, not arbitrary width and height input."
+      },
+      "moderation": "Moderation controls content safety filtering strength, not image quality. Auto uses the default review policy, while low is more permissive.",
+      "quality": "Quality controls the speed, cost, and detail trade-off. Low is faster and cheaper, high gives more detail, and auto lets the model decide."
+    },
     "image": {
       "size": "影像尺寸"
     },
@@ -3171,8 +3184,25 @@
     "image_mix_failed": "無法混合圖片",
     "image_placeholder": "無圖片",
     "image_retry": "重試",
+    "image_size_auto": {
+      "conflict": "Conflicting landscape/portrait/square cues detected. Falling back to official Auto.",
+      "fallback": "No clear size intent was detected. Falling back to official Auto.",
+      "matched": "Detected size intent: {{target}}"
+    },
     "image_size_options": {
-      "auto": "自動"
+      "1024x1024": "1024 × 1024 · Square",
+      "1024x1536": "1024 × 1536 · Portrait",
+      "1440x2560": "1440 × 2560 · 2K Portrait",
+      "1536x1024": "1536 × 1024 · Landscape",
+      "2048x2048": "2048 × 2048 · 2K Square",
+      "2048x3072": "2048 × 3072 · 3K Portrait",
+      "2048x3840": "2048 × 3840 · 4K-class Portrait",
+      "2560x1440": "2560 × 1440 · 2K Landscape",
+      "2880x2880": "High-res Square · 2880 × 2880",
+      "3072x2048": "3072 × 2048 · 3K Landscape",
+      "3840x2048": "3840 × 2048 · 4K-class Landscape",
+      "auto": "自動",
+      "experimental_badge": "(Experimental)"
     },
     "inference_steps": "推理步數",
     "inference_steps_tip": "要執行的推理步數。步數越多，品質越高但耗時越長",
@@ -3455,58 +3485,6 @@
     "zai": "Z.ai",
     "zhinao": "360 智腦",
     "zhipu": "智譜開放平台"
-  },
-  "research": {
-    "actions": {
-      "create_project": "新增課題",
-      "import_pdf": "匯入 PDF"
-    },
-    "assistant": {
-      "evidence_placeholder": "證據模式會把回答連接到文獻來源與頁碼級片段。",
-      "next_step_placeholder": "下一步建議會協助推進選題、閱讀與寫作。",
-      "review_placeholder": "綜述框架會把選取的證據整理成文獻綜述寫作大綱。",
-      "title": "科研助手"
-    },
-    "modules": {
-      "cards": "論文卡片",
-      "literatures": "文獻庫",
-      "matrix": "文獻矩陣",
-      "overview": "概覽",
-      "review": "綜述框架"
-    },
-    "projects": {
-      "empty_description": "先建立一個課題空間，後續可匯入 PDF、生成論文卡片、整理文獻矩陣。",
-      "empty_title": "尚無課題",
-      "title": "課題空間"
-    },
-    "stage": {
-      "cards": {
-        "description": "論文卡片會保存每篇論文的結構化摘要、方法、結論、限制與證據片段。",
-        "title": "論文卡片工作區"
-      },
-      "literatures": {
-        "description": "文獻庫會管理目前課題下的 PDF、後設資料、標籤、閱讀狀態與來源連結。",
-        "title": "文獻庫"
-      },
-      "matrix": {
-        "description": "文獻矩陣會依研究問題、方法、樣本、結論與研究空白比較多篇文獻。",
-        "title": "文獻矩陣"
-      },
-      "overview": {
-        "description": "課題概覽會彙整研究問題、核心資料、閱讀進度與目前寫作方向。",
-        "title": "課題概覽"
-      },
-      "review": {
-        "description": "綜述框架會根據選取的論文卡片與證據項生成並迭代綜述大綱。",
-        "title": "綜述框架"
-      }
-    },
-    "title": "科研工作台",
-    "workspace": {
-      "description": "圍繞一個研究課題組織文獻、筆記、證據、寫作與進度。",
-      "eyebrow": "AI Research Workspace",
-      "title": "從一個課題空間開始"
-    }
   },
   "restore": {
     "confirm": {
@@ -6073,6 +6051,7 @@
     "available": "發現新版本 {{version}}，你可以稍後在「檢查更新」中手動下載安裝。",
     "downloading": "正在背景下載新版本 {{version}}，下載完成後會提示你安裝。",
     "install": "立即安裝",
+    "installNow": "Install Now",
     "later": "稍後",
     "message": "新版本 {{version}} 已下載完成，是否立即重新啟動並安裝？",
     "noReleaseNotes": "暫無更新日誌",

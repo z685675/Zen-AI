@@ -7,7 +7,7 @@ import type { QuickPanelListItem } from '../QuickPanel'
 import { QuickPanelProvider, QuickPanelView, useQuickPanel } from '../QuickPanel'
 
 vi.mock('@renderer/components/VirtualList', () => ({
-  DynamicVirtualList: React.forwardRef<any, any>(function MockDynamicVirtualList(props, ref) {
+  DynamicVirtualList: function MockDynamicVirtualList({ ref, ...props }: any & { ref?: React.RefObject<any | null> }) {
     const { list, children, scrollerStyle } = props
     React.useImperativeHandle(ref, () => ({
       scrollToIndex: vi.fn()
@@ -19,7 +19,7 @@ vi.mock('@renderer/components/VirtualList', () => ({
         ))}
       </div>
     )
-  })
+  }
 }))
 
 vi.mock('@renderer/hooks/useUserTheme', () => ({

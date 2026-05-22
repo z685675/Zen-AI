@@ -14,11 +14,7 @@ const TopicContent = ({ assistant, assistants, setActiveAssistant }: TopicConten
   return (
     <>
       <div className="ml-2 flex min-w-0 flex-initial items-center gap-2.5">
-        <AssistantSwitchButton
-          assistant={assistant}
-          assistants={assistants}
-          onSelectAssistant={setActiveAssistant}
-        />
+        <AssistantSwitchButton assistant={assistant} assistants={assistants} onSelectAssistant={setActiveAssistant} />
         <SelectModelButton assistant={assistant} />
       </div>
       <Tools assistant={assistant} />

@@ -8,7 +8,21 @@ import type { NotesSortType, NotesTreeNode } from '@renderer/types/note'
 import type { MenuProps } from 'antd'
 import { Dropdown, Modal } from 'antd'
 import dayjs from 'dayjs'
-import { Check, ChevronDown, ChevronRight, File, FilePlus, Folder, FolderClosed, FolderUp, Loader2, RotateCcw, Trash2, Upload, X } from 'lucide-react'
+import {
+  Check,
+  ChevronDown,
+  ChevronRight,
+  File,
+  FilePlus,
+  Folder,
+  FolderClosed,
+  FolderUp,
+  Loader2,
+  RotateCcw,
+  Trash2,
+  Upload,
+  X
+} from 'lucide-react'
 import type { FC, ReactNode } from 'react'
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -1074,4 +1088,3 @@ const RecentDeletedActionButton = styled.button<{ danger?: boolean }>`
 `
 
 export default memo(NotesSidebar)
-

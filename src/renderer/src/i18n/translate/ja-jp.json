@@ -3162,6 +3162,19 @@
     "go_to_settings": "設定に移動",
     "guidance_scale": "ガイダンススケール",
     "guidance_scale_tip": "分類器なしのガイダンス。モデルが関連する画像を探す際にプロンプトにどれだけ従うかを制御します",
+    "help": {
+      "background": {
+        "default": "Choose how the image background is rendered. Transparent background is only available on models that explicitly support it.",
+        "gpt_image_2": "gpt-image-2 currently supports only supported background modes from the official API, so transparent background is hidden here."
+      },
+      "image_size": {
+        "default": "Available sizes depend on the selected image model.",
+        "experimental": "Higher-resolution presets above the 2560x1440 class are slower and usually cost more.",
+        "gpt_image_2": "gpt-image-2 supports higher official preset resolutions on this page. This round exposes curated presets only, not arbitrary width and height input."
+      },
+      "moderation": "Moderation controls content safety filtering strength, not image quality. Auto uses the default review policy, while low is more permissive.",
+      "quality": "Quality controls the speed, cost, and detail trade-off. Low is faster and cheaper, high gives more detail, and auto lets the model decide."
+    },
     "image": {
       "size": "画像サイズ"
     },
@@ -3171,8 +3184,25 @@
     "image_mix_failed": "画像の混合に失敗しました",
     "image_placeholder": "画像がありません",
     "image_retry": "再試行",
+    "image_size_auto": {
+      "conflict": "Conflicting landscape/portrait/square cues detected. Falling back to official Auto.",
+      "fallback": "No clear size intent was detected. Falling back to official Auto.",
+      "matched": "Detected size intent: {{target}}"
+    },
     "image_size_options": {
-      "auto": "自動"
+      "1024x1024": "1024 × 1024 · Square",
+      "1024x1536": "1024 × 1536 · Portrait",
+      "1440x2560": "1440 × 2560 · 2K Portrait",
+      "1536x1024": "1536 × 1024 · Landscape",
+      "2048x2048": "2048 × 2048 · 2K Square",
+      "2048x3072": "2048 × 3072 · 3K Portrait",
+      "2048x3840": "2048 × 3840 · 4K-class Portrait",
+      "2560x1440": "2560 × 1440 · 2K Landscape",
+      "2880x2880": "High-res Square · 2880 × 2880",
+      "3072x2048": "3072 × 2048 · 3K Landscape",
+      "3840x2048": "3840 × 2048 · 4K-class Landscape",
+      "auto": "自動",
+      "experimental_badge": "(Experimental)"
     },
     "inference_steps": "推論ステップ数",
     "inference_steps_tip": "実行する推論ステップ数。ステップ数が多いほど品質が向上しますが、時間がかかります",
@@ -5168,6 +5198,8 @@
       "provider_key_no_change": "{{provider}} の API キーは変更されませんでした",
       "provider_key_overridden": "{{provider}} の API キーを更新しました",
       "provider_key_override_confirm": "{{provider}} はすでに API キー ({{existingKey}}) を持っています。新しいキー ({{newKey}}) で上書きしますか？",
+      "provider_models_sync_empty": "{{provider}} was imported, but no models were fetched yet. Please refresh manually later.",
+      "provider_models_synced": "{{provider}} imported successfully, synced {{count}} models",
       "provider_name": "プロバイダー名",
       "quick_assistant_default_tag": "デフォルト",
       "quick_assistant_model": "クイックアシスタントモデル",
@@ -6016,12 +6048,17 @@
     "show_window": "ウィンドウを表示"
   },
   "update": {
+    "available": "A new version {{version}} is available. Click Check for Updates any time to download it.",
+    "downloading": "Downloading version {{version}} in the background. You will be prompted when it is ready.",
     "install": "今すぐインストール",
+    "installNow": "Install Now",
     "later": "後で",
     "message": "新バージョン {{version}} が利用可能です。今すぐインストールしますか？",
     "noReleaseNotes": "暫無更新日誌",
+    "releaseDate": "Release Date",
     "saveDataError": "データの保存に失敗しました。もう一度お試しください。",
-    "title": "更新"
+    "title": "更新",
+    "version": "Version"
   },
   "warning": {
     "missing_provider": "サプライヤーが存在しないため、デフォルトのサプライヤー {{provider}} にロールバックされました。これにより問題が発生する可能性があります。"

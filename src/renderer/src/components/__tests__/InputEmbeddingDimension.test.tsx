@@ -33,7 +33,10 @@ vi.mock('antd', () => {
     </div>
   )
 
-  const InputNumber = React.forwardRef<HTMLInputElement, any>(function MockInputNumber(props, ref) {
+  const InputNumber = function MockInputNumber({
+    ref,
+    ...props
+  }: any & { ref?: React.RefObject<HTMLInputElement | null> }) {
     const { value, onChange, placeholder, disabled, style } = props
     return (
       <input
@@ -47,7 +50,7 @@ vi.mock('antd', () => {
         onChange={(event) => onChange?.(event.currentTarget.value === '' ? null : Number(event.currentTarget.value))}
       />
     )
-  })
+  }
 
   const Button: React.FC<any> = ({ children, icon, ...props }) => (
     <button type="button" {...props}>

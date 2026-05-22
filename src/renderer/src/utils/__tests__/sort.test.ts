@@ -26,11 +26,7 @@ describe('sort', () => {
 
     it('works with strings and objects', () => {
       expect(droppableReorder(['a', 'b', 'c', 'd'], 0, 2)).toEqual(['b', 'c', 'a', 'd'])
-      expect(droppableReorder([{ id: 1 }, { id: 2 }, { id: 3 }], 0, 2)).toEqual([
-        { id: 2 },
-        { id: 3 },
-        { id: 1 }
-      ])
+      expect(droppableReorder([{ id: 1 }, { id: 2 }, { id: 3 }], 0, 2)).toEqual([{ id: 2 }, { id: 3 }, { id: 1 }])
     })
   })
 

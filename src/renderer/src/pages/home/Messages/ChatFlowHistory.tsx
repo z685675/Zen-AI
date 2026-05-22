@@ -323,7 +323,7 @@ const ChatFlowHistory: FC<ChatFlowHistoryProps> = ({ conversationId }) => {
           sourcePos = Position.Bottom
         }
 
-        const aMsgAny = aMsg as any
+        const aMsgAny = aMsg
 
         // 获取模型名称
         const modelName = (aMsgAny.model && aMsgAny.model.name) || t('chat.history.assistant_node')
@@ -414,7 +414,7 @@ const ChatFlowHistory: FC<ChatFlowHistoryProps> = ({ conversationId }) => {
 
         // 获取模型数据
         // FIXME: No any plz
-        const aMsgAny = aMsg as any
+        const aMsgAny = aMsg
 
         // 获取模型名称
         const modelName = (aMsgAny.model && aMsgAny.model.name) || t('chat.history.assistant_node')

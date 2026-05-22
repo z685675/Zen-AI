@@ -1,12 +1,6 @@
 import type { SidebarIcon } from '@renderer/types'
 
-import { isResearchWorkspaceEnabled } from './researchWorkspace'
-
-/**
- * 默认显示的侧边栏图标
- * 这些图标会在侧边栏中默认显示
- */
-export const DEFAULT_SIDEBAR_ICONS: SidebarIcon[] = [
+export const ALL_SIDEBAR_ICONS: SidebarIcon[] = [
   'assistants',
   'agents',
   'store',
@@ -20,33 +14,21 @@ export const DEFAULT_SIDEBAR_ICONS: SidebarIcon[] = [
   'openclaw'
 ]
 
-/**
- * 必须显示的侧边栏图标（不能被隐藏）
- * 这些图标必须始终在侧边栏中可见
- * 抽取为参数方便未来扩展
- */
+export const DEFAULT_DISABLED_SIDEBAR_ICONS: SidebarIcon[] = ['store', 'minapp', 'code_tools']
+
+export const DEFAULT_SIDEBAR_ICONS: SidebarIcon[] = ALL_SIDEBAR_ICONS.filter(
+  (icon) => !DEFAULT_DISABLED_SIDEBAR_ICONS.includes(icon)
+)
+
 export const REQUIRED_SIDEBAR_ICONS: SidebarIcon[] = ['assistants']
 
 export const getAvailableSidebarIcons = (
   visibleIcons: SidebarIcon[],
   disabledIcons: SidebarIcon[] = [],
-  enableDeveloperMode = false
+  _enableDeveloperMode = false
 ) => {
-  if (!isResearchWorkspaceEnabled(enableDeveloperMode)) {
-    return visibleIcons.filter((icon) => icon !== 'research')
-  }
-
-  if (disabledIcons.includes('research')) {
-    return visibleIcons.filter((icon) => icon !== 'research')
-  }
-
-  if (visibleIcons.includes('research')) {
-    return visibleIcons
-  }
-
-  const nextIcons = [...visibleIcons]
-  const insertAfter = nextIcons.indexOf('notes')
-  nextIcons.splice(insertAfter >= 0 ? insertAfter + 1 : nextIcons.length, 0, 'research')
-
-  return nextIcons
+  const legacyDisabledIcons = new Set<string>(disabledIcons)
+  return (visibleIcons as string[]).filter(
+    (icon) => !legacyDisabledIcons.has(icon) && icon !== 'research'
+  ) as SidebarIcon[]
 }

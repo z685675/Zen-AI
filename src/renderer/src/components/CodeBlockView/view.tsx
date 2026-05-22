@@ -283,7 +283,7 @@ export const CodeBlockView: React.FC<Props> = memo(({ children, language, onSave
 
   // 特殊视图组件映射
   const specialView = useMemo(() => {
-    const SpecialView = SPECIAL_VIEW_COMPONENTS[language as keyof typeof SPECIAL_VIEW_COMPONENTS]
+    const SpecialView = SPECIAL_VIEW_COMPONENTS[language]
 
     if (!SpecialView) return null
 

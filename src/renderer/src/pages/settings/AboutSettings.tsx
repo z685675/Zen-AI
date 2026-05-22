@@ -1,8 +1,8 @@
 import { HStack } from '@renderer/components/Layout'
 import { APP_NAME, AppLogo } from '@renderer/config/env'
 import { useTheme } from '@renderer/context/ThemeProvider'
-import { showAppUpdateAvailableModal, showAppUpdateDownloadedModal } from '@renderer/utils/appUpdate'
 import { runAsyncFunction } from '@renderer/utils'
+import { showAppUpdateAvailableModal, showAppUpdateDownloadedModal } from '@renderer/utils/appUpdate'
 import {
   APP_DOWNLOADS_URL,
   APP_FEEDBACK_URL,
@@ -86,7 +86,10 @@ const AboutSettings: FC = () => {
               <Title>{APP_NAME}</Title>
               <Description>{t('settings.about.description')}</Description>
               <HStack alignItems="center" gap={8}>
-                <Tag onClick={() => onOpenWebsite(APP_RELEASES_URL)} color="cyan" style={{ marginTop: 8, cursor: 'pointer' }}>
+                <Tag
+                  onClick={() => onOpenWebsite(APP_RELEASES_URL)}
+                  color="cyan"
+                  style={{ marginTop: 8, cursor: 'pointer' }}>
                   v{version}
                 </Tag>
                 {isPortable && (

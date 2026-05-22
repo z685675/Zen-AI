@@ -21,9 +21,9 @@ import type {
   QuickPhrase,
   TranslateHistory
 } from '@renderer/types'
-import { APP_DB_NAME } from '@shared/config/constant'
 // Import necessary types for blocks and new message structure
 import type { Message as NewMessage, MessageBlock } from '@renderer/types/newMessage'
+import { APP_DB_NAME } from '@shared/config/constant'
 import { Dexie, type EntityTable } from 'dexie'
 
 import { upgradeToV5, upgradeToV7, upgradeToV8 } from './upgrades'

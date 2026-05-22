@@ -111,7 +111,13 @@ describe('geminiCachePlugin', () => {
     const result = await runMiddleware({
       model: 'gemini-2.5-pro',
       prompt: [
-        { role: 'user', content: [{ type: 'text', text: 'Hello' }, { type: 'file', mediaType: 'image/png', data: 'x' }] }
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: 'Hello' },
+            { type: 'file', mediaType: 'image/png', data: 'x' }
+          ]
+        }
       ],
       headers: {
         'x-goog-api-key': 'test-key'

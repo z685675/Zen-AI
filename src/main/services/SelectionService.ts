@@ -19,7 +19,8 @@ import { ConfigKeys, configManager } from './ConfigManager'
 import storeSyncService from './StoreSyncService'
 
 const logger = loggerService.withContext('SelectionService')
-const selectionWindowIcon = nativeImage.createFromPath(iconPath)
+const selectionWindowIcon =
+  nativeImage && typeof nativeImage.createFromPath === 'function' ? nativeImage.createFromPath(iconPath) : undefined
 
 let SelectionHook: SelectionHookConstructor | null = null
 try {
@@ -460,7 +461,7 @@ export class SelectionService {
       hasShadow: false,
       thickFrame: false,
       roundedCorners: true,
-      ...(isWin ? { icon: selectionWindowIcon } : {}),
+      ...(isWin && selectionWindowIcon ? { icon: selectionWindowIcon } : {}),
 
       // Platform specific settings
       //   [macOS] DO NOT set focusable to false — it causes other windows to bring to front together.
@@ -1206,7 +1207,7 @@ export class SelectionService {
       hasShadow: false,
       thickFrame: false,
       show: false,
-      ...(isWin ? { icon: selectionWindowIcon } : {}),
+      ...(isWin && selectionWindowIcon ? { icon: selectionWindowIcon } : {}),
       webPreferences: {
         preload: join(__dirname, '../preload/index.js'),
         contextIsolation: true,

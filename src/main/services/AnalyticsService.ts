@@ -1,5 +1,5 @@
-import { loggerService } from '@logger'
 import type { TokenUsageData } from '@cherrystudio/analytics-client'
+import { loggerService } from '@logger'
 
 const logger = loggerService.withContext('AnalyticsService')
 

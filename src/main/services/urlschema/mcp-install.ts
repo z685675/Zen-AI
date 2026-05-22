@@ -83,4 +83,3 @@ export function handleMcpProtocolUrl(url: URL) {
       break
   }
 }
-

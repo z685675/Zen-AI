@@ -2,9 +2,9 @@ import { loggerService } from '@logger'
 import { isPortable } from '@main/constant'
 import { APP_NAME, APP_UPDATE_FEED_URL } from '@shared/config/constant'
 import { IpcChannel } from '@shared/IpcChannel'
-import { type BrowserWindow, app } from 'electron'
-import { autoUpdater } from 'electron-updater'
+import { app, type BrowserWindow } from 'electron'
 import type { ProgressInfo, UpdateDownloadedEvent, UpdateInfo } from 'electron-updater'
+import { autoUpdater } from 'electron-updater'
 
 export type AppUpdateCheckSource = 'auto' | 'manual'
 

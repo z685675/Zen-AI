@@ -59,6 +59,9 @@ vi.mock('electron', () => ({
       if (key === 'userData') return '/mock/userData'
       return '/mock/unknown'
     })
+  },
+  nativeImage: {
+    createFromPath: vi.fn(() => ({ isEmpty: () => false }))
   }
 }))
 
@@ -114,8 +117,8 @@ vi.mock('node-stream-zip', () => ({
 }))
 
 // Import after mocks
-import * as fs from 'fs-extra'
 import { APP_TEMP_DIR_NAME } from '@shared/config/constant'
+import * as fs from 'fs-extra'
 
 import BackupManager from '../BackupManager'
 

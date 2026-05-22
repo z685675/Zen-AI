@@ -289,6 +289,12 @@ const ToolBlockGroup: React.FC<Props> = ({ blocks }) => {
     }
   }, [activeKey, currentRunningBlock])
 
+  useEffect(() => {
+    if (!allCompleted) {
+      setActiveKey((prev) => (prev.includes('tool-group') ? prev : [...prev, 'tool-group']))
+    }
+  }, [allCompleted])
+
   const handleChange = (keys: string | string[]) => {
     const keyArray = Array.isArray(keys) ? keys : [keys]
     const isExpanding = keyArray.includes('tool-group')

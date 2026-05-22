@@ -51,8 +51,7 @@ const initialState: AssistantsState = {
 }
 
 const normalizeTopics = (topics: unknown): Topic[] => (Array.isArray(topics) ? topics : [])
-const normalizeConversationFolders = (folders: unknown): ConversationFolder[] =>
-  Array.isArray(folders) ? folders : []
+const normalizeConversationFolders = (folders: unknown): ConversationFolder[] => (Array.isArray(folders) ? folders : [])
 
 const cleanupTouchedConversationFolders = (state: AssistantsState, previousFolders: ConversationFolder[]) => {
   const nextFolders = normalizeConversationFolders(state.conversationFolders)
@@ -117,11 +116,10 @@ const assistantsSlice = createSlice({
       state.assistants = state.assistants.filter((c) => c.id !== action.payload.id)
       state.quickAssistantIds = state.quickAssistantIds.filter((id) => id !== action.payload.id)
       if (removedTopicIds.length > 0) {
-        state.conversationFolders = normalizeConversationFolders(state.conversationFolders)
-          .map((folder) => ({
-            ...folder,
-            topicIds: folder.topicIds.filter((topicId) => !removedTopicIds.includes(topicId))
-          }))
+        state.conversationFolders = normalizeConversationFolders(state.conversationFolders).map((folder) => ({
+          ...folder,
+          topicIds: folder.topicIds.filter((topicId) => !removedTopicIds.includes(topicId))
+        }))
         cleanupTouchedConversationFolders(state, previousFolders)
       }
     },
@@ -198,11 +196,10 @@ const assistantsSlice = createSlice({
             }
           : assistant
       )
-      state.conversationFolders = normalizeConversationFolders(state.conversationFolders)
-        .map((folder) => ({
-          ...folder,
-          topicIds: folder.topicIds.filter((topicId) => topicId !== action.payload.topic.id)
-        }))
+      state.conversationFolders = normalizeConversationFolders(state.conversationFolders).map((folder) => ({
+        ...folder,
+        topicIds: folder.topicIds.filter((topicId) => topicId !== action.payload.topic.id)
+      }))
       cleanupTouchedConversationFolders(state, previousFolders)
     },
     updateTopic: (state, action: PayloadAction<{ assistantId: string; topic: Topic }>) => {
@@ -239,11 +236,10 @@ const assistantsSlice = createSlice({
         if (assistant.id === action.payload.assistantId) {
           const removedTopicIds = normalizeTopics(assistant.topics).map((topic) => topic.id)
           normalizeTopics(assistant.topics).forEach((topic) => TopicManager.removeTopic(topic.id))
-          state.conversationFolders = normalizeConversationFolders(state.conversationFolders)
-            .map((folder) => ({
-              ...folder,
-              topicIds: folder.topicIds.filter((topicId) => !removedTopicIds.includes(topicId))
-            }))
+          state.conversationFolders = normalizeConversationFolders(state.conversationFolders).map((folder) => ({
+            ...folder,
+            topicIds: folder.topicIds.filter((topicId) => !removedTopicIds.includes(topicId))
+          }))
           return {
             ...assistant,
             topics: [getDefaultTopic(assistant.id)]
@@ -334,7 +330,7 @@ const assistantsSlice = createSlice({
         }
       ]
       state.collapsedConversationFolders = {
-        ...(state.collapsedConversationFolders || {}),
+        ...state.collapsedConversationFolders,
         [action.payload.id]: false
       }
     },
@@ -377,7 +373,7 @@ const assistantsSlice = createSlice({
     },
     toggleConversationFolderCollapsed: (state, action: PayloadAction<{ id: string }>) => {
       state.collapsedConversationFolders = {
-        ...(state.collapsedConversationFolders || {}),
+        ...state.collapsedConversationFolders,
         [action.payload.id]: !state.collapsedConversationFolders?.[action.payload.id]
       }
     },

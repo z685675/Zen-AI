@@ -1,5 +1,6 @@
 import { isMac } from '@main/constant'
 import { windowService } from '@main/services/WindowService'
+import { locales } from '@main/utils/locales'
 import {
   APP_DOCS_URL,
   APP_FEEDBACK_URL,
@@ -7,7 +8,6 @@ import {
   APP_SOURCE_URL,
   APP_WEBSITE_URL
 } from '@shared/config/constant'
-import { locales } from '@main/utils/locales'
 import { IpcChannel } from '@shared/IpcChannel'
 import type { MenuItemConstructorOptions } from 'electron'
 import { app, Menu, shell } from 'electron'

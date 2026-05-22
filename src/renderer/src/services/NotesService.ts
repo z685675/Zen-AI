@@ -29,7 +29,9 @@ export function sortTree(
 ): NotesTreeNode[] {
   const cloned = nodes.map((node) => ({
     ...node,
-    children: node.children ? sortTree(node.children, sortType, manualOrders, normalizePath(node.externalPath)) : undefined
+    children: node.children
+      ? sortTree(node.children, sortType, manualOrders, normalizePath(node.externalPath))
+      : undefined
   }))
 
   const sorter = getSorter(sortType)

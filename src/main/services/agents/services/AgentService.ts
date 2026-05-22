@@ -10,7 +10,7 @@ import type {
   UpdateAgentResponse
 } from '@types'
 import { AgentBaseSchema } from '@types'
-import { asc, count, desc, eq, sql } from 'drizzle-orm'
+import { asc, count, desc, eq, min } from 'drizzle-orm'
 
 import { BaseService } from '../BaseService'
 import { type AgentRow, agentsTable, type InsertAgentRow } from '../database/schema'
@@ -64,11 +64,10 @@ export class AgentService extends BaseService {
     }
 
     const database = await this.getDatabase()
-    // Shift all existing agents' sort_order up by 1 and insert new agent at position 0 atomically
-    await database.transaction(async (tx) => {
-      await tx.update(agentsTable).set({ sort_order: sql`${agentsTable.sort_order} + 1` })
-      await tx.insert(agentsTable).values(insertData)
-    })
+    const minSortResult = await database.select({ min: min(agentsTable.sort_order) }).from(agentsTable)
+    const newSortOrder = (minSortResult[0]?.min ?? 0) - 1
+    insertData.sort_order = newSortOrder
+    await database.insert(agentsTable).values(insertData)
     const result = await database.select().from(agentsTable).where(eq(agentsTable.id, id)).limit(1)
     if (!result[0]) {
       throw new Error('Failed to create agent')
@@ -232,10 +231,10 @@ export class AgentService extends BaseService {
         updated_at: now
       }
 
-      await database.transaction(async (tx) => {
-        await tx.update(agentsTable).set({ sort_order: sql`${agentsTable.sort_order} + 1` })
-        await tx.insert(agentsTable).values(insertData)
-      })
+      const minSortResult = await database.select({ min: min(agentsTable.sort_order) }).from(agentsTable)
+      const newSortOrder = (minSortResult[0]?.min ?? 0) - 1
+      insertData.sort_order = newSortOrder
+      await database.insert(agentsTable).values(insertData)
 
       logger.info(`Created built-in ${builtinRole} agent`, { id })
       return id
@@ -312,10 +311,10 @@ export class AgentService extends BaseService {
         updated_at: now
       }
 
-      await database.transaction(async (tx) => {
-        await tx.update(agentsTable).set({ sort_order: sql`${agentsTable.sort_order} + 1` })
-        await tx.insert(agentsTable).values(insertData)
-      })
+      const minSortResult = await database.select({ min: min(agentsTable.sort_order) }).from(agentsTable)
+      const newSortOrder = (minSortResult[0]?.min ?? 0) - 1
+      insertData.sort_order = newSortOrder
+      await database.insert(agentsTable).values(insertData)
 
       // Seed workspace templates for soul mode
       const workspace = resolvedPaths?.[0]
@@ -416,4 +415,3 @@ export class AgentService extends BaseService {
 }
 
 export const agentService = AgentService.getInstance()
-

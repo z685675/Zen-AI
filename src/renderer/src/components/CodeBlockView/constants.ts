@@ -1,6 +1,5 @@
-import type { ComponentType } from 'react'
-
 import { GraphvizPreview, MermaidPreview, PlantUmlPreview, SvgPreview } from '@renderer/components/Preview'
+import type { ComponentType } from 'react'
 
 /**
  * 特殊视图语言列表

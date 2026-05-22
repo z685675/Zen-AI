@@ -157,8 +157,7 @@ export function selectAnthropicCacheBreakpointIndices(
   const reservedSystemSlots = systemIndex === undefined ? 0 : 1
   const maxRecentByCandidates = Math.max(eligibleNonSystemCandidates.length - 1, 0)
   const maxRecentBySlots = Math.max(MAX_CACHE_BREAKPOINTS - reservedSystemSlots - 1, 0)
-  const recentCount =
-    cacheLastNMessages > 0 ? Math.min(cacheLastNMessages, maxRecentByCandidates, maxRecentBySlots) : 0
+  const recentCount = cacheLastNMessages > 0 ? Math.min(cacheLastNMessages, maxRecentByCandidates, maxRecentBySlots) : 0
 
   const recentCandidates = recentCount > 0 ? eligibleNonSystemCandidates.slice(-recentCount) : []
   const recentIndices = recentCandidates.map((candidate) => candidate.index)

@@ -241,7 +241,11 @@ export const serializeError = (error: AiSdkErrorUnion): SerializedError => {
       serializedError.zenConnectivityCheck = JSON.parse(serialized)
     }
   }
-  if (!serializedError.zenTraceId && serializedError.responseHeaders && typeof serializedError.responseHeaders === 'object') {
+  if (
+    !serializedError.zenTraceId &&
+    serializedError.responseHeaders &&
+    typeof serializedError.responseHeaders === 'object'
+  ) {
     const headers = serializedError.responseHeaders as Record<string, string>
     serializedError.zenTraceId = headers[ZEN_TRACE_HEADER] || headers[ZEN_TRACE_HEADER.toLowerCase()]
   }
@@ -421,7 +425,7 @@ export function formatErrorForClipboard(error: SerializedError): string {
   pushLine('错误类型', error.name)
   pushLine('错误消息', error.message)
   pushLine('原因', 'cause' in error ? error.cause : undefined)
-  pushLine('状态码', 'statusCode' in error ? error.statusCode : ('status' in error ? error.status : undefined))
+  pushLine('状态码', 'statusCode' in error ? error.statusCode : 'status' in error ? error.status : undefined)
   pushLine('状态文本', 'statusText' in error ? error.statusText : undefined)
   pushLine('Provider', error.providerId)
   pushLine('模型', error.modelId)

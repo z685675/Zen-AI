@@ -69,4 +69,3 @@ export function handleNavigateProtocolUrl(url: URL) {
     setTimeout(() => handleNavigateProtocolUrl(url), 1000)
   }
 }
-

@@ -87,7 +87,7 @@ const persistedReducer = persistReducer(
   {
     key: APP_PERSIST_KEY,
     storage,
-    version: 209,
+    version: 210,
     blacklist: ['runtime', 'messages', 'messageBlocks', 'tabs', 'toolPermissions'],
     migrate
   },

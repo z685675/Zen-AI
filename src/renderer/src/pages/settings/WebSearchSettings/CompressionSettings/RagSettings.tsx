@@ -60,7 +60,8 @@ const RagSettings = () => {
       compressionConfig?.embeddingModel &&
       !embeddingModels.some(
         (model) =>
-          model.id === compressionConfig.embeddingModel?.id && model.provider === compressionConfig.embeddingModel?.provider
+          model.id === compressionConfig.embeddingModel?.id &&
+          model.provider === compressionConfig.embeddingModel?.provider
       )
     ) {
       nextConfig.embeddingModel = undefined

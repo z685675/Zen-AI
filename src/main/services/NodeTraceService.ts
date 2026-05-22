@@ -4,9 +4,9 @@ import { CacheBatchSpanProcessor, FunctionSpanExporter } from '@mcp-trace/trace-
 import { NodeTracer as MCPNodeTracer } from '@mcp-trace/trace-node/nodeTracer'
 import type { SpanContext } from '@opentelemetry/api'
 import { context, trace } from '@opentelemetry/api'
+import { APP_NAME } from '@shared/config/constant'
 import { BrowserWindow, ipcMain } from 'electron'
 import * as path from 'path'
-import { APP_NAME } from '@shared/config/constant'
 
 import { ConfigKeys, configManager } from './ConfigManager'
 import { spanCacheService } from './SpanCacheService'

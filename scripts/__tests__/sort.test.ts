@@ -61,28 +61,28 @@ describe('sortedObjectByKeys', () => {
       translation: {
         backup: {
           progress: {
-            writing_data: '鍐欏叆鏁版嵁...',
-            preparing: '鍑嗗澶囦唤...',
-            completed: '澶囦唤瀹屾垚'
+            writing_data: '\u5199\u5165\u6570\u636e...',
+            preparing: '\u6b63\u5728\u51c6\u5907...',
+            completed: '\u5df2\u5b8c\u6210'
           }
         },
         agents: {
-          'delete.popup.content': '纭畾瑕佸垹闄ゆ鏅鸿兘浣撳悧锛?,
-          'edit.model.select.title': '閫夋嫨妯″瀷'
+          'delete.popup.content': '\u786e\u5b9a\u8981\u5220\u9664\u8be5\u667a\u80fd\u4f53\u5417\uff1f',
+          'edit.model.select.title': '\u9009\u62e9\u6a21\u578b'
         }
       }
     }
     const sortedObj = {
       translation: {
         agents: {
-          'delete.popup.content': '纭畾瑕佸垹闄ゆ鏅鸿兘浣撳悧锛?,
-          'edit.model.select.title': '閫夋嫨妯″瀷'
+          'delete.popup.content': '\u786e\u5b9a\u8981\u5220\u9664\u8be5\u667a\u80fd\u4f53\u5417\uff1f',
+          'edit.model.select.title': '\u9009\u62e9\u6a21\u578b'
         },
         backup: {
           progress: {
-            completed: '澶囦唤瀹屾垚',
-            preparing: '鍑嗗澶囦唤...',
-            writing_data: '鍐欏叆鏁版嵁...'
+            completed: '\u5df2\u5b8c\u6210',
+            preparing: '\u6b63\u5728\u51c6\u5907...',
+            writing_data: '\u5199\u5165\u6570\u636e...'
           }
         }
       }

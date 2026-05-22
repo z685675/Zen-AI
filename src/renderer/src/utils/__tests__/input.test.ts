@@ -76,28 +76,16 @@ describe('input utils', () => {
 
   it('checks exact modifier combinations for send shortcuts', () => {
     expect(
-      isSendMessageKeyPressed(
-        { shiftKey: false, ctrlKey: false, metaKey: false, altKey: false } as any,
-        'Enter'
-      )
+      isSendMessageKeyPressed({ shiftKey: false, ctrlKey: false, metaKey: false, altKey: false } as any, 'Enter')
     ).toBe(true)
     expect(
-      isSendMessageKeyPressed(
-        { shiftKey: false, ctrlKey: true, metaKey: false, altKey: false } as any,
-        'Ctrl+Enter'
-      )
+      isSendMessageKeyPressed({ shiftKey: false, ctrlKey: true, metaKey: false, altKey: false } as any, 'Ctrl+Enter')
     ).toBe(true)
     expect(
-      isSendMessageKeyPressed(
-        { shiftKey: false, ctrlKey: false, metaKey: true, altKey: false } as any,
-        'Command+Enter'
-      )
+      isSendMessageKeyPressed({ shiftKey: false, ctrlKey: false, metaKey: true, altKey: false } as any, 'Command+Enter')
     ).toBe(true)
     expect(
-      isSendMessageKeyPressed(
-        { shiftKey: true, ctrlKey: true, metaKey: false, altKey: false } as any,
-        'Ctrl+Enter'
-      )
+      isSendMessageKeyPressed({ shiftKey: true, ctrlKey: true, metaKey: false, altKey: false } as any, 'Ctrl+Enter')
     ).toBe(false)
   })
 })

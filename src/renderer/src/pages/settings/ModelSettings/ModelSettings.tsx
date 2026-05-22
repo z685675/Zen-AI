@@ -53,7 +53,9 @@ const ModelSettings: FC<ModelSettingsProps> = ({
 
   const hasAvailableModel = useCallback(
     (model?: Model) =>
-      !!model && hasModel(model) && enabledModels.some((item) => item.id === model.id && item.provider === model.provider),
+      !!model &&
+      hasModel(model) &&
+      enabledModels.some((item) => item.id === model.id && item.provider === model.provider),
     [enabledModels]
   )
 

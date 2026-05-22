@@ -4,13 +4,14 @@ import { AiProvider } from '@renderer/aiCore'
 import IcImageUp from '@renderer/assets/images/paintings/ic_ImageUp.svg'
 import { Navbar, NavbarCenter, NavbarRight } from '@renderer/components/app/Navbar'
 import Scrollbar from '@renderer/components/Scrollbar'
+import InfoTooltip from '@renderer/components/TooltipIcons/InfoTooltip'
 import TranslateButton from '@renderer/components/TranslateButton'
 import { isMac } from '@renderer/config/constant'
 import { getProviderLogo, PROVIDER_URLS } from '@renderer/config/providers'
 import { LanguagesEnum } from '@renderer/config/translate'
 import { useTheme } from '@renderer/context/ThemeProvider'
 import { usePaintings } from '@renderer/hooks/usePaintings'
-import { useAllProviders } from '@renderer/hooks/useProvider'
+import { usePaintingProviders } from '@renderer/hooks/useProvider'
 import { useRuntime } from '@renderer/hooks/useRuntime'
 import { useSettings } from '@renderer/hooks/useSettings'
 import {
@@ -20,7 +21,12 @@ import {
   getPaintingsQualityOptionsLabel
 } from '@renderer/i18n/label'
 import PaintingsList from '@renderer/pages/paintings/components/PaintingsList'
-import { DEFAULT_PAINTING, MODELS, SUPPORTED_MODELS } from '@renderer/pages/paintings/config/NewApiConfig'
+import {
+  DEFAULT_PAINTING,
+  isGptImage2Family,
+  resolveModelConfig,
+  SUPPORTED_MODELS
+} from '@renderer/pages/paintings/config/NewApiConfig'
 import FileManager from '@renderer/services/FileManager'
 import { translateText } from '@renderer/services/TranslateService'
 import { useAppDispatch } from '@renderer/store'
@@ -28,7 +34,6 @@ import { setGenerating } from '@renderer/store/runtime'
 import type { PaintingAction, PaintingsState } from '@renderer/types'
 import type { FileMetadata } from '@renderer/types'
 import { getErrorMessage, uuid } from '@renderer/utils'
-import { isNewApiProvider } from '@renderer/utils/provider'
 import { Avatar, Button, Empty, InputNumber, Segmented, Select, Upload } from 'antd'
 import TextArea from 'antd/es/input/TextArea'
 import type { RcFile } from 'antd/es/upload'
@@ -44,7 +49,7 @@ import SendMessageButton from '../home/Inputbar/SendMessageButton'
 import { SettingHelpLink, SettingTitle } from '../settings'
 import Artboard from './components/Artboard'
 import ProviderSelect from './components/ProviderSelect'
-import { checkProviderEnabled } from './utils'
+import { checkProviderEnabled, findPaintingByFiles, resolveSmartAutoSize } from './utils'
 
 const logger = loggerService.withContext('NewApiPage')
 
@@ -69,23 +74,25 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
 
   const { t } = useTranslation()
   const { theme } = useTheme()
-  const providers = useAllProviders()
+  const providers = usePaintingProviders()
   const location = useLocation()
   const routeName = location.pathname.split('/').pop() || 'new-api'
-  const newApiProviders = providers.filter((p) => isNewApiProvider(p))
 
   const dispatch = useAppDispatch()
   const { generating } = useRuntime()
   const navigate = useNavigate()
   const { autoTranslateWithSpace } = useSettings()
   const spaceClickTimer = useRef<NodeJS.Timeout>(null)
-  const newApiProvider = newApiProviders.find((p) => p.id === routeName) || newApiProviders[0]
+  const newApiProvider = providers.find((p) => p.id === routeName) || providers[0]
+  const providerId = newApiProvider?.id ?? ''
+  const providerModels = useMemo(() => newApiProvider?.models ?? [], [newApiProvider?.models])
+  const providerApiHost = newApiProvider?.apiHost ?? ''
 
   const filteredPaintings = useMemo(
-    () => (newApiPaintings[mode] || []).filter((p) => p.providerId === newApiProvider.id),
-    [newApiPaintings, mode, newApiProvider.id]
+    () => (newApiPaintings[mode] || []).filter((p) => p.providerId === providerId),
+    [newApiPaintings, mode, providerId]
   )
-  const [painting, setPainting] = useState<PaintingAction>({ ...DEFAULT_PAINTING, providerId: newApiProvider.id })
+  const [painting, setPainting] = useState<PaintingAction>({ ...DEFAULT_PAINTING, providerId })
 
   const modeOptions = [
     { label: t('paintings.mode.generate'), value: 'openai_image_generate' },
@@ -99,20 +106,67 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
     return editImageFiles
   }, [editImageFiles])
 
+  useEffect(() => {
+    if (mode !== 'openai_image_edit') {
+      return
+    }
+
+    let isActive = true
+
+    const syncEditImages = async () => {
+      if (painting.files.length === 0) {
+        setEditImageFiles([])
+        return
+      }
+
+      try {
+        const files = await Promise.all(
+          painting.files.map(async (file, index) => {
+            const { data, mime } = await window.api.file.binaryImage(file.id + file.ext)
+            const fileName = file.name || `image_${index + 1}${file.ext}`
+
+            return new File([data], fileName, {
+              type: mime,
+              lastModified: new Date(file.created_at).getTime()
+            })
+          })
+        )
+
+        if (isActive) {
+          setEditImageFiles(files)
+        }
+      } catch (error) {
+        logger.error('Failed to sync edit images from selected painting:', error as Error)
+
+        if (isActive) {
+          setEditImageFiles([])
+        }
+      }
+    }
+
+    void syncEditImages()
+
+    return () => {
+      isActive = false
+    }
+  }, [mode, painting.files])
+
   const updatePaintingState = useCallback(
     (updates: Partial<PaintingAction>) => {
-      const updatedPainting = { ...painting, providerId: newApiProvider.id, ...updates }
+      const updatedPainting = { ...painting, providerId, ...updates }
       setPainting(updatedPainting)
-      updatePainting(mode, updatedPainting)
+      if (newApiProvider) {
+        updatePainting(mode, updatedPainting)
+      }
     },
-    [painting, newApiProvider.id, mode, updatePainting]
+    [painting, providerId, newApiProvider, mode, updatePainting]
   )
 
   // ---------------- Model Related Configurations ----------------
   // const modelOptions = MODELS.map((m) => ({ label: m.name, value: m.name }))
 
   const modelOptions = useMemo(() => {
-    const customModels = newApiProvider.models
+    const customModels = providerModels
       .filter((m) => m.endpoint_type && m.endpoint_type === 'image-generation')
       .map((m) => ({
         label: m.name,
@@ -121,7 +175,7 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
         group: m.group
       }))
     return [...customModels]
-  }, [newApiProvider.models])
+  }, [providerModels])
 
   // 根据 group 将模型进行分组，便于在下拉列表中分组渲染
   const groupedModelOptions = useMemo(() => {
@@ -140,17 +194,44 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
       ...DEFAULT_PAINTING,
       model: painting.model || modelOptions[0]?.value || '',
       id: uuid(),
-      providerId: newApiProvider.id
+      providerId
     }
-  }, [modelOptions, painting.model, newApiProvider.id])
+  }, [modelOptions, painting.model, providerId])
 
-  const selectedModelConfig = useMemo(
-    () => MODELS.find((m) => m.name === painting.model) || MODELS[0],
-    [painting.model]
+  const selectedModelConfig = useMemo(() => resolveModelConfig(painting.model), [painting.model])
+  const isGptImage2 = isGptImage2Family(selectedModelConfig.name)
+  const imageSizeOptions = selectedModelConfig.imageSizes
+  const qualityOptions = selectedModelConfig.quality
+  const moderationOptions = selectedModelConfig.moderation
+  const backgroundOptions = selectedModelConfig.background
+  const smartAutoSize = useMemo(
+    () => (painting.size === 'auto' && isGptImage2 ? resolveSmartAutoSize(painting.model, painting.prompt) : undefined),
+    [isGptImage2, painting.model, painting.prompt, painting.size]
   )
+  const smartAutoSizeSummary = useMemo(() => {
+    if (!smartAutoSize || painting.size !== 'auto' || !isGptImage2) {
+      return null
+    }
+
+    if (smartAutoSize.reason === 'conflict') {
+      return t('paintings.image_size_auto.conflict')
+    }
+
+    if (smartAutoSize.reason === 'fallback_auto') {
+      return t('paintings.image_size_auto.fallback')
+    }
+
+    if (!smartAutoSize.size) {
+      return null
+    }
+
+    return t('paintings.image_size_auto.matched', {
+      target: getPaintingsImageSizeOptionsLabel(smartAutoSize.size)
+    })
+  }, [isGptImage2, painting.size, smartAutoSize, t])
 
   const handleModelChange = (value: string) => {
-    const modelConfig = MODELS.find((m) => m.name === value)
+    const modelConfig = resolveModelConfig(value)
     const updates: Partial<PaintingAction> = { model: value }
 
     // 设置默认值
@@ -162,6 +243,9 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
     }
     if (modelConfig?.moderation?.length) {
       updates.moderation = modelConfig.moderation[0].value
+    }
+    if (modelConfig?.background?.length) {
+      updates.background = modelConfig.background[0].value
     }
     updates.n = 1
     updatePaintingState(updates)
@@ -221,6 +305,10 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
   }
 
   const onGenerate = async () => {
+    if (!newApiProvider) {
+      return
+    }
+
     await checkProviderEnabled(newApiProvider, t)
 
     if (painting.files.length > 0) {
@@ -261,19 +349,26 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
     }
     // NOTE: Cherry Studio当下 newapi只接受v1/images/xxx的请求
     // TODO: support gemini https://www.newapi.ai/zh/docs/api/ai-model/images/gemini/geminirelayv1beta-383837589
-    let url = newApiProvider.apiHost.replace(/\/v1$/, '') + `/v1/images/generations`
-    let editUrl = newApiProvider.apiHost.replace(/\/v1$/, '') + `/v1/images/edits`
+    let url = providerApiHost.replace(/\/v1$/, '') + `/v1/images/generations`
+    let editUrl = providerApiHost.replace(/\/v1$/, '') + `/v1/images/edits`
     if (newApiProvider.id === 'aionly') {
-      url = newApiProvider.apiHost.replace(/\/v1$/, '') + `/openai/v1/images/generations`
-      editUrl = newApiProvider.apiHost.replace(/\/v1$/, '') + `/openai/v1/images/edits`
+      url = providerApiHost.replace(/\/v1$/, '') + `/openai/v1/images/generations`
+      editUrl = providerApiHost.replace(/\/v1$/, '') + `/openai/v1/images/edits`
     }
 
     try {
       if (mode === 'openai_image_generate') {
+        const resolvedSize =
+          painting.size === 'auto'
+            ? smartAutoSize?.size === undefined
+              ? undefined
+              : smartAutoSize.size
+            : painting.size
+
         const requestData = {
           prompt,
           model: painting.model,
-          size: painting.size === 'auto' ? undefined : painting.size,
+          size: resolvedSize,
           background: painting.background === 'auto' ? undefined : painting.background,
           n: painting.n,
           quality: painting.quality === 'auto' ? undefined : painting.quality,
@@ -451,11 +546,39 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
 
   // 处理模式切换
   const handleModeChange = (value: string) => {
-    setMode(value as keyof PaintingsState)
-    const list = (newApiPaintings[value as keyof PaintingsState] || []).filter(
-      (p) => p.providerId === newApiProvider.id
-    )
-    setPainting(list[0] || { ...DEFAULT_PAINTING, providerId: newApiProvider.id })
+    if (!newApiProvider) {
+      return
+    }
+
+    const nextMode = value as keyof PaintingsState
+
+    setMode(nextMode)
+
+    if (nextMode === 'openai_image_edit' && mode === 'openai_image_generate' && painting.files.length > 0) {
+      const existingEditPainting = findPaintingByFiles<PaintingAction>(
+        newApiPaintings.openai_image_edit || [],
+        providerId,
+        painting.files
+      )
+
+      if (existingEditPainting) {
+        setPainting(existingEditPainting)
+        return
+      }
+
+      const seededPainting = {
+        ...painting,
+        id: uuid(),
+        providerId
+      }
+
+      addPainting(nextMode, seededPainting)
+      setPainting(seededPainting)
+      return
+    }
+
+    const list = (newApiPaintings[nextMode] || []).filter((p) => p.providerId === providerId)
+    setPainting(list[0] || { ...DEFAULT_PAINTING, providerId })
   }
 
   // 渲染配置项的函数
@@ -472,10 +595,14 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
 
   // 当 modelOptions 为空时，引导用户跳转到 Provider 设置页面，新增 image-generation 端点模型
   const handleShowAddModelPopup = () => {
-    navigate(`/settings/provider?id=${newApiProvider.id}`)
+    navigate(providerId ? `/settings/provider?id=${providerId}` : '/settings/provider')
   }
 
   useEffect(() => {
+    if (!newApiProvider) {
+      return
+    }
+
     if (filteredPaintings.length === 0) {
       const newPainting = getNewPainting()
       addPainting(mode, newPainting)
@@ -489,7 +616,7 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
         setPainting(filteredPaintings[0])
       }
     }
-  }, [filteredPaintings, mode, addPainting, getNewPainting, painting.id])
+  }, [filteredPaintings, mode, addPainting, getNewPainting, newApiProvider, painting.id])
 
   useEffect(() => {
     const timer = spaceClickTimer.current
@@ -506,6 +633,54 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
       updatePaintingState({ model: modelOptions[0].value })
     }
   }, [modelOptions, painting.model, updatePaintingState])
+
+  useEffect(() => {
+    if (!imageSizeOptions.some((option) => option.value === painting.size)) {
+      updatePaintingState({ size: imageSizeOptions[0]?.value ?? DEFAULT_PAINTING.size })
+    }
+  }, [imageSizeOptions, painting.size, updatePaintingState])
+
+  useEffect(() => {
+    if (!qualityOptions.some((option) => option.value === painting.quality)) {
+      updatePaintingState({ quality: qualityOptions[0]?.value ?? DEFAULT_PAINTING.quality })
+    }
+  }, [painting.quality, qualityOptions, updatePaintingState])
+
+  useEffect(() => {
+    if (!moderationOptions.some((option) => option.value === painting.moderation)) {
+      updatePaintingState({ moderation: moderationOptions[0]?.value ?? DEFAULT_PAINTING.moderation })
+    }
+  }, [moderationOptions, painting.moderation, updatePaintingState])
+
+  useEffect(() => {
+    if (!backgroundOptions.some((option) => option.value === painting.background)) {
+      updatePaintingState({ background: backgroundOptions[0]?.value ?? DEFAULT_PAINTING.background })
+    }
+  }, [backgroundOptions, painting.background, updatePaintingState])
+
+  if (!newApiProvider) {
+    return (
+      <Container>
+        <Navbar>
+          <NavbarCenter style={{ borderRight: 'none' }}>{t('paintings.title')}</NavbarCenter>
+        </Navbar>
+        <ContentContainer id="content-container">
+          <LeftContainer>
+            <Empty
+              style={{ marginTop: 24 }}
+              description={t('paintings.no_image_generation_model', {
+                endpoint_type: t('endpoint_type.image-generation')
+              })}>
+              <Button type="primary" onClick={() => navigate('/settings/provider')}>
+                {t('paintings.go_to_settings')}
+              </Button>
+            </Empty>
+          </LeftContainer>
+          <MainContainer />
+        </ContentContainer>
+      </Container>
+    )
+  }
 
   return (
     <Container>
@@ -608,28 +783,39 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
               </Select>
 
               {/* Image Size */}
-              {selectedModelConfig?.imageSizes && selectedModelConfig.imageSizes.length > 0 && (
+              {imageSizeOptions.length > 0 && (
                 <>
-                  <SettingTitle>{t('paintings.image.size')}</SettingTitle>
+                  <SettingTitleRow>
+                    <SettingTitle>{t('paintings.image.size')}</SettingTitle>
+                    <InfoTooltip
+                      title={t(
+                        isGptImage2 ? 'paintings.help.image_size.gpt_image_2' : 'paintings.help.image_size.default'
+                      )}
+                    />
+                  </SettingTitleRow>
                   <Select value={painting.size} onChange={handleSizeChange} style={{ width: '100%', marginBottom: 15 }}>
-                    {selectedModelConfig.imageSizes.map((s) => (
+                    {imageSizeOptions.map((s) => (
                       <Select.Option value={s.value} key={s.value}>
-                        {getPaintingsImageSizeOptionsLabel(s.value) ?? s.value}
+                        {getPaintingsImageSizeOptionsLabel(s.value, s.label, s.isExperimental) ?? s.value}
                       </Select.Option>
                     ))}
                   </Select>
+                  {smartAutoSizeSummary && <SettingHint>{smartAutoSizeSummary}</SettingHint>}
                 </>
               )}
 
               {/* Quality */}
-              {selectedModelConfig?.quality && selectedModelConfig.quality.length > 0 && (
+              {qualityOptions.length > 0 && (
                 <>
-                  <SettingTitle>{t('paintings.quality')}</SettingTitle>
+                  <SettingTitleRow>
+                    <SettingTitle>{t('paintings.quality')}</SettingTitle>
+                    <InfoTooltip title={t('paintings.help.quality')} />
+                  </SettingTitleRow>
                   <Select
                     value={painting.quality}
                     onChange={handleQualityChange}
                     style={{ width: '100%', marginBottom: 15 }}>
-                    {selectedModelConfig.quality.map((q) => (
+                    {qualityOptions.map((q) => (
                       <Select.Option value={q.value} key={q.value}>
                         {getPaintingsQualityOptionsLabel(q.value) ?? q.value}
                       </Select.Option>
@@ -639,42 +825,48 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
               )}
 
               {/* Moderation */}
-              {mode !== 'openai_image_edit' &&
-                selectedModelConfig?.moderation &&
-                selectedModelConfig.moderation.length > 0 && (
-                  <>
+              {moderationOptions.length > 0 && (
+                <>
+                  <SettingTitleRow>
                     <SettingTitle>{t('paintings.moderation')}</SettingTitle>
-                    <Select
-                      value={painting.moderation}
-                      onChange={handleModerationChange}
-                      style={{ width: '100%', marginBottom: 15 }}>
-                      {selectedModelConfig.moderation.map((m) => (
-                        <Select.Option value={m.value} key={m.value}>
-                          {getPaintingsModerationOptionsLabel(m.value) ?? m.value}
-                        </Select.Option>
-                      ))}
-                    </Select>
-                  </>
-                )}
+                    <InfoTooltip title={t('paintings.help.moderation')} />
+                  </SettingTitleRow>
+                  <Select
+                    value={painting.moderation}
+                    onChange={handleModerationChange}
+                    style={{ width: '100%', marginBottom: 15 }}>
+                    {moderationOptions.map((m) => (
+                      <Select.Option value={m.value} key={m.value}>
+                        {getPaintingsModerationOptionsLabel(m.value) ?? m.value}
+                      </Select.Option>
+                    ))}
+                  </Select>
+                </>
+              )}
 
               {/* Background */}
-              {mode === 'openai_image_edit' &&
-                selectedModelConfig?.background &&
-                selectedModelConfig.background.length > 0 && (
-                  <>
+              {backgroundOptions.length > 0 && (
+                <>
+                  <SettingTitleRow>
                     <SettingTitle>{t('paintings.background')}</SettingTitle>
-                    <Select
-                      value={painting.background}
-                      onChange={(value) => updatePaintingState({ background: value })}
-                      style={{ width: '100%', marginBottom: 15 }}>
-                      {selectedModelConfig.background.map((b) => (
-                        <Select.Option value={b.value} key={b.value}>
-                          {getPaintingsBackgroundOptionsLabel(b.value) ?? b.value}
-                        </Select.Option>
-                      ))}
-                    </Select>
-                  </>
-                )}
+                    <InfoTooltip
+                      title={t(
+                        isGptImage2 ? 'paintings.help.background.gpt_image_2' : 'paintings.help.background.default'
+                      )}
+                    />
+                  </SettingTitleRow>
+                  <Select
+                    value={painting.background}
+                    onChange={(value) => updatePaintingState({ background: value })}
+                    style={{ width: '100%', marginBottom: 15 }}>
+                    {backgroundOptions.map((b) => (
+                      <Select.Option value={b.value} key={b.value}>
+                        {getPaintingsBackgroundOptionsLabel(b.value) ?? b.value}
+                      </Select.Option>
+                    ))}
+                  </Select>
+                </>
+              )}
 
               {/* Number of Images (n) */}
               {selectedModelConfig?.max_images && (
@@ -839,6 +1031,20 @@ const ProviderTitleContainer = styled.div`
   justify-content: space-between;
   align-items: center;
   margin-bottom: 5px;
+`
+
+const SettingTitleRow = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 6px;
+`
+
+const SettingHint = styled.div`
+  margin-top: -8px;
+  margin-bottom: 14px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--color-text-3);
 `
 
 const ImageUploadButton = styled(Upload)`

@@ -180,7 +180,9 @@ describe('export utils', () => {
 
   it('joins multiple messages as markdown', () => {
     const first = createMessage('user', [createBlock('user-1', MessageBlockType.MAIN_TEXT, 'First message')])
-    const second = createMessage('assistant', [createBlock('assistant-1', MessageBlockType.MAIN_TEXT, 'Second message')])
+    const second = createMessage('assistant', [
+      createBlock('assistant-1', MessageBlockType.MAIN_TEXT, 'Second message')
+    ])
 
     const result = messagesToMarkdown([first, second], false, true)
 
@@ -190,7 +192,9 @@ describe('export utils', () => {
   })
 
   it('converts a single message to plain text and copies it', async () => {
-    const message = createMessage('assistant', [createBlock('assistant-1', MessageBlockType.MAIN_TEXT, 'Plain text body')])
+    const message = createMessage('assistant', [
+      createBlock('assistant-1', MessageBlockType.MAIN_TEXT, 'Plain text body')
+    ])
 
     expect(messageToPlainText(message)).toBe('Plain text body')
 
@@ -201,7 +205,9 @@ describe('export utils', () => {
   })
 
   it('converts a topic to plain text using loaded messages', async () => {
-    const message = createMessage('assistant', [createBlock('assistant-1', MessageBlockType.MAIN_TEXT, 'Topic message')])
+    const message = createMessage('assistant', [
+      createBlock('assistant-1', MessageBlockType.MAIN_TEXT, 'Topic message')
+    ])
     vi.mocked(TopicManager.getTopicMessages).mockResolvedValue([message])
 
     const topic = {

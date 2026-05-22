@@ -134,30 +134,30 @@ const NotesPage: FC = () => {
     [dispatch, store]
   )
 
-  const removeManualOrderEntries = useCallback(
-    (orders: Record<string, string[]>, nodes: NotesTreeNode[]) => {
-      const nextEntries = Object.entries(orders)
-        .filter(([parentPath]) => {
-          const normalizedParentPath = normalizePathValue(parentPath)
+  const removeManualOrderEntries = useCallback((orders: Record<string, string[]>, nodes: NotesTreeNode[]) => {
+    const nextEntries = Object.entries(orders)
+      .filter(([parentPath]) => {
+        const normalizedParentPath = normalizePathValue(parentPath)
 
-          return !nodes.some((node) => {
-            const normalizedNodePath = normalizePathValue(node.externalPath)
-            return (
-              normalizedParentPath === normalizedNodePath ||
-              (node.type === 'folder' && normalizedParentPath.startsWith(`${normalizedNodePath}/`))
-            )
-          })
+        return !nodes.some((node) => {
+          const normalizedNodePath = normalizePathValue(node.externalPath)
+          return (
+            normalizedParentPath === normalizedNodePath ||
+            (node.type === 'folder' && normalizedParentPath.startsWith(`${normalizedNodePath}/`))
+          )
         })
-        .map(([parentPath, paths]) => [
-          parentPath,
-          nodes.reduce((acc, node) => removePathEntries(acc, node.externalPath, node.type === 'folder'), paths)
-        ] as const)
-        .filter(([, paths]) => paths.length > 0)
+      })
+      .map(
+        ([parentPath, paths]) =>
+          [
+            parentPath,
+            nodes.reduce((acc, node) => removePathEntries(acc, node.externalPath, node.type === 'folder'), paths)
+          ] as const
+      )
+      .filter(([, paths]) => paths.length > 0)
 
-      return Object.fromEntries(nextEntries)
-    },
-    []
-  )
+    return Object.fromEntries(nextEntries)
+  }, [])
 
   const moveManualOrderEntries = useCallback(
     (
@@ -189,7 +189,10 @@ const NotesPage: FC = () => {
 
         let nextPaths = replacePathEntries(paths, oldPath, newPath, isFolder)
 
-        if (normalizedSourceParentPath !== normalizedTargetParentPath && normalizedParentPath === normalizedSourceParentPath) {
+        if (
+          normalizedSourceParentPath !== normalizedTargetParentPath &&
+          normalizedParentPath === normalizedSourceParentPath
+        ) {
           nextPaths = nextPaths.filter((path) => normalizePathValue(path) !== normalizedNewPath)
         }
 
@@ -939,7 +942,12 @@ const NotesPage: FC = () => {
         const isManualReorder = position !== 'inside' && normalizedSourceParent === normalizedTargetParent
 
         if (isManualReorder) {
-          const reorderedTree = reorderTreeNodes(notesTree, sourceNodeId, targetNodeId, position === 'before' ? 'before' : 'after')
+          const reorderedTree = reorderTreeNodes(
+            notesTree,
+            sourceNodeId,
+            targetNodeId,
+            position === 'before' ? 'before' : 'after'
+          )
           const reorderedParentNode = sourceParentNode ? findNode(reorderedTree, sourceParentNode.id) : null
           const reorderedSiblings = reorderedParentNode?.children || reorderedTree
 

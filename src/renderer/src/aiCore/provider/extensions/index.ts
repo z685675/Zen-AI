@@ -233,4 +233,3 @@ export const extensions = [
   TogetherAIExtension,
   GroqExtension
 ] as const
-

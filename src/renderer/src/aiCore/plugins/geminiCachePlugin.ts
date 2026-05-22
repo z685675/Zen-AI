@@ -60,11 +60,7 @@ function stringifyMessage(message: LanguageModelV3Message): string {
 }
 
 function buildStablePrefixKey(modelId: string, prefixMessages: LanguageModelV3Message[]): string {
-  return [
-    'zen-gemini-cache',
-    modelId,
-    ...prefixMessages.map((message) => stringifyMessage(message))
-  ].join('\n')
+  return ['zen-gemini-cache', modelId, ...prefixMessages.map((message) => stringifyMessage(message))].join('\n')
 }
 
 function getEffectivePrefixThreshold(settings: GeminiCacheControlSettings): number {
@@ -204,7 +200,7 @@ function geminiCacheMiddleware(settings: GeminiCacheControlSettings): LanguageMo
         return params
       }
 
-      const headers = (params.headers as Record<string, string | undefined> | undefined) || {}
+      const headers = params.headers || {}
       const apiKey = headers['x-goog-api-key']
       if (!apiKey) {
         return params

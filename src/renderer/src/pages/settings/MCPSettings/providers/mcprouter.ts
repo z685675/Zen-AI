@@ -1,7 +1,7 @@
 import { loggerService } from '@logger'
-import { APP_NAME, APP_WEBSITE_URL } from '@shared/config/constant'
 import { nanoid } from '@reduxjs/toolkit'
 import type { MCPServer } from '@renderer/types'
+import { APP_NAME, APP_WEBSITE_URL } from '@shared/config/constant'
 import i18next from 'i18next'
 
 const logger = loggerService.withContext('MCPRouterSyncUtils')

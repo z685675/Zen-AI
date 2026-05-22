@@ -29,11 +29,7 @@ export function isProviderImportPayload(value: unknown): value is ProviderImport
   }
 
   const payload = value as Record<string, unknown>
-  return (
-    isNonEmptyString(payload.id) &&
-    isNonEmptyString(payload.apiKey) &&
-    isNonEmptyString(payload.baseUrl)
-  )
+  return isNonEmptyString(payload.id) && isNonEmptyString(payload.apiKey) && isNonEmptyString(payload.baseUrl)
 }
 
 export function normalizeProviderImportPayload(payload: ProviderImportPayload): ProviderImportPayload {

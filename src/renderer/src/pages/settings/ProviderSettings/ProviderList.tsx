@@ -68,11 +68,7 @@ function isProviderImportPayload(value: unknown): value is ProviderImportPayload
   }
 
   const payload = value as Record<string, unknown>
-  return (
-    isNonEmptyString(payload.id) &&
-    isNonEmptyString(payload.apiKey) &&
-    isNonEmptyString(payload.baseUrl)
-  )
+  return isNonEmptyString(payload.id) && isNonEmptyString(payload.apiKey) && isNonEmptyString(payload.baseUrl)
 }
 
 function remapModelToImportedProvider(
@@ -266,12 +262,18 @@ const ProviderList: FC<ProviderListProps> = ({ isOnboarding = false }) => {
 
       if (disableOtherProviders) {
         const disabledProviderIds = new Set<string>(
-          nextProviders.filter((provider) => provider.id !== finalProvider.id && !provider.enabled).map((provider) => provider.id)
+          nextProviders
+            .filter((provider) => provider.id !== finalProvider.id && !provider.enabled)
+            .map((provider) => provider.id)
         )
 
         const nextDefaultModel = resolveImportedProviderModelFallback(defaultModel, finalProvider, disabledProviderIds)
         const nextQuickModel = resolveImportedProviderModelFallback(quickModel, finalProvider, disabledProviderIds)
-        const nextTranslateModel = resolveImportedProviderModelFallback(translateModel, finalProvider, disabledProviderIds)
+        const nextTranslateModel = resolveImportedProviderModelFallback(
+          translateModel,
+          finalProvider,
+          disabledProviderIds
+        )
 
         if (nextDefaultModel) {
           setDefaultModel(nextDefaultModel)
@@ -282,7 +284,9 @@ const ProviderList: FC<ProviderListProps> = ({ isOnboarding = false }) => {
         if (nextTranslateModel) {
           setTranslateModel(nextTranslateModel)
         }
-        updateAssistants(assistants.map((assistant) => remapAssistantModels(assistant, finalProvider, disabledProviderIds)))
+        updateAssistants(
+          assistants.map((assistant) => remapAssistantModels(assistant, finalProvider, disabledProviderIds))
+        )
         updateDefaultAssistant(remapAssistantModels(defaultAssistant, finalProvider, disabledProviderIds))
       }
 
@@ -335,7 +339,6 @@ const ProviderList: FC<ProviderListProps> = ({ isOnboarding = false }) => {
   )
 
   useEffect(() => {
-
     const addProviderData = searchParams.get('addProviderData')
     if (!addProviderData) {
       return
@@ -679,7 +682,9 @@ const ProviderList: FC<ProviderListProps> = ({ isOnboarding = false }) => {
         <ProviderSetting providerId={selectedProvider.id} key={selectedProvider.id} isOnboarding={isOnboarding} />
       ) : (
         <EmptyState>
-          <EmptyStateTitle>{t('settings.provider.empty.title', { defaultValue: '请点击左侧的添加按钮' })}</EmptyStateTitle>
+          <EmptyStateTitle>
+            {t('settings.provider.empty.title', { defaultValue: '请点击左侧的添加按钮' })}
+          </EmptyStateTitle>
           <EmptyStateDescription>
             {t('settings.provider.empty.description', {
               defaultValue: '配置一个模型服务'

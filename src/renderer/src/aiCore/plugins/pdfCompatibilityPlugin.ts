@@ -53,7 +53,11 @@ function supportsNativePdf(provider: Provider, model: Model, runtimeProviderId?:
   if (PDF_NATIVE_PROVIDER_TYPES.has(provider.type)) {
     return true
   }
-  if (model.endpoint_type === 'openai-response' || model.endpoint_type === 'anthropic' || model.endpoint_type === 'gemini') {
+  if (
+    model.endpoint_type === 'openai-response' ||
+    model.endpoint_type === 'anthropic' ||
+    model.endpoint_type === 'gemini'
+  ) {
     return true
   }
   if ((provider.type === 'openai-response' || provider.type === 'azure-openai') && isOpenAILLMModel(model)) {
@@ -69,7 +73,11 @@ function supportsNativePdf(provider: Provider, model: Model, runtimeProviderId?:
   return false
 }
 
-function pdfCompatibilityMiddleware(provider: Provider, model: Model, runtimeProviderId?: string): LanguageModelMiddleware {
+function pdfCompatibilityMiddleware(
+  provider: Provider,
+  model: Model,
+  runtimeProviderId?: string
+): LanguageModelMiddleware {
   return {
     specificationVersion: 'v3',
     transformParams: async ({ params }) => {

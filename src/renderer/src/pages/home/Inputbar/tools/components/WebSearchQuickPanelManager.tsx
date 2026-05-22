@@ -137,7 +137,14 @@ export const useWebSearchPanelController = (assistantId: string, quickPanelContr
         }),
       200
     )
-  }, [assistant.enableWebSearch, assistant.model, assistant.settings?.reasoning_effort, setTimeoutTimer, t, updateAssistant])
+  }, [
+    assistant.enableWebSearch,
+    assistant.model,
+    assistant.settings?.reasoning_effort,
+    setTimeoutTimer,
+    t,
+    updateAssistant
+  ])
 
   const providerItems = useMemo<QuickPanelListItem[]>(() => {
     const isWebSearchModelEnabled = assistant.model && isWebSearchModel(assistant.model)

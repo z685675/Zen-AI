@@ -51,4 +51,3 @@ export async function handleProvidersProtocolUrl(url: URL) {
       break
   }
 }
-

@@ -3162,6 +3162,19 @@
     "go_to_settings": "Aller aux paramètres",
     "guidance_scale": "Échelle de guidance",
     "guidance_scale_tip": "Aucune guidance du classificateur. Contrôle le niveau d'obéissance du modèle aux mots-clés lors de la recherche d'images pertinentes",
+    "help": {
+      "background": {
+        "default": "Choose how the image background is rendered. Transparent background is only available on models that explicitly support it.",
+        "gpt_image_2": "gpt-image-2 currently supports only supported background modes from the official API, so transparent background is hidden here."
+      },
+      "image_size": {
+        "default": "Available sizes depend on the selected image model.",
+        "experimental": "Higher-resolution presets above the 2560x1440 class are slower and usually cost more.",
+        "gpt_image_2": "gpt-image-2 supports higher official preset resolutions on this page. This round exposes curated presets only, not arbitrary width and height input."
+      },
+      "moderation": "Moderation controls content safety filtering strength, not image quality. Auto uses the default review policy, while low is more permissive.",
+      "quality": "Quality controls the speed, cost, and detail trade-off. Low is faster and cheaper, high gives more detail, and auto lets the model decide."
+    },
     "image": {
       "size": "Taille de l'image"
     },
@@ -3171,8 +3184,25 @@
     "image_mix_failed": "Échec du mélange des images",
     "image_placeholder": "Aucune image pour le moment",
     "image_retry": "Réessayer",
+    "image_size_auto": {
+      "conflict": "Conflicting landscape/portrait/square cues detected. Falling back to official Auto.",
+      "fallback": "No clear size intent was detected. Falling back to official Auto.",
+      "matched": "Detected size intent: {{target}}"
+    },
     "image_size_options": {
-      "auto": "Automatique"
+      "1024x1024": "1024 × 1024 · Square",
+      "1024x1536": "1024 × 1536 · Portrait",
+      "1440x2560": "1440 × 2560 · 2K Portrait",
+      "1536x1024": "1536 × 1024 · Landscape",
+      "2048x2048": "2048 × 2048 · 2K Square",
+      "2048x3072": "2048 × 3072 · 3K Portrait",
+      "2048x3840": "2048 × 3840 · 4K-class Portrait",
+      "2560x1440": "2560 × 1440 · 2K Landscape",
+      "2880x2880": "High-res Square · 2880 × 2880",
+      "3072x2048": "3072 × 2048 · 3K Landscape",
+      "3840x2048": "3840 × 2048 · 4K-class Landscape",
+      "auto": "Automatique",
+      "experimental_badge": "(Experimental)"
     },
     "inference_steps": "Étapes d'inférence",
     "inference_steps_tip": "Nombre d'étapes d'inférence à effectuer. Plus il y a d'étapes, meilleure est la qualité mais plus c'est long",
@@ -5168,6 +5198,8 @@
       "provider_key_no_change": "La clé API de {{provider}} n'a pas changé",
       "provider_key_overridden": "Clé API de {{provider}} mise à jour avec succès",
       "provider_key_override_confirm": "Une clé API identique existe déjà pour {{provider}}, voulez-vous la remplacer ?",
+      "provider_models_sync_empty": "{{provider}} was imported, but no models were fetched yet. Please refresh manually later.",
+      "provider_models_synced": "{{provider}} imported successfully, synced {{count}} models",
       "provider_name": "Nom du fournisseur",
       "quick_assistant_default_tag": "Par défaut",
       "quick_assistant_model": "Modèle de l'assistant rapide",
@@ -6016,12 +6048,17 @@
     "show_window": "Afficher la fenêtre"
   },
   "update": {
+    "available": "A new version {{version}} is available. Click Check for Updates any time to download it.",
+    "downloading": "Downloading version {{version}} in the background. You will be prompted when it is ready.",
     "install": "Installer",
+    "installNow": "Install Now",
     "later": "Plus tard",
     "message": "Nouvelle version {{version}} disponible, voulez-vous l'installer maintenant ?",
     "noReleaseNotes": "Aucune note de version",
+    "releaseDate": "Release Date",
     "saveDataError": "Échec de la sauvegarde des données, veuillez réessayer",
-    "title": "Mise à jour"
+    "title": "Mise à jour",
+    "version": "Version"
   },
   "warning": {
     "missing_provider": "Le fournisseur n’existe pas, retour au fournisseur par défaut {{provider}}. Cela peut entraîner des problèmes."

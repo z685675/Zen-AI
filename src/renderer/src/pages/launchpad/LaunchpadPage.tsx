@@ -33,7 +33,7 @@ const LaunchpadPage: FC = () => {
     {
       icon: <Palette size={32} className="icon" />,
       text: t('title.paintings'),
-      path: `/paintings/${defaultPaintingProvider}`,
+      path: defaultPaintingProvider ? `/paintings/${defaultPaintingProvider}` : '/paintings',
       bgColor: 'linear-gradient(135deg, #EC4899, #F472B6)' // 绘画：活力粉色，代表创造力和艺术
     },
     {

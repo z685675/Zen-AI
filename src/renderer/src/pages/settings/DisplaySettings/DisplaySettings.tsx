@@ -3,7 +3,7 @@ import { ResetIcon } from '@renderer/components/Icons'
 import { HStack } from '@renderer/components/Layout'
 import TextBadge from '@renderer/components/TextBadge'
 import { isLinux, isMac, THEME_COLOR_PRESETS } from '@renderer/config/constant'
-import { DEFAULT_SIDEBAR_ICONS } from '@renderer/config/sidebar'
+import { DEFAULT_DISABLED_SIDEBAR_ICONS, DEFAULT_SIDEBAR_ICONS } from '@renderer/config/sidebar'
 import { useTheme } from '@renderer/context/ThemeProvider'
 import { useNavbarPosition, useSettings } from '@renderer/hooks/useSettings'
 import { useTimer } from '@renderer/hooks/useTimer'
@@ -82,7 +82,7 @@ const DisplaySettings: FC = () => {
   const { setUserTheme } = useUserTheme()
 
   const [visibleIcons, setVisibleIcons] = useState(sidebarIcons?.visible || DEFAULT_SIDEBAR_ICONS)
-  const [disabledIcons, setDisabledIcons] = useState(sidebarIcons?.disabled || [])
+  const [disabledIcons, setDisabledIcons] = useState(sidebarIcons?.disabled || DEFAULT_DISABLED_SIDEBAR_ICONS)
   const [fontList, setFontList] = useState<string[]>([])
 
   const handleWindowStyleChange = useCallback(
@@ -124,8 +124,8 @@ const DisplaySettings: FC = () => {
 
   const handleReset = useCallback(() => {
     setVisibleIcons([...DEFAULT_SIDEBAR_ICONS])
-    setDisabledIcons([])
-    dispatch(setSidebarIcons({ visible: DEFAULT_SIDEBAR_ICONS, disabled: [] }))
+    setDisabledIcons([...DEFAULT_DISABLED_SIDEBAR_ICONS])
+    dispatch(setSidebarIcons({ visible: DEFAULT_SIDEBAR_ICONS, disabled: DEFAULT_DISABLED_SIDEBAR_ICONS }))
   }, [dispatch])
 
   const themeOptions = useMemo(
@@ -345,7 +345,10 @@ const DisplaySettings: FC = () => {
               options={[
                 {
                   label: (
-                    <span style={{ fontFamily: "'HarmonyOS Sans SC', 'HarmonyOS Sans', Ubuntu, system-ui, Arial, sans-serif" }}>
+                    <span
+                      style={{
+                        fontFamily: "'HarmonyOS Sans SC', 'HarmonyOS Sans', Ubuntu, system-ui, Arial, sans-serif"
+                      }}>
                       {t('settings.display.font.default')}
                     </span>
                   ),
@@ -377,7 +380,10 @@ const DisplaySettings: FC = () => {
               options={[
                 {
                   label: (
-                    <span style={{ fontFamily: "'HarmonyOS Sans SC', 'HarmonyOS Sans', Ubuntu, system-ui, Arial, sans-serif" }}>
+                    <span
+                      style={{
+                        fontFamily: "'HarmonyOS Sans SC', 'HarmonyOS Sans', Ubuntu, system-ui, Arial, sans-serif"
+                      }}>
                       {t('settings.display.font.default')}
                     </span>
                   ),

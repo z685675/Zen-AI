@@ -214,9 +214,19 @@ export function getBriefInfo(text: string, maxLength: number = 50): string {
  * @returns {string} 清理后的字符串
  */
 export function sanitizeProviderName(name: string): string {
-  return name
-    .replace(/\s+/g, '-') // spaces -> dashes
-    .replace(/[<>:"|?*\\/_]/g, '_') // dangerous chars -> underscores
+  if (!name) return name
+
+  const sanitized = name.replace(/[^a-zA-Z0-9_\s.-]/g, '').replace(/\s+/g, '-')
+
+  if (!sanitized) {
+    let hash = 0
+    for (let i = 0; i < name.length; i++) {
+      hash = ((hash << 5) - hash + name.charCodeAt(i)) | 0
+    }
+    return 'p_' + Math.abs(hash).toString(36)
+  }
+
+  return sanitized
 }
 
 /**

@@ -91,7 +91,7 @@ export class WindowService {
       ...(windowsBackgroundMaterial ? { backgroundMaterial: windowsBackgroundMaterial } : {}),
       ...(mainWindowBackgroundColor ? { backgroundColor: mainWindowBackgroundColor } : {}),
       darkTheme: nativeTheme.shouldUseDarkColors,
-      ...((isLinux || isWin) ? { icon: appWindowIcon } : {}),
+      ...(isLinux || isWin ? { icon: appWindowIcon } : {}),
       webPreferences: {
         preload: join(__dirname, '../preload/index.js'),
         sandbox: false,

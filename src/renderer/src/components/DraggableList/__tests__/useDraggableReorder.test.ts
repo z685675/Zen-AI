@@ -34,13 +34,7 @@ describe('useDraggableReorder', () => {
     })
 
     expect(onUpdate).toHaveBeenCalledTimes(1)
-    expect(onUpdate.mock.calls[0][0].map((item) => item.id)).toEqual([
-      'item-2',
-      'item-3',
-      'item-1',
-      'item-4',
-      'item-5'
-    ])
+    expect(onUpdate.mock.calls[0][0].map((item) => item.id)).toEqual(['item-2', 'item-3', 'item-1', 'item-4', 'item-5'])
   })
 
   it('maps filtered indexes back to original indexes before reordering', () => {
@@ -60,13 +54,7 @@ describe('useDraggableReorder', () => {
     })
 
     expect(onUpdate).toHaveBeenCalledTimes(1)
-    expect(onUpdate.mock.calls[0][0].map((item) => item.id)).toEqual([
-      'item-5',
-      'item-1',
-      'item-2',
-      'item-3',
-      'item-4'
-    ])
+    expect(onUpdate.mock.calls[0][0].map((item) => item.id)).toEqual(['item-5', 'item-1', 'item-2', 'item-3', 'item-4'])
   })
 
   it('does not update when destination is null or unchanged', () => {

@@ -149,11 +149,10 @@ const ConversationHistoryList: FC<Props> = ({ activeTopic, setActiveTopic, onCre
   }, [conversationFolders])
 
   const groupedFolders = useMemo<FolderWithTopics[]>(() => {
-    return conversationFolders
-      .map((folder) => ({
-        folder,
-        topics: sortedTopics.filter((topic) => folder.topicIds.includes(topic.id))
-      }))
+    return conversationFolders.map((folder) => ({
+      folder,
+      topics: sortedTopics.filter((topic) => folder.topicIds.includes(topic.id))
+    }))
   }, [conversationFolders, sortedTopics])
 
   const rootTopics = useMemo<Topic[]>(
@@ -207,7 +206,10 @@ const ConversationHistoryList: FC<Props> = ({ activeTopic, setActiveTopic, onCre
     [selectedRecycleBinItemKeys, visibleRecycleBinItemKeys]
   )
 
-  const getAssistantByTopic = useCallback((topic: Topic): Assistant | undefined => assistantMap.get(topic.assistantId), [assistantMap])
+  const getAssistantByTopic = useCallback(
+    (topic: Topic): Assistant | undefined => assistantMap.get(topic.assistantId),
+    [assistantMap]
+  )
 
   useEffect(() => {
     void loadRecentDeletedTopics()
@@ -270,7 +272,15 @@ const ConversationHistoryList: FC<Props> = ({ activeTopic, setActiveTopic, onCre
       setDeletingTopicId(null)
       await loadRecentDeletedTopics()
     },
-    [activeTopic?.id, dispatch, getAssistantByTopic, loadRecentDeletedTopics, onCreateConversation, setActiveTopic, sortedTopics]
+    [
+      activeTopic?.id,
+      dispatch,
+      getAssistantByTopic,
+      loadRecentDeletedTopics,
+      onCreateConversation,
+      setActiveTopic,
+      sortedTopics
+    ]
   )
 
   const handleRestoreDeletedTopic = useCallback(
@@ -360,7 +370,8 @@ const ConversationHistoryList: FC<Props> = ({ activeTopic, setActiveTopic, onCre
     const selectedFolderIds = new Set(selectedFolderEntries.map((item) => item.folder.id))
     const selectedTopicEntries = recentDeletedTopics.filter(
       (item) =>
-        selectedRecycleBinItemKeys.has(`topic:${item.entryId}`) && (!item.folderId || !selectedFolderIds.has(item.folderId))
+        selectedRecycleBinItemKeys.has(`topic:${item.entryId}`) &&
+        (!item.folderId || !selectedFolderIds.has(item.folderId))
     )
 
     window.modal.confirm({
@@ -494,10 +505,13 @@ const ConversationHistoryList: FC<Props> = ({ activeTopic, setActiveTopic, onCre
     [removeTopicFromAssistant]
   )
 
-  const onClearMessages = useCallback((topic: Topic) => {
-    dispatch(setGenerating(false))
-    void EventEmitter.emit(EVENT_NAMES.CLEAR_MESSAGES, topic)
-  }, [dispatch])
+  const onClearMessages = useCallback(
+    (topic: Topic) => {
+      dispatch(setGenerating(false))
+      void EventEmitter.emit(EVENT_NAMES.CLEAR_MESSAGES, topic)
+    },
+    [dispatch]
+  )
 
   const onPinTopic = useCallback(
     (topic: Topic) => {
@@ -547,8 +561,7 @@ const ConversationHistoryList: FC<Props> = ({ activeTopic, setActiveTopic, onCre
       dispatch(addTopicAction({ assistantId: toAssistant.id, topic: { ...topic, assistantId: toAssistant.id } }))
       dispatch(removeTopicAction({ assistantId: fromAssistant.id, topic }))
 
-      await db
-        .topics
+      await db.topics
         .where('id')
         .equals(topic.id)
         .modify((dbTopic) => {
@@ -1093,7 +1106,11 @@ const ConversationHistoryList: FC<Props> = ({ activeTopic, setActiveTopic, onCre
                 )}
                 <RecentDeletedMeta>
                   <RecentDeletedFolderTitleWrap>
-                    {expandedDeletedFolderIds.has(item.folder.id) ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                    {expandedDeletedFolderIds.has(item.folder.id) ? (
+                      <ChevronDown size={14} />
+                    ) : (
+                      <ChevronRight size={14} />
+                    )}
                     <FolderClosed size={14} />
                     <RecentDeletedName title={item.folder.name}>{item.folder.name}</RecentDeletedName>
                   </RecentDeletedFolderTitleWrap>

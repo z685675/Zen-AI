@@ -121,7 +121,8 @@ const HomePage: FC = () => {
         return
       }
 
-      const sourceAssistant = assistants.find((assistant) => assistant.id === activeTopic.assistantId) || activeAssistant
+      const sourceAssistant =
+        assistants.find((assistant) => assistant.id === activeTopic.assistantId) || activeAssistant
 
       if (!sourceAssistant) {
         return

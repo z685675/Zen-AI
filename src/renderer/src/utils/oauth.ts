@@ -1,7 +1,7 @@
 import { loggerService } from '@logger'
 import { PPIO_APP_SECRET, PPIO_CLIENT_ID, SILICON_CLIENT_ID, TOKENFLUX_HOST } from '@renderer/config/constant'
-import { APP_NAME, APP_PROTOCOL_URL, APP_WEBSITE_URL } from '@shared/config/constant'
 import i18n, { getLanguageCode } from '@renderer/i18n'
+import { APP_NAME, APP_PROTOCOL_URL, APP_WEBSITE_URL } from '@shared/config/constant'
 
 const logger = loggerService.withContext('Utils:oauth')
 
