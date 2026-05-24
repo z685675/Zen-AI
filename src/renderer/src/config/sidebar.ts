@@ -29,6 +29,10 @@ export const getAvailableSidebarIcons = (
 ) => {
   const legacyDisabledIcons = new Set<string>(disabledIcons)
   return (visibleIcons as string[]).filter(
-    (icon) => !legacyDisabledIcons.has(icon) && icon !== 'research'
+    (icon) =>
+      !legacyDisabledIcons.has(icon) &&
+      icon !== 'research' &&
+      icon !== 'task_agent' &&
+      icon !== 'task-agent'
   ) as SidebarIcon[]
 }

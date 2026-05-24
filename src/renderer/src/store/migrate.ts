@@ -3471,6 +3471,27 @@ const migrateConfig = {
       logger.error('migrate 210 error', error as Error)
       return state
     }
+  },
+  '211': (state: RootState) => {
+    try {
+      const hiddenByDefault = new Set<SidebarIcon>(DEFAULT_DISABLED_SIDEBAR_ICONS)
+      const legacyHiddenIcons = new Set(['research', 'task_agent', 'task-agent'])
+      const visibleIcons = (state.settings.sidebarIcons?.visible ?? []).filter(
+        (icon) => !legacyHiddenIcons.has(icon)
+      )
+      const disabledIcons = state.settings.sidebarIcons?.disabled ?? []
+
+      state.settings.sidebarIcons = {
+        visible: visibleIcons.filter((icon) => !hiddenByDefault.has(icon)),
+        disabled: [...new Set<SidebarIcon>([...disabledIcons, ...DEFAULT_DISABLED_SIDEBAR_ICONS])]
+      }
+
+      logger.info('migrate 211 success')
+      return state
+    } catch (error) {
+      logger.error('migrate 211 error', error as Error)
+      return state
+    }
   }
 }
 

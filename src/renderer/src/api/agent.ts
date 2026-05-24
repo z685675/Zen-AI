@@ -145,7 +145,59 @@ export class AgentApiClient {
       const fullUrl = queryString ? `${url}?${queryString}` : url
 
       const response = await this.axios.get(fullUrl)
-      const result = ListAgentsResponseSchema.safeParse(response.data)
+      const normalizedData = (() => {
+        const directResult = ListAgentsResponseSchema.safeParse(response.data)
+        if (directResult.success) {
+          return directResult.data
+        }
+
+        const rawData = response.data
+        if (!rawData || typeof rawData !== 'object') {
+          return rawData
+        }
+
+        const wrappedAgents = Array.isArray((rawData as { agents?: unknown }).agents)
+          ? (rawData as { agents: unknown[] }).agents
+          : Array.isArray((rawData as { data?: unknown }).data)
+            ? ((rawData as { data: unknown[] }).data ?? [])
+            : undefined
+
+        if (!wrappedAgents) {
+          return rawData
+        }
+
+        return {
+          data: wrappedAgents,
+          total:
+            typeof (rawData as { total?: unknown }).total === 'number'
+              ? (rawData as { total: number }).total
+              : wrappedAgents.length,
+          limit:
+            typeof (rawData as { limit?: unknown }).limit === 'number'
+              ? (rawData as { limit: number }).limit
+              : wrappedAgents.length,
+          offset:
+            typeof (rawData as { offset?: unknown }).offset === 'number'
+              ? (rawData as { offset: number }).offset
+              : 0
+        }
+      })()
+      const result = ListAgentsResponseSchema.safeParse(normalizedData)
+      if (!result.success && normalizedData && typeof normalizedData === 'object' && Array.isArray(normalizedData.data)) {
+        const filteredData = {
+          ...normalizedData,
+          data: normalizedData.data.filter((agent: unknown) => {
+            if (!agent || typeof agent !== 'object') {
+              return false
+            }
+            return (agent as { type?: unknown }).type === 'claude-code'
+          })
+        }
+        const filteredResult = ListAgentsResponseSchema.safeParse(filteredData)
+        if (filteredResult.success) {
+          return filteredResult.data
+        }
+      }
       if (!result.success) {
         throw new Error('Not a valid Agents array.')
       }
