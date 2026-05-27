@@ -13,7 +13,7 @@ import styled from 'styled-components'
 
 interface PaintingsListProps {
   paintings: Painting[]
-  selectedPainting: Painting
+  selectedPainting: Painting | null
   onSelectPainting: (painting: Painting) => void
   onDeletePainting: (painting: Painting) => void
   onNewPainting: () => void
@@ -47,10 +47,11 @@ const PaintingsList: FC<PaintingsListProps> = ({
         {(item: Painting) => (
           <CanvasWrapper key={item.id}>
             <Canvas
-              className={classNames(selectedPainting.id === item.id && 'selected')}
+              className={classNames(selectedPainting?.id === item.id && 'selected')}
               onClick={() => onSelectPainting(item)}>
               {item.files[0] && <ThumbnailImage src={FileManager.getFileUrl(item.files[0])} alt="" />}
             </Canvas>
+            <CanvasIndex>{paintings.length - paintings.findIndex((painting) => painting.id === item.id)}</CanvasIndex>
             <DeleteButton>
               <Popconfirm
                 title={t('paintings.button.delete.image.confirm')}
@@ -131,6 +132,13 @@ const DeleteButton = styled.div.attrs({ className: 'delete-button' })`
   display: flex;
   align-items: center;
   justify-content: center;
+`
+
+const CanvasIndex = styled.div`
+  margin-top: 6px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--color-text-2);
 `
 
 const NewPaintingButton = styled.div`

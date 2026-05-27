@@ -1,4 +1,4 @@
-import { DEFAULT_DISABLED_SIDEBAR_ICONS } from '@renderer/config/sidebar'
+import { DEFAULT_DISABLED_SIDEBAR_ICONS, DEFAULT_SIDEBAR_ICONS } from '@renderer/config/sidebar'
 import { createMigrate } from 'redux-persist'
 import { describe, expect, it } from 'vitest'
 
@@ -37,18 +37,16 @@ describe('sidebar icons migration', () => {
     })
   })
 
-  describe('migration 211: remove legacy task agent sidebar entries', () => {
+  describe('migration 211: simplify primary sidebar order', () => {
     const migrate211 = (state: any) => {
-      const hiddenByDefault = new Set(DEFAULT_DISABLED_SIDEBAR_ICONS)
-      const legacyHiddenIcons = new Set(['research', 'task_agent', 'task-agent'])
-      const visibleIcons = (state.settings.sidebarIcons?.visible ?? []).filter(
-        (icon: string) => !legacyHiddenIcons.has(icon)
-      )
+      const primarySidebarIcons = DEFAULT_SIDEBAR_ICONS
+      const hiddenSidebarIcons = new Set(['openclaw', 'store', 'minapp', 'code_tools'])
       const disabledIcons = state.settings.sidebarIcons?.disabled ?? []
+      const hiddenIcons = [...new Set([...disabledIcons, ...DEFAULT_DISABLED_SIDEBAR_ICONS])]
 
       state.settings.sidebarIcons = {
-        visible: visibleIcons.filter((icon: string) => !hiddenByDefault.has(icon as any)),
-        disabled: [...new Set([...disabledIcons, ...DEFAULT_DISABLED_SIDEBAR_ICONS])]
+        visible: primarySidebarIcons,
+        disabled: hiddenIcons.filter((icon: string) => hiddenSidebarIcons.has(icon))
       }
 
       return state
@@ -56,12 +54,12 @@ describe('sidebar icons migration', () => {
 
     const migrate = createMigrate({ '211': migrate211 as any })
 
-    it('removes task agent and research entries from visible sidebar icons', async () => {
+    it('keeps only the core image-generation workflow entries in the requested order', async () => {
       const state = {
         settings: {
           sidebarIcons: {
-            visible: ['assistants', 'task_agent', 'task-agent', 'research', 'agents', 'minapp'],
-            disabled: ['openclaw']
+            visible: ['assistants', 'store', 'translate', 'paintings', 'openclaw', 'notes'],
+            disabled: ['minapp']
           }
         },
         _persist: { version: 210, rehydrated: false }
@@ -69,8 +67,16 @@ describe('sidebar icons migration', () => {
 
       const migrated: any = await migrate(state, 211)
 
-      expect(migrated.settings.sidebarIcons.visible).toEqual(['assistants', 'agents'])
-      expect(migrated.settings.sidebarIcons.disabled).toEqual(['openclaw', 'store', 'minapp', 'code_tools'])
+      expect(migrated.settings.sidebarIcons.visible).toEqual([
+        'assistants',
+        'agents',
+        'translate',
+        'notes',
+        'knowledge',
+        'files',
+        'paintings'
+      ])
+      expect(migrated.settings.sidebarIcons.disabled).toEqual(['minapp', 'openclaw', 'store', 'code_tools'])
     })
   })
 })

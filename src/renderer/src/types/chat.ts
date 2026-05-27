@@ -17,5 +17,6 @@ export type InputBarToolType =
   // Agent Session tools
   | 'create_session'
   | 'slash_commands'
-  | 'activity_directory'
+  | 'resource_panel'
   | 'permission_mode'
+  | 'session_more'

@@ -1,7 +1,7 @@
 import EmojiAvatar from '@renderer/components/Avatar/EmojiAvatar'
 import { isMac } from '@renderer/config/constant'
 import { UserAvatar } from '@renderer/config/env'
-import { getAvailableSidebarIcons } from '@renderer/config/sidebar'
+import { DEFAULT_DISABLED_SIDEBAR_ICONS, DEFAULT_SIDEBAR_ICONS, getAvailableSidebarIcons } from '@renderer/config/sidebar'
 import { useTheme } from '@renderer/context/ThemeProvider'
 import useAvatar from '@renderer/hooks/useAvatar'
 import { useFullscreen } from '@renderer/hooks/useFullscreen'
@@ -11,8 +11,7 @@ import useNavBackgroundColor from '@renderer/hooks/useNavBackgroundColor'
 import { modelGenerating, useRuntime } from '@renderer/hooks/useRuntime'
 import { useEnableDeveloperMode } from '@renderer/hooks/useSettings'
 import { useSettings } from '@renderer/hooks/useSettings'
-import { getSidebarIconLabel, getThemeModeLabel } from '@renderer/i18n/label'
-import { ThemeMode } from '@renderer/types'
+import { getSidebarIconLabel } from '@renderer/i18n/label'
 import { isEmoji } from '@renderer/utils'
 import { Avatar, Tooltip } from 'antd'
 import {
@@ -22,16 +21,14 @@ import {
   Languages,
   LayoutGrid,
   MessageSquare,
-  Monitor,
-  Moon,
   MousePointerClick,
   NotepadText,
   Palette,
   Settings,
-  Sparkle,
-  Sun
+  Sparkle
 } from 'lucide-react'
 import type { FC, ReactNode } from 'react'
+import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useLocation, useNavigate } from 'react-router-dom'
 import styled from 'styled-components'
@@ -63,13 +60,13 @@ const SidebarMenuItem: FC<SidebarMenuItemProps> = ({ active = false, label, onCl
 const Sidebar: FC = () => {
   const { hideMinappPopup } = useMinappPopup()
   const { minappShow } = useRuntime()
-  const { sidebarIcons } = useSettings()
+  const { sidebarIcons, updateSidebarIcons } = useSettings()
   const { pinned } = useMinapps()
 
   const { pathname } = useLocation()
   const navigate = useNavigate()
 
-  const { theme, settedTheme, toggleTheme } = useTheme()
+  const { theme } = useTheme()
   const avatar = useAvatar()
   const { t } = useTranslation()
 
@@ -78,6 +75,28 @@ const Sidebar: FC = () => {
   const backgroundColor = useNavBackgroundColor()
 
   const showPinnedApps = pinned.length > 0 && sidebarIcons.visible.includes('minapp')
+
+  useEffect(() => {
+    const sidebarLayoutVersionKey = 'sidebar.layout.image-generation-primary.v1'
+    if (localStorage.getItem(sidebarLayoutVersionKey)) {
+      return
+    }
+
+    const hasExpectedVisibleOrder =
+      sidebarIcons.visible.length === DEFAULT_SIDEBAR_ICONS.length &&
+      DEFAULT_SIDEBAR_ICONS.every((icon, index) => sidebarIcons.visible[index] === icon)
+    const hasExpectedHiddenIcons = DEFAULT_DISABLED_SIDEBAR_ICONS.every((icon) => sidebarIcons.disabled.includes(icon))
+
+    if (!hasExpectedVisibleOrder || !hasExpectedHiddenIcons) {
+      updateSidebarIcons({
+        visible: DEFAULT_SIDEBAR_ICONS,
+        disabled: [...new Set([...sidebarIcons.disabled, ...DEFAULT_DISABLED_SIDEBAR_ICONS])].filter((icon) =>
+          DEFAULT_DISABLED_SIDEBAR_ICONS.includes(icon)
+        )
+      })
+    }
+    localStorage.setItem(sidebarLayoutVersionKey, '1')
+  }, [sidebarIcons.disabled, sidebarIcons.visible, updateSidebarIcons])
 
   const to = async (path: string) => {
     await modelGenerating()
@@ -113,19 +132,6 @@ const Sidebar: FC = () => {
         )}
       </MainMenusContainer>
       <BottomMenus>
-        <SidebarMenuItem
-          label={t('settings.theme.title')}
-          onClick={toggleTheme}
-          theme={theme}
-          tooltip={t('settings.theme.title') + ': ' + getThemeModeLabel(settedTheme)}>
-          {settedTheme === ThemeMode.dark ? (
-            <Moon size={18} className="icon" />
-          ) : settedTheme === ThemeMode.light ? (
-            <Sun size={18} className="icon" />
-          ) : (
-            <Monitor size={18} className="icon" />
-          )}
-        </SidebarMenuItem>
         <SidebarMenuItem
           active={pathname.startsWith('/settings') && !minappShow}
           label={t('settings.title')}

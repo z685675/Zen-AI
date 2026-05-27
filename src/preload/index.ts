@@ -568,6 +568,8 @@ const api = {
           userName: string
           text: string
           images?: Array<{ data: string; media_type: string }>
+          imagePaths?: string[]
+          filePaths?: string[]
           files?: Array<{ filename: string; media_type: string; size: number }>
         }
       }) => void
@@ -586,6 +588,8 @@ const api = {
             userName: string
             text: string
             images?: Array<{ data: string; media_type: string }>
+            imagePaths?: string[]
+            filePaths?: string[]
             files?: Array<{ filename: string; media_type: string; size: number }>
           }
         }

@@ -2,7 +2,8 @@ import { loggerService } from '@logger'
 import { AgentModelValidationError, agentService, sessionService } from '@main/services/agents'
 import { channelManager } from '@main/services/agents/services/channels'
 import { schedulerService } from '@main/services/agents/services/SchedulerService'
-import type { CherryClawConfiguration, ListAgentsResponse } from '@types'
+import { isProtectedAgentId } from '@shared/config/agents'
+import type { AgentEntity, CherryClawConfiguration, ListAgentsResponse } from '@types'
 import { type ReplaceAgentRequest, type UpdateAgentRequest } from '@types'
 import type { Request, Response } from 'express'
 
@@ -33,6 +34,30 @@ const modelValidationErrorBody = (error: AgentModelValidationError) => ({
     code: error.detail.code
   }
 })
+
+async function syncAgentSessionsAfterAgentUpdate(
+  agentId: string,
+  updatePayload: UpdateAgentRequest | ReplaceAgentRequest,
+  agent: { model?: string; instructions?: string; configuration?: AgentEntity['configuration'] }
+): Promise<void> {
+  const syncJobs: Promise<unknown>[] = []
+
+  if (Object.prototype.hasOwnProperty.call(updatePayload, 'model') && agent.model) {
+    syncJobs.push(sessionService.syncAgentSessionModel(agentId, agent.model))
+  }
+
+  if (Object.prototype.hasOwnProperty.call(updatePayload, 'instructions') && agent.instructions !== undefined) {
+    syncJobs.push(sessionService.syncAgentSessionInstructions(agentId, agent.instructions))
+  }
+
+  if (Object.prototype.hasOwnProperty.call(updatePayload, 'configuration')) {
+    syncJobs.push(sessionService.syncAgentSessionConfiguration(agentId, agent.configuration))
+  }
+
+  if (syncJobs.length === 0) return
+
+  await Promise.all(syncJobs)
+}
 
 /**
  * @swagger
@@ -374,6 +399,7 @@ export const updateAgent = async (req: Request, res: Response): Promise<Response
       })
     }
 
+    await syncAgentSessionsAfterAgentUpdate(agentId, replacePayload, agent)
     syncSchedulerIfNeeded(agentId, agent)
 
     logger.info('Agent updated', { agentId })
@@ -522,6 +548,7 @@ export const patchAgent = async (req: Request, res: Response): Promise<Response>
       })
     }
 
+    await syncAgentSessionsAfterAgentUpdate(agentId, updatePayload, agent)
     syncSchedulerIfNeeded(agentId, agent)
 
     logger.info('Agent patched', { agentId })
@@ -583,6 +610,17 @@ export const deleteAgent = async (req: Request, res: Response): Promise<Response
   try {
     const { agentId } = req.params
     logger.debug('Deleting agent', { agentId })
+
+    if (isProtectedAgentId(agentId)) {
+      logger.warn('Attempted to delete protected built-in agent', { agentId })
+      return res.status(403).json({
+        error: {
+          message: 'This official built-in agent cannot be deleted.',
+          type: 'forbidden',
+          code: 'protected_agent_cannot_delete'
+        }
+      })
+    }
 
     const deleted = await agentService.deleteAgent(agentId)
 

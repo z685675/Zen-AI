@@ -4,19 +4,20 @@ import styled from 'styled-components'
 
 interface Props extends HTMLAttributes<HTMLDivElement> {
   children: React.ReactNode
+  contentMaxWidth?: string
 }
 
-const NarrowLayout: FC<Props> = ({ children, ...props }) => {
+const NarrowLayout: FC<Props> = ({ children, contentMaxWidth, ...props }) => {
   const { narrowMode } = useSettings()
 
   return (
-    <Container className={`narrow-mode ${narrowMode ? 'active' : ''}`} {...props}>
+    <Container className={`narrow-mode ${narrowMode ? 'active' : ''}`} $contentMaxWidth={contentMaxWidth} {...props}>
       {children}
     </Container>
   )
 }
 
-const Container = styled.div`
+const Container = styled.div<{ $contentMaxWidth?: string }>`
   max-width: 100%;
   width: 100%;
   margin: 0 auto;
@@ -24,7 +25,7 @@ const Container = styled.div`
   transition: max-width 0.3s ease-in-out;
 
   &.active {
-    max-width: 800px;
+    max-width: ${({ $contentMaxWidth }) => $contentMaxWidth ?? '800px'};
   }
 `
 

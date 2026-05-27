@@ -8,9 +8,10 @@ import styled from 'styled-components'
 import MessageBlockRenderer from './Blocks'
 interface Props {
   message: Message
+  isStreaming?: boolean
 }
 
-const MessageContent: React.FC<Props> = ({ message }) => {
+const MessageContent: React.FC<Props> = ({ message, isStreaming }) => {
   return (
     <>
       {!isEmpty(message.mentions) && (
@@ -20,7 +21,7 @@ const MessageContent: React.FC<Props> = ({ message }) => {
           ))}
         </Flex>
       )}
-      <MessageBlockRenderer blocks={message.blocks} message={message} />
+      <MessageBlockRenderer blocks={message.blocks} message={message} isStreaming={isStreaming} />
     </>
   )
 }

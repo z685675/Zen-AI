@@ -1,88 +1,68 @@
-import { useRuntime } from '@renderer/hooks/useRuntime'
-import { useNavbarPosition, useSettings } from '@renderer/hooks/useSettings'
+import { useAgents } from '@renderer/hooks/agents/useAgents'
 import { cn } from '@renderer/utils'
-import type { FC } from 'react'
-import { useState } from 'react'
-import { useTranslation } from 'react-i18next'
+import type { PropsWithChildren } from 'react'
+import { useMemo } from 'react'
 
 import Agents from './components/Agents'
-import Sessions from './components/Sessions'
+import GlobalSessions from './components/GlobalSessions'
 
 interface AgentSidePanelProps {
   onSelectItem?: () => void
 }
 
 const AgentSidePanel = ({ onSelectItem }: AgentSidePanelProps) => {
-  const { t } = useTranslation()
-  const { chat } = useRuntime()
-  const { activeAgentId } = chat
-  const { isLeftNavbar, isTopNavbar } = useNavbarPosition()
-  const { topicPosition } = useSettings()
+  const { agents } = useAgents()
 
-  const sessionsOnRight = topicPosition === 'right'
-  const [tab, setTab] = useState<'agents' | 'sessions'>('agents')
+  const agentsById = useMemo(() => {
+    return Object.fromEntries((agents ?? []).map((agent) => [agent.id, agent]))
+  }, [agents])
 
   return (
     <div
-      className="flex flex-col overflow-hidden"
+      className="flex flex-col overflow-hidden rounded-tl-[10px] rounded-bl-[10px] px-1.5 py-1.5"
       style={{
         width: 'var(--assistants-width)',
         height: 'calc(100vh - var(--navbar-height))',
-        borderRight: isLeftNavbar ? '0.5px solid var(--color-border)' : 'none',
-        backgroundColor: isLeftNavbar ? 'var(--color-background)' : undefined
+        background: 'transparent'
       }}>
-      {/* Tabs */}
-      {!sessionsOnRight && (
-        <div
-          className={cn('mx-3 flex border-(--color-border) border-b bg-transparent py-1.5', isTopNavbar && 'pt-0.5')}
-          style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
-          <TabButton active={tab === 'agents'} onClick={() => setTab('agents')}>
-            {t('agent.sidebar_title')}
-          </TabButton>
-          <TabButton active={tab === 'sessions'} onClick={() => setTab('sessions')}>
-            {t('common.sessions')}
-          </TabButton>
-        </div>
-      )}
+      <SectionShell className="min-h-[180px] max-h-[34%]" tone="agents">
+        <Agents onSelectItem={onSelectItem} />
+      </SectionShell>
 
-      {/* Content */}
-      <div className="flex flex-1 flex-col overflow-hidden">
-        {(sessionsOnRight || tab === 'agents') && <Agents onSelectItem={onSelectItem} />}
-        {!sessionsOnRight && tab === 'sessions' && activeAgentId && (
-          <Sessions agentId={activeAgentId} onSelectItem={onSelectItem} />
-        )}
-        {!sessionsOnRight && tab === 'sessions' && !activeAgentId && (
-          <div className="flex flex-1 items-center justify-center p-5 text-(--color-text-secondary) text-[13px]">
-            {t('chat.alerts.select_agent')}
-          </div>
-        )}
-      </div>
+      <div className="h-3 shrink-0" />
+
+      <SectionShell className="min-h-0 flex-1" tone="sessions">
+        <GlobalSessions agentsById={agentsById} onSelectItem={onSelectItem} />
+      </SectionShell>
     </div>
   )
 }
 
-const TabButton: FC<{ active: boolean; onClick: () => void; children: React.ReactNode }> = ({
-  active,
-  onClick,
-  children
-}) => (
-  <button
-    type="button"
-    onClick={onClick}
-    className={cn(
-      'relative mx-0.5 flex flex-1 cursor-pointer items-center justify-center rounded-lg border-none bg-transparent text-[13px]',
-      'h-7.5',
-      'hover:text-(--color-text)',
-      'active:scale-[0.98]',
-      active ? 'font-semibold text-(--color-text)' : 'font-normal text-(--color-text-secondary)',
-      // Underline indicator via pseudo-element
-      'after:-translate-x-1/2 after:-bottom-2 after:absolute after:left-1/2 after:h-0.75 after:rounded-sm after:transition-all after:duration-200 after:ease-in-out',
-      active
-        ? 'after:w-7.5 after:bg-(--color-primary)'
-        : 'after:w-0 after:bg-(--color-primary) hover:after:w-4 hover:after:bg-(--color-primary-soft)'
-    )}>
-    {children}
-  </button>
-)
+const SectionShell = ({
+  children,
+  className,
+  tone
+}: PropsWithChildren<{ className?: string; tone: 'agents' | 'sessions' }>) => {
+  return (
+    <div
+      className={cn('relative flex flex-col overflow-hidden rounded-[22px] border', className)}
+      style={{
+        borderColor: tone === 'agents' ? 'rgba(14, 116, 144, 0.10)' : 'rgba(15, 23, 42, 0.08)',
+        background:
+          tone === 'agents'
+            ? 'linear-gradient(180deg, rgba(247,252,255,0.96) 0%, rgba(255,255,255,0.98) 100%)'
+            : 'linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(249,250,251,0.96) 100%)',
+        boxShadow:
+          tone === 'agents'
+            ? '0 10px 24px rgba(14, 116, 144, 0.05), inset 0 1px 0 rgba(255,255,255,0.7)'
+            : '0 10px 24px rgba(15, 23, 42, 0.035), inset 0 1px 0 rgba(255,255,255,0.78)'
+      }}>
+      {tone === 'agents' && (
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-12 bg-[linear-gradient(180deg,rgba(226,247,255,0.55),rgba(226,247,255,0))]" />
+      )}
+      {children}
+    </div>
+  )
+}
 
 export default AgentSidePanel

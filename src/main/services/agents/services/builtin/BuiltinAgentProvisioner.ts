@@ -29,9 +29,19 @@ function resolveLocalizedField(value: unknown): string | undefined {
   return map[lang] || (prefixKey && map[prefixKey]) || map['en-US'] || Object.values(map)[0]
 }
 
-const ROLE_TO_TEMPLATE: Record<string, string> = {
-  assistant: 'cherry-assistant',
-  'skill-creator': 'skill-creator'
+const ROLE_TO_TEMPLATE: Record<string, { workspaceTemplate: string; configTemplate: string }> = {
+  assistant: {
+    workspaceTemplate: 'cherry-assistant',
+    configTemplate: 'cherry-assistant'
+  },
+  fusion: {
+    workspaceTemplate: 'cherry-assistant',
+    configTemplate: 'cherry-fusion'
+  },
+  'skill-creator': {
+    workspaceTemplate: 'skill-creator',
+    configTemplate: 'skill-creator'
+  }
 }
 
 /**
@@ -47,6 +57,12 @@ function copyDirSync(src: string, dest: string): void {
     } else {
       fs.copyFileSync(srcPath, destPath)
     }
+  }
+}
+
+function removeDirIfExists(dirPath: string): void {
+  if (fs.existsSync(dirPath)) {
+    fs.rmSync(dirPath, { recursive: true, force: true })
   }
 }
 
@@ -71,27 +87,36 @@ export async function provisionBuiltinAgent(
   workspacePath: string,
   builtinRole: string
 ): Promise<BuiltinAgentConfig | undefined> {
-  const templateName = ROLE_TO_TEMPLATE[builtinRole]
-  if (!templateName) {
+  const templateConfig = ROLE_TO_TEMPLATE[builtinRole]
+  if (!templateConfig) {
     logger.warn('Unknown builtin role, skipping provisioning', { builtinRole })
     return undefined
   }
 
   const resourceBase = path.join(getResourcePath(), 'builtin-agents')
-  const templateDir = path.join(resourceBase, templateName)
+  const workspaceTemplateDir = path.join(resourceBase, templateConfig.workspaceTemplate)
+  const configTemplateDir = path.join(resourceBase, templateConfig.configTemplate)
 
-  if (!fs.existsSync(templateDir)) {
-    logger.error('Builtin agent template not found', { templateDir, builtinRole })
+  if (!fs.existsSync(workspaceTemplateDir)) {
+    logger.error('Builtin agent workspace template not found', { workspaceTemplateDir, builtinRole })
+    return undefined
+  }
+
+  if (!fs.existsSync(configTemplateDir)) {
+    logger.error('Builtin agent config template not found', { configTemplateDir, builtinRole })
     return undefined
   }
 
   try {
     // Copy .claude/ directory (skills + plugins.json)
-    const srcClaudeDir = path.join(templateDir, '.claude')
+    const srcClaudeDir = path.join(workspaceTemplateDir, '.claude')
     const destClaudeDir = path.join(workspacePath, '.claude')
 
     if (fs.existsSync(srcClaudeDir)) {
       copyDirSync(srcClaudeDir, destClaudeDir)
+      if (builtinRole === 'fusion') {
+        removeDirIfExists(path.join(destClaudeDir, 'skills'))
+      }
       logger.info('Provisioned .claude/ directory for builtin agent', {
         builtinRole,
         workspacePath,
@@ -100,7 +125,7 @@ export async function provisionBuiltinAgent(
     }
 
     // Read agent.json to extract full config
-    const agentJsonPath = path.join(templateDir, 'agent.json')
+    const agentJsonPath = path.join(configTemplateDir, 'agent.json')
     if (fs.existsSync(agentJsonPath)) {
       const agentConfig = JSON.parse(fs.readFileSync(agentJsonPath, 'utf-8'))
       return {

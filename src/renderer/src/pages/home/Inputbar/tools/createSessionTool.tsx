@@ -22,9 +22,9 @@ const createSessionTool = defineTool({
     const sessionAgentId = session?.agentId
 
     const agentId = sessionAgentId || assistant.id
-    const { createDefaultSession, creatingSession } = useCreateDefaultSession(agentId)
+    const { createDefaultSession, creatingSession, canCreateSession } = useCreateDefaultSession(agentId)
 
-    const createSessionDisabled = creatingSession || !apiServer.enabled
+    const createSessionDisabled = creatingSession || !apiServer.enabled || !canCreateSession
 
     const handleCreateSession = useCallback(async () => {
       if (createSessionDisabled) {

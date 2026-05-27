@@ -2,21 +2,12 @@ import { IpcChannel } from '@shared/IpcChannel'
 import { ThemeMode } from '@types'
 import { BrowserWindow, nativeTheme } from 'electron'
 
-import { titleBarOverlayDark, titleBarOverlayLight } from '../config'
+import { titleBarOverlayLight } from '../config'
 import { configManager } from './ConfigManager'
 
 class ThemeService {
-  private theme: ThemeMode = ThemeMode.system
   constructor() {
-    this.theme = configManager.getTheme()
-
-    if (this.theme === ThemeMode.dark || this.theme === ThemeMode.light || this.theme === ThemeMode.system) {
-      nativeTheme.themeSource = this.theme
-    } else {
-      // 兼容旧版本
-      configManager.setTheme(ThemeMode.system)
-      nativeTheme.themeSource = ThemeMode.system
-    }
+    this.setTheme(ThemeMode.light)
     nativeTheme.on('updated', this.themeUpdatadHandler.bind(this))
   }
 
@@ -24,24 +15,20 @@ class ThemeService {
     BrowserWindow.getAllWindows().forEach((win) => {
       if (win && !win.isDestroyed() && win.setTitleBarOverlay) {
         try {
-          win.setTitleBarOverlay(nativeTheme.shouldUseDarkColors ? titleBarOverlayDark : titleBarOverlayLight)
+          win.setTitleBarOverlay(titleBarOverlayLight)
         } catch (error) {
-          // don't throw error if setTitleBarOverlay failed
-          // Because it may be called with some windows have some title bar
+          // Ignore windows that do not support custom title bar overlays.
         }
       }
-      win.webContents.send(IpcChannel.ThemeUpdated, nativeTheme.shouldUseDarkColors ? ThemeMode.dark : ThemeMode.light)
+      win.webContents.send(IpcChannel.ThemeUpdated, ThemeMode.light)
     })
   }
 
   setTheme(theme: ThemeMode) {
-    if (theme === this.theme) {
-      return
-    }
-
-    this.theme = theme
-    nativeTheme.themeSource = theme
-    configManager.setTheme(theme)
+    const enforcedTheme = theme === ThemeMode.light ? theme : ThemeMode.light
+    nativeTheme.themeSource = enforcedTheme
+    configManager.setTheme(enforcedTheme)
+    this.themeUpdatadHandler()
   }
 }
 

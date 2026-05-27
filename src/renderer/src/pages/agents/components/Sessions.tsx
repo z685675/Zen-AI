@@ -42,7 +42,7 @@ const Sessions = ({ agentId, onSelectItem }: SessionsProps) => {
   const { chat } = useRuntime()
   const { activeSessionIdMap } = chat
   const dispatch = useAppDispatch()
-  const { createDefaultSession, creatingSession } = useCreateDefaultSession(agentId)
+  const { createDefaultSession, creatingSession, canCreateSession } = useCreateDefaultSession(agentId)
   const listRef = useRef<DraggableVirtualListRef>(null)
   const client = useAgentClient()
 
@@ -189,11 +189,13 @@ const Sessions = ({ agentId, onSelectItem }: SessionsProps) => {
         onUpdate={reorderSessions}
         itemKey={(index) => sessions[index]?.id ?? index}
         header={
-          <div className="-mt-0.5 mb-1.5">
-            <AddButton onClick={createDefaultSession} disabled={creatingSession}>
-              {t('agent.session.add.title')}
-            </AddButton>
-          </div>
+          canCreateSession ? (
+            <div className="-mt-0.5 mb-1.5">
+              <AddButton onClick={createDefaultSession} disabled={creatingSession}>
+                {t('agent.session.add.title')}
+              </AddButton>
+            </div>
+          ) : null
         }>
         {(session) => (
           <SessionItem

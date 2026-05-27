@@ -2,8 +2,9 @@ import ListItem from '@renderer/components/ListItem'
 import Scrollbar from '@renderer/components/Scrollbar'
 import { getChannelTypeIcon } from '@renderer/utils/agentSession'
 import type { FC } from 'react'
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useSearchParams } from 'react-router-dom'
 
 import ChannelDetail from './ChannelDetail'
 import { AVAILABLE_CHANNELS, type AvailableChannel } from './channelTypes'
@@ -12,7 +13,25 @@ const TITLE_STYLE = { fontWeight: 500 } as const
 
 const ChannelsSettings: FC = () => {
   const { t } = useTranslation()
-  const [selectedType, setSelectedType] = useState<AvailableChannel>(AVAILABLE_CHANNELS[0])
+  const [searchParams, setSearchParams] = useSearchParams()
+  const requestedType = searchParams.get('type')
+  const initialSelectedType = useMemo(
+    () => AVAILABLE_CHANNELS.find((channel) => channel.type === requestedType) ?? AVAILABLE_CHANNELS[0],
+    [requestedType]
+  )
+  const [selectedType, setSelectedType] = useState<AvailableChannel>(initialSelectedType)
+
+  useEffect(() => {
+    setSelectedType(initialSelectedType)
+  }, [initialSelectedType])
+
+  const handleSelectType = (channel: AvailableChannel) => {
+    setSelectedType(channel)
+
+    const nextParams = new URLSearchParams(searchParams)
+    nextParams.set('type', channel.type)
+    setSearchParams(nextParams, { replace: true })
+  }
 
   return (
     <div className="flex flex-1">
@@ -29,7 +48,7 @@ const ChannelsSettings: FC = () => {
                 key={ch.type}
                 title={t(ch.titleKey)}
                 active={selectedType.type === ch.type}
-                onClick={() => setSelectedType(ch)}
+                onClick={() => handleSelectType(ch)}
                 icon={
                   iconSrc ? (
                     <img src={iconSrc} alt={ch.name} className="h-5.5 w-5.5 rounded object-contain" />

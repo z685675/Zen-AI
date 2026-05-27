@@ -5,6 +5,7 @@ import { useActiveAgent } from '@renderer/hooks/agents/useActiveAgent'
 import { useAgents } from '@renderer/hooks/agents/useAgents'
 import { useApiServer } from '@renderer/hooks/useApiServer'
 import { useRuntime } from '@renderer/hooks/useRuntime'
+import { useEnableDeveloperMode } from '@renderer/hooks/useSettings'
 import type { AgentEntity } from '@renderer/types'
 import { memo, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -22,6 +23,7 @@ const Agents = ({ onSelectItem }: AgentsProps) => {
   const { chat } = useRuntime()
   const { activeAgentId } = chat
   const { setActiveAgentId } = useActiveAgent()
+  const { enableDeveloperMode } = useEnableDeveloperMode()
 
   const handleAgentPress = useCallback(
     (agentId: string) => {
@@ -60,7 +62,11 @@ const Agents = ({ onSelectItem }: AgentsProps) => {
         itemKey={(index) => (agents ?? [])[index]?.id ?? index}
         header={
           <div className="-mt-0.5 mb-1.5">
-            <AddButton onClick={handleAddAgent}>{t('agent.sidebar_title')}</AddButton>
+            {enableDeveloperMode ? (
+              <AddButton onClick={handleAddAgent}>{t('agent.sidebar_title')}</AddButton>
+            ) : (
+              <div className="px-2 py-1 font-medium text-(--color-text) text-xs">{t('agent.sidebar_title')}</div>
+            )}
           </div>
         }>
         {(agent) => (

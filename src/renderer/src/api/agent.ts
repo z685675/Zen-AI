@@ -13,6 +13,7 @@ import type {
   GetAgentSessionResponse,
   ListAgentSessionsResponse,
   ListOptions,
+  SearchAgentSessionsResponse,
   UpdateAgentForm,
   UpdateAgentRequest,
   UpdateAgentResponse,
@@ -41,6 +42,7 @@ import {
   objectEntries,
   objectKeys,
   ScheduledTaskEntitySchema,
+  SearchAgentSessionsResponseSchema,
   UpdateAgentResponseSchema
 } from '@types'
 import type { Axios, AxiosRequestConfig } from 'axios'
@@ -92,6 +94,9 @@ export class AgentApiClient {
     base: `/${this.apiVersion}/agents/${agentId}/sessions`,
     withId: (id: string) => `/${this.apiVersion}/agents/${agentId}/sessions/${id}`
   })
+
+  public allSessionsPath = `/${this.apiVersion}/agents/sessions`
+  public allSessionsSearchPath = `/${this.apiVersion}/agents/sessions/search`
 
   public getSessionMessagesPaths = (agentId: string, sessionId: string) => ({
     base: `/${this.apiVersion}/agents/${agentId}/sessions/${sessionId}/messages`,
@@ -145,59 +150,7 @@ export class AgentApiClient {
       const fullUrl = queryString ? `${url}?${queryString}` : url
 
       const response = await this.axios.get(fullUrl)
-      const normalizedData = (() => {
-        const directResult = ListAgentsResponseSchema.safeParse(response.data)
-        if (directResult.success) {
-          return directResult.data
-        }
-
-        const rawData = response.data
-        if (!rawData || typeof rawData !== 'object') {
-          return rawData
-        }
-
-        const wrappedAgents = Array.isArray((rawData as { agents?: unknown }).agents)
-          ? (rawData as { agents: unknown[] }).agents
-          : Array.isArray((rawData as { data?: unknown }).data)
-            ? ((rawData as { data: unknown[] }).data ?? [])
-            : undefined
-
-        if (!wrappedAgents) {
-          return rawData
-        }
-
-        return {
-          data: wrappedAgents,
-          total:
-            typeof (rawData as { total?: unknown }).total === 'number'
-              ? (rawData as { total: number }).total
-              : wrappedAgents.length,
-          limit:
-            typeof (rawData as { limit?: unknown }).limit === 'number'
-              ? (rawData as { limit: number }).limit
-              : wrappedAgents.length,
-          offset:
-            typeof (rawData as { offset?: unknown }).offset === 'number'
-              ? (rawData as { offset: number }).offset
-              : 0
-        }
-      })()
-      const result = ListAgentsResponseSchema.safeParse(normalizedData)
-      if (!result.success && normalizedData && typeof normalizedData === 'object' && Array.isArray(normalizedData.data)) {
-        const filteredData = {
-          ...normalizedData,
-          data: normalizedData.data.filter((agent: unknown) => {
-            if (!agent || typeof agent !== 'object') {
-              return false
-            }
-            return (agent as { type?: unknown }).type === 'claude-code'
-          })
-        }
-        const filteredResult = ListAgentsResponseSchema.safeParse(filteredData)
-        if (filteredResult.success) {
-          return filteredResult.data
-        }
-      }
+      const result = ListAgentsResponseSchema.safeParse(response.data)
       if (!result.success) {
         throw new Error('Not a valid Agents array.')
       }
@@ -277,6 +230,39 @@ export class AgentApiClient {
       return result.data
     } catch (error) {
       throw processError(error, 'Failed to list sessions.')
+    }
+  }
+
+  public async listAllSessions(options?: ListOptions): Promise<ListAgentSessionsResponse> {
+    const url = this.allSessionsPath
+    try {
+      const response = await this.axios.get(url, { params: options })
+      const result = ListAgentSessionsResponseSchema.safeParse(response.data)
+      if (!result.success) {
+        throw new Error('Not a valid Sessions array.')
+      }
+      return result.data
+    } catch (error) {
+      throw processError(error, 'Failed to list sessions.')
+    }
+  }
+
+  public async searchSessions(params: {
+    query: string
+    limit?: number
+    offset?: number
+    archived?: ListOptions['archived']
+  }): Promise<SearchAgentSessionsResponse> {
+    const url = this.allSessionsSearchPath
+    try {
+      const response = await this.axios.get(url, { params })
+      const result = SearchAgentSessionsResponseSchema.safeParse(response.data)
+      if (!result.success) {
+        throw new Error('Not a valid session search response.')
+      }
+      return result.data
+    } catch (error) {
+      throw processError(error, 'Failed to search sessions.')
     }
   }
 

@@ -12,7 +12,7 @@ import { useAgentClient } from './useAgentClient'
 type InfiniteData = ListAgentSessionsResponse[]
 
 const mutateInfiniteList = (
-  infKey: string,
+  infKey: string | ((key?: unknown) => boolean),
   sessionId: string,
   updater: (session: AgentSessionEntity) => AgentSessionEntity
 ) => {
@@ -41,15 +41,18 @@ export const useUpdateSession = (agentId: string | null) => {
       const sessionId = form.id
       const itemKey = paths.withId(sessionId)
       const infKey = unstable_serialize(() => [listKey, 0, DEFAULT_SESSION_PAGE_SIZE])
+      const allSessionsKeyMatcher = (key?: unknown) => Array.isArray(key) && key[0] === client.allSessionsPath
 
       // Optimistic update
       mutateInfiniteList(infKey, sessionId, (session) => ({ ...session, ...form }))
+      mutateInfiniteList(allSessionsKeyMatcher, sessionId, (session) => ({ ...session, ...form }))
       void mutate<AgentSessionEntity>(itemKey, (prev) => (prev ? { ...prev, ...form } : prev), { revalidate: false })
 
       try {
         const result = await client.updateSession(agentId, form)
         // Update with server response
         mutateInfiniteList(infKey, sessionId, () => result)
+        mutateInfiniteList(allSessionsKeyMatcher, sessionId, () => result)
         void mutate(itemKey, result, { revalidate: false })
         if (options?.showSuccessToast ?? true) {
           window.toast.success(t('common.update_success'))
@@ -58,6 +61,7 @@ export const useUpdateSession = (agentId: string | null) => {
       } catch (error) {
         // Rollback: revalidate to get fresh data
         void mutate(infKey)
+        void mutate(allSessionsKeyMatcher)
         void mutate(itemKey)
         window.toast.error({ title: t('agent.session.update.error.failed'), description: getErrorMessage(error) })
         return undefined

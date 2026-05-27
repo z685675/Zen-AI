@@ -42,10 +42,10 @@ describe('NewApiConfig', () => {
     }
   })
 
-  it('removes transparent background from gpt-image-2', () => {
+  it('exposes all background choices for gpt-image-2', () => {
     const gptImage2 = getModelConfig('gpt-image-2')
 
-    expect(gptImage2?.background.map((option) => option.value)).toEqual(['auto', 'opaque'])
+    expect(gptImage2?.background.map((option) => option.value)).toEqual(['auto', 'opaque', 'transparent'])
   })
 
   it('reuses gpt-image-2 capabilities for gpt-image-2-pro', () => {
@@ -54,7 +54,7 @@ describe('NewApiConfig', () => {
     expect(gptImage2Pro?.imageSizes.map((option) => option.value)).toEqual(
       getModelConfig('gpt-image-2')?.imageSizes.map((option) => option.value)
     )
-    expect(gptImage2Pro?.background.map((option) => option.value)).toEqual(['auto', 'opaque'])
+    expect(gptImage2Pro?.background.map((option) => option.value)).toEqual(['auto', 'opaque', 'transparent'])
   })
 
   it('reuses gpt-image-2 capabilities for gpt-image-2-vip', () => {
@@ -63,6 +63,6 @@ describe('NewApiConfig', () => {
     expect(gptImage2Vip?.imageSizes.map((option) => option.value)).toEqual(
       getModelConfig('gpt-image-2')?.imageSizes.map((option) => option.value)
     )
-    expect(gptImage2Vip?.background.map((option) => option.value)).toEqual(['auto', 'opaque'])
+    expect(gptImage2Vip?.background.map((option) => option.value)).toEqual(['auto', 'opaque', 'transparent'])
   })
 })

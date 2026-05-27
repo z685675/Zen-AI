@@ -18,7 +18,7 @@ import type {
   ToolStateKey,
   ToolStateMap
 } from '@renderer/pages/home/Inputbar/types'
-import { getToolsForScope } from '@renderer/pages/home/Inputbar/types'
+import { getToolsForScope, TopicType } from '@renderer/pages/home/Inputbar/types'
 import { useAppDispatch, useAppSelector } from '@renderer/store'
 import { selectToolOrderForScope, setIsCollapsed, setToolOrder } from '@renderer/store/inputTools'
 import type { Assistant, Model } from '@renderer/types'
@@ -87,7 +87,7 @@ const InputbarTools = ({ scope, assistant, model, session, toolOrderOverride }: 
 
   // Get tool order for current scope
   const toolOrder = useMemo(() => toolOrderOverride ?? reduxToolOrder, [reduxToolOrder, toolOrderOverride])
-  const disableCustomization = !!toolOrderOverride
+  const disableCustomization = scope === TopicType.Session && !!toolOrderOverride
 
   // Build render context for tools
   const buildRenderContext = useCallback(
@@ -192,18 +192,20 @@ const InputbarTools = ({ scope, assistant, model, session, toolOrderOverride }: 
 
     // 2. Find new tools not in toolOrder (auto-show new tools)
     const knownToolKeys = new Set([...toolOrder.visible, ...toolOrder.hidden])
-    const newTools = toolMetadata
-      .filter((meta) => !knownToolKeys.has(meta.key) && meta.tool.render !== null)
-      .map((meta) => ({
-        key: meta.key,
-        label: meta.label,
-        tool: meta.tool,
-        visible: true
-      }))
+    const newTools = disableCustomization
+      ? []
+      : toolMetadata
+          .filter((meta) => !knownToolKeys.has(meta.key) && meta.tool.render !== null)
+          .map((meta) => ({
+            key: meta.key,
+            label: meta.label,
+            tool: meta.tool,
+            visible: true
+          }))
 
     // 3. Merge: explicit order + new tools at end
     return [...explicitlyVisible, ...newTools]
-  }, [toolMetadata, toolOrder.visible, toolOrder.hidden])
+  }, [disableCustomization, toolMetadata, toolOrder.visible, toolOrder.hidden])
 
   const hiddenTools = useMemo(() => {
     return toolOrder.hidden
@@ -221,12 +223,12 @@ const InputbarTools = ({ scope, assistant, model, session, toolOrderOverride }: 
   }, [toolMetadata, toolOrder.hidden])
 
   const showDivider = useMemo(() => {
-    return hiddenTools.length > 0 && visibleTools.length > 0
-  }, [hiddenTools, visibleTools])
+    return !disableCustomization && hiddenTools.length > 0 && visibleTools.length > 0
+  }, [disableCustomization, hiddenTools, visibleTools])
 
   const showCollapseButton = useMemo(() => {
-    return hiddenTools.length > 0
-  }, [hiddenTools])
+    return !disableCustomization && hiddenTools.length > 0
+  }, [disableCustomization, hiddenTools])
 
   const toggleToolVisibility = useCallback(
     (toolKey: InputBarToolType, isVisible: boolean | undefined) => {
@@ -389,7 +391,11 @@ const InputbarTools = ({ scope, assistant, model, session, toolOrderOverride }: 
 
             <Droppable droppableId="inputbar-tools-hidden" direction="horizontal">
               {(provided) => (
-                <HiddenTools ref={provided.innerRef} {...provided.droppableProps}>
+                <HiddenTools
+                  ref={provided.innerRef}
+                  {...provided.droppableProps}
+                  aria-hidden={disableCustomization}
+                  className={classNames({ 'is-session-hidden': disableCustomization })}>
                   {hiddenTools.map((toolConfig, index) => renderTool(toolConfig, index, true))}
                   {!disableCustomization && provided.placeholder}
                 </HiddenTools>
@@ -421,7 +427,7 @@ const ToolsContainer = styled.div`
 `
 
 const VisibleTools = styled.div`
-  height: 30px;
+  min-height: 36px;
   display: flex;
   align-items: center;
   overflow-x: auto;
@@ -433,10 +439,15 @@ const VisibleTools = styled.div`
 `
 
 const HiddenTools = styled.div`
-  height: 30px;
+  min-height: 36px;
   display: flex;
   align-items: center;
   overflow-x: auto;
+
+  &.is-session-hidden {
+    display: none;
+  }
+
   &::-webkit-scrollbar {
     display: none;
   }
@@ -445,7 +456,12 @@ const HiddenTools = styled.div`
 `
 
 const ToolWrapper = styled.div`
-  width: 30px;
+  width: auto;
+  min-width: 30px;
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
   margin-right: 6px;
   transition:
     width 0.2s,
@@ -453,6 +469,8 @@ const ToolWrapper = styled.div`
     opacity 0.2s;
   &.is-collapsed {
     width: 0px;
+    min-width: 0px;
+    min-height: 0px;
     margin-right: 0px;
     overflow: hidden;
     opacity: 0;

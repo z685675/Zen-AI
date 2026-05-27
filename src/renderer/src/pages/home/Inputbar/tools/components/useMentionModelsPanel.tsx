@@ -1,7 +1,7 @@
 import ModelTagsWithLabel from '@renderer/components/ModelTagsWithLabel'
 import type { QuickPanelListItem } from '@renderer/components/QuickPanel'
 import { QuickPanelReservedSymbol } from '@renderer/components/QuickPanel'
-import { getModelLogo, isEmbeddingModel, isRerankModel, isVisionModel } from '@renderer/config/models'
+import { chatModelFilter, getModelLogo, isVisionModel } from '@renderer/config/models'
 import db from '@renderer/databases'
 import { useProviders } from '@renderer/hooks/useProvider'
 import type { ToolQuickPanelApi, ToolQuickPanelController } from '@renderer/pages/home/Inputbar/types'
@@ -132,7 +132,7 @@ export const useMentionModelsPanel = (params: Params, role: 'button' | 'manager'
     if (pinnedModels.length > 0) {
       const pinnedItems = providers.flatMap((provider) =>
         provider.models
-          .filter((model) => !isEmbeddingModel(model) && !isRerankModel(model))
+          .filter(chatModelFilter)
           .filter((model) => pinnedModels.includes(getModelUniqId(model)))
           .filter((model) => couldMentionNotVisionModel || (!couldMentionNotVisionModel && isVisionModel(model)))
           .map((model) => ({
@@ -162,7 +162,7 @@ export const useMentionModelsPanel = (params: Params, role: 'button' | 'manager'
     providers.forEach((provider) => {
       const providerModels = sortBy(
         provider.models
-          .filter((model) => !isEmbeddingModel(model) && !isRerankModel(model))
+          .filter(chatModelFilter)
           .filter((model) => !pinnedModels.includes(getModelUniqId(model)))
           .filter((model) => couldMentionNotVisionModel || (!couldMentionNotVisionModel && isVisionModel(model))),
         ['group', 'name']

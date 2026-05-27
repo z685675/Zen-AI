@@ -7,7 +7,7 @@ import { useSettings } from '@renderer/hooks/useSettings'
 import { useTimer } from '@renderer/hooks/useTimer'
 import { EVENT_NAMES, EventEmitter } from '@renderer/services/EventService'
 import type { MultiModelMessageStyle } from '@renderer/store/settings'
-import type { Topic } from '@renderer/types'
+import type { Assistant, Topic } from '@renderer/types'
 import type { Message } from '@renderer/types/newMessage'
 import { classNames } from '@renderer/utils'
 import { scrollIntoView } from '@renderer/utils/dom'
@@ -23,10 +23,11 @@ const logger = loggerService.withContext('MessageGroup')
 interface Props {
   messages: (Message & { index: number })[]
   topic: Topic
+  assistant?: Assistant
   registerMessageElement?: (id: string, element: HTMLElement | null) => void
 }
 
-const MessageGroup = ({ messages, topic, registerMessageElement }: Props) => {
+const MessageGroup = ({ messages, topic, assistant, registerMessageElement }: Props) => {
   const messageLength = messages.length
 
   // Hooks
@@ -217,6 +218,7 @@ const MessageGroup = ({ messages, topic, registerMessageElement }: Props) => {
           <MessageItem
             onUpdateUseful={onUpdateUseful}
             isGroupContextMessage={isGrouped && message.id === groupContextMessageId}
+            assistant={assistant}
             {...messageProps}
           />
         </MessageWrapper>
@@ -236,7 +238,7 @@ const MessageGroup = ({ messages, topic, registerMessageElement }: Props) => {
                     selected: message.id === selectedMessageId
                   }
                 ])}>
-                <MessageItem onUpdateUseful={onUpdateUseful} {...messageProps} />
+                <MessageItem assistant={assistant} onUpdateUseful={onUpdateUseful} {...messageProps} />
               </MessageWrapper>
             }
             trigger={gridPopoverTrigger}
@@ -255,6 +257,7 @@ const MessageGroup = ({ messages, topic, registerMessageElement }: Props) => {
       isGrid,
       isGrouped,
       topic,
+      assistant,
       multiModelMessageStyle,
       messages,
       selectedMessageId,

@@ -18,7 +18,7 @@ import type {
   Tool,
   UpdateAgentForm
 } from '@renderer/types'
-import { AgentConfigurationSchema, isAgentType } from '@renderer/types'
+import { AgentConfigurationSchema, isAgentType, normalizePermissionMode } from '@renderer/types'
 import { parseKeyValueString, serializeKeyValueString } from '@renderer/utils/env'
 import { getAnthropicSupportedProviders } from '@renderer/utils/provider'
 import type { GitBashPathInfo } from '@shared/config/constant'
@@ -87,7 +87,7 @@ const PopupContainer: React.FC<Props> = ({ agent, afterSubmit, resolve }) => {
     void checkGitBash()
   }, [checkGitBash])
 
-  const selectedPermissionMode = form.configuration?.permission_mode ?? 'default'
+  const selectedPermissionMode = normalizePermissionMode(form.configuration?.permission_mode ?? 'default')
 
   const handlePickGitBash = useCallback(async () => {
     try {

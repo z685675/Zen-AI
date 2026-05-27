@@ -40,7 +40,10 @@ export const DEFAULT_MESSAGE_MENUBAR_BUTTON_IDS: MessageMenubarButtonId[] = [
 ]
 
 export const SESSION_MESSAGE_MENUBAR_BUTTON_IDS: MessageMenubarButtonId[] = [
+  'user-regenerate',
+  'user-edit',
   'copy',
+  'assistant-regenerate',
   'translate',
   'notes',
   'delete',

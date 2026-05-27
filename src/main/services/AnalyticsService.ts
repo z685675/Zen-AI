@@ -17,7 +17,8 @@ class AnalyticsService {
     logger.info('Analytics service disabled for this distribution build')
   }
 
-  public trackTokenUsage(_data: TokenUsageData): void {
+  public trackTokenUsage(data: TokenUsageData): void {
+    void data
     return
   }
 

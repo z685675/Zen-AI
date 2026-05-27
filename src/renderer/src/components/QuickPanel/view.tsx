@@ -117,7 +117,7 @@ export const QuickPanelView: React.FC<Props> = ({ setInputText }) => {
 
     // ????? + ???????
     return [...pinnedItems, ...sortedNormalItems]
-  }, [ctx.isVisible, ctx.symbol, ctx.manageListExternally, ctx.list, ctx.defaultIndex, searchText, filterFn, sortFn])
+  }, [ctx.isVisible, ctx.symbol, ctx.manageListExternally, ctx.list, searchText, filterFn, sortFn])
 
   useEffect(() => {
     if (!ctx.isVisible && !ctx.symbol) {

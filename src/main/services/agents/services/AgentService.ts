@@ -1,5 +1,11 @@
 import { loggerService } from '@logger'
 import { modelsService } from '@main/apiServer/services/models'
+import {
+  DEFAULT_AGENT_AVATAR,
+  DEFAULT_CHERRY_CLAW_AGENT_ID,
+  DEPRECATED_AGENT_NAME_PREFIX,
+  isBuiltinAgentId
+} from '@shared/config/agents'
 import type {
   AgentEntity,
   CreateAgentRequest,
@@ -20,7 +26,8 @@ import { seedWorkspaceTemplates } from './cherryclaw/seedWorkspace'
 const logger = loggerService.withContext('AgentService')
 
 export class AgentService extends BaseService {
-  static readonly DEFAULT_AGENT_ID = 'cherry-claw-default'
+  static readonly DEFAULT_AGENT_ID = DEFAULT_CHERRY_CLAW_AGENT_ID
+  static readonly PREFERRED_BUILTIN_MODEL_IDS = ['gpt-5.4-mini', 'gpt-5-mini', 'gpt-5.4', 'gpt-5'] as const
 
   private static instance: AgentService | null = null
   private readonly modelFields: AgentModelField[] = ['model', 'plan_model', 'small_model']
@@ -37,6 +44,13 @@ export class AgentService extends BaseService {
     const id = `agent_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`
     const now = new Date().toISOString()
 
+    req.configuration = {
+      permission_mode: 'default',
+      max_turns: 100,
+      env_vars: {},
+      avatar: DEFAULT_AGENT_AVATAR,
+      ...req.configuration
+    }
     req.accessible_paths = this.resolveAccessiblePaths(req.accessible_paths, id)
 
     await this.validateAgentModels(req.type, {
@@ -139,9 +153,127 @@ export class AgentService extends BaseService {
     return { agents, total: totalResult[0].count }
   }
 
+  private extractProviderModelId(modelId: string): string {
+    return modelId.includes(':') ? modelId.split(':').slice(1).join(':') : modelId
+  }
+
+  private getDeprecatedAgentDisplayName(name: string | undefined): string | null {
+    const trimmedName = name?.trim()
+    if (!trimmedName) {
+      return null
+    }
+
+    if (trimmedName.startsWith(DEPRECATED_AGENT_NAME_PREFIX)) {
+      return null
+    }
+
+    return `${DEPRECATED_AGENT_NAME_PREFIX}${trimmedName}`
+  }
+
+  private findPreferredBuiltinModelId(models: Array<{ id: string; provider_model_id?: string }>): string | null {
+    if (models.length === 0) {
+      return null
+    }
+
+    const normalizedModels = models.map((model) => ({
+      id: model.id,
+      providerModelId: (model.provider_model_id ?? this.extractProviderModelId(model.id)).toLowerCase()
+    }))
+
+    for (const preferredModelId of AgentService.PREFERRED_BUILTIN_MODEL_IDS) {
+      const match = normalizedModels.find((model) => model.providerModelId === preferredModelId)
+      if (match) {
+        return match.id
+      }
+    }
+
+    return models[0]?.id ?? null
+  }
+
+  async getPreferredBuiltinModelId(): Promise<string | null> {
+    const modelsRes = await modelsService.getModels({ providerType: 'anthropic' })
+    const modelId = this.findPreferredBuiltinModelId(modelsRes.data ?? [])
+
+    if (modelId) {
+      logger.info('Resolved preferred built-in agent model', { modelId })
+    } else {
+      logger.info('No compatible built-in agent model available')
+    }
+
+    return modelId
+  }
+
+  async listCompatibleAgents(): Promise<GetAgentResponse[]> {
+    const database = await this.getDatabase()
+    const rows = await database.select().from(agentsTable)
+
+    return rows
+      .map((row) => this.deserializeJsonFields(row) as GetAgentResponse)
+      .filter((agent) => agent.type === 'claude-code')
+  }
+
+  async syncCompatibleAgentsToModel(modelId: string): Promise<string[]> {
+    const database = await this.getDatabase()
+    const compatibleAgents = await this.listCompatibleAgents()
+
+    for (const agent of compatibleAgents) {
+      if (agent.model === modelId) {
+        continue
+      }
+
+      await database
+        .update(agentsTable)
+        .set({
+          model: modelId,
+          updated_at: new Date().toISOString()
+        })
+        .where(eq(agentsTable.id, agent.id))
+    }
+
+    logger.info('Synchronized compatible agents to preferred model', {
+      modelId,
+      total: compatibleAgents.length
+    })
+
+    return compatibleAgents.map((agent) => agent.id)
+  }
+
+  async markLegacyUserAgentsDeprecated(): Promise<number> {
+    const database = await this.getDatabase()
+    const agents = await this.listCompatibleAgents()
+    let updatedCount = 0
+
+    for (const agent of agents) {
+      if (isBuiltinAgentId(agent.id)) {
+        continue
+      }
+
+      const deprecatedName = this.getDeprecatedAgentDisplayName(agent.name)
+      if (!deprecatedName) {
+        continue
+      }
+
+      await database
+        .update(agentsTable)
+        .set({
+          name: deprecatedName,
+          updated_at: new Date().toISOString()
+        })
+        .where(eq(agentsTable.id, agent.id))
+
+      updatedCount++
+    }
+
+    if (updatedCount > 0) {
+      logger.info('Marked legacy user agents as deprecated', { updatedCount })
+    }
+
+    return updatedCount
+  }
+
   /**
    * Initialize a built-in agent from its bundled agent.json template.
-   * Called once at app startup. Safe to call multiple times 鈥?skips if the agent already exists.
+   * Called once at app startup. Safe to call multiple times, skips if the agent already exists.
    * Returns the agent ID if created or already present, or null if no compatible model is available yet.
    *
    * @param opts.id - Fixed agent ID
@@ -169,23 +301,48 @@ export class AgentService extends BaseService {
         .limit(1)
 
       if (existing.length > 0) {
-        // Sync localized description/instructions on every startup (language may have changed)
+        // Keep built-in agents editable. Startup should provision bundled workspaces and fill
+        // missing defaults, but it must not reset user-edited name/prompt/model/settings.
         const resolvedPaths = this.resolveAccessiblePaths([], id)
         const workspace = resolvedPaths[0]
         const agentConfig = workspace ? await provisionWorkspace(workspace, builtinRole) : undefined
-        if (agentConfig && (agentConfig.description || agentConfig.instructions)) {
-          const updateData: Partial<InsertAgentRow> = { updated_at: new Date().toISOString() }
-          if (agentConfig.description) updateData.description = agentConfig.description
-          if (agentConfig.instructions) updateData.instructions = agentConfig.instructions
+        const existingAgent = await this.getAgent(id)
+
+        if (workspace && agentConfig?.configuration?.soul_enabled === true) {
+          await seedWorkspaceTemplates(workspace)
+        }
+
+        const updateData: Partial<InsertAgentRow> = {}
+
+        if (agentConfig && (agentConfig.name || agentConfig.description || agentConfig.instructions || agentConfig.configuration)) {
+          const currentConfiguration = (existingAgent?.configuration ?? {}) as Record<string, unknown>
+          const mergedConfiguration = agentConfig.configuration
+            ? {
+                ...agentConfig.configuration,
+                ...currentConfiguration,
+                builtin_role: currentConfiguration.builtin_role ?? agentConfig.configuration.builtin_role
+              }
+            : currentConfiguration
+
+          if (!existingAgent?.name && agentConfig.name) updateData.name = agentConfig.name
+          if (!existingAgent?.description && agentConfig.description) updateData.description = agentConfig.description
+          if (!existingAgent?.instructions && agentConfig.instructions) updateData.instructions = agentConfig.instructions
+          if (agentConfig.configuration) {
+            updateData.configuration = this.serializeJsonFields({ configuration: mergedConfiguration }).configuration
+          }
+        }
+
+        if (Object.keys(updateData).length > 0) {
+          updateData.updated_at = new Date().toISOString()
           await database.update(agentsTable).set(updateData).where(eq(agentsTable.id, id))
         }
+
         return id
       }
 
-      const modelsRes = await modelsService.getModels({ providerType: 'anthropic', limit: 1 })
-      const firstModel = modelsRes.data?.[0]
-      if (!firstModel) {
-        logger.info(`No Anthropic-compatible models available yet 鈥?skipping ${builtinRole} creation`)
+      const preferredModelId = await this.getPreferredBuiltinModelId()
+      if (!preferredModelId) {
+        logger.info(`No Anthropic-compatible models available yet, skipping ${builtinRole} creation`)
         return null
       }
 
@@ -198,6 +355,7 @@ export class AgentService extends BaseService {
 
       const now = new Date().toISOString()
       const configuration: CreateAgentRequest['configuration'] = {
+        avatar: DEFAULT_AGENT_AVATAR,
         permission_mode: 'default',
         max_turns: 100,
         env_vars: {},
@@ -209,7 +367,7 @@ export class AgentService extends BaseService {
         name: agentConfig?.name || builtinRole,
         description: agentConfig?.description || `Built-in ${builtinRole} agent`,
         instructions: agentConfig?.instructions || 'You are a helpful assistant.',
-        model: firstModel.id,
+        model: preferredModelId,
         accessible_paths: resolvedPaths,
         configuration
       }
@@ -236,6 +394,10 @@ export class AgentService extends BaseService {
       insertData.sort_order = newSortOrder
       await database.insert(agentsTable).values(insertData)
 
+      if (workspace && configuration.soul_enabled === true) {
+        await seedWorkspaceTemplates(workspace)
+      }
+
       logger.info(`Created built-in ${builtinRole} agent`, { id })
       return id
     } catch (error) {
@@ -246,7 +408,7 @@ export class AgentService extends BaseService {
 
   /**
    * Initialize the built-in CherryClaw agent with a fixed ID.
-   * Called once at app startup. Safe to call multiple times 鈥?skips if the agent already exists.
+   * Called once at app startup. Safe to call multiple times, skips if the agent already exists.
    * Returns the agent ID if created or already present, or null if no compatible model is available yet.
    */
   async initDefaultCherryClawAgent(): Promise<string | null> {
@@ -260,20 +422,29 @@ export class AgentService extends BaseService {
         .limit(1)
 
       if (existing.length > 0) {
+        const preferredModelId = await this.getPreferredBuiltinModelId()
+        if (preferredModelId) {
+          const existingAgent = await this.getAgent(id)
+          if (existingAgent?.model !== preferredModelId) {
+            await database
+              .update(agentsTable)
+              .set({ model: preferredModelId, updated_at: new Date().toISOString() })
+              .where(eq(agentsTable.id, id))
+          }
+        }
         return id
       }
 
-      const modelsRes = await modelsService.getModels({ providerType: 'anthropic', limit: 1 })
-      const firstModel = modelsRes.data?.[0]
-      if (!firstModel) {
-        logger.info('No Anthropic-compatible models available yet 鈥?skipping default Zen Agent creation')
+      const preferredModelId = await this.getPreferredBuiltinModelId()
+      if (!preferredModelId) {
+        logger.info('No Anthropic-compatible models available yet, skipping default Zen Agent creation')
         return null
       }
 
       const now = new Date().toISOString()
       const configuration: CreateAgentRequest['configuration'] = {
-        avatar: '馃',
-        permission_mode: 'bypassPermissions',
+        avatar: DEFAULT_AGENT_AVATAR,
+        permission_mode: 'plan',
         max_turns: 100,
         soul_enabled: true,
         scheduler_enabled: true,
@@ -287,7 +458,7 @@ export class AgentService extends BaseService {
         type: 'claude-code',
         name: 'Zen Agent',
         description: 'Default autonomous Zen AI agent',
-        model: firstModel.id,
+        model: preferredModelId,
         accessible_paths: [],
         configuration
       }

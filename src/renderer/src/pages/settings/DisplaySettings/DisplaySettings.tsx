@@ -18,9 +18,8 @@ import {
   setShowTopicTime,
   setSidebarIcons
 } from '@renderer/store/settings'
-import { ThemeMode } from '@renderer/types'
 import { Button, ColorPicker, Segmented, Select, Switch, Tooltip } from 'antd'
-import { Minus, Monitor, Moon, Plus, Sun } from 'lucide-react'
+import { Minus, Plus } from 'lucide-react'
 import type { FC } from 'react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -67,14 +66,13 @@ const DisplaySettings: FC = () => {
     pinTopicsToTop,
     customCss,
     sidebarIcons,
-    setTheme,
     assistantIconType,
     userTheme,
     useSystemTitleBar,
     setUseSystemTitleBar
   } = useSettings()
   const { navbarPosition, setNavbarPosition } = useNavbarPosition()
-  const { theme, settedTheme } = useTheme()
+  const { theme } = useTheme()
   const { t } = useTranslation()
   const dispatch = useAppDispatch()
   const { setTimeoutTimer } = useTimer()
@@ -127,39 +125,6 @@ const DisplaySettings: FC = () => {
     setDisabledIcons([...DEFAULT_DISABLED_SIDEBAR_ICONS])
     dispatch(setSidebarIcons({ visible: DEFAULT_SIDEBAR_ICONS, disabled: DEFAULT_DISABLED_SIDEBAR_ICONS }))
   }, [dispatch])
-
-  const themeOptions = useMemo(
-    () => [
-      {
-        value: ThemeMode.light,
-        label: (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-            <Sun size={16} />
-            <span>{t('settings.theme.light')}</span>
-          </div>
-        )
-      },
-      {
-        value: ThemeMode.dark,
-        label: (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-            <Moon size={16} />
-            <span>{t('settings.theme.dark')}</span>
-          </div>
-        )
-      },
-      {
-        value: ThemeMode.system,
-        label: (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-            <Monitor size={16} />
-            <span>{t('settings.theme.system')}</span>
-          </div>
-        )
-      }
-    ],
-    [t]
-  )
 
   useEffect(() => {
     // 初始化获取所有系统字体
@@ -239,11 +204,6 @@ const DisplaySettings: FC = () => {
     <SettingContainer theme={theme}>
       <SettingGroup theme={theme}>
         <SettingTitle>{t('settings.display.title')}</SettingTitle>
-        <SettingDivider />
-        <SettingRow>
-          <SettingRowTitle>{t('settings.theme.title')}</SettingRowTitle>
-          <Segmented value={settedTheme} shape="round" onChange={setTheme} options={themeOptions} />
-        </SettingRow>
         <SettingDivider />
         <SettingRow>
           <SettingRowTitle>{t('settings.theme.color_primary')}</SettingRowTitle>

@@ -1,15 +1,12 @@
-import { PlusOutlined } from '@ant-design/icons'
+import { UploadOutlined } from '@ant-design/icons'
 import { loggerService } from '@logger'
 import { AiProvider } from '@renderer/aiCore'
-import IcImageUp from '@renderer/assets/images/paintings/ic_ImageUp.svg'
-import { Navbar, NavbarCenter, NavbarRight } from '@renderer/components/app/Navbar'
+import { Navbar, NavbarCenter } from '@renderer/components/app/Navbar'
 import Scrollbar from '@renderer/components/Scrollbar'
 import InfoTooltip from '@renderer/components/TooltipIcons/InfoTooltip'
 import TranslateButton from '@renderer/components/TranslateButton'
-import { isMac } from '@renderer/config/constant'
 import { getProviderLogo, PROVIDER_URLS } from '@renderer/config/providers'
 import { LanguagesEnum } from '@renderer/config/translate'
-import { useTheme } from '@renderer/context/ThemeProvider'
 import { usePaintings } from '@renderer/hooks/usePaintings'
 import { usePaintingProviders } from '@renderer/hooks/useProvider'
 import { useRuntime } from '@renderer/hooks/useRuntime'
@@ -31,13 +28,10 @@ import FileManager from '@renderer/services/FileManager'
 import { translateText } from '@renderer/services/TranslateService'
 import { useAppDispatch } from '@renderer/store'
 import { setGenerating } from '@renderer/store/runtime'
-import type { PaintingAction, PaintingsState } from '@renderer/types'
-import type { FileMetadata } from '@renderer/types'
+import type { FileMetadata, PaintingAction } from '@renderer/types'
 import { getErrorMessage, uuid } from '@renderer/utils'
-import { Avatar, Button, Empty, InputNumber, Segmented, Select, Upload } from 'antd'
+import { Avatar, Button, Empty, InputNumber, Select, Upload } from 'antd'
 import TextArea from 'antd/es/input/TextArea'
-import type { RcFile } from 'antd/es/upload'
-import type { UploadFile } from 'antd/es/upload/interface'
 import type { FC } from 'react'
 import React from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -49,135 +43,71 @@ import SendMessageButton from '../home/Inputbar/SendMessageButton'
 import { SettingHelpLink, SettingTitle } from '../settings'
 import Artboard from './components/Artboard'
 import ProviderSelect from './components/ProviderSelect'
-import { checkProviderEnabled, findPaintingByFiles, resolveSmartAutoSize } from './utils'
+import { checkProviderEnabled, resolveSmartAutoSize } from './utils'
 
 const logger = loggerService.withContext('NewApiPage')
 
+type ComposerMode = 'create' | 'continue' | 'upload-edit'
+
 const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
-  const [mode, setMode] = useState<keyof PaintingsState>('openai_image_generate')
-  const { addPainting, removePainting, updatePainting, openai_image_generate, openai_image_edit } = usePaintings()
-
-  const newApiPaintings = useMemo(() => {
-    return {
-      openai_image_generate,
-      openai_image_edit
-    }
-  }, [openai_image_generate, openai_image_edit])
-
-  // moved below after newApiProvider is defined
+  const { openai_image_generate, addPainting, removePainting, updatePainting } = usePaintings()
   const [currentImageIndex, setCurrentImageIndex] = useState(0)
   const [isLoading, setIsLoading] = useState(false)
   const [abortController, setAbortController] = useState<AbortController | null>(null)
   const [spaceClickCount, setSpaceClickCount] = useState(0)
   const [isTranslating, setIsTranslating] = useState(false)
-  const [editImageFiles, setEditImageFiles] = useState<File[]>([])
+  const [selectedPaintingId, setSelectedPaintingId] = useState<string | null>(null)
+  const [composerMode, setComposerMode] = useState<ComposerMode>('create')
+  const [uploadedEditFiles, setUploadedEditFiles] = useState<File[]>([])
+  const [draft, setDraft] = useState<PaintingAction>({ ...DEFAULT_PAINTING })
 
   const { t } = useTranslation()
-  const { theme } = useTheme()
   const providers = usePaintingProviders()
   const location = useLocation()
   const routeName = location.pathname.split('/').pop() || 'new-api'
-
   const dispatch = useAppDispatch()
   const { generating } = useRuntime()
   const navigate = useNavigate()
   const { autoTranslateWithSpace } = useSettings()
+  const textareaRef = useRef<any>(null)
   const spaceClickTimer = useRef<NodeJS.Timeout>(null)
   const newApiProvider = providers.find((p) => p.id === routeName) || providers[0]
   const providerId = newApiProvider?.id ?? ''
   const providerModels = useMemo(() => newApiProvider?.models ?? [], [newApiProvider?.models])
   const providerApiHost = newApiProvider?.apiHost ?? ''
 
-  const filteredPaintings = useMemo(
-    () => (newApiPaintings[mode] || []).filter((p) => p.providerId === providerId),
-    [newApiPaintings, mode, providerId]
-  )
-  const [painting, setPainting] = useState<PaintingAction>({ ...DEFAULT_PAINTING, providerId })
-
-  const modeOptions = [
-    { label: t('paintings.mode.generate'), value: 'openai_image_generate' },
-    { label: t('paintings.mode.edit'), value: 'openai_image_edit' }
-  ]
-
-  const textareaRef = useRef<any>(null)
-
-  // 获取编辑模式的图片文件
-  const editImages = useMemo(() => {
-    return editImageFiles
-  }, [editImageFiles])
-
-  useEffect(() => {
-    if (mode !== 'openai_image_edit') {
-      return
-    }
-
-    let isActive = true
-
-    const syncEditImages = async () => {
-      if (painting.files.length === 0) {
-        setEditImageFiles([])
-        return
-      }
-
-      try {
-        const files = await Promise.all(
-          painting.files.map(async (file, index) => {
-            const { data, mime } = await window.api.file.binaryImage(file.id + file.ext)
-            const fileName = file.name || `image_${index + 1}${file.ext}`
-
-            return new File([data], fileName, {
-              type: mime,
-              lastModified: new Date(file.created_at).getTime()
-            })
-          })
-        )
-
-        if (isActive) {
-          setEditImageFiles(files)
-        }
-      } catch (error) {
-        logger.error('Failed to sync edit images from selected painting:', error as Error)
-
-        if (isActive) {
-          setEditImageFiles([])
-        }
-      }
-    }
-
-    void syncEditImages()
-
-    return () => {
-      isActive = false
-    }
-  }, [mode, painting.files])
-
-  const updatePaintingState = useCallback(
-    (updates: Partial<PaintingAction>) => {
-      const updatedPainting = { ...painting, providerId, ...updates }
-      setPainting(updatedPainting)
-      if (newApiProvider) {
-        updatePainting(mode, updatedPainting)
-      }
-    },
-    [painting, providerId, newApiProvider, mode, updatePainting]
+  const paintings = useMemo(
+    () => openai_image_generate.filter((painting) => painting.providerId === providerId),
+    [openai_image_generate, providerId]
   )
 
-  // ---------------- Model Related Configurations ----------------
-  // const modelOptions = MODELS.map((m) => ({ label: m.name, value: m.name }))
+  const selectedPainting = useMemo(
+    () => paintings.find((painting) => painting.id === selectedPaintingId) ?? null,
+    [paintings, selectedPaintingId]
+  )
+
+  const artboardPainting = selectedPainting ?? { ...draft, files: [], urls: [] }
+  const composerHint = useMemo(() => {
+    if (composerMode === 'continue' && selectedPainting) {
+      return t('paintings.composer_continue_hint')
+    }
+    if (composerMode === 'upload-edit' && uploadedEditFiles.length > 0) {
+      return t('paintings.composer_upload_hint')
+    }
+    return null
+  }, [composerMode, selectedPainting, t, uploadedEditFiles.length])
 
   const modelOptions = useMemo(() => {
-    const customModels = providerModels
-      .filter((m) => m.endpoint_type && m.endpoint_type === 'image-generation')
-      .map((m) => ({
-        label: m.name,
-        value: m.id,
-        custom: !SUPPORTED_MODELS.includes(m.id),
-        group: m.group
+    return providerModels
+      .filter((model) => model.endpoint_type === 'image-generation')
+      .map((model) => ({
+        label: model.name,
+        value: model.id,
+        custom: !SUPPORTED_MODELS.includes(model.id),
+        group: model.group
       }))
-    return [...customModels]
   }, [providerModels])
 
-  // 根据 group 将模型进行分组，便于在下拉列表中分组渲染
   const groupedModelOptions = useMemo(() => {
     return modelOptions.reduce<Record<string, typeof modelOptions>>((acc, option) => {
       const groupName = option.group
@@ -189,27 +119,19 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
     }, {})
   }, [modelOptions])
 
-  const getNewPainting = useCallback(() => {
-    return {
-      ...DEFAULT_PAINTING,
-      model: painting.model || modelOptions[0]?.value || '',
-      id: uuid(),
-      providerId
-    }
-  }, [modelOptions, painting.model, providerId])
-
-  const selectedModelConfig = useMemo(() => resolveModelConfig(painting.model), [painting.model])
+  const selectedModelConfig = useMemo(() => resolveModelConfig(draft.model), [draft.model])
   const isGptImage2 = isGptImage2Family(selectedModelConfig.name)
   const imageSizeOptions = selectedModelConfig.imageSizes
   const qualityOptions = selectedModelConfig.quality
   const moderationOptions = selectedModelConfig.moderation
   const backgroundOptions = selectedModelConfig.background
   const smartAutoSize = useMemo(
-    () => (painting.size === 'auto' && isGptImage2 ? resolveSmartAutoSize(painting.model, painting.prompt) : undefined),
-    [isGptImage2, painting.model, painting.prompt, painting.size]
+    () => (draft.size === 'auto' && isGptImage2 ? resolveSmartAutoSize(draft.model, draft.prompt) : undefined),
+    [draft.model, draft.prompt, draft.size, isGptImage2]
   )
+
   const smartAutoSizeSummary = useMemo(() => {
-    if (!smartAutoSize || painting.size !== 'auto' || !isGptImage2) {
+    if (!smartAutoSize || draft.size !== 'auto' || !isGptImage2) {
       return null
     }
 
@@ -228,54 +150,206 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
     return t('paintings.image_size_auto.matched', {
       target: getPaintingsImageSizeOptionsLabel(smartAutoSize.size)
     })
-  }, [isGptImage2, painting.size, smartAutoSize, t])
+  }, [draft.size, isGptImage2, smartAutoSize, t])
+
+  const updateDraft = useCallback((updates: Partial<PaintingAction>) => {
+    setDraft((prev) => ({ ...prev, ...updates }))
+  }, [])
+
+  const createEmptyDraft = useCallback(
+    (overrides: Partial<PaintingAction> = {}): PaintingAction => ({
+      ...DEFAULT_PAINTING,
+      id: uuid(),
+      providerId,
+      model: draft.model || modelOptions[0]?.value || '',
+      prompt: draft.prompt || '',
+      ...overrides
+    }),
+    [draft.model, draft.prompt, modelOptions, providerId]
+  )
+
+  const syncDraftFromPainting = useCallback(
+    (painting: PaintingAction) => {
+      setDraft((prev) => ({
+        ...prev,
+        providerId,
+        model: painting.model || prev.model || modelOptions[0]?.value || '',
+        prompt: '',
+        size: painting.size || prev.size || DEFAULT_PAINTING.size,
+        quality: painting.quality || prev.quality || DEFAULT_PAINTING.quality,
+        moderation: painting.moderation || prev.moderation || DEFAULT_PAINTING.moderation,
+        background: painting.background || prev.background || DEFAULT_PAINTING.background,
+        n: painting.n || prev.n || DEFAULT_PAINTING.n
+      }))
+    },
+    [modelOptions, providerId]
+  )
+
+  useEffect(() => {
+    if (!providerId) {
+      return
+    }
+
+    setDraft((prev) => ({
+      ...prev,
+      providerId,
+      model: prev.model || modelOptions[0]?.value || '',
+      size: prev.size || DEFAULT_PAINTING.size,
+      quality: prev.quality || DEFAULT_PAINTING.quality,
+      moderation: prev.moderation || DEFAULT_PAINTING.moderation,
+      background: prev.background || DEFAULT_PAINTING.background,
+      n: prev.n || DEFAULT_PAINTING.n
+    }))
+  }, [modelOptions, providerId])
+
+  useEffect(() => {
+    if (!selectedPaintingId) {
+      return
+    }
+
+    if (!selectedPainting) {
+      setSelectedPaintingId(null)
+      setComposerMode('create')
+      return
+    }
+
+    syncDraftFromPainting(selectedPainting)
+  }, [selectedPainting, selectedPaintingId, syncDraftFromPainting])
+
+  useEffect(() => {
+    if (!imageSizeOptions.some((option) => option.value === draft.size)) {
+      updateDraft({ size: imageSizeOptions[0]?.value ?? DEFAULT_PAINTING.size })
+    }
+  }, [draft.size, imageSizeOptions, updateDraft])
+
+  useEffect(() => {
+    if (!qualityOptions.some((option) => option.value === draft.quality)) {
+      updateDraft({ quality: qualityOptions[0]?.value ?? DEFAULT_PAINTING.quality })
+    }
+  }, [draft.quality, qualityOptions, updateDraft])
+
+  useEffect(() => {
+    if (!moderationOptions.some((option) => option.value === draft.moderation)) {
+      updateDraft({ moderation: moderationOptions[0]?.value ?? DEFAULT_PAINTING.moderation })
+    }
+  }, [draft.moderation, moderationOptions, updateDraft])
+
+  useEffect(() => {
+    if (!backgroundOptions.some((option) => option.value === draft.background)) {
+      updateDraft({ background: backgroundOptions[0]?.value ?? DEFAULT_PAINTING.background })
+    }
+  }, [backgroundOptions, draft.background, updateDraft])
+
+  useEffect(() => {
+    const timer = spaceClickTimer.current
+    return () => {
+      if (timer) {
+        clearTimeout(timer)
+      }
+    }
+  }, [])
+
+  const handleProviderChange = (nextProviderId: string) => {
+    const currentRouteName = location.pathname.split('/').pop()
+    if (nextProviderId !== currentRouteName) {
+      navigate(`../${nextProviderId}`, { replace: true })
+    }
+  }
 
   const handleModelChange = (value: string) => {
     const modelConfig = resolveModelConfig(value)
-    const updates: Partial<PaintingAction> = { model: value }
-
-    // 设置默认值
-    if (modelConfig?.imageSizes?.length) {
-      updates.size = modelConfig.imageSizes[0].value
-    }
-    if (modelConfig?.quality?.length) {
-      updates.quality = modelConfig.quality[0].value
-    }
-    if (modelConfig?.moderation?.length) {
-      updates.moderation = modelConfig.moderation[0].value
-    }
-    if (modelConfig?.background?.length) {
-      updates.background = modelConfig.background[0].value
-    }
-    updates.n = 1
-    updatePaintingState(updates)
+    const defaultModeration =
+      modelConfig.moderation.find((option) => option.value === DEFAULT_PAINTING.moderation)?.value ??
+      modelConfig.moderation[0]?.value ??
+      DEFAULT_PAINTING.moderation
+    updateDraft({
+      model: value,
+      size: modelConfig.imageSizes[0]?.value ?? DEFAULT_PAINTING.size,
+      quality: modelConfig.quality[0]?.value ?? DEFAULT_PAINTING.quality,
+      moderation: defaultModeration,
+      background: modelConfig.background[0]?.value ?? DEFAULT_PAINTING.background,
+      n: 1
+    })
   }
 
-  const handleSizeChange = (value: string) => {
-    updatePaintingState({ size: value })
+  const handleImageUpload = (file: File) => {
+    setUploadedEditFiles((prev) => [...prev, file])
+    setComposerMode('upload-edit')
+    setSelectedPaintingId(null)
+    setCurrentImageIndex(0)
+    return false
   }
 
-  const handleQualityChange = (value: string) => {
-    updatePaintingState({ quality: value })
-  }
+  const handlePastedFiles = useCallback(
+    (files: File[]) => {
+      if (files.length === 0) {
+        return
+      }
+      setUploadedEditFiles((prev) => [...prev, ...files])
+      setComposerMode('upload-edit')
+      setSelectedPaintingId(null)
+      setCurrentImageIndex(0)
+    },
+    []
+  )
 
-  const handleModerationChange = (value: string) => {
-    updatePaintingState({ moderation: value })
-  }
-
-  const handleNChange = (value: number | string | null) => {
-    if (value !== null && value !== undefined && value !== '') {
-      updatePaintingState({ n: Number(value) })
-    }
-  }
-
-  const handleError = (error: unknown) => {
-    if (error instanceof Error && error.name !== 'AbortError') {
-      window.modal.error({
-        content: getErrorMessage(error),
-        centered: true
+  const handleDeleteUploadedImage = useCallback((index: number) => {
+    setUploadedEditFiles((prev) => {
+      const nextFiles = prev.filter((_, fileIndex) => fileIndex !== index)
+      if (nextFiles.length === 0) {
+        setComposerMode('create')
+      }
+      setCurrentImageIndex((currentIndex) => {
+        if (nextFiles.length === 0) {
+          return 0
+        }
+        return Math.min(currentIndex, Math.max(0, nextFiles.length - 1))
       })
-    }
+      return nextFiles
+    })
+  }, [])
+
+  const getClipboardImageFiles = (clipboardData: DataTransfer) => {
+    const files = Array.from(clipboardData.files).filter((file) => file.type.startsWith('image/'))
+    const itemFiles = Array.from(clipboardData.items)
+      .filter((item) => item.kind === 'file' && item.type.startsWith('image/'))
+      .map((item) => item.getAsFile())
+      .filter((file): file is File => Boolean(file))
+
+    const seen = new Set<string>()
+    return [...files, ...itemFiles].filter((file) => {
+      const key = `${file.name}-${file.size}-${file.lastModified}`
+      if (seen.has(key)) {
+        return false
+      }
+      seen.add(key)
+      return true
+    })
+  }
+
+  const handleShowAddModelPopup = () => {
+    navigate(providerId ? `/settings/provider?id=${providerId}` : '/settings/provider')
+  }
+
+  const onSelectPainting = (painting: PaintingAction) => {
+    if (generating) return
+    setSelectedPaintingId(painting.id)
+    setComposerMode('continue')
+    setUploadedEditFiles([])
+    setCurrentImageIndex(0)
+    syncDraftFromPainting(painting)
+  }
+
+  const handleCreateNew = () => {
+    setComposerMode('create')
+    setSelectedPaintingId(null)
+    setUploadedEditFiles([])
+    setCurrentImageIndex(0)
+    setDraft((prev) =>
+      createEmptyDraft({
+        prompt: prev.prompt
+      })
+    )
   }
 
   const downloadImages = async (urls: string[]) => {
@@ -283,13 +357,13 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
       urls.map(async (url) => {
         try {
           if (!url?.trim()) {
-            logger.error('图像URL为空')
+            logger.error('Image URL is empty')
             window.toast.warning(t('message.empty_url'))
             return null
           }
           return await window.api.file.download(url)
         } catch (error) {
-          logger.error('下载图像失败:', error as Error)
+          logger.error('Failed to download image:', error as Error)
           if (
             error instanceof Error &&
             (error.message.includes('Failed to parse URL') || error.message.includes('Invalid URL'))
@@ -304,6 +378,32 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
     return downloadedFiles.filter((file): file is FileMetadata => file !== null)
   }
 
+  const handleError = (error: unknown) => {
+    if (error instanceof Error && error.name !== 'AbortError') {
+      window.modal.error({
+        content: getErrorMessage(error),
+        centered: true
+      })
+    }
+  }
+
+  const createResultPainting = useCallback(
+    (prompt: string) => ({
+      ...createEmptyDraft(),
+      providerId,
+      prompt,
+      model: draft.model,
+      size: draft.size,
+      quality: draft.quality,
+      moderation: draft.moderation,
+      background: draft.background,
+      n: draft.n,
+      files: [],
+      urls: []
+    }),
+    [createEmptyDraft, draft.background, draft.model, draft.moderation, draft.n, draft.quality, draft.size, providerId]
+  )
+
   const onGenerate = async () => {
     if (!newApiProvider) {
       return
@@ -311,22 +411,12 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
 
     await checkProviderEnabled(newApiProvider, t)
 
-    if (painting.files.length > 0) {
-      const confirmed = await window.modal.confirm({
-        content: t('paintings.regenerate.confirm'),
-        centered: true
-      })
+    const prompt = textareaRef.current?.resizableTextArea?.textArea?.value || draft.prompt || ''
+    updateDraft({ prompt })
 
-      if (!confirmed) return
-      await FileManager.deleteFiles(painting.files)
-    }
+    const ai = new AiProvider(newApiProvider)
 
-    const prompt = textareaRef.current?.resizableTextArea?.textArea?.value || ''
-    updatePaintingState({ prompt })
-
-    const AI = new AiProvider(newApiProvider)
-
-    if (!AI.getApiKey()) {
+    if (!ai.getApiKey()) {
       window.modal.error({
         content: t('error.no_api_key'),
         centered: true
@@ -334,7 +424,7 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
       return
     }
 
-    if (!painting.model || !painting.prompt) {
+    if (!draft.model || !prompt) {
       return
     }
 
@@ -343,80 +433,80 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
     setIsLoading(true)
     dispatch(setGenerating(true))
 
+    const resultPainting = createResultPainting(prompt)
+    addPainting('openai_image_generate', resultPainting)
+    setSelectedPaintingId(resultPainting.id)
+    setComposerMode('continue')
+    setCurrentImageIndex(0)
+
     let body: string | FormData = ''
     const headers: Record<string, string> = {
-      Authorization: `Bearer ${AI.getApiKey()}`
+      Authorization: `Bearer ${ai.getApiKey()}`
     }
-    // NOTE: Cherry Studio当下 newapi只接受v1/images/xxx的请求
-    // TODO: support gemini https://www.newapi.ai/zh/docs/api/ai-model/images/gemini/geminirelayv1beta-383837589
-    let url = providerApiHost.replace(/\/v1$/, '') + `/v1/images/generations`
+    let generationUrl = providerApiHost.replace(/\/v1$/, '') + `/v1/images/generations`
     let editUrl = providerApiHost.replace(/\/v1$/, '') + `/v1/images/edits`
     if (newApiProvider.id === 'aionly') {
-      url = providerApiHost.replace(/\/v1$/, '') + `/openai/v1/images/generations`
+      generationUrl = providerApiHost.replace(/\/v1$/, '') + `/openai/v1/images/generations`
       editUrl = providerApiHost.replace(/\/v1$/, '') + `/openai/v1/images/edits`
     }
 
     try {
-      if (mode === 'openai_image_generate') {
+      const continueImages =
+        composerMode === 'continue' && selectedPainting?.files?.length
+          ? await Promise.all(
+              selectedPainting.files.map(async (file, index) => {
+                const { data, mime } = await window.api.file.binaryImage(file.id + file.ext)
+                const fileName = file.name || `image_${index + 1}${file.ext}`
+                return new File([data], fileName, {
+                  type: mime,
+                  lastModified: new Date(file.created_at).getTime()
+                })
+              })
+            )
+          : []
+
+      const inputImages = composerMode === 'upload-edit' ? uploadedEditFiles : continueImages
+      const shouldEdit = inputImages.length > 0
+
+      if (!shouldEdit) {
         const resolvedSize =
-          painting.size === 'auto'
-            ? smartAutoSize?.size === undefined
-              ? undefined
-              : smartAutoSize.size
-            : painting.size
+          draft.size === 'auto' ? (smartAutoSize?.size === undefined ? undefined : smartAutoSize.size) : draft.size
 
-        const requestData = {
+        body = JSON.stringify({
           prompt,
-          model: painting.model,
+          model: draft.model,
           size: resolvedSize,
-          background: painting.background === 'auto' ? undefined : painting.background,
-          n: painting.n,
-          quality: painting.quality === 'auto' ? undefined : painting.quality,
-          moderation: painting.moderation === 'auto' ? undefined : painting.moderation
-        }
-
-        body = JSON.stringify(requestData)
+          background: draft.background === 'auto' ? undefined : draft.background,
+          n: draft.n,
+          quality: draft.quality === 'auto' ? undefined : draft.quality,
+          moderation: draft.moderation === 'auto' ? undefined : draft.moderation
+        })
         headers['Content-Type'] = 'application/json'
-      } else if (mode === 'openai_image_edit') {
-        // -------- Edit Mode --------
-        if (editImages.length === 0) {
-          window.toast.warning(t('paintings.image_file_required'))
-          return
-        }
-
+      } else {
         const formData = new FormData()
         formData.append('prompt', prompt)
-        formData.append('model', painting.model)
-        if (painting.background && painting.background !== 'auto') {
-          formData.append('background', painting.background)
+        formData.append('model', draft.model)
+        if (draft.background && draft.background !== 'auto') {
+          formData.append('background', draft.background)
         }
-
-        if (painting.size && painting.size !== 'auto') {
-          formData.append('size', painting.size)
+        if (draft.size && draft.size !== 'auto') {
+          formData.append('size', draft.size)
         }
-
-        if (painting.quality && painting.quality !== 'auto') {
-          formData.append('quality', painting.quality)
+        if (draft.quality && draft.quality !== 'auto') {
+          formData.append('quality', draft.quality)
         }
-
-        if (painting.moderation && painting.moderation !== 'auto') {
-          formData.append('moderation', painting.moderation)
+        if (draft.moderation && draft.moderation !== 'auto') {
+          formData.append('moderation', draft.moderation)
         }
-
-        // append images
-        editImages.forEach((file) => {
-          formData.append('image', file)
-        })
-
-        // TODO: mask support later
-
+        inputImages.forEach((file) => formData.append('image', file))
         body = formData
-
-        // For edit mode we do not set content-type; browser will set multipart boundary
       }
 
-      const requestUrl = mode === 'openai_image_edit' ? editUrl : url
-      const response = await fetch(requestUrl, { method: 'POST', headers, body })
+      const response = await fetch(shouldEdit ? editUrl : generationUrl, {
+        method: 'POST',
+        headers,
+        body
+      })
 
       if (!response.ok) {
         const errorData = await response.json()
@@ -427,22 +517,35 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
       const urls = data.data.filter((item) => item.url).map((item) => item.url)
       const base64s = data.data.filter((item) => item.b64_json).map((item) => item.b64_json)
 
+      let validFiles: FileMetadata[] = []
+
       if (urls.length > 0) {
-        const validFiles = await downloadImages(urls)
-        await FileManager.addFiles(validFiles)
-        updatePaintingState({ files: validFiles, urls })
+        validFiles = await downloadImages(urls)
       }
 
-      if (base64s?.length > 0) {
-        const validFiles = await Promise.all(
-          base64s.map(async (base64) => {
-            return await window.api.file.saveBase64Image(base64)
-          })
-        )
-        await FileManager.addFiles(validFiles)
-        updatePaintingState({ files: validFiles, urls: [] })
+      if (base64s.length > 0) {
+        validFiles = await Promise.all(base64s.map((base64) => window.api.file.saveBase64Image(base64)))
+      }
+
+      await FileManager.addFiles(validFiles)
+
+      const completedPainting = {
+        ...resultPainting,
+        files: validFiles,
+        urls: urls.length > 0 ? urls : []
+      }
+
+      void removePainting('openai_image_generate', resultPainting)
+      addPainting('openai_image_generate', completedPainting)
+      setSelectedPaintingId(completedPainting.id)
+      syncDraftFromPainting(completedPainting)
+      if (composerMode === 'upload-edit') {
+        setComposerMode('continue')
+        setUploadedEditFiles([])
       }
     } catch (error: unknown) {
+      void removePainting('openai_image_generate', resultPainting)
+      setSelectedPaintingId(selectedPainting?.id ?? null)
       handleError(error)
     } finally {
       setIsLoading(false)
@@ -456,7 +559,13 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
     try {
       const validFiles = await downloadImages(painting.urls)
       await FileManager.addFiles(validFiles)
-      updatePaintingState({ files: validFiles, urls: painting.urls })
+      const retriedPainting = {
+        ...painting,
+        files: validFiles
+      }
+      updatePainting('openai_image_generate', retriedPainting)
+      setSelectedPaintingId(retriedPainting.id)
+      syncDraftFromPainting(retriedPainting)
     } catch (error) {
       handleError(error)
     } finally {
@@ -464,52 +573,53 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
     }
   }
 
+  const onDeletePainting = (paintingToDelete: PaintingAction) => {
+    const targetIndex = paintings.findIndex((painting) => painting.id === paintingToDelete.id)
+    const nextPainting =
+      selectedPaintingId === paintingToDelete.id
+        ? paintings[targetIndex + 1] || paintings[targetIndex - 1] || null
+        : selectedPainting
+
+    void removePainting('openai_image_generate', paintingToDelete)
+
+    if (nextPainting) {
+      setSelectedPaintingId(nextPainting.id)
+      setComposerMode('continue')
+      syncDraftFromPainting(nextPainting)
+      return
+    }
+
+    setSelectedPaintingId(null)
+    setComposerMode('create')
+  }
+
   const onCancel = () => {
     abortController?.abort()
   }
 
   const nextImage = () => {
-    setCurrentImageIndex((prev) => (prev + 1) % painting.files.length)
+    const totalImages = artboardPainting.files.length > 0 ? artboardPainting.files.length : uploadedEditFiles.length
+    if (totalImages === 0) return
+    const step = artboardPainting.files.length === 0 && uploadedEditFiles.length > 1 ? 9 : 1
+    setCurrentImageIndex((prev) => (prev + step) % totalImages)
   }
 
   const prevImage = () => {
-    setCurrentImageIndex((prev) => (prev - 1 + painting.files.length) % painting.files.length)
-  }
-
-  const handleAddPainting = () => {
-    const newPainting = addPainting(mode, getNewPainting())
-    updatePainting(mode, newPainting)
-    setPainting(newPainting)
-    return newPainting
-  }
-
-  const onDeletePainting = (paintingToDelete: PaintingAction) => {
-    if (paintingToDelete.id === painting.id) {
-      const currentIndex = filteredPaintings.findIndex((p) => p.id === paintingToDelete.id)
-
-      if (currentIndex > 0) {
-        setPainting(filteredPaintings[currentIndex - 1])
-      } else if (filteredPaintings.length > 1) {
-        setPainting(filteredPaintings[1])
-      }
-    }
-
-    void removePainting(mode, paintingToDelete)
+    const totalImages = artboardPainting.files.length > 0 ? artboardPainting.files.length : uploadedEditFiles.length
+    if (totalImages === 0) return
+    const step = artboardPainting.files.length === 0 && uploadedEditFiles.length > 1 ? 9 : 1
+    setCurrentImageIndex((prev) => (prev - step + totalImages) % totalImages)
   }
 
   const translate = async () => {
-    if (isTranslating) {
-      return
-    }
-
-    if (!painting.prompt) {
+    if (isTranslating || !draft.prompt) {
       return
     }
 
     try {
       setIsTranslating(true)
-      const translatedText = await translateText(painting.prompt, LanguagesEnum.enUS)
-      updatePaintingState({ prompt: translatedText })
+      const translatedText = await translateText(draft.prompt, LanguagesEnum.enUS)
+      updateDraft({ prompt: translatedText })
     } catch (error) {
       logger.error('Translation failed:', error as Error)
     } finally {
@@ -519,144 +629,47 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (autoTranslateWithSpace && event.key === ' ') {
-      setSpaceClickCount((prev) => prev + 1)
-
+      const nextSpaceClickCount = spaceClickCount + 1
+      setSpaceClickCount(nextSpaceClickCount)
       if (spaceClickTimer.current) {
         clearTimeout(spaceClickTimer.current)
       }
-
       spaceClickTimer.current = setTimeout(() => {
         setSpaceClickCount(0)
       }, 200)
 
-      if (spaceClickCount === 2) {
+      if (nextSpaceClickCount >= 2) {
         setSpaceClickCount(0)
-        setIsTranslating(true)
         void translate()
       }
-    }
-  }
-
-  const handleProviderChange = (providerId: string) => {
-    const routeName = location.pathname.split('/').pop()
-    if (providerId !== routeName) {
-      navigate('../' + providerId, { replace: true })
-    }
-  }
-
-  // 处理模式切换
-  const handleModeChange = (value: string) => {
-    if (!newApiProvider) {
       return
     }
 
-    const nextMode = value as keyof PaintingsState
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault()
+      void onGenerate()
+    }
+  }
 
-    setMode(nextMode)
-
-    if (nextMode === 'openai_image_edit' && mode === 'openai_image_generate' && painting.files.length > 0) {
-      const existingEditPainting = findPaintingByFiles<PaintingAction>(
-        newApiPaintings.openai_image_edit || [],
-        providerId,
-        painting.files
-      )
-
-      if (existingEditPainting) {
-        setPainting(existingEditPainting)
-        return
-      }
-
-      const seededPainting = {
-        ...painting,
-        id: uuid(),
-        providerId
-      }
-
-      addPainting(nextMode, seededPainting)
-      setPainting(seededPainting)
+  const handlePaste = (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const imageFiles = getClipboardImageFiles(event.clipboardData)
+    if (imageFiles.length === 0) {
       return
     }
-
-    const list = (newApiPaintings[nextMode] || []).filter((p) => p.providerId === providerId)
-    setPainting(list[0] || { ...DEFAULT_PAINTING, providerId })
+    event.preventDefault()
+    handlePastedFiles(imageFiles)
   }
 
-  // 渲染配置项的函数
-  const onSelectPainting = (newPainting: PaintingAction) => {
-    if (generating) return
-    setPainting(newPainting)
-    setCurrentImageIndex(0)
-  }
-
-  const handleImageUpload = (file: File) => {
-    setEditImageFiles((prev) => [...prev, file])
-    return false // 阻止默认上传行为
-  }
-
-  // 当 modelOptions 为空时，引导用户跳转到 Provider 设置页面，新增 image-generation 端点模型
-  const handleShowAddModelPopup = () => {
-    navigate(providerId ? `/settings/provider?id=${providerId}` : '/settings/provider')
-  }
+  const uploadedPreviewUrls = useMemo(
+    () => uploadedEditFiles.map((file) => URL.createObjectURL(file)),
+    [uploadedEditFiles]
+  )
 
   useEffect(() => {
-    if (!newApiProvider) {
-      return
-    }
-
-    if (filteredPaintings.length === 0) {
-      const newPainting = getNewPainting()
-      addPainting(mode, newPainting)
-      setPainting(newPainting)
-    } else {
-      // 如果当前 painting 存在于 filteredPaintings 中，则优先显示当前 painting
-      const found = filteredPaintings.find((p) => p.id === painting.id)
-      if (found) {
-        setPainting(found)
-      } else {
-        setPainting(filteredPaintings[0])
-      }
-    }
-  }, [filteredPaintings, mode, addPainting, getNewPainting, newApiProvider, painting.id])
-
-  useEffect(() => {
-    const timer = spaceClickTimer.current
     return () => {
-      if (timer) {
-        clearTimeout(timer)
-      }
+      uploadedPreviewUrls.forEach((url) => URL.revokeObjectURL(url))
     }
-  }, [])
-
-  // if painting.model is not set, set it to the first model in modelOptions
-  useEffect(() => {
-    if (!painting.model && modelOptions.length > 0) {
-      updatePaintingState({ model: modelOptions[0].value })
-    }
-  }, [modelOptions, painting.model, updatePaintingState])
-
-  useEffect(() => {
-    if (!imageSizeOptions.some((option) => option.value === painting.size)) {
-      updatePaintingState({ size: imageSizeOptions[0]?.value ?? DEFAULT_PAINTING.size })
-    }
-  }, [imageSizeOptions, painting.size, updatePaintingState])
-
-  useEffect(() => {
-    if (!qualityOptions.some((option) => option.value === painting.quality)) {
-      updatePaintingState({ quality: qualityOptions[0]?.value ?? DEFAULT_PAINTING.quality })
-    }
-  }, [painting.quality, qualityOptions, updatePaintingState])
-
-  useEffect(() => {
-    if (!moderationOptions.some((option) => option.value === painting.moderation)) {
-      updatePaintingState({ moderation: moderationOptions[0]?.value ?? DEFAULT_PAINTING.moderation })
-    }
-  }, [moderationOptions, painting.moderation, updatePaintingState])
-
-  useEffect(() => {
-    if (!backgroundOptions.some((option) => option.value === painting.background)) {
-      updatePaintingState({ background: backgroundOptions[0]?.value ?? DEFAULT_PAINTING.background })
-    }
-  }, [backgroundOptions, painting.background, updatePaintingState])
+  }, [uploadedPreviewUrls])
 
   if (!newApiProvider) {
     return (
@@ -686,13 +699,6 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
     <Container>
       <Navbar>
         <NavbarCenter style={{ borderRight: 'none' }}>{t('paintings.title')}</NavbarCenter>
-        {isMac && (
-          <NavbarRight style={{ justifyContent: 'flex-end' }}>
-            <Button size="small" className="nodrag" icon={<PlusOutlined />} onClick={handleAddPainting}>
-              {t('paintings.button.new.image')}
-            </Button>
-          </NavbarRight>
-        )}
       </Navbar>
       <ContentContainer id="content-container">
         <LeftContainer>
@@ -702,18 +708,12 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
               target="_blank"
               href={PROVIDER_URLS[newApiProvider.id]?.websites?.docs || 'https://docs.newapi.pro/'}>
               {t('paintings.learn_more')}
-              <ProviderLogo
-                shape="square"
-                src={getProviderLogo(newApiProvider.id)}
-                size={16}
-                style={{ marginLeft: 5 }}
-              />
+              <ProviderLogo shape="square" src={getProviderLogo(newApiProvider.id)} size={16} style={{ marginLeft: 5 }} />
             </SettingHelpLink>
           </ProviderTitleContainer>
 
           <ProviderSelect provider={newApiProvider} options={Options} onChange={handleProviderChange} />
 
-          {/* 当没有可用的 Image Generation 模型时，提示用户先去新增 */}
           {modelOptions.length === 0 && (
             <Empty
               style={{ marginTop: 24 }}
@@ -728,61 +728,19 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
 
           {modelOptions.length > 0 && (
             <>
-              {mode === 'openai_image_edit' && (
-                <>
-                  <SettingTitle style={{ marginTop: 20 }}>{t('paintings.input_image')}</SettingTitle>
-                  <ImageUploadButton
-                    accept="image/png, image/jpeg, image/gif"
-                    maxCount={16}
-                    showUploadList={true}
-                    listType="picture"
-                    beforeUpload={handleImageUpload}
-                    fileList={editImageFiles.map((file, idx): UploadFile<any> => {
-                      const rcFile: RcFile = {
-                        ...file,
-                        uid: String(idx),
-                        lastModifiedDate: file.lastModified ? new Date(file.lastModified) : new Date()
-                      }
-                      return {
-                        uid: rcFile.uid,
-                        name: rcFile.name || `image_${idx + 1}.png`,
-                        status: 'done',
-                        url: URL.createObjectURL(file),
-                        originFileObj: rcFile,
-                        lastModifiedDate: rcFile.lastModifiedDate
-                      }
-                    })}
-                    onRemove={(file) => {
-                      setEditImageFiles((prev) =>
-                        prev.filter((f) => {
-                          const idx = prev.indexOf(f)
-                          return String(idx) !== file.uid
-                        })
-                      )
-                      return true
-                    }}>
-                    <ImagePlaceholder>
-                      <ImageSizeImage src={IcImageUp} theme={theme} />
-                    </ImagePlaceholder>
-                  </ImageUploadButton>
-                </>
-              )}
-
-              {/* Model Selector */}
               <SettingTitle style={{ marginTop: 20 }}>{t('paintings.model')}</SettingTitle>
-              <Select value={painting.model} onChange={handleModelChange} style={{ width: '100%', marginBottom: 15 }}>
+              <Select value={draft.model} onChange={handleModelChange} style={{ width: '100%', marginBottom: 15 }}>
                 {Object.entries(groupedModelOptions).map(([groupName, options]) => (
                   <Select.OptGroup label={groupName} key={groupName}>
-                    {options.map((m) => (
-                      <Select.Option value={m.value} key={m.value}>
-                        {m.label}
+                    {(options as typeof modelOptions).map((model) => (
+                      <Select.Option value={model.value} key={model.value}>
+                        {model.label}
                       </Select.Option>
                     ))}
                   </Select.OptGroup>
                 ))}
               </Select>
 
-              {/* Image Size */}
               {imageSizeOptions.length > 0 && (
                 <>
                   <SettingTitleRow>
@@ -793,10 +751,10 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
                       )}
                     />
                   </SettingTitleRow>
-                  <Select value={painting.size} onChange={handleSizeChange} style={{ width: '100%', marginBottom: 15 }}>
-                    {imageSizeOptions.map((s) => (
-                      <Select.Option value={s.value} key={s.value}>
-                        {getPaintingsImageSizeOptionsLabel(s.value, s.label, s.isExperimental) ?? s.value}
+                  <Select value={draft.size} onChange={(value) => updateDraft({ size: value })} style={{ width: '100%', marginBottom: 15 }}>
+                    {imageSizeOptions.map((size) => (
+                      <Select.Option value={size.value} key={size.value}>
+                        {getPaintingsImageSizeOptionsLabel(size.value, size.label, size.isExperimental) ?? size.value}
                       </Select.Option>
                     ))}
                   </Select>
@@ -804,27 +762,22 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
                 </>
               )}
 
-              {/* Quality */}
               {qualityOptions.length > 0 && (
                 <>
                   <SettingTitleRow>
                     <SettingTitle>{t('paintings.quality')}</SettingTitle>
                     <InfoTooltip title={t('paintings.help.quality')} />
                   </SettingTitleRow>
-                  <Select
-                    value={painting.quality}
-                    onChange={handleQualityChange}
-                    style={{ width: '100%', marginBottom: 15 }}>
-                    {qualityOptions.map((q) => (
-                      <Select.Option value={q.value} key={q.value}>
-                        {getPaintingsQualityOptionsLabel(q.value) ?? q.value}
+                  <Select value={draft.quality} onChange={(value) => updateDraft({ quality: value })} style={{ width: '100%', marginBottom: 15 }}>
+                    {qualityOptions.map((quality) => (
+                      <Select.Option value={quality.value} key={quality.value}>
+                        {getPaintingsQualityOptionsLabel(quality.value) ?? quality.value}
                       </Select.Option>
                     ))}
                   </Select>
                 </>
               )}
 
-              {/* Moderation */}
               {moderationOptions.length > 0 && (
                 <>
                   <SettingTitleRow>
@@ -832,51 +785,54 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
                     <InfoTooltip title={t('paintings.help.moderation')} />
                   </SettingTitleRow>
                   <Select
-                    value={painting.moderation}
-                    onChange={handleModerationChange}
+                    value={draft.moderation}
+                    onChange={(value) => updateDraft({ moderation: value })}
                     style={{ width: '100%', marginBottom: 15 }}>
-                    {moderationOptions.map((m) => (
-                      <Select.Option value={m.value} key={m.value}>
-                        {getPaintingsModerationOptionsLabel(m.value) ?? m.value}
+                    {moderationOptions.map((moderation) => (
+                      <Select.Option value={moderation.value} key={moderation.value}>
+                        {getPaintingsModerationOptionsLabel(moderation.value) ?? moderation.value}
                       </Select.Option>
                     ))}
                   </Select>
                 </>
               )}
 
-              {/* Background */}
               {backgroundOptions.length > 0 && (
                 <>
                   <SettingTitleRow>
                     <SettingTitle>{t('paintings.background')}</SettingTitle>
                     <InfoTooltip
+                      overlayInnerStyle={{ whiteSpace: 'pre-line' }}
                       title={t(
                         isGptImage2 ? 'paintings.help.background.gpt_image_2' : 'paintings.help.background.default'
                       )}
                     />
                   </SettingTitleRow>
                   <Select
-                    value={painting.background}
-                    onChange={(value) => updatePaintingState({ background: value })}
+                    value={draft.background}
+                    onChange={(value) => updateDraft({ background: value })}
                     style={{ width: '100%', marginBottom: 15 }}>
-                    {backgroundOptions.map((b) => (
-                      <Select.Option value={b.value} key={b.value}>
-                        {getPaintingsBackgroundOptionsLabel(b.value) ?? b.value}
+                    {backgroundOptions.map((background) => (
+                      <Select.Option value={background.value} key={background.value}>
+                        {getPaintingsBackgroundOptionsLabel(background.value) ?? background.value}
                       </Select.Option>
                     ))}
                   </Select>
                 </>
               )}
 
-              {/* Number of Images (n) */}
               {selectedModelConfig?.max_images && (
                 <>
                   <SettingTitle>{t('paintings.number_images')}</SettingTitle>
                   <InputNumber
                     min={1}
                     max={selectedModelConfig.max_images}
-                    value={painting.n || 1}
-                    onChange={handleNChange}
+                    value={draft.n || 1}
+                    onChange={(value) => {
+                      if (value !== null && value !== undefined) {
+                        updateDraft({ n: Number(value) })
+                      }
+                    }}
                     style={{ width: '100%', marginBottom: 15 }}
                   />
                 </>
@@ -884,42 +840,57 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
             </>
           )}
         </LeftContainer>
+
         <MainContainer>
-          {/* 添加功能切换分段控制器 */}
-          <ModeSegmentedContainer>
-            <Segmented shape="round" value={mode} onChange={handleModeChange} options={modeOptions} />
-          </ModeSegmentedContainer>
           <Artboard
-            painting={painting}
+            painting={artboardPainting}
             isLoading={isLoading}
             currentImageIndex={currentImageIndex}
             onPrevImage={prevImage}
             onNextImage={nextImage}
             onCancel={onCancel}
             retry={handleRetry}
+            previewUrls={uploadedPreviewUrls}
+            onDeletePreview={handleDeleteUploadedImage}
+            imageCover={
+              <CanvasGuide>
+                <GuideText>{t('paintings.canvas_guide_primary')}</GuideText>
+                <GuideTextMuted>{t('paintings.canvas_guide_secondary')}</GuideTextMuted>
+                <ImageUploadButton
+                  accept="image/png, image/jpeg, image/gif"
+                  maxCount={16}
+                  multiple
+                  showUploadList={false}
+                  beforeUpload={handleImageUpload}>
+                  <Button icon={<UploadOutlined />}>{t('paintings.canvas_upload_action')}</Button>
+                </ImageUploadButton>
+              </CanvasGuide>
+            }
           />
           <InputContainer>
+            {composerHint && <ComposerHint>{composerHint}</ComposerHint>}
             <Textarea
               ref={textareaRef}
               variant="borderless"
               disabled={isLoading}
-              value={painting.prompt}
+              value={draft.prompt}
               spellCheck={false}
-              onChange={(e) => updatePaintingState({ prompt: e.target.value })}
+              onChange={(event) => updateDraft({ prompt: event.target.value })}
               placeholder={
                 isTranslating
                   ? t('paintings.translating')
-                  : painting.model?.startsWith('imagen-')
+                  : draft.model?.startsWith('imagen-')
                     ? t('paintings.prompt_placeholder_en')
                     : t('paintings.prompt_placeholder_edit')
               }
               onKeyDown={handleKeyDown}
+              onPaste={handlePaste}
             />
             <Toolbar>
               <ToolbarMenu>
                 <TranslateButton
                   text={textareaRef.current?.resizableTextArea?.textArea?.value}
-                  onTranslated={(translatedText) => updatePaintingState({ prompt: translatedText })}
+                  onTranslated={(translatedText) => updateDraft({ prompt: translatedText })}
                   disabled={isLoading || isTranslating}
                   isLoading={isTranslating}
                   style={{ marginRight: 6, borderRadius: '50%' }}
@@ -929,13 +900,14 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
             </Toolbar>
           </InputContainer>
         </MainContainer>
+
         <PaintingsList
-          namespace={mode}
-          paintings={filteredPaintings}
-          selectedPainting={painting}
+          namespace="openai_image_generate"
+          paintings={paintings}
+          selectedPainting={selectedPainting}
           onSelectPainting={onSelectPainting}
           onDeletePainting={onDeletePainting}
-          onNewPainting={handleAddPainting}
+          onNewPainting={handleCreateNew}
         />
       </ContentContainer>
     </Container>
@@ -1002,10 +974,8 @@ const Textarea = styled(TextArea)`
 const Toolbar = styled.div`
   display: flex;
   flex-direction: row;
-  justify-content: space-between;
   justify-content: flex-end;
   padding: 0 8px;
-  padding-bottom: 0;
   height: 40px;
 `
 
@@ -1018,12 +988,6 @@ const ToolbarMenu = styled.div`
 
 const ProviderLogo = styled(Avatar)`
   border: 0.5px solid var(--color-border);
-`
-
-const ModeSegmentedContainer = styled.div`
-  display: flex;
-  justify-content: center;
-  padding-top: 24px;
 `
 
 const ProviderTitleContainer = styled.div`
@@ -1048,27 +1012,40 @@ const SettingHint = styled.div`
 `
 
 const ImageUploadButton = styled(Upload)`
-  & .ant-upload.ant-upload-select {
-    width: 100% !important;
-    height: 60px !important;
-    border: 1px dashed var(--color-border);
-  }
+  display: inline-flex;
 `
 
-const ImagePlaceholder = styled.div`
+const CanvasGuide = styled.div`
   display: flex;
-  flex-direction: row;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  height: 100%;
-  cursor: pointer;
-  gap: 8px;
+  gap: 12px;
+  text-align: center;
+  max-width: 420px;
 `
 
-const ImageSizeImage = styled.img<{ theme: string }>`
-  filter: ${({ theme }) => (theme === 'dark' ? 'invert(100%)' : 'none')};
-  width: 20px;
-  height: 20px;
+const GuideText = styled.div`
+  font-size: 18px;
+  line-height: 1.6;
+  color: var(--color-text-1);
+`
+
+const GuideTextMuted = styled.div`
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--color-text-3);
+`
+
+const ComposerHint = styled.div`
+  align-self: flex-start;
+  margin: 8px 10px 0;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 10%, transparent);
 `
 
 export default NewApiPage

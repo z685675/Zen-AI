@@ -2,6 +2,8 @@ import {
   CreateSessionRequestSchema,
   ReplaceSessionRequestSchema,
   SessionIdParamSchema,
+  SessionListQuerySchema,
+  SessionSearchQuerySchema,
   UpdateSessionRequestSchema
 } from '@types'
 
@@ -21,4 +23,12 @@ export const validateSessionUpdate = createZodValidator({
 
 export const validateSessionId = createZodValidator({
   params: SessionIdParamSchema
+})
+
+export const validateSessionList = createZodValidator({
+  query: SessionListQuerySchema
+})
+
+export const validateSessionSearch = createZodValidator({
+  query: SessionSearchQuerySchema
 })

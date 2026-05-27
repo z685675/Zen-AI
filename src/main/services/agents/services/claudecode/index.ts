@@ -68,6 +68,39 @@ const IMAGE_MAX_DIMENSION = 2000
 const IMAGE_MAX_BYTES = 5 * 1024 * 1024 // 5MB API limit
 const shouldAutoApproveTools = process.env.CHERRY_AUTO_ALLOW_TOOLS === '1'
 const NO_RESUME_COMMANDS = ['/clear']
+const DESTRUCTIVE_FILE_COMMAND_RE =
+  /\b(rm|rmdir|del|erase|remove-item|remove|unlink|trash|shred)\b|删除|刪除|移除|清空|永久删除/i
+const BACKUP_COMMAND_RE =
+  /\b(cp|copy|copy-item|robocopy|xcopy|mkdir|new-item)\b|backup|backups|bak|备份|備份|ZenAI_Backups/i
+const FILE_BACKUP_REQUIRED_MESSAGE = [
+  'Zen AI safety policy: before deleting or otherwise destructively changing existing user files, first create a timestamped backup copy and verify it exists.',
+  'For Desktop files, use a clear backup folder such as Desktop/ZenAI_Backups/<timestamp>/, then delete the original only after the backup succeeds.',
+  'If the user explicitly asked to skip backup, clearly state that no backup will be created and then run the direct command.'
+].join('\n')
+
+const isBashToolName = (toolName: string) => toolName === 'Bash' || toolName === 'builtin_Bash'
+
+const getBashCommand = (toolInput: unknown): string | undefined => {
+  if (!toolInput || typeof toolInput !== 'object' || Array.isArray(toolInput)) {
+    return undefined
+  }
+
+  const command = (toolInput as Record<string, unknown>).command
+  return typeof command === 'string' ? command : undefined
+}
+
+const isDirectDestructiveFileCommandWithoutBackup = (toolName: string, toolInput: unknown): boolean => {
+  if (!isBashToolName(toolName)) {
+    return false
+  }
+
+  const command = getBashCommand(toolInput)
+  if (!command) {
+    return false
+  }
+
+  return DESTRUCTIVE_FILE_COMMAND_RE.test(command) && !BACKUP_COMMAND_RE.test(command)
+}
 
 const getLanguageInstruction = () => {
   const lang = configManager.getLanguage()
@@ -76,6 +109,302 @@ const getLanguageInstruction = () => {
   (1) text responses, (2) tool call parameters like "description" fields, and (3) any user-facing content.
   ${lang === 'en-US' ? '' : 'Never use English unless the content is code, file paths, or technical identifiers.'}
   `
+}
+
+const FUSION_CAPABILITY_CONTRACT = `
+## Xiao Long Xia Core Capability Contract
+You are expected to reliably complete these six baseline product capabilities:
+
+1. Information acquisition
+- For any current, future, latest, online, website, weather, flight, paper, video, policy, price, company, news, or other public information request, first try to obtain information with the available web tools.
+- Prefer mcp__exa__web_search_exa for structured search, and use mcp__browser__open / mcp__browser__snapshot / mcp__browser__screenshot when a specific page must be inspected.
+- Do not say you lack search, weather, flight, paper, or website lookup ability before trying available tools. Only say you cannot obtain it after the tools fail, are unavailable, require login/CAPTCHA/payment, or the information is not publicly accessible.
+- When information is time-sensitive, include the date/range you checked and mention uncertainty if the source may change.
+
+2. Output and file generation
+- When the user asks for MD, TXT, Word/DOCX, Excel/XLSX/CSV, PPT/PPTX, PDF, or other common file output, create the file in the requested location or a sensible default location.
+- After writing files, verify that the files exist and briefly report file names and paths.
+- Do not merely describe how to create a file unless file creation is blocked.
+
+3. Local file and desktop operations
+- Use file and shell tools to read, search, organize, rename, summarize, extract, convert, or batch-process local files within the allowed workspace.
+- Before editing, renaming, moving, overwriting, converting in-place, deleting, or batch-processing existing user files, pause once and explain the affected files, the risk, and the backup location you will use.
+- Default to creating a timestamped backup copy before changing existing user files, then perform the requested operation after the user confirms. A good default location is a clearly named folder such as ZenAI_Backups/<timestamp>/ next to the affected files or on the Desktop when the affected files are on the Desktop. Also tell the user that if the files are very large or they are sure no backup is needed, they can say so and proceed without backup.
+- For deletion requests, do not merely ask the user to type "confirm delete". Tell the user that you will first copy the matched file(s) into the backup folder, verify the backup exists, and only then delete the originals.
+- If the user explicitly says no backup is needed and asks to proceed directly, do not ask again; perform the requested operation and clearly state that no backup was created.
+- For batch work, inspect the current state first and avoid repeating already completed work.
+
+4. Task controllability and recovery
+- For long or multi-step tasks, keep the task finite and observable. Use TODOs when helpful, and report what is done, what remains, and any blocker.
+- If a task is interrupted or regenerated, inspect existing files/results first, then continue only missing work.
+- Never promise to keep working in the background unless an explicit scheduler/automation has actually been created.
+
+5. Reliable delivery and verification
+- Before saying "done", verify observable results: files exist, counts match, key content is present, sources were found, or tool outputs support the answer.
+- If verification is partial, say exactly what was verified and what could not be verified.
+- Prefer concise source attribution for searched information.
+
+6. Memory, scheduling, and cross-device handoff
+- When the user asks for reminders, recurring checks, monitoring, or follow-up, use the available scheduling/automation path instead of only giving instructions.
+- For WeChat-connected sessions, remember it is a text remote-control channel. Keep responses suitable for text, and avoid relying on image/file upload from WeChat unless the desktop side confirms support.
+
+## Xiao Long Xia Product Tools
+- Use mcp__claw__cron for reminders, recurring checks, scheduled reports, and explicit background follow-up tasks.
+- Use mcp__claw__notify when a result or alert should be sent through connected IM channels.
+- Use mcp__claw__skills to search, install, list, or remove skills from the skill marketplace.
+- Use mcp__claw__memory to append durable task notes or search previous journal entries when memory is relevant.
+- Use mcp__claw__config only for agent/channel configuration tasks such as checking connected channels or reconnecting WeChat.
+`
+
+const FUSION_SEARCH_INTENT_KEYWORDS = [
+  '天气',
+  '航班',
+  '机票',
+  '高铁',
+  '火车',
+  '论文',
+  '文献',
+  '最新',
+  '今天',
+  '明天',
+  '后天',
+  '下周',
+  '实时',
+  '查询',
+  '搜索',
+  '搜',
+  '网站',
+  '网页',
+  '视频',
+  '标题',
+  '新闻',
+  '价格',
+  '政策',
+  '公告',
+  '排行榜',
+  '公司',
+  '官网',
+  'weather',
+  'flight',
+  'ticket',
+  'train',
+  'paper',
+  'literature',
+  'latest',
+  'current',
+  'today',
+  'tomorrow',
+  'next week',
+  'real-time',
+  'realtime',
+  'search',
+  'website',
+  'webpage',
+  'video',
+  'news',
+  'price',
+  'policy',
+  'announcement',
+  'ranking',
+  'company',
+  'official'
+]
+
+const FUSION_FILE_ACTION_KEYWORDS = [
+  '生成',
+  '创建',
+  '输出',
+  '保存',
+  '导出',
+  '写成',
+  '整理成',
+  '做成',
+  '下载',
+  '写',
+  'create',
+  'generate',
+  'export',
+  'save',
+  'write',
+  'make',
+  'download'
+]
+
+const FUSION_FILE_TARGET_KEYWORDS = [
+  'word',
+  'docx',
+  'doc',
+  'excel',
+  'xlsx',
+  'csv',
+  'ppt',
+  'pptx',
+  'pdf',
+  'md',
+  'markdown',
+  'txt',
+  '文件',
+  '文档',
+  '表格',
+  '幻灯片',
+  '演示文稿',
+  '报告',
+  '论文',
+  '文献',
+  '图片',
+  '图像',
+  '视频',
+  '桌面',
+  '下载目录',
+  '下载文件夹',
+  'desktop',
+  'downloads',
+  'paper',
+  'literature',
+  'image'
+]
+
+const FUSION_SCHEDULE_INTENT_KEYWORDS = [
+  '定时',
+  '提醒',
+  '闹钟',
+  '每天',
+  '每周',
+  '每月',
+  '每隔',
+  '之后提醒',
+  '到时候',
+  '盯着',
+  '监控',
+  '持续检查',
+  '定期',
+  '自动检查',
+  'schedule',
+  'scheduled',
+  'remind',
+  'reminder',
+  'recurring',
+  'every day',
+  'every week',
+  'monitor',
+  'follow up',
+  'check every'
+]
+
+const FUSION_SKILL_INTENT_KEYWORDS = [
+  'skill',
+  'skills',
+  '技能',
+  '技能市场',
+  '插件',
+  '插件市场',
+  '安装技能',
+  '卸载技能',
+  'marketplace',
+  'extension',
+  'plugin'
+]
+
+const FUSION_MEMORY_INTENT_KEYWORDS = [
+  '记住',
+  '记下来',
+  '记忆',
+  '以后记得',
+  '下次记得',
+  'remember',
+  'memorize',
+  'memory',
+  'note this'
+]
+
+const includesAnyKeyword = (text: string, keywords: string[]) => keywords.some((keyword) => text.includes(keyword))
+
+const detectFusionSearchIntent = (prompt: string): boolean => {
+  const normalizedPrompt = prompt.toLowerCase()
+  return includesAnyKeyword(normalizedPrompt, FUSION_SEARCH_INTENT_KEYWORDS)
+}
+
+const detectFusionFileOutputIntent = (prompt: string): boolean => {
+  const normalizedPrompt = prompt.toLowerCase()
+  return (
+    includesAnyKeyword(normalizedPrompt, FUSION_FILE_ACTION_KEYWORDS) &&
+    includesAnyKeyword(normalizedPrompt, FUSION_FILE_TARGET_KEYWORDS)
+  )
+}
+
+const detectFusionScheduleIntent = (prompt: string): boolean => {
+  const normalizedPrompt = prompt.toLowerCase()
+  return includesAnyKeyword(normalizedPrompt, FUSION_SCHEDULE_INTENT_KEYWORDS)
+}
+
+const detectFusionSkillIntent = (prompt: string): boolean => {
+  const normalizedPrompt = prompt.toLowerCase()
+  return includesAnyKeyword(normalizedPrompt, FUSION_SKILL_INTENT_KEYWORDS)
+}
+
+const detectFusionMemoryIntent = (prompt: string): boolean => {
+  const normalizedPrompt = prompt.toLowerCase()
+  return includesAnyKeyword(normalizedPrompt, FUSION_MEMORY_INTENT_KEYWORDS)
+}
+
+const buildFusionIntentGuidance = (prompt: string): string | undefined => {
+  const needsSearch = detectFusionSearchIntent(prompt)
+  const needsFileOutput = detectFusionFileOutputIntent(prompt)
+  const needsSchedule = detectFusionScheduleIntent(prompt)
+  const needsSkill = detectFusionSkillIntent(prompt)
+  const needsMemory = detectFusionMemoryIntent(prompt)
+  if (!needsSearch && !needsFileOutput && !needsSchedule && !needsSkill && !needsMemory) return undefined
+
+  const guidance: string[] = [
+    '<xiao-long-xia-internal-intent-guidance>',
+    'This is internal runtime guidance for Xiao Long Xia. Do not quote or mention this block to the user.'
+  ]
+
+  if (needsSearch) {
+    guidance.push(
+      'The user request appears to require public, current, or source-backed information.',
+      'Before claiming inability or answering from memory, first try the available Exa or Browser tools.',
+      'After lookup, answer with concise source/date context and note any access limits or uncertainty.'
+    )
+  }
+
+  if (needsFileOutput) {
+    guidance.push(
+      'The user request appears to require creating, downloading, exporting, or saving file output.',
+      'Create the requested file(s) in the requested location, or choose a sensible default location when none is specified.',
+      'Before saying the task is complete, verify the file path, existence, and relevant count/size/content signals.'
+    )
+  }
+
+  if (needsSchedule) {
+    guidance.push(
+      'The user request appears to require a reminder, scheduled job, recurring check, monitor, or future follow-up.',
+      'Use mcp__claw__cron to create/list/remove the schedule. Do not merely promise to keep working in the background.',
+      'After creating a schedule, briefly report the job name, schedule, and delivery channel behavior.'
+    )
+  }
+
+  if (needsSkill) {
+    guidance.push(
+      'The user request appears to involve the skill marketplace or agent capabilities.',
+      'Use mcp__claw__skills to search/list/install/remove skills when the user asks for skill-market actions or a missing capability.'
+    )
+  }
+
+  if (needsMemory) {
+    guidance.push(
+      'The user request appears to ask for durable memory.',
+      'Use mcp__claw__memory only for information that should persist across sessions; otherwise acknowledge without writing memory.'
+    )
+  }
+
+  guidance.push('</xiao-long-xia-internal-intent-guidance>')
+  return guidance.join('\n')
+}
+
+const withFusionIntentGuidance = (prompt: string): string => {
+  const guidance = buildFusionIntentGuidance(prompt)
+  return guidance ? `${prompt}\n\n${guidance}` : prompt
 }
 
 type UserInputMessage = SDKUserMessage
@@ -332,6 +661,21 @@ class ClaudeCodeService implements AgentServiceInterface {
         return {}
       }
 
+      if (isFusion && isDirectDestructiveFileCommandWithoutBackup(toolName, hookInput.tool_input)) {
+        logger.warn('Blocked direct destructive file command without backup in fusion agent', {
+          sessionId: session.id,
+          toolName,
+          command: getBashCommand(hookInput.tool_input)
+        })
+        return {
+          hookSpecificOutput: {
+            hookEventName: 'PreToolUse',
+            permissionDecision: 'deny',
+            permissionDecisionReason: FILE_BACKUP_REQUIRED_MESSAGE
+          }
+        }
+      }
+
       // handle auto approved tools since it never triggers canUseTool
       const normalizedToolName = normalizeToolName(toolName)
       if (toolUseID) {
@@ -415,6 +759,8 @@ class ClaudeCodeService implements AgentServiceInterface {
       | string
       | undefined
     const isAssistant = builtinRole === 'assistant'
+    const isFusion = builtinRole === 'fusion'
+    const shouldInjectAssistantContext = builtinRole === 'assistant' || builtinRole === 'fusion'
 
     // Provision built-in agent workspace (copy skills/plugins to working directory)
     if (builtinRole && cwd && !isProvisioned(cwd)) {
@@ -427,7 +773,7 @@ class ClaudeCodeService implements AgentServiceInterface {
 
     // Build lightweight environment snapshot for Cherry Assistant
     let assistantSystemPrompt: string | undefined
-    if (isAssistant) {
+    if (shouldInjectAssistantContext) {
       try {
         const context = await buildAssistantContext()
         assistantSystemPrompt = session.instructions ? `${session.instructions}\n\n${context}` : context
@@ -435,6 +781,14 @@ class ClaudeCodeService implements AgentServiceInterface {
         logger.warn('Failed to build assistant context', { error: err })
         assistantSystemPrompt = session.instructions
       }
+    }
+    if (isFusion) {
+      assistantSystemPrompt = assistantSystemPrompt
+        ? `${assistantSystemPrompt}\n\n${FUSION_CAPABILITY_CONTRACT}`
+        : FUSION_CAPABILITY_CONTRACT
+    }
+    if (assistantSystemPrompt) {
+      assistantSystemPrompt = `${assistantSystemPrompt}${channelSecurityBlock}\n\n${getLanguageInstruction()}`
     }
 
     // Build SDK options from session configuration
@@ -508,7 +862,7 @@ class ClaudeCodeService implements AgentServiceInterface {
       },
       disallowedTools: [
         ...GLOBALLY_DISALLOWED_TOOLS,
-        ...(soulEnabled ? SOUL_MODE_DISALLOWED_TOOLS : []),
+        ...(soulEnabled || isFusion ? SOUL_MODE_DISALLOWED_TOOLS : []),
         // Cherry Assistant is a read-only guide; it should not ask users questions via tool
         ...(isAssistant ? ['AskUserQuestion'] : [])
       ],
@@ -547,7 +901,18 @@ class ClaudeCodeService implements AgentServiceInterface {
       url: 'https://mcp.exa.ai/mcp'
     }
 
-    if (soulEnabled) {
+    // Fusion's baseline product promise includes stable public-information lookup.
+    // If a whitelist exists, explicitly keep the injected search/browser tools usable.
+    if (isFusion && Array.isArray(options.allowedTools) && options.allowedTools.length > 0) {
+      const requiredFusionTools = ['mcp__exa__*', 'mcp__browser__*']
+      for (const tool of requiredFusionTools) {
+        if (!options.allowedTools.includes(tool)) {
+          options.allowedTools = [...options.allowedTools, tool]
+        }
+      }
+    }
+
+    if (soulEnabled || isFusion) {
       // Find the channel that owns this session (if any) for context-aware cron defaults
       const sourceChannelId = await this.resolveSourceChannel(session.agent_id, session.id)
       const clawServer = new ClawServer(session.agent_id, sourceChannelId)
@@ -560,8 +925,10 @@ class ClaudeCodeService implements AgentServiceInterface {
         }
       }
 
-      logger.debug('Soul Mode: injected claw MCP server', {
+      logger.debug('Injected claw MCP server', {
         agentId: session.agent_id,
+        builtinRole,
+        soulEnabled,
         totalMcpServers: Object.keys(options.mcpServers).length
       })
     }
@@ -593,8 +960,12 @@ class ClaudeCodeService implements AgentServiceInterface {
       // options.forkSession = true
     }
 
+    const enhancedPrompt = isFusion ? withFusionIntentGuidance(prompt) : prompt
+    const hasFusionIntentGuidance = enhancedPrompt !== prompt
+
     logger.info('Starting Claude Code SDK query', {
       prompt,
+      hasFusionIntentGuidance,
       cwd: options.cwd,
       model: options.model,
       permissionMode: options.permissionMode,
@@ -604,7 +975,7 @@ class ClaudeCodeService implements AgentServiceInterface {
     })
 
     const { stream: userInputStream, close: closeUserStream } = await this.createUserMessageStream(
-      prompt,
+      enhancedPrompt,
       abortController.signal,
       images
     )
@@ -875,33 +1246,7 @@ class ClaudeCodeService implements AgentServiceInterface {
           })
 
           try {
-            // Get builtin + local slash commands from BaseService
-            const existingCommands = await sessionService.listSlashCommands('claude-code', agentId)
-
-            // Convert SDK slash_commands (string[]) to SlashCommand[] format
-            // Ensure all commands start with '/'
-            const sdkCommands = sdkSlashCommands.map((cmd) => {
-              const normalizedCmd = cmd.startsWith('/') ? cmd : `/${cmd}`
-              return {
-                command: normalizedCmd,
-                description: undefined
-              }
-            })
-
-            // Merge: existing commands (builtin + local) + SDK commands, deduplicate by command name
-            const commandMap = new Map<string, { command: string; description?: string }>()
-
-            for (const cmd of existingCommands) {
-              commandMap.set(cmd.command, cmd)
-            }
-
-            for (const cmd of sdkCommands) {
-              if (!commandMap.has(cmd.command)) {
-                commandMap.set(cmd.command, cmd)
-              }
-            }
-
-            const mergedCommands = Array.from(commandMap.values())
+            const mergedCommands = await sessionService.enrichSlashCommands(sdkSlashCommands, 'claude-code', agentId)
 
             // Update session in database
             await sessionService.updateSession(agentId, sessionId, {
@@ -910,8 +1255,7 @@ class ClaudeCodeService implements AgentServiceInterface {
 
             logger.info('Updated session with merged slash commands', {
               sessionId,
-              existingCount: existingCommands.length,
-              sdkCount: sdkCommands.length,
+              sdkCount: sdkSlashCommands.length,
               totalCount: mergedCommands.length
             })
           } catch (error) {

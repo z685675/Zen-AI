@@ -12,8 +12,9 @@ import type {
   UpdateAgentFunction,
   UpdateAgentSessionFunction
 } from '@renderer/types'
-import { AgentConfigurationSchema } from '@renderer/types'
+import { AgentConfigurationSchema, normalizePermissionMode } from '@renderer/types'
 import { cn } from '@renderer/utils'
+import { getAgentAvatar } from '@shared/config/agents'
 import type { ModalProps } from 'antd'
 import { Menu, Modal } from 'antd'
 import type { ReactNode } from 'react'
@@ -22,13 +23,9 @@ import styled from 'styled-components'
 
 import { SettingDivider } from '..'
 
-// Shared types and constants for agent settings
 export type AgentConfigurationState = AgentConfiguration & Record<string, unknown>
 export const defaultConfiguration: AgentConfigurationState = AgentConfigurationSchema.parse({})
 
-/**
- * Unified props type for settings components that work with both Agent and Session
- */
 export type AgentOrSessionSettingsProps =
   | {
       agentBase: GetAgentResponse | undefined | null
@@ -39,12 +36,9 @@ export type AgentOrSessionSettingsProps =
       update: UpdateAgentSessionFunction
     }
 
-/**
- * Computes the list of tool IDs that should be automatically approved for a given permission mode.
- */
 export const computeModeDefaults = (mode: PermissionMode, tools: Tool[]): string[] => {
   const defaultToolIds = tools.filter((tool) => !tool.requirePermissions).map((tool) => tool.id)
-  switch (mode) {
+  switch (normalizePermissionMode(mode)) {
     case 'acceptEdits':
       return [
         ...defaultToolIds,
@@ -60,8 +54,8 @@ export const computeModeDefaults = (mode: PermissionMode, tools: Tool[]): string
       ]
     case 'bypassPermissions':
       return tools.map((tool) => tool.id)
-    case 'default':
     case 'plan':
+    default:
       return defaultToolIds
   }
 }
@@ -89,13 +83,13 @@ export type AgentLabelProps = {
   hideIcon?: boolean
 }
 
-export const SOUL_MODE_EMOJI = '🦞'
+export const SOUL_MODE_EMOJI = '🩶'
 
 export const isSoulModeEnabled = (configuration: AgentConfiguration | undefined | null): boolean =>
   configuration?.soul_enabled === true
 
 export const AgentLabel = ({ agent, classNames, hideIcon }: AgentLabelProps) => {
-  const emoji = agent?.configuration?.avatar || '⭐️'
+  const emoji = getAgentAvatar(agent?.id, agent?.configuration?.avatar)
 
   return (
     <div className={cn('flex w-full items-center gap-2 truncate', classNames?.container)}>
@@ -112,17 +106,11 @@ export type SessionLabelProps = {
 
 export const SessionLabel = ({ session, className }: SessionLabelProps) => {
   const displayName = session?.name ?? session?.id
-  return (
-    <>
-      <span className={cn('truncate text-(--color-text) text-sm', className)}>{displayName}</span>
-    </>
-  )
+  return <span className={cn('truncate text-(--color-text) text-[13px] font-normal', className)}>{displayName}</span>
 }
 
 export interface SettingsItemProps extends React.ComponentPropsWithRef<'div'> {
-  /** Add a divider beneath the item if true, defaults to true.  */
   divider?: boolean
-  /** Apply row direction flex or not, defaults to false. */
   inline?: boolean
 }
 
@@ -213,9 +201,6 @@ export const StyledMenu = styled(Menu)`
   }
 `
 
-/**
- * Shared modal styles configuration for settings popups
- */
 export const settingsModalStyles: ModalProps['styles'] = {
   content: {
     padding: 0,

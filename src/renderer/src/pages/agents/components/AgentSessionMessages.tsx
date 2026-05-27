@@ -4,6 +4,7 @@ import { LoadingIcon } from '@renderer/components/Icons'
 import { useAgent } from '@renderer/hooks/agents/useAgent'
 import { useSession } from '@renderer/hooks/agents/useSession'
 import { useTopicMessages } from '@renderer/hooks/useMessageOperations'
+import { getModel } from '@renderer/hooks/useModel'
 import useScrollPosition from '@renderer/hooks/useScrollPosition'
 import { useSettings } from '@renderer/hooks/useSettings'
 import { useTimer } from '@renderer/hooks/useTimer'
@@ -14,12 +15,8 @@ import { MessagesContainer, ScrollContainer } from '@renderer/pages/home/Message
 import { EVENT_NAMES, EventEmitter } from '@renderer/services/EventService'
 import { getGroupedMessages } from '@renderer/services/MessagesService'
 import store, { useAppDispatch } from '@renderer/store'
-import {
-  addChannelUserMessage,
-  type ChannelStreamController,
-  loadTopicMessagesThunk,
-  setupChannelStream
-} from '@renderer/store/thunk/messageThunk'
+import { addChannelUserMessage, type ChannelStreamController, setupChannelStream } from '@renderer/store/thunk/messageThunk'
+import type { Assistant } from '@renderer/types'
 import { type Topic, TopicType } from '@renderer/types'
 import type { Message } from '@renderer/types/newMessage'
 import { addAbortController } from '@renderer/utils/abortController'
@@ -47,15 +44,33 @@ const AgentSessionMessages = ({ agentId, sessionId }: Props) => {
   const { messageNavigation } = useSettings()
   const dispatch = useAppDispatch()
 
-  // Ensure messages are loaded when session changes (e.g. navigating from task logs)
-  useEffect(() => {
-    void dispatch(loadTopicMessagesThunk(sessionTopicId))
-  }, [dispatch, sessionTopicId])
-
   // Use agent's model as fallback when session model is not yet available
   const { agent } = useAgent(agentId)
   const agentModelRef = useRef(agent?.model)
   agentModelRef.current = agent?.model
+
+  const sessionAssistant = useMemo<Assistant | undefined>(() => {
+    if (!agent) {
+      return undefined
+    }
+
+    const [providerId, actualModelId] = session?.model?.split(':') ?? [undefined, undefined]
+    const sessionModel = actualModelId ? getModel(actualModelId, providerId) : undefined
+    const resolvedModel = sessionModel ?? agent.model
+
+    return {
+      id: agent.id,
+      name: agent.name || 'Agent Session',
+      prompt: session?.instructions ?? '',
+      topics: [],
+      type: 'agent-session',
+      model: resolvedModel,
+      defaultModel: resolvedModel,
+      settings: {},
+      tags: [],
+      enableWebSearch: false
+    }
+  }, [agent, session?.instructions, session?.model])
 
   // Subscribe to real-time IM channel stream chunks and render via BlockManager pipeline
   const streamCtrlRef = useRef<ChannelStreamController | null>(null)
@@ -72,7 +87,7 @@ const AgentSessionMessages = ({ agentId, sessionId }: Props) => {
     let cleanupChunk: (() => void) | null = null
     exchangeDoneRef.current = false
 
-    const getOrCreateStream = () => {
+    const getOrCreateStream = (askId?: string) => {
       if (exchangeDoneRef.current) return streamCtrlRef.current
       if (!streamCtrlRef.current) {
         streamCtrlRef.current = setupChannelStream(
@@ -80,7 +95,8 @@ const AgentSessionMessages = ({ agentId, sessionId }: Props) => {
           store.getState,
           sessionTopicId,
           agentId,
-          sessionRef.current?.model ?? agentModelRef.current
+          sessionRef.current?.model ?? agentModelRef.current,
+          askId
         )
       }
       return streamCtrlRef.current
@@ -100,9 +116,17 @@ const AgentSessionMessages = ({ agentId, sessionId }: Props) => {
         if (event.type === 'user-message' && event.userMessage) {
           // A new exchange starts — reset the done flag
           exchangeDoneRef.current = false
-          addChannelUserMessage(dispatch, sessionTopicId, agentId, event.userMessage.text, event.userMessage.images)
-          const ctrl = getOrCreateStream()
+          const userMessageId = addChannelUserMessage(
+            dispatch,
+            sessionTopicId,
+            agentId,
+            event.userMessage.text,
+            event.userMessage.images,
+            event.userMessage.imagePaths
+          )
+          const ctrl = getOrCreateStream(userMessageId)
           if (ctrl) {
+            ctrl.markUserMessageReceived()
             // Register abort callback so the input bar's stop button can abort the main process stream
             addAbortController(ctrl.assistantMessageId, () => {
               void window.api.agentSessionStream.abort(sessionId)
@@ -244,7 +268,7 @@ const AgentSessionMessages = ({ agentId, sessionId }: Props) => {
       className="messages-container"
       ref={scrollContainerRef}
       onScroll={handleScrollPosition}>
-      <NarrowLayout style={{ display: 'flex', flexDirection: 'column-reverse' }}>
+      <NarrowLayout style={{ display: 'flex', flexDirection: 'column-reverse' }} contentMaxWidth="960px">
         <InfiniteScroll
           dataLength={displayMessages.length}
           next={loadMoreMessages}
@@ -257,7 +281,7 @@ const AgentSessionMessages = ({ agentId, sessionId }: Props) => {
             <ScrollContainer>
               {groupedMessages.length > 0 ? (
                 groupedMessages.map(([key, groupMessages]) => (
-                  <MessageGroup key={key} messages={groupMessages} topic={derivedTopic} />
+                  <MessageGroup key={key} messages={groupMessages} topic={derivedTopic} assistant={sessionAssistant} />
                 ))
               ) : !session ? (
                 <div className="flex items-center justify-center py-5">

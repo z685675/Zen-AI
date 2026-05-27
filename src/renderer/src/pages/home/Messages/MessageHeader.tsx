@@ -13,8 +13,10 @@ import { useMessageStyle, useSettings } from '@renderer/hooks/useSettings'
 import { getMessageModelId } from '@renderer/services/MessagesService'
 import { getModelName } from '@renderer/services/ModelService'
 import type { Assistant, Model, Topic } from '@renderer/types'
+import type { AgentSessionSyncMetadata } from '@renderer/types/newMessage'
 import type { Message } from '@renderer/types/newMessage'
 import { firstLetter, isEmoji, removeLeadingEmoji } from '@renderer/utils'
+import { isAgentSessionTopicId } from '@renderer/utils/agentSession'
 import { Avatar, Checkbox, Tooltip } from 'antd'
 import dayjs from 'dayjs'
 import { Sparkle } from 'lucide-react'
@@ -36,6 +38,14 @@ interface Props {
 const getAvatarSource = (isLocalAi: boolean, modelId: string | undefined) => {
   if (isLocalAi) return AppLogo
   return modelId ? getModelLogoById(modelId) : undefined
+}
+
+const getSyncStatusLabel = (sync?: AgentSessionSyncMetadata) => {
+  if (!sync || sync.target !== 'wechat') return null
+
+  if (sync.status === 'pending') return '等待同步到微信'
+  if (sync.status === 'synced') return '已同步到微信'
+  return '未同步'
 }
 
 const MessageHeader: FC<Props> = memo(({ assistant, model, message, topic, isGroupContextMessage }) => {
@@ -78,6 +88,8 @@ const MessageHeader: FC<Props> = memo(({ assistant, model, message, topic, isGro
 
   const avatarName = useMemo(() => firstLetter(assistant?.name).toUpperCase(), [assistant?.name])
   const username = useMemo(() => removeLeadingEmoji(getUserName()), [getUserName])
+  const syncStatus = message.providerMetadata?.agentSessionSync
+  const syncStatusLabel = isAgentSessionTopicId(message.topicId) ? getSyncStatusLabel(syncStatus) : null
 
   const showMiniApp = useCallback(() => {
     showMinappIcon && model?.provider && openMinappById(model.provider)
@@ -141,6 +153,12 @@ const MessageHeader: FC<Props> = memo(({ assistant, model, message, topic, isGro
               <MessageTokens message={message} />
             </>
           )}
+          {syncStatusLabel && (
+            <>
+              |
+              <SyncStatusBadge status={syncStatus?.status}>{syncStatusLabel}</SyncStatusBadge>
+            </>
+          )}
         </InfoWrap>
       </UserWrap>
       {isMultiSelectMode && (
@@ -188,6 +206,16 @@ const UserName = styled.span<{ isBubbleStyle?: boolean; theme?: string }>`
 const MessageTime = styled.div`
   font-size: 10px;
   color: var(--color-text-3);
+`
+
+const SyncStatusBadge = styled.span<{ status?: AgentSessionSyncMetadata['status'] }>`
+  font-size: 10px;
+  color: ${(props) =>
+    props.status === 'failed'
+      ? 'var(--color-error)'
+      : props.status === 'synced'
+        ? 'var(--color-success)'
+        : 'var(--color-text-3)'};
 `
 
 export default MessageHeader

@@ -127,7 +127,7 @@
           "chatIdsHint": "用逗号分隔。留空表示允许所有用户。",
           "chatIdsPlaceholder": "wxid_abc123, wxid_def456",
           "connected": "已登录",
-          "description": "通过微信 iLink Bot API 接收和回复消息。",
+          "description": "通过微信进行远程文字对话。图片和文件请回到桌面端发送，体验会更稳定。",
           "disconnected": "未登录",
           "loginHint": "首次登录需要扫描二维码，启用频道后将自动弹出二维码。",
           "qrHint": "请使用手机微信扫描二维码完成登录。",
@@ -282,8 +282,9 @@
       "title": "编辑 Agent"
     },
     "empty": {
-      "description": "创建一个 Agent，让 AI 帮你处理复杂任务",
-      "title": "还没有 Agent"
+      "action": "去配置模型服务",
+      "description": "请先在模型服务里启用至少一个支持 Agent 的模型，然后再回来使用智能助手",
+      "title": "先配置模型服务"
     },
     "get": {
       "error": {
@@ -382,10 +383,22 @@
       },
       "label_one": "会话",
       "label_other": "会话",
+      "archive": {
+        "badge": "已归档",
+        "empty": "暂无归档会话",
+        "move": "归档会话",
+        "restore": "恢复会话",
+        "title": "归档"
+      },
       "reorder": {
         "error": {
           "failed": "会话排序失败"
         }
+      },
+      "search": {
+        "empty": "没有找到匹配的会话",
+        "error": "搜索会话失败",
+        "placeholder": "搜索智能助手会话..."
       },
       "update": {
         "error": {
@@ -420,6 +433,8 @@
       },
       "essential": "基础设置",
       "permissionMode": {
+        "currentModePrefix": "当前模式：",
+        "simpleTitle": "模式选择",
         "tab": "权限模式",
         "title": "权限模式"
       },
@@ -514,28 +529,25 @@
         },
         "permissionMode": {
           "acceptEdits": {
-            "description": "可自由读取和编辑文件，执行命令前会询问。",
-            "title": "自动编辑模式"
+            "description": "可以直接帮你改内容、执行任务，但遇到关键操作时会先确认。",
+            "title": "执行"
           },
           "bypassPermissions": {
-            "description": "可执行任何操作，无需询问。请谨慎使用。",
-            "title": "全自动模式",
+            "description": "会尽量自己把任务连续做完，修改文件和执行命令通常不再逐项确认。",
+            "title": "全自动",
             "warning": "危险：所有工具都会在无审批情况下执行。"
           },
           "confirmChange": {
             "description": "切换模式会更新自动预先授权的工具。",
             "title": "确认切换权限模式？"
           },
-          "default": {
-            "description": "可自由读取文件，编辑或执行命令前会询问。",
-            "title": "普通模式"
-          },
           "helper": "指定智能体如何处理工具使用授权",
           "placeholder": "选择权限模式",
           "plan": {
-            "description": "只能读取文件和制定计划，不能编辑文件或执行命令。",
-            "title": "计划模式"
+            "description": "先帮你分析问题、整理思路和列步骤，不会直接改文件，也不会执行命令。",
+            "title": "计划"
           },
+          "simpleTitle": "模式选择",
           "title": "权限模式"
         },
         "preapproved": {
@@ -569,7 +581,7 @@
         }
       }
     },
-    "sidebar_title": "小龙虾",
+    "sidebar_title": "智能助手",
     "todo": {
       "panel": {
         "title": "已完成 {{completed}}/{{total}} 个任务"
@@ -980,7 +992,7 @@
       },
       "untagged": "未分组"
     },
-    "title": "对话"
+    "title": "AI对话"
   },
   "auth": {
     "error": "自动获取密钥失败，请手动获取",
@@ -1125,9 +1137,20 @@
         },
         "title": "资源"
       },
+      "more": {
+        "title": "更多",
+        "attachment": "上传图片、文档等内容到当前会话",
+        "create_session": "基于当前助手新建一个会话",
+        "quick_phrases": "插入常用短语、模板内容或快捷预设",
+        "resource_panel": "查看当前会话可用的文件与技能资源",
+        "slash_commands": "查看当前助手提供的快捷命令",
+        "thinking": "调整模型的思考模式或推理深度",
+        "toggle_expand": "展开或收起当前输入框"
+      },
       "send": "发送",
       "settings": "设置",
       "slash_commands": {
+        "empty": "当前没有可用的斜杠命令",
         "description": "代理会话斜杠命令",
         "title": "斜杠命令"
       },
@@ -1577,12 +1600,12 @@
     "add": "添加",
     "add_success": "添加成功",
     "advanced_settings": "高级设置",
-    "agent_one": "小龙虾",
-    "agent_other": "小龙虾",
+    "agent_one": "智能助手",
+    "agent_other": "智能助手",
     "and": "和",
-    "assistant": "对话",
-    "assistant_one": "对话",
-    "assistant_other": "对话",
+    "assistant": "AI对话",
+    "assistant_one": "AI对话",
+    "assistant_other": "AI对话",
     "avatar": "头像",
     "back": "返回",
     "browse": "浏览",
@@ -1855,6 +1878,7 @@
     "attached_files": "附件",
     "conversation_details": "会话详情",
     "conversation_history": "会话历史",
+    "no_history": "暂无会话记录",
     "created": "创建时间",
     "last_updated": "最后更新",
     "messages": "消息数",
@@ -1905,6 +1929,7 @@
     "title": "GPUStack"
   },
   "history": {
+    "conversation_history": "会话记录",
     "continue_chat": "继续聊天",
     "error": {
       "topic_not_found": "话题不存在"
@@ -1927,6 +1952,7 @@
         "empty": "没有找到相关话题，点击回车键搜索所有消息"
       }
     },
+    "no_history": "暂无会话记录",
     "title": "话题搜索"
   },
   "html_artifacts": {
@@ -3079,6 +3105,7 @@
     "title": "Intel OVMS"
   },
   "paintings": {
+    "title": "图片生成",
     "aspect_ratio": "画幅比例",
     "aspect_ratios": {
       "landscape": "横图",
@@ -3164,15 +3191,15 @@
     "guidance_scale_tip": "无分类器指导。控制模型在寻找相关图像时对提示词的遵循程度",
     "help": {
       "background": {
-        "default": "用于控制图片背景的渲染方式。只有模型明确支持时才会提供透明背景。",
-        "gpt_image_2": "gpt-image-2 当前仅显示官方支持的背景模式，因此这里会隐藏透明背景选项。"
+        "default": "背景用来决定图片后面有没有底色：\n1. 自动模式：不确定时选它，让模型根据你的描述自己判断。\n2. 透明模式：生成没有背景的图片，适合头像、贴纸、商品图或 PPT 素材，可以叠到别的设计上。\n3. 不透明模式：生成普通图片，后面会有完整背景。\n如果提示词里已经写了“透明背景”或“白色背景”，建议这里也选择一致的背景类型，效果会更稳定。",
+        "gpt_image_2": "背景用来决定图片后面有没有底色：\n1. 自动模式：不确定时选它，让模型根据你的描述自己判断。\n2. 透明模式：生成没有背景的图片，适合头像、贴纸、商品图或 PPT 素材，可以叠到别的设计上。\n3. 不透明模式：生成普通图片，后面会有完整背景。\n这里会把常用选择都放出来，实际是否支持以当前模型和后端返回结果为准。"
       },
       "image_size": {
         "default": "可选分辨率会根据当前图片模型动态变化。",
         "experimental": "这些更高分辨率预设仍在官方支持范围内，只是通常生成更慢、消耗也更高。",
         "gpt_image_2": "gpt-image-2 在此页已支持更高的官方预设分辨率，也支持 auto 自动模式。选择 auto 时，会优先根据提示词中的横图、竖图、方图、2K、3K、4K 等描述智能匹配更合适的预设尺寸。"
       },
-      "moderation": "敏感度控制的是内容审核强度，不是画质。auto 使用默认审核策略，low 会相对更宽松。",
+      "moderation": "控制内容审核强度，不影响画质。默认使用低敏感度，限制更少，适合大多数创作场景。",
       "quality": "质量用于控制速度、成本和细节之间的平衡。low 更快更省，high 细节更多，auto 则交由模型自动决定。"
     },
     "image": {
@@ -3212,12 +3239,21 @@
     "learn_more": "了解更多",
     "magic_prompt_option": "提示词增强",
     "mode": {
+      "continue_with_index": "基于第 {{index}} 张图片继续创作",
+      "create": "新建图片",
       "edit": "编辑",
       "generate": "绘图",
       "merge": "合并",
       "remix": "混合",
+      "upload_edit": "上传图片编辑",
       "upscale": "高清增强"
     },
+    "current_mode": "当前模式",
+    "canvas_guide_primary": "请在下方输入你想要的图片内容，我来帮你生成。",
+    "canvas_guide_secondary": "也可以上传或粘贴一张或多张图片，在原图基础上继续修改和创作。",
+    "canvas_upload_action": "上传图片",
+    "composer_continue_hint": "基于当前图片继续创作，新结果会单独生成，不会覆盖原图。",
+    "composer_upload_hint": "正在基于上传图片编辑，结果会单独生成。",
     "model": "模型",
     "model_and_pricing": "模型与定价",
     "moderation": "敏感度",
@@ -3304,7 +3340,7 @@
       "realistic": "写实"
     },
     "text_desc_required": "请先输入图片描述",
-    "title": "图片",
+    "title": "图片生成",
     "top_up": "充值",
     "translating": "翻译中...",
     "uploaded_input": "已上传输入",
@@ -5892,7 +5928,7 @@
     "memories": "记忆",
     "notes": "笔记",
     "openclaw": "OpenClaw",
-    "paintings": "绘画",
+    "paintings": "图片生成",
     "settings": "设置",
     "store": "助手库",
     "translate": "翻译"

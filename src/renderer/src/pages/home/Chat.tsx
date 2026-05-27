@@ -6,7 +6,7 @@ import MultiSelectActionPopup from '@renderer/components/Popups/MultiSelectionPo
 import PromptPopup from '@renderer/components/Popups/PromptPopup'
 import { SelectChatModelPopup } from '@renderer/components/Popups/SelectModelPopup'
 import { QuickPanelProvider } from '@renderer/components/QuickPanel'
-import { isEmbeddingModel, isRerankModel, isWebSearchModel } from '@renderer/config/models'
+import { chatModelFilter, isWebSearchModel } from '@renderer/config/models'
 import { useAssistant } from '@renderer/hooks/useAssistant'
 import { useChatContext } from '@renderer/hooks/useChatContext'
 import { useTopicMessages } from '@renderer/hooks/useMessageOperations'
@@ -16,7 +16,7 @@ import { useShowTopics } from '@renderer/hooks/useStore'
 import { useTimer } from '@renderer/hooks/useTimer'
 import { EVENT_NAMES, EventEmitter } from '@renderer/services/EventService'
 import { useAppSelector } from '@renderer/store'
-import type { Assistant, Model, Topic } from '@renderer/types'
+import type { Assistant, Topic } from '@renderer/types'
 import { classNames } from '@renderer/utils'
 import { Flex } from 'antd'
 import { debounce } from 'lodash'
@@ -62,7 +62,9 @@ const Chat: FC<Props> = ({
   const { isMultiSelectMode } = useChatContext(activeTopic)
   const { isTopNavbar } = useNavbarPosition()
   const messages = useTopicMessages(activeTopic.id)
-  const isWelcomeState = messages.length === 0
+  const hasLoadedTopicMessages = useAppSelector((state) => !!state.messages.loadedByTopic[activeTopic.id])
+  const isLoadingTopicMessages = useAppSelector((state) => !!state.messages.loadingByTopic[activeTopic.id])
+  const isWelcomeState = hasLoadedTopicMessages && !isLoadingTopicMessages && messages.length === 0
 
   const welcomeAssistants = useMemo(() => {
     const defaultAssistant = assistants.find((item) => item.id === 'default') || assistants[0]
@@ -141,10 +143,9 @@ const Chat: FC<Props> = ({
   })
 
   useShortcut('select_model', async () => {
-    const modelFilter = (item: Model) => !isEmbeddingModel(item) && !isRerankModel(item)
     const selectedModel = await SelectChatModelPopup.show({
       model: assistant?.model,
-      filter: modelFilter
+      filter: chatModelFilter
     })
 
     if (selectedModel) {

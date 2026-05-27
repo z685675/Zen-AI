@@ -1,11 +1,11 @@
 import { Navbar, NavbarCenter, NavbarLeft, NavbarRight } from '@renderer/components/app/Navbar'
 import { HStack } from '@renderer/components/Layout'
 import NavbarIcon from '@renderer/components/NavbarIcon'
-import SearchPopup from '@renderer/components/Popups/SearchPopup'
+import AgentSearchPopup from '@renderer/components/Popups/AgentSearchPopup'
 import { modelGenerating } from '@renderer/hooks/useRuntime'
 import { useSettings } from '@renderer/hooks/useSettings'
 import { useShortcut } from '@renderer/hooks/useShortcuts'
-import { useShowAssistants, useShowTopics } from '@renderer/hooks/useStore'
+import { useShowAssistants } from '@renderer/hooks/useStore'
 import { useAppDispatch } from '@renderer/store'
 import { setNarrowMode } from '@renderer/store/settings'
 import { Tooltip } from 'antd'
@@ -17,12 +17,11 @@ import AgentSidePanelDrawer from './components/AgentSidePanelDrawer'
 
 const AgentNavbar = () => {
   const { showAssistants, toggleShowAssistants } = useShowAssistants()
-  const { showTopics, toggleShowTopics } = useShowTopics()
-  const { narrowMode, topicPosition } = useSettings()
+  const { narrowMode } = useSettings()
   const dispatch = useAppDispatch()
 
   useShortcut('search_message', () => {
-    void SearchPopup.show()
+    void AgentSearchPopup.show()
   })
 
   const handleNarrowModeToggle = async () => {
@@ -80,8 +79,8 @@ const AgentNavbar = () => {
         }}
         className="agent-navbar-right">
         <HStack alignItems="center" gap={6}>
-          <Tooltip title={t('chat.assistant.search.placeholder')} mouseEnterDelay={0.8}>
-            <NavbarIcon className="max-[1000px]:hidden" onClick={() => SearchPopup.show()}>
+          <Tooltip title={t('agent.session.search.placeholder')} mouseEnterDelay={0.8}>
+            <NavbarIcon className="max-[1000px]:hidden" onClick={() => AgentSearchPopup.show()}>
               <Search size={18} />
             </NavbarIcon>
           </Tooltip>
@@ -90,20 +89,6 @@ const AgentNavbar = () => {
               <i className="iconfont icon-icon-adaptive-width"></i>
             </NavbarIcon>
           </Tooltip>
-          {topicPosition === 'right' && !showTopics && (
-            <Tooltip title={t('navbar.show_sidebar')} mouseEnterDelay={2}>
-              <NavbarIcon onClick={toggleShowTopics}>
-                <PanelLeftClose size={18} />
-              </NavbarIcon>
-            </Tooltip>
-          )}
-          {topicPosition === 'right' && showTopics && (
-            <Tooltip title={t('navbar.hide_sidebar')} mouseEnterDelay={2}>
-              <NavbarIcon onClick={toggleShowTopics}>
-                <PanelRightClose size={18} />
-              </NavbarIcon>
-            </Tooltip>
-          )}
         </HStack>
       </NavbarRight>
     </Navbar>

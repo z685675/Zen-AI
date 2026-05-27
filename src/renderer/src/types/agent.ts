@@ -199,6 +199,8 @@ export interface ListOptions {
   offset?: number
   sortBy?: 'created_at' | 'updated_at' | 'name' | 'sort_order'
   orderBy?: 'asc' | 'desc'
+  archived?: 'exclude' | 'include' | 'only'
+  search?: string
 }
 
 // AgentSession entity representing a conversation session with one or more agents
@@ -206,6 +208,8 @@ export const AgentSessionEntitySchema = AgentBaseSchema.extend({
   id: z.string(),
   agent_id: z.string(), // Primary agent ID for the session
   agent_type: AgentTypeSchema,
+  is_pinned: z.boolean().optional().default(false),
+  is_archived: z.boolean().optional().default(false),
   // sub_agent_ids?: string[] // Array of sub-agent IDs involved in the session
 
   created_at: z.iso.datetime(),
@@ -292,7 +296,10 @@ export type UpdateAgentForm = Partial<Omit<BaseAgentForm, 'type'>> & {
 
 export type AgentForm = AddAgentForm | UpdateAgentForm
 
-export type BaseSessionForm = AgentBase
+export type BaseSessionForm = AgentBase & {
+  is_pinned?: boolean
+  is_archived?: boolean
+}
 
 export type CreateSessionForm = BaseSessionForm & { id?: never }
 
@@ -355,7 +362,10 @@ export type UpdateAgentResponse = GetAgentResponse
 
 export type CreateSessionRequest = z.infer<typeof CreateSessionRequestSchema>
 
-export interface UpdateSessionRequest extends Partial<AgentBase> {}
+export interface UpdateSessionRequest extends Partial<AgentBase> {
+  is_pinned?: boolean
+  is_archived?: boolean
+}
 
 export const GetAgentSessionResponseSchema = AgentSessionEntitySchema.extend({
   tools: z.array(ToolSchema).optional(), // All tools available to the session (including built-in and custom)
@@ -385,6 +395,23 @@ export const ListAgentSessionsResponseSchema = z.object({
 })
 
 export type ListAgentSessionsResponse = z.infer<typeof ListAgentSessionsResponseSchema>
+
+export const AgentSessionSearchResultSchema = z.object({
+  session: AgentSessionEntitySchema,
+  snippet: z.string().optional(),
+  matched_at: z.iso.datetime().optional()
+})
+
+export type AgentSessionSearchResult = z.infer<typeof AgentSessionSearchResultSchema>
+
+export const SearchAgentSessionsResponseSchema = z.object({
+  data: z.array(AgentSessionSearchResultSchema),
+  total: z.int(),
+  limit: z.int(),
+  offset: z.int()
+})
+
+export type SearchAgentSessionsResponse = z.infer<typeof SearchAgentSessionsResponseSchema>
 
 export type CreateSessionMessageRequest = z.infer<typeof CreateSessionMessageRequestSchema>
 
@@ -469,6 +496,18 @@ export const PaginationQuerySchema = z.object({
   status: z.enum(['idle', 'running', 'completed', 'failed', 'stopped']).optional()
 })
 
+export const SessionListQuerySchema = PaginationQuerySchema.extend({
+  archived: z.enum(['exclude', 'include', 'only']).optional().default('exclude'),
+  search: z.string().trim().optional()
+})
+
+export const SessionSearchQuerySchema = z.object({
+  query: z.string().trim().min(1, 'Query is required'),
+  limit: z.coerce.number().int().min(1).max(100).optional().default(20),
+  offset: z.coerce.number().int().min(0).optional().default(0),
+  archived: z.enum(['exclude', 'include', 'only']).optional().default('include')
+})
+
 // Request body validation schemas derived from shared bases
 const agentCreatableSchema = AgentBaseSchema.extend({
   name: z.string().min(1, 'Name is required'),
@@ -489,7 +528,12 @@ const sessionCreatableSchema = AgentBaseSchema.extend({
 
 export const CreateSessionRequestSchema = sessionCreatableSchema
 
-export const UpdateSessionRequestSchema = sessionCreatableSchema.partial()
+export const UpdateSessionRequestSchema = sessionCreatableSchema
+  .partial()
+  .extend({
+    is_pinned: z.boolean().optional(),
+    is_archived: z.boolean().optional()
+  })
 
 export const ReplaceSessionRequestSchema = sessionCreatableSchema
 
@@ -520,4 +564,19 @@ export type PermissionModeCard = {
   descriptionFallback: string
   caution?: boolean
   unsupported?: boolean
+}
+
+export type PermissionModeDisplayMode = 'plan' | 'acceptEdits' | 'bypassPermissions'
+
+export const normalizePermissionMode = (mode?: PermissionMode | null): PermissionModeDisplayMode => {
+  switch (mode) {
+    case 'plan':
+      return 'plan'
+    case 'bypassPermissions':
+      return 'bypassPermissions'
+    case 'default':
+    case 'acceptEdits':
+    default:
+      return 'acceptEdits'
+  }
 }

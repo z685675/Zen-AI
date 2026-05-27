@@ -26,6 +26,8 @@ describe('AsyncInitializer', () => {
     const result2 = await initializer.get()
     const result3 = await initializer.get()
 
+    expect(result1).toBe('test-value')
+
     // factory 鍙簲璇ヨ璋冪敤涓?娆?    expect(mockFactory).toHaveBeenCalledTimes(1)
 
     // 鎵?鏈夌粨鏋滃簲璇ョ浉鍚?    expect(result1).toBe('test-value')

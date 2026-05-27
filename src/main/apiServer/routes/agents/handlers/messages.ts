@@ -10,6 +10,34 @@ import type { Request, Response } from 'express'
 
 const logger = loggerService.withContext('ApiServerMessagesHandlers')
 
+const isResponseWritable = (res: Response): boolean => !res.destroyed && !res.writableEnded && !res.writableFinished
+
+const writeSse = (res: Response, payload: string): boolean => {
+  if (!isResponseWritable(res)) {
+    return false
+  }
+
+  try {
+    res.write(payload)
+    return true
+  } catch (error) {
+    logger.warn('Failed to write SSE payload', { error })
+    return false
+  }
+}
+
+const endResponse = (res: Response): void => {
+  if (!isResponseWritable(res)) {
+    return
+  }
+
+  try {
+    res.end()
+  } catch (error) {
+    logger.warn('Failed to end SSE response', { error })
+  }
+}
+
 // Helper function to verify agent and session exist and belong together
 const verifyAgentAndSession = async (agentId: string, sessionId: string) => {
   const agentExists = await agentService.agentExists(agentId)
@@ -56,13 +84,16 @@ export const createMessage = async (req: Request, res: Response): Promise<void> 
     const { stream, completion } = await sessionMessageService.createSessionMessage(
       session,
       messageData,
-      abortController
+      abortController,
+      { mirrorToBoundChannel: true, displayContent: messageData.content }
     )
     const reader = stream.getReader()
 
-    // Track stream lifecycle so we keep the SSE connection open until persistence finishes
+    // Track both lifecycles so the SSE connection stays open for post-stream events
+    // such as desktop-to-WeChat sync status before we send the final [DONE].
     let responseEnded = false
     let streamFinished = false
+    let completionFinished = false
 
     const cleanup = () => {
       dispose()
@@ -73,7 +104,7 @@ export const createMessage = async (req: Request, res: Response): Promise<void> 
         return
       }
 
-      if (!streamFinished) {
+      if (!streamFinished || !completionFinished) {
         return
       }
 
@@ -81,11 +112,11 @@ export const createMessage = async (req: Request, res: Response): Promise<void> 
       cleanup()
       try {
         // res.write('data: {"type":"finish"}\n\n')
-        res.write('data: [DONE]\n\n')
+        writeSse(res, 'data: [DONE]\n\n')
       } catch (writeError) {
         logger.error('Error writing final sentinel to SSE stream', { error: writeError as Error })
       }
-      res.end()
+      endResponse(res)
     }
 
     /**
@@ -117,7 +148,8 @@ export const createMessage = async (req: Request, res: Response): Promise<void> 
       if (abortReason === STREAM_TIMEOUT_REASON) {
         logger.error('Streaming message timeout', { agentId, sessionId })
         try {
-          res.write(
+          writeSse(
+            res,
             `data: ${JSON.stringify({
               type: 'error',
               error: {
@@ -144,9 +176,7 @@ export const createMessage = async (req: Request, res: Response): Promise<void> 
         res.setHeader('Connection', 'keep-alive')
       }
 
-      if (!res.writableEnded) {
-        res.end()
-      }
+      endResponse(res)
     })
 
     const handleDisconnect = () => {
@@ -166,7 +196,12 @@ export const createMessage = async (req: Request, res: Response): Promise<void> 
             break
           }
 
-          res.write(`data: ${JSON.stringify(value)}\n\n`)
+          if (!writeSse(res, `data: ${JSON.stringify(value)}\n\n`)) {
+            responseEnded = true
+            cleanup()
+            reader.cancel('SSE response closed').catch(() => {})
+            break
+          }
         }
 
         streamFinished = true
@@ -175,7 +210,8 @@ export const createMessage = async (req: Request, res: Response): Promise<void> 
         if (responseEnded) return
         logger.error('Error reading agent stream', { error })
         try {
-          res.write(
+          writeSse(
+            res,
             `data: ${JSON.stringify({
               type: 'error',
               error: {
@@ -190,7 +226,7 @@ export const createMessage = async (req: Request, res: Response): Promise<void> 
         }
         responseEnded = true
         cleanup()
-        res.end()
+        endResponse(res)
       }
     }
 
@@ -200,14 +236,15 @@ export const createMessage = async (req: Request, res: Response): Promise<void> 
 
     completion
       .then(() => {
-        streamFinished = true
+        completionFinished = true
         finalizeResponse()
       })
       .catch((error) => {
         if (responseEnded) return
         logger.error('Streaming message error', { agentId, sessionId, error })
         try {
-          res.write(
+          writeSse(
+            res,
             `data: ${JSON.stringify({
               type: 'error',
               error: {
@@ -222,7 +259,7 @@ export const createMessage = async (req: Request, res: Response): Promise<void> 
         }
         responseEnded = true
         cleanup()
-        res.end()
+        endResponse(res)
       })
     // Clear timeout when response ends
     res.on('close', cleanup)
@@ -252,12 +289,12 @@ export const createMessage = async (req: Request, res: Response): Promise<void> 
         }
       }
 
-      res.write(`data: ${JSON.stringify(errorResponse)}\n\n`)
+      writeSse(res, `data: ${JSON.stringify(errorResponse)}\n\n`)
     } catch (writeError) {
       logger.error('Error writing initial error to SSE stream', { error: writeError })
     }
 
-    res.end()
+    endResponse(res)
   }
 }
 

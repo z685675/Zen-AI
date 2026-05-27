@@ -20,7 +20,7 @@ import {
 } from '@renderer/pages/home/Inputbar/context/InputbarToolsProvider'
 import InputbarTools from '@renderer/pages/home/Inputbar/InputbarTools'
 import { getInputbarConfig } from '@renderer/pages/home/Inputbar/registry'
-import type { ToolContext } from '@renderer/pages/home/Inputbar/types'
+import type { ToolContext, ToolOrderConfig } from '@renderer/pages/home/Inputbar/types'
 import { TopicType } from '@renderer/pages/home/Inputbar/types'
 import { isSoulModeEnabled } from '@renderer/pages/settings/AgentSettings/shared'
 import { CacheService } from '@renderer/services/CacheService'
@@ -54,9 +54,10 @@ const getAgentDraftCacheKey = (agentId: string) => `agent-session-draft-${agentI
 type Props = {
   agentId: string
   sessionId: string
+  variant?: 'default' | 'hero'
 }
 
-const AgentSessionInputbar = ({ agentId, sessionId }: Props) => {
+const AgentSessionInputbar = ({ agentId, sessionId, variant = 'default' }: Props) => {
   const { session } = useSession(agentId, sessionId)
   // FIXME: 不应该使用ref将action传到context提供给tool，权宜之计
   const actionsRef = useRef({
@@ -131,6 +132,7 @@ const AgentSessionInputbar = ({ agentId, sessionId }: Props) => {
         sessionId={sessionId}
         sessionData={sessionData}
         actionsRef={actionsRef}
+        variant={variant}
       />
     </InputbarToolsProvider>
   )
@@ -141,6 +143,7 @@ interface InnerProps {
   agentId: string
   sessionId: string
   sessionData?: ToolContext['session']
+  variant: 'default' | 'hero'
   actionsRef: React.MutableRefObject<{
     resizeTextArea: () => void
     onTextChange: (updater: React.SetStateAction<string> | ((prev: string) => string)) => void
@@ -148,10 +151,18 @@ interface InnerProps {
   }>
 }
 
-const AgentSessionInputbarInner: FC<InnerProps> = ({ assistant, agentId, sessionId, sessionData, actionsRef }) => {
+const AgentSessionInputbarInner: FC<InnerProps> = ({
+  assistant,
+  agentId,
+  sessionId,
+  sessionData,
+  variant,
+  actionsRef
+}) => {
   const { agent: agentBase } = useAgent(agentId)
   const scope = TopicType.Session
   const config = getInputbarConfig(scope)
+  const isHero = variant === 'hero'
 
   // Use shared hooks for text and textarea management with draft persistence
   const draftCacheKey = getAgentDraftCacheKey(agentId)
@@ -370,12 +381,19 @@ const AgentSessionInputbarInner: FC<InnerProps> = ({ assistant, agentId, session
     })
 
     for (const askId of streamingAskIds) {
+      window.keyv.set(`agent-session-interrupted-${askId}`, Date.now())
       abortCompletion(askId)
     }
 
+    window.toast.info(
+      t(
+        'agent.session.abort_notice',
+        '当前任务已中断，不会在后台继续执行。已完成的结果会保留，你可以点击重新生成或继续追问来补全剩余部分。'
+      )
+    )
     void pauseTrace(sessionTopicId)
     dispatch(newMessagesActions.setTopicLoading({ topicId: sessionTopicId, loading: false }))
-  }, [dispatch, sessionTopicId, streamingAskIds])
+  }, [dispatch, sessionTopicId, streamingAskIds, t])
 
   const sendMessage = useCallback(async () => {
     if (sendDisabled) {
@@ -479,25 +497,41 @@ const AgentSessionInputbarInner: FC<InnerProps> = ({ assistant, agentId, session
     if (!sessionData) return undefined
     return { ...sessionData, reasoningEffort, onReasoningEffortChange: setReasoningEffort }
   }, [sessionData, reasoningEffort])
+  const sessionToolOrderOverride = useMemo<ToolOrderConfig>(
+    () => ({
+      visible: ['permission_mode', 'session_more'],
+      hidden: ['create_session', 'slash_commands', 'attachment', 'resource_panel', 'quick_phrases', 'thinking', 'toggle_expand']
+    }),
+    []
+  )
 
   const leftToolbar = useMemo(
     () => (
       <ToolbarGroup>
         {config.showTools && (
-          <InputbarTools scope={scope} assistant={assistant} model={assistant.model!} session={toolsSession} />
+          <InputbarTools
+            scope={scope}
+            assistant={assistant}
+            model={assistant.model!}
+            session={toolsSession}
+            toolOrderOverride={sessionToolOrderOverride}
+          />
         )}
       </ToolbarGroup>
     ),
-    [config.showTools, scope, assistant, toolsSession]
+    [config.showTools, scope, assistant, sessionToolOrderOverride, toolsSession]
   )
   const placeholderText = useMemo(() => {
+    if (isHero) {
+      return t('agent.input.hero_placeholder', '比如：帮我搜索资料、总结重点，再整理成结果给我')
+    }
     if (isSoulModeEnabled(agentBase?.configuration)) {
       return t('agent.input.soul_placeholder')
     }
     return t('agent.input.placeholder', {
       key: getSendMessageShortcutLabel(sendMessageShortcut)
     })
-  }, [agentBase?.configuration, sendMessageShortcut, t])
+  }, [agentBase?.configuration, isHero, sendMessageShortcut, t])
 
   return (
     <InputbarCore
@@ -516,6 +550,8 @@ const AgentSessionInputbarInner: FC<InnerProps> = ({ assistant, agentId, session
       handleSendMessage={sendMessage}
       leftToolbar={leftToolbar}
       forceEnableQuickPanelTriggers
+      layoutMaxWidth={isHero ? '1040px' : '960px'}
+      minimal={isHero}
     />
   )
 }

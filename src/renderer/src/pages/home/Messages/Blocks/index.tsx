@@ -64,6 +64,7 @@ interface Props {
   blocks: string[] // 可以接收块ID数组或MessageBlock数组
   messageStatus?: Message['status']
   message: Message
+  isStreaming?: boolean
 }
 
 const groupSimilarBlocks = (blocks: MessageBlock[]): (MessageBlock[] | MessageBlock)[] => {
@@ -112,7 +113,7 @@ const groupSimilarBlocks = (blocks: MessageBlock[]): (MessageBlock[] | MessageBl
   }, [])
 }
 
-const MessageBlockRenderer: React.FC<Props> = ({ blocks, message }) => {
+const MessageBlockRenderer: React.FC<Props> = ({ blocks, message, isStreaming }) => {
   // 始终调用useSelector，避免条件调用Hook
   const blockEntities = useSelector((state: RootState) => messageBlocksSelectors.selectEntities(state))
   // 根据blocks类型处理渲染数据
@@ -120,7 +121,7 @@ const MessageBlockRenderer: React.FC<Props> = ({ blocks, message }) => {
   const groupedBlocks = useMemo(() => groupSimilarBlocks(renderedBlocks), [renderedBlocks])
 
   // Check if message is still processing
-  const isProcessing = isMessageProcessing(message)
+  const isProcessing = isStreaming ?? isMessageProcessing(message)
 
   return (
     <AnimatePresence mode="sync">

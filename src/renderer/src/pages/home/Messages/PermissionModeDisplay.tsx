@@ -1,7 +1,8 @@
 import { permissionModeCards } from '@renderer/config/agent'
 import SessionSettingsPopup from '@renderer/pages/settings/AgentSettings/SessionSettingsPopup'
 import type { GetAgentSessionResponse, PermissionMode } from '@renderer/types'
-import { FileEdit, Lightbulb, Shield, ShieldOff } from 'lucide-react'
+import { normalizePermissionMode } from '@renderer/types'
+import { FileEdit, Lightbulb, ShieldOff } from 'lucide-react'
 import type { FC } from 'react'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -12,11 +13,7 @@ interface Props {
 }
 
 const getPermissionModeConfig = (mode: PermissionMode) => {
-  switch (mode) {
-    case 'default':
-      return {
-        icon: <Shield size={18} color="var(--color-primary)" />
-      }
+  switch (normalizePermissionMode(mode)) {
     case 'plan':
       return {
         icon: <Lightbulb size={18} color="#faad14" />
@@ -31,7 +28,7 @@ const getPermissionModeConfig = (mode: PermissionMode) => {
       }
     default:
       return {
-        icon: <Shield size={18} color="var(--color-primary)" />
+        icon: <FileEdit size={18} color="#52c41a" />
       }
   }
 }
@@ -40,10 +37,11 @@ const PermissionModeDisplay: FC<Props> = ({ session, agentId }) => {
   const { t } = useTranslation()
 
   const permissionMode = session?.configuration?.permission_mode ?? 'default'
+  const normalizedMode = useMemo(() => normalizePermissionMode(permissionMode), [permissionMode])
 
   const modeCard = useMemo(() => {
-    return permissionModeCards.find((card) => card.mode === permissionMode)
-  }, [permissionMode])
+    return permissionModeCards.find((card) => card.mode === normalizedMode)
+  }, [normalizedMode])
 
   const modeConfig = useMemo(() => getPermissionModeConfig(permissionMode), [permissionMode])
 

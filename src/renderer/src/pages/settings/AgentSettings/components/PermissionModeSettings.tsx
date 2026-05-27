@@ -1,5 +1,6 @@
 import { permissionModeCards } from '@renderer/config/agent'
 import type { PermissionMode, UpdateAgentBaseForm } from '@renderer/types'
+import { normalizePermissionMode } from '@renderer/types'
 import { Tag } from 'antd'
 import { uniq } from 'lodash'
 import { CheckCircle, ShieldAlert } from 'lucide-react'
@@ -22,10 +23,11 @@ export const PermissionModeSettings: FC<AgentOrSessionSettingsProps> = ({ agentB
   const [isUpdatingMode, setIsUpdatingMode] = useState(false)
 
   const configuration = useMemo(() => agentBase?.configuration ?? defaultConfiguration, [agentBase?.configuration])
-  const selectedMode = useMemo(
+  const persistedMode = useMemo(
     () => agentBase?.configuration?.permission_mode ?? defaultConfiguration.permission_mode,
     [agentBase?.configuration?.permission_mode]
   )
+  const selectedMode = useMemo(() => normalizePermissionMode(persistedMode), [persistedMode])
   const availableTools = useMemo(() => agentBase?.tools ?? [], [agentBase?.tools])
   const autoToolIds = useMemo(() => computeModeDefaults(selectedMode, availableTools), [availableTools, selectedMode])
   const approvedToolIds = useMemo(() => {

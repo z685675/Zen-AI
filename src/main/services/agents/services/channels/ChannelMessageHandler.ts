@@ -270,7 +270,9 @@ export class ChannelMessageHandler {
             userId: message.userId,
             userName: message.userName,
             text: displayText,
-            images: message.images
+            images: message.images,
+            imagePaths,
+            filePaths
           }
         })
       }
@@ -569,16 +571,15 @@ export class ChannelMessageHandler {
     images?: ImageAttachment[],
     rendererIsWatching: boolean = false
   ): Promise<string> {
-    // Use the pre-computed rendererIsWatching flag from processIncoming.
-    // When renderer is watching: persist=false (renderer handles rich block persistence),
-    //   stream chunks and events are forwarded to the renderer via the bus.
-    // When renderer is NOT watching: persist=true (main persists via persistHeadlessExchange),
-    //   stream events are NOT forwarded (no subscriber or subscriber arrived late).
+    // Channel-originated messages are always persisted by the main process.
+    // Renderer subscriptions are best-effort realtime previews; relying on them
+    // for persistence can leave WeChat sessions empty if the window misses an
+    // event or subscribes at the wrong moment.
     const { stream, completion } = await sessionMessageService.createSessionMessage(
       session,
       { content },
       abortController,
-      { persist: !rendererIsWatching, displayContent, images }
+      { persist: true, displayContent, images }
     )
 
     const reader = stream.getReader()
@@ -636,9 +637,9 @@ export class ChannelMessageHandler {
           type: 'complete'
         })
       }
-      // headless=true means main process persisted; renderer should force-reload from DB.
-      // headless=false means renderer handled persistence; no reload needed.
-      broadcastSessionChanged(session.agent_id, session.id, !rendererIsWatching)
+      // Main process persisted channel messages; force renderer to reload from DB
+      // so desktop history matches WeChat even if realtime preview was missed.
+      broadcastSessionChanged(session.agent_id, session.id, true)
 
       // Trim trailing separator
       return (completedText + currentBlockText).replace(/\n+$/, '')

@@ -10,9 +10,11 @@ import {
   validatePagination,
   validateSession,
   validateSessionId,
+  validateSessionList,
   validateSessionMessage,
   validateSessionMessageId,
   validateSessionReplace,
+  validateSessionSearch,
   validateSessionUpdate
 } from './validators'
 
@@ -393,6 +395,40 @@ agentsRouter.put('/reorder', agentHandlers.reorderAgents)
 // Agent CRUD routes
 agentsRouter.post('/', validateAgent, handleValidationErrors, agentHandlers.createAgent)
 
+agentsRouter.get('/sessions/search', validateSessionSearch, handleValidationErrors, sessionHandlers.searchAllSessions)
+
+/**
+ * @swagger
+ * /agents/sessions:
+ *   get:
+ *     summary: List all sessions
+ *     tags: [Sessions]
+ *     parameters:
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           maximum: 100
+ *           default: 20
+ *         description: Number of sessions to return
+ *       - in: query
+ *         name: offset
+ *         schema:
+ *           type: integer
+ *           minimum: 0
+ *           default: 0
+ *         description: Number of sessions to skip
+ *     responses:
+ *       200:
+ *         description: List of sessions
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ListSessionsResponse'
+ */
+agentsRouter.get('/sessions', validateSessionList, handleValidationErrors, sessionHandlers.listAllSessions)
+
 /**
  * @swagger
  * /agents:
@@ -705,7 +741,7 @@ const createSessionsRouter = (): express.Router => {
    *             schema:
    *               $ref: '#/components/schemas/ErrorResponse'
    */
-  sessionsRouter.get('/', validatePagination, handleValidationErrors, sessionHandlers.listSessions)
+  sessionsRouter.get('/', validateSessionList, handleValidationErrors, sessionHandlers.listSessions)
   /**
    * @swagger
    * /agents/{agentId}/sessions/{sessionId}:

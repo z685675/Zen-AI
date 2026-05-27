@@ -15,6 +15,8 @@ import { BaseService } from '../BaseService'
 import { sessionMessagesTable } from '../database/schema'
 import { agentMessageRepository } from '../database/sessionMessageRepository'
 import type { AgentStreamEvent } from '../interfaces/AgentStreamInterface'
+import { channelManager } from './channels/ChannelManager'
+import { channelService } from './ChannelService'
 import ClaudeCodeService from './claudecode'
 
 const claudeCodeService = new ClaudeCodeService()
@@ -29,6 +31,12 @@ type SessionStreamResult = {
   }>
 }
 
+type SessionMirrorResult = {
+  target: 'wechat'
+  status: 'synced' | 'failed' | 'skipped'
+  reason?: string
+}
+
 export type CreateMessageOptions = {
   /** When true, persist user+assistant messages to DB on stream complete. Use for headless callers (channels, scheduler) where no UI handles persistence. */
   persist?: boolean
@@ -36,6 +44,8 @@ export type CreateMessageOptions = {
   displayContent?: string
   /** Images to persist in the user message for UI display (not sent to AI model). */
   images?: Array<{ data: string; media_type: string }>
+  /** Mirror desktop-side user/assistant text back to a bound external channel when applicable. */
+  mirrorToBoundChannel?: boolean
 }
 
 // Ensure errors emitted through SSE are serializable
@@ -249,7 +259,41 @@ export class SessionMessageService extends BaseService {
 
               case 'complete': {
                 cleanup()
-                controller.close()
+                const assistantText = accumulator.getText()
+                if (options?.mirrorToBoundChannel) {
+                  this.mirrorSessionExchangeToBoundChannel(session, options?.displayContent ?? req.content, assistantText)
+                    .then((result) => {
+                      controller.enqueue({
+                        type: 'raw',
+                        rawValue: {
+                          type: 'agent_session_sync',
+                          target: result.target,
+                          status: result.status,
+                          reason: result.reason
+                        }
+                      } as TextStreamPart<Record<string, any>>)
+                    })
+                    .catch((error) => {
+                      logger.warn('Failed to mirror session exchange to bound channel', {
+                        sessionId: session.id,
+                        error: error instanceof Error ? error.message : String(error)
+                      })
+                      controller.enqueue({
+                        type: 'raw',
+                        rawValue: {
+                          type: 'agent_session_sync',
+                          target: 'wechat',
+                          status: 'failed',
+                          reason: error instanceof Error ? error.message : String(error)
+                        }
+                      } as TextStreamPart<Record<string, any>>)
+                    })
+                    .finally(() => {
+                      controller.close()
+                    })
+                } else {
+                  controller.close()
+                }
                 if (options?.persist) {
                   // Read SDK session_id from the stream object (set by ClaudeCodeService on init)
                   const resolvedSessionId = claudeStream.sdkSessionId || agentSessionId
@@ -278,10 +322,43 @@ export class SessionMessageService extends BaseService {
 
               case 'cancelled': {
                 cleanup()
-                controller.close()
+                const partialText = accumulator.getText()
+                if (options?.mirrorToBoundChannel && partialText) {
+                  this.mirrorSessionExchangeToBoundChannel(session, options?.displayContent ?? req.content, partialText)
+                    .then((result) => {
+                      controller.enqueue({
+                        type: 'raw',
+                        rawValue: {
+                          type: 'agent_session_sync',
+                          target: result.target,
+                          status: result.status,
+                          reason: result.reason
+                        }
+                      } as TextStreamPart<Record<string, any>>)
+                    })
+                    .catch((error) => {
+                      logger.warn('Failed to mirror cancelled session exchange to bound channel', {
+                        sessionId: session.id,
+                        error: error instanceof Error ? error.message : String(error)
+                      })
+                      controller.enqueue({
+                        type: 'raw',
+                        rawValue: {
+                          type: 'agent_session_sync',
+                          target: 'wechat',
+                          status: 'failed',
+                          reason: error instanceof Error ? error.message : String(error)
+                        }
+                      } as TextStreamPart<Record<string, any>>)
+                    })
+                    .finally(() => {
+                      controller.close()
+                    })
+                } else {
+                  controller.close()
+                }
                 if (options?.persist) {
                   const resolvedSessionId = claudeStream.sdkSessionId || agentSessionId
-                  const partialText = accumulator.getText()
                   if (partialText) {
                     this.persistHeadlessExchange(
                       session,
@@ -427,6 +504,40 @@ export class SessionMessageService extends BaseService {
     })
 
     return result
+  }
+
+  private async mirrorSessionExchangeToBoundChannel(
+    session: GetAgentSessionResponse,
+    userContent: string,
+    assistantContent: string
+  ): Promise<SessionMirrorResult> {
+    const boundChannel = await channelService.findBySessionId(session.id)
+    if (!boundChannel || !boundChannel.isActive || boundChannel.type !== 'wechat') {
+      return { target: 'wechat', status: 'skipped', reason: 'not_bound' }
+    }
+
+    const adapter = channelManager.getAdapter(boundChannel.id)
+    if (!adapter) {
+      return { target: 'wechat', status: 'failed', reason: 'adapter_unavailable' }
+    }
+
+    const targetChatId = boundChannel.activeChatIds?.[0] ?? adapter.notifyChatIds?.[0]
+    if (!targetChatId) {
+      return { target: 'wechat', status: 'failed', reason: 'chat_unavailable' }
+    }
+
+    const normalizedUserContent = userContent.trim()
+    const normalizedAssistantContent = assistantContent.trim()
+
+    if (normalizedUserContent) {
+      await adapter.sendMessage(targetChatId, `桌面端消息：\n${normalizedUserContent}`)
+    }
+
+    if (normalizedAssistantContent) {
+      await adapter.sendMessage(targetChatId, normalizedAssistantContent)
+    }
+
+    return { target: 'wechat', status: 'synced' }
   }
 
   private async getLastAgentSessionId(sessionId: string): Promise<string> {

@@ -6,6 +6,7 @@ import { channelService } from '../../ChannelService'
 import { sessionMessageService } from '../../SessionMessageService'
 import { sessionService } from '../../SessionService'
 import { channelMessageHandler } from '../ChannelMessageHandler'
+import { sessionStreamBus } from '../SessionStreamBus'
 
 vi.mock('@logger', () => ({
   loggerService: {
@@ -197,6 +198,37 @@ describe('ChannelMessageHandler', () => {
     })
 
     expect(adapter.sendMessage).toHaveBeenCalledTimes(2)
+  })
+
+  it('persists channel exchanges in main process even when renderer is watching', async () => {
+    const adapter = createMockAdapter()
+    const session = {
+      id: 'session-1',
+      agent_id: 'agent-1',
+      agent_type: 'claude-code',
+      accessible_paths: ['/tmp/test-workspace'],
+      configuration: {}
+    }
+
+    vi.mocked(sessionStreamBus.hasSubscribers).mockReturnValueOnce(true)
+    vi.mocked(sessionService.createSession).mockResolvedValueOnce(session as any)
+    vi.mocked(sessionMessageService.createSessionMessage).mockResolvedValueOnce(
+      createMockStream([{ type: 'text-delta', text: 'Hello desktop history.' }]) as any
+    )
+
+    await handleIncomingAndFlush(adapter, {
+      chatId: 'chat-1',
+      userId: 'user-1',
+      userName: 'User',
+      text: 'Hi from WeChat'
+    })
+
+    expect(sessionMessageService.createSessionMessage).toHaveBeenCalledWith(
+      session,
+      { content: 'Hi from WeChat' },
+      expect.any(AbortController),
+      { persist: true, displayContent: 'Hi from WeChat', images: undefined }
+    )
   })
 
   it('handleCommand /new creates a new session', async () => {

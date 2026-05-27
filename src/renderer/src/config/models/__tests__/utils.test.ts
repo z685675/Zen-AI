@@ -6,6 +6,7 @@ import { isOpenAIReasoningModel } from '../openai'
 import { isQwenMTModel } from '../qwen'
 import {
   agentModelFilter,
+  chatModelFilter,
   getModelSupportedVerbosity,
   groupQwenModels,
   isAnthropicModel,
@@ -600,6 +601,25 @@ describe('model utils', () => {
         rerankMock.mockReturnValue(false)
         textToImageMock.mockReturnValueOnce(true)
         expect(agentModelFilter(createModel({ id: 'gpt-image-1' }))).toBe(false)
+      })
+    })
+
+    describe('chatModelFilter', () => {
+      it('returns true for regular chat models', () => {
+        generateImageMock.mockReturnValueOnce(false)
+        expect(chatModelFilter(createModel())).toBe(true)
+      })
+
+      it('filters out dedicated image models', () => {
+        generateImageMock.mockReturnValue(false)
+        textToImageMock.mockReturnValueOnce(true)
+        expect(chatModelFilter(createModel({ id: 'gpt-image-1' }))).toBe(false)
+      })
+
+      it('filters out conversational image-generation models', () => {
+        textToImageMock.mockReturnValue(false)
+        generateImageMock.mockReturnValueOnce(true)
+        expect(chatModelFilter(createModel({ id: 'gemini-2.5-flash-image' }))).toBe(false)
       })
     })
   })

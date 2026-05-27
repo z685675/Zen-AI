@@ -1,8 +1,9 @@
 import { EmojiAvatarWithPicker } from '@renderer/components/Avatar/EmojiAvatarWithPicker'
 import type { AgentBaseWithId, UpdateAgentBaseForm, UpdateAgentFunctionUnion } from '@renderer/types'
 import { AgentConfigurationSchema, isAgentEntity, isAgentType } from '@renderer/types'
+import { getAgentAvatar } from '@shared/config/agents'
 import { Input } from 'antd'
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { SettingsItem, SettingsTitle } from '../shared'
@@ -21,10 +22,18 @@ export const NameSetting = ({ base, update }: NameSettingsProps) => {
     return update({ id: base.id, name: name?.trim() })
   }
 
-  // Avatar logic
   const isAgent = isAgentEntity(base)
   const isDefault = isAgent ? isAgentType(base.configuration?.avatar) : false
-  const [emoji, setEmoji] = useState(isAgent && !isDefault ? (base.configuration?.avatar ?? '⭐️') : '⭐️')
+  const fallbackEmoji = isAgent && base ? getAgentAvatar(base.id, base.configuration?.avatar) : '🩶'
+  const [emoji, setEmoji] = useState(isAgent && !isDefault ? fallbackEmoji : fallbackEmoji)
+
+  useEffect(() => {
+    setName(base?.name?.trim())
+  }, [base?.id, base?.name])
+
+  useEffect(() => {
+    setEmoji(fallbackEmoji)
+  }, [fallbackEmoji])
 
   const updateAvatar = useCallback(
     (avatar: string) => {
@@ -51,10 +60,10 @@ export const NameSetting = ({ base, update }: NameSettingsProps) => {
           <SettingsTitle>{t('common.avatar')}</SettingsTitle>
           <EmojiAvatarWithPicker
             emoji={emoji}
-            onPick={(emoji: string) => {
-              setEmoji(emoji)
-              if (isAgent && emoji === base?.configuration?.avatar) return
-              updateAvatar(emoji)
+            onPick={(nextEmoji: string) => {
+              setEmoji(nextEmoji)
+              if (isAgent && nextEmoji === base?.configuration?.avatar) return
+              updateAvatar(nextEmoji)
             }}
           />
         </SettingsItem>

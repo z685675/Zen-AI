@@ -73,6 +73,7 @@ export interface InputbarCoreProps {
   // Override the user preference for quick panel triggers
   forceEnableQuickPanelTriggers?: boolean
   minimal?: boolean
+  layoutMaxWidth?: string
 }
 
 /**
@@ -118,7 +119,8 @@ export const InputbarCore: FC<InputbarCoreProps> = ({
   topContent,
   pinnedContent,
   forceEnableQuickPanelTriggers,
-  minimal = false
+  minimal = false,
+  layoutMaxWidth
 }) => {
   const config = useMemo(() => getInputbarConfig(scope), [scope])
   const { files, isExpanded } = useInputbarToolsState()
@@ -630,7 +632,7 @@ export const InputbarCore: FC<InputbarCoreProps> = ({
   const quickPanelElement = config.enableQuickPanel ? <QuickPanelView setInputText={setText} /> : null
 
   return (
-    <NarrowLayout style={{ width: '100%' }}>
+    <NarrowLayout style={{ width: '100%' }} contentMaxWidth={layoutMaxWidth}>
       <Container
         onDragEnter={handleDragEnter}
         onDragLeave={handleDragLeave}
@@ -834,11 +836,11 @@ const LeftSection = styled.div`
   .inputbar-container.minimal & .ant-btn,
   .inputbar-container.minimal & button {
     transform: scale(0.92);
-    opacity: 0.86;
+    opacity: 1;
   }
 
   .ant-btn-text {
-    color: #c2c7cc;
+    color: #768293;
   }
 
   .ant-btn-text .anticon,
@@ -848,7 +850,7 @@ const LeftSection = styled.div`
   }
 
   .ant-btn-text:hover {
-    color: #4f5965;
+    color: #253244;
     background: rgba(15, 23, 42, 0.05);
   }
 `
@@ -864,7 +866,7 @@ const RightSection = styled.div`
   }
 
   .ant-btn-text {
-    color: #c2c7cc;
+    color: #768293;
   }
 
   .ant-btn-text .anticon,
@@ -874,7 +876,7 @@ const RightSection = styled.div`
   }
 
   .ant-btn-text:hover {
-    color: #4f5965;
+    color: #253244;
     background: rgba(15, 23, 42, 0.05);
   }
 `

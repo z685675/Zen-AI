@@ -302,6 +302,10 @@ export const agentModelFilter = (model: Model): boolean => {
   return !isEmbeddingModel(model) && !isRerankModel(model) && !isTextToImageModel(model)
 }
 
+export const chatModelFilter = (model: Model): boolean => {
+  return !isEmbeddingModel(model) && !isRerankModel(model) && !isTextToImageModel(model) && !isGenerateImageModel(model)
+}
+
 export const isMaxTemperatureOneModel = (model: Model): boolean => {
   if (isZhipuModel(model) || isAnthropicModel(model) || isMoonshotModel(model)) {
     return true

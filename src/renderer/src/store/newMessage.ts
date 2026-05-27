@@ -31,6 +31,7 @@ export interface MessagesState extends EntityState<Message, string> {
   messageIdsByTopic: Record<string, string[]> // Map: topicId -> ordered message IDs
   currentTopicId: string | null
   loadingByTopic: Record<string, boolean>
+  loadedByTopic: Record<string, boolean>
   fulfilledByTopic: Record<string, boolean>
   displayCount: number
 }
@@ -40,6 +41,7 @@ const initialState: MessagesState = messagesAdapter.getInitialState({
   messageIdsByTopic: {},
   currentTopicId: null,
   loadingByTopic: {},
+  loadedByTopic: {},
   fulfilledByTopic: {},
   displayCount: 10
 })
@@ -105,6 +107,7 @@ const messagesSliceInternal: any = createSlice({
       if (action.payload && !(action.payload in state.messageIdsByTopic)) {
         state.messageIdsByTopic[action.payload] = []
         state.loadingByTopic[action.payload] = false
+        state.loadedByTopic[action.payload] = false
       }
     },
     setTopicLoading(state, action: PayloadAction<SetTopicLoadingPayload>) {
@@ -124,6 +127,7 @@ const messagesSliceInternal: any = createSlice({
       messagesAdapter.upsertMany(state, messages)
       state.messageIdsByTopic[topicId] = messages.map((m) => m.id)
       state.currentTopicId = topicId
+      state.loadedByTopic[topicId] = true
     },
     addMessage(state, action: PayloadAction<{ topicId: string; message: Message }>) {
       const { topicId, message } = action.payload
@@ -134,6 +138,9 @@ const messagesSliceInternal: any = createSlice({
       state.messageIdsByTopic[topicId].push(message.id)
       if (!(topicId in state.loadingByTopic)) {
         state.loadingByTopic[topicId] = false
+      }
+      if (!(topicId in state.loadedByTopic)) {
+        state.loadedByTopic[topicId] = true
       }
       if (!(topicId in state.fulfilledByTopic)) {
         state.fulfilledByTopic[topicId] = false
@@ -151,6 +158,9 @@ const messagesSliceInternal: any = createSlice({
 
       if (!(topicId in state.loadingByTopic)) {
         state.loadingByTopic[topicId] = false
+      }
+      if (!(topicId in state.loadedByTopic)) {
+        state.loadedByTopic[topicId] = true
       }
       if (!(topicId in state.fulfilledByTopic)) {
         state.fulfilledByTopic[topicId] = false
@@ -199,6 +209,7 @@ const messagesSliceInternal: any = createSlice({
       }
       delete state.messageIdsByTopic[topicId]
       state.loadingByTopic[topicId] = false
+      state.loadedByTopic[topicId] = false
       state.fulfilledByTopic[topicId] = false
     },
     removeMessage(state, action: PayloadAction<RemoveMessagePayload>) {

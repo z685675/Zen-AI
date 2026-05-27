@@ -2,6 +2,7 @@ import CollapsibleSearchBar from '@renderer/components/CollapsibleSearchBar'
 import { permissionModeCards } from '@renderer/config/agent'
 import { useMCPServers } from '@renderer/hooks/useMCPServers'
 import type { UpdateAgentBaseForm } from '@renderer/types'
+import { normalizePermissionMode } from '@renderer/types'
 import { GLOBALLY_DISALLOWED_TOOLS, SOUL_MODE_DISALLOWED_TOOLS } from '@shared/agents/claudecode/constants'
 import type { CardProps } from 'antd'
 import { Card, Switch, Tag, Tooltip } from 'antd'
@@ -67,7 +68,7 @@ export const ToolsSettings: FC<AgentOrSessionSettingsProps> = ({ agentBase, upda
   const [isUpdatingMcp, setIsUpdatingMcp] = useState(false)
 
   const selectedMode = useMemo(
-    () => agentBase?.configuration?.permission_mode ?? defaultConfiguration.permission_mode,
+    () => normalizePermissionMode(agentBase?.configuration?.permission_mode ?? defaultConfiguration.permission_mode),
     [agentBase?.configuration?.permission_mode]
   )
   const selectedModeCard = useMemo(() => permissionModeCards.find((card) => card.mode === selectedMode), [selectedMode])

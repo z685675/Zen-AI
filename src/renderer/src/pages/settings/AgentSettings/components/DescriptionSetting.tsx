@@ -1,6 +1,6 @@
 import type { AgentBaseWithId, UpdateAgentBaseForm, UpdateAgentFunctionUnion } from '@renderer/types'
 import TextArea from 'antd/es/input/TextArea'
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { SettingsItem, SettingsTitle } from '../shared'
@@ -13,6 +13,10 @@ export interface DescriptionSettingProps {
 export const DescriptionSetting = ({ base, update }: DescriptionSettingProps) => {
   const { t } = useTranslation()
   const [description, setDescription] = useState<string | undefined>(base?.description?.trim())
+
+  useEffect(() => {
+    setDescription(base?.description?.trim())
+  }, [base?.id, base?.description])
 
   const updateDesc = useCallback(
     (description: UpdateAgentBaseForm['description']) => {

@@ -71,6 +71,8 @@ export const GPT_IMAGE_2_FAMILY = ['gpt-image-2', 'gpt-image-2-pro', 'gpt-image-
 
 export const SUPPORTED_MODELS = ['gpt-image-1', ...GPT_IMAGE_2_FAMILY]
 
+const BACKGROUND_OPTIONS: PaintingOption[] = [{ value: 'auto' }, { value: 'opaque' }, { value: 'transparent' }]
+
 export const MODELS: PaintingModelConfig[] = [
   {
     name: 'gpt-image-1',
@@ -81,7 +83,7 @@ export const MODELS: PaintingModelConfig[] = [
     moderation: [{ value: 'auto' }, { value: 'low' }],
     output_compression_format: [{ value: 'jpeg' }, { value: 'webp' }],
     output_format: [{ value: 'image/png' }, { value: 'image/jpeg' }, { value: 'image/webp' }],
-    background: [{ value: 'auto' }, { value: 'transparent' }, { value: 'opaque' }]
+    background: BACKGROUND_OPTIONS
   },
   {
     name: 'gpt-image-2',
@@ -92,7 +94,7 @@ export const MODELS: PaintingModelConfig[] = [
     moderation: [{ value: 'auto' }, { value: 'low' }],
     output_compression_format: [{ value: 'jpeg' }, { value: 'webp' }],
     output_format: [{ value: 'image/png' }, { value: 'image/jpeg' }, { value: 'image/webp' }],
-    background: [{ value: 'auto' }, { value: 'opaque' }]
+    background: BACKGROUND_OPTIONS
   },
   {
     name: 'gpt-image-2-pro',
@@ -103,7 +105,7 @@ export const MODELS: PaintingModelConfig[] = [
     moderation: [{ value: 'auto' }, { value: 'low' }],
     output_compression_format: [{ value: 'jpeg' }, { value: 'webp' }],
     output_format: [{ value: 'image/png' }, { value: 'image/jpeg' }, { value: 'image/webp' }],
-    background: [{ value: 'auto' }, { value: 'opaque' }]
+    background: BACKGROUND_OPTIONS
   },
   {
     name: 'gpt-image-2-vip',
@@ -114,7 +116,7 @@ export const MODELS: PaintingModelConfig[] = [
     moderation: [{ value: 'auto' }, { value: 'low' }],
     output_compression_format: [{ value: 'jpeg' }, { value: 'webp' }],
     output_format: [{ value: 'image/png' }, { value: 'image/jpeg' }, { value: 'image/webp' }],
-    background: [{ value: 'auto' }, { value: 'opaque' }]
+    background: BACKGROUND_OPTIONS
   }
 ]
 
@@ -136,6 +138,6 @@ export const DEFAULT_PAINTING: GeneratePainting = {
   quality: 'auto',
   n: 1,
   background: 'auto',
-  moderation: 'auto',
+  moderation: 'low',
   size: 'auto'
 }

@@ -1,5 +1,5 @@
 import { NavbarHeader } from '@renderer/components/app/Navbar'
-import SearchPopup from '@renderer/components/Popups/SearchPopup'
+import AgentSearchPopup from '@renderer/components/Popups/AgentSearchPopup'
 import { useShortcut } from '@renderer/hooks/useShortcuts'
 import type { AgentEntity } from '@renderer/types'
 import { cn } from '@renderer/utils'
@@ -13,7 +13,7 @@ interface Props {
 
 const AgentChatNavbar = ({ activeAgent, className }: Props) => {
   useShortcut('search_message', () => {
-    void SearchPopup.show()
+    void AgentSearchPopup.show()
   })
 
   return (

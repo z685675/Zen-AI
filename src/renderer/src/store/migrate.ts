@@ -3474,16 +3474,22 @@ const migrateConfig = {
   },
   '211': (state: RootState) => {
     try {
-      const hiddenByDefault = new Set<SidebarIcon>(DEFAULT_DISABLED_SIDEBAR_ICONS)
-      const legacyHiddenIcons = new Set(['research', 'task_agent', 'task-agent'])
-      const visibleIcons = (state.settings.sidebarIcons?.visible ?? []).filter(
-        (icon) => !legacyHiddenIcons.has(icon)
-      )
+      const primarySidebarIcons: SidebarIcon[] = [
+        'assistants',
+        'agents',
+        'translate',
+        'notes',
+        'knowledge',
+        'files',
+        'paintings'
+      ]
+      const hiddenSidebarIcons = new Set<SidebarIcon>(['openclaw', 'store', 'minapp', 'code_tools'])
       const disabledIcons = state.settings.sidebarIcons?.disabled ?? []
+      const hiddenIcons = [...new Set<SidebarIcon>([...disabledIcons, ...DEFAULT_DISABLED_SIDEBAR_ICONS])]
 
       state.settings.sidebarIcons = {
-        visible: visibleIcons.filter((icon) => !hiddenByDefault.has(icon)),
-        disabled: [...new Set<SidebarIcon>([...disabledIcons, ...DEFAULT_DISABLED_SIDEBAR_ICONS])]
+        visible: primarySidebarIcons,
+        disabled: hiddenIcons.filter((icon) => hiddenSidebarIcons.has(icon))
       }
 
       logger.info('migrate 211 success')

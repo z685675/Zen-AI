@@ -1,6 +1,6 @@
 import { loggerService } from '@logger'
 import { AgentModelValidationError, sessionService } from '@main/services/agents'
-import type { ListAgentSessionsResponse, UpdateSessionResponse } from '@types'
+import type { ListAgentSessionsResponse, SearchAgentSessionsResponse, UpdateSessionResponse } from '@types'
 import { type ReplaceSessionRequest } from '@types'
 import type { Request, Response } from 'express'
 
@@ -54,13 +54,16 @@ export const createSession = async (req: Request, res: Response): Promise<Respon
 export const listSessions = async (req: Request, res: Response): Promise<Response> => {
   const { agentId } = req.params
   try {
-    const limit = req.query.limit ? parseInt(req.query.limit as string) : 20
-    const offset = req.query.offset ? parseInt(req.query.offset as string) : 0
+    const validationReq = req as ValidationRequest
+    const limit = validationReq.validatedQuery?.limit ?? (req.query.limit ? parseInt(req.query.limit as string) : 20)
+    const offset =
+      validationReq.validatedQuery?.offset ?? (req.query.offset ? parseInt(req.query.offset as string) : 0)
+    const archived = validationReq.validatedQuery?.archived ?? 'exclude'
     const status = req.query.status as any
 
-    logger.debug('Listing agent sessions', { agentId, limit, offset, status })
+    logger.debug('Listing agent sessions', { agentId, limit, offset, status, archived })
 
-    const result = await sessionService.listSessions(agentId, { limit, offset })
+    const result = await sessionService.listSessions(agentId, { limit, offset, archived })
 
     logger.info('Agent sessions listed', {
       agentId,
@@ -358,13 +361,22 @@ export const reorderSessions = async (req: Request, res: Response): Promise<Resp
 // Convenience endpoints for sessions without agent context
 export const listAllSessions = async (req: Request, res: Response): Promise<Response> => {
   try {
-    const limit = req.query.limit ? parseInt(req.query.limit as string) : 20
-    const offset = req.query.offset ? parseInt(req.query.offset as string) : 0
+    const validationReq = req as ValidationRequest
+    const limit = validationReq.validatedQuery?.limit ?? (req.query.limit ? parseInt(req.query.limit as string) : 20)
+    const offset =
+      validationReq.validatedQuery?.offset ?? (req.query.offset ? parseInt(req.query.offset as string) : 0)
+    const archived = validationReq.validatedQuery?.archived ?? 'exclude'
     const status = req.query.status as any
 
-    logger.debug('Listing all sessions', { limit, offset, status })
+    logger.debug('Listing all sessions', { limit, offset, status, archived })
 
-    const result = await sessionService.listSessions(undefined, { limit, offset })
+    const result = await sessionService.listSessions(undefined, {
+      limit,
+      offset,
+      sortBy: 'updated_at',
+      orderBy: 'desc',
+      archived
+    })
 
     logger.info('Sessions listed', {
       returned: result.sessions.length,
@@ -385,6 +397,49 @@ export const listAllSessions = async (req: Request, res: Response): Promise<Resp
         message: 'Failed to list sessions',
         type: 'internal_error',
         code: 'session_list_failed'
+      }
+    })
+  }
+}
+
+export const searchAllSessions = async (req: Request, res: Response): Promise<Response> => {
+  try {
+    const validationReq = req as ValidationRequest
+    const query = validationReq.validatedQuery?.query ?? String(req.query.query ?? '').trim()
+    const limit = validationReq.validatedQuery?.limit ?? 20
+    const offset = validationReq.validatedQuery?.offset ?? 0
+    const archived = validationReq.validatedQuery?.archived ?? 'include'
+
+    logger.debug('Searching all sessions', { query, limit, offset, archived })
+
+    const result = await sessionService.searchSessions(query, {
+      limit,
+      offset,
+      archived
+    })
+
+    logger.info('Session search completed', {
+      query,
+      returned: result.results.length,
+      total: result.total,
+      limit,
+      offset,
+      archived
+    })
+
+    return res.json({
+      data: result.results,
+      total: result.total,
+      limit,
+      offset
+    } satisfies SearchAgentSessionsResponse)
+  } catch (error: any) {
+    logger.error('Error searching sessions', { error })
+    return res.status(500).json({
+      error: {
+        message: 'Failed to search sessions',
+        type: 'internal_error',
+        code: 'session_search_failed'
       }
     })
   }

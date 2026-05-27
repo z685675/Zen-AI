@@ -12,7 +12,7 @@ interface WelcomePageProps {
   setCherryInLoggedIn: (loggedIn: boolean) => void
 }
 
-const WelcomePage: FC<WelcomePageProps> = ({ setStep, setCherryInLoggedIn: _setCherryInLoggedIn }) => {
+const WelcomePage: FC<WelcomePageProps> = ({ setStep }) => {
   const { t } = useTranslation()
   const store = useAppStore()
 

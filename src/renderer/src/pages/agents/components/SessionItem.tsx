@@ -12,13 +12,14 @@ import { SessionLabel } from '@renderer/pages/settings/AgentSettings/shared'
 import store, { type RootState, useAppDispatch, useAppSelector } from '@renderer/store'
 import { newMessagesActions } from '@renderer/store/newMessage'
 import { loadTopicMessagesThunk, renameAgentSessionIfNeeded } from '@renderer/store/thunk/messageThunk'
-import type { AgentSessionEntity } from '@renderer/types'
+import type { AgentEntity, AgentSessionEntity } from '@renderer/types'
 import { classNames } from '@renderer/utils'
 import { getChannelTypeIcon } from '@renderer/utils/agentSession'
 import { buildAgentSessionTopicId } from '@renderer/utils/agentSession'
 import type { MenuProps } from 'antd'
 import { Dropdown, Tooltip } from 'antd'
-import { MenuIcon, Sparkles, XIcon } from 'lucide-react'
+import dayjs from 'dayjs'
+import { Archive, ArchiveRestore, MenuIcon, Pin, PinOff, Sparkles, XIcon } from 'lucide-react'
 import React, { memo, startTransition, useDeferredValue, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import styled from 'styled-components'
@@ -27,14 +28,28 @@ import styled from 'styled-components'
 
 interface SessionItemProps {
   session: AgentSessionEntity
+  agent?: AgentEntity
   // use external agentId as SSOT, instead of session.agent_id
   agentId: string
+  isActive?: boolean
   channelType?: string
   onDelete: () => void
+  onTogglePinned?: () => void
+  onToggleArchived?: () => void
   onPress: () => void
 }
 
-const SessionItem = ({ session, agentId, channelType, onDelete, onPress }: SessionItemProps) => {
+const SessionItem = ({
+  session,
+  agent,
+  agentId,
+  isActive: isActiveProp,
+  channelType,
+  onDelete,
+  onTogglePinned,
+  onToggleArchived,
+  onPress
+}: SessionItemProps) => {
   const { t } = useTranslation()
   const { chat } = useRuntime()
   const { updateSession } = useUpdateSession(agentId)
@@ -93,7 +108,7 @@ const SessionItem = ({ session, agentId, channelType, onDelete, onPress }: Sessi
     )
   }
 
-  const isActive = activeSessionId === session.id
+  const isActive = isActiveProp ?? activeSessionId === session.id
   const topicLoadingQuery = useAppSelector((state) => state.messages.loadingByTopic)
   const topicFulfilledQuery = useAppSelector((state) => state.messages.fulfilledByTopic)
   const sessionTopicId = buildAgentSessionTopicId(session.id)
@@ -116,6 +131,7 @@ const SessionItem = ({ session, agentId, channelType, onDelete, onPress }: Sessi
   }, [activeSessionId, dispatch, isFulfilled, session.id, sessionTopicId])
 
   const channelIcon = getChannelTypeIcon(channelType)
+  const lastUsedAt = dayjs(session.updated_at).format('YYYY/MM/DD HH:mm')
 
   const { topicPosition, setTopicPosition } = useSettings()
   const singlealone = topicPosition === 'right'
@@ -152,6 +168,22 @@ const SessionItem = ({ session, agentId, channelType, onDelete, onPress }: Sessi
         }
       },
       {
+        label: session.is_pinned ? t('chat.topics.unpin') : t('chat.topics.pin'),
+        key: 'pin',
+        icon: session.is_pinned ? <PinOff size={14} /> : <Pin size={14} />,
+        onClick: () => {
+          onTogglePinned?.()
+        }
+      },
+      {
+        label: session.is_archived ? t('agent.session.archive.restore') : t('agent.session.archive.move'),
+        key: 'archive',
+        icon: session.is_archived ? <ArchiveRestore size={14} /> : <Archive size={14} />,
+        onClick: () => {
+          onToggleArchived?.()
+        }
+      },
+      {
         label: t('settings.topic.position.label'),
         key: 'topic-position',
         icon: <MenuIcon size={14} />,
@@ -178,7 +210,20 @@ const SessionItem = ({ session, agentId, channelType, onDelete, onPress }: Sessi
         }
       }
     ],
-    [agentId, dispatch, onDelete, session.id, sessionTopicId, setTopicPosition, t, targetSession.id]
+    [
+      agentId,
+      dispatch,
+      onDelete,
+      onToggleArchived,
+      onTogglePinned,
+      session.id,
+      session.is_archived,
+      session.is_pinned,
+      sessionTopicId,
+      setTopicPosition,
+      t,
+      targetSession.id
+    ]
   )
 
   return (
@@ -205,10 +250,14 @@ const SessionItem = ({ session, agentId, channelType, onDelete, onPress }: Sessi
             <>
               <SessionName>
                 {channelIcon && <ChannelIconImg src={channelIcon} />}
+                {session.is_pinned && <Pin size={11} className="shrink-0 text-(--color-text-secondary)" />}
                 <MarqueeText className="flex min-w-0 flex-1">
                   <SessionLabel
                     session={session}
-                    className={isRenaming ? 'animation-shimmer' : isNewlyRenamed ? 'animation-reveal' : ''}
+                    className={classNames(
+                      'font-semibold text-(--color-text-1)',
+                      isRenaming ? 'animation-shimmer' : isNewlyRenamed ? 'animation-reveal' : ''
+                    )}
                   />
                 </MarqueeText>
               </SessionName>
@@ -216,20 +265,26 @@ const SessionItem = ({ session, agentId, channelType, onDelete, onPress }: Sessi
             </>
           )}
         </SessionNameContainer>
+        {agent && (
+          <SessionMeta>
+            <MetaAgentName title={agent.name}>{agent.name}</MetaAgentName>
+            <MetaTime>{lastUsedAt}</MetaTime>
+          </SessionMeta>
+        )}
       </SessionListItem>
     </Dropdown>
   )
 }
 
 const SessionListItem = styled.div`
-  padding: 7px 12px;
+  padding: 8px 12px;
   border-radius: var(--list-item-border-radius);
-  font-size: 13px;
+  font-size: 12px;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
   cursor: pointer;
-  width: calc(var(--assistants-width) - 20px);
+  width: 100%;
 
   .menu {
     opacity: 0;
@@ -273,8 +328,38 @@ const SessionNameContainer = styled.div`
   flex-direction: row;
   align-items: center;
   gap: 4px;
-  height: 20px;
+  min-height: 21px;
   justify-content: space-between;
+`
+
+const SessionMeta = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin-top: 5px;
+  color: var(--color-text-3);
+  font-size: 10px;
+  line-height: 14px;
+`
+
+const MetaAgentName = styled.span`
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--color-text-3);
+  font-size: 10px;
+  font-weight: 400;
+  opacity: 0.72;
+`
+
+const MetaTime = styled.span`
+  flex-shrink: 0;
+  color: var(--color-text-3);
+  font-size: 10px;
+  opacity: 0.58;
 `
 
 const SessionName = styled.div`
@@ -282,7 +367,7 @@ const SessionName = styled.div`
   align-items: center;
   gap: 4px;
   overflow: hidden;
-  font-size: 13px;
+  font-size: 12px;
   position: relative;
   min-width: 0;
 `

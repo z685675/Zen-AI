@@ -84,7 +84,7 @@ export const useWebSearchPanelController = (assistantId: string, quickPanelContr
         })
       })
     },
-    [assistant, setTimeoutTimer, updateAssistant]
+    [setTimeoutTimer, updateAssistant]
   )
 
   const updateQuickPanelItem = useCallback(
@@ -138,9 +138,7 @@ export const useWebSearchPanelController = (assistantId: string, quickPanelContr
       200
     )
   }, [
-    assistant.enableWebSearch,
-    assistant.model,
-    assistant.settings?.reasoning_effort,
+    assistant,
     setTimeoutTimer,
     t,
     updateAssistant

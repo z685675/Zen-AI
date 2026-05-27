@@ -1,13 +1,5 @@
 import { loggerService } from '@logger'
-import {
-  isAutoEnableImageGenerationModel,
-  isGenerateImageModel,
-  isGenerateImageModels,
-  isMandatoryWebSearchModel,
-  isVisionModel,
-  isVisionModels,
-  isWebSearchModel
-} from '@renderer/config/models'
+import { chatModelFilter, isMandatoryWebSearchModel, isVisionModel, isVisionModels, isWebSearchModel } from '@renderer/config/models'
 import db from '@renderer/databases'
 import { useAssistant } from '@renderer/hooks/useAssistant'
 import { useInputText } from '@renderer/hooks/useInputText'
@@ -193,7 +185,6 @@ const InputbarInner: FC<InputbarInnerProps> = ({
   const topicMessages = useAppSelector((state) => selectMessagesForTopic(state, topic.id))
   const dispatch = useAppDispatch()
   const isVisionAssistant = useMemo(() => isVisionModel(model), [model])
-  const isGenerateImageAssistant = useMemo(() => isGenerateImageModel(model), [model])
   const { setTimeoutTimer } = useTimer()
   const isMultiSelectMode = useAppSelector((state) => state.runtime.chat.isMultiSelectMode)
   const cacheStats = useMemo(
@@ -208,20 +199,13 @@ const InputbarInner: FC<InputbarInnerProps> = ({
     [mentionedModels, isVisionAssistant]
   )
 
-  const isGenerateImageSupported = useMemo(
-    () =>
-      (mentionedModels.length > 0 && isGenerateImageModels(mentionedModels)) ||
-      (mentionedModels.length === 0 && isGenerateImageAssistant),
-    [mentionedModels, isGenerateImageAssistant]
-  )
-
   const canAddImageFile = useMemo(() => {
-    return isVisionSupported || isGenerateImageSupported
-  }, [isGenerateImageSupported, isVisionSupported])
+    return isVisionSupported
+  }, [isVisionSupported])
 
   const canAddTextFile = useMemo(() => {
-    return isVisionSupported || (!isVisionSupported && !isGenerateImageSupported)
-  }, [isGenerateImageSupported, isVisionSupported])
+    return true
+  }, [])
 
   const supportedExts = useMemo(() => {
     if (canAddImageFile && canAddTextFile) {
@@ -268,11 +252,17 @@ const InputbarInner: FC<InputbarInnerProps> = ({
       return
     }
 
+    const requestModels = mentionedModels.length > 0 ? mentionedModels : [assistant.model]
+    if (!requestModels.every(chatModelFilter)) {
+      window.toast.warning('图片模型只能在“图片生成”入口中使用，请切换为对话模型后再发送。')
+      return
+    }
+
     logger.info('Starting to send message')
 
     const parent = spanManagerService.startTrace(
       { topicId: topic.id, name: 'sendMessage', inputs: text },
-      mentionedModels.length > 0 ? mentionedModels : [assistant.model]
+      requestModels
     )
     void EventEmitter.emit(EVENT_NAMES.SEND_MESSAGE, { topicId: topic.id, traceId: parent?.spanContext().traceId })
 
@@ -481,12 +471,8 @@ const InputbarInner: FC<InputbarInnerProps> = ({
       updateAssistant({ webSearchProviderId: undefined })
     }
 
-    // Auto-enable/disable image generation based on model capabilities
-    if (isGenerateImageModel(model)) {
-      if (isAutoEnableImageGenerationModel(model) && !assistant.enableGenerateImage) {
-        updateAssistant({ enableGenerateImage: true })
-      }
-    } else if (assistant.enableGenerateImage) {
+    // Image generation is handled only from the dedicated image-generation page.
+    if (assistant.enableGenerateImage) {
       updateAssistant({ enableGenerateImage: false })
     }
   }, [assistant, model, updateAssistant])
@@ -520,16 +506,18 @@ const InputbarInner: FC<InputbarInnerProps> = ({
       toolOrderOverride={
         isHero
           ? {
-              visible: ['attachment'],
-              hidden: [
-                'new_topic',
+              visible: [
+                'attachment',
                 'thinking',
                 'web_search',
                 'url_context',
                 'knowledge_base',
                 'mcp_tools',
                 'generate_image',
-                'mention_models',
+                'mention_models'
+              ],
+              hidden: [
+                'new_topic',
                 'quick_phrases',
                 'clear_topic',
                 'toggle_expand',

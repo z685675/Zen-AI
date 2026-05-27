@@ -220,7 +220,20 @@ export type Message = {
 
   // raw data
   // TODO: add this providerMetadata to MessageBlock to save raw provider data for each block
-  providerMetadata?: ProviderMetadata
+  providerMetadata?: MessageProviderMetadata
+}
+
+export type AgentSessionSyncStatus = 'pending' | 'synced' | 'failed'
+
+export type AgentSessionSyncMetadata = {
+  target: 'wechat'
+  status: AgentSessionSyncStatus
+  updatedAt?: string
+  reason?: string
+}
+
+export type MessageProviderMetadata = ProviderMetadata & {
+  agentSessionSync?: AgentSessionSyncMetadata
 }
 
 export interface Response {

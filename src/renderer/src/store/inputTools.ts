@@ -46,8 +46,8 @@ export const DEFAULT_TOOL_ORDER: ToolOrder = {
 export const DEFAULT_TOOL_ORDER_BY_SCOPE: Record<InputbarScope, ToolOrder> = {
   [TopicType.Chat]: DEFAULT_TOOL_ORDER,
   [TopicType.Session]: {
-    visible: ['create_session', 'permission_mode', 'slash_commands', 'attachment'],
-    hidden: []
+    visible: ['permission_mode', 'session_more'],
+    hidden: ['create_session', 'slash_commands', 'attachment', 'resource_panel', 'quick_phrases', 'thinking', 'toggle_expand']
   },
   'mini-window': {
     visible: ['attachment', 'mention_models', 'quick_phrases'],

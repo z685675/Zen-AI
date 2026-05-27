@@ -2,7 +2,9 @@ import * as fs from 'node:fs'
 import * as path from 'node:path'
 
 import { loggerService } from '@logger'
-import { parsePluginMetadata } from '@main/utils/markdownParser'
+import { configManager } from '@main/services/ConfigManager'
+import { toAsarUnpackedPath } from '@main/utils'
+import { parsePluginMetadata, parseSkillMetadata } from '@main/utils/markdownParser'
 import type { SlashCommand, UpdateSessionResponse } from '@types'
 import {
   AgentBaseSchema,
@@ -13,14 +15,77 @@ import {
   type ListOptions,
   type UpdateSessionRequest
 } from '@types'
-import { and, asc, count, desc, eq, type SQL, sql } from 'drizzle-orm'
+import { and, asc, count, desc, eq, like, or, type SQL, sql } from 'drizzle-orm'
+import { app } from 'electron'
 
 import { BaseService } from '../BaseService'
-import { agentsTable, type InsertSessionRow, type SessionRow, sessionsTable } from '../database/schema'
+import {
+  agentsTable,
+  type InsertSessionRow,
+  type SessionMessageRow,
+  sessionMessagesTable,
+  type SessionRow,
+  sessionsTable
+} from '../database/schema'
 import type { AgentModelField } from '../errors'
 import { builtinSlashCommands } from './claudecode/commands'
 
 const logger = loggerService.withContext('SessionService')
+
+const SDK_SLASH_COMMAND_DESCRIPTIONS = {
+  'en-US': {
+    '/batch': 'Run a batch-style workflow for repeated tasks',
+    '/cherry-assistant-guide': 'Open the built-in product guide, troubleshooting notes, and page navigation hints',
+    '/claude-api': 'Inspect or explain Claude/API-related usage and configuration',
+    '/clear': 'Clear the current conversation context',
+    '/compact': 'Compress the conversation and keep only the most useful context',
+    '/context': 'Show current context usage and remaining room',
+    '/cost': 'Show token and cost usage for the current session',
+    '/debug': 'Collect extra debugging context for troubleshooting',
+    '/faq-collector': 'Save a solved problem into the FAQ knowledge file',
+    '/find-skills': 'Search for installable skills that extend the agent',
+    '/heapdump': 'Collect runtime memory diagnostics for advanced debugging',
+    '/init': 'Initialize the current workspace for agent usage',
+    '/insights': 'Summarize useful insights from the current work context',
+    '/issue-reporter': 'Draft or file a bug report or feature request',
+    '/loop': 'Run a multi-step loop until the task reaches a stopping condition',
+    '/mcp__exa__web_search_help': 'Show help for Exa web search capabilities',
+    '/pr-comments': 'Generate or summarize pull request comments',
+    '/release-notes': 'Draft release notes from recent changes',
+    '/review': 'Review code or changes and surface risks',
+    '/security-review': 'Review code or changes from a security perspective',
+    '/simplify': 'Rewrite the plan or answer in a simpler form',
+    '/skill-creator': 'Create or improve a reusable skill',
+    '/skills-manager': 'Search, install, or manage agent skills',
+    '/todos': 'Show the current task checklist'
+  },
+  'zh-CN': {
+    '/batch': '执行一组批量化、重复性的任务流程',
+    '/cherry-assistant-guide': '查看内置产品指南、故障排查说明和页面导航提示',
+    '/claude-api': '查看或解释 Claude 与接口相关的配置和用法',
+    '/clear': '清空当前会话上下文',
+    '/compact': '压缩当前对话，只保留更有用的上下文',
+    '/context': '查看当前上下文占用和剩余空间',
+    '/cost': '查看当前会话的 Token 与成本消耗',
+    '/debug': '收集额外的调试信息用于排查问题',
+    '/faq-collector': '把已经解决的问题收录到 FAQ 知识文件',
+    '/find-skills': '搜索可安装的技能来扩展 Agent 能力',
+    '/heapdump': '收集运行时内存诊断信息，适合高级排障',
+    '/init': '初始化当前工作区的 Agent 使用环境',
+    '/insights': '基于当前上下文提炼重点洞察',
+    '/issue-reporter': '整理并提交 Bug 反馈或功能需求',
+    '/loop': '按循环流程连续执行多步任务直到满足停止条件',
+    '/mcp__exa__web_search_help': '查看 Exa 网页搜索能力的帮助说明',
+    '/pr-comments': '生成或整理 Pull Request 评论',
+    '/release-notes': '根据近期变更整理更新说明',
+    '/review': '对代码或改动做审查并指出风险',
+    '/security-review': '从安全角度审查代码或改动',
+    '/simplify': '把当前方案或回答改写得更简单易懂',
+    '/skill-creator': '创建或改进一个可复用的 Skill',
+    '/skills-manager': '搜索、安装或管理 Agent Skills',
+    '/todos': '查看当前任务清单'
+  }
+} as const
 
 export class SessionService extends BaseService {
   private static instance: SessionService | null = null
@@ -33,66 +98,332 @@ export class SessionService extends BaseService {
     return SessionService.instance
   }
 
+  private escapeLikeQuery(value: string): string {
+    return `%${value.replace(/([\\%_])/g, '\\$1')}%`
+  }
+
+  private getSlashCommandLocale(): 'en-US' | 'zh-CN' {
+    return configManager.getLanguage() === 'zh-CN' ? 'zh-CN' : 'en-US'
+  }
+
+  private normalizeSlashCommandEntry(command: SlashCommand | string | null | undefined): SlashCommand | null {
+    if (!command) {
+      return null
+    }
+
+    if (typeof command === 'string') {
+      const normalizedCommand = command.startsWith('/') ? command : `/${command}`
+      return { command: normalizedCommand }
+    }
+
+    if (typeof command.command !== 'string' || !command.command.trim()) {
+      return null
+    }
+
+    return {
+      command: command.command.startsWith('/') ? command.command : `/${command.command}`,
+      description: command.description
+    }
+  }
+
+  private mergeSlashCommand(
+    commandMap: Map<string, SlashCommand>,
+    command: SlashCommand | string | null | undefined,
+    preferredDescriptions?: Record<string, string>
+  ) {
+    const normalized = this.normalizeSlashCommandEntry(command)
+    if (!normalized) {
+      return
+    }
+
+    const preferredDescription = preferredDescriptions?.[normalized.command]
+    const existing = commandMap.get(normalized.command)
+    const description = preferredDescription ?? normalized.description ?? existing?.description
+
+    if (!existing) {
+      commandMap.set(normalized.command, {
+        command: normalized.command,
+        ...(description ? { description } : {})
+      })
+      return
+    }
+
+    if (!existing.description && description) {
+      commandMap.set(normalized.command, {
+        command: normalized.command,
+        description
+      })
+    } else if (preferredDescription && existing.description !== preferredDescription) {
+      commandMap.set(normalized.command, {
+        command: normalized.command,
+        description: preferredDescription
+      })
+    }
+  }
+
+  private getKnownSlashCommandDescriptions() {
+    return SDK_SLASH_COMMAND_DESCRIPTIONS[this.getSlashCommandLocale()]
+  }
+
+  private async getAgentWorkspacePath(agentId?: string): Promise<string | undefined> {
+    if (!agentId) {
+      return undefined
+    }
+
+    const database = await this.getDatabase()
+    const result = await database.select().from(agentsTable).where(eq(agentsTable.id, agentId)).limit(1)
+    const agent = result[0] ? (this.deserializeJsonFields(result[0]) as AgentEntity) : null
+    return agent?.accessible_paths?.[0]
+  }
+
+  private async collectSkillSlashCommands(skillsDir: string, sourcePrefix: string): Promise<SlashCommand[]> {
+    const commands: SlashCommand[] = []
+
+    try {
+      const entries = await fs.promises.readdir(skillsDir, { withFileTypes: true })
+      for (const entry of entries) {
+        if (!entry.isDirectory()) continue
+
+        try {
+          const skillPath = path.join(skillsDir, entry.name)
+          const metadata = await parseSkillMetadata(skillPath, path.join(sourcePrefix, entry.name), 'skills')
+          commands.push({
+            command: `/${entry.name}`,
+            description: metadata.description
+          })
+        } catch {
+          // Skip skills with invalid metadata
+        }
+      }
+    } catch {
+      // Skill directory doesn't exist, that's fine
+    }
+
+    return commands
+  }
+
+  private async getSupplementalSlashCommands(agentId?: string): Promise<SlashCommand[]> {
+    const commands: SlashCommand[] = []
+
+    const workspacePath = await this.getAgentWorkspacePath(agentId)
+    if (workspacePath) {
+      commands.push(...(await this.collectSkillSlashCommands(path.join(workspacePath, '.claude', 'skills'), 'skills')))
+    }
+
+    const globalSkillsDir = toAsarUnpackedPath(path.join(app.getAppPath(), 'resources', 'skills'))
+    commands.push(...(await this.collectSkillSlashCommands(globalSkillsDir, 'skills')))
+
+    return commands
+  }
+
+  async enrichSlashCommands(
+    commands: Array<SlashCommand | string>,
+    agentType: string,
+    agentId?: string
+  ): Promise<SlashCommand[]> {
+    const commandMap = new Map<string, SlashCommand>()
+    const knownDescriptions = this.getKnownSlashCommandDescriptions()
+
+    for (const command of commands) {
+      this.mergeSlashCommand(commandMap, command, knownDescriptions)
+    }
+
+    const supplementalCommands = await this.listSlashCommands(agentType, agentId)
+    for (const command of supplementalCommands) {
+      this.mergeSlashCommand(commandMap, command, knownDescriptions)
+    }
+
+    return Array.from(commandMap.values())
+  }
+
+  private appendArchivedFilter(whereConditions: SQL[], archived: ListOptions['archived'] = 'exclude') {
+    if (archived === 'only') {
+      whereConditions.push(eq(sessionsTable.is_archived, true))
+      return
+    }
+
+    if (archived !== 'include') {
+      whereConditions.push(eq(sessionsTable.is_archived, false))
+    }
+  }
+
+  private buildSessionOrder(options: ListOptions = {}) {
+    const sortBy = options.sortBy ?? 'updated_at'
+    const orderBy = options.orderBy ?? 'desc'
+    const sortDirection = orderBy === 'asc' ? asc : desc
+    const orderClauses = [desc(sessionsTable.is_pinned)]
+
+    switch (sortBy) {
+      case 'name':
+        orderClauses.push(sortDirection(sessionsTable.name), desc(sessionsTable.updated_at))
+        break
+      case 'created_at':
+        orderClauses.push(sortDirection(sessionsTable.created_at), desc(sessionsTable.updated_at))
+        break
+      case 'sort_order':
+        orderClauses.push(asc(sessionsTable.sort_order), desc(sessionsTable.updated_at))
+        break
+      case 'updated_at':
+      default:
+        orderClauses.push(sortDirection(sessionsTable.updated_at), desc(sessionsTable.created_at))
+        break
+    }
+
+    return orderClauses
+  }
+
+  private extractSearchableText(value: unknown): string[] {
+    if (!value) {
+      return []
+    }
+
+    if (typeof value === 'string') {
+      return [value]
+    }
+
+    if (Array.isArray(value)) {
+      return value.flatMap((item) => this.extractSearchableText(item))
+    }
+
+    if (typeof value === 'object') {
+      const record = value as Record<string, unknown>
+      if (Array.isArray(record.blocks)) {
+        const blockContents = record.blocks
+          .map((block) => (block && typeof block === 'object' ? (block as Record<string, unknown>).content : undefined))
+          .filter((content): content is string => typeof content === 'string')
+
+        if (blockContents.length > 0) {
+          return blockContents
+        }
+      }
+
+      return Object.entries(record).flatMap(([key, entry]) => {
+        if (typeof entry === 'string' && ['content', 'text', 'title', 'name'].includes(key)) {
+          return [entry]
+        }
+
+        return this.extractSearchableText(entry)
+      })
+    }
+
+    return []
+  }
+
+  private buildSnippet(text: string, query: string): string {
+    const normalizedText = text.replace(/\s+/g, ' ').trim()
+    if (!normalizedText) {
+      return ''
+    }
+
+    const loweredText = normalizedText.toLowerCase()
+    const loweredQuery = query.trim().toLowerCase()
+    const matchIndex = loweredQuery ? loweredText.indexOf(loweredQuery) : -1
+
+    if (matchIndex === -1) {
+      return normalizedText.length > 140 ? `${normalizedText.slice(0, 140)}...` : normalizedText
+    }
+
+    const start = Math.max(0, matchIndex - 48)
+    const end = Math.min(normalizedText.length, matchIndex + loweredQuery.length + 92)
+    const prefix = start > 0 ? '...' : ''
+    const suffix = end < normalizedText.length ? '...' : ''
+
+    return `${prefix}${normalizedText.slice(start, end)}${suffix}`
+  }
+
+  private async buildSessionSearchMatch(sessionId: string, escapedQuery: string, query: string) {
+    const database = await this.getDatabase()
+    const rows = await database
+      .select({
+        content: sessionMessagesTable.content,
+        created_at: sessionMessagesTable.created_at
+      })
+      .from(sessionMessagesTable)
+      .where(and(eq(sessionMessagesTable.session_id, sessionId), like(sessionMessagesTable.content, escapedQuery)))
+      .orderBy(desc(sessionMessagesTable.created_at))
+      .limit(5)
+
+    for (const row of rows as Pick<SessionMessageRow, 'content' | 'created_at'>[]) {
+      try {
+        const parsed = JSON.parse(row.content)
+        const texts = this.extractSearchableText(parsed)
+        const matched = texts.find((item) => item.toLowerCase().includes(query.toLowerCase()))
+        if (matched) {
+          return {
+            snippet: this.buildSnippet(matched, query),
+            matched_at: row.created_at
+          }
+        }
+      } catch {
+        const matched = row.content.toLowerCase().includes(query.toLowerCase()) ? row.content : undefined
+        if (matched) {
+          return {
+            snippet: this.buildSnippet(matched, query),
+            matched_at: row.created_at
+          }
+        }
+      }
+    }
+
+    return {}
+  }
+
   /**
    * Override BaseService.listSlashCommands to merge builtin and plugin commands
    */
   async listSlashCommands(agentType: string, agentId?: string): Promise<SlashCommand[]> {
-    const commands: SlashCommand[] = []
+    const commandMap = new Map<string, SlashCommand>()
+    const knownDescriptions = this.getKnownSlashCommandDescriptions()
 
     // Add builtin slash commands
     if (agentType === 'claude-code') {
-      commands.push(...builtinSlashCommands)
+      for (const command of builtinSlashCommands) {
+        this.mergeSlashCommand(commandMap, command, knownDescriptions)
+      }
     }
 
     // Add local command plugins from .claude/commands/
-    if (agentId) {
+    const workspacePath = await this.getAgentWorkspacePath(agentId)
+    if (workspacePath) {
       try {
-        const database = await this.getDatabase()
-        const result = await database.select().from(agentsTable).where(eq(agentsTable.id, agentId)).limit(1)
-        const agent = result[0] ? this.deserializeJsonFields(result[0]) : null
-        const workdir = (agent as AgentEntity | null)?.accessible_paths?.[0]
+        const commandsDir = path.join(workspacePath, '.claude', 'commands')
+        try {
+          const entries = await fs.promises.readdir(commandsDir, { withFileTypes: true })
+          const ALLOWED_EXTENSIONS = ['.md', '.txt']
+          let localCount = 0
 
-        if (workdir) {
-          const commandsDir = path.join(workdir, '.claude', 'commands')
-          try {
-            const entries = await fs.promises.readdir(commandsDir, { withFileTypes: true })
-            const ALLOWED_EXTENSIONS = ['.md', '.txt']
-            let localCount = 0
+          for (const entry of entries) {
+            if (!entry.isFile()) continue
+            const ext = path.extname(entry.name).toLowerCase()
+            if (!ALLOWED_EXTENSIONS.includes(ext)) continue
 
-            for (const entry of entries) {
-              if (!entry.isFile()) continue
-              const ext = path.extname(entry.name).toLowerCase()
-              if (!ALLOWED_EXTENSIONS.includes(ext)) continue
-
-              try {
-                const filePath = path.join(commandsDir, entry.name)
-                const metadata = await parsePluginMetadata(
-                  filePath,
-                  path.join('commands', entry.name),
-                  'commands',
-                  'command'
-                )
-                const commandName = entry.name.replace(/\.md$/i, '')
-                commands.push({
+            try {
+              const filePath = path.join(commandsDir, entry.name)
+              const metadata = await parsePluginMetadata(filePath, path.join('commands', entry.name), 'commands', 'command')
+              const commandName = entry.name.replace(/\.(md|txt)$/i, '')
+              this.mergeSlashCommand(
+                commandMap,
+                {
                   command: `/${commandName}`,
                   description: metadata.description
-                })
-                localCount++
-              } catch {
-                // Skip files that fail to parse
-              }
+                },
+                knownDescriptions
+              )
+              localCount++
+            } catch {
+              // Skip files that fail to parse
             }
-
-            logger.info('Listed slash commands', {
-              agentType,
-              agentId,
-              builtinCount: builtinSlashCommands.length,
-              localCount,
-              totalCount: commands.length
-            })
-          } catch {
-            // .claude/commands/ doesn't exist, that's fine
           }
+
+          logger.info('Listed slash commands', {
+            agentType,
+            agentId,
+            builtinCount: builtinSlashCommands.length,
+            localCount,
+            totalCount: commandMap.size
+          })
+        } catch {
+          // .claude/commands/ doesn't exist, that's fine
         }
       } catch (error) {
         logger.warn('Failed to list local command plugins', {
@@ -102,7 +433,12 @@ export class SessionService extends BaseService {
       }
     }
 
-    return commands
+    const supplementalCommands = await this.getSupplementalSlashCommands(agentId)
+    for (const command of supplementalCommands) {
+      this.mergeSlashCommand(commandMap, command, knownDescriptions)
+    }
+
+    return Array.from(commandMap.values())
   }
 
   async createSession(
@@ -156,6 +492,8 @@ export class SessionService extends BaseService {
       allowed_tools: serializedData.allowed_tools || null,
       configuration: serializedData.configuration || null,
       sort_order: 0,
+      is_pinned: false,
+      is_archived: false,
       created_at: now,
       updated_at: now
     }
@@ -197,10 +535,26 @@ export class SessionService extends BaseService {
     session.tools = tools
     session.allowed_tools = this.normalizeAllowedTools(session.allowed_tools, session.tools, legacyIdMap)
 
+    const originalSlashCommands = Array.isArray(session.slash_commands) ? session.slash_commands : []
+
     // If slash_commands is not in database yet (e.g., first invoke before init message),
     // fall back to builtin + local commands. Otherwise, use the merged commands from database.
-    if (!session.slash_commands || session.slash_commands.length === 0) {
-      session.slash_commands = await this.listSlashCommands(session.agent_type, agentId)
+    const enrichedSlashCommands =
+      originalSlashCommands.length === 0
+        ? await this.listSlashCommands(session.agent_type, agentId)
+        : await this.enrichSlashCommands(originalSlashCommands, session.agent_type, agentId)
+
+    session.slash_commands = enrichedSlashCommands
+
+    const originalSerialized = JSON.stringify(originalSlashCommands)
+    const enrichedSerialized = JSON.stringify(enrichedSlashCommands)
+    if (originalSerialized !== enrichedSerialized) {
+      await database
+        .update(sessionsTable)
+        .set({
+          slash_commands: enrichedSerialized
+        })
+        .where(and(eq(sessionsTable.id, id), eq(sessionsTable.agent_id, agentId)))
     }
 
     return session
@@ -214,6 +568,22 @@ export class SessionService extends BaseService {
     const whereConditions: SQL[] = []
     if (agentId) {
       whereConditions.push(eq(sessionsTable.agent_id, agentId))
+    }
+    this.appendArchivedFilter(whereConditions, options.archived)
+
+    if (options.search?.trim()) {
+      const escapedQuery = this.escapeLikeQuery(options.search.trim())
+      whereConditions.push(
+        or(
+          like(sessionsTable.name, escapedQuery),
+          sql`exists (
+            select 1
+            from ${sessionMessagesTable}
+            where ${sessionMessagesTable.session_id} = ${sessionsTable.id}
+              and ${sessionMessagesTable.content} like ${escapedQuery}
+          )`
+        )!
+      )
     }
 
     const whereClause =
@@ -234,7 +604,7 @@ export class SessionService extends BaseService {
       .select()
       .from(sessionsTable)
       .where(whereClause)
-      .orderBy(asc(sessionsTable.sort_order), desc(sessionsTable.created_at))
+      .orderBy(...this.buildSessionOrder(options))
 
     const result =
       options.limit !== undefined
@@ -254,6 +624,46 @@ export class SessionService extends BaseService {
     )
 
     return { sessions, total }
+  }
+
+  async searchSessions(
+    query: string,
+    options: ListOptions = {}
+  ): Promise<{ results: Array<{ session: AgentSessionEntity; snippet?: string; matched_at?: string }>; total: number }> {
+    const trimmedQuery = query.trim()
+    if (!trimmedQuery) {
+      return { results: [], total: 0 }
+    }
+
+    const escapedQuery = this.escapeLikeQuery(trimmedQuery)
+    const result = await this.listSessions(undefined, {
+      ...options,
+      archived: options.archived ?? 'include',
+      search: trimmedQuery,
+      sortBy: 'updated_at',
+      orderBy: 'desc'
+    })
+
+    const sessions = result.sessions
+    const results = await Promise.all(
+      sessions.map(async (session) => {
+        if (session.name?.toLowerCase().includes(trimmedQuery.toLowerCase())) {
+          return {
+            session,
+            snippet: this.buildSnippet(session.name, trimmedQuery),
+            matched_at: session.updated_at
+          }
+        }
+
+        const match = await this.buildSessionSearchMatch(session.id, escapedQuery, trimmedQuery)
+        return {
+          session,
+          ...match
+        }
+      })
+    )
+
+    return { results, total: result.total }
   }
 
   async updateSession(
@@ -304,10 +714,73 @@ export class SessionService extends BaseService {
       }
     }
 
+    if (Object.prototype.hasOwnProperty.call(updates, 'is_pinned')) {
+      updateData.is_pinned = updates.is_pinned ?? false
+    }
+
+    if (Object.prototype.hasOwnProperty.call(updates, 'is_archived')) {
+      updateData.is_archived = updates.is_archived ?? false
+    }
+
     const database = await this.getDatabase()
     await database.update(sessionsTable).set(updateData).where(eq(sessionsTable.id, id))
 
     return await this.getSession(agentId, id)
+  }
+
+  async syncAgentSessionModel(agentId: string, model: string): Promise<number> {
+    const database = await this.getDatabase()
+    const result = await database
+      .update(sessionsTable)
+      .set({
+        model,
+        updated_at: new Date().toISOString()
+      })
+      .where(eq(sessionsTable.agent_id, agentId))
+
+    logger.info('Synchronized session model for agent', {
+      agentId,
+      model,
+      updated: result.rowsAffected
+    })
+
+    return result.rowsAffected
+  }
+
+  async syncAgentSessionInstructions(agentId: string, instructions: string): Promise<number> {
+    const database = await this.getDatabase()
+    const result = await database
+      .update(sessionsTable)
+      .set({
+        instructions
+      })
+      .where(eq(sessionsTable.agent_id, agentId))
+
+    logger.info('Synchronized session instructions for agent', {
+      agentId,
+      updated: result.rowsAffected
+    })
+
+    return result.rowsAffected
+  }
+
+  async syncAgentSessionConfiguration(agentId: string, configuration: AgentEntity['configuration']): Promise<number> {
+    const database = await this.getDatabase()
+    const serialized = this.serializeJsonFields({ configuration })
+    const result = await database
+      .update(sessionsTable)
+      .set({
+        configuration: serialized.configuration ?? null,
+        updated_at: new Date().toISOString()
+      })
+      .where(eq(sessionsTable.agent_id, agentId))
+
+    logger.info('Synchronized session configuration for agent', {
+      agentId,
+      updated: result.rowsAffected
+    })
+
+    return result.rowsAffected
   }
 
   async deleteSession(agentId: string, id: string): Promise<boolean> {

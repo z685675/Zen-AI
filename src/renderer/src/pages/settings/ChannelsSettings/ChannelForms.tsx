@@ -1,9 +1,15 @@
+import { AgentApiClient } from '@renderer/api/agent'
+import { useSettings } from '@renderer/hooks/useSettings'
+import { useAppDispatch } from '@renderer/store'
+import { setActiveAgentId, setActiveSessionIdAction } from '@renderer/store/runtime'
 import type { FeishuChannelConfig, FeishuDomain, PermissionMode } from '@renderer/types'
+import { DEFAULT_FUSION_AGENT_ID } from '@shared/config/agents'
 import { Input, Modal, Select } from 'antd'
 import { QRCodeSVG } from 'qrcode.react'
 import type { ReactNode } from 'react'
-import { type FC, useCallback, useEffect, useState } from 'react'
+import { type FC, useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useNavigate } from 'react-router-dom'
 
 import type { ChannelData } from './channelTypes'
 
@@ -39,6 +45,7 @@ type ChatIdsConfig = {
 type ChannelFormProps = {
   channel: ChannelData
   onConfigChange: (updates: Partial<ChannelData>) => void
+  onConnected?: () => void
 }
 
 type ChannelFieldsFormProps = ChannelFormProps & {
@@ -374,11 +381,20 @@ export const QQForm: FC<ChannelFormProps> = ({ channel, onConfigChange }) => {
 
 type WeChatStatus = 'idle' | 'pending' | 'confirmed' | 'disconnected'
 
-export const WeChatForm: FC<ChannelFormProps & { onRemove?: () => void }> = ({ channel, onConfigChange, onRemove }) => {
+export const WeChatForm: FC<ChannelFormProps & { onRemove?: () => void }> = ({
+  channel,
+  onConfigChange,
+  onRemove
+}) => {
   const { t } = useTranslation()
+  const dispatch = useAppDispatch()
+  const navigate = useNavigate()
+  const { apiServer } = useSettings()
   const [status, setStatus] = useState<WeChatStatus>('idle')
   const [loginUserId, setLoginUserId] = useState<string | null>(null)
   const [qrUrl, setQrUrl] = useState<string | null>(null)
+  const [showSuccessModal, setShowSuccessModal] = useState(false)
+  const shouldReturnOnConfirmRef = useRef(false)
 
   useEffect(() => {
     void window.api.wechat.hasCredentials(channel.id).then((result) => {
@@ -396,18 +412,55 @@ export const WeChatForm: FC<ChannelFormProps & { onRemove?: () => void }> = ({ c
         setQrUrl(null)
         setStatus('confirmed')
         if (data.userId) setLoginUserId(data.userId)
+        if (shouldReturnOnConfirmRef.current) {
+          shouldReturnOnConfirmRef.current = false
+          setShowSuccessModal(true)
+        }
       } else if (data.status === 'expired') {
         setQrUrl(null)
+        shouldReturnOnConfirmRef.current = false
       } else if (data.status === 'disconnected') {
         setStatus('disconnected')
         setLoginUserId(null)
+        shouldReturnOnConfirmRef.current = false
       } else if (data.url) {
         setQrUrl(data.url)
         setStatus('pending')
+        shouldReturnOnConfirmRef.current = true
       }
     })
     return cleanup
   }, [channel.id])
+
+  const handleWechatSuccessConfirm = useCallback(async () => {
+    try {
+      const client = new AgentApiClient({
+        baseURL: `http://${apiServer.host}:${apiServer.port}`,
+        headers: {
+          Authorization: `Bearer ${apiServer.apiKey}`
+        }
+      })
+      const channelList = await client.listChannels({ agent_id: DEFAULT_FUSION_AGENT_ID, type: 'wechat' })
+      const linkedChannel =
+        channelList.data.find((item) => item.id === channel.id) ??
+        channelList.data.find((item) => item.sessionId || item.session_id) ??
+        null
+      const resolvedSessionId = linkedChannel?.sessionId ?? linkedChannel?.session_id ?? channel.sessionId ?? null
+
+      dispatch(setActiveAgentId(DEFAULT_FUSION_AGENT_ID))
+      if (resolvedSessionId) {
+        dispatch(setActiveSessionIdAction({ agentId: DEFAULT_FUSION_AGENT_ID, sessionId: resolvedSessionId }))
+      }
+    } catch {
+      dispatch(setActiveAgentId(DEFAULT_FUSION_AGENT_ID))
+      if (channel.sessionId) {
+        dispatch(setActiveSessionIdAction({ agentId: DEFAULT_FUSION_AGENT_ID, sessionId: channel.sessionId }))
+      }
+    } finally {
+      setShowSuccessModal(false)
+      window.setTimeout(() => navigate('/agents'), 0)
+    }
+  }, [apiServer.apiKey, apiServer.host, apiServer.port, channel.id, channel.sessionId, dispatch, navigate])
 
   return (
     <div className="flex flex-col gap-3">
@@ -444,6 +497,7 @@ export const WeChatForm: FC<ChannelFormProps & { onRemove?: () => void }> = ({ c
         footer={null}
         onCancel={() => {
           setQrUrl(null)
+          shouldReturnOnConfirmRef.current = false
           if (status !== 'confirmed' && onRemove) onRemove()
         }}
         centered
@@ -453,6 +507,20 @@ export const WeChatForm: FC<ChannelFormProps & { onRemove?: () => void }> = ({ c
           <span className="text-center text-foreground-500 text-xs">
             {t('agent.cherryClaw.channels.wechat.qrHint')}
           </span>
+        </div>
+      </Modal>
+
+      <Modal
+        open={showSuccessModal}
+        title="微信已连接"
+        onOk={() => void handleWechatSuccessConfirm()}
+        onCancel={() => void handleWechatSuccessConfirm()}
+        okText="确定"
+        cancelButtonProps={{ style: { display: 'none' } }}
+        centered
+        width={420}>
+        <div className="py-2 text-sm leading-6 text-foreground">
+          微信已成功扫码连接，可以直接在手机微信上和我进行文字对话。图片和文件请回到桌面端发送，体验会更稳定。
         </div>
       </Modal>
     </div>

@@ -10,6 +10,7 @@ import { Alert, Button, Empty, Input, Modal, Popconfirm, Select, Spin, Switch, T
 import type { FC } from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useSearchParams } from 'react-router-dom'
 
 import { SettingDivider, SettingTitle } from '..'
 import { getFormForType } from './ChannelForms'
@@ -244,7 +245,12 @@ const ChannelEditModal: FC<
             )}
           </div>
           {FormComponent && (
-            <FormComponent channel={channel} onConfigChange={handleUpdate} onRemove={() => onDelete(channel.id)} />
+            <FormComponent
+              channel={channel}
+              onConfigChange={handleUpdate}
+              onRemove={() => onDelete(channel.id)}
+              onConnected={onClose}
+            />
           )}
         </div>
       )}
@@ -333,6 +339,7 @@ type ChannelDetailProps = {
 
 const ChannelDetail: FC<ChannelDetailProps> = ({ channelDef }) => {
   const { t } = useTranslation()
+  const [searchParams, setSearchParams] = useSearchParams()
 
   // SWR-managed remote data
   const { channels, isLoading, mutate, createChannel, updateChannel, deleteChannel } = useChannels(channelDef.type)
@@ -345,10 +352,11 @@ const ChannelDetail: FC<ChannelDetailProps> = ({ channelDef }) => {
     }
   }, [agentList])
 
-  const channelList = channels ?? []
+  const channelList = useMemo(() => channels ?? [], [channels])
 
   const [editingChannelId, setEditingChannelId] = useState<string | null>(null)
   const editingChannel = channelList.find((ch) => ch.id === editingChannelId) ?? null
+  const hasHandledAutoOpenRef = useRef(false)
 
   // Connection status tracking
   const [statuses, setStatuses] = useState<Map<string, StatusEvent>>(new Map())
@@ -380,12 +388,13 @@ const ChannelDetail: FC<ChannelDetailProps> = ({ channelDef }) => {
     return unsub
   }, [mutate])
 
-  const handleAdd = useCallback(async () => {
+  const createChannelEntry = useCallback(async (overrides?: { agentId?: string; name?: string }) => {
     const existingCount = channels?.length ?? 0
     try {
       const newChannel = await createChannel({
         type: channelDef.type,
-        name: existingCount > 0 ? `${channelDef.name} ${existingCount + 1}` : channelDef.name,
+        name: overrides?.name ?? (existingCount > 0 ? `${channelDef.name} ${existingCount + 1}` : channelDef.name),
+        agent_id: overrides?.agentId,
         config: channelDef.defaultConfig,
         is_active: true
       })
@@ -394,6 +403,10 @@ const ChannelDetail: FC<ChannelDetailProps> = ({ channelDef }) => {
       // ignore
     }
   }, [channels?.length, createChannel, channelDef])
+
+  const handleAdd = useCallback(() => {
+    void createChannelEntry()
+  }, [createChannelEntry])
 
   const handleSave = useCallback(
     async (channelId: string, updates: Partial<ChannelData>) => {
@@ -431,6 +444,41 @@ const ChannelDetail: FC<ChannelDetailProps> = ({ channelDef }) => {
     },
     [handleSave]
   )
+
+  useEffect(() => {
+    const requestedType = searchParams.get('type')
+    const shouldAutoOpen = searchParams.get('open') === '1'
+    const requestedAgentId = searchParams.get('agentId') ?? undefined
+
+    if (requestedType !== channelDef.type || !shouldAutoOpen || isLoading || hasHandledAutoOpenRef.current) {
+      return
+    }
+
+    hasHandledAutoOpenRef.current = true
+
+    const autoOpenChannel = async () => {
+      const targetChannel = requestedAgentId
+        ? channelList.find((channel) => channel.agentId === requestedAgentId)
+        : channelList[0]
+
+      if (targetChannel) {
+        setEditingChannelId(targetChannel.id)
+        await handleSave(targetChannel.id, {
+          agentId: requestedAgentId && targetChannel.agentId !== requestedAgentId ? requestedAgentId : undefined,
+          isActive: true
+        })
+      } else {
+        await createChannelEntry({ agentId: requestedAgentId })
+      }
+
+      const nextParams = new URLSearchParams(searchParams)
+      nextParams.delete('open')
+      nextParams.delete('agentId')
+      setSearchParams(nextParams, { replace: true })
+    }
+
+    void autoOpenChannel()
+  }, [channelDef.type, channelList, createChannelEntry, handleSave, isLoading, searchParams, setSearchParams])
 
   if (isLoading) {
     return (

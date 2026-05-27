@@ -27,6 +27,8 @@ export const sessionsTable = sqliteTable('sessions', {
   configuration: text('configuration'), // JSON, extensible settings
 
   sort_order: integer('sort_order').notNull().default(0), // Manual sort order (lower = first)
+  is_pinned: integer('is_pinned', { mode: 'boolean' }).notNull().default(false),
+  is_archived: integer('is_archived', { mode: 'boolean' }).notNull().default(false),
 
   created_at: text('created_at').notNull(),
   updated_at: text('updated_at').notNull()
@@ -44,6 +46,8 @@ export const sessionsCreatedAtIdx = index('idx_sessions_created_at').on(sessions
 export const sessionsMainAgentIdIdx = index('idx_sessions_agent_id').on(sessionsTable.agent_id)
 export const sessionsModelIdx = index('idx_sessions_model').on(sessionsTable.model)
 export const sessionsSortOrderIdx = index('idx_sessions_sort_order').on(sessionsTable.sort_order)
+export const sessionsPinnedIdx = index('idx_sessions_is_pinned').on(sessionsTable.is_pinned)
+export const sessionsArchivedIdx = index('idx_sessions_is_archived').on(sessionsTable.is_archived)
 
 export type SessionRow = typeof sessionsTable.$inferSelect
 export type InsertSessionRow = typeof sessionsTable.$inferInsert

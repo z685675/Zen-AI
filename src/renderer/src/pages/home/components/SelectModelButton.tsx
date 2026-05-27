@@ -1,11 +1,11 @@
 import ModelAvatar from '@renderer/components/Avatar/ModelAvatar'
 import { SelectChatModelPopup } from '@renderer/components/Popups/SelectModelPopup'
 import { isLocalAi } from '@renderer/config/env'
-import { isEmbeddingModel, isRerankModel, isWebSearchModel } from '@renderer/config/models'
+import { chatModelFilter, isWebSearchModel } from '@renderer/config/models'
 import { useAssistant } from '@renderer/hooks/useAssistant'
 import { useProvider } from '@renderer/hooks/useProvider'
 import { getProviderName } from '@renderer/services/ProviderService'
-import type { Assistant, Model } from '@renderer/types'
+import type { Assistant } from '@renderer/types'
 import { Button, Tag } from 'antd'
 import { ChevronsUpDown } from 'lucide-react'
 import type { FC } from 'react'
@@ -24,11 +24,9 @@ const SelectModelButton: FC<Props> = ({ assistant }) => {
   const assistantRef = useRef(assistant)
   const provider = useProvider(model?.provider)
 
-  const modelFilter = (model: Model) => !isEmbeddingModel(model) && !isRerankModel(model)
-
   const onSelectModel = async (event: React.MouseEvent<HTMLElement>) => {
     event.currentTarget.blur()
-    const selectedModel = await SelectChatModelPopup.show({ model, filter: modelFilter })
+    const selectedModel = await SelectChatModelPopup.show({ model, filter: chatModelFilter })
     if (selectedModel) {
       // 避免更新数据造成关闭弹框的卡顿
       clearTimeout(timerRef.current)

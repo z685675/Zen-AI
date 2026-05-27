@@ -93,7 +93,7 @@ export const useNotesMenu = ({
           centered: true,
           okButtonProps: { danger: true },
           onOk: () => {
-            onDeleteNodes(Array.from(selectedNodeIds))
+            void onDeleteNodes(Array.from(selectedNodeIds))
           }
         })
         return
@@ -110,7 +110,7 @@ export const useNotesMenu = ({
         centered: true,
         okButtonProps: { danger: true },
         onOk: () => {
-          onDeleteNode(node.id)
+          void onDeleteNode(node.id)
         }
       })
     },

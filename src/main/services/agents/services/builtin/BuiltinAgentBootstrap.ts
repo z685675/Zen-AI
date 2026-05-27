@@ -7,6 +7,10 @@
  */
 import { loggerService } from '@logger'
 import { installBuiltinSkills } from '@main/utils/builtinSkills'
+import {
+  DEFAULT_CHERRY_ASSISTANT_AGENT_ID,
+  DEFAULT_FUSION_AGENT_ID
+} from '@shared/config/agents'
 
 import { agentService } from '../AgentService'
 import { schedulerService } from '../SchedulerService'
@@ -27,7 +31,33 @@ export async function bootstrapBuiltinAgents(): Promise<void> {
   } catch (error) {
     logger.error('Failed to install built-in skills', error as Error)
   }
-  await Promise.all([initCherryClaw(), initCherryAssistant()])
+  await initCherryClaw()
+  await initCherryAssistant()
+  await initFusionAgent()
+  await markLegacyAgentsDeprecated()
+}
+
+async function syncBuiltinSessionModel(agentId: string): Promise<void> {
+  const agent = await agentService.getAgent(agentId)
+  if (!agent?.model) {
+    return
+  }
+
+  await sessionService.syncAgentSessionModel(agentId, agent.model)
+  if (agent.instructions) {
+    await sessionService.syncAgentSessionInstructions(agentId, agent.instructions)
+  }
+  if (agent.configuration) {
+    await sessionService.syncAgentSessionConfiguration(agentId, agent.configuration)
+  }
+}
+
+async function markLegacyAgentsDeprecated(): Promise<void> {
+  try {
+    await agentService.markLegacyUserAgentsDeprecated()
+  } catch (error) {
+    logger.warn('Failed to mark legacy user agents as deprecated:', error as Error)
+  }
 }
 
 // ── CherryClaw ──────────────────────────────────────────────────────
@@ -44,6 +74,7 @@ async function initCherryClaw(): Promise<void> {
       logger.info('Default session created for Zen Agent')
     }
 
+    await syncBuiltinSessionModel(agentId)
     await schedulerService.ensureHeartbeatTask(agentId, 30)
   } catch (error) {
     logger.warn('Failed to init Zen Agent:', error as Error)
@@ -52,7 +83,7 @@ async function initCherryClaw(): Promise<void> {
 
 // ── Cherry Assistant ────────────────────────────────────────────────
 
-export const CHERRY_ASSISTANT_AGENT_ID = 'cherry-assistant-default'
+export const CHERRY_ASSISTANT_AGENT_ID = DEFAULT_CHERRY_ASSISTANT_AGENT_ID
 
 async function initCherryAssistant(): Promise<void> {
   try {
@@ -69,7 +100,31 @@ async function initCherryAssistant(): Promise<void> {
       await sessionService.createSession(agentId, {})
       logger.info('Default session created for Cherry Assistant agent')
     }
+
+    await syncBuiltinSessionModel(agentId)
   } catch (error) {
     logger.warn('Failed to init Cherry Assistant agent:', error as Error)
+  }
+}
+
+async function initFusionAgent(): Promise<void> {
+  try {
+    const agentId = await agentService.initBuiltinAgent({
+      id: DEFAULT_FUSION_AGENT_ID,
+      builtinRole: 'fusion',
+      provisionWorkspace: provisionBuiltinAgent
+    })
+    if (!agentId) return
+
+    const { total } = await sessionService.listSessions(agentId, { limit: 1 })
+    if (total === 0) {
+      await sessionService.createSession(agentId, {})
+      logger.info('Default session created for fusion agent')
+    }
+
+    await syncBuiltinSessionModel(agentId)
+    await schedulerService.ensureHeartbeatTask(agentId, 30)
+  } catch (error) {
+    logger.warn('Failed to init fusion agent:', error as Error)
   }
 }

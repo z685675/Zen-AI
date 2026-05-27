@@ -37,7 +37,14 @@ import type {
   GetAgentSessionResponse
 } from '@renderer/types/agent'
 import { ChunkType } from '@renderer/types/chunk'
-import type { FileMessageBlock, ImageMessageBlock, Message, MessageBlock } from '@renderer/types/newMessage'
+import type {
+  AgentSessionSyncMetadata,
+  FileMessageBlock,
+  ImageMessageBlock,
+  Message,
+  MessageBlock,
+  MessageProviderMetadata
+} from '@renderer/types/newMessage'
 import {
   AssistantMessageStatus,
   MessageBlockStatus,
@@ -98,8 +105,340 @@ type AgentSessionContext = {
   thinking?: AgentThinkingConfig
 }
 
+const AGENT_SESSION_RECOVERY_INSTRUCTION = [
+  '【任务恢复要求】',
+  '用户正在重新生成一个可能被中断过的长任务。继续前请先检查目标目录、已有文件、已有结果或当前环境状态，判断哪些部分已经完成。',
+  '只继续未完成或缺失的部分，不要重复下载、重复生成或覆盖已经完成的结果，除非用户明确要求。',
+  '如果无法确认完成度，请先说明当前能确认的进度，并询问是否继续补全。',
+  '不要承诺“我会继续盯着”“完成后再告诉你”等后台继续执行能力；除非本次回复内已经实际完成并校验，否则不要说任务已完成。'
+].join('\n')
+const AGENT_SESSION_INTERRUPTED_CACHE_TTL = 1000 * 60 * 60 * 24
+const AGENT_SESSION_CHANNEL_STALL_TIMEOUT_MS = 1000 * 60 * 3
+
 const agentSessionRenameLocks = new Set<string>()
 const dbFacade = DbService.getInstance()
+
+const buildAgentSessionSyncMetadata = (
+  status: AgentSessionSyncMetadata['status'],
+  reason?: string
+): AgentSessionSyncMetadata => ({
+  target: 'wechat',
+  status,
+  updatedAt: new Date().toISOString(),
+  ...(reason ? { reason } : {})
+})
+
+const withAgentSessionSyncMetadata = (
+  message: Message | undefined,
+  status: AgentSessionSyncMetadata['status'],
+  reason?: string
+): MessageProviderMetadata => ({
+  ...((message?.providerMetadata ?? {}) as MessageProviderMetadata),
+  agentSessionSync: buildAgentSessionSyncMetadata(status, reason)
+})
+
+const updateAgentSessionSyncStatus = async (
+  dispatch: AppDispatch,
+  getState: () => RootState,
+  topicId: string,
+  messageIds: string[],
+  status: AgentSessionSyncMetadata['status'],
+  reason?: string
+) => {
+  const updates = messageIds
+    .map((messageId) => {
+      const message = getState().messages.entities[messageId]
+      if (!message) {
+        return null
+      }
+
+      const providerMetadata = withAgentSessionSyncMetadata(message, status, reason)
+      return { messageId, providerMetadata }
+    })
+    .filter(Boolean) as Array<{ messageId: string; providerMetadata: MessageProviderMetadata }>
+
+  if (updates.length === 0) {
+    return
+  }
+
+  for (const update of updates) {
+    dispatch(
+      newMessagesActions.updateMessage({
+        topicId,
+        messageId: update.messageId,
+        updates: { providerMetadata: update.providerMetadata }
+      })
+    )
+  }
+
+  await Promise.all(
+    updates.map((update) => updateMessage(topicId, update.messageId, { providerMetadata: update.providerMetadata }))
+  )
+}
+
+const finalizeStaleAssistantBlocksAfterStream = async (
+  dispatch: AppDispatch,
+  getState: () => RootState,
+  topicId: string,
+  assistantMessageId: string
+) => {
+  const state = getState()
+  const assistantMessage = state.messages.entities[assistantMessageId]
+  if (!assistantMessage) {
+    return
+  }
+
+  const staleBlocks = (assistantMessage.blocks || [])
+    .map((blockId) => state.messageBlocks.entities[blockId])
+    .filter(
+      (block): block is MessageBlock =>
+        !!block &&
+        (block.status === MessageBlockStatus.PROCESSING ||
+          block.status === MessageBlockStatus.STREAMING ||
+          block.status === MessageBlockStatus.PENDING)
+    )
+
+  if (staleBlocks.length === 0) {
+    return
+  }
+
+  const now = new Date().toISOString()
+  const updatedBlocks = staleBlocks.map((block) => ({
+    ...block,
+    status: MessageBlockStatus.SUCCESS,
+    updatedAt: now
+  }))
+
+  for (const block of updatedBlocks) {
+    dispatch(
+      updateOneBlock({
+        id: block.id,
+        changes: {
+          status: MessageBlockStatus.SUCCESS,
+          updatedAt: now
+        }
+      })
+    )
+  }
+
+  const messageUpdates = {
+    status: AssistantMessageStatus.SUCCESS,
+    updatedAt: now
+  }
+
+  dispatch(
+    newMessagesActions.updateMessage({
+      topicId,
+      messageId: assistantMessageId,
+      updates: messageUpdates
+    })
+  )
+
+  await saveUpdatesToDB(assistantMessageId, topicId, messageUpdates, updatedBlocks)
+}
+
+const isWechatBoundAgentSession = async (
+  apiServer: ApiServerConfig,
+  agentSession: AgentSessionContext
+): Promise<boolean> => {
+  if (!apiServer.enabled || !apiServer.apiKey) {
+    return false
+  }
+
+  try {
+    const baseURL = buildAgentBaseURL(apiServer)
+    const client = new AgentApiClient({
+      baseURL,
+      headers: {
+        Authorization: `Bearer ${apiServer.apiKey}`
+      }
+    })
+    const channels = await client.listChannels({ agent_id: agentSession.agentId, type: 'wechat' })
+    return channels.data.some((channel) => {
+      const sessionId = channel?.sessionId ?? channel?.session_id
+      const isActive = channel?.isActive ?? channel?.is_active
+      return sessionId === agentSession.sessionId && isActive !== false
+    })
+  } catch (error) {
+    logger.warn('Failed to check bound WeChat channel for agent session', error as Error)
+    return false
+  }
+}
+
+const collectMainTextContentFromBlocks = (
+  message: Pick<Message, 'blocks'> | undefined,
+  blocks: MessageBlock[]
+): string => {
+  if (!message?.blocks?.length || blocks.length === 0) {
+    return ''
+  }
+
+  const blockMap = new Map(blocks.map((block) => [block.id, block]))
+
+  return message.blocks
+    .map((blockId) => blockMap.get(blockId))
+    .filter(
+      (block): block is Extract<MessageBlock, { type: MessageBlockType.MAIN_TEXT }> =>
+        !!block && block.type === MessageBlockType.MAIN_TEXT && typeof block.content === 'string'
+    )
+    .map((block) => block.content)
+    .join('\n\n')
+}
+
+const resolveAgentSessionUserContent = async (
+  topicId: string,
+  userMessageId: string,
+  getState: () => RootState
+): Promise<string> => {
+  const userMessageEntity = getState().messages.entities[userMessageId]
+  const liveContent = userMessageEntity ? getMainTextContent(userMessageEntity).trim() : ''
+
+  if (liveContent) {
+    return liveContent
+  }
+
+  try {
+    const { messages, blocks } = await dbFacade.fetchMessages(topicId, true)
+    const persistedUserMessage = messages.find((message) => message.id === userMessageId)
+    const persistedContent = collectMainTextContentFromBlocks(persistedUserMessage, blocks).trim()
+
+    if (persistedContent) {
+      logger.warn('Recovered agent session user content from persisted history', {
+        topicId,
+        userMessageId
+      })
+      return persistedContent
+    }
+  } catch (error) {
+    logger.warn('Failed to recover agent session user content from persisted history', {
+      topicId,
+      userMessageId,
+      error
+    })
+  }
+
+  return ''
+}
+
+type ChannelImageAttachment = {
+  data: string
+  media_type: string
+}
+
+const getBlocksFromStateOrDB = async (
+  topicId: string,
+  message: Pick<Message, 'id' | 'blocks'>,
+  getState: () => RootState
+): Promise<MessageBlock[]> => {
+  const liveBlocks = (message.blocks || [])
+    .map((blockId) => getState().messageBlocks.entities[blockId])
+    .filter(Boolean) as MessageBlock[]
+
+  if (liveBlocks.length > 0) {
+    return liveBlocks
+  }
+
+  try {
+    const { blocks } = await dbFacade.fetchMessages(topicId, true)
+    const blockIdSet = new Set(message.blocks || [])
+    return blocks.filter((block) => blockIdSet.has(block.id))
+  } catch (error) {
+    logger.warn('Failed to recover message blocks from persisted history', {
+      topicId,
+      messageId: message.id,
+      error
+    })
+    return []
+  }
+}
+
+const resolveAgentSessionChannelAttachments = async (
+  topicId: string,
+  userMessage: Message,
+  getState: () => RootState
+): Promise<{ imagePaths: string[] }> => {
+  const blocks = await getBlocksFromStateOrDB(topicId, userMessage, getState)
+  const imagePaths: string[] = []
+
+  for (const block of blocks) {
+    if (block.type !== MessageBlockType.IMAGE) {
+      continue
+    }
+
+    const metadata = block.metadata as
+      | {
+          channelImagePath?: string
+        }
+      | undefined
+
+    if (metadata?.channelImagePath) {
+      imagePaths.push(metadata.channelImagePath)
+    }
+  }
+
+  return { imagePaths }
+}
+
+const hasPausedOrCancelledAgentSessionBlocks = (state: RootState, assistantMessages: Message[]): boolean => {
+  for (const message of assistantMessages) {
+    for (const blockId of message.blocks || []) {
+      const block = state.messageBlocks.entities[blockId]
+      if (!block) continue
+
+      if (block.status === MessageBlockStatus.PAUSED) {
+        return true
+      }
+
+      if (
+        block.type === MessageBlockType.TOOL &&
+        block.metadata?.rawMcpToolResponse?.status === 'cancelled'
+      ) {
+        return true
+      }
+    }
+  }
+
+  return false
+}
+
+const wasAgentSessionRecentlyInterrupted = (userMessageId: string): boolean => {
+  const interruptedAt = Number(window.keyv.get(`agent-session-interrupted-${userMessageId}`) || 0)
+  if (!interruptedAt) {
+    return false
+  }
+
+  if (Date.now() - interruptedAt > AGENT_SESSION_INTERRUPTED_CACHE_TTL) {
+    window.keyv.remove(`agent-session-interrupted-${userMessageId}`)
+    return false
+  }
+
+  return true
+}
+
+const withAgentSessionRecoveryInstruction = (content: string): string => {
+  const trimmedContent = content.trim()
+  if (!trimmedContent) {
+    return trimmedContent
+  }
+
+  return `${trimmedContent}\n\n${AGENT_SESSION_RECOVERY_INSTRUCTION}`
+}
+
+const withChannelImagePathInstruction = (content: string, imagePaths: string[]): string => {
+  const uniquePaths = [...new Set(imagePaths.map((path) => path.trim()).filter(Boolean))]
+  if (uniquePaths.length === 0) {
+    return content
+  }
+
+  return [
+    content.trim(),
+    '',
+    '[Attached images saved to workspace]',
+    ...uniquePaths.map((path) => `- ${path}`),
+    '',
+    '请根据上面的本地图片路径读取并理解图片内容。'
+  ].join('\n')
+}
 
 const findExistingAgentSessionContext = (
   state: RootState,
@@ -141,6 +480,102 @@ const findExistingAgentSessionContext = (
     agentId: assistantId,
     sessionId,
     agentSessionId: existingAgentSessionId
+  }
+}
+
+const runAgentSessionResend = async (
+  dispatch: AppDispatch,
+  getState: () => RootState,
+  topicId: string,
+  userMessageToResend: Message,
+  assistant: Assistant
+) => {
+  const agentSession = findExistingAgentSessionContext(getState(), topicId, assistant.id)
+  if (!agentSession) {
+    throw new Error(`Agent session context not found for topic: ${topicId}`)
+  }
+
+  const state = getState()
+  const allMessagesForTopic = selectMessagesForTopic(state, topicId)
+  const assistantMessagesToReset = allMessagesForTopic.filter(
+    (m) => m.askId === userMessageToResend.id && m.role === 'assistant'
+  )
+  const recoveryMode =
+    wasAgentSessionRecentlyInterrupted(userMessageToResend.id) ||
+    hasPausedOrCancelledAgentSessionBlocks(state, assistantMessagesToReset)
+
+  const allBlockIdsToDelete: string[] = []
+  const resetMessages: Message[] = []
+
+  for (const originalMsg of assistantMessagesToReset) {
+    const blockIdsToDelete = [...(originalMsg.blocks || [])]
+    const resetMsg = resetAssistantMessage(originalMsg, {
+      status: AssistantMessageStatus.PENDING,
+      updatedAt: new Date().toISOString(),
+      model: originalMsg.model ?? assistant.model
+    })
+
+    if (agentSession.agentSessionId && !resetMsg.agentSessionId) {
+      resetMsg.agentSessionId = agentSession.agentSessionId
+    }
+
+    resetMessages.push(resetMsg)
+    allBlockIdsToDelete.push(...blockIdsToDelete)
+
+    dispatch(
+      newMessagesActions.updateMessage({
+        topicId,
+        messageId: resetMsg.id,
+        updates: resetMsg
+      })
+    )
+  }
+
+  if (assistantMessagesToReset.length === 0) {
+    const assistantMessage = createAssistantMessage(assistant.id, topicId, {
+      askId: userMessageToResend.id,
+      model: assistant.model,
+      traceId: userMessageToResend.traceId
+    })
+
+    if (agentSession.agentSessionId && !assistantMessage.agentSessionId) {
+      assistantMessage.agentSessionId = agentSession.agentSessionId
+    }
+
+    resetMessages.push(assistantMessage)
+    await saveMessageAndBlocksToDB(topicId, assistantMessage, [])
+    dispatch(newMessagesActions.addMessage({ topicId, message: assistantMessage }))
+  } else {
+    cleanupMultipleBlocks(dispatch, allBlockIdsToDelete)
+
+    try {
+      if (allBlockIdsToDelete.length > 0) {
+        await db.message_blocks.bulkDelete(allBlockIdsToDelete)
+      }
+      const finalMessagesToSave = selectMessagesForTopic(getState(), topicId)
+      await db.topics.update(topicId, { messages: finalMessagesToSave })
+    } catch (dbError) {
+      logger.error('[runAgentSessionResend] Error updating database:', dbError as Error)
+    }
+  }
+
+  const queue = getTopicQueue(topicId)
+  for (const resetMsg of resetMessages) {
+    const assistantConfigForThisRegen = {
+      ...assistant,
+      ...(resetMsg.model ? { model: resetMsg.model } : {})
+    }
+
+    void queue.add(async () => {
+      await fetchAndProcessAgentResponseImpl(dispatch, getState, {
+        topicId,
+        assistant: assistantConfigForThisRegen,
+        assistantMessage: resetMsg,
+        agentSession,
+        userMessageId: userMessageToResend.id,
+        recoveryMode
+      })
+    })
   }
 }
 
@@ -397,6 +832,11 @@ const createAgentMessageStream = async (
 
   const baseURL = buildAgentBaseURL(apiServer)
   const url = `${baseURL}/v1/agents/${agentSession.agentId}/sessions/${agentSession.sessionId}/messages`
+  const normalizedContent = typeof content === 'string' ? content.trim() : String(content ?? '').trim()
+
+  if (!normalizedContent) {
+    throw new Error('Unable to resend agent session message because the original user content is empty.')
+  }
 
   const response = await fetch(url, {
     method: 'POST',
@@ -407,7 +847,7 @@ const createAgentMessageStream = async (
       'Cache-Control': 'no-cache'
     },
     body: JSON.stringify({
-      content,
+      content: normalizedContent,
       ...(agentSession.effort ? { effort: agentSession.effort } : {}),
       ...(agentSession.thinking ? { thinking: agentSession.thinking } : {})
     }),
@@ -615,14 +1055,17 @@ interface AgentStreamParams {
   assistantMessage: Message
   agentSession: AgentSessionContext
   userMessageId: string
+  recoveryMode?: boolean
 }
 
 const fetchAndProcessAgentResponseImpl = async (
   dispatch: AppDispatch,
   getState: () => RootState,
-  { topicId, assistant, assistantMessage, agentSession, userMessageId }: AgentStreamParams
+  { topicId, assistant, assistantMessage, agentSession, userMessageId, recoveryMode }: AgentStreamParams
 ) => {
   let callbacks: StreamProcessorCallbacks = {}
+  let shouldShowWechatSync = false
+  const syncMessageIds = [userMessageId, assistantMessage.id]
   try {
     dispatch(newMessagesActions.setTopicLoading({ topicId, loading: true }))
 
@@ -652,17 +1095,65 @@ const fetchAndProcessAgentResponseImpl = async (
     // Emit initial chunk to mirror assistant behaviour and ensure pending UI state
     streamProcessorCallbacks({ type: ChunkType.LLM_RESPONSE_CREATED })
 
-    const state = getState()
-    const userMessageEntity = state.messages.entities[userMessageId]
-    const userContent = userMessageEntity ? getMainTextContent(userMessageEntity) : ''
+    const userMessage = getState().messages.entities[userMessageId]
+    const userContent = await resolveAgentSessionUserContent(topicId, userMessageId, getState)
+    const channelAttachments = userMessage
+      ? await resolveAgentSessionChannelAttachments(topicId, userMessage, getState)
+      : { imagePaths: [] }
+    const contentWithChannelAttachments = withChannelImagePathInstruction(userContent, channelAttachments.imagePaths)
+    const requestContent = recoveryMode
+      ? withAgentSessionRecoveryInstruction(contentWithChannelAttachments)
+      : contentWithChannelAttachments
 
     const abortController = new AbortController()
     addAbortController(userMessageId, () => abortController.abort())
 
+    const state = getState()
+    const hasExistingWechatSync = syncMessageIds.some(
+      (messageId) => state.messages.entities[messageId]?.providerMetadata?.agentSessionSync?.target === 'wechat'
+    )
+    shouldShowWechatSync =
+      hasExistingWechatSync || (await isWechatBoundAgentSession(state.settings.apiServer, agentSession))
+    let agentSessionSyncResolved = false
+
+    if (shouldShowWechatSync) {
+      await updateAgentSessionSyncStatus(dispatch, getState, topicId, syncMessageIds, 'pending')
+      const originalOnRawData = callbacks.onRawData
+      callbacks.onRawData = (content, metadata) => {
+        originalOnRawData?.(content, metadata)
+
+        if (
+          typeof content === 'object' &&
+          content !== null &&
+          (content as { type?: string }).type === 'agent_session_sync'
+        ) {
+          const syncEvent = content as {
+            target?: string
+            status?: 'synced' | 'failed' | 'skipped'
+            reason?: string
+          }
+
+          if (syncEvent.target !== 'wechat' || syncEvent.status === 'skipped') {
+            return
+          }
+
+          agentSessionSyncResolved = true
+          void updateAgentSessionSyncStatus(
+            dispatch,
+            getState,
+            topicId,
+            syncMessageIds,
+            syncEvent.status === 'synced' ? 'synced' : 'failed',
+            syncEvent.reason
+          )
+        }
+      }
+    }
+
     const stream = await createAgentMessageStream(
       state.settings.apiServer,
       agentSession,
-      userContent,
+      requestContent,
       abortController.signal
     )
 
@@ -758,18 +1249,32 @@ const fetchAndProcessAgentResponseImpl = async (
       fullStream: stream,
       text: Promise.resolve('')
     })
+    await finalizeStaleAssistantBlocksAfterStream(dispatch, getState, topicId, assistantMessage.id)
 
     if (latestAgentSessionId) {
       await persistAgentSessionId(latestAgentSessionId)
     }
 
     await renameAgentSessionIfNeeded(agentSession, topicId, getState)
+    if (shouldShowWechatSync && !agentSessionSyncResolved) {
+      await updateAgentSessionSyncStatus(dispatch, getState, topicId, syncMessageIds, 'failed', 'sync_result_missing')
+    }
   } catch (error: any) {
     logger.error('Error in fetchAndProcessAgentResponseImpl:', error)
     try {
       callbacks.onError?.(error)
     } catch (callbackError) {
       logger.error('Error in agent onError callback:', callbackError as Error)
+    }
+    if (shouldShowWechatSync) {
+      await updateAgentSessionSyncStatus(
+        dispatch,
+        getState,
+        topicId,
+        syncMessageIds,
+        'failed',
+        error instanceof Error ? error.message : String(error)
+      )
     }
   } finally {
     dispatch(newMessagesActions.setTopicLoading({ topicId, loading: false }))
@@ -939,6 +1444,7 @@ const fetchAndProcessAssistantResponseImpl = async (
       },
       streamProcessorCallbacks
     )
+    await finalizeStaleAssistantBlocksAfterStream(dispatch, getState, topicId, assistantMsgId)
   } catch (error: any) {
     logger.error('Error in fetchAndProcessAssistantResponseImpl:', error)
     endSpan({
@@ -995,6 +1501,14 @@ export const sendMessage =
         userMessage.agentSessionId = activeAgentSession.agentSessionId
       }
 
+      let shouldShowWechatSync = false
+      if (activeAgentSession) {
+        shouldShowWechatSync = await isWechatBoundAgentSession(stateBeforeSend.settings.apiServer, activeAgentSession)
+        if (shouldShowWechatSync) {
+          userMessage.providerMetadata = withAgentSessionSyncMetadata(userMessage, 'pending')
+        }
+      }
+
       await saveMessageAndBlocksToDB(topicId, userMessage, userMessageBlocks)
       dispatch(newMessagesActions.addMessage({ topicId, message: userMessage }))
       if (userMessageBlocks.length > 0) {
@@ -1008,7 +1522,14 @@ export const sendMessage =
         const assistantMessage = createAssistantMessage(assistant.id, topicId, {
           askId: userMessage.id,
           model: assistant.model,
-          traceId: userMessage.traceId
+          traceId: userMessage.traceId,
+          ...(shouldShowWechatSync
+            ? {
+                providerMetadata: {
+                  agentSessionSync: buildAgentSessionSyncMetadata('pending')
+                } as MessageProviderMetadata
+              }
+            : {})
         })
         if (activeAgentSession.agentSessionId && !assistantMessage.agentSessionId) {
           assistantMessage.agentSessionId = activeAgentSession.agentSessionId
@@ -1209,6 +1730,11 @@ export const resendMessageThunk =
   (topicId: Topic['id'], userMessageToResend: Message, assistant: Assistant) =>
   async (dispatch: AppDispatch, getState: () => RootState) => {
     try {
+      if (isAgentSessionTopicId(topicId)) {
+        await runAgentSessionResend(dispatch, getState, topicId, userMessageToResend, assistant)
+        return
+      }
+
       const state = getState()
       // Use selector to get all messages for the topic
       const allMessagesForTopic = selectMessagesForTopic(state, topicId)
@@ -1336,6 +1862,30 @@ export const regenerateAssistantResponseThunk =
   (topicId: Topic['id'], assistantMessageToRegenerate: Message, assistant: Assistant) =>
   async (dispatch: AppDispatch, getState: () => RootState) => {
     try {
+      if (isAgentSessionTopicId(topicId)) {
+        const state = getState()
+        const askId = assistantMessageToRegenerate.askId
+
+        if (!askId) {
+          logger.error(
+            `[regenerateAssistantResponseThunk] Assistant message ${assistantMessageToRegenerate.id} does not have an askId.`
+          )
+          return
+        }
+
+        const originalUserQuery = state.messages.entities[askId]
+        if (!originalUserQuery) {
+          logger.error(
+            `[regenerateAssistantResponseThunk] Original user query ${askId} not found for session regeneration.`
+          )
+          window.toast.error(t('error.missing_user_message'))
+          return
+        }
+
+        await runAgentSessionResend(dispatch, getState, topicId, originalUserQuery, assistant)
+        return
+      }
+
       const state = getState()
 
       // 1. Use selector to get all messages for the topic
@@ -1900,8 +2450,9 @@ export const loadTopicMessagesThunk =
 
     dispatch(newMessagesActions.setCurrentTopicId(topicId))
 
-    // Skip if already cached and not forcing reload
-    if (!forceReload && state.messages.messageIdsByTopic[topicId]) {
+    // Skip only after a real load has completed. Some UI paths create an
+    // empty placeholder topic first, which must not be treated as cached data.
+    if (!forceReload && state.messages.messageIdsByTopic[topicId] && state.messages.loadedByTopic[topicId]) {
       return
     }
 
@@ -1922,6 +2473,7 @@ export const loadTopicMessagesThunk =
         dispatch(upsertManyBlocks(blocks))
       }
       dispatch(newMessagesActions.messagesReceived({ topicId, messages }))
+      dispatch(newMessagesActions.setTopicFulfilled({ topicId, fulfilled: true }))
     } catch (error) {
       logger.error(`Failed to load messages for topic ${topicId}:`, error as Error)
       // Could dispatch an error action here if needed
@@ -2109,6 +2661,7 @@ export type ChannelStreamController = {
   complete: () => void
   error: (err: Error) => void
   assistantMessageId: string
+  markUserMessageReceived: () => void
 }
 
 /**
@@ -2120,8 +2673,9 @@ export const addChannelUserMessage = (
   topicId: string,
   agentId: string,
   text: string,
-  images?: Array<{ data: string; media_type: string }>
-) => {
+  images?: ChannelImageAttachment[],
+  imagePaths?: string[]
+): string => {
   const now = new Date().toISOString()
   const userMsgId = uuid()
   const blockId = uuid()
@@ -2138,14 +2692,15 @@ export const addChannelUserMessage = (
   ]
 
   if (images && images.length > 0) {
-    for (const img of images) {
+    for (const [index, img] of images.entries()) {
       allBlocks.push({
         id: uuid(),
         messageId: userMsgId,
         type: MessageBlockType.IMAGE,
         url: `data:${img.media_type};base64,${img.data}`,
         status: MessageBlockStatus.SUCCESS,
-        createdAt: now
+        createdAt: now,
+        ...(imagePaths?.[index] ? { metadata: { channelImagePath: imagePaths[index] } } : {})
       } as MessageBlock)
     }
   }
@@ -2168,6 +2723,8 @@ export const addChannelUserMessage = (
   dbService.appendMessage(topicId, userMessage, allBlocks).catch((err) => {
     logger.error('Failed to persist channel user message', err as Error)
   })
+
+  return userMsgId
 }
 
 /**
@@ -2180,12 +2737,14 @@ export const setupChannelStream = (
   getState: () => RootState,
   topicId: string,
   agentId: string,
-  modelId?: string
+  modelId?: string,
+  askId?: string
 ): ChannelStreamController => {
   const model: Model | undefined =
     (modelId ? getModel(modelId) : undefined) ??
     (modelId ? { id: modelId, provider: '', name: '', group: '' } : undefined)
   const assistantMessage = createAssistantMessage(agentId, topicId, {
+    ...(askId ? { askId } : {}),
     ...(model ? { modelId: model.id, model } : {})
   })
   dispatch(newMessagesActions.addMessage({ topicId, message: assistantMessage }))
@@ -2228,6 +2787,21 @@ export const setupChannelStream = (
   streamProcessorCallbacks({ type: ChunkType.LLM_RESPONSE_CREATED })
 
   const adapter = new AiSdkToChunkAdapter(streamProcessorCallbacks, [], false, false)
+  let streamSettled = false
+  let userMessageReceived = false
+  const stallTimer = window.setTimeout(() => {
+    if (streamSettled || !userMessageReceived) {
+      return
+    }
+
+    const error = new Error('微信图片消息处理超时，请稍后重试，或在桌面端重新发送这张图片。')
+    streamController?.enqueue({
+      type: 'error',
+      error
+    } as TextStreamPart<Record<string, any>>)
+    streamController?.close()
+  }, AGENT_SESSION_CHANNEL_STALL_TIMEOUT_MS)
+
   adapter
     .processStream({
       fullStream: stream,
@@ -2237,18 +2811,27 @@ export const setupChannelStream = (
       logger.error('Channel stream processing failed', err as Error)
     })
     .finally(() => {
+      streamSettled = true
+      window.clearTimeout(stallTimer)
       dispatch(newMessagesActions.setTopicLoading({ topicId, loading: false }))
     })
 
   return {
     assistantMessageId: assistantMessage.id,
+    markUserMessageReceived() {
+      userMessageReceived = true
+    },
     pushChunk(chunk: TextStreamPart<Record<string, any>>) {
       streamController?.enqueue(chunk)
     },
     complete() {
+      streamSettled = true
+      window.clearTimeout(stallTimer)
       streamController?.close()
     },
     error(err: Error) {
+      streamSettled = true
+      window.clearTimeout(stallTimer)
       streamController?.error(err)
     }
   }

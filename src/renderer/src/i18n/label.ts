@@ -199,9 +199,6 @@ const sidebarIconKeyMap = {
 } as const
 
 export const getSidebarIconLabel = (key: string): string => {
-  if (key === 'task_agent' || key === 'task-agent') {
-    return ''
-  }
   return getLabel(sidebarIconKeyMap, key)
 }
 

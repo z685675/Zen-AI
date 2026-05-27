@@ -140,7 +140,7 @@ const MCPToolsButton: FC<Props> = ({ quickPanel, setInputValue, resizeTextArea, 
         200
       )
     },
-    [assistant, setTimeoutTimer, updateAssistant]
+    [setTimeoutTimer, updateAssistant]
   )
 
   const handleMcpServerSelect = useCallback(
@@ -172,7 +172,7 @@ const MCPToolsButton: FC<Props> = ({ quickPanel, setInputValue, resizeTextArea, 
         enableWebSearch
       })
     },
-    [assistant.enableUrlContext, assistant.enableWebSearch, assistantMcpServers, mcpServers, model, t, updateAssistant]
+    [assistant, assistantMcpServers, mcpServers, model, t, updateAssistant]
   )
 
   const handleMcpServerSelectRef = useRef(handleMcpServerSelect)

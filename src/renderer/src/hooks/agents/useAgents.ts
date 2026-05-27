@@ -2,6 +2,7 @@ import { useAppDispatch } from '@renderer/store'
 import { setActiveAgentId, setActiveSessionIdAction } from '@renderer/store/runtime'
 import type { AddAgentForm, CreateAgentResponse, GetAgentResponse } from '@renderer/types'
 import { formatErrorMessageWithPrefix } from '@renderer/utils/error'
+import { getPreferredAgentId } from '@shared/config/agents'
 import { useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import useSWR from 'swr'
@@ -73,7 +74,8 @@ export const useAgents = () => {
         await client.deleteAgent(id)
         dispatch(setActiveSessionIdAction({ agentId: id, sessionId: null }))
         if (activeAgentId === id) {
-          const newId = data?.filter((a) => a.id !== id).find(() => true)?.id
+          const remainingAgents = data?.filter((a) => a.id !== id) ?? []
+          const newId = getPreferredAgentId(remainingAgents)
           if (newId) {
             dispatch(setActiveAgentId(newId))
           } else {

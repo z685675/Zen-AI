@@ -4,7 +4,7 @@ import Scrollbar from '@renderer/components/Scrollbar'
 import { useMessageEditing } from '@renderer/context/MessageEditingContext'
 import { useAssistant } from '@renderer/hooks/useAssistant'
 import { useChatContext } from '@renderer/hooks/useChatContext'
-import { useMessageOperations } from '@renderer/hooks/useMessageOperations'
+import { selectNewTopicLoading, useMessageOperations } from '@renderer/hooks/useMessageOperations'
 import { useModel } from '@renderer/hooks/useModel'
 import { useSettings } from '@renderer/hooks/useSettings'
 import { useTimer } from '@renderer/hooks/useTimer'
@@ -12,6 +12,7 @@ import { EVENT_NAMES, EventEmitter } from '@renderer/services/EventService'
 import { getMessageModelId } from '@renderer/services/MessagesService'
 import { getModelUniqId } from '@renderer/services/ModelService'
 import { estimateMessageUsage } from '@renderer/services/TokenService'
+import type { RootState } from '@renderer/store'
 import type { Assistant, Topic } from '@renderer/types'
 import type { Message, MessageBlock } from '@renderer/types/newMessage'
 import { classNames, cn } from '@renderer/utils'
@@ -21,6 +22,7 @@ import { Divider } from 'antd'
 import type { Dispatch, FC, SetStateAction } from 'react'
 import React, { memo, useCallback, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useSelector } from 'react-redux'
 import styled from 'styled-components'
 
 import MessageContent from './MessageContent'
@@ -60,7 +62,7 @@ const WrapperContainer = ({
 const MessageItem: FC<Props> = ({
   message,
   topic,
-  // assistant,
+  assistant: sessionAssistant,
   index,
   hideMenuBar = false,
   isGrouped,
@@ -68,7 +70,8 @@ const MessageItem: FC<Props> = ({
   isGroupContextMessage
 }) => {
   const { t } = useTranslation()
-  const { assistant, setModel } = useAssistant(message.assistantId)
+  const { assistant: fallbackAssistant, setModel } = useAssistant(message.assistantId)
+  const assistant = sessionAssistant ?? fallbackAssistant
   const { isMultiSelectMode } = useChatContext(topic)
   const model = useModel(getMessageModelId(message), message.model?.provider) || message.model
   const { messageFont, fontSize, messageStyle, showMessageOutline } = useSettings()
@@ -77,6 +80,7 @@ const MessageItem: FC<Props> = ({
   const { editingMessageId, startEditing, stopEditing } = useMessageEditing()
   const { setTimeoutTimer } = useTimer()
   const isEditing = editingMessageId === message.id
+  const topicLoading = useSelector((state: RootState) => selectNewTopicLoading(state, topic.id))
 
   useEffect(() => {
     if (isEditing && messageContainerRef.current) {
@@ -120,7 +124,7 @@ const MessageItem: FC<Props> = ({
 
   const isLastMessage = index === 0 || !!isGrouped
   const isAssistantMessage = message.role === 'assistant'
-  const isProcessing = isMessageProcessing(message)
+  const isProcessing = isMessageProcessing(message) && topicLoading
   const showMenubar = !hideMenuBar && !isEditing && !isProcessing
 
   const messageHighlightHandler = useCallback(
@@ -225,7 +229,7 @@ const MessageItem: FC<Props> = ({
                 overflowY: 'visible'
               }}>
               <MessageErrorBoundary>
-                <MessageContent message={message} />
+                <MessageContent message={message} isStreaming={isProcessing} />
               </MessageErrorBoundary>
             </MessageContentContainer>
             {showMenubar && (

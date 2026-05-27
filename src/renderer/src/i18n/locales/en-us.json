@@ -127,7 +127,7 @@
           "chatIdsHint": "Comma-separated. Leave empty to allow all users.",
           "chatIdsPlaceholder": "wxid_abc123, wxid_def456",
           "connected": "Logged in",
-          "description": "Receive and respond to messages via WeChat using the iLink Bot API.",
+          "description": "Use WeChat for remote text conversations. Send images and files from the desktop app for a more reliable experience.",
           "disconnected": "Not logged in",
           "loginHint": "First login requires scanning a QR code. A QR code will appear automatically when the channel connects.",
           "qrHint": "Open WeChat on your phone, scan the QR code to log in.",
@@ -282,8 +282,9 @@
       "title": "Edit Agent"
     },
     "empty": {
-      "description": "Create an agent to handle complex tasks with AI-powered tools",
-      "title": "No agents yet"
+      "action": "Configure Model Service",
+      "description": "Enable at least one Agent-compatible model in Model Services, then come back to use Lobster",
+      "title": "Configure Model Service First"
     },
     "get": {
       "error": {
@@ -382,10 +383,22 @@
       },
       "label_one": "Session",
       "label_other": "Sessions",
+      "archive": {
+        "badge": "Archived",
+        "empty": "No archived sessions yet",
+        "move": "Archive Session",
+        "restore": "Restore Session",
+        "title": "Archived"
+      },
       "reorder": {
         "error": {
           "failed": "Failed to reorder sessions"
         }
+      },
+      "search": {
+        "empty": "No matching sessions found",
+        "error": "Failed to search sessions",
+        "placeholder": "Search Lobster sessions..."
       },
       "update": {
         "error": {
@@ -420,6 +433,8 @@
       },
       "essential": "Essential Settings",
       "permissionMode": {
+        "currentModePrefix": "Current Mode: ",
+        "simpleTitle": "Mode Selection",
         "tab": "Permission Mode",
         "title": "Permission Mode"
       },
@@ -514,28 +529,25 @@
         },
         "permissionMode": {
           "acceptEdits": {
-            "description": "Can read and edit files freely. Asks before running commands.",
-            "title": "Auto-edit Mode"
+            "description": "Can directly act on tasks and update content, but still asks before key operations.",
+            "title": "Execute"
           },
           "bypassPermissions": {
-            "description": "Can do everything without asking. Use with caution.",
-            "title": "Full Auto Mode",
+            "description": "Tries to carry tasks through in one go, and usually skips step-by-step confirmations for edits and commands.",
+            "title": "Full Auto",
             "warning": "Use with caution — all tools will run without asking for approval."
           },
           "confirmChange": {
             "description": "Switching modes updates the automatically approved tools.",
             "title": "Change permission mode?"
           },
-          "default": {
-            "description": "Can read files freely. Asks before editing or running commands.",
-            "title": "Normal Mode"
-          },
           "helper": "Choose how the agent handles tool approvals.",
           "placeholder": "Select permission mode",
           "plan": {
-            "description": "Can only read files and make plans. Cannot edit files or run commands.",
-            "title": "Plan Mode"
+            "description": "Focuses on analysis, planning, and step lists. It will not edit files or run commands.",
+            "title": "Plan"
           },
+          "simpleTitle": "Mode Selection",
           "title": "Permission mode"
         },
         "preapproved": {
@@ -1125,9 +1137,20 @@
         },
         "title": "Resources"
       },
+      "more": {
+        "title": "More",
+        "attachment": "Upload images, documents, or other files into the current conversation",
+        "create_session": "Create a new conversation under the current assistant",
+        "quick_phrases": "Insert a commonly used phrase or preset content",
+        "resource_panel": "Browse files and skills available to this session",
+        "slash_commands": "View quick commands provided by this assistant",
+        "thinking": "Adjust the model thinking mode or reasoning depth",
+        "toggle_expand": "Expand or collapse the current input box"
+      },
       "send": "Send",
       "settings": "Settings",
       "slash_commands": {
+        "empty": "No slash commands available right now",
         "description": "Agent session slash commands",
         "title": "Slash Commands"
       },
@@ -1855,6 +1878,7 @@
     "attached_files": "Attached Files",
     "conversation_details": "Conversation Details",
     "conversation_history": "Conversation History",
+    "no_history": "No conversation history",
     "created": "Created",
     "last_updated": "Last Updated",
     "messages": "Messages",
@@ -1905,6 +1929,7 @@
     "title": "GPUStack"
   },
   "history": {
+    "conversation_history": "Conversation History",
     "continue_chat": "Continue Chatting",
     "error": {
       "topic_not_found": "Topic not found"
@@ -1927,6 +1952,7 @@
         "empty": "No topics found, press Enter to search all messages"
       }
     },
+    "no_history": "No conversation history yet",
     "title": "Topics Search"
   },
   "html_artifacts": {
@@ -3079,6 +3105,7 @@
     "title": "Intel OVMS"
   },
   "paintings": {
+    "title": "Image Generation",
     "aspect_ratio": "Aspect Ratio",
     "aspect_ratios": {
       "landscape": "Landscape",
@@ -3164,15 +3191,15 @@
     "guidance_scale_tip": "Classifier Free Guidance. How close you want the model to stick to your prompt when looking for a related image to show you",
     "help": {
       "background": {
-        "default": "Choose how the image background is rendered. Transparent background is only available on models that explicitly support it.",
-        "gpt_image_2": "gpt-image-2 currently supports only supported background modes from the official API, so transparent background is hidden here."
+        "default": "Background decides whether the image has a backdrop:\n1. Auto: choose this when you are not sure, and let the model decide from your prompt.\n2. Transparent: creates an image without a background, useful for avatars, stickers, product images, or PPT assets that you want to place on top of other designs.\n3. Opaque: creates a normal image with a full background.\nIf your prompt already asks for a transparent or white background, choose the matching option here for more stable results.",
+        "gpt_image_2": "Background decides whether the image has a backdrop:\n1. Auto: choose this when you are not sure, and let the model decide from your prompt.\n2. Transparent: creates an image without a background, useful for avatars, stickers, product images, or PPT assets that you want to place on top of other designs.\n3. Opaque: creates a normal image with a full background.\nThe app exposes the common choices here, and actual support depends on the selected model and backend response."
       },
       "image_size": {
         "default": "Available sizes depend on the selected image model.",
         "experimental": "These higher-resolution presets are still within official support, but they are usually slower and more expensive to generate.",
         "gpt_image_2": "gpt-image-2 supports higher official preset resolutions on this page and also supports auto mode. When auto is selected, the app will first use prompt cues like landscape, portrait, square, 2K, 3K, and 4K to smart-match a more suitable preset size."
       },
-      "moderation": "Moderation controls content safety filtering strength, not image quality. Auto uses the default review policy, while low is more permissive.",
+      "moderation": "Controls content safety filtering, not image quality. Low is the default here, with fewer restrictions for most creative use cases.",
       "quality": "Quality controls the speed, cost, and detail trade-off. Low is faster and cheaper, high gives more detail, and auto lets the model decide."
     },
     "image": {
@@ -3212,12 +3239,21 @@
     "learn_more": "Learn More",
     "magic_prompt_option": "Magic Prompt",
     "mode": {
+      "continue_with_index": "Continue from image {{index}}",
+      "create": "Create New Image",
       "edit": "Edit",
       "generate": "Draw",
       "merge": "Merge",
       "remix": "Remix",
+      "upload_edit": "Upload Image Edit",
       "upscale": "Upscale"
     },
+    "current_mode": "Current Mode",
+    "canvas_guide_primary": "Describe the image you want below, and I'll generate it for you.",
+    "canvas_guide_secondary": "You can also upload or paste one or more images to keep editing and creating from them.",
+    "canvas_upload_action": "Upload Image",
+    "composer_continue_hint": "Continuing from this image; the result will be generated separately without overwriting it.",
+    "composer_upload_hint": "Editing from the uploaded image; the result will be generated separately.",
     "model": "Model",
     "model_and_pricing": "Model & Pricing",
     "moderation": "Moderation",
@@ -3304,7 +3340,7 @@
       "realistic": "Realistic"
     },
     "text_desc_required": "Please enter image description first",
-    "title": "Images",
+    "title": "Image Generation",
     "top_up": "Top up ",
     "translating": "Translating...",
     "uploaded_input": "Uploaded input",
@@ -5892,7 +5928,7 @@
     "memories": "Memories",
     "notes": "Notes",
     "openclaw": "OpenClaw",
-    "paintings": "Paintings",
+    "paintings": "Image Generation",
     "settings": "Settings",
     "store": "Assistant Library",
     "translate": "Translate"

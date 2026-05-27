@@ -54,7 +54,7 @@ class WeChatAdapter extends ChannelAdapter {
     })
     this.bot = bot
 
-    // Abort guard — if disconnect() was called before login completes
+    // Abort guard: if disconnect() was called before login completes
     if (signal.aborted) return
 
     const credentials = await bot.login({ signal })

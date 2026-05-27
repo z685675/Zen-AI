@@ -1,3 +1,4 @@
+import { CloseOutlined, LeftOutlined, RightOutlined } from '@ant-design/icons'
 import ImageViewer from '@renderer/components/ImageViewer'
 import FileManager from '@renderer/services/FileManager'
 import type { Painting } from '@renderer/types'
@@ -17,6 +18,8 @@ interface ArtboardProps {
   retry?: (painting: Painting) => void
   imageCover?: React.ReactNode
   loadText?: React.ReactNode
+  previewUrls?: string[]
+  onDeletePreview?: (index: number) => void
 }
 
 const Artboard: FC<ArtboardProps> = ({
@@ -28,27 +31,77 @@ const Artboard: FC<ArtboardProps> = ({
   onCancel,
   retry,
   imageCover,
-  loadText
+  loadText,
+  previewUrls = [],
+  onDeletePreview
 }) => {
   const { t } = useTranslation()
 
-  const getCurrentImageUrl = () => {
-    const currentFile = painting.files[currentImageIndex]
-    return currentFile ? FileManager.getFileUrl(currentFile) : ''
-  }
+  const fileUrls = painting.files.map((file) => FileManager.getFileUrl(file))
+  const displayUrls = fileUrls.length > 0 ? fileUrls : previewUrls
+  const currentDisplayUrl = displayUrls[currentImageIndex] || ''
+  const isPreviewGrid = fileUrls.length === 0 && previewUrls.length > 1
+  const gridPageSize = 9
+  const currentPage = Math.floor(currentImageIndex / gridPageSize)
+  const totalPages = Math.max(1, Math.ceil(previewUrls.length / gridPageSize))
+  const previewPageUrls = previewUrls.slice(currentPage * gridPageSize, currentPage * gridPageSize + gridPageSize)
+  const gridColumnCount = previewPageUrls.length <= 1 ? 1 : previewPageUrls.length <= 4 ? 2 : 3
+  const showGridPager = previewUrls.length > gridPageSize
 
   return (
     <Container>
       <LoadingContainer spinning={isLoading}>
-        {painting.files.length > 0 ? (
-          <ImageContainer>
-            {painting.files.length > 1 && (
+        {isPreviewGrid ? (
+          <CanvasFrame>
+            {showGridPager && (
+              <GridNavigationButton onClick={onPrevImage} $side="left" icon={<LeftOutlined />} />
+            )}
+            <PreviewGrid $columns={gridColumnCount}>
+              {previewPageUrls.map((url, index) => {
+                const absoluteIndex = currentPage * gridPageSize + index
+                return (
+                  <PreviewTile key={`${url}-${absoluteIndex}`}>
+                    <ImageViewer
+                      src={url}
+                      preview={{ mask: false }}
+                      style={{
+                        width: '100%',
+                        height: '100%',
+                        objectFit: 'contain',
+                        cursor: 'pointer'
+                      }}
+                    />
+                    {onDeletePreview && (
+                      <DeletePreviewButton
+                        size="small"
+                        type="text"
+                        icon={<CloseOutlined />}
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          onDeletePreview(absoluteIndex)
+                        }}
+                      />
+                    )}
+                  </PreviewTile>
+                )
+              })}
+            </PreviewGrid>
+            {showGridPager && (
+              <GridNavigationButton onClick={onNextImage} $side="right" icon={<RightOutlined />} />
+            )}
+            <ImageCounter>
+              {currentPage + 1} / {totalPages}
+            </ImageCounter>
+          </CanvasFrame>
+        ) : displayUrls.length > 0 ? (
+          <CanvasFrame>
+            {displayUrls.length > 1 && (
               <NavigationButton onClick={onPrevImage} style={{ left: 10 }}>
-                ←
+                {'<'}
               </NavigationButton>
             )}
             <ImageViewer
-              src={getCurrentImageUrl()}
+              src={currentDisplayUrl}
               preview={{ mask: false }}
               style={{
                 maxWidth: 'var(--artboard-max)',
@@ -58,15 +111,15 @@ const Artboard: FC<ArtboardProps> = ({
                 cursor: 'pointer'
               }}
             />
-            {painting.files.length > 1 && (
+            {displayUrls.length > 1 && (
               <NavigationButton onClick={onNextImage} style={{ right: 10 }}>
-                →
+                {'>'}
               </NavigationButton>
             )}
             <ImageCounter>
-              {currentImageIndex + 1} / {painting.files.length}
+              {currentImageIndex + 1} / {displayUrls.length}
             </ImageCounter>
-          </ImageContainer>
+          </CanvasFrame>
         ) : (
           <ImagePlaceholder>
             {painting.urls.length > 0 && retry ? (
@@ -95,7 +148,7 @@ const Artboard: FC<ArtboardProps> = ({
         {isLoading && (
           <LoadingOverlay>
             <Spin size="large" />
-            {loadText ? loadText : ''}
+            {loadText || ''}
             <CancelButton onClick={onCancel}>{t('common.cancel')}</CancelButton>
           </LoadingOverlay>
         )}
@@ -110,19 +163,30 @@ const Container = styled.div`
   flex-direction: row;
   justify-content: center;
   align-items: center;
+  padding: 24px;
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--color-border) 34%, transparent) 1px, transparent 1px),
+    linear-gradient(0deg, color-mix(in srgb, var(--color-border) 34%, transparent) 1px, transparent 1px);
+  background-size: 24px 24px;
 
-  --artboard-max: calc(100vh - 256px);
+  --artboard-max: min(calc(100vh - 280px), calc(100vw - 520px));
 `
 
 const ImagePlaceholder = styled.div`
   display: flex;
   width: var(--artboard-max);
   height: var(--artboard-max);
-  background-color: var(--color-background-soft);
+  min-width: 320px;
+  min-height: 320px;
+  background-color: var(--color-background);
   align-items: center;
   justify-content: center;
   padding: 24px;
   box-sizing: border-box;
+  border: 1px solid var(--color-border);
+  box-shadow:
+    0 18px 44px rgba(15, 23, 42, 0.08),
+    0 1px 0 rgba(255, 255, 255, 0.6) inset;
 `
 
 const ImageList = styled.ul`
@@ -138,11 +202,19 @@ const ImageListItem = styled.li`
   margin-bottom: 10px;
 `
 
-const ImageContainer = styled.div`
+const CanvasFrame = styled.div`
   position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
+  min-width: 320px;
+  min-height: 320px;
+  padding: 18px;
+  background: var(--color-background);
+  border: 1px solid var(--color-border);
+  box-shadow:
+    0 18px 44px rgba(15, 23, 42, 0.08),
+    0 1px 0 rgba(255, 255, 255, 0.6) inset;
 
   .ant-spin {
     max-height: none;
@@ -157,14 +229,126 @@ const ImageContainer = styled.div`
   }
 `
 
+const PreviewGrid = styled.div<{ $columns: number }>`
+  display: grid;
+  grid-template-columns: repeat(${(props) => props.$columns}, minmax(0, 1fr));
+  gap: 10px;
+  width: min(var(--artboard-max), 680px);
+  height: min(var(--artboard-max), 680px);
+  padding: 4px;
+`
+
+const PreviewTile = styled.div`
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background:
+    linear-gradient(45deg, color-mix(in srgb, var(--color-border) 24%, transparent) 25%, transparent 25%),
+    linear-gradient(-45deg, color-mix(in srgb, var(--color-border) 24%, transparent) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, color-mix(in srgb, var(--color-border) 24%, transparent) 75%),
+    linear-gradient(-45deg, transparent 75%, color-mix(in srgb, var(--color-border) 24%, transparent) 75%),
+    var(--color-background-soft);
+  background-position:
+    0 0,
+    0 8px,
+    8px -8px,
+    -8px 0;
+  background-size: 16px 16px;
+  border: 1px solid var(--color-border-soft);
+  aspect-ratio: 1;
+
+  .ant-image {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .ant-image-img {
+    width: auto;
+    height: auto;
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+    display: block;
+  }
+`
+
+const DeletePreviewButton = styled(Button)`
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 2;
+  width: 22px;
+  height: 22px;
+  min-width: 22px;
+  padding: 0;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.55);
+  border-radius: 50%;
+
+  &:hover {
+    color: #fff !important;
+    background: rgba(0, 0, 0, 0.72) !important;
+  }
+`
+
 const NavigationButton = styled(Button)`
   position: absolute;
   top: 50%;
   transform: translateY(-50%);
   z-index: 2;
   opacity: 0.7;
+
   &:hover {
     opacity: 1;
+  }
+`
+
+const GridNavigationButton = styled(Button)<{ $side: 'left' | 'right' }>`
+  position: absolute;
+  top: 50%;
+  ${(props) => props.$side}: -30px;
+  transform: translateY(-50%);
+  z-index: 4;
+  width: 46px;
+  height: 64px;
+  min-width: 46px;
+  padding: 0;
+  color: color-mix(in srgb, var(--color-text) 86%, #1d4ed8);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(246, 249, 255, 0.9)) !important;
+  border: 1px solid color-mix(in srgb, var(--color-border) 70%, #3b82f6);
+  border-radius: 999px;
+  box-shadow:
+    0 14px 32px rgba(15, 23, 42, 0.18),
+    0 1px 0 rgba(255, 255, 255, 0.86) inset;
+  font-size: 20px;
+  backdrop-filter: blur(10px);
+  transition:
+    transform 0.18s ease,
+    box-shadow 0.18s ease,
+    color 0.18s ease,
+    border-color 0.18s ease;
+
+  .anticon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  &:hover,
+  &:focus-visible {
+    color: #2563eb !important;
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 1), rgba(239, 246, 255, 0.96)) !important;
+    border-color: rgba(37, 99, 235, 0.46) !important;
+    transform: translateY(-50%) scale(1.04);
+    box-shadow:
+      0 18px 38px rgba(37, 99, 235, 0.22),
+      0 0 0 4px rgba(37, 99, 235, 0.1);
   }
 `
 
