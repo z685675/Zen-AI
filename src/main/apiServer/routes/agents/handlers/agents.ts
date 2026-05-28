@@ -35,6 +35,18 @@ const modelValidationErrorBody = (error: AgentModelValidationError) => ({
   }
 })
 
+const officialPromptLockedBody = {
+  error: {
+    message: 'The official assistant default prompt cannot be modified.',
+    type: 'forbidden',
+    code: 'official_agent_prompt_locked'
+  }
+}
+
+function includesInstructionUpdate(payload: UpdateAgentRequest | ReplaceAgentRequest): boolean {
+  return Object.prototype.hasOwnProperty.call(payload, 'instructions')
+}
+
 async function syncAgentSessionsAfterAgentUpdate(
   agentId: string,
   updatePayload: UpdateAgentRequest | ReplaceAgentRequest,
@@ -385,6 +397,10 @@ export const updateAgent = async (req: Request, res: Response): Promise<Response
 
     const { validatedBody } = req as ValidationRequest
     const replacePayload = (validatedBody ?? {}) as ReplaceAgentRequest
+    if (isProtectedAgentId(agentId) && includesInstructionUpdate(replacePayload)) {
+      logger.warn('Attempted to modify official assistant prompt', { agentId })
+      return res.status(403).json(officialPromptLockedBody)
+    }
 
     const agent = await agentService.updateAgent(agentId, replacePayload, { replace: true })
 
@@ -534,6 +550,10 @@ export const patchAgent = async (req: Request, res: Response): Promise<Response>
 
     const { validatedBody } = req as ValidationRequest
     const updatePayload = (validatedBody ?? {}) as UpdateAgentRequest
+    if (isProtectedAgentId(agentId) && includesInstructionUpdate(updatePayload)) {
+      logger.warn('Attempted to modify official assistant prompt', { agentId })
+      return res.status(403).json(officialPromptLockedBody)
+    }
 
     const agent = await agentService.updateAgent(agentId, updatePayload)
 

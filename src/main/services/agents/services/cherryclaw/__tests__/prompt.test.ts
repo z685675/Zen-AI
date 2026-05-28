@@ -75,7 +75,7 @@ describe('PromptBuilder', () => {
 
     const result = await builder.buildSystemPrompt('/workspace')
 
-    expect(result).toContain('You are Zen AI Assistant')
+    expect(result).toContain('你是 Zen AI 官方智能助手')
     expect(result).toContain('## Zen AI Assistant Tools')
     expect(result).not.toContain('## Memories')
   })
@@ -88,7 +88,7 @@ describe('PromptBuilder', () => {
     const result = await builder.buildSystemPrompt('/workspace')
 
     expect(result).toContain('You are CustomBot')
-    expect(result).not.toContain('You are Zen AI Assistant')
+    expect(result).not.toContain('你是 Zen AI 官方智能助手')
   })
 
   it('includes soul.md in memories section', async () => {

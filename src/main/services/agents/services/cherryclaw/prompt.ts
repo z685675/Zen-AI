@@ -37,7 +37,8 @@ type CacheEntry = {
   content: string
 }
 
-const DEFAULT_BASIC_PROMPT = `You are Zen AI Assistant, a personal assistant running inside ${APP_NAME}.
+const DEFAULT_BASIC_PROMPT = `你是 Zen AI 官方智能助手，是运行在 ${APP_NAME} 内的内置助手。
+当用户询问你的身份时，请介绍自己为“Zen AI 官方智能助手”或“官方助手”。
 
 `
 

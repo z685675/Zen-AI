@@ -1,9 +1,9 @@
 import { loggerService } from '@logger'
-import { isPortable } from '@main/constant'
+import { isMac, isPortable } from '@main/constant'
 import { configManager } from '@main/services/ConfigManager'
 import { APP_NAME, APP_UPDATE_FEED_URL } from '@shared/config/constant'
 import { IpcChannel } from '@shared/IpcChannel'
-import { app, type BrowserWindow } from 'electron'
+import { app, autoUpdater as nativeAutoUpdater, type BrowserWindow } from 'electron'
 import type { ProgressInfo, UpdateDownloadedEvent, UpdateInfo } from 'electron-updater'
 import { autoUpdater } from 'electron-updater'
 import semver from 'semver'
@@ -116,12 +116,16 @@ export type AppUpdateCheckResult =
 
 const logger = loggerService.withContext('AppUpdateService')
 const STARTUP_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000
+const MAC_INSTALL_START_TIMEOUT_MS = 120000
+
+type MacUpdateReadyResult = { success: true; updateInfo: AppUpdateInfo } | { success: false; message: string }
 
 export class AppUpdateService {
   private readonly feedUrl = APP_UPDATE_FEED_URL.trim()
   private latestUpdateInfo: AppUpdateInfo | null = null
   private downloadedUpdateInfo: AppUpdateInfo | null = null
   private progressInfo: AppUpdateProgressInfo | null = null
+  private downloadedUpdateReady = false
   private checking = false
   private downloading = false
   private startupTimeout: NodeJS.Timeout | null = null
@@ -306,19 +310,23 @@ export class AppUpdateService {
     }
 
     if (this.downloadedUpdateInfo) {
-      this.setState({
-        status: 'downloaded',
-        source: 'manual',
-        autoUpdateEnabled: this.shouldAutoDownload(),
-        currentVersion: this.currentVersion,
-        updateInfo: this.downloadedUpdateInfo,
-        progress: null
-      })
-      return {
-        status: 'downloaded',
-        currentVersion: this.currentVersion,
-        source: 'manual',
-        updateInfo: this.downloadedUpdateInfo
+      if (isMac && !this.downloadedUpdateReady) {
+        logger.info('macOS downloaded update info exists but installer payload is not ready in this process')
+      } else {
+        this.setState({
+          status: 'downloaded',
+          source: 'manual',
+          autoUpdateEnabled: this.shouldAutoDownload(),
+          currentVersion: this.currentVersion,
+          updateInfo: this.downloadedUpdateInfo,
+          progress: null
+        })
+        return {
+          status: 'downloaded',
+          currentVersion: this.currentVersion,
+          source: 'manual',
+          updateInfo: this.downloadedUpdateInfo
+        }
       }
     }
 
@@ -358,6 +366,7 @@ export class AppUpdateService {
       })
       autoUpdater.autoDownload = true
       await autoUpdater.downloadUpdate()
+      this.downloadedUpdateReady = true
 
       return {
         status: 'downloading',
@@ -371,7 +380,7 @@ export class AppUpdateService {
     }
   }
 
-  quitAndInstall(): AppUpdateInstallResult {
+  async quitAndInstall(): Promise<AppUpdateInstallResult> {
     const updateInfo = this.downloadedUpdateInfo ?? this.restorePendingUpdateInfo()
 
     if (!updateInfo) {
@@ -385,28 +394,58 @@ export class AppUpdateService {
       }
     }
 
-    this.downloadedUpdateInfo = updateInfo
-    this.latestUpdateInfo = updateInfo
+    let installUpdateInfo = updateInfo
+
+    if (isMac && !this.downloadedUpdateReady) {
+      const readyResult = await this.ensureMacDownloadedUpdateReady(updateInfo)
+      if (!readyResult.success) {
+        return {
+          success: false,
+          status: 'error',
+          message: readyResult.message,
+          updateInfo
+        }
+      }
+      installUpdateInfo = readyResult.updateInfo
+    }
+
+    this.downloadedUpdateInfo = installUpdateInfo
+    this.latestUpdateInfo = installUpdateInfo
     this.progressInfo = null
     this.setState({
       status: 'downloaded',
       source: this.currentSource,
       autoUpdateEnabled: this.shouldAutoDownload(),
       currentVersion: this.currentVersion,
-      updateInfo,
+      updateInfo: installUpdateInfo,
       progress: null
     })
 
     try {
       app.isInstallingUpdate = true
       app.isQuitting = true
-      logger.info('Quitting and installing downloaded app update', { version: updateInfo.version })
+      logger.info('Quitting and installing downloaded app update', { version: installUpdateInfo.version })
+      const installStartPromise = isMac ? this.waitForMacInstallStart() : Promise.resolve(true)
       autoUpdater.quitAndInstall(false, true)
+      const installStarted = await installStartPromise
+      if (!installStarted) {
+        app.isInstallingUpdate = false
+        app.isQuitting = false
+        const message =
+          'macOS 更新安装器没有启动。请再次点击“立即安装”，或退出并重新打开软件后完成更新。'
+        logger.warn('macOS update installer did not start after quitAndInstall', { version: installUpdateInfo.version })
+        return {
+          success: false,
+          status: 'error',
+          message,
+          updateInfo: installUpdateInfo
+        }
+      }
       this.clearPendingUpdateInfo()
       return {
         success: true,
         status: 'installing',
-        updateInfo
+        updateInfo: installUpdateInfo
       }
     } catch (error) {
       app.isInstallingUpdate = false
@@ -417,7 +456,7 @@ export class AppUpdateService {
         success: false,
         status: 'error',
         message,
-        updateInfo
+        updateInfo: installUpdateInfo
       }
     }
   }
@@ -510,6 +549,7 @@ export class AppUpdateService {
       const updateInfo = this.normalizeUpdateInfo(event)
       this.latestUpdateInfo = updateInfo
       this.downloadedUpdateInfo = updateInfo
+      this.downloadedUpdateReady = true
       this.progressInfo = null
       this.persistPendingUpdateInfo(updateInfo)
       this.setState({
@@ -529,8 +569,106 @@ export class AppUpdateService {
     autoUpdater.on('error', (error) => {
       this.checking = false
       this.downloading = false
+      this.downloadedUpdateReady = false
       this.progressInfo = null
       this.handleUpdateError(this.currentSource, error instanceof Error ? error.message : String(error))
+    })
+  }
+
+  private async ensureMacDownloadedUpdateReady(updateInfo: AppUpdateInfo): Promise<MacUpdateReadyResult> {
+    logger.info('Preparing macOS update installer payload before quitAndInstall', { version: updateInfo.version })
+    this.downloading = true
+    this.progressInfo = null
+    this.setState({
+      status: 'downloading',
+      source: this.currentSource,
+      autoUpdateEnabled: this.shouldAutoDownload(),
+      currentVersion: this.currentVersion,
+      updateInfo,
+      progress: null
+    })
+
+    try {
+      autoUpdater.autoDownload = false
+      const result = await autoUpdater.checkForUpdates()
+      if (!result?.isUpdateAvailable) {
+        this.downloading = false
+        this.downloadedUpdateReady = false
+        this.downloadedUpdateInfo = null
+        this.clearPendingUpdateInfo()
+        return {
+          success: false,
+          message: '当前下载的 macOS 更新已失效或不再可用，请重新检查更新。'
+        }
+      }
+
+      const latestUpdateInfo = this.normalizeUpdateInfo(result.updateInfo)
+      this.latestUpdateInfo = latestUpdateInfo
+      this.downloadedUpdateInfo = latestUpdateInfo
+      this.persistPendingUpdateInfo(latestUpdateInfo)
+
+      autoUpdater.autoDownload = true
+      await autoUpdater.downloadUpdate()
+      this.downloading = false
+      this.downloadedUpdateReady = true
+      this.progressInfo = null
+      this.setState({
+        status: 'downloaded',
+        source: this.currentSource,
+        autoUpdateEnabled: this.shouldAutoDownload(),
+        currentVersion: this.currentVersion,
+        updateInfo: latestUpdateInfo,
+        progress: null
+      })
+      return { success: true, updateInfo: latestUpdateInfo }
+    } catch (error) {
+      this.downloading = false
+      this.downloadedUpdateReady = false
+      const message = error instanceof Error ? error.message : String(error)
+      logger.warn('Failed to prepare macOS update installer payload', { error: message })
+      return {
+        success: false,
+        message: `macOS 更新安装包准备失败：${message}`
+      }
+    }
+  }
+
+  private waitForMacInstallStart(): Promise<boolean> {
+    return new Promise((resolve) => {
+      let settled = false
+
+      const cleanup = () => {
+        clearTimeout(timer)
+        app.removeListener('before-quit', onBeforeQuit)
+        nativeAutoUpdater.removeListener('before-quit-for-update', onBeforeQuitForUpdate)
+        nativeAutoUpdater.removeListener('update-downloaded', onNativeUpdateDownloaded)
+        nativeAutoUpdater.removeListener('error', onError)
+      }
+
+      const finish = (started: boolean) => {
+        if (settled) return
+        settled = true
+        cleanup()
+        resolve(started)
+      }
+
+      const onBeforeQuit = () => finish(true)
+      const onBeforeQuitForUpdate = () => finish(true)
+      const onNativeUpdateDownloaded = () => {
+        logger.info('macOS native updater downloaded update; waiting for app quit')
+      }
+      const onError = (error: unknown) => {
+        logger.warn('macOS update installer emitted an error after quitAndInstall', {
+          error: error instanceof Error ? error.message : String(error)
+        })
+        finish(false)
+      }
+      const timer = setTimeout(() => finish(false), MAC_INSTALL_START_TIMEOUT_MS)
+
+      app.once('before-quit', onBeforeQuit)
+      nativeAutoUpdater.once('before-quit-for-update', onBeforeQuitForUpdate)
+      nativeAutoUpdater.once('update-downloaded', onNativeUpdateDownloaded)
+      nativeAutoUpdater.once('error', onError)
     })
   }
 

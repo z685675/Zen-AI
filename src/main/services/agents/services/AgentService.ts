@@ -238,6 +238,27 @@ export class AgentService extends BaseService {
     return compatibleAgents.map((agent) => agent.id)
   }
 
+  private shouldRefreshBuiltinInstructions(currentInstructions?: string, nextInstructions?: string): boolean {
+    if (!currentInstructions || !nextInstructions) {
+      return false
+    }
+
+    if (currentInstructions === nextInstructions) {
+      return false
+    }
+
+    const legacyBuiltinIdentityPatterns = [
+      /Xiao\s+Long\s+Xia\s+Official\s+Assistant/i,
+      /小龙虾/,
+      /小龙侠/,
+      /Lobster/i,
+      /CherryClaw/i,
+      /Cherry\s+Studio\s+assistant/i
+    ]
+
+    return legacyBuiltinIdentityPatterns.some((pattern) => pattern.test(currentInstructions))
+  }
+
   async markLegacyUserAgentsDeprecated(): Promise<number> {
     const database = await this.getDatabase()
     const agents = await this.listCompatibleAgents()
@@ -326,7 +347,11 @@ export class AgentService extends BaseService {
 
           if (!existingAgent?.name && agentConfig.name) updateData.name = agentConfig.name
           if (!existingAgent?.description && agentConfig.description) updateData.description = agentConfig.description
-          if (!existingAgent?.instructions && agentConfig.instructions) updateData.instructions = agentConfig.instructions
+          if (!existingAgent?.instructions && agentConfig.instructions) {
+            updateData.instructions = agentConfig.instructions
+          } else if (this.shouldRefreshBuiltinInstructions(existingAgent?.instructions, agentConfig.instructions)) {
+            updateData.instructions = agentConfig.instructions
+          }
           if (agentConfig.configuration) {
             updateData.configuration = this.serializeJsonFields({ configuration: mergedConfiguration }).configuration
           }

@@ -1,28 +1,35 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { EventEmitter } from 'node:events'
+import path from 'node:path'
 
-const mockAutoUpdater = {
+const mockAutoUpdaterEmitter = new EventEmitter()
+const mockAutoUpdater = Object.assign(mockAutoUpdaterEmitter, {
   autoDownload: true,
   autoInstallOnAppQuit: false,
   allowPrerelease: false,
   allowDowngrade: false,
   logger: undefined as unknown,
   setFeedURL: vi.fn(),
-  on: vi.fn(),
   quitAndInstall: vi.fn(),
   checkForUpdates: vi.fn(),
   downloadUpdate: vi.fn()
-}
+})
+vi.spyOn(mockAutoUpdaterEmitter, 'on')
+
+const mockNativeAutoUpdater = new EventEmitter()
 
 const configManagerMock = {
   getPendingUpdateInfo: vi.fn(),
   setPendingUpdateInfo: vi.fn()
 }
 
-const mockApp = {
+let mockIsMac = false
+
+const mockApp = Object.assign(new EventEmitter(), {
   isPackaged: true,
   isQuitting: false,
   isInstallingUpdate: false
-}
+})
 
 vi.mock('@logger', () => ({
   loggerService: {
@@ -36,6 +43,9 @@ vi.mock('@logger', () => ({
 }))
 
 vi.mock('@main/constant', () => ({
+  get isMac() {
+    return mockIsMac
+  },
   isPortable: false
 }))
 
@@ -59,7 +69,8 @@ vi.mock('@shared/IpcChannel', () => ({
 }))
 
 vi.mock('electron', () => ({
-  app: mockApp
+  app: mockApp,
+  autoUpdater: mockNativeAutoUpdater
 }))
 
 vi.mock('electron-updater', () => ({
@@ -69,9 +80,17 @@ vi.mock('electron-updater', () => ({
 describe('AppUpdateService', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockIsMac = false
     mockApp.isQuitting = false
     mockApp.isInstallingUpdate = false
     configManagerMock.getPendingUpdateInfo.mockReturnValue(null)
+    mockAutoUpdater.removeAllListeners()
+    mockNativeAutoUpdater.removeAllListeners()
+    mockAutoUpdater.autoDownload = true
+    mockAutoUpdater.autoInstallOnAppQuit = false
+    mockAutoUpdater.checkForUpdates.mockReset()
+    mockAutoUpdater.downloadUpdate.mockReset()
+    mockAutoUpdater.quitAndInstall.mockReset()
   })
 
   afterEach(() => {
@@ -89,7 +108,7 @@ describe('AppUpdateService', () => {
       () => true
     )
 
-    expect(service.quitAndInstall()).toEqual({
+    await expect(service.quitAndInstall()).resolves.toEqual({
       success: false,
       status: 'not-downloaded',
       message: 'Update package has not been downloaded yet.',
@@ -112,7 +131,7 @@ describe('AppUpdateService', () => {
 
     ;(service as any).downloadedUpdateInfo = { version: '1.1.0' }
 
-    expect(service.quitAndInstall()).toEqual({
+    await expect(service.quitAndInstall()).resolves.toEqual({
       success: true,
       status: 'installing',
       updateInfo: { version: '1.1.0' }
@@ -139,7 +158,7 @@ describe('AppUpdateService', () => {
       () => true
     )
 
-    expect(service.quitAndInstall()).toEqual({
+    await expect(service.quitAndInstall()).resolves.toEqual({
       success: true,
       status: 'installing',
       updateInfo: {
@@ -166,7 +185,7 @@ describe('AppUpdateService', () => {
       throw new Error('installer failed')
     })
 
-    expect(service.quitAndInstall()).toEqual({
+    await expect(service.quitAndInstall()).resolves.toEqual({
       success: false,
       status: 'error',
       message: 'installer failed',
@@ -174,6 +193,149 @@ describe('AppUpdateService', () => {
     })
     expect(mockApp.isInstallingUpdate).toBe(false)
     expect(mockApp.isQuitting).toBe(false)
+  })
+
+  it('keeps downloaded update pending when macOS installer does not start', async () => {
+    vi.useFakeTimers()
+    mockIsMac = true
+    mockAutoUpdater.checkForUpdates.mockResolvedValue({
+      isUpdateAvailable: true,
+      updateInfo: { version: '1.1.0' }
+    })
+    mockAutoUpdater.downloadUpdate.mockResolvedValue([])
+
+    const { AppUpdateService } = await import('../AppUpdateService')
+    const service = new AppUpdateService(
+      {
+        isDestroyed: () => false,
+        webContents: { send: vi.fn() }
+      } as any,
+      '1.0.0',
+      () => true
+    )
+
+    ;(service as any).downloadedUpdateInfo = { version: '1.1.0' }
+    const installResult = service.quitAndInstall()
+    await vi.advanceTimersByTimeAsync(120000)
+
+    await expect(installResult).resolves.toEqual({
+      success: false,
+      status: 'error',
+      message: 'macOS 更新安装器没有启动。请再次点击“立即安装”，或退出并重新打开软件后完成更新。',
+      updateInfo: { version: '1.1.0' }
+    })
+    expect(configManagerMock.setPendingUpdateInfo).not.toHaveBeenCalledWith(null)
+    expect(mockApp.isInstallingUpdate).toBe(false)
+    expect(mockApp.isQuitting).toBe(false)
+  })
+
+  it('treats native macOS before-quit-for-update as installer start', async () => {
+    vi.useFakeTimers()
+    mockIsMac = true
+    mockAutoUpdater.checkForUpdates.mockResolvedValue({
+      isUpdateAvailable: true,
+      updateInfo: { version: '1.1.0' }
+    })
+    mockAutoUpdater.downloadUpdate.mockResolvedValue([])
+    mockAutoUpdater.quitAndInstall.mockImplementation(() => {
+      setTimeout(() => mockNativeAutoUpdater.emit('before-quit-for-update'), 1)
+    })
+
+    const { AppUpdateService } = await import('../AppUpdateService')
+    const service = new AppUpdateService(
+      {
+        isDestroyed: () => false,
+        webContents: { send: vi.fn() }
+      } as any,
+      '1.0.0',
+      () => true
+    )
+
+    ;(service as any).downloadedUpdateInfo = { version: '1.1.0' }
+    const installResult = service.quitAndInstall()
+    await vi.advanceTimersByTimeAsync(1)
+
+    await expect(installResult).resolves.toEqual({
+      success: true,
+      status: 'installing',
+      updateInfo: { version: '1.1.0' }
+    })
+    expect(configManagerMock.setPendingUpdateInfo).toHaveBeenCalledWith(null)
+  })
+
+  it('does not re-prepare an already downloaded macOS update in the same process', async () => {
+    vi.useFakeTimers()
+    mockIsMac = true
+    mockAutoUpdater.quitAndInstall.mockImplementation(() => {
+      setTimeout(() => mockNativeAutoUpdater.emit('before-quit-for-update'), 1)
+    })
+
+    const { AppUpdateService } = await import('../AppUpdateService')
+    const service = new AppUpdateService(
+      {
+        isDestroyed: () => false,
+        webContents: { send: vi.fn() }
+      } as any,
+      '1.0.0',
+      () => true
+    )
+
+    ;(service as any).downloadedUpdateInfo = { version: '1.1.0' }
+    ;(service as any).downloadedUpdateReady = true
+
+    const checkResult = await service.checkForUpdates('manual')
+    expect(checkResult.status).toBe('downloaded')
+
+    const installResult = service.quitAndInstall()
+    await vi.advanceTimersByTimeAsync(1)
+
+    await expect(installResult).resolves.toEqual({
+      success: true,
+      status: 'installing',
+      updateInfo: { version: '1.1.0' }
+    })
+    expect(mockAutoUpdater.checkForUpdates).not.toHaveBeenCalled()
+    expect(mockAutoUpdater.downloadUpdate).not.toHaveBeenCalled()
+  })
+
+  it('re-prepares macOS installer payload before installing a restored pending update', async () => {
+    vi.useFakeTimers()
+    mockIsMac = true
+    configManagerMock.getPendingUpdateInfo.mockReturnValue({
+      version: '1.1.0',
+      releaseNotes: 'pending'
+    })
+    mockAutoUpdater.checkForUpdates.mockResolvedValue({
+      isUpdateAvailable: true,
+      updateInfo: { version: '1.1.0', releaseNotes: 'fresh' }
+    })
+    mockAutoUpdater.downloadUpdate.mockResolvedValue([])
+    mockAutoUpdater.quitAndInstall.mockImplementation(() => {
+      setTimeout(() => mockApp.emit('before-quit'), 1)
+    })
+
+    const { AppUpdateService } = await import('../AppUpdateService')
+    const service = new AppUpdateService(
+      {
+        isDestroyed: () => false,
+        webContents: { send: vi.fn() }
+      } as any,
+      '1.0.0',
+      () => true
+    )
+
+    const installResult = service.quitAndInstall()
+    await vi.advanceTimersByTimeAsync(1)
+
+    await expect(installResult).resolves.toEqual({
+      success: true,
+      status: 'installing',
+      updateInfo: { version: '1.1.0', releaseNotes: 'fresh' }
+    })
+    expect(mockAutoUpdater.checkForUpdates).toHaveBeenCalledOnce()
+    expect(mockAutoUpdater.downloadUpdate).toHaveBeenCalledOnce()
+    expect(mockAutoUpdater.quitAndInstall).toHaveBeenCalledWith(false, true)
+    expect(configManagerMock.setPendingUpdateInfo).toHaveBeenCalledWith(null)
   })
 
   it('restores downloaded update state from pending config on startup', async () => {
@@ -224,5 +386,14 @@ describe('AppUpdateService', () => {
 
     await vi.advanceTimersByTimeAsync(6 * 60 * 60 * 1000)
     expect(mockAutoUpdater.checkForUpdates).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps macOS zip target configured for auto update compatibility', async () => {
+    const fs = await vi.importActual<typeof import('node:fs')>('node:fs')
+    const configPath = path.join(process.cwd(), 'electron-builder.yml')
+    const config = fs.readFileSync(configPath, 'utf8')
+
+    expect(config).toMatch(/^mac:\n[\s\S]*?target:\n[\s\S]*?-\s*target:\s*dmg/m)
+    expect(config).toMatch(/^mac:\n[\s\S]*?target:\n[\s\S]*?-\s*target:\s*zip/m)
   })
 })

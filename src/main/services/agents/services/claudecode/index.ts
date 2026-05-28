@@ -112,7 +112,7 @@ const getLanguageInstruction = () => {
 }
 
 const FUSION_CAPABILITY_CONTRACT = `
-## Xiao Long Xia Core Capability Contract
+## Zen AI Official Assistant Core Capability Contract
 You are expected to reliably complete these six baseline product capabilities:
 
 1. Information acquisition
@@ -148,7 +148,7 @@ You are expected to reliably complete these six baseline product capabilities:
 - When the user asks for reminders, recurring checks, monitoring, or follow-up, use the available scheduling/automation path instead of only giving instructions.
 - For WeChat-connected sessions, remember it is a text remote-control channel. Keep responses suitable for text, and avoid relying on image/file upload from WeChat unless the desktop side confirms support.
 
-## Xiao Long Xia Product Tools
+## Zen AI Official Assistant Product Tools
 - Use mcp__claw__cron for reminders, recurring checks, scheduled reports, and explicit background follow-up tasks.
 - Use mcp__claw__notify when a result or alert should be sent through connected IM channels.
 - Use mcp__claw__skills to search, install, list, or remove skills from the skill marketplace.
@@ -356,8 +356,8 @@ const buildFusionIntentGuidance = (prompt: string): string | undefined => {
   if (!needsSearch && !needsFileOutput && !needsSchedule && !needsSkill && !needsMemory) return undefined
 
   const guidance: string[] = [
-    '<xiao-long-xia-internal-intent-guidance>',
-    'This is internal runtime guidance for Xiao Long Xia. Do not quote or mention this block to the user.'
+    '<zen-ai-official-assistant-internal-intent-guidance>',
+    'This is internal runtime guidance for Zen AI Official Assistant. Do not quote or mention this block to the user.'
   ]
 
   if (needsSearch) {
@@ -398,7 +398,7 @@ const buildFusionIntentGuidance = (prompt: string): string | undefined => {
     )
   }
 
-  guidance.push('</xiao-long-xia-internal-intent-guidance>')
+  guidance.push('</zen-ai-official-assistant-internal-intent-guidance>')
   return guidance.join('\n')
 }
 
