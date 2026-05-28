@@ -14,7 +14,7 @@ export const ALL_SIDEBAR_ICONS: SidebarIcon[] = [
   'code_tools'
 ]
 
-export const DEFAULT_DISABLED_SIDEBAR_ICONS: SidebarIcon[] = ['openclaw', 'store', 'minapp', 'code_tools']
+export const DEFAULT_DISABLED_SIDEBAR_ICONS: SidebarIcon[] = ['knowledge', 'openclaw', 'store', 'minapp', 'code_tools']
 
 export const DEFAULT_SIDEBAR_ICONS: SidebarIcon[] = ALL_SIDEBAR_ICONS.filter(
   (icon) => !DEFAULT_DISABLED_SIDEBAR_ICONS.includes(icon)

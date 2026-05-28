@@ -9,7 +9,6 @@ import { getProviderLogo, PROVIDER_URLS } from '@renderer/config/providers'
 import { LanguagesEnum } from '@renderer/config/translate'
 import { usePaintings } from '@renderer/hooks/usePaintings'
 import { usePaintingProviders } from '@renderer/hooks/useProvider'
-import { useRuntime } from '@renderer/hooks/useRuntime'
 import { useSettings } from '@renderer/hooks/useSettings'
 import {
   getPaintingsBackgroundOptionsLabel,
@@ -26,8 +25,6 @@ import {
 } from '@renderer/pages/paintings/config/NewApiConfig'
 import FileManager from '@renderer/services/FileManager'
 import { translateText } from '@renderer/services/TranslateService'
-import { useAppDispatch } from '@renderer/store'
-import { setGenerating } from '@renderer/store/runtime'
 import type { FileMetadata, PaintingAction } from '@renderer/types'
 import { getErrorMessage, uuid } from '@renderer/utils'
 import { Avatar, Button, Empty, InputNumber, Select, Upload } from 'antd'
@@ -49,11 +46,56 @@ const logger = loggerService.withContext('NewApiPage')
 
 type ComposerMode = 'create' | 'continue' | 'upload-edit'
 
+interface NewApiPaintingTask {
+  controller: AbortController
+  inputPreviewUrls: string[]
+}
+
+const activeNewApiPaintingTasks = new Map<string, NewApiPaintingTask>()
+const newApiPaintingTaskListeners = new Set<() => void>()
+
+const notifyNewApiPaintingTaskListeners = () => {
+  newApiPaintingTaskListeners.forEach((listener) => listener())
+}
+
+const getActiveNewApiPaintingIds = () => new Set(activeNewApiPaintingTasks.keys())
+
+const getNewApiPaintingTaskPreviewUrls = (paintingId: string) =>
+  activeNewApiPaintingTasks.get(paintingId)?.inputPreviewUrls ?? []
+
+const registerNewApiPaintingTask = (
+  paintingId: string,
+  controller: AbortController,
+  inputPreviewUrls: string[] = []
+) => {
+  activeNewApiPaintingTasks.set(paintingId, { controller, inputPreviewUrls })
+  notifyNewApiPaintingTaskListeners()
+}
+
+const unregisterNewApiPaintingTask = (paintingId: string) => {
+  const task = activeNewApiPaintingTasks.get(paintingId)
+  task?.inputPreviewUrls.forEach((url) => URL.revokeObjectURL(url))
+  activeNewApiPaintingTasks.delete(paintingId)
+  notifyNewApiPaintingTaskListeners()
+}
+
+const cancelNewApiPaintingTask = (paintingId: string) => {
+  const task = activeNewApiPaintingTasks.get(paintingId)
+  task?.controller.abort()
+  unregisterNewApiPaintingTask(paintingId)
+}
+
+const subscribeNewApiPaintingTasks = (listener: () => void) => {
+  newApiPaintingTaskListeners.add(listener)
+  return () => {
+    newApiPaintingTaskListeners.delete(listener)
+  }
+}
+
 const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
   const { openai_image_generate, addPainting, removePainting, updatePainting } = usePaintings()
   const [currentImageIndex, setCurrentImageIndex] = useState(0)
-  const [isLoading, setIsLoading] = useState(false)
-  const [abortController, setAbortController] = useState<AbortController | null>(null)
+  const [loadingPaintingIds, setLoadingPaintingIds] = useState<Set<string>>(getActiveNewApiPaintingIds)
   const [spaceClickCount, setSpaceClickCount] = useState(0)
   const [isTranslating, setIsTranslating] = useState(false)
   const [selectedPaintingId, setSelectedPaintingId] = useState<string | null>(null)
@@ -65,8 +107,6 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
   const providers = usePaintingProviders()
   const location = useLocation()
   const routeName = location.pathname.split('/').pop() || 'new-api'
-  const dispatch = useAppDispatch()
-  const { generating } = useRuntime()
   const navigate = useNavigate()
   const { autoTranslateWithSpace } = useSettings()
   const textareaRef = useRef<any>(null)
@@ -87,6 +127,8 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
   )
 
   const artboardPainting = selectedPainting ?? { ...draft, files: [], urls: [] }
+  const isArtboardLoading = loadingPaintingIds.has(artboardPainting.id)
+  const taskPreviewUrls = isArtboardLoading ? getNewApiPaintingTaskPreviewUrls(artboardPainting.id) : []
   const composerHint = useMemo(() => {
     if (composerMode === 'continue' && selectedPainting) {
       return t('paintings.composer_continue_hint')
@@ -241,6 +283,15 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
   }, [backgroundOptions, draft.background, updateDraft])
 
   useEffect(() => {
+    const unsubscribe = subscribeNewApiPaintingTasks(() => {
+      setLoadingPaintingIds(getActiveNewApiPaintingIds())
+    })
+
+    setLoadingPaintingIds(getActiveNewApiPaintingIds())
+    return unsubscribe
+  }, [])
+
+  useEffect(() => {
     const timer = spaceClickTimer.current
     return () => {
       if (timer) {
@@ -280,18 +331,15 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
     return false
   }
 
-  const handlePastedFiles = useCallback(
-    (files: File[]) => {
-      if (files.length === 0) {
-        return
-      }
-      setUploadedEditFiles((prev) => [...prev, ...files])
-      setComposerMode('upload-edit')
-      setSelectedPaintingId(null)
-      setCurrentImageIndex(0)
-    },
-    []
-  )
+  const handlePastedFiles = useCallback((files: File[]) => {
+    if (files.length === 0) {
+      return
+    }
+    setUploadedEditFiles((prev) => [...prev, ...files])
+    setComposerMode('upload-edit')
+    setSelectedPaintingId(null)
+    setCurrentImageIndex(0)
+  }, [])
 
   const handleDeleteUploadedImage = useCallback((index: number) => {
     setUploadedEditFiles((prev) => {
@@ -332,7 +380,6 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
   }
 
   const onSelectPainting = (painting: PaintingAction) => {
-    if (generating) return
     setSelectedPaintingId(painting.id)
     setComposerMode('continue')
     setUploadedEditFiles([])
@@ -387,6 +434,12 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
     }
   }
 
+  const throwIfAborted = (signal: AbortSignal) => {
+    if (signal.aborted) {
+      throw new DOMException('Image generation was cancelled', 'AbortError')
+    }
+  }
+
   const createResultPainting = useCallback(
     (prompt: string) => ({
       ...createEmptyDraft(),
@@ -428,12 +481,11 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
       return
     }
 
-    const controller = new AbortController()
-    setAbortController(controller)
-    setIsLoading(true)
-    dispatch(setGenerating(true))
-
     const resultPainting = createResultPainting(prompt)
+    const controller = new AbortController()
+    const inputPreviewUrls =
+      composerMode === 'upload-edit' ? uploadedEditFiles.map((file) => URL.createObjectURL(file)) : []
+    registerNewApiPaintingTask(resultPainting.id, controller, inputPreviewUrls)
     addPainting('openai_image_generate', resultPainting)
     setSelectedPaintingId(resultPainting.id)
     setComposerMode('continue')
@@ -451,6 +503,8 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
     }
 
     try {
+      throwIfAborted(controller.signal)
+
       const continueImages =
         composerMode === 'continue' && selectedPainting?.files?.length
           ? await Promise.all(
@@ -464,6 +518,8 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
               })
             )
           : []
+
+      throwIfAborted(controller.signal)
 
       const inputImages = composerMode === 'upload-edit' ? uploadedEditFiles : continueImages
       const shouldEdit = inputImages.length > 0
@@ -505,8 +561,11 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
       const response = await fetch(shouldEdit ? editUrl : generationUrl, {
         method: 'POST',
         headers,
-        body
+        body,
+        signal: controller.signal
       })
+
+      throwIfAborted(controller.signal)
 
       if (!response.ok) {
         const errorData = await response.json()
@@ -514,6 +573,8 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
       }
 
       const data = await response.json()
+      throwIfAborted(controller.signal)
+
       const urls = data.data.filter((item) => item.url).map((item) => item.url)
       const base64s = data.data.filter((item) => item.b64_json).map((item) => item.b64_json)
 
@@ -521,13 +582,16 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
 
       if (urls.length > 0) {
         validFiles = await downloadImages(urls)
+        throwIfAborted(controller.signal)
       }
 
       if (base64s.length > 0) {
         validFiles = await Promise.all(base64s.map((base64) => window.api.file.saveBase64Image(base64)))
+        throwIfAborted(controller.signal)
       }
 
       await FileManager.addFiles(validFiles)
+      throwIfAborted(controller.signal)
 
       const completedPainting = {
         ...resultPainting,
@@ -535,27 +599,24 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
         urls: urls.length > 0 ? urls : []
       }
 
-      void removePainting('openai_image_generate', resultPainting)
-      addPainting('openai_image_generate', completedPainting)
-      setSelectedPaintingId(completedPainting.id)
-      syncDraftFromPainting(completedPainting)
+      updatePainting('openai_image_generate', completedPainting)
       if (composerMode === 'upload-edit') {
         setComposerMode('continue')
-        setUploadedEditFiles([])
+        setSelectedPaintingId((currentId) => (currentId === resultPainting.id ? completedPainting.id : currentId))
       }
     } catch (error: unknown) {
       void removePainting('openai_image_generate', resultPainting)
-      setSelectedPaintingId(selectedPainting?.id ?? null)
+      setSelectedPaintingId((currentId) =>
+        currentId === resultPainting.id ? (selectedPainting?.id ?? null) : currentId
+      )
       handleError(error)
     } finally {
-      setIsLoading(false)
-      dispatch(setGenerating(false))
-      setAbortController(null)
+      unregisterNewApiPaintingTask(resultPainting.id)
     }
   }
 
   const handleRetry = async (painting: PaintingAction) => {
-    setIsLoading(true)
+    registerNewApiPaintingTask(painting.id, new AbortController())
     try {
       const validFiles = await downloadImages(painting.urls)
       await FileManager.addFiles(validFiles)
@@ -569,7 +630,7 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
     } catch (error) {
       handleError(error)
     } finally {
-      setIsLoading(false)
+      unregisterNewApiPaintingTask(painting.id)
     }
   }
 
@@ -594,20 +655,22 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
   }
 
   const onCancel = () => {
-    abortController?.abort()
+    cancelNewApiPaintingTask(artboardPainting.id)
   }
 
   const nextImage = () => {
-    const totalImages = artboardPainting.files.length > 0 ? artboardPainting.files.length : uploadedEditFiles.length
+    const activePreviewUrls = taskPreviewUrls.length > 0 ? taskPreviewUrls : uploadedPreviewUrls
+    const totalImages = artboardPainting.files.length > 0 ? artboardPainting.files.length : activePreviewUrls.length
     if (totalImages === 0) return
-    const step = artboardPainting.files.length === 0 && uploadedEditFiles.length > 1 ? 9 : 1
+    const step = artboardPainting.files.length === 0 && activePreviewUrls.length > 1 ? 9 : 1
     setCurrentImageIndex((prev) => (prev + step) % totalImages)
   }
 
   const prevImage = () => {
-    const totalImages = artboardPainting.files.length > 0 ? artboardPainting.files.length : uploadedEditFiles.length
+    const activePreviewUrls = taskPreviewUrls.length > 0 ? taskPreviewUrls : uploadedPreviewUrls
+    const totalImages = artboardPainting.files.length > 0 ? artboardPainting.files.length : activePreviewUrls.length
     if (totalImages === 0) return
-    const step = artboardPainting.files.length === 0 && uploadedEditFiles.length > 1 ? 9 : 1
+    const step = artboardPainting.files.length === 0 && activePreviewUrls.length > 1 ? 9 : 1
     setCurrentImageIndex((prev) => (prev - step + totalImages) % totalImages)
   }
 
@@ -708,7 +771,12 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
               target="_blank"
               href={PROVIDER_URLS[newApiProvider.id]?.websites?.docs || 'https://docs.newapi.pro/'}>
               {t('paintings.learn_more')}
-              <ProviderLogo shape="square" src={getProviderLogo(newApiProvider.id)} size={16} style={{ marginLeft: 5 }} />
+              <ProviderLogo
+                shape="square"
+                src={getProviderLogo(newApiProvider.id)}
+                size={16}
+                style={{ marginLeft: 5 }}
+              />
             </SettingHelpLink>
           </ProviderTitleContainer>
 
@@ -751,7 +819,10 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
                       )}
                     />
                   </SettingTitleRow>
-                  <Select value={draft.size} onChange={(value) => updateDraft({ size: value })} style={{ width: '100%', marginBottom: 15 }}>
+                  <Select
+                    value={draft.size}
+                    onChange={(value) => updateDraft({ size: value })}
+                    style={{ width: '100%', marginBottom: 15 }}>
                     {imageSizeOptions.map((size) => (
                       <Select.Option value={size.value} key={size.value}>
                         {getPaintingsImageSizeOptionsLabel(size.value, size.label, size.isExperimental) ?? size.value}
@@ -768,7 +839,10 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
                     <SettingTitle>{t('paintings.quality')}</SettingTitle>
                     <InfoTooltip title={t('paintings.help.quality')} />
                   </SettingTitleRow>
-                  <Select value={draft.quality} onChange={(value) => updateDraft({ quality: value })} style={{ width: '100%', marginBottom: 15 }}>
+                  <Select
+                    value={draft.quality}
+                    onChange={(value) => updateDraft({ quality: value })}
+                    style={{ width: '100%', marginBottom: 15 }}>
                     {qualityOptions.map((quality) => (
                       <Select.Option value={quality.value} key={quality.value}>
                         {getPaintingsQualityOptionsLabel(quality.value) ?? quality.value}
@@ -844,14 +918,14 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
         <MainContainer>
           <Artboard
             painting={artboardPainting}
-            isLoading={isLoading}
+            isLoading={isArtboardLoading}
             currentImageIndex={currentImageIndex}
             onPrevImage={prevImage}
             onNextImage={nextImage}
             onCancel={onCancel}
             retry={handleRetry}
-            previewUrls={uploadedPreviewUrls}
-            onDeletePreview={handleDeleteUploadedImage}
+            previewUrls={taskPreviewUrls.length > 0 ? taskPreviewUrls : uploadedPreviewUrls}
+            onDeletePreview={taskPreviewUrls.length > 0 ? undefined : handleDeleteUploadedImage}
             imageCover={
               <CanvasGuide>
                 <GuideText>{t('paintings.canvas_guide_primary')}</GuideText>
@@ -872,7 +946,7 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
             <Textarea
               ref={textareaRef}
               variant="borderless"
-              disabled={isLoading}
+              disabled={isArtboardLoading}
               value={draft.prompt}
               spellCheck={false}
               onChange={(event) => updateDraft({ prompt: event.target.value })}
@@ -891,11 +965,11 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
                 <TranslateButton
                   text={textareaRef.current?.resizableTextArea?.textArea?.value}
                   onTranslated={(translatedText) => updateDraft({ prompt: translatedText })}
-                  disabled={isLoading || isTranslating}
+                  disabled={isArtboardLoading || isTranslating}
                   isLoading={isTranslating}
                   style={{ marginRight: 6, borderRadius: '50%' }}
                 />
-                <SendMessageButton sendMessage={onGenerate} disabled={isLoading} />
+                <SendMessageButton sendMessage={onGenerate} disabled={isArtboardLoading} />
               </ToolbarMenu>
             </Toolbar>
           </InputContainer>
@@ -908,6 +982,7 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
           onSelectPainting={onSelectPainting}
           onDeletePainting={onDeletePainting}
           onNewPainting={handleCreateNew}
+          loadingPaintingIds={loadingPaintingIds}
         />
       </ContentContainer>
     </Container>

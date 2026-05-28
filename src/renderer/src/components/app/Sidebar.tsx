@@ -77,7 +77,7 @@ const Sidebar: FC = () => {
   const showPinnedApps = pinned.length > 0 && sidebarIcons.visible.includes('minapp')
 
   useEffect(() => {
-    const sidebarLayoutVersionKey = 'sidebar.layout.image-generation-primary.v1'
+    const sidebarLayoutVersionKey = 'sidebar.layout.hide-knowledge.v1'
     if (localStorage.getItem(sidebarLayoutVersionKey)) {
       return
     }

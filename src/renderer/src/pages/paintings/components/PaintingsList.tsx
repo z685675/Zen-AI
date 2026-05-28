@@ -18,6 +18,7 @@ interface PaintingsListProps {
   onDeletePainting: (painting: Painting) => void
   onNewPainting: () => void
   namespace: keyof PaintingsState
+  loadingPaintingIds?: Set<string>
 }
 
 const PaintingsList: FC<PaintingsListProps> = ({
@@ -26,7 +27,8 @@ const PaintingsList: FC<PaintingsListProps> = ({
   onSelectPainting,
   onDeletePainting,
   onNewPainting,
-  namespace
+  namespace,
+  loadingPaintingIds
 }) => {
   const { t } = useTranslation()
   const [dragging, setDragging] = useState(false)
@@ -50,6 +52,7 @@ const PaintingsList: FC<PaintingsListProps> = ({
               className={classNames(selectedPainting?.id === item.id && 'selected')}
               onClick={() => onSelectPainting(item)}>
               {item.files[0] && <ThumbnailImage src={FileManager.getFileUrl(item.files[0])} alt="" />}
+              {loadingPaintingIds?.has(item.id) && <GeneratingDot />}
             </Canvas>
             <CanvasIndex>{paintings.length - paintings.findIndex((painting) => painting.id === item.id)}</CanvasIndex>
             <DeleteButton>
@@ -116,6 +119,19 @@ const ThumbnailImage = styled.img`
   height: 100%;
   object-fit: cover;
   display: block;
+`
+
+const GeneratingDot = styled.div`
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--color-primary) 18%, transparent),
+    0 0 12px color-mix(in srgb, var(--color-primary) 55%, transparent);
 `
 
 const DeleteButton = styled.div.attrs({ className: 'delete-button' })`

@@ -4027,6 +4027,55 @@
       "model_params": "模型参数",
       "title": "默认助手"
     },
+    "assistantEnvironment": {
+      "binariesDir": "应用工具目录",
+      "checkFailed": "环境检测失败",
+      "coreDescription": "这些工具会影响智能助手调用扩展能力、技能和本地任务的稳定性。",
+      "coreTitle": "核心能力准备",
+      "dependencies": {
+        "bun": {
+          "description": "用于运行部分技能、工具服务和前端类自动化任务。",
+          "name": "Bun 运行时"
+        },
+        "git": {
+          "description": "可选增强项，用于 Git 来源的 Skill、仓库下载和代码类任务。",
+          "name": "Git"
+        },
+        "pyodide": {
+          "description": "用于浏览器内 Python 沙盒。当前版本首次使用需要联网加载，不要求用户安装本机 Python。",
+          "name": "Python 沙盒联网"
+        },
+        "uv": {
+          "description": "用于准备 Python 工具环境和部分本地技能依赖。",
+          "name": "UV"
+        },
+        "uvx": {
+          "description": "随 UV 一起提供，用于临时运行 Python 工具包和 MCP 服务。",
+          "name": "UVX"
+        }
+      },
+      "description": "检查智能助手完整能力所需的本地工具与联网条件。",
+      "install": "安装",
+      "installFailed": "安装失败",
+      "installSuccess": "安装完成",
+      "intro": "基础对话和普通本地文件操作可以直接使用。下面的检测主要用于扩展能力：技能市场、定时任务、Python 沙盒、Git 来源工具等。",
+      "noPath": "暂未检测到可用路径",
+      "optionalDescription": "这些不是基础对话的硬性要求，但会影响部分高级任务体验。",
+      "optionalTitle": "可选增强",
+      "prepare": "一键准备 Bun 和 UV",
+      "prepareSuccess": "环境准备完成",
+      "refresh": "重新检测",
+      "sources": {
+        "app": "应用内置目录",
+        "network": "网络可用",
+        "system": "系统已安装"
+      },
+      "status": {
+        "error": "检测失败",
+        "missing": "未就绪"
+      },
+      "title": "智能助手环境"
+    },
     "channels": {
       "description": "将 Agent 连接到 Telegram、飞书、Discord 等消息平台。",
       "title": "频道"

@@ -35,6 +35,7 @@ export enum IpcChannel {
   App_ResetData = 'app:reset-data',
   App_IsBinaryExist = 'app:is-binary-exist',
   App_GetBinaryPath = 'app:get-binary-path',
+  App_CheckAssistantEnvironment = 'app:check-assistant-environment',
   App_InstallUvBinary = 'app:install-uv-binary',
   App_InstallBunBinary = 'app:install-bun-binary',
   App_InstallOvmsBinary = 'app:install-ovms-binary',

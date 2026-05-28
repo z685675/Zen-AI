@@ -53,9 +53,7 @@ const Artboard: FC<ArtboardProps> = ({
       <LoadingContainer spinning={isLoading}>
         {isPreviewGrid ? (
           <CanvasFrame>
-            {showGridPager && (
-              <GridNavigationButton onClick={onPrevImage} $side="left" icon={<LeftOutlined />} />
-            )}
+            {showGridPager && <GridNavigationButton onClick={onPrevImage} $side="left" icon={<LeftOutlined />} />}
             <PreviewGrid $columns={gridColumnCount}>
               {previewPageUrls.map((url, index) => {
                 const absoluteIndex = currentPage * gridPageSize + index
@@ -86,9 +84,7 @@ const Artboard: FC<ArtboardProps> = ({
                 )
               })}
             </PreviewGrid>
-            {showGridPager && (
-              <GridNavigationButton onClick={onNextImage} $side="right" icon={<RightOutlined />} />
-            )}
+            {showGridPager && <GridNavigationButton onClick={onNextImage} $side="right" icon={<RightOutlined />} />}
             <ImageCounter>
               {currentPage + 1} / {totalPages}
             </ImageCounter>
@@ -147,9 +143,13 @@ const Artboard: FC<ArtboardProps> = ({
         )}
         {isLoading && (
           <LoadingOverlay>
-            <Spin size="large" />
-            {loadText || ''}
-            <CancelButton onClick={onCancel}>{t('common.cancel')}</CancelButton>
+            <LoadingStatus>
+              <Spin size="large" />
+              {loadText || ''}
+            </LoadingStatus>
+            <CancelButton danger type="primary" size="large" onClick={onCancel}>
+              {t('common.cancel')}
+            </CancelButton>
           </LoadingOverlay>
         )}
       </LoadingContainer>
@@ -371,24 +371,57 @@ const LoadingContainer = styled.div<{ spinning: boolean }>`
   display: flex;
   justify-content: center;
   align-items: center;
-  opacity: ${(props) => (props.spinning ? 0.5 : 1)};
   transition: opacity 0.3s;
+
+  > :not(.loading-overlay) {
+    opacity: ${(props) => (props.spinning ? 0.42 : 1)};
+    transition: opacity 0.3s;
+  }
 `
 
-const LoadingOverlay = styled.div`
+const LoadingOverlay = styled.div.attrs({ className: 'loading-overlay' })`
   position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+`
+
+const LoadingStatus = styled.div`
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 20px;
+  gap: 14px;
+  color: var(--color-text-2);
+  pointer-events: none;
 `
 
 const CancelButton = styled(Button)`
-  margin-top: 10px;
-  z-index: 1001;
+  position: absolute;
+  left: 50%;
+  bottom: max(26px, calc((100% - var(--artboard-max)) / 2 + 26px));
+  transform: translateX(-50%);
+  z-index: 21;
+  min-width: 118px;
+  height: 42px;
+  padding: 0 26px;
+  border-radius: 999px;
+  font-size: 15px;
+  font-weight: 600;
+  box-shadow:
+    0 14px 34px rgba(220, 38, 38, 0.28),
+    0 0 0 5px color-mix(in srgb, var(--color-background) 84%, transparent);
+  pointer-events: auto;
+
+  &:hover,
+  &:focus-visible {
+    transform: translateX(-50%) translateY(-1px);
+    box-shadow:
+      0 18px 42px rgba(220, 38, 38, 0.34),
+      0 0 0 5px color-mix(in srgb, var(--color-background) 84%, transparent);
+  }
 `
 
 export default Artboard

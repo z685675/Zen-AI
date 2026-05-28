@@ -7,6 +7,7 @@ import { useApiServer } from '@renderer/hooks/useApiServer'
 import { useRuntime } from '@renderer/hooks/useRuntime'
 import { useEnableDeveloperMode } from '@renderer/hooks/useSettings'
 import type { AgentEntity } from '@renderer/types'
+import { DEFAULT_FUSION_AGENT_ID } from '@shared/config/agents'
 import { memo, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -50,10 +51,13 @@ const Agents = ({ onSelectItem }: AgentsProps) => {
     return <div className="p-5 text-center text-(--color-error) text-[13px]">{error.message}</div>
   }
 
+  const hasNonOfficialAgent = agents?.some((agent) => agent.id !== DEFAULT_FUSION_AGENT_ID) ?? false
   const sidebarTitle = (
     <span className="min-w-0">
       <span>{t('agent.sidebar_title')}</span>
-      <span className="ml-1 font-normal text-(--color-text-secondary)">（建议删除其他非官方助手）</span>
+      {hasNonOfficialAgent && (
+        <span className="ml-1 font-normal text-(--color-text-secondary)">（建议删除其他非官方助手）</span>
+      )}
     </span>
   )
 

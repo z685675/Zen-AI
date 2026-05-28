@@ -4027,6 +4027,55 @@
       "model_params": "Model Parameters",
       "title": "Default Assistant"
     },
+    "assistantEnvironment": {
+      "binariesDir": "App tools directory",
+      "checkFailed": "Environment check failed",
+      "coreDescription": "These tools affect the assistant's ability to use extensions, skills, and local tasks reliably.",
+      "coreTitle": "Core Readiness",
+      "dependencies": {
+        "bun": {
+          "description": "Runs some skills, tool services, and frontend-oriented automation tasks.",
+          "name": "Bun runtime"
+        },
+        "git": {
+          "description": "Optional enhancement for Git-based skills, repository downloads, and coding tasks.",
+          "name": "Git"
+        },
+        "pyodide": {
+          "description": "Powers the in-browser Python sandbox. This version loads it from the network on first use and does not require system Python.",
+          "name": "Python sandbox network"
+        },
+        "uv": {
+          "description": "Prepares Python tool environments and dependencies for some local skills.",
+          "name": "UV"
+        },
+        "uvx": {
+          "description": "Provided with UV and used to run temporary Python tool packages and MCP services.",
+          "name": "UVX"
+        }
+      },
+      "description": "Check local tools and network readiness for the full smart assistant experience.",
+      "install": "Install",
+      "installFailed": "Install failed",
+      "installSuccess": "Installed",
+      "intro": "Basic chat and ordinary local file operations work out of the box. The checks below are mainly for extended capabilities such as the Skill marketplace, scheduled tasks, Python sandbox, and Git-based tools.",
+      "noPath": "No available path detected yet",
+      "optionalDescription": "These are not required for basic chat, but they improve some advanced tasks.",
+      "optionalTitle": "Optional Enhancements",
+      "prepare": "Prepare Bun and UV",
+      "prepareSuccess": "Environment prepared",
+      "refresh": "Check Again",
+      "sources": {
+        "app": "App tools directory",
+        "network": "Network available",
+        "system": "System install"
+      },
+      "status": {
+        "error": "Check failed",
+        "missing": "Not ready"
+      },
+      "title": "Assistant Environment"
+    },
     "channels": {
       "description": "Connect agents to messaging platforms like Telegram, Feishu, Discord, and more.",
       "title": "Channels"

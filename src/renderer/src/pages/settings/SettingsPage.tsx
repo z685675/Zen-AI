@@ -18,6 +18,7 @@ import {
   Search,
   Server,
   Settings2,
+  ShieldCheck,
   Sparkles,
   TextCursorInput,
   Zap
@@ -28,6 +29,7 @@ import { Link, Route, Routes, useLocation } from 'react-router-dom'
 import styled from 'styled-components'
 
 import AboutSettings from './AboutSettings'
+import AssistantEnvironmentSettings from './AssistantEnvironmentSettings'
 import ChannelsSettings from './ChannelsSettings'
 import DataSettings from './DataSettings/DataSettings'
 import DisplaySettings from './DisplaySettings/DisplaySettings'
@@ -100,6 +102,12 @@ const SettingsPage: FC = () => {
             <MenuItem className={isRoute('/settings/skills')}>
               <Sparkles size={18} />
               {t('settings.skills.title')}
+            </MenuItem>
+          </MenuItemLink>
+          <MenuItemLink to="/settings/assistant-environment">
+            <MenuItem className={isRoute('/settings/assistant-environment')}>
+              <ShieldCheck size={18} />
+              {t('settings.assistantEnvironment.title')}
             </MenuItem>
           </MenuItemLink>
           <MenuItemLink to="/settings/websearch">
@@ -183,6 +191,7 @@ const SettingsPage: FC = () => {
             <Route path="quickphrase" element={<QuickPhraseSettings />} />
             <Route path="mcp/*" element={<MCPSettings />} />
             <Route path="skills" element={<SkillsSettings />} />
+            <Route path="assistant-environment" element={<AssistantEnvironmentSettings />} />
             <Route path="memory" element={<MemorySettings />} />
             <Route path="general/*" element={<GeneralSettings />} />
             <Route path="display" element={<DisplaySettings />} />

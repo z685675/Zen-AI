@@ -1,15 +1,13 @@
 import { loggerService } from '@logger'
 import { NavbarCenter, NavbarHeader, NavbarRight } from '@renderer/components/app/Navbar'
-import { HStack } from '@renderer/components/Layout'
 import BaseNavbarIcon from '@renderer/components/NavbarIcon'
 import GeneralPopup from '@renderer/components/Popups/GeneralPopup'
 import { useActiveNode } from '@renderer/hooks/useNotesQuery'
 import { useNotesSettings } from '@renderer/hooks/useNotesSettings'
-import { useShowWorkspace } from '@renderer/hooks/useShowWorkspace'
 import { findNode } from '@renderer/services/NotesTreeService'
 import { Breadcrumb, Dropdown, Input, Tooltip } from 'antd'
 import { t } from 'i18next'
-import { MoreHorizontal, PanelLeftClose, PanelRightClose, Star } from 'lucide-react'
+import { MoreHorizontal, Star } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import styled from 'styled-components'
 
@@ -19,7 +17,6 @@ import NotesSettings from './NotesSettings'
 const logger = loggerService.withContext('HeaderNavbar')
 
 const HeaderNavbar = ({ notesTree, getCurrentNoteContent, onToggleStar, onExpandPath, onRenameNode }) => {
-  const { showWorkspace, toggleShowWorkspace } = useShowWorkspace()
   const { activeNode } = useActiveNode(notesTree)
   const [breadcrumbItems, setBreadcrumbItems] = useState<
     Array<{ key: string; title: string; treePath: string; isFolder: boolean }>
@@ -28,10 +25,6 @@ const HeaderNavbar = ({ notesTree, getCurrentNoteContent, onToggleStar, onExpand
   const titleInputRef = useRef<any>(null)
   const { settings, updateSettings } = useNotesSettings()
   const canShowStarButton = activeNode?.type === 'file' && onToggleStar
-
-  const handleToggleShowWorkspace = useCallback(() => {
-    toggleShowWorkspace()
-  }, [toggleShowWorkspace])
 
   const handleToggleStarred = useCallback(() => {
     if (activeNode) {
@@ -208,22 +201,6 @@ const HeaderNavbar = ({ notesTree, getCurrentNoteContent, onToggleStar, onExpand
     <NavbarHeader
       className="home-navbar"
       style={{ justifyContent: 'flex-start', borderBottom: '0.5px solid var(--color-border)' }}>
-      <HStack alignItems="center" flex="0 0 auto">
-        {showWorkspace && (
-          <Tooltip title={t('navbar.hide_sidebar')} mouseEnterDelay={0.8}>
-            <NavbarIcon onClick={handleToggleShowWorkspace}>
-              <PanelLeftClose size={18} />
-            </NavbarIcon>
-          </Tooltip>
-        )}
-        {!showWorkspace && (
-          <Tooltip title={t('navbar.show_sidebar')} mouseEnterDelay={0.8} placement="right">
-            <NavbarIcon onClick={handleToggleShowWorkspace}>
-              <PanelRightClose size={18} />
-            </NavbarIcon>
-          </Tooltip>
-        )}
-      </HStack>
       <NavbarCenter style={{ flex: 1, minWidth: 0 }}>
         <BreadcrumbsContainer>
           <Breadcrumb

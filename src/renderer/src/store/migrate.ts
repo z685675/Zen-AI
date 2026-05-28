@@ -3474,16 +3474,8 @@ const migrateConfig = {
   },
   '211': (state: RootState) => {
     try {
-      const primarySidebarIcons: SidebarIcon[] = [
-        'assistants',
-        'agents',
-        'translate',
-        'notes',
-        'knowledge',
-        'files',
-        'paintings'
-      ]
-      const hiddenSidebarIcons = new Set<SidebarIcon>(['openclaw', 'store', 'minapp', 'code_tools'])
+      const primarySidebarIcons = DEFAULT_SIDEBAR_ICONS
+      const hiddenSidebarIcons = new Set<SidebarIcon>(DEFAULT_DISABLED_SIDEBAR_ICONS)
       const disabledIcons = state.settings.sidebarIcons?.disabled ?? []
       const hiddenIcons = [...new Set<SidebarIcon>([...disabledIcons, ...DEFAULT_DISABLED_SIDEBAR_ICONS])]
 
@@ -3496,6 +3488,39 @@ const migrateConfig = {
       return state
     } catch (error) {
       logger.error('migrate 211 error', error as Error)
+      return state
+    }
+  },
+  '212': (state: RootState) => {
+    try {
+      const hiddenByDefault = new Set<SidebarIcon>(DEFAULT_DISABLED_SIDEBAR_ICONS)
+      const visibleIcons = state.settings.sidebarIcons?.visible ?? DEFAULT_SIDEBAR_ICONS
+      const disabledIcons = state.settings.sidebarIcons?.disabled ?? []
+
+      state.settings.sidebarIcons = {
+        visible: DEFAULT_SIDEBAR_ICONS.filter((icon) => visibleIcons.includes(icon)),
+        disabled: [...new Set<SidebarIcon>([...disabledIcons, ...DEFAULT_DISABLED_SIDEBAR_ICONS])].filter((icon) =>
+          hiddenByDefault.has(icon)
+        )
+      }
+
+      logger.info('migrate 212 success')
+      return state
+    } catch (error) {
+      logger.error('migrate 212 error', error as Error)
+      return state
+    }
+  },
+  '213': (state: RootState) => {
+    try {
+      state.settings.showAssistants = true
+      state.settings.showTopics = true
+      state.settings.narrowMode = false
+
+      logger.info('migrate 213 success')
+      return state
+    } catch (error) {
+      logger.error('migrate 213 error', error as Error)
       return state
     }
   }
