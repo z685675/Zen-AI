@@ -1,4 +1,5 @@
 import { loggerService } from '@logger'
+import { DEFAULT_FUSION_AGENT_ID } from '@shared/config/agents'
 import { windowService } from '@main/services/WindowService'
 import type { ChannelLogEntry, ChannelStatusEvent } from '@shared/config/types'
 import { IpcChannel } from '@shared/IpcChannel'
@@ -61,13 +62,15 @@ class ChannelManager {
   async start(): Promise<void> {
     try {
       const channels = await channelService.listChannels()
+      const deletedChannelIds = await this.deleteLegacyWechatChannels(channels)
       const activeChannels = channels.filter((ch) => ch.isActive && ch.agentId)
+      const connectableChannels = activeChannels.filter((channel) => !deletedChannelIds.has(channel.id))
 
       // Lazy-load only the adapter modules needed for active channels
-      const neededTypes = [...new Set(activeChannels.map((ch) => ch.type))]
+      const neededTypes = [...new Set(connectableChannels.map((ch) => ch.type))]
       await Promise.all(neededTypes.map((type) => ensureAdapterLoaded(type)))
 
-      await Promise.all(activeChannels.map((channel) => this.connectChannelFromRow(channel)))
+      await Promise.all(connectableChannels.map((channel) => this.connectChannelFromRow(channel)))
 
       logger.info('Channel manager started', { adapterCount: this.adapters.size })
     } catch (error) {
@@ -91,6 +94,26 @@ class ChannelManager {
     await Promise.all(disconnects)
     this.adapters.clear()
     logger.info('Channel manager stopped')
+  }
+
+  async deleteLegacyWechatChannels(existingChannels?: ChannelRow[]): Promise<Set<string>> {
+    const channels = existingChannels ?? (await channelService.listChannels({ type: 'wechat' }))
+    const legacyChannels = channels.filter(
+      (channel) => channel.type === 'wechat' && channel.agentId && channel.agentId !== DEFAULT_FUSION_AGENT_ID
+    )
+    const deletedChannelIds = new Set<string>()
+
+    for (const channel of legacyChannels) {
+      await this.disconnectChannel(channel.id)
+      await channelService.deleteChannel(channel.id)
+      deletedChannelIds.add(channel.id)
+      logger.info('Deleted legacy WeChat channel bound to non-official agent', {
+        channelId: channel.id,
+        agentId: channel.agentId
+      })
+    }
+
+    return deletedChannelIds
   }
 
   /**

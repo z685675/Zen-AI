@@ -15,7 +15,7 @@ import {
   type ListOptions,
   type UpdateSessionRequest
 } from '@types'
-import { and, asc, count, desc, eq, like, or, type SQL, sql } from 'drizzle-orm'
+import { and, asc, count, desc, eq, inArray, like, or, type SQL, sql } from 'drizzle-orm'
 import { app } from 'electron'
 
 import { BaseService } from '../BaseService'
@@ -790,6 +790,35 @@ export class SessionService extends BaseService {
       .where(and(eq(sessionsTable.id, id), eq(sessionsTable.agent_id, agentId)))
 
     return result.rowsAffected > 0
+  }
+
+  async deleteEmptySessionsForAgents(agentIds: string[]): Promise<number> {
+    if (agentIds.length === 0) {
+      return 0
+    }
+
+    const database = await this.getDatabase()
+    const result = await database
+      .delete(sessionsTable)
+      .where(
+        and(
+          inArray(sessionsTable.agent_id, agentIds),
+          sql`not exists (
+            select 1
+            from ${sessionMessagesTable}
+            where ${sessionMessagesTable.session_id} = ${sessionsTable.id}
+          )`
+        )
+      )
+
+    if (result.rowsAffected > 0) {
+      logger.info('Deleted empty sessions for legacy built-in agents', {
+        agentIds,
+        deleted: result.rowsAffected
+      })
+    }
+
+    return result.rowsAffected
   }
 
   async reorderSessions(agentId: string, orderedIds: string[]): Promise<void> {

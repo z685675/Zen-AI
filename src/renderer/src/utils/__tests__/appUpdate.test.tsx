@@ -63,7 +63,7 @@ describe('appUpdate', () => {
     ;(window as any).modal = { confirm }
     ;(window as any).api = {
       downloadUpdate: vi.fn(),
-      quitAndInstallUpdate: vi.fn()
+      quitAndInstallUpdate: vi.fn().mockResolvedValue({ success: true, status: 'installing' })
     }
 
     showAppUpdateAvailableModal(t, {
@@ -84,13 +84,13 @@ describe('appUpdate', () => {
     expect(window.api.quitAndInstallUpdate).not.toHaveBeenCalled()
   })
 
-  it('uses install action for downloaded updates', () => {
+  it('uses install action for downloaded updates', async () => {
     const confirm = vi.fn()
 
     ;(window as any).modal = { confirm }
     ;(window as any).api = {
       downloadUpdate: vi.fn(),
-      quitAndInstallUpdate: vi.fn()
+      quitAndInstallUpdate: vi.fn().mockResolvedValue({ success: true, status: 'installing' })
     }
 
     showAppUpdateDownloadedModal(t, {
@@ -103,8 +103,34 @@ describe('appUpdate', () => {
     const options = confirm.mock.calls[0][0]
     expect(options.okText).toBe('立即安装')
 
-    options.onOk()
+    await options.onOk()
     expect(window.api.quitAndInstallUpdate).toHaveBeenCalledOnce()
     expect(window.api.downloadUpdate).not.toHaveBeenCalled()
+  })
+
+  it('keeps the downloaded update modal open when install fails', async () => {
+    const confirm = vi.fn()
+    const toastError = vi.fn()
+
+    ;(window as any).modal = { confirm }
+    ;(window as any).toast = { error: toastError }
+    ;(window as any).api = {
+      downloadUpdate: vi.fn(),
+      quitAndInstallUpdate: vi.fn().mockResolvedValue({
+        success: false,
+        status: 'not-downloaded',
+        message: 'Update package has not been downloaded yet.'
+      })
+    }
+
+    showAppUpdateDownloadedModal(t, {
+      version: '1.1.14',
+      releaseNotes: '- test'
+    })
+
+    const options = confirm.mock.calls[0][0]
+
+    await expect(options.onOk()).rejects.toThrow('Update package has not been downloaded yet.')
+    expect(toastError).toHaveBeenCalledWith('Update package has not been downloaded yet.')
   })
 })

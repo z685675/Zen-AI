@@ -1,5 +1,5 @@
 import { loggerService } from '@logger'
-import { AgentModelValidationError, sessionService } from '@main/services/agents'
+import { AgentModelValidationError, agentService, sessionService } from '@main/services/agents'
 import type { ListAgentSessionsResponse, SearchAgentSessionsResponse, UpdateSessionResponse } from '@types'
 import { type ReplaceSessionRequest } from '@types'
 import type { Request, Response } from 'express'
@@ -283,6 +283,15 @@ export const deleteSession = async (req: Request, res: Response): Promise<Respon
     }
 
     logger.info('Session deleted', { agentId, sessionId })
+
+    const agentStillExists = await agentService.agentExists(agentId)
+    if (!agentStillExists) {
+      logger.info('Deleted orphan session without recreating default session because agent no longer exists', {
+        agentId,
+        sessionId
+      })
+      return res.status(204).send()
+    }
 
     const { total } = await sessionService.listSessions(agentId, { limit: 1 })
 

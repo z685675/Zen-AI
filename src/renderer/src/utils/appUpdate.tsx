@@ -108,8 +108,18 @@ export function showAppUpdateDownloadedModal(t: Translate, updateInfo: UpdateInf
     width: 720,
     maskClosable: false,
     content: renderUpdateContent(t, updateInfo, 'update.message'),
-    onOk() {
-      return window.api.quitAndInstallUpdate()
+    async onOk() {
+      const result = await window.api.quitAndInstallUpdate()
+      if (result === true || result?.success === true) {
+        return
+      }
+
+      const message =
+        typeof result?.message === 'string' && result.message
+          ? result.message
+          : '更新安装包尚未准备好，请重新检查更新或等待下载完成后再安装。'
+      window.toast.error(message)
+      throw new Error(message)
     }
   })
 }

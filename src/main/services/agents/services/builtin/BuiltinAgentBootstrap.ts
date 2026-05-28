@@ -9,6 +9,7 @@ import { loggerService } from '@logger'
 import { installBuiltinSkills } from '@main/utils/builtinSkills'
 import {
   DEFAULT_CHERRY_ASSISTANT_AGENT_ID,
+  DEFAULT_CHERRY_CLAW_AGENT_ID,
   DEFAULT_FUSION_AGENT_ID
 } from '@shared/config/agents'
 
@@ -31,9 +32,8 @@ export async function bootstrapBuiltinAgents(): Promise<void> {
   } catch (error) {
     logger.error('Failed to install built-in skills', error as Error)
   }
-  await initCherryClaw()
-  await initCherryAssistant()
   await initFusionAgent()
+  await cleanupLegacyBuiltinEmptySessions()
   await markLegacyAgentsDeprecated()
 }
 
@@ -60,52 +60,17 @@ async function markLegacyAgentsDeprecated(): Promise<void> {
   }
 }
 
+async function cleanupLegacyBuiltinEmptySessions(): Promise<void> {
+  try {
+    await sessionService.deleteEmptySessionsForAgents([DEFAULT_CHERRY_CLAW_AGENT_ID, DEFAULT_CHERRY_ASSISTANT_AGENT_ID])
+  } catch (error) {
+    logger.warn('Failed to cleanup legacy built-in empty sessions:', error as Error)
+  }
+}
+
 // ── CherryClaw ──────────────────────────────────────────────────────
 
-async function initCherryClaw(): Promise<void> {
-  try {
-    const agentId = await agentService.initDefaultCherryClawAgent()
-    if (!agentId) return
-
-    // Ensure the default agent has at least one session
-    const { total } = await sessionService.listSessions(agentId, { limit: 1 })
-    if (total === 0) {
-      await sessionService.createSession(agentId, {})
-      logger.info('Default session created for Zen Agent')
-    }
-
-    await syncBuiltinSessionModel(agentId)
-    await schedulerService.ensureHeartbeatTask(agentId, 30)
-  } catch (error) {
-    logger.warn('Failed to init Zen Agent:', error as Error)
-  }
-}
-
 // ── Cherry Assistant ────────────────────────────────────────────────
-
-export const CHERRY_ASSISTANT_AGENT_ID = DEFAULT_CHERRY_ASSISTANT_AGENT_ID
-
-async function initCherryAssistant(): Promise<void> {
-  try {
-    const agentId = await agentService.initBuiltinAgent({
-      id: CHERRY_ASSISTANT_AGENT_ID,
-      builtinRole: 'assistant',
-      provisionWorkspace: provisionBuiltinAgent
-    })
-    if (!agentId) return
-
-    // Ensure the assistant agent has at least one session
-    const { total } = await sessionService.listSessions(agentId, { limit: 1 })
-    if (total === 0) {
-      await sessionService.createSession(agentId, {})
-      logger.info('Default session created for Cherry Assistant agent')
-    }
-
-    await syncBuiltinSessionModel(agentId)
-  } catch (error) {
-    logger.warn('Failed to init Cherry Assistant agent:', error as Error)
-  }
-}
 
 async function initFusionAgent(): Promise<void> {
   try {

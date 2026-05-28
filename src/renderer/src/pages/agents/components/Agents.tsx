@@ -50,6 +50,13 @@ const Agents = ({ onSelectItem }: AgentsProps) => {
     return <div className="p-5 text-center text-(--color-error) text-[13px]">{error.message}</div>
   }
 
+  const sidebarTitle = (
+    <span className="min-w-0">
+      <span>{t('agent.sidebar_title')}</span>
+      <span className="ml-1 font-normal text-(--color-text-secondary)">（建议删除其他非官方助手）</span>
+    </span>
+  )
+
   return (
     <div className="flex h-full flex-col">
       <DraggableVirtualList
@@ -63,9 +70,9 @@ const Agents = ({ onSelectItem }: AgentsProps) => {
         header={
           <div className="-mt-0.5 mb-1.5">
             {enableDeveloperMode ? (
-              <AddButton onClick={handleAddAgent}>{t('agent.sidebar_title')}</AddButton>
+              <AddButton onClick={handleAddAgent}>{sidebarTitle}</AddButton>
             ) : (
-              <div className="px-2 py-1 font-medium text-(--color-text) text-xs">{t('agent.sidebar_title')}</div>
+              <div className="px-2 py-1 font-medium text-(--color-text) text-xs">{sidebarTitle}</div>
             )}
           </div>
         }>

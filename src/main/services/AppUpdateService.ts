@@ -103,6 +103,10 @@ export interface AppUpdateCheckResultError {
   message: string
 }
 
+export type AppUpdateInstallResult =
+  | { success: true; status: 'installing'; updateInfo: AppUpdateInfo }
+  | { success: false; status: 'not-downloaded' | 'error'; message: string; updateInfo: AppUpdateInfo | null }
+
 export type AppUpdateCheckResult =
   | AppUpdateCheckResultAvailable
   | AppUpdateCheckResultUpToDate
@@ -367,16 +371,55 @@ export class AppUpdateService {
     }
   }
 
-  quitAndInstall() {
-    if (!this.downloadedUpdateInfo) {
-      return false
+  quitAndInstall(): AppUpdateInstallResult {
+    const updateInfo = this.downloadedUpdateInfo ?? this.restorePendingUpdateInfo()
+
+    if (!updateInfo) {
+      const message = 'Update package has not been downloaded yet.'
+      logger.warn('Cannot install update because no downloaded update is available')
+      return {
+        success: false,
+        status: 'not-downloaded',
+        message,
+        updateInfo: null
+      }
     }
 
-    this.clearPendingUpdateInfo()
-    app.isInstallingUpdate = true
-    app.isQuitting = true
-    autoUpdater.quitAndInstall(false, true)
-    return true
+    this.downloadedUpdateInfo = updateInfo
+    this.latestUpdateInfo = updateInfo
+    this.progressInfo = null
+    this.setState({
+      status: 'downloaded',
+      source: this.currentSource,
+      autoUpdateEnabled: this.shouldAutoDownload(),
+      currentVersion: this.currentVersion,
+      updateInfo,
+      progress: null
+    })
+
+    try {
+      app.isInstallingUpdate = true
+      app.isQuitting = true
+      logger.info('Quitting and installing downloaded app update', { version: updateInfo.version })
+      autoUpdater.quitAndInstall(false, true)
+      this.clearPendingUpdateInfo()
+      return {
+        success: true,
+        status: 'installing',
+        updateInfo
+      }
+    } catch (error) {
+      app.isInstallingUpdate = false
+      app.isQuitting = false
+      const message = error instanceof Error ? error.message : String(error)
+      logger.error('Failed to quit and install downloaded update', { error: message })
+      return {
+        success: false,
+        status: 'error',
+        message,
+        updateInfo
+      }
+    }
   }
 
   getState(): AppUpdateState {

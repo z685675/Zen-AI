@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { DEFAULT_FUSION_AGENT_ID } from '@shared/config/agents'
+
 import { channelService } from '../../ChannelService'
 import { ChannelAdapter, type ChannelAdapterConfig } from '../ChannelAdapter'
 import { channelManager, registerAdapterFactory } from '../ChannelManager'
@@ -21,7 +23,8 @@ vi.mock('../../ChannelService', () => ({
   channelService: {
     listChannels: vi.fn().mockResolvedValue([]),
     getChannel: vi.fn(),
-    updateChannel: vi.fn()
+    updateChannel: vi.fn(),
+    deleteChannel: vi.fn()
   }
 }))
 
@@ -67,6 +70,16 @@ describe('ChannelManager', () => {
       createdAdapters.push(adapter)
       return adapter
     })
+    registerAdapterFactory('wechat', (channel, agentId) => {
+      const adapter = new MockAdapter({
+        channelId: channel.id,
+        channelType: channel.type,
+        agentId,
+        channelConfig: channel.config
+      })
+      createdAdapters.push(adapter)
+      return adapter
+    })
   })
 
   afterEach(async () => {
@@ -100,6 +113,46 @@ describe('ChannelManager', () => {
     await channelManager.start()
 
     expect(createdAdapters).toHaveLength(1)
+    expect(createdAdapters[0].connect).toHaveBeenCalledTimes(1)
+  })
+
+  it('start() deletes legacy WeChat channels bound to non-official agents instead of connecting them', async () => {
+    vi.mocked(channelService.listChannels).mockResolvedValueOnce([
+      makeChannelRow({
+        id: 'legacy-wechat',
+        type: 'wechat',
+        agentId: 'legacy-agent',
+        config: { type: 'wechat' }
+      }),
+      makeChannelRow({
+        id: 'legacy-telegram',
+        type: 'telegram',
+        agentId: 'legacy-agent',
+        config: { bot_token: 'tok' }
+      })
+    ])
+
+    await channelManager.start()
+
+    expect(channelService.deleteChannel).toHaveBeenCalledWith('legacy-wechat')
+    expect(createdAdapters.map((adapter) => adapter.channelId)).toEqual(['legacy-telegram'])
+  })
+
+  it('start() keeps WeChat channels bound to the official agent', async () => {
+    vi.mocked(channelService.listChannels).mockResolvedValueOnce([
+      makeChannelRow({
+        id: 'official-wechat',
+        type: 'wechat',
+        agentId: DEFAULT_FUSION_AGENT_ID,
+        config: { type: 'wechat' }
+      })
+    ])
+
+    await channelManager.start()
+
+    expect(channelService.deleteChannel).not.toHaveBeenCalled()
+    expect(createdAdapters).toHaveLength(1)
+    expect(createdAdapters[0].channelId).toBe('official-wechat')
     expect(createdAdapters[0].connect).toHaveBeenCalledTimes(1)
   })
 

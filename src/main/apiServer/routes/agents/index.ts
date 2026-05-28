@@ -1035,6 +1035,15 @@ const createMessagesRouter = (): express.Router => {
 const sessionsRouter = createSessionsRouter()
 const messagesRouter = createMessagesRouter()
 
+// Allow deleting orphan sessions after their legacy agent has been removed.
+agentsRouter.delete(
+  '/:agentId/sessions/:sessionId',
+  validateAgentId,
+  validateSessionId,
+  handleValidationErrors,
+  sessionHandlers.deleteSession
+)
+
 // Mount sessions under specific agent
 agentsRouter.use('/:agentId/sessions', validateAgentId, checkAgentExists, handleValidationErrors, sessionsRouter)
 

@@ -78,7 +78,7 @@ describe('AppUpdateService', () => {
     vi.useRealTimers()
   })
 
-  it('returns false when no downloaded update is available', async () => {
+  it('returns a not-downloaded result when no downloaded update is available', async () => {
     const { AppUpdateService } = await import('../AppUpdateService')
     const service = new AppUpdateService(
       {
@@ -89,7 +89,12 @@ describe('AppUpdateService', () => {
       () => true
     )
 
-    expect(service.quitAndInstall()).toBe(false)
+    expect(service.quitAndInstall()).toEqual({
+      success: false,
+      status: 'not-downloaded',
+      message: 'Update package has not been downloaded yet.',
+      updateInfo: null
+    })
     expect(mockAutoUpdater.quitAndInstall).not.toHaveBeenCalled()
     expect(mockApp.isInstallingUpdate).toBe(false)
   })
@@ -107,11 +112,68 @@ describe('AppUpdateService', () => {
 
     ;(service as any).downloadedUpdateInfo = { version: '1.1.0' }
 
-    expect(service.quitAndInstall()).toBe(true)
+    expect(service.quitAndInstall()).toEqual({
+      success: true,
+      status: 'installing',
+      updateInfo: { version: '1.1.0' }
+    })
     expect(configManagerMock.setPendingUpdateInfo).toHaveBeenCalledWith(null)
     expect(mockApp.isInstallingUpdate).toBe(true)
     expect(mockApp.isQuitting).toBe(true)
     expect(mockAutoUpdater.quitAndInstall).toHaveBeenCalledWith(false, true)
+  })
+
+  it('installs when downloaded update state is restored from pending config', async () => {
+    configManagerMock.getPendingUpdateInfo.mockReturnValue({
+      version: '1.1.0',
+      releaseNotes: 'pending'
+    })
+
+    const { AppUpdateService } = await import('../AppUpdateService')
+    const service = new AppUpdateService(
+      {
+        isDestroyed: () => false,
+        webContents: { send: vi.fn() }
+      } as any,
+      '1.0.0',
+      () => true
+    )
+
+    expect(service.quitAndInstall()).toEqual({
+      success: true,
+      status: 'installing',
+      updateInfo: {
+        version: '1.1.0',
+        releaseNotes: 'pending'
+      }
+    })
+    expect(mockAutoUpdater.quitAndInstall).toHaveBeenCalledWith(false, true)
+  })
+
+  it('returns an error result and resets install flags when quitAndInstall throws', async () => {
+    const { AppUpdateService } = await import('../AppUpdateService')
+    const service = new AppUpdateService(
+      {
+        isDestroyed: () => false,
+        webContents: { send: vi.fn() }
+      } as any,
+      '1.0.0',
+      () => true
+    )
+
+    ;(service as any).downloadedUpdateInfo = { version: '1.1.0' }
+    mockAutoUpdater.quitAndInstall.mockImplementationOnce(() => {
+      throw new Error('installer failed')
+    })
+
+    expect(service.quitAndInstall()).toEqual({
+      success: false,
+      status: 'error',
+      message: 'installer failed',
+      updateInfo: { version: '1.1.0' }
+    })
+    expect(mockApp.isInstallingUpdate).toBe(false)
+    expect(mockApp.isQuitting).toBe(false)
   })
 
   it('restores downloaded update state from pending config on startup', async () => {
