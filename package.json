@@ -1,6 +1,6 @@
 {
   "name": "zen-ai",
-  "version": "1.1.19",
+  "version": "1.1.20",
   "private": true,
   "description": "An independent AI desktop workspace for Windows and macOS.",
   "desktopName": "ZenAI.desktop",

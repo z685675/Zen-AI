@@ -13,6 +13,32 @@
 
 ; https://github.com/electron-userland/electron-builder/issues/1122
 !ifndef BUILD_UNINSTALLER
+  ; Older builds can minimize to tray when NSIS asks the main window to close,
+  ; so the installer may keep seeing Zen AI as "running". Close it explicitly
+  ; before electron-builder's default app-running check starts.
+  Function closeRunningZenAI
+    DetailPrint "Closing running ${PRODUCT_NAME}..."
+
+    ; First try the normal WM_CLOSE path so the old app can flush data.
+    nsExec::ExecToStack 'taskkill /IM "${PRODUCT_NAME}.exe" /T'
+    Pop $0
+    Pop $1
+    Sleep 3000
+
+    ; If the old app is still alive, it is usually hidden in tray or stuck in
+    ; shutdown cleanup. Force-kill it so overwrite installation can continue.
+    nsExec::ExecToStack 'cmd /C tasklist /FI "IMAGENAME eq ${PRODUCT_NAME}.exe" | find /I "${PRODUCT_NAME}.exe" >nul'
+    Pop $0
+    Pop $1
+    ${If} $0 == 0
+      DetailPrint "${PRODUCT_NAME} is still running, forcing it to close..."
+      nsExec::ExecToStack 'taskkill /F /IM "${PRODUCT_NAME}.exe" /T'
+      Pop $0
+      Pop $1
+      Sleep 1500
+    ${EndIf}
+  FunctionEnd
+
   ; Check VC++ Redistributable based on architecture stored in $1
   Function checkVCRedist
     ${If} $1 == "arm64"
@@ -106,6 +132,8 @@
   Push $2
   Push $3
   Push $4
+
+  Call closeRunningZenAI
 
   ; Check architecture compatibility first
   Call checkArchitectureCompatibility
