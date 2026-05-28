@@ -21,9 +21,6 @@
     DetailPrint "Closing running ${PRODUCT_NAME}..."
 
     ; First try the normal close path so the old app can flush data.
-    nsExec::ExecToStack '"$SYSDIR\taskkill.exe" /IM "${APP_EXECUTABLE_FILENAME}" /T'
-    Pop $0
-    Pop $1
     nsExec::ExecToStack '"$SYSDIR\taskkill.exe" /IM "${PRODUCT_NAME}.exe" /T'
     Pop $0
     Pop $1
@@ -31,10 +28,7 @@
 
     ; If the old app is hidden in tray or stuck in shutdown cleanup, force-kill
     ; it. Ignore "not found" failures because the process may already be gone.
-    DetailPrint "Force-closing ${APP_EXECUTABLE_FILENAME} if it is still running..."
-    nsExec::ExecToStack '"$SYSDIR\taskkill.exe" /F /IM "${APP_EXECUTABLE_FILENAME}" /T'
-    Pop $0
-    Pop $1
+    DetailPrint "Force-closing ${PRODUCT_NAME}.exe if it is still running..."
     nsExec::ExecToStack '"$SYSDIR\taskkill.exe" /F /IM "${PRODUCT_NAME}.exe" /T'
     Pop $0
     Pop $1
