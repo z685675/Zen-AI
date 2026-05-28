@@ -15,29 +15,35 @@
 !ifndef BUILD_UNINSTALLER
   ; Older builds can minimize to tray when NSIS asks the main window to close,
   ; so the installer may keep seeing Zen AI as "running". Close it explicitly
-  ; before electron-builder's default app-running check starts.
+  ; from electron-builder's app-running hook so overwrite installs and silent
+  ; auto-updates do not get stuck on the default "cannot be closed" dialog.
   Function closeRunningZenAI
     DetailPrint "Closing running ${PRODUCT_NAME}..."
 
-    ; First try the normal WM_CLOSE path so the old app can flush data.
-    nsExec::ExecToStack 'taskkill /IM "${PRODUCT_NAME}.exe" /T'
+    ; First try the normal close path so the old app can flush data.
+    nsExec::ExecToStack '"$SYSDIR\taskkill.exe" /IM "${APP_EXECUTABLE_FILENAME}" /T'
     Pop $0
     Pop $1
-    Sleep 3000
+    nsExec::ExecToStack '"$SYSDIR\taskkill.exe" /IM "${PRODUCT_NAME}.exe" /T'
+    Pop $0
+    Pop $1
+    Sleep 2500
 
-    ; If the old app is still alive, it is usually hidden in tray or stuck in
-    ; shutdown cleanup. Force-kill it so overwrite installation can continue.
-    nsExec::ExecToStack 'cmd /C tasklist /FI "IMAGENAME eq ${PRODUCT_NAME}.exe" | find /I "${PRODUCT_NAME}.exe" >nul'
+    ; If the old app is hidden in tray or stuck in shutdown cleanup, force-kill
+    ; it. Ignore "not found" failures because the process may already be gone.
+    DetailPrint "Force-closing ${APP_EXECUTABLE_FILENAME} if it is still running..."
+    nsExec::ExecToStack '"$SYSDIR\taskkill.exe" /F /IM "${APP_EXECUTABLE_FILENAME}" /T'
     Pop $0
     Pop $1
-    ${If} $0 == 0
-      DetailPrint "${PRODUCT_NAME} is still running, forcing it to close..."
-      nsExec::ExecToStack 'taskkill /F /IM "${PRODUCT_NAME}.exe" /T'
-      Pop $0
-      Pop $1
-      Sleep 1500
-    ${EndIf}
+    nsExec::ExecToStack '"$SYSDIR\taskkill.exe" /F /IM "${PRODUCT_NAME}.exe" /T'
+    Pop $0
+    Pop $1
+    Sleep 1500
   FunctionEnd
+
+  !macro customCheckAppRunning
+    Call closeRunningZenAI
+  !macroend
 
   ; Check VC++ Redistributable based on architecture stored in $1
   Function checkVCRedist
