@@ -119,6 +119,11 @@ describe('AppUpdateService', () => {
   })
 
   it('marks the app as installing an update before quitting', async () => {
+    vi.useFakeTimers()
+    mockAutoUpdater.quitAndInstall.mockImplementation(() => {
+      setTimeout(() => mockApp.emit('before-quit'), 1)
+    })
+
     const { AppUpdateService } = await import('../AppUpdateService')
     const service = new AppUpdateService(
       {
@@ -130,8 +135,12 @@ describe('AppUpdateService', () => {
     )
 
     ;(service as any).downloadedUpdateInfo = { version: '1.1.0' }
+    ;(service as any).downloadedUpdateReady = true
 
-    await expect(service.quitAndInstall()).resolves.toEqual({
+    const installResult = service.quitAndInstall()
+    await vi.advanceTimersByTimeAsync(1)
+
+    await expect(installResult).resolves.toEqual({
       success: true,
       status: 'installing',
       updateInfo: { version: '1.1.0' }
@@ -143,9 +152,21 @@ describe('AppUpdateService', () => {
   })
 
   it('installs when downloaded update state is restored from pending config', async () => {
+    vi.useFakeTimers()
     configManagerMock.getPendingUpdateInfo.mockReturnValue({
       version: '1.1.0',
       releaseNotes: 'pending'
+    })
+    mockAutoUpdater.checkForUpdates.mockResolvedValue({
+      isUpdateAvailable: true,
+      updateInfo: {
+        version: '1.1.0',
+        releaseNotes: 'fresh'
+      }
+    })
+    mockAutoUpdater.downloadUpdate.mockResolvedValue([])
+    mockAutoUpdater.quitAndInstall.mockImplementation(() => {
+      setTimeout(() => mockApp.emit('before-quit'), 1)
     })
 
     const { AppUpdateService } = await import('../AppUpdateService')
@@ -158,15 +179,49 @@ describe('AppUpdateService', () => {
       () => true
     )
 
-    await expect(service.quitAndInstall()).resolves.toEqual({
+    const installResult = service.quitAndInstall()
+    await vi.advanceTimersByTimeAsync(1)
+
+    await expect(installResult).resolves.toEqual({
       success: true,
       status: 'installing',
       updateInfo: {
         version: '1.1.0',
-        releaseNotes: 'pending'
+        releaseNotes: 'fresh'
       }
     })
+    expect(mockAutoUpdater.checkForUpdates).toHaveBeenCalledOnce()
+    expect(mockAutoUpdater.downloadUpdate).toHaveBeenCalledOnce()
     expect(mockAutoUpdater.quitAndInstall).toHaveBeenCalledWith(false, true)
+  })
+
+  it('keeps downloaded update pending when Windows installer does not start', async () => {
+    vi.useFakeTimers()
+
+    const { AppUpdateService } = await import('../AppUpdateService')
+    const service = new AppUpdateService(
+      {
+        isDestroyed: () => false,
+        webContents: { send: vi.fn() }
+      } as any,
+      '1.0.0',
+      () => true
+    )
+
+    ;(service as any).downloadedUpdateInfo = { version: '1.1.0' }
+    ;(service as any).downloadedUpdateReady = true
+    const installResult = service.quitAndInstall()
+    await vi.advanceTimersByTimeAsync(30000)
+
+    await expect(installResult).resolves.toEqual({
+      success: false,
+      status: 'error',
+      message: expect.stringContaining('Update installer did not start'),
+      updateInfo: { version: '1.1.0' }
+    })
+    expect(configManagerMock.setPendingUpdateInfo).not.toHaveBeenCalledWith(null)
+    expect(mockApp.isInstallingUpdate).toBe(false)
+    expect(mockApp.isQuitting).toBe(false)
   })
 
   it('returns an error result and resets install flags when quitAndInstall throws', async () => {
@@ -181,6 +236,7 @@ describe('AppUpdateService', () => {
     )
 
     ;(service as any).downloadedUpdateInfo = { version: '1.1.0' }
+    ;(service as any).downloadedUpdateReady = true
     mockAutoUpdater.quitAndInstall.mockImplementationOnce(() => {
       throw new Error('installer failed')
     })
@@ -218,11 +274,11 @@ describe('AppUpdateService', () => {
     const installResult = service.quitAndInstall()
     await vi.advanceTimersByTimeAsync(120000)
 
-    await expect(installResult).resolves.toEqual({
+    await expect(installResult).resolves.toMatchObject({
       success: false,
       status: 'error',
-      message: 'macOS 更新安装器没有启动。请再次点击“立即安装”，或退出并重新打开软件后完成更新。',
-      updateInfo: { version: '1.1.0' }
+      message: expect.stringContaining('Update installer did not start'),
+      updateInfo: expect.objectContaining({ version: '1.1.0' })
     })
     expect(configManagerMock.setPendingUpdateInfo).not.toHaveBeenCalledWith(null)
     expect(mockApp.isInstallingUpdate).toBe(false)

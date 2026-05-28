@@ -93,8 +93,16 @@ export function showAppUpdateAvailableModal(t: Translate, updateInfo: UpdateInfo
     width: 720,
     maskClosable: false,
     content: renderUpdateContent(t, updateInfo, 'update.available'),
-    onOk() {
-      return window.api.downloadUpdate()
+    async onOk() {
+      const result = await window.api.downloadUpdate()
+      if (result?.status === 'error') {
+        const message =
+          typeof result.message === 'string' && result.message
+            ? result.message
+            : 'Update download failed. Please check your network and try again.'
+        window.toast.error(message)
+        throw new Error(message)
+      }
     }
   })
 }

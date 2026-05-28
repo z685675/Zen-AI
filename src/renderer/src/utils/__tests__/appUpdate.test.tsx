@@ -57,12 +57,13 @@ describe('appUpdate', () => {
     expect(screen.getByText('第二项')).toBeInTheDocument()
   })
 
-  it('uses download action and copy for available updates', () => {
+  it('uses download action and copy for available updates', async () => {
     const confirm = vi.fn()
 
     ;(window as any).modal = { confirm }
+    ;(window as any).toast = { error: vi.fn() }
     ;(window as any).api = {
-      downloadUpdate: vi.fn(),
+      downloadUpdate: vi.fn().mockResolvedValue({ status: 'downloading' }),
       quitAndInstallUpdate: vi.fn().mockResolvedValue({ success: true, status: 'installing' })
     }
 
@@ -79,8 +80,34 @@ describe('appUpdate', () => {
     render(<>{options.content}</>)
     expect(screen.getByText('发现新版本 1.1.14，是否立即下载？')).toBeInTheDocument()
 
-    options.onOk()
+    await options.onOk()
     expect(window.api.downloadUpdate).toHaveBeenCalledOnce()
+    expect(window.api.quitAndInstallUpdate).not.toHaveBeenCalled()
+  })
+
+  it('keeps the available update modal open when download fails', async () => {
+    const confirm = vi.fn()
+    const toastError = vi.fn()
+
+    ;(window as any).modal = { confirm }
+    ;(window as any).toast = { error: toastError }
+    ;(window as any).api = {
+      downloadUpdate: vi.fn().mockResolvedValue({
+        status: 'error',
+        message: 'network failed'
+      }),
+      quitAndInstallUpdate: vi.fn()
+    }
+
+    showAppUpdateAvailableModal(t, {
+      version: '1.1.14',
+      releaseNotes: '- test'
+    })
+
+    const options = confirm.mock.calls[0][0]
+
+    await expect(options.onOk()).rejects.toThrow('network failed')
+    expect(toastError).toHaveBeenCalledWith('network failed')
     expect(window.api.quitAndInstallUpdate).not.toHaveBeenCalled()
   })
 
