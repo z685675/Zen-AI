@@ -195,6 +195,111 @@ describe('AppUpdateService', () => {
     expect(mockAutoUpdater.quitAndInstall).toHaveBeenCalledWith(false, true)
   })
 
+  it('surfaces a newer server update instead of sticking to a stale downloaded update', async () => {
+    mockAutoUpdater.checkForUpdates.mockResolvedValue({
+      isUpdateAvailable: true,
+      updateInfo: {
+        version: '1.1.24',
+        releaseNotes: 'newer'
+      }
+    })
+
+    const { AppUpdateService } = await import('../AppUpdateService')
+    const service = new AppUpdateService(
+      {
+        isDestroyed: () => false,
+        webContents: { send: vi.fn() }
+      } as any,
+      '1.1.18',
+      () => true
+    )
+
+    ;(service as any).downloadedUpdateInfo = { version: '1.1.20', releaseNotes: 'stale' }
+    ;(service as any).downloadedUpdateReady = true
+
+    await expect(service.checkForUpdates('manual')).resolves.toEqual({
+      status: 'available',
+      currentVersion: '1.1.18',
+      source: 'manual',
+      updateInfo: {
+        version: '1.1.24',
+        releaseNotes: 'newer'
+      }
+    })
+    expect((service as any).downloadedUpdateInfo).toBeNull()
+    expect((service as any).downloadedUpdateReady).toBe(false)
+  })
+
+  it('keeps an existing downloaded update when the server does not offer a newer version', async () => {
+    mockAutoUpdater.checkForUpdates.mockResolvedValue({
+      isUpdateAvailable: true,
+      updateInfo: {
+        version: '1.1.20',
+        releaseNotes: 'same'
+      }
+    })
+
+    const { AppUpdateService } = await import('../AppUpdateService')
+    const service = new AppUpdateService(
+      {
+        isDestroyed: () => false,
+        webContents: { send: vi.fn() }
+      } as any,
+      '1.1.18',
+      () => true
+    )
+
+    ;(service as any).downloadedUpdateInfo = { version: '1.1.20', releaseNotes: 'pending' }
+    ;(service as any).downloadedUpdateReady = true
+
+    await expect(service.checkForUpdates('manual')).resolves.toEqual({
+      status: 'downloaded',
+      currentVersion: '1.1.18',
+      source: 'manual',
+      updateInfo: {
+        version: '1.1.20',
+        releaseNotes: 'pending'
+      }
+    })
+    expect((service as any).downloadedUpdateInfo).toEqual({ version: '1.1.20', releaseNotes: 'pending' })
+  })
+
+  it('downloads the newer update when a stale downloaded update was replaced by checkForUpdates', async () => {
+    mockAutoUpdater.checkForUpdates.mockResolvedValue({
+      isUpdateAvailable: true,
+      updateInfo: {
+        version: '1.1.24',
+        releaseNotes: 'newer'
+      }
+    })
+    mockAutoUpdater.downloadUpdate.mockResolvedValue([])
+
+    const { AppUpdateService } = await import('../AppUpdateService')
+    const service = new AppUpdateService(
+      {
+        isDestroyed: () => false,
+        webContents: { send: vi.fn() }
+      } as any,
+      '1.1.18',
+      () => true
+    )
+
+    ;(service as any).downloadedUpdateInfo = { version: '1.1.20', releaseNotes: 'stale' }
+    ;(service as any).downloadedUpdateReady = true
+
+    await service.checkForUpdates('manual')
+    await expect(service.downloadUpdate()).resolves.toEqual({
+      status: 'downloading',
+      currentVersion: '1.1.18',
+      source: 'manual',
+      updateInfo: {
+        version: '1.1.24',
+        releaseNotes: 'newer'
+      }
+    })
+    expect(mockAutoUpdater.downloadUpdate).toHaveBeenCalledOnce()
+  })
+
   it('keeps downloaded update pending when Windows installer does not start', async () => {
     vi.useFakeTimers()
 
@@ -251,8 +356,7 @@ describe('AppUpdateService', () => {
     expect(mockApp.isQuitting).toBe(false)
   })
 
-  it('keeps downloaded update pending when macOS installer does not start', async () => {
-    vi.useFakeTimers()
+  it('hands macOS installation to Squirrel without waiting for a Windows-style installer start event', async () => {
     mockIsMac = true
     mockAutoUpdater.checkForUpdates.mockResolvedValue({
       isUpdateAvailable: true,
@@ -272,21 +376,21 @@ describe('AppUpdateService', () => {
 
     ;(service as any).downloadedUpdateInfo = { version: '1.1.0' }
     const installResult = service.quitAndInstall()
-    await vi.advanceTimersByTimeAsync(120000)
 
-    await expect(installResult).resolves.toMatchObject({
-      success: false,
-      status: 'error',
-      message: expect.stringContaining('Update installer did not start'),
-      updateInfo: expect.objectContaining({ version: '1.1.0' })
+    await expect(installResult).resolves.toEqual({
+      success: true,
+      status: 'installing',
+      updateInfo: { version: '1.1.0' }
     })
+    expect(mockAutoUpdater.checkForUpdates).toHaveBeenCalledOnce()
+    expect(mockAutoUpdater.downloadUpdate).toHaveBeenCalledOnce()
+    expect(mockAutoUpdater.quitAndInstall).toHaveBeenCalledWith(false, true)
     expect(configManagerMock.setPendingUpdateInfo).not.toHaveBeenCalledWith(null)
-    expect(mockApp.isInstallingUpdate).toBe(false)
-    expect(mockApp.isQuitting).toBe(false)
+    expect(mockApp.isInstallingUpdate).toBe(true)
+    expect(mockApp.isQuitting).toBe(true)
   })
 
-  it('treats native macOS before-quit-for-update as installer start', async () => {
-    vi.useFakeTimers()
+  it('does not wait for native macOS before-quit-for-update before returning install status', async () => {
     mockIsMac = true
     mockAutoUpdater.checkForUpdates.mockResolvedValue({
       isUpdateAvailable: true,
@@ -309,19 +413,22 @@ describe('AppUpdateService', () => {
 
     ;(service as any).downloadedUpdateInfo = { version: '1.1.0' }
     const installResult = service.quitAndInstall()
-    await vi.advanceTimersByTimeAsync(1)
 
     await expect(installResult).resolves.toEqual({
       success: true,
       status: 'installing',
       updateInfo: { version: '1.1.0' }
     })
-    expect(configManagerMock.setPendingUpdateInfo).toHaveBeenCalledWith(null)
+    expect(configManagerMock.setPendingUpdateInfo).not.toHaveBeenCalledWith(null)
   })
 
-  it('does not re-prepare an already downloaded macOS update in the same process', async () => {
+  it('does not re-download an already downloaded macOS update when no newer version exists', async () => {
     vi.useFakeTimers()
     mockIsMac = true
+    mockAutoUpdater.checkForUpdates.mockResolvedValue({
+      isUpdateAvailable: true,
+      updateInfo: { version: '1.1.0' }
+    })
     mockAutoUpdater.quitAndInstall.mockImplementation(() => {
       setTimeout(() => mockNativeAutoUpdater.emit('before-quit-for-update'), 1)
     })
@@ -350,7 +457,7 @@ describe('AppUpdateService', () => {
       status: 'installing',
       updateInfo: { version: '1.1.0' }
     })
-    expect(mockAutoUpdater.checkForUpdates).not.toHaveBeenCalled()
+    expect(mockAutoUpdater.checkForUpdates).toHaveBeenCalledOnce()
     expect(mockAutoUpdater.downloadUpdate).not.toHaveBeenCalled()
   })
 
@@ -391,7 +498,7 @@ describe('AppUpdateService', () => {
     expect(mockAutoUpdater.checkForUpdates).toHaveBeenCalledOnce()
     expect(mockAutoUpdater.downloadUpdate).toHaveBeenCalledOnce()
     expect(mockAutoUpdater.quitAndInstall).toHaveBeenCalledWith(false, true)
-    expect(configManagerMock.setPendingUpdateInfo).toHaveBeenCalledWith(null)
+    expect(configManagerMock.setPendingUpdateInfo).not.toHaveBeenCalledWith(null)
   })
 
   it('restores downloaded update state from pending config on startup', async () => {

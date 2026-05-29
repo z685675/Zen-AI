@@ -116,7 +116,6 @@ export type AppUpdateCheckResult =
 
 const logger = loggerService.withContext('AppUpdateService')
 const STARTUP_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000
-const MAC_INSTALL_START_TIMEOUT_MS = 120000
 const WIN_INSTALL_START_TIMEOUT_MS = 30000
 
 type UpdateReadyResult = { success: true; updateInfo: AppUpdateInfo } | { success: false; message: string }
@@ -176,12 +175,13 @@ export class AppUpdateService {
   async checkForUpdates(source: AppUpdateCheckSource = 'manual'): Promise<AppUpdateCheckResult> {
     this.currentSource = source
     autoUpdater.autoDownload = source === 'manual' ? false : this.shouldAutoDownload()
+    const pendingUpdateInfo = this.downloadedUpdateInfo ?? this.restorePendingUpdateInfo()
     this.setState({
       status: 'checking',
       source,
       autoUpdateEnabled: this.shouldAutoDownload(),
       currentVersion: this.currentVersion,
-      updateInfo: this.downloadedUpdateInfo ?? this.latestUpdateInfo,
+      updateInfo: pendingUpdateInfo ?? this.latestUpdateInfo,
       progress: this.progressInfo
     })
 
@@ -194,23 +194,6 @@ export class AppUpdateService {
         source,
         'Portable builds do not support automatic in-place updates. Please use the installer build.'
       )
-    }
-
-    if (this.downloadedUpdateInfo) {
-      this.setState({
-        status: 'downloaded',
-        source,
-        autoUpdateEnabled: this.shouldAutoDownload(),
-        currentVersion: this.currentVersion,
-        updateInfo: this.downloadedUpdateInfo,
-        progress: null
-      })
-      return {
-        status: 'downloaded',
-        currentVersion: this.currentVersion,
-        source,
-        updateInfo: this.downloadedUpdateInfo
-      }
     }
 
     if (this.downloading) {
@@ -250,8 +233,27 @@ export class AppUpdateService {
       this.checking = true
       const result = await autoUpdater.checkForUpdates()
       const updateInfo = this.normalizeUpdateInfo(result?.updateInfo)
+      const hasNewerServerUpdate = this.isNewerUpdate(updateInfo.version, pendingUpdateInfo?.version)
 
-      if (!result?.isUpdateAvailable) {
+      if (!result?.isUpdateAvailable || (pendingUpdateInfo && !hasNewerServerUpdate)) {
+        if (pendingUpdateInfo) {
+          this.downloadedUpdateInfo = pendingUpdateInfo
+          this.setState({
+            status: 'downloaded',
+            source,
+            autoUpdateEnabled: this.shouldAutoDownload(),
+            currentVersion: this.currentVersion,
+            updateInfo: pendingUpdateInfo,
+            progress: null
+          })
+          return {
+            status: 'downloaded',
+            currentVersion: this.currentVersion,
+            source,
+            updateInfo: pendingUpdateInfo
+          }
+        }
+
         this.latestUpdateInfo = null
         this.progressInfo = null
         this.setState({
@@ -273,6 +275,14 @@ export class AppUpdateService {
       }
 
       this.latestUpdateInfo = updateInfo
+      if (pendingUpdateInfo && hasNewerServerUpdate) {
+        logger.info('A newer update is available; replacing stale downloaded update info', {
+          pendingVersion: pendingUpdateInfo.version,
+          latestVersion: updateInfo.version
+        })
+        this.downloadedUpdateInfo = null
+        this.downloadedUpdateReady = false
+      }
       this.setState({
         status: 'available',
         source,
@@ -298,6 +308,7 @@ export class AppUpdateService {
   async downloadUpdate(): Promise<AppUpdateCheckResult> {
     this.currentSource = 'manual'
     autoUpdater.autoDownload = false
+    const pendingUpdateInfo = this.downloadedUpdateInfo ?? this.restorePendingUpdateInfo()
 
     if (!app.isPackaged) {
       return this.handleUpdateError('manual', `${APP_NAME} only supports auto update after installation packaging.`)
@@ -310,8 +321,16 @@ export class AppUpdateService {
       )
     }
 
-    if (this.downloadedUpdateInfo) {
-      if (isMac && !this.downloadedUpdateReady) {
+    if (pendingUpdateInfo) {
+      const hasNewerServerUpdate = this.latestUpdateInfo && this.isNewerUpdate(this.latestUpdateInfo.version, pendingUpdateInfo.version)
+      if (hasNewerServerUpdate) {
+        logger.info('Downloading newer update instead of using stale pending package', {
+          pendingVersion: pendingUpdateInfo.version,
+          latestVersion: this.latestUpdateInfo?.version
+        })
+        this.downloadedUpdateInfo = null
+        this.downloadedUpdateReady = false
+      } else if (isMac && !this.downloadedUpdateReady) {
         logger.info('macOS downloaded update info exists but installer payload is not ready in this process')
       } else {
         this.setState({
@@ -319,14 +338,14 @@ export class AppUpdateService {
           source: 'manual',
           autoUpdateEnabled: this.shouldAutoDownload(),
           currentVersion: this.currentVersion,
-          updateInfo: this.downloadedUpdateInfo,
+          updateInfo: pendingUpdateInfo,
           progress: null
         })
         return {
           status: 'downloaded',
           currentVersion: this.currentVersion,
           source: 'manual',
-          updateInfo: this.downloadedUpdateInfo
+          updateInfo: pendingUpdateInfo
         }
       }
     }
@@ -426,6 +445,16 @@ export class AppUpdateService {
       app.isInstallingUpdate = true
       app.isQuitting = true
       logger.info('Quitting and installing downloaded app update', { version: installUpdateInfo.version })
+
+      if (isMac) {
+        autoUpdater.quitAndInstall(false, true)
+        return {
+          success: true,
+          status: 'installing',
+          updateInfo: installUpdateInfo
+        }
+      }
+
       const installStartPromise = this.waitForInstallStart()
       autoUpdater.quitAndInstall(false, true)
       const installStarted = await installStartPromise
@@ -664,7 +693,7 @@ export class AppUpdateService {
         })
         finish(false)
       }
-      const timer = setTimeout(() => finish(false), isMac ? MAC_INSTALL_START_TIMEOUT_MS : WIN_INSTALL_START_TIMEOUT_MS)
+      const timer = setTimeout(() => finish(false), WIN_INSTALL_START_TIMEOUT_MS)
 
       app.once('before-quit', onBeforeQuit)
       autoUpdater.once('error', onError)
@@ -757,6 +786,21 @@ export class AppUpdateService {
 
   private clearPendingUpdateInfo() {
     configManager.setPendingUpdateInfo(null)
+  }
+
+  private isNewerUpdate(candidateVersion: string | undefined, baselineVersion: string | undefined) {
+    if (!candidateVersion || !baselineVersion) {
+      return false
+    }
+
+    const candidate = semver.coerce(candidateVersion)
+    const baseline = semver.coerce(baselineVersion)
+
+    if (!candidate || !baseline) {
+      return candidateVersion !== baselineVersion
+    }
+
+    return semver.gt(candidate, baseline)
   }
 
   private sendEvent(channel: IpcChannel, payload: unknown) {
