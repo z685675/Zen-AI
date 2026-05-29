@@ -1,10 +1,13 @@
 import { type CSSProperties } from 'react'
+import { isMac } from '@renderer/config/constant'
 import ReactMarkdown from 'react-markdown'
 import rehypeRaw from 'rehype-raw'
 import remarkCjkFriendly from 'remark-cjk-friendly'
 import remarkGfm from 'remark-gfm'
 
 type Translate = (key: string, options?: Record<string, unknown>) => string
+
+const MAC_MANUAL_DOWNLOAD_URL = 'https://github.com/z685675/Zen-AI/releases/latest'
 
 export interface UpdateInfo {
   version: string
@@ -48,6 +51,15 @@ const releaseNotesStyle: CSSProperties = {
   border: '1px solid var(--color-border)',
   borderRadius: 8,
   background: 'var(--color-background-soft)'
+}
+
+const manualInstallNoticeStyle: CSSProperties = {
+  padding: '12px 14px',
+  borderRadius: 10,
+  border: '1px solid rgba(250, 173, 20, 0.28)',
+  background: 'rgba(250, 173, 20, 0.1)',
+  color: 'var(--color-text)',
+  lineHeight: 1.7
 }
 
 function renderReleaseNotes(releaseNotes: string) {
@@ -108,15 +120,32 @@ export function showAppUpdateAvailableModal(t: Translate, updateInfo: UpdateInfo
 }
 
 export function showAppUpdateDownloadedModal(t: Translate, updateInfo: UpdateInfo) {
+  const shouldUseManualMacInstall = isMac
+
   window.modal.confirm({
     title: t('update.title'),
-    okText: t('update.installNow'),
+    okText: shouldUseManualMacInstall ? '打开下载页面' : t('update.installNow'),
     cancelText: t('update.later'),
     centered: true,
     width: 720,
     maskClosable: false,
-    content: renderUpdateContent(t, updateInfo, 'update.message'),
+    content: (
+      <div style={updateContainerStyle}>
+        {shouldUseManualMacInstall && (
+          <div style={manualInstallNoticeStyle}>
+            macOS 当前版本暂不支持可靠的一键安装。请点击“打开下载页面”，下载最新的 macOS DMG 安装包后手动安装。
+          </div>
+        )}
+        {renderUpdateContent(t, updateInfo, 'update.message')}
+      </div>
+    ),
     async onOk() {
+      if (shouldUseManualMacInstall) {
+        await window.api.shell.openExternal(MAC_MANUAL_DOWNLOAD_URL)
+        window.toast.info('已打开下载页面，请下载 macOS DMG 安装包后手动安装。')
+        return
+      }
+
       const result = await window.api.quitAndInstallUpdate()
       if (result === true || result?.success === true) {
         return

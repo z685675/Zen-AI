@@ -316,12 +316,12 @@ describe('AppUpdateService', () => {
     ;(service as any).downloadedUpdateInfo = { version: '1.1.0' }
     ;(service as any).downloadedUpdateReady = true
     const installResult = service.quitAndInstall()
-    await vi.advanceTimersByTimeAsync(30000)
+    await vi.advanceTimersByTimeAsync(60000)
 
     await expect(installResult).resolves.toEqual({
       success: false,
       status: 'error',
-      message: expect.stringContaining('Update installer did not start'),
+      message: expect.stringContaining('更新安装器暂时没有启动'),
       updateInfo: { version: '1.1.0' }
     })
     expect(configManagerMock.setPendingUpdateInfo).not.toHaveBeenCalledWith(null)

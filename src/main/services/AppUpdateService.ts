@@ -116,7 +116,7 @@ export type AppUpdateCheckResult =
 
 const logger = loggerService.withContext('AppUpdateService')
 const STARTUP_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000
-const WIN_INSTALL_START_TIMEOUT_MS = 30000
+const WIN_INSTALL_START_TIMEOUT_MS = 60000
 
 type UpdateReadyResult = { success: true; updateInfo: AppUpdateInfo } | { success: false; message: string }
 
@@ -461,7 +461,7 @@ export class AppUpdateService {
       if (!installStarted) {
         app.isInstallingUpdate = false
         app.isQuitting = false
-        const message = 'Update installer did not start. Please click Install Now again, or restart the app and try again.'
+        const message = '更新安装器暂时没有启动。请再次点击“立即安装”，或退出并重新打开软件后完成更新。'
         logger.warn('Update installer did not start after quitAndInstall', { version: installUpdateInfo.version })
         return {
           success: false,

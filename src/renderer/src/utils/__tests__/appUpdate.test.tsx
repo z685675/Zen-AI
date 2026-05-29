@@ -4,6 +4,10 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { formatReleaseDate, showAppUpdateAvailableModal, showAppUpdateDownloadedModal } from '../appUpdate'
 
+vi.mock('@renderer/config/constant', () => ({
+  isMac: false
+}))
+
 const t = (key: string, options?: Record<string, unknown>) => {
   switch (key) {
     case 'update.available':
