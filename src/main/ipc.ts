@@ -179,6 +179,7 @@ export async function registerIpc(mainWindow: BrowserWindow, app: Electron.App) 
   ipcMain.handle(IpcChannel.App_GetUpdateState, () => appUpdateService.getState())
   ipcMain.handle(IpcChannel.App_QuitAndInstall, () => appUpdateService.quitAndInstall())
   ipcMain.handle(IpcChannel.App_DownloadUpdate, () => appUpdateService.downloadUpdate())
+  ipcMain.handle(IpcChannel.App_OpenDownloadedInstaller, () => appUpdateService.openDownloadedInstaller())
 
   // language
   ipcMain.handle(IpcChannel.App_SetLanguage, (_, language) => {

@@ -3,7 +3,11 @@ import { isMac, isPortable } from '@main/constant'
 import { configManager } from '@main/services/ConfigManager'
 import { APP_NAME, APP_UPDATE_FEED_URL } from '@shared/config/constant'
 import { IpcChannel } from '@shared/IpcChannel'
-import { app, autoUpdater as nativeAutoUpdater, type BrowserWindow } from 'electron'
+import { createWriteStream } from 'node:fs'
+import { mkdir, rename, stat, unlink } from 'node:fs/promises'
+import { request } from 'node:https'
+import path from 'node:path'
+import { app, autoUpdater as nativeAutoUpdater, shell, type BrowserWindow } from 'electron'
 import type { ProgressInfo, UpdateDownloadedEvent, UpdateInfo } from 'electron-updater'
 import { autoUpdater } from 'electron-updater'
 import semver from 'semver'
@@ -105,6 +109,14 @@ export interface AppUpdateCheckResultError {
 
 export type AppUpdateInstallResult =
   | { success: true; status: 'installing'; updateInfo: AppUpdateInfo }
+  | {
+      success: true
+      status: 'manual-installer-opened'
+      updateInfo: AppUpdateInfo
+      installerPath: string
+      fallbackToFolder?: boolean
+      message?: string
+    }
   | { success: false; status: 'not-downloaded' | 'error'; message: string; updateInfo: AppUpdateInfo | null }
 
 export type AppUpdateCheckResult =
@@ -117,6 +129,8 @@ export type AppUpdateCheckResult =
 const logger = loggerService.withContext('AppUpdateService')
 const STARTUP_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000
 const WIN_INSTALL_START_TIMEOUT_MS = 60000
+const DEFAULT_UPDATE_FEED_URL = 'https://download.925636.xyz/zen-ai/'
+const MAC_MANUAL_UPDATE_DIR_NAME = 'Zen AI Updates'
 
 type UpdateReadyResult = { success: true; updateInfo: AppUpdateInfo } | { success: false; message: string }
 
@@ -376,14 +390,30 @@ export class AppUpdateService {
 
     try {
       this.downloading = true
+      const updateInfo = this.latestUpdateInfo
+      if (!updateInfo) {
+        return this.handleUpdateError('manual', 'No update is available to download.')
+      }
+
       this.setState({
         status: 'downloading',
         source: 'manual',
         autoUpdateEnabled: this.shouldAutoDownload(),
         currentVersion: this.currentVersion,
-        updateInfo: this.latestUpdateInfo,
+        updateInfo,
         progress: this.progressInfo
       })
+
+      if (isMac) {
+        await this.prepareMacManualInstaller(updateInfo)
+        return {
+          status: 'downloaded',
+          currentVersion: this.currentVersion,
+          source: 'manual',
+          updateInfo
+        }
+      }
+
       autoUpdater.autoDownload = true
       await autoUpdater.downloadUpdate()
       this.downloadedUpdateReady = true
@@ -392,7 +422,7 @@ export class AppUpdateService {
         status: 'downloading',
         currentVersion: this.currentVersion,
         source: 'manual',
-        updateInfo: this.latestUpdateInfo
+        updateInfo
       }
     } catch (error) {
       this.downloading = false
@@ -447,11 +477,17 @@ export class AppUpdateService {
       logger.info('Quitting and installing downloaded app update', { version: installUpdateInfo.version })
 
       if (isMac) {
-        autoUpdater.quitAndInstall(false, true)
+        const installerPath = await this.prepareMacManualInstaller(installUpdateInfo)
+        const openResult = await this.openMacManualInstaller(installerPath)
+        this.clearPendingUpdateInfo()
+        app.isInstallingUpdate = false
+        app.isQuitting = false
         return {
           success: true,
-          status: 'installing',
-          updateInfo: installUpdateInfo
+          status: 'manual-installer-opened',
+          updateInfo: installUpdateInfo,
+          installerPath,
+          ...openResult
         }
       }
 
@@ -486,6 +522,46 @@ export class AppUpdateService {
         status: 'error',
         message,
         updateInfo: installUpdateInfo
+      }
+    }
+  }
+
+  async openDownloadedInstaller(): Promise<AppUpdateInstallResult> {
+    if (!isMac) {
+      return this.quitAndInstall()
+    }
+
+    const updateInfo = this.downloadedUpdateInfo ?? this.latestUpdateInfo ?? this.restorePendingUpdateInfo()
+
+    if (!updateInfo) {
+      const message = 'Update package has not been downloaded yet.'
+      logger.warn('Cannot open macOS update installer because no update is available')
+      return {
+        success: false,
+        status: 'not-downloaded',
+        message,
+        updateInfo: null
+      }
+    }
+
+    try {
+      const installerPath = await this.prepareMacManualInstaller(updateInfo)
+      const openResult = await this.openMacManualInstaller(installerPath)
+      return {
+        success: true,
+        status: 'manual-installer-opened',
+        updateInfo,
+        installerPath,
+        ...openResult
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      logger.error('Failed to open downloaded macOS update installer', { error: message })
+      return {
+        success: false,
+        status: 'error',
+        message,
+        updateInfo
       }
     }
   }
@@ -605,6 +681,19 @@ export class AppUpdateService {
   }
 
   private async ensureDownloadedUpdateReady(updateInfo: AppUpdateInfo): Promise<UpdateReadyResult> {
+    if (isMac) {
+      try {
+        await this.prepareMacManualInstaller(updateInfo)
+        return { success: true, updateInfo }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        return {
+          success: false,
+          message: `Failed to prepare the macOS installer: ${message}`
+        }
+      }
+    }
+
     logger.info('Preparing update installer payload before quitAndInstall', { version: updateInfo.version })
     this.downloading = true
     this.progressInfo = null
@@ -701,6 +790,182 @@ export class AppUpdateService {
       nativeAutoUpdater.once('update-downloaded', onNativeUpdateDownloaded)
       nativeAutoUpdater.once('error', onError)
     })
+  }
+
+  private async prepareMacManualInstaller(updateInfo: AppUpdateInfo): Promise<string> {
+    if (!updateInfo.version) {
+      throw new Error('Missing update version.')
+    }
+
+    const installerPath = this.getMacManualInstallerPath(updateInfo.version)
+    if (await this.isExistingFile(installerPath)) {
+      this.markMacManualInstallerReady(updateInfo)
+      return installerPath
+    }
+
+    const installerUrl = this.getMacManualInstallerUrl(updateInfo.version)
+    logger.info('Downloading macOS manual update installer', {
+      version: updateInfo.version,
+      url: installerUrl,
+      installerPath
+    })
+
+    this.downloading = true
+    this.progressInfo = null
+    this.setState({
+      status: 'downloading',
+      source: this.currentSource,
+      autoUpdateEnabled: this.shouldAutoDownload(),
+      currentVersion: this.currentVersion,
+      updateInfo,
+      progress: null
+    })
+
+    try {
+      await mkdir(path.dirname(installerPath), { recursive: true })
+      await this.downloadFile(installerUrl, installerPath)
+      this.markMacManualInstallerReady(updateInfo)
+      return installerPath
+    } finally {
+      this.downloading = false
+    }
+  }
+
+  private async openMacManualInstaller(installerPath: string) {
+    const openError = await shell.openPath(installerPath)
+    if (!openError) {
+      return {
+        fallbackToFolder: false,
+        message: 'macOS installer opened.'
+      }
+    }
+
+    logger.warn('Failed to open macOS update DMG directly; revealing installer in Finder instead', {
+      installerPath,
+      error: openError
+    })
+    shell.showItemInFolder(installerPath)
+    return {
+      fallbackToFolder: true,
+      message: openError
+    }
+  }
+
+  private markMacManualInstallerReady(updateInfo: AppUpdateInfo) {
+    this.downloadedUpdateInfo = updateInfo
+    this.latestUpdateInfo = updateInfo
+    this.downloadedUpdateReady = true
+    this.progressInfo = null
+    this.persistPendingUpdateInfo(updateInfo)
+    this.setState({
+      status: 'downloaded',
+      source: this.currentSource,
+      autoUpdateEnabled: this.shouldAutoDownload(),
+      currentVersion: this.currentVersion,
+      updateInfo,
+      progress: null
+    })
+
+    const payload = { ...updateInfo, currentVersion: this.currentVersion, source: this.currentSource }
+    this.sendEvent(IpcChannel.UpdateDownloaded, payload)
+  }
+
+  private getMacManualInstallerUrl(version: string) {
+    const baseUrl = this.feedUrl || DEFAULT_UPDATE_FEED_URL
+    const filename = this.getMacManualInstallerFilename(version)
+    const encodedFilename = filename
+      .split('/')
+      .map((segment) => encodeURIComponent(segment))
+      .join('/')
+    return new URL(encodedFilename, baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`).toString()
+  }
+
+  private getMacManualInstallerPath(version: string) {
+    return path.join(app.getPath('downloads'), MAC_MANUAL_UPDATE_DIR_NAME, this.getMacManualInstallerFilename(version))
+  }
+
+  private getMacManualInstallerFilename(version: string) {
+    return `${APP_NAME}-${version}-macos-${process.arch}.dmg`
+  }
+
+  private async isExistingFile(filePath: string) {
+    try {
+      const fileStat = await stat(filePath)
+      return fileStat.isFile() && fileStat.size > 0
+    } catch {
+      return false
+    }
+  }
+
+  private async downloadFile(url: string, destinationPath: string): Promise<void> {
+    const temporaryPath = `${destinationPath}.download`
+    await unlink(temporaryPath).catch(() => undefined)
+
+    await new Promise<void>((resolve, reject) => {
+      const file = createWriteStream(temporaryPath)
+      let settled = false
+
+      const finish = (error?: Error) => {
+        if (settled) return
+        settled = true
+        file.close(() => {
+          if (error) {
+            void unlink(temporaryPath).catch(() => undefined)
+            reject(error)
+          } else {
+            resolve()
+          }
+        })
+      }
+
+      request(url, (response) => {
+        const statusCode = response.statusCode ?? 0
+        if (statusCode >= 300 && statusCode < 400 && response.headers.location) {
+          file.close(() => {
+            void unlink(temporaryPath).catch(() => undefined)
+            this.downloadFile(new URL(response.headers.location!, url).toString(), destinationPath).then(resolve, reject)
+          })
+          return
+        }
+
+        if (statusCode !== 200) {
+          response.resume()
+          finish(new Error(`Download failed with HTTP ${statusCode}.`))
+          return
+        }
+
+        const total = Number(response.headers['content-length'] ?? 0)
+        let transferred = 0
+        response.on('data', (chunk: Buffer) => {
+          transferred += chunk.length
+          if (total > 0) {
+            this.progressInfo = {
+              percent: Math.max(0, Math.min(100, (transferred / total) * 100)),
+              transferred,
+              total,
+              bytesPerSecond: 0
+            }
+            this.setState({
+              status: 'downloading',
+              source: this.currentSource,
+              autoUpdateEnabled: this.shouldAutoDownload(),
+              currentVersion: this.currentVersion,
+              updateInfo: this.latestUpdateInfo,
+              progress: this.progressInfo
+            })
+            this.sendEvent(IpcChannel.DownloadProgress, this.progressInfo)
+          }
+        })
+        response.on('error', finish)
+        file.on('error', finish)
+        file.on('finish', () => finish())
+        response.pipe(file)
+      })
+        .on('error', finish)
+        .end()
+    })
+
+    await rename(temporaryPath, destinationPath)
   }
 
   private handleUpdateError(source: AppUpdateCheckSource, message: string): AppUpdateCheckResultError {

@@ -17,6 +17,10 @@ const mockAutoUpdater = Object.assign(mockAutoUpdaterEmitter, {
 vi.spyOn(mockAutoUpdaterEmitter, 'on')
 
 const mockNativeAutoUpdater = new EventEmitter()
+const mockShell = {
+  openPath: vi.fn(),
+  showItemInFolder: vi.fn()
+}
 
 const configManagerMock = {
   getPendingUpdateInfo: vi.fn(),
@@ -28,7 +32,8 @@ let mockIsMac = false
 const mockApp = Object.assign(new EventEmitter(), {
   isPackaged: true,
   isQuitting: false,
-  isInstallingUpdate: false
+  isInstallingUpdate: false,
+  getPath: vi.fn(() => path.join('mock', 'Downloads'))
 })
 
 vi.mock('@logger', () => ({
@@ -54,7 +59,7 @@ vi.mock('@main/services/ConfigManager', () => ({
 }))
 
 vi.mock('@shared/config/constant', () => ({
-  APP_NAME: 'Zen-AI',
+  APP_NAME: 'Zen AI',
   APP_UPDATE_FEED_URL: 'https://example.com/releases'
 }))
 
@@ -70,7 +75,8 @@ vi.mock('@shared/IpcChannel', () => ({
 
 vi.mock('electron', () => ({
   app: mockApp,
-  autoUpdater: mockNativeAutoUpdater
+  autoUpdater: mockNativeAutoUpdater,
+  shell: mockShell
 }))
 
 vi.mock('electron-updater', () => ({
@@ -91,6 +97,10 @@ describe('AppUpdateService', () => {
     mockAutoUpdater.checkForUpdates.mockReset()
     mockAutoUpdater.downloadUpdate.mockReset()
     mockAutoUpdater.quitAndInstall.mockReset()
+    mockShell.openPath.mockReset()
+    mockShell.openPath.mockResolvedValue('')
+    mockShell.showItemInFolder.mockReset()
+    mockApp.getPath.mockReturnValue(path.join('mock', 'Downloads'))
   })
 
   afterEach(() => {
@@ -356,13 +366,8 @@ describe('AppUpdateService', () => {
     expect(mockApp.isQuitting).toBe(false)
   })
 
-  it('hands macOS installation to Squirrel without waiting for a Windows-style installer start event', async () => {
+  it('opens the local macOS DMG installer instead of using Squirrel auto install', async () => {
     mockIsMac = true
-    mockAutoUpdater.checkForUpdates.mockResolvedValue({
-      isUpdateAvailable: true,
-      updateInfo: { version: '1.1.0' }
-    })
-    mockAutoUpdater.downloadUpdate.mockResolvedValue([])
 
     const { AppUpdateService } = await import('../AppUpdateService')
     const service = new AppUpdateService(
@@ -375,30 +380,32 @@ describe('AppUpdateService', () => {
     )
 
     ;(service as any).downloadedUpdateInfo = { version: '1.1.0' }
-    const installResult = service.quitAndInstall()
+    ;(service as any).downloadedUpdateReady = true
+    vi.spyOn(service as any, 'isExistingFile').mockResolvedValue(true)
 
-    await expect(installResult).resolves.toEqual({
+    const installerPath = path.join('mock', 'Downloads', 'Zen AI Updates', 'Zen AI-1.1.0-macos-x64.dmg')
+
+    await expect(service.quitAndInstall()).resolves.toEqual({
       success: true,
-      status: 'installing',
-      updateInfo: { version: '1.1.0' }
+      status: 'manual-installer-opened',
+      updateInfo: { version: '1.1.0' },
+      installerPath,
+      fallbackToFolder: false,
+      message: 'macOS installer opened.'
     })
-    expect(mockAutoUpdater.checkForUpdates).toHaveBeenCalledOnce()
-    expect(mockAutoUpdater.downloadUpdate).toHaveBeenCalledOnce()
-    expect(mockAutoUpdater.quitAndInstall).toHaveBeenCalledWith(false, true)
-    expect(configManagerMock.setPendingUpdateInfo).not.toHaveBeenCalledWith(null)
-    expect(mockApp.isInstallingUpdate).toBe(true)
-    expect(mockApp.isQuitting).toBe(true)
+    expect(mockShell.openPath).toHaveBeenCalledWith(installerPath)
+    expect(mockShell.showItemInFolder).not.toHaveBeenCalled()
+    expect(mockAutoUpdater.quitAndInstall).not.toHaveBeenCalled()
+    expect(configManagerMock.setPendingUpdateInfo).toHaveBeenCalledWith(null)
+    expect(mockApp.isInstallingUpdate).toBe(false)
+    expect(mockApp.isQuitting).toBe(false)
   })
 
-  it('does not wait for native macOS before-quit-for-update before returning install status', async () => {
+  it('can open a restored macOS pending update from the local manual installer folder', async () => {
     mockIsMac = true
-    mockAutoUpdater.checkForUpdates.mockResolvedValue({
-      isUpdateAvailable: true,
-      updateInfo: { version: '1.1.0' }
-    })
-    mockAutoUpdater.downloadUpdate.mockResolvedValue([])
-    mockAutoUpdater.quitAndInstall.mockImplementation(() => {
-      setTimeout(() => mockNativeAutoUpdater.emit('before-quit-for-update'), 1)
+    configManagerMock.getPendingUpdateInfo.mockReturnValue({
+      version: '1.1.0',
+      releaseNotes: 'pending'
     })
 
     const { AppUpdateService } = await import('../AppUpdateService')
@@ -411,26 +418,55 @@ describe('AppUpdateService', () => {
       () => true
     )
 
-    ;(service as any).downloadedUpdateInfo = { version: '1.1.0' }
-    const installResult = service.quitAndInstall()
+    vi.spyOn(service as any, 'isExistingFile').mockResolvedValue(true)
 
-    await expect(installResult).resolves.toEqual({
+    await expect(service.openDownloadedInstaller()).resolves.toMatchObject({
       success: true,
-      status: 'installing',
-      updateInfo: { version: '1.1.0' }
+      status: 'manual-installer-opened',
+      updateInfo: { version: '1.1.0', releaseNotes: 'pending' }
     })
-    expect(configManagerMock.setPendingUpdateInfo).not.toHaveBeenCalledWith(null)
+    expect(mockShell.openPath).toHaveBeenCalledOnce()
+    expect(mockShell.showItemInFolder).not.toHaveBeenCalled()
+    expect(mockAutoUpdater.quitAndInstall).not.toHaveBeenCalled()
+  })
+
+  it('reveals the local macOS installer in Finder when opening the DMG directly fails', async () => {
+    mockIsMac = true
+    mockShell.openPath.mockResolvedValueOnce('permission denied')
+
+    const { AppUpdateService } = await import('../AppUpdateService')
+    const service = new AppUpdateService(
+      {
+        isDestroyed: () => false,
+        webContents: { send: vi.fn() }
+      } as any,
+      '1.0.0',
+      () => true
+    )
+
+    ;(service as any).downloadedUpdateInfo = { version: '1.1.0' }
+    ;(service as any).downloadedUpdateReady = true
+    vi.spyOn(service as any, 'isExistingFile').mockResolvedValue(true)
+
+    const installerPath = path.join('mock', 'Downloads', 'Zen AI Updates', 'Zen AI-1.1.0-macos-x64.dmg')
+
+    await expect(service.openDownloadedInstaller()).resolves.toEqual({
+      success: true,
+      status: 'manual-installer-opened',
+      updateInfo: { version: '1.1.0' },
+      installerPath,
+      fallbackToFolder: true,
+      message: 'permission denied'
+    })
+    expect(mockShell.openPath).toHaveBeenCalledWith(installerPath)
+    expect(mockShell.showItemInFolder).toHaveBeenCalledWith(installerPath)
   })
 
   it('does not re-download an already downloaded macOS update when no newer version exists', async () => {
-    vi.useFakeTimers()
     mockIsMac = true
     mockAutoUpdater.checkForUpdates.mockResolvedValue({
       isUpdateAvailable: true,
       updateInfo: { version: '1.1.0' }
-    })
-    mockAutoUpdater.quitAndInstall.mockImplementation(() => {
-      setTimeout(() => mockNativeAutoUpdater.emit('before-quit-for-update'), 1)
     })
 
     const { AppUpdateService } = await import('../AppUpdateService')
@@ -445,36 +481,26 @@ describe('AppUpdateService', () => {
 
     ;(service as any).downloadedUpdateInfo = { version: '1.1.0' }
     ;(service as any).downloadedUpdateReady = true
+    vi.spyOn(service as any, 'isExistingFile').mockResolvedValue(true)
 
     const checkResult = await service.checkForUpdates('manual')
     expect(checkResult.status).toBe('downloaded')
 
-    const installResult = service.quitAndInstall()
-    await vi.advanceTimersByTimeAsync(1)
-
-    await expect(installResult).resolves.toEqual({
+    await expect(service.quitAndInstall()).resolves.toMatchObject({
       success: true,
-      status: 'installing',
+      status: 'manual-installer-opened',
       updateInfo: { version: '1.1.0' }
     })
     expect(mockAutoUpdater.checkForUpdates).toHaveBeenCalledOnce()
     expect(mockAutoUpdater.downloadUpdate).not.toHaveBeenCalled()
+    expect(mockAutoUpdater.quitAndInstall).not.toHaveBeenCalled()
   })
 
-  it('re-prepares macOS installer payload before installing a restored pending update', async () => {
-    vi.useFakeTimers()
+  it('prepares the local macOS installer payload before installing a restored pending update', async () => {
     mockIsMac = true
     configManagerMock.getPendingUpdateInfo.mockReturnValue({
       version: '1.1.0',
       releaseNotes: 'pending'
-    })
-    mockAutoUpdater.checkForUpdates.mockResolvedValue({
-      isUpdateAvailable: true,
-      updateInfo: { version: '1.1.0', releaseNotes: 'fresh' }
-    })
-    mockAutoUpdater.downloadUpdate.mockResolvedValue([])
-    mockAutoUpdater.quitAndInstall.mockImplementation(() => {
-      setTimeout(() => mockApp.emit('before-quit'), 1)
     })
 
     const { AppUpdateService } = await import('../AppUpdateService')
@@ -487,18 +513,16 @@ describe('AppUpdateService', () => {
       () => true
     )
 
-    const installResult = service.quitAndInstall()
-    await vi.advanceTimersByTimeAsync(1)
+    vi.spyOn(service as any, 'isExistingFile').mockResolvedValue(true)
 
-    await expect(installResult).resolves.toEqual({
+    await expect(service.quitAndInstall()).resolves.toMatchObject({
       success: true,
-      status: 'installing',
-      updateInfo: { version: '1.1.0', releaseNotes: 'fresh' }
+      status: 'manual-installer-opened',
+      updateInfo: { version: '1.1.0', releaseNotes: 'pending' }
     })
-    expect(mockAutoUpdater.checkForUpdates).toHaveBeenCalledOnce()
-    expect(mockAutoUpdater.downloadUpdate).toHaveBeenCalledOnce()
-    expect(mockAutoUpdater.quitAndInstall).toHaveBeenCalledWith(false, true)
-    expect(configManagerMock.setPendingUpdateInfo).not.toHaveBeenCalledWith(null)
+    expect(mockAutoUpdater.checkForUpdates).not.toHaveBeenCalled()
+    expect(mockAutoUpdater.downloadUpdate).not.toHaveBeenCalled()
+    expect(mockAutoUpdater.quitAndInstall).not.toHaveBeenCalled()
   })
 
   it('restores downloaded update state from pending config on startup', async () => {

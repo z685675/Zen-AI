@@ -9,6 +9,7 @@ export enum IpcChannel {
   App_GetUpdateState = 'app:get-update-state',
   App_DownloadUpdate = 'app:download-update',
   App_QuitAndInstall = 'app:quit-and-install',
+  App_OpenDownloadedInstaller = 'app:open-downloaded-installer',
   App_Reload = 'app:reload',
   App_Quit = 'app:quit',
   App_Info = 'app:info',

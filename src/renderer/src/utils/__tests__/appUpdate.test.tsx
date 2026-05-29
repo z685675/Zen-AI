@@ -1,11 +1,15 @@
 import { render, screen } from '@testing-library/react'
 import type { ReactNode } from 'react'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { formatReleaseDate, showAppUpdateAvailableModal, showAppUpdateDownloadedModal } from '../appUpdate'
 
+let mockIsMac = false
+
 vi.mock('@renderer/config/constant', () => ({
-  isMac: false
+  get isMac() {
+    return mockIsMac
+  }
 }))
 
 const t = (key: string, options?: Record<string, unknown>) => {
@@ -34,6 +38,10 @@ const t = (key: string, options?: Record<string, unknown>) => {
 }
 
 describe('appUpdate', () => {
+  beforeEach(() => {
+    mockIsMac = false
+  })
+
   it('formats release date as a readable local datetime', () => {
     expect(formatReleaseDate('2026-05-22T17:57:33.000Z')).not.toContain('T')
     expect(formatReleaseDate('2026-05-22T17:57:33.000Z')).not.toContain('Z')
@@ -68,7 +76,8 @@ describe('appUpdate', () => {
     ;(window as any).toast = { error: vi.fn() }
     ;(window as any).api = {
       downloadUpdate: vi.fn().mockResolvedValue({ status: 'downloading' }),
-      quitAndInstallUpdate: vi.fn().mockResolvedValue({ success: true, status: 'installing' })
+      quitAndInstallUpdate: vi.fn().mockResolvedValue({ success: true, status: 'installing' }),
+      openDownloadedInstaller: vi.fn()
     }
 
     showAppUpdateAvailableModal(t, {
@@ -100,7 +109,8 @@ describe('appUpdate', () => {
         status: 'error',
         message: 'network failed'
       }),
-      quitAndInstallUpdate: vi.fn()
+      quitAndInstallUpdate: vi.fn(),
+      openDownloadedInstaller: vi.fn()
     }
 
     showAppUpdateAvailableModal(t, {
@@ -121,7 +131,8 @@ describe('appUpdate', () => {
     ;(window as any).modal = { confirm }
     ;(window as any).api = {
       downloadUpdate: vi.fn(),
-      quitAndInstallUpdate: vi.fn().mockResolvedValue({ success: true, status: 'installing' })
+      quitAndInstallUpdate: vi.fn().mockResolvedValue({ success: true, status: 'installing' }),
+      openDownloadedInstaller: vi.fn()
     }
 
     showAppUpdateDownloadedModal(t, {
@@ -137,6 +148,72 @@ describe('appUpdate', () => {
     await options.onOk()
     expect(window.api.quitAndInstallUpdate).toHaveBeenCalledOnce()
     expect(window.api.downloadUpdate).not.toHaveBeenCalled()
+    expect(window.api.openDownloadedInstaller).not.toHaveBeenCalled()
+  })
+
+  it('opens the local macOS installer for downloaded updates', async () => {
+    mockIsMac = true
+    const confirm = vi.fn()
+    const toastInfo = vi.fn()
+
+    ;(window as any).modal = { confirm }
+    ;(window as any).toast = { info: toastInfo, error: vi.fn() }
+    ;(window as any).api = {
+      downloadUpdate: vi.fn(),
+      quitAndInstallUpdate: vi.fn(),
+      openDownloadedInstaller: vi.fn().mockResolvedValue({
+        success: true,
+        status: 'manual-installer-opened',
+        installerPath: '/Users/test/Downloads/Zen AI Updates/Zen AI-1.1.14-macos-arm64.dmg',
+        fallbackToFolder: false
+      })
+    }
+
+    showAppUpdateDownloadedModal(t, {
+      version: '1.1.14',
+      releaseNotes: '- test'
+    })
+
+    const options = confirm.mock.calls[0][0]
+    expect(options.okText).toBe('打开安装包')
+
+    render(<>{options.content}</>)
+    expect(screen.getByText(/自动打开已下载的 DMG 安装窗口/)).toBeInTheDocument()
+
+    await options.onOk()
+    expect(window.api.openDownloadedInstaller).toHaveBeenCalledOnce()
+    expect(window.api.quitAndInstallUpdate).not.toHaveBeenCalled()
+    expect(toastInfo).toHaveBeenCalledWith('已打开安装包，请在安装窗口中拖入 Applications 完成安装。')
+  })
+
+  it('shows a Finder fallback message when macOS installer cannot be opened directly', async () => {
+    mockIsMac = true
+    const confirm = vi.fn()
+    const toastInfo = vi.fn()
+
+    ;(window as any).modal = { confirm }
+    ;(window as any).toast = { info: toastInfo, error: vi.fn() }
+    ;(window as any).api = {
+      downloadUpdate: vi.fn(),
+      quitAndInstallUpdate: vi.fn(),
+      openDownloadedInstaller: vi.fn().mockResolvedValue({
+        success: true,
+        status: 'manual-installer-opened',
+        installerPath: '/Users/test/Downloads/Zen AI Updates/Zen AI-1.1.14-macos-arm64.dmg',
+        fallbackToFolder: true
+      })
+    }
+
+    showAppUpdateDownloadedModal(t, {
+      version: '1.1.14',
+      releaseNotes: '- test'
+    })
+
+    const options = confirm.mock.calls[0][0]
+    await options.onOk()
+
+    expect(window.api.openDownloadedInstaller).toHaveBeenCalledOnce()
+    expect(toastInfo).toHaveBeenCalledWith('未能直接打开安装包，已为你定位到安装包位置，请双击 DMG 完成安装。')
   })
 
   it('keeps the downloaded update modal open when install fails', async () => {
@@ -151,7 +228,8 @@ describe('appUpdate', () => {
         success: false,
         status: 'not-downloaded',
         message: 'Update package has not been downloaded yet.'
-      })
+      }),
+      openDownloadedInstaller: vi.fn()
     }
 
     showAppUpdateDownloadedModal(t, {

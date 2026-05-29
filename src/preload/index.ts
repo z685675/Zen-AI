@@ -135,6 +135,7 @@ const api = {
   getUpdateState: () => ipcRenderer.invoke(IpcChannel.App_GetUpdateState),
   downloadUpdate: () => ipcRenderer.invoke(IpcChannel.App_DownloadUpdate),
   quitAndInstallUpdate: () => ipcRenderer.invoke(IpcChannel.App_QuitAndInstall),
+  openDownloadedInstaller: () => ipcRenderer.invoke(IpcChannel.App_OpenDownloadedInstaller),
   getCacheSize: () => ipcRenderer.invoke(IpcChannel.App_GetCacheSize),
   clearCache: () => ipcRenderer.invoke(IpcChannel.App_ClearCache),
   logToMain: (source: LogSourceWithContext, level: LogLevel, message: string, data: any[]) =>

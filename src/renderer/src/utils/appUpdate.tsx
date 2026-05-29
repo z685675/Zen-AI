@@ -7,8 +7,6 @@ import remarkGfm from 'remark-gfm'
 
 type Translate = (key: string, options?: Record<string, unknown>) => string
 
-const MAC_MANUAL_DOWNLOAD_URL = 'https://github.com/z685675/Zen-AI/releases/latest'
-
 export interface UpdateInfo {
   version: string
   releaseDate?: string
@@ -124,7 +122,7 @@ export function showAppUpdateDownloadedModal(t: Translate, updateInfo: UpdateInf
 
   window.modal.confirm({
     title: t('update.title'),
-    okText: shouldUseManualMacInstall ? '打开下载页面' : t('update.installNow'),
+    okText: shouldUseManualMacInstall ? '打开安装包' : t('update.installNow'),
     cancelText: t('update.later'),
     centered: true,
     width: 720,
@@ -133,7 +131,8 @@ export function showAppUpdateDownloadedModal(t: Translate, updateInfo: UpdateInf
       <div style={updateContainerStyle}>
         {shouldUseManualMacInstall && (
           <div style={manualInstallNoticeStyle}>
-            macOS 当前版本暂不支持可靠的一键安装。请点击“打开下载页面”，下载最新的 macOS DMG 安装包后手动安装。
+            macOS 当前采用手动安装更新。点击“打开安装包”后，会自动打开已下载的 DMG 安装窗口；
+            请在窗口中将 Zen AI 拖入 Applications 覆盖安装。
           </div>
         )}
         {renderUpdateContent(t, updateInfo, 'update.message')}
@@ -141,9 +140,21 @@ export function showAppUpdateDownloadedModal(t: Translate, updateInfo: UpdateInf
     ),
     async onOk() {
       if (shouldUseManualMacInstall) {
-        await window.api.shell.openExternal(MAC_MANUAL_DOWNLOAD_URL)
-        window.toast.info('已打开下载页面，请下载 macOS DMG 安装包后手动安装。')
-        return
+        const result = await window.api.openDownloadedInstaller()
+        if (result === true || result?.success === true) {
+          const message = result?.fallbackToFolder
+            ? '未能直接打开安装包，已为你定位到安装包位置，请双击 DMG 完成安装。'
+            : '已打开安装包，请在安装窗口中拖入 Applications 完成安装。'
+          window.toast.info(message)
+          return
+        }
+
+        const message =
+          typeof result?.message === 'string' && result.message
+            ? result.message
+            : '安装包暂时没有准备好，请重新检查更新或等待下载完成后再试。'
+        window.toast.error(message)
+        throw new Error(message)
       }
 
       const result = await window.api.quitAndInstallUpdate()
