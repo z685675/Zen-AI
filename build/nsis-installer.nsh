@@ -68,8 +68,61 @@ Function closeRunningZenAI
   Pop $0
 FunctionEnd
 
+Function un.closeRunningZenAI
+  Push $0
+  Push $1
+
+  DetailPrint "Closing running ${PRODUCT_NAME} processes..."
+
+  nsExec::ExecToStack `"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -Command "$$dirs = @('$INSTDIR', [IO.Path]::Combine([Environment]::GetFolderPath('LocalApplicationData'), 'Programs', 'Zen AI'), [IO.Path]::Combine([Environment]::GetFolderPath('LocalApplicationData'), 'Programs', 'Cherry Studio')); Get-CimInstance Win32_Process | ? { $$_.ProcessId -ne $$PID -and $$_.Path -and ($$dirs | ? { $$_.Path.StartsWith($$_, [StringComparison]::CurrentCultureIgnoreCase) }) } | % { Stop-Process -Id $$_.ProcessId -Force -ErrorAction SilentlyContinue }"`
+  Pop $0
+  Pop $1
+
+  nsExec::ExecToStack '"$SYSDIR\taskkill.exe" /IM "Zen AI.exe" /T'
+  Pop $0
+  Pop $1
+  nsExec::ExecToStack '"$SYSDIR\taskkill.exe" /IM "Zen-AI.exe" /T'
+  Pop $0
+  Pop $1
+  nsExec::ExecToStack '"$SYSDIR\taskkill.exe" /IM "ZenAI.exe" /T'
+  Pop $0
+  Pop $1
+  nsExec::ExecToStack '"$SYSDIR\taskkill.exe" /IM "Cherry Studio.exe" /T'
+  Pop $0
+  Pop $1
+  nsExec::ExecToStack '"$SYSDIR\taskkill.exe" /IM "CherryStudio.exe" /T'
+  Pop $0
+  Pop $1
+  Sleep 2500
+
+  DetailPrint "Force-closing remaining ${PRODUCT_NAME} processes..."
+  nsExec::ExecToStack '"$SYSDIR\taskkill.exe" /F /IM "Zen AI.exe" /T'
+  Pop $0
+  Pop $1
+  nsExec::ExecToStack '"$SYSDIR\taskkill.exe" /F /IM "Zen-AI.exe" /T'
+  Pop $0
+  Pop $1
+  nsExec::ExecToStack '"$SYSDIR\taskkill.exe" /F /IM "ZenAI.exe" /T'
+  Pop $0
+  Pop $1
+  nsExec::ExecToStack '"$SYSDIR\taskkill.exe" /F /IM "Cherry Studio.exe" /T'
+  Pop $0
+  Pop $1
+  nsExec::ExecToStack '"$SYSDIR\taskkill.exe" /F /IM "CherryStudio.exe" /T'
+  Pop $0
+  Pop $1
+  Sleep 2500
+
+  Pop $1
+  Pop $0
+FunctionEnd
+
 !macro customCheckAppRunning
-  Call closeRunningZenAI
+  !ifdef BUILD_UNINSTALLER
+    Call un.closeRunningZenAI
+  !else
+    Call closeRunningZenAI
+  !endif
 !macroend
 
 !ifndef BUILD_UNINSTALLER
