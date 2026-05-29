@@ -15,6 +15,7 @@
 ; Older builds can minimize to tray or leave helper processes below the install
 ; directory. Close both current and legacy process names before electron-builder's
 ; app-running check, including the uninstall phase used during overwrite installs.
+!ifndef BUILD_UNINSTALLER
 Function closeRunningZenAI
   Push $0
   Push $1
@@ -67,7 +68,9 @@ Function closeRunningZenAI
   Pop $1
   Pop $0
 FunctionEnd
+!endif
 
+!ifdef BUILD_UNINSTALLER
 Function un.closeRunningZenAI
   Push $0
   Push $1
@@ -116,6 +119,7 @@ Function un.closeRunningZenAI
   Pop $1
   Pop $0
 FunctionEnd
+!endif
 
 !macro customCheckAppRunning
   !ifdef BUILD_UNINSTALLER
