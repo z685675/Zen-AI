@@ -12,32 +12,67 @@
 !include FileFunc.nsh
 
 ; https://github.com/electron-userland/electron-builder/issues/1122
+; Older builds can minimize to tray or leave helper processes below the install
+; directory. Close both current and legacy process names before electron-builder's
+; app-running check, including the uninstall phase used during overwrite installs.
+Function closeRunningZenAI
+  Push $0
+  Push $1
+
+  DetailPrint "Closing running ${PRODUCT_NAME} processes..."
+
+  ; Prefer path-based cleanup so helper processes inside the install directory do
+  ; not keep NSIS stuck on the "cannot be closed" retry dialog.
+  nsExec::ExecToStack `"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -Command "$$dirs = @('$INSTDIR', [IO.Path]::Combine([Environment]::GetFolderPath('LocalApplicationData'), 'Programs', 'Zen AI'), [IO.Path]::Combine([Environment]::GetFolderPath('LocalApplicationData'), 'Programs', 'Cherry Studio')); Get-CimInstance Win32_Process | ? { $$_.ProcessId -ne $$PID -and $$_.Path -and ($$dirs | ? { $$_.Path.StartsWith($$_, [StringComparison]::CurrentCultureIgnoreCase) }) } | % { Stop-Process -Id $$_.ProcessId -Force -ErrorAction SilentlyContinue }"`
+  Pop $0
+  Pop $1
+
+  ; Also cover old renamed builds where the executable name is no longer the same
+  ; as the current product name.
+  nsExec::ExecToStack '"$SYSDIR\taskkill.exe" /IM "Zen AI.exe" /T'
+  Pop $0
+  Pop $1
+  nsExec::ExecToStack '"$SYSDIR\taskkill.exe" /IM "Zen-AI.exe" /T'
+  Pop $0
+  Pop $1
+  nsExec::ExecToStack '"$SYSDIR\taskkill.exe" /IM "ZenAI.exe" /T'
+  Pop $0
+  Pop $1
+  nsExec::ExecToStack '"$SYSDIR\taskkill.exe" /IM "Cherry Studio.exe" /T'
+  Pop $0
+  Pop $1
+  nsExec::ExecToStack '"$SYSDIR\taskkill.exe" /IM "CherryStudio.exe" /T'
+  Pop $0
+  Pop $1
+  Sleep 2500
+
+  DetailPrint "Force-closing remaining ${PRODUCT_NAME} processes..."
+  nsExec::ExecToStack '"$SYSDIR\taskkill.exe" /F /IM "Zen AI.exe" /T'
+  Pop $0
+  Pop $1
+  nsExec::ExecToStack '"$SYSDIR\taskkill.exe" /F /IM "Zen-AI.exe" /T'
+  Pop $0
+  Pop $1
+  nsExec::ExecToStack '"$SYSDIR\taskkill.exe" /F /IM "ZenAI.exe" /T'
+  Pop $0
+  Pop $1
+  nsExec::ExecToStack '"$SYSDIR\taskkill.exe" /F /IM "Cherry Studio.exe" /T'
+  Pop $0
+  Pop $1
+  nsExec::ExecToStack '"$SYSDIR\taskkill.exe" /F /IM "CherryStudio.exe" /T'
+  Pop $0
+  Pop $1
+  Sleep 2500
+
+  Pop $1
+  Pop $0
+FunctionEnd
+
+!macro customCheckAppRunning
+  Call closeRunningZenAI
+!macroend
+
 !ifndef BUILD_UNINSTALLER
-  ; Older builds can minimize to tray when NSIS asks the main window to close,
-  ; so the installer may keep seeing Zen AI as "running". Close it explicitly
-  ; from electron-builder's app-running hook so overwrite installs and silent
-  ; auto-updates do not get stuck on the default "cannot be closed" dialog.
-  Function closeRunningZenAI
-    DetailPrint "Closing running ${PRODUCT_NAME}..."
-
-    ; First try the normal close path so the old app can flush data.
-    nsExec::ExecToStack '"$SYSDIR\taskkill.exe" /IM "${PRODUCT_NAME}.exe" /T'
-    Pop $0
-    Pop $1
-    Sleep 2500
-
-    ; If the old app is hidden in tray or stuck in shutdown cleanup, force-kill
-    ; it. Ignore "not found" failures because the process may already be gone.
-    DetailPrint "Force-closing ${PRODUCT_NAME}.exe if it is still running..."
-    nsExec::ExecToStack '"$SYSDIR\taskkill.exe" /F /IM "${PRODUCT_NAME}.exe" /T'
-    Pop $0
-    Pop $1
-    Sleep 1500
-  FunctionEnd
-
-  !macro customCheckAppRunning
-    Call closeRunningZenAI
-  !macroend
 
   ; Check VC++ Redistributable based on architecture stored in $1
   Function checkVCRedist
