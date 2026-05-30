@@ -87,7 +87,7 @@ Function prepareInstallDirForOverwrite
   ; Avoid relying on the old bundled uninstaller during app updates. Older
   ; uninstallers can report "app cannot be closed" even after the app process is
   ; gone, which blocks the new installer. User data lives outside $INSTDIR.
-  IfFileExists "$INSTDIR\${APP_EXECUTABLE_FILENAME}" 0 done
+  IfFileExists "$INSTDIR\Zen AI.exe" 0 done
 
   StrCpy $0 "$PLUGINSDIR\old-install-preclean"
   RMDir /r "$0"
