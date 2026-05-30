@@ -5,7 +5,6 @@ import { Navbar, NavbarCenter } from '@renderer/components/app/Navbar'
 import Scrollbar from '@renderer/components/Scrollbar'
 import InfoTooltip from '@renderer/components/TooltipIcons/InfoTooltip'
 import TranslateButton from '@renderer/components/TranslateButton'
-import { getProviderLogo, PROVIDER_URLS } from '@renderer/config/providers'
 import { LanguagesEnum } from '@renderer/config/translate'
 import { usePaintings } from '@renderer/hooks/usePaintings'
 import { usePaintingProviders } from '@renderer/hooks/useProvider'
@@ -26,8 +25,9 @@ import {
 import FileManager from '@renderer/services/FileManager'
 import { translateText } from '@renderer/services/TranslateService'
 import type { FileMetadata, PaintingAction } from '@renderer/types'
-import { getErrorMessage, uuid } from '@renderer/utils'
-import { Avatar, Button, Empty, InputNumber, Select, Upload } from 'antd'
+import { uuid } from '@renderer/utils'
+import { getFriendlyPaintingErrorMessage } from '@renderer/utils/friendlyError'
+import { Button, Empty, InputNumber, Select, Upload } from 'antd'
 import TextArea from 'antd/es/input/TextArea'
 import type { FC } from 'react'
 import React from 'react'
@@ -37,7 +37,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import styled from 'styled-components'
 
 import SendMessageButton from '../home/Inputbar/SendMessageButton'
-import { SettingHelpLink, SettingTitle } from '../settings'
+import { SettingTitle } from '../settings'
 import Artboard from './components/Artboard'
 import ProviderSelect from './components/ProviderSelect'
 import { checkProviderEnabled, resolveSmartAutoSize } from './utils'
@@ -437,7 +437,7 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
   const handleError = (error: unknown) => {
     if (error instanceof Error && error.name !== 'AbortError') {
       window.modal.error({
-        content: getErrorMessage(error),
+        content: getFriendlyPaintingErrorMessage(error),
         centered: true
       })
     }
@@ -774,20 +774,7 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
       </Navbar>
       <ContentContainer id="content-container">
         <LeftContainer>
-          <ProviderTitleContainer>
-            <SettingTitle style={{ marginBottom: 5 }}>{t('common.provider')}</SettingTitle>
-            <SettingHelpLink
-              target="_blank"
-              href={PROVIDER_URLS[newApiProvider.id]?.websites?.docs || 'https://docs.newapi.pro/'}>
-              {t('paintings.learn_more')}
-              <ProviderLogo
-                shape="square"
-                src={getProviderLogo(newApiProvider.id)}
-                size={16}
-                style={{ marginLeft: 5 }}
-              />
-            </SettingHelpLink>
-          </ProviderTitleContainer>
+          <SettingTitle style={{ marginBottom: 5 }}>{t('common.provider')}</SettingTitle>
 
           <ProviderSelect provider={newApiProvider} options={Options} onChange={handleProviderChange} />
 
@@ -1068,17 +1055,6 @@ const ToolbarMenu = styled.div`
   flex-direction: row;
   align-items: center;
   gap: 6px;
-`
-
-const ProviderLogo = styled(Avatar)`
-  border: 0.5px solid var(--color-border);
-`
-
-const ProviderTitleContainer = styled.div`
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 5px;
 `
 
 const SettingTitleRow = styled.div`

@@ -27,6 +27,7 @@ import NarrowLayout from '../home/Messages/NarrowLayout'
 import AgentChatNavbar from './components/AgentChatNavbar'
 import AgentSessionInputbar from './components/AgentSessionInputbar'
 import AgentSessionMessages from './components/AgentSessionMessages'
+import AgentTaskStatusBar from './components/AgentTaskStatusBar'
 
 type CapabilityCardItem = {
   key: string
@@ -229,6 +230,7 @@ const AgentChat = () => {
                 <AgentSessionMessages agentId={activeAgentId} sessionId={activeSessionId} />
                 <div className="mt-auto px-4.5 pb-2">
                   <NarrowLayout contentMaxWidth="960px">
+                    <AgentTaskStatusBar topicId={buildAgentSessionTopicId(activeSessionId)} />
                     <PinnedTodoPanel topicId={buildAgentSessionTopicId(activeSessionId)} />
                   </NarrowLayout>
                 </div>

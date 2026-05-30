@@ -51,6 +51,10 @@ export async function handleWaitForUser(controller: CdpBrowserController, args: 
     return successResponse(JSON.stringify(result))
   } catch (error) {
     logger.error('Wait for user failed', { error })
-    return errorResponse(error instanceof Error ? error : String(error))
+    const message = error instanceof Error ? error.message : String(error)
+    if (message.toLowerCase().includes('timed out waiting for user')) {
+      return errorResponse('等待网页接管超时。请重新发起任务，或再次打开网页完成登录、验证或确认后继续。')
+    }
+    return errorResponse(message)
   }
 }

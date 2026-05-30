@@ -25,6 +25,7 @@ import styled from 'styled-components'
 
 import { type ToolStatus, ToolStatusIndicator } from './MessageAgentTools/GenericTools'
 import { AgentToolsType } from './MessageAgentTools/types'
+import { getToolDisplayInfo, getToolStatusLabel } from './toolDisplay'
 
 export interface ToolHeaderProps {
   block?: ToolMessageBlock
@@ -216,20 +217,22 @@ const ToolHeader: FC<ToolHeaderProps> = ({
 
   const status = propStatus || (toolResponse?.status as ToolStatus)
   const hasError = propHasError ?? toolResponse?.response?.isError === true
+  const displayInfo = getToolDisplayInfo(toolName, tool?.type === 'mcp' ? (tool as MCPTool) : undefined)
+  const statusLabel = getToolStatusLabel(status, displayInfo, hasError)
 
-  const description = params ?? getToolDescription(toolResponse)
+  const description = params ?? displayInfo.description ?? getToolDescription(toolResponse)
 
   const Container = variant === 'standalone' ? HeaderContainer : LabelContainer
 
   if (block && tool?.type === 'mcp') {
     const mcpTool = tool as MCPTool
+    const mcpDisplayInfo = getToolDisplayInfo(mcpTool.name, mcpTool)
+    const mcpStatusLabel = getToolStatusLabel(status, mcpDisplayInfo, hasError)
     return (
       <Container>
         <ToolName align="center" gap={6}>
           <Wrench size={14} className="tool-icon" />
-          <span className="name">
-            {mcpTool.serverName} : {mcpTool.name}
-          </span>
+          <span className="name">{mcpDisplayInfo.label}</span>
           {isToolAutoApproved(mcpTool) && (
             <Tooltip title={t('message.tools.autoApproveEnabled')} mouseLeaveDelay={0}>
               <ShieldCheck size={14} color="var(--color-primary)" />
@@ -240,7 +243,7 @@ const ToolHeader: FC<ToolHeaderProps> = ({
         {stats && <Stats>{stats}</Stats>}
         {showStatus && status && (
           <StatusWrapper>
-            <ToolStatusIndicator status={status} hasError={hasError} />
+            <ToolStatusIndicator status={status} hasError={hasError} label={mcpStatusLabel} />
           </StatusWrapper>
         )}
       </Container>
@@ -251,13 +254,13 @@ const ToolHeader: FC<ToolHeaderProps> = ({
     <Container>
       <ToolName align="center" gap={6}>
         <span className="tool-icon">{propIcon || getAgentToolIcon(toolName)}</span>
-        <span className="name">{getAgentToolLabel(toolName, t)}</span>
+        <span className="name">{displayInfo.label || getAgentToolLabel(toolName, t)}</span>
       </ToolName>
       {description && <Description>{description}</Description>}
       {stats && <Stats>{stats}</Stats>}
       {showStatus && status && (
         <StatusWrapper>
-          <ToolStatusIndicator status={status} hasError={hasError} />
+          <ToolStatusIndicator status={status} hasError={hasError} label={statusLabel} />
         </StatusWrapper>
       )}
     </Container>

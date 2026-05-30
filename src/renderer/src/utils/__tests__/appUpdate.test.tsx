@@ -183,7 +183,8 @@ describe('appUpdate', () => {
     await options.onOk()
     expect(window.api.openDownloadedInstaller).toHaveBeenCalledOnce()
     expect(window.api.quitAndInstallUpdate).not.toHaveBeenCalled()
-    expect(toastInfo).toHaveBeenCalledWith('已打开安装包，请在安装窗口中拖入 Applications 完成安装。')
+    expect(toastInfo).toHaveBeenCalledWith('正在打开安装程序…')
+    expect(toastInfo).toHaveBeenCalledWith('已打开安装程序，请在安装窗口中拖入 Applications 完成安装。')
   })
 
   it('shows a Finder fallback message when macOS installer cannot be opened directly', async () => {
@@ -213,7 +214,8 @@ describe('appUpdate', () => {
     await options.onOk()
 
     expect(window.api.openDownloadedInstaller).toHaveBeenCalledOnce()
-    expect(toastInfo).toHaveBeenCalledWith('未能直接打开安装包，已为你定位到安装包位置，请双击 DMG 完成安装。')
+    expect(toastInfo).toHaveBeenCalledWith('正在打开安装程序…')
+    expect(toastInfo).toHaveBeenCalledWith('没能直接打开安装包，已为你定位到安装包位置，请双击 DMG 完成安装。')
   })
 
   it('keeps the downloaded update modal open when install fails', async () => {

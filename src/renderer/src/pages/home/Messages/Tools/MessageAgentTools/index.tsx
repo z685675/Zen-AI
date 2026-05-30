@@ -33,6 +33,7 @@ import { UnknownToolRenderer } from './UnknownToolRenderer'
 import { WebFetchTool } from './WebFetchTool'
 import { WebSearchTool } from './WebSearchTool'
 import { WriteTool } from './WriteTool'
+import { getToolDisplayInfo, getToolStatusLabel } from '../toolDisplay'
 
 // 创建工具渲染器映射
 export const toolRenderers = {
@@ -107,7 +108,11 @@ function ToolContent({
         <div className="min-w-0">{renderedItem.label}</div>
         {status && (
           <div className="shrink-0">
-            <ToolStatusIndicator status={status} hasError={hasError} />
+            <ToolStatusIndicator
+              status={status}
+              hasError={hasError}
+              label={getToolStatusLabel(status, getToolDisplayInfo(toolName), hasError)}
+            />
           </div>
         )}
       </div>

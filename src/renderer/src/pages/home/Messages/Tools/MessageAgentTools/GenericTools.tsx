@@ -128,39 +128,47 @@ export function getEffectiveStatus(status: MCPToolResponseStatus | undefined, is
 }
 
 // 工具状态指示器 - 显示在 Collapse 标题右侧
-export function ToolStatusIndicator({ status, hasError = false }: { status: ToolStatus; hasError?: boolean }) {
+export function ToolStatusIndicator({
+  status,
+  hasError = false,
+  label
+}: {
+  status: ToolStatus
+  hasError?: boolean
+  label?: string
+}) {
   const { t } = useTranslation()
 
   const getStatusInfo = (): { label: string; icon: ReactNode; color: StatusColor } | null => {
     switch (status) {
       case 'streaming':
-        return { label: t('message.tools.streaming', 'Streaming'), icon: <LoadingIcon />, color: 'primary' }
+        return { label: label ?? t('message.tools.streaming', 'Streaming'), icon: <LoadingIcon />, color: 'primary' }
       case 'waiting':
-        return { label: t('message.tools.pending', 'Awaiting Approval'), icon: <LoadingIcon />, color: 'warning' }
+        return { label: label ?? t('message.tools.pending', 'Awaiting Approval'), icon: <LoadingIcon />, color: 'warning' }
       case 'pending':
       case 'invoking':
-        return { label: t('message.tools.invoking'), icon: <LoadingIcon />, color: 'primary' }
+        return { label: label ?? t('message.tools.invoking'), icon: <LoadingIcon />, color: 'primary' }
       case 'cancelled':
         return {
-          label: t('message.tools.cancelled'),
+          label: label ?? t('message.tools.cancelled'),
           icon: <X size={13} className="lucide-custom" />,
           color: 'error'
         }
       case 'done':
         return hasError
           ? {
-              label: t('message.tools.error'),
+              label: label ?? t('message.tools.error'),
               icon: <TriangleAlert size={13} className="lucide-custom" />,
               color: 'error'
             }
           : {
-              label: t('message.tools.completed'),
+              label: label ?? t('message.tools.completed'),
               icon: <Check size={13} className="lucide-custom" />,
               color: 'success'
             }
       case 'error':
         return {
-          label: t('message.tools.error'),
+          label: label ?? t('message.tools.error'),
           icon: <TriangleAlert size={13} className="lucide-custom" />,
           color: 'error'
         }

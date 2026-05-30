@@ -247,8 +247,7 @@ describe('MessageAgentTools', () => {
       render(<MessageAgentTools toolResponse={toolResponse} />)
 
       // Should render the DEDICATED ReadTool component, not StreamingToolContent
-      // ReadTool uses 'Read File' as label, not just 'Read'
-      expect(screen.getByText('Read File')).toBeInTheDocument()
+      expect(screen.getByText('读取文件')).toBeInTheDocument()
       // Should show the filename from partial args
       expect(screen.getByText('test.ts')).toBeInTheDocument()
     })
@@ -263,7 +262,7 @@ describe('MessageAgentTools', () => {
       render(<MessageAgentTools toolResponse={toolResponse} />)
 
       // Should use dedicated ReadTool renderer
-      expect(screen.getByText('Read File')).toBeInTheDocument()
+      expect(screen.getByText('读取文件')).toBeInTheDocument()
       // Should show the filename extracted by ReadTool
       expect(screen.getByText('myfile.ts')).toBeInTheDocument()
     })
@@ -278,7 +277,7 @@ describe('MessageAgentTools', () => {
       const { rerender } = render(<MessageAgentTools toolResponse={initialResponse} />)
 
       // Should use dedicated renderer even with partial path
-      expect(screen.getByText('Read File')).toBeInTheDocument()
+      expect(screen.getByText('读取文件')).toBeInTheDocument()
 
       // Update with status changed to pending when arguments complete
       const updatedResponse = createToolResponse({
@@ -306,7 +305,7 @@ describe('MessageAgentTools', () => {
       render(<MessageAgentTools toolResponse={toolResponse} />)
 
       // Should render the complete tool with output
-      expect(screen.getByText('Read File')).toBeInTheDocument()
+      expect(screen.getByText('读取文件')).toBeInTheDocument()
     })
 
     it('should render error state correctly', () => {
@@ -320,7 +319,7 @@ describe('MessageAgentTools', () => {
       render(<MessageAgentTools toolResponse={toolResponse} />)
 
       // Should still render the tool component
-      expect(screen.getByText('Read File')).toBeInTheDocument()
+      expect(screen.getByText('读取文件')).toBeInTheDocument()
     })
   })
 
@@ -362,7 +361,7 @@ describe('MessageAgentTools', () => {
       render(<MessageAgentTools toolResponse={toolResponse} />)
 
       // Should render the DEDICATED BashTool component
-      expect(screen.getByText('Bash')).toBeInTheDocument()
+      expect(screen.getByText('执行操作')).toBeInTheDocument()
       // Command should be visible in the dedicated renderer (ANSI colorizer splits tokens across spans)
       const container = screen.getByTestId('collapse-content-Bash')
       expect(container.textContent).toContain('npm install')

@@ -36,6 +36,7 @@ import {
 } from './shared/ArgsTable'
 import { truncateOutput } from './shared/truncateOutput'
 import ToolApprovalActionsComponent from './ToolApprovalActions'
+import { getToolDisplayInfo, getToolStatusLabel } from './toolDisplay'
 
 interface Props {
   block: ToolMessageBlock
@@ -61,6 +62,7 @@ const MessageMcpTool: FC<Props> = ({ block }) => {
   const isDone = status === 'done'
   const isError = status === 'error'
   const isStreaming = status === 'streaming'
+  const displayInfo = getToolDisplayInfo(tool.name, tool)
 
   useEffect(() => {
     const removeListener = window.electron.ipcRenderer.on(
@@ -134,7 +136,7 @@ const MessageMcpTool: FC<Props> = ({ block }) => {
         <MessageTitleLabel>
           <TitleContent>
             <ToolName align="center" gap={4}>
-              {tool.serverName} : {tool.name}
+              {displayInfo.label}
               {isToolAutoApproved(tool) && (
                 <Tooltip title={t('message.tools.autoApproveEnabled')} mouseLeaveDelay={0}>
                   <ShieldCheck size={14} color="var(--status-color-success)" />
@@ -146,7 +148,11 @@ const MessageMcpTool: FC<Props> = ({ block }) => {
             {progress > 0 ? (
               <Progress type="circle" size={14} percent={Number((progress * 100)?.toFixed(0))} />
             ) : (
-              <ToolStatusIndicator status={getEffectiveStatus(status, approval.isWaiting)} hasError={hasError} />
+              <ToolStatusIndicator
+                status={getEffectiveStatus(status, approval.isWaiting)}
+                hasError={hasError}
+                label={getToolStatusLabel(getEffectiveStatus(status, approval.isWaiting), displayInfo, hasError)}
+              />
             )}
             {!isPending && (
               <Tooltip title={t('common.copy')} mouseEnterDelay={0.5}>

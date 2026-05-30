@@ -60,6 +60,15 @@ const manualInstallNoticeStyle: CSSProperties = {
   lineHeight: 1.7
 }
 
+const installStatusStyle: CSSProperties = {
+  padding: '10px 12px',
+  borderRadius: 8,
+  border: '1px solid rgba(22, 119, 255, 0.25)',
+  background: 'rgba(22, 119, 255, 0.08)',
+  color: 'var(--color-text)',
+  fontWeight: 500
+}
+
 function renderReleaseNotes(releaseNotes: string) {
   return (
     <div className="markdown" style={releaseNotesStyle}>
@@ -120,31 +129,52 @@ export function showAppUpdateAvailableModal(t: Translate, updateInfo: UpdateInfo
 export function showAppUpdateDownloadedModal(t: Translate, updateInfo: UpdateInfo) {
   const shouldUseManualMacInstall = isMac
 
-  window.modal.confirm({
+  const renderDownloadedContent = (statusText?: string) => (
+    <div style={updateContainerStyle}>
+      {statusText && <div style={installStatusStyle}>{statusText}</div>}
+      {shouldUseManualMacInstall && (
+        <div style={manualInstallNoticeStyle}>
+          macOS 当前采用手动安装更新。点击“打开安装包”后，会自动打开已下载的 DMG 安装窗口，请在窗口中将 Zen AI 拖入
+          Applications 覆盖安装。
+        </div>
+      )}
+      {renderUpdateContent(t, updateInfo, 'update.message')}
+    </div>
+  )
+
+  const modal = window.modal.confirm({
     title: t('update.title'),
     okText: shouldUseManualMacInstall ? '打开安装包' : t('update.installNow'),
     cancelText: t('update.later'),
     centered: true,
     width: 720,
     maskClosable: false,
-    content: (
-      <div style={updateContainerStyle}>
-        {shouldUseManualMacInstall && (
-          <div style={manualInstallNoticeStyle}>
-            macOS 当前采用手动安装更新。点击“打开安装包”后，会自动打开已下载的 DMG 安装窗口；
-            请在窗口中将 Zen AI 拖入 Applications 覆盖安装。
-          </div>
-        )}
-        {renderUpdateContent(t, updateInfo, 'update.message')}
-      </div>
-    ),
+    content: renderDownloadedContent(),
     async onOk() {
+      const statusText = shouldUseManualMacInstall ? '正在打开安装程序…' : '正在准备安装包…'
+      const restoreModal = () => {
+        modal?.update({
+          okText: shouldUseManualMacInstall ? '打开安装包' : t('update.installNow'),
+          okButtonProps: { loading: false, disabled: false },
+          cancelButtonProps: { disabled: false },
+          content: renderDownloadedContent()
+        })
+      }
+
+      modal?.update({
+        okText: statusText,
+        okButtonProps: { loading: true, disabled: true },
+        cancelButtonProps: { disabled: true },
+        content: renderDownloadedContent(statusText)
+      })
+      window.toast.info?.(statusText)
+
       if (shouldUseManualMacInstall) {
         const result = await window.api.openDownloadedInstaller()
         if (result === true || result?.success === true) {
           const message = result?.fallbackToFolder
-            ? '未能直接打开安装包，已为你定位到安装包位置，请双击 DMG 完成安装。'
-            : '已打开安装包，请在安装窗口中拖入 Applications 完成安装。'
+            ? '没能直接打开安装包，已为你定位到安装包位置，请双击 DMG 完成安装。'
+            : '已打开安装程序，请在安装窗口中拖入 Applications 完成安装。'
           window.toast.info(message)
           return
         }
@@ -152,8 +182,9 @@ export function showAppUpdateDownloadedModal(t: Translate, updateInfo: UpdateInf
         const message =
           typeof result?.message === 'string' && result.message
             ? result.message
-            : '安装包暂时没有准备好，请重新检查更新或等待下载完成后再试。'
+            : '安装包暂时没有准备好，请重新检查更新，或等待下载完成后再试。'
         window.toast.error(message)
+        restoreModal()
         throw new Error(message)
       }
 
@@ -165,8 +196,9 @@ export function showAppUpdateDownloadedModal(t: Translate, updateInfo: UpdateInf
       const message =
         typeof result?.message === 'string' && result.message
           ? result.message
-          : '更新安装包尚未准备好，请重新检查更新或等待下载完成后再安装。'
+          : '更新安装包尚未准备好，请重新检查更新，或等待下载完成后再安装。'
       window.toast.error(message)
+      restoreModal()
       throw new Error(message)
     }
   })

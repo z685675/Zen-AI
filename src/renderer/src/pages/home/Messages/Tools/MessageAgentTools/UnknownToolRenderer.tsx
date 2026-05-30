@@ -4,22 +4,13 @@ import { Wrench } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { ToolArgsTable } from '../shared/ArgsTable'
+import { getToolDisplayInfo } from '../toolDisplay'
 import { ToolHeader } from './GenericTools'
 
 interface UnknownToolProps {
   toolName: string
   input?: unknown
   output?: unknown
-}
-
-const getToolDisplayName = (name: string) => {
-  if (name.startsWith('mcp__')) {
-    const parts = name.substring(5).split('__')
-    if (parts.length >= 2) {
-      return `${parts[0]}:${parts.slice(1).join(':')}`
-    }
-  }
-  return name
 }
 
 /**
@@ -53,7 +44,7 @@ export function UnknownToolRenderer({
 
   const getToolDescription = (name: string) => {
     if (name.startsWith('mcp__')) {
-      return t('message.tools.labels.mcpServerTool')
+      return getToolDisplayInfo(name).description ?? t('message.tools.labels.mcpServerTool')
     }
     return t('message.tools.labels.tool')
   }
@@ -76,7 +67,7 @@ export function UnknownToolRenderer({
     key: 'unknown-tool',
     label: (
       <ToolHeader
-        toolName={getToolDisplayName(toolName)}
+        toolName={toolName}
         icon={<Wrench className="h-4 w-4" />}
         params={getToolDescription(toolName)}
         variant="collapse-label"
