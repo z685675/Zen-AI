@@ -362,6 +362,8 @@ export type PaintingParams = {
   files: FileMetadata[]
   // provider that this painting belongs to (for new-api family separation)
   providerId?: string
+  // Legacy namespace retained for non-destructive image workspace migration.
+  migratedFromNamespace?: string
 }
 
 export type PaintingProvider = string

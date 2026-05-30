@@ -16,6 +16,11 @@ const logger = loggerService.withContext('SchedulerService')
 const POLL_INTERVAL_MS = 60_000
 const MAX_CONSECUTIVE_ERRORS = 3
 
+const isBrowserWaitForUserTool = (toolName?: string): boolean => {
+  if (!toolName) return false
+  return toolName.includes('browser') && toolName.includes('wait_for_user')
+}
+
 type RunningTask = {
   taskId: string
   agentId: string
@@ -243,6 +248,16 @@ class SchedulerService {
       // Resolve subscribed channels
       subscribedChannels = await channelService.getSubscribedChannels(task.id)
 
+      fullPrompt = [
+        '[Scheduled Task Execution Policy]',
+        'Run this scheduled task in the background by default.',
+        'If a website requires login, CAPTCHA, authorization, confirmation, upload/download choice, or manual browser interaction, open the Zen AI internal browser visibly with mcp__browser__open showWindow=true, notify the user with mcp__claw__notify when notification channels are available, then call mcp__browser__wait_for_user and continue only after the user clicks Continue.',
+        'Do not bypass CAPTCHA, payment confirmation, security prompts, or website anti-abuse protections.',
+        'For ordinary public web search, page reading, and report generation, keep the browser in background mode and do not claim that a visible browser was opened.',
+        '',
+        fullPrompt
+      ].join('\n')
+
       // Try to reuse the session from the last successful run for context continuity
       const lastSessionId = await taskService.getLastRunSessionId(task.id)
       let session = lastSessionId ? await sessionService.getSession(task.agent_id, lastSessionId) : null
@@ -269,6 +284,7 @@ class SchedulerService {
       )
 
       // Collect the response text and stream to subscribed channels only
+      let waitingForUser = false
       const targetAdapters = subscribedChannels
         .map((ch) => {
           const adapter = channelManager.getAdapter(ch.id)
@@ -280,7 +296,24 @@ class SchedulerService {
           return adapter
         })
         .filter((a) => a !== undefined)
-      const responseText = await this.collectAndStreamResponse(stream, targetAdapters)
+      const responseText = await this.collectAndStreamResponse(stream, targetAdapters, {
+        onWaitingForUser: async () => {
+          if (waitingForUser) return
+          waitingForUser = true
+          await taskService.updateTaskRunLog(logId, {
+            status: 'waiting_user',
+            result: 'Waiting for user browser handoff'
+          })
+        },
+        onResumedFromUser: async () => {
+          if (!waitingForUser) return
+          waitingForUser = false
+          await taskService.updateTaskRunLog(logId, {
+            status: 'running',
+            result: 'Resumed after user browser handoff'
+          })
+        }
+      })
       await completion
 
       // Notify renderer so the session list refreshes and messages can be loaded
@@ -341,7 +374,14 @@ class SchedulerService {
    * Collect the stream response text and simultaneously stream to channel adapters.
    * Mirrors the logic in ChannelMessageHandler.collectStreamResponse.
    */
-  private async collectAndStreamResponse(stream: ReadableStream, adapters: ChannelAdapter[]): Promise<string> {
+  private async collectAndStreamResponse(
+    stream: ReadableStream,
+    adapters: ChannelAdapter[],
+    callbacks?: {
+      onWaitingForUser?: () => Promise<void>
+      onResumedFromUser?: () => Promise<void>
+    }
+  ): Promise<string> {
     const reader = stream.getReader()
     let completedText = ''
     let currentBlockText = ''
@@ -359,6 +399,16 @@ class SchedulerService {
         if (rawType === 'user') continue
 
         switch (value.type) {
+          case 'tool-call':
+            if (isBrowserWaitForUserTool(value.toolName)) {
+              await callbacks?.onWaitingForUser?.()
+            }
+            break
+          case 'tool-result':
+            if (isBrowserWaitForUserTool(value.toolName)) {
+              await callbacks?.onResumedFromUser?.()
+            }
+            break
           case 'text-delta':
             if (value.text) {
               currentBlockText = value.text

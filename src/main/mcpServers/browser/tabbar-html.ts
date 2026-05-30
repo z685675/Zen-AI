@@ -21,6 +21,10 @@ export const TAB_BAR_HTML = `<!DOCTYPE html>
       --bg-url: #f1f3f4;
       --bg-url-focus: #fff;
       --bg-btn-hover: rgba(0,0,0,0.08);
+      --bg-handoff: #fff7ed;
+      --bg-handoff-action: #f97316;
+      --color-handoff: #9a3412;
+      --color-handoff-action: #fff;
       --bg-favicon: #9aa0a6;
       --color-text: #5f6368;
       --color-text-active: #202124;
@@ -38,6 +42,10 @@ export const TAB_BAR_HTML = `<!DOCTYPE html>
       --bg-url: #35363a;
       --bg-url-focus: #202124;
       --bg-btn-hover: rgba(255,255,255,0.1);
+      --bg-handoff: #3b2818;
+      --bg-handoff-action: #fb923c;
+      --color-handoff: #fed7aa;
+      --color-handoff-action: #1f1308;
       --bg-favicon: #5f6368;
       --color-text: #9aa0a6;
       --color-text-active: #e8eaed;
@@ -245,6 +253,18 @@ export const TAB_BAR_HTML = `<!DOCTYPE html>
     }
     #url-input::placeholder { color: var(--color-text); }
     #url-input::-webkit-input-placeholder { color: var(--color-text); }
+    #browser-owner-badge {
+      height: 28px;
+      display: flex;
+      align-items: center;
+      border-radius: 999px;
+      padding: 0 10px;
+      background: var(--bg-url);
+      color: var(--color-text);
+      font-size: 12px;
+      white-space: nowrap;
+      -webkit-app-region: no-drag;
+    }
 
     /* Window controls for Windows/Linux - use inline-flex inside tab-row instead of fixed position */
     #window-controls {
@@ -274,6 +294,65 @@ export const TAB_BAR_HTML = `<!DOCTYPE html>
     .window-control-btn svg { width: 10px; height: 10px; color: var(--color-text); fill: var(--color-text); stroke: var(--color-text); }
     .window-control-btn:hover svg { color: var(--color-text-active); fill: var(--color-text-active); stroke: var(--color-text-active); }
     .window-control-btn.close:hover svg { color: #fff; fill: #fff; stroke: #fff; }
+
+    #handoff-bar {
+      display: none;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 14px;
+      min-height: 48px;
+      background: var(--bg-handoff);
+      color: var(--color-handoff);
+      border-top: 1px solid rgba(251, 146, 60, 0.28);
+      border-bottom: 1px solid rgba(251, 146, 60, 0.28);
+      -webkit-app-region: no-drag;
+    }
+    #handoff-bar.visible { display: flex; }
+    #handoff-icon {
+      width: 24px;
+      height: 24px;
+      border-radius: 999px;
+      background: rgba(249, 115, 22, 0.16);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      flex-shrink: 0;
+    }
+    #handoff-text {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      min-width: 0;
+      flex: 1;
+    }
+    #handoff-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--color-handoff);
+    }
+    #handoff-message {
+      font-size: 12px;
+      line-height: 1.4;
+      color: var(--color-handoff);
+      opacity: 0.92;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    #handoff-continue-btn {
+      height: 30px;
+      border: none;
+      border-radius: 999px;
+      padding: 0 14px;
+      background: var(--bg-handoff-action);
+      color: var(--color-handoff-action);
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+    #handoff-continue-btn:hover { filter: brightness(0.96); }
   </style>
 </head>
 <body>
@@ -309,6 +388,15 @@ export const TAB_BAR_HTML = `<!DOCTYPE html>
     <div id="url-container">
       <input type="text" id="url-input" placeholder="Search or enter URL" spellcheck="false" />
     </div>
+    <div id="browser-owner-badge">Zen AI internal browser</div>
+  </div>
+  <div id="handoff-bar">
+    <div id="handoff-icon">!</div>
+    <div id="handoff-text">
+      <div id="handoff-title">\u9700\u8981\u4f60\u63a5\u7ba1\u6d4f\u89c8\u5668</div>
+      <div id="handoff-message">\u8bf7\u5b8c\u6210\u767b\u5f55\u3001\u9a8c\u8bc1\u7801\u6216\u786e\u8ba4\u64cd\u4f5c\uff0c\u5b8c\u6210\u540e\u70b9\u51fb\u7ee7\u7eed\u3002</div>
+    </div>
+    <button id="handoff-continue-btn">\u5b8c\u6210\u540e\u7ee7\u7eed</button>
   </div>
   <script>
     const tabsContainer = document.getElementById('tabs-container');
@@ -316,6 +404,9 @@ export const TAB_BAR_HTML = `<!DOCTYPE html>
     const backBtn = document.getElementById('back-btn');
     const forwardBtn = document.getElementById('forward-btn');
     const refreshBtn = document.getElementById('refresh-btn');
+    const handoffBar = document.getElementById('handoff-bar');
+    const handoffMessage = document.getElementById('handoff-message');
+    const handoffContinueBtn = document.getElementById('handoff-continue-btn');
 
     window.currentUrl = '';
     window.canGoBack = false;
@@ -458,6 +549,19 @@ export const TAB_BAR_HTML = `<!DOCTYPE html>
     function sendAction(action) {
       window.postMessage({ channel: 'tabbar-action', payload: action }, '*');
     }
+
+    window.showHandoff = function(message) {
+      handoffMessage.textContent = message || '\u8bf7\u5b8c\u6210\u767b\u5f55\u3001\u9a8c\u8bc1\u7801\u6216\u786e\u8ba4\u64cd\u4f5c\uff0c\u5b8c\u6210\u540e\u70b9\u51fb\u7ee7\u7eed\u3002';
+      handoffBar.classList.add('visible');
+    };
+
+    window.hideHandoff = function() {
+      handoffBar.classList.remove('visible');
+    };
+
+    handoffContinueBtn.addEventListener('click', function() {
+      sendAction({ type: 'handoff-continue' });
+    });
 
     tabsContainer.addEventListener('click', function(e) {
       var closeBtn = e.target.closest('.tab-close');

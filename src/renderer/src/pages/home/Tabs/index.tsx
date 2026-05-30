@@ -16,6 +16,7 @@ import ConversationHistoryList from './components/ConversationHistoryList'
 import Topics from './TopicsTab'
 
 interface Props {
+  assistants?: Assistant[]
   activeAssistant: Assistant
   activeTopic: Topic
   setActiveAssistant: (assistant: Assistant) => void
@@ -31,6 +32,7 @@ interface Props {
 let _tab: Tab | null = null
 
 const HomeTabs: FC<Props> = ({
+  assistants: visibleAssistants,
   activeAssistant,
   activeTopic,
   setActiveAssistant,
@@ -144,6 +146,7 @@ const HomeTabs: FC<Props> = ({
             />
           ) : (
             <Assistants
+              visibleAssistants={visibleAssistants}
               activeAssistant={activeAssistant}
               setActiveAssistant={setActiveAssistant}
               onCreateAssistant={onCreateAssistant}

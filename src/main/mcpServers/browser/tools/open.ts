@@ -30,14 +30,14 @@ export const OpenSchema = z.object({
     .optional()
     .default(false)
     .describe(
-      'Show browser window (default: false). Set true only when the user needs to see or interact with the page (e.g. login, CAPTCHA).'
+      'Show the Zen AI internal browser window (default: false). MUST be true when the user explicitly asks to open/show a page, or when login, CAPTCHA, authorization, confirmation, upload/download choice, or manual interaction is required. Keep false for ordinary background search, extraction, and summarization.'
     )
 })
 
 export const openToolDefinition = {
   name: 'open',
   description:
-    'Navigate to a URL and optionally fetch page content. By default the browser runs in the background (no window shown). If format is specified, returns { tabId, content } with page content in that format. Otherwise, returns { currentUrl, title, tabId } for subsequent operations. Use selector to extract only part of a page (e.g. "#search" for Google results). Set showWindow=true ONLY when the user needs to visually see or interact with the page (e.g. login, CAPTCHA, manual browsing). PARALLEL: Set newTab=true and call this tool multiple times simultaneously when visiting multiple URLs.',
+    'Navigate to a URL and optionally fetch page content using the Zen AI internal browser. By default the browser runs in the background (no window shown). If format is specified, returns { tabId, content } with page content in that format. Otherwise, returns { currentUrl, title, tabId } for subsequent operations. Use selector to extract only part of a page (e.g. "#search" for Google results). Set showWindow=true when the user explicitly asks to open/show a page, or when login, CAPTCHA, authorization, confirmation, upload/download choice, or manual browsing is required. Keep showWindow=false for ordinary background search, extraction, and summarization. PARALLEL: Set newTab=true and call this tool multiple times simultaneously when visiting multiple URLs.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -74,7 +74,7 @@ export const openToolDefinition = {
       showWindow: {
         type: 'boolean',
         description:
-          'Show browser window (default: false). Set true only when the user needs to see or interact with the page (e.g. login, CAPTCHA).'
+          'Show the Zen AI internal browser window. MUST be true for visible page requests or manual handoff; false for background search/extraction.'
       }
     },
     required: ['url']

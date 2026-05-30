@@ -18,6 +18,7 @@ import { AssistantList } from './components/AssistantList'
 import { AssistantTagGroups } from './components/AssistantTagGroups'
 
 interface AssistantsTabProps {
+  visibleAssistants?: Assistant[]
   activeAssistant: Assistant
   setActiveAssistant: (assistant: Assistant) => void
   onCreateAssistant: () => void
@@ -30,7 +31,7 @@ const selectTagsOrder = createSelector(
 )
 
 const AssistantsTab: FC<AssistantsTabProps> = (props) => {
-  const { activeAssistant, setActiveAssistant, onCreateAssistant, onCreateDefaultAssistant } = props
+  const { visibleAssistants, activeAssistant, setActiveAssistant, onCreateAssistant, onCreateDefaultAssistant } = props
   const containerRef = useRef<HTMLDivElement>(null)
   const { t } = useTranslation()
 
@@ -41,18 +42,20 @@ const AssistantsTab: FC<AssistantsTabProps> = (props) => {
   const { assistantsTabSortType = 'list', setAssistantsTabSortType } = useAssistantsTabSortType()
   const [dragging, setDragging] = useState(false)
   const savedTagsOrder = useAppSelector(selectTagsOrder)
+  const displayAssistants = useMemo(() => visibleAssistants ?? assistants, [assistants, visibleAssistants])
 
   // Sorting
   const sortByPinyin = useCallback(
     (isAscending: boolean) => {
-      const sorted = [...assistants].sort((a, b) => {
+      const sorted = [...displayAssistants].sort((a, b) => {
         const pinyinA = tinyPinyin.convertToPinyin(a.name, '', true)
         const pinyinB = tinyPinyin.convertToPinyin(b.name, '', true)
         return isAscending ? pinyinA.localeCompare(pinyinB) : pinyinB.localeCompare(pinyinA)
       })
-      updateAssistants(sorted)
+      const sortedIdSet = new Set(sorted.map((assistant) => assistant.id))
+      updateAssistants([...sorted, ...assistants.filter((assistant) => !sortedIdSet.has(assistant.id))])
     },
-    [assistants, updateAssistants]
+    [assistants, displayAssistants, updateAssistants]
   )
 
   const sortByPinyinAsc = useCallback(() => sortByPinyin(true), [sortByPinyin])
@@ -62,7 +65,7 @@ const AssistantsTab: FC<AssistantsTabProps> = (props) => {
   const groupedAssistantItems = useMemo(() => {
     const groups = new Map<string, Assistant[]>()
 
-    assistants.forEach((assistant) => {
+    displayAssistants.forEach((assistant) => {
       const tags = assistant.tags?.length ? assistant.tags : [t('assistants.tags.untagged')]
       tags.forEach((tag) => {
         if (!groups.has(tag)) {
@@ -89,12 +92,12 @@ const AssistantsTab: FC<AssistantsTabProps> = (props) => {
     })
 
     return sortedGroups.map(([tag, items]) => ({ tag, items }))
-  }, [assistants, t, savedTagsOrder])
+  }, [displayAssistants, t, savedTagsOrder])
 
   const handleAssistantGroupReorder = useCallback(
     (tag: string, newGroupList: Assistant[]) => {
       let insertIndex = 0
-      const updatedAssistants = assistants.map((a) => {
+      const updatedDisplayAssistants = displayAssistants.map((a) => {
         const tags = a.tags?.length ? a.tags : [t('assistants.tags.untagged')]
         if (tags.includes(tag)) {
           const replaced = newGroupList[insertIndex]
@@ -103,9 +106,13 @@ const AssistantsTab: FC<AssistantsTabProps> = (props) => {
         }
         return a
       })
-      updateAssistants(updatedAssistants)
+      const updatedIdSet = new Set(updatedDisplayAssistants.map((assistant) => assistant.id))
+      updateAssistants([
+        ...updatedDisplayAssistants,
+        ...assistants.filter((assistant) => !updatedIdSet.has(assistant.id))
+      ])
     },
-    [assistants, t, updateAssistants]
+    [assistants, displayAssistants, t, updateAssistants]
   )
 
   const onDeleteAssistant = useCallback(
@@ -157,10 +164,13 @@ const AssistantsTab: FC<AssistantsTabProps> = (props) => {
         />
       ) : (
         <AssistantList
-          items={assistants}
+          items={displayAssistants}
           activeAssistantId={activeAssistant.id}
           sortBy={assistantsTabSortType}
-          onReorder={updateAssistants}
+          onReorder={(newList) => {
+            const reorderedIdSet = new Set(newList.map((assistant) => assistant.id))
+            updateAssistants([...newList, ...assistants.filter((assistant) => !reorderedIdSet.has(assistant.id))])
+          }}
           onDragStart={() => setDragging(true)}
           onDragEnd={() => setDragging(false)}
           onAssistantSwitch={setActiveAssistant}

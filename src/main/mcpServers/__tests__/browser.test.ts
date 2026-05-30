@@ -68,6 +68,7 @@ vi.mock('electron', () => {
     public removeBrowserView = vi.fn()
     public getContentSize = vi.fn(() => [1200, 800])
     public show = vi.fn()
+    public focus = vi.fn()
 
     constructor() {
       windows.push(this)
@@ -349,6 +350,26 @@ describe('CdpBrowserController', () => {
       // Second call with showWindow=true should show existing window
       const result = await controller.open('https://example.com/', 5000, false, false, true)
       expect(result.currentUrl).toBe('https://example.com/')
+    })
+  })
+
+  describe('User handoff', () => {
+    it('waits until the user continues from the visible browser', async () => {
+      const controller = new CdpBrowserController()
+      const waitPromise = controller.waitForUser('Please sign in, then continue.', 'login_required', 1000)
+
+      await vi.waitFor(() => {
+        const windows = (controller as any).windows as Map<string, any>
+        expect(windows.size).toBe(1)
+        expect(Array.from(windows.values())[0].handoff).toBeDefined()
+      })
+
+      const windows = (controller as any).windows as Map<string, any>
+      const windowInfo = Array.from(windows.values())[0]
+      ;(controller as any).handleTabBarAction(windowInfo, { type: 'handoff-continue' })
+
+      await expect(waitPromise).resolves.toMatchObject({ status: 'continued' })
+      expect(windowInfo.handoff).toBeUndefined()
     })
   })
 

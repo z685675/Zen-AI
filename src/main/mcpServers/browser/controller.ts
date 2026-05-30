@@ -6,7 +6,7 @@ import TurndownService from 'turndown'
 
 import { SESSION_KEY_DEFAULT, SESSION_KEY_PRIVATE, TAB_BAR_HEIGHT } from './constants'
 import { TAB_BAR_HTML } from './tabbar-html'
-import { logger, type TabInfo, userAgent, type WindowInfo } from './types'
+import { logger, type BrowserHandoffInfo, type TabInfo, userAgent, type WindowInfo } from './types'
 
 /**
  * Controller for managing browser windows via Chrome DevTools Protocol (CDP).
@@ -182,6 +182,32 @@ export class CdpBrowserController {
     })
   }
 
+  private resolveHandoff(windowInfo: WindowInfo, status: 'continued' | 'closed') {
+    const handoff = windowInfo.handoff
+    if (!handoff) return
+
+    if (handoff.timeoutHandle) {
+      clearTimeout(handoff.timeoutHandle)
+    }
+
+    windowInfo.handoff = undefined
+    this.sendHandoffUpdate(windowInfo)
+    this.updateViewBounds(windowInfo)
+    handoff.resolve({ id: handoff.id, status })
+  }
+
+  private sendHandoffUpdate(windowInfo: WindowInfo) {
+    if (!windowInfo.tabBarView || windowInfo.tabBarView.webContents.isDestroyed()) return
+
+    const script = windowInfo.handoff
+      ? `window.showHandoff(${JSON.stringify(windowInfo.handoff.message)})`
+      : 'window.hideHandoff()'
+
+    windowInfo.tabBarView.webContents.executeJavaScript(script).catch((error) => {
+      logger.debug('Handoff bar update failed', { error, windowKey: windowInfo.windowKey })
+    })
+  }
+
   private handleNavigateAction(windowInfo: WindowInfo, url: string) {
     if (!windowInfo.activeTabId) return
     const activeTab = windowInfo.tabs.get(windowInfo.activeTabId)
@@ -281,6 +307,8 @@ export class CdpBrowserController {
       this.handleForwardAction(windowInfo)
     } else if (action.type === 'refresh') {
       this.handleRefreshAction(windowInfo)
+    } else if (action.type === 'handoff-continue') {
+      this.resolveHandoff(windowInfo, 'continued')
     } else if (action.type === 'window-minimize') {
       if (!windowInfo.window.isDestroyed()) {
         windowInfo.window.minimize()
@@ -328,6 +356,8 @@ export class CdpBrowserController {
       })
       this.setupTabBarMessageHandler(windowInfo)
       this.sendTabBarUpdate(windowInfo)
+      this.sendHandoffUpdate(windowInfo)
+      this.updateViewBounds(windowInfo)
     })
 
     return tabBarView
@@ -367,6 +397,7 @@ export class CdpBrowserController {
     win.on('closed', () => {
       const windowInfo = this.windows.get(windowKey)
       if (windowInfo) {
+        this.resolveHandoff(windowInfo, 'closed')
         const tabIds = Array.from(windowInfo.tabs.keys())
         for (const tabId of tabIds) {
           this.closeTabInternal(windowInfo, tabId)
@@ -422,9 +453,12 @@ export class CdpBrowserController {
 
     const [width, height] = windowInfo.window.getContentSize()
 
+    const handoffHeight = windowInfo.handoff ? 48 : 0
+    const tabBarHeight = TAB_BAR_HEIGHT + handoffHeight
+
     // Update tab bar bounds
     if (windowInfo.tabBarView && !windowInfo.tabBarView.webContents.isDestroyed()) {
-      windowInfo.tabBarView.setBounds({ x: 0, y: 0, width, height: TAB_BAR_HEIGHT })
+      windowInfo.tabBarView.setBounds({ x: 0, y: 0, width, height: tabBarHeight })
     }
 
     // Update active tab view bounds
@@ -433,9 +467,9 @@ export class CdpBrowserController {
       if (activeTab && !activeTab.view.webContents.isDestroyed()) {
         activeTab.view.setBounds({
           x: 0,
-          y: TAB_BAR_HEIGHT,
+          y: tabBarHeight,
           width,
-          height: Math.max(0, height - TAB_BAR_HEIGHT)
+          height: Math.max(0, height - tabBarHeight)
         })
       }
     }
@@ -711,6 +745,52 @@ export class CdpBrowserController {
     } finally {
       if (timeoutHandle) clearTimeout(timeoutHandle)
     }
+  }
+
+  public async waitForUser(
+    message = '请完成登录、验证码或确认操作，完成后点击继续。',
+    reason?: string,
+    timeout = 15 * 60 * 1000,
+    privateMode = false
+  ) {
+    const windowInfo = await this.getOrCreateWindow(privateMode, true)
+    const handoffId = randomUUID()
+
+    if (!windowInfo.window.isDestroyed()) {
+      windowInfo.window.show()
+      windowInfo.window.focus()
+    }
+
+    if (windowInfo.handoff) {
+      this.resolveHandoff(windowInfo, 'closed')
+    }
+
+    const result = await new Promise<{ id: string; status: 'continued' | 'closed' }>((resolve, reject) => {
+      const handoff: BrowserHandoffInfo = {
+        id: handoffId,
+        message,
+        reason,
+        createdAt: Date.now(),
+        resolve
+      }
+
+      if (timeout > 0) {
+        handoff.timeoutHandle = setTimeout(() => {
+          if (windowInfo.handoff?.id === handoffId) {
+            windowInfo.handoff = undefined
+            this.sendHandoffUpdate(windowInfo)
+            this.updateViewBounds(windowInfo)
+            reject(new Error('Timed out waiting for user to continue browser handoff'))
+          }
+        }, timeout)
+      }
+
+      windowInfo.handoff = handoff
+      this.sendHandoffUpdate(windowInfo)
+      this.updateViewBounds(windowInfo)
+    })
+
+    return result
   }
 
   public async reset(privateMode?: boolean, tabId?: string) {

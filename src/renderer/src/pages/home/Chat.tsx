@@ -66,7 +66,7 @@ const Chat: FC<Props> = ({
   const isLoadingTopicMessages = useAppSelector((state) => !!state.messages.loadingByTopic[activeTopic.id])
   const isWelcomeState = hasLoadedTopicMessages && !isLoadingTopicMessages && messages.length === 0
 
-  const welcomeAssistants = useMemo(() => {
+  const selectableAssistants = useMemo(() => {
     const defaultAssistant = assistants.find((item) => item.id === 'default') || assistants[0]
     const visibleIds = new Set<string>()
     const visibleAssistants: Assistant[] = []
@@ -228,7 +228,7 @@ const Chat: FC<Props> = ({
             <QuickPanelProvider>
               {!isWelcomeState && (
                 <ChatNavbar
-                  assistants={assistants}
+                  assistants={selectableAssistants}
                   activeAssistant={activeAssistant}
                   activeTopic={activeTopic}
                   setActiveTopic={setActiveTopic}
@@ -246,7 +246,7 @@ const Chat: FC<Props> = ({
                     <WelcomeMeta>
                       <AssistantSwitchButton
                         assistant={assistant}
-                        assistants={welcomeAssistants}
+                        assistants={selectableAssistants}
                         onSelectAssistant={setActiveAssistant}
                       />
                       <SelectModelButton assistant={assistant} />
@@ -304,6 +304,7 @@ const Chat: FC<Props> = ({
               transition={{ duration: 0.3, ease: 'easeInOut' }}
               style={{ overflow: 'hidden' }}>
               <Tabs
+                assistants={selectableAssistants}
                 activeAssistant={assistant}
                 activeTopic={activeTopic}
                 setActiveAssistant={setActiveAssistant}

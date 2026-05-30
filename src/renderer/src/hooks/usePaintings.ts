@@ -38,7 +38,9 @@ export function usePaintings() {
       return painting
     },
     removePainting: async (namespace: keyof PaintingsState, painting: PaintingAction) => {
-      void FileManager.deleteFiles(painting.files)
+      if (!painting.migratedFromNamespace) {
+        void FileManager.deleteFiles(painting.files)
+      }
       dispatch(removePainting({ namespace, painting }))
     },
     updatePainting: (namespace: keyof PaintingsState, painting: PaintingAction) => {

@@ -116,10 +116,8 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
   const providerModels = useMemo(() => newApiProvider?.models ?? [], [newApiProvider?.models])
   const providerApiHost = newApiProvider?.apiHost ?? ''
 
-  const paintings = useMemo(
-    () => openai_image_generate.filter((painting) => painting.providerId === providerId),
-    [openai_image_generate, providerId]
-  )
+  // Image tasks belong to the image workspace. Provider only decides how new tasks are executed.
+  const paintings = useMemo(() => openai_image_generate, [openai_image_generate])
 
   const selectedPainting = useMemo(
     () => paintings.find((painting) => painting.id === selectedPaintingId) ?? null,
@@ -149,6 +147,14 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
         group: model.group
       }))
   }, [providerModels])
+
+  const resolveAvailableModel = useCallback(
+    (...candidates: Array<string | undefined>) => {
+      const modelIds = new Set(modelOptions.map((model) => model.value))
+      return candidates.find((modelId): modelId is string => Boolean(modelId && modelIds.has(modelId))) || modelOptions[0]?.value || ''
+    },
+    [modelOptions]
+  )
 
   const groupedModelOptions = useMemo(() => {
     return modelOptions.reduce<Record<string, typeof modelOptions>>((acc, option) => {
@@ -199,15 +205,18 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
   }, [])
 
   const createEmptyDraft = useCallback(
-    (overrides: Partial<PaintingAction> = {}): PaintingAction => ({
-      ...DEFAULT_PAINTING,
-      id: uuid(),
-      providerId,
-      model: draft.model || modelOptions[0]?.value || '',
-      prompt: draft.prompt || '',
-      ...overrides
-    }),
-    [draft.model, draft.prompt, modelOptions, providerId]
+    (overrides: Partial<PaintingAction> = {}): PaintingAction => {
+      const model = resolveAvailableModel(overrides.model, draft.model)
+      return {
+        ...DEFAULT_PAINTING,
+        id: uuid(),
+        prompt: draft.prompt || '',
+        ...overrides,
+        providerId,
+        model
+      }
+    },
+    [draft.model, draft.prompt, providerId, resolveAvailableModel]
   )
 
   const syncDraftFromPainting = useCallback(
@@ -215,7 +224,7 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
       setDraft((prev) => ({
         ...prev,
         providerId,
-        model: painting.model || prev.model || modelOptions[0]?.value || '',
+        model: resolveAvailableModel(painting.model, prev.model),
         prompt: '',
         size: painting.size || prev.size || DEFAULT_PAINTING.size,
         quality: painting.quality || prev.quality || DEFAULT_PAINTING.quality,
@@ -224,7 +233,7 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
         n: painting.n || prev.n || DEFAULT_PAINTING.n
       }))
     },
-    [modelOptions, providerId]
+    [providerId, resolveAvailableModel]
   )
 
   useEffect(() => {
@@ -235,14 +244,14 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
     setDraft((prev) => ({
       ...prev,
       providerId,
-      model: prev.model || modelOptions[0]?.value || '',
+      model: resolveAvailableModel(prev.model),
       size: prev.size || DEFAULT_PAINTING.size,
       quality: prev.quality || DEFAULT_PAINTING.quality,
       moderation: prev.moderation || DEFAULT_PAINTING.moderation,
       background: prev.background || DEFAULT_PAINTING.background,
       n: prev.n || DEFAULT_PAINTING.n
     }))
-  }, [modelOptions, providerId])
+  }, [providerId, resolveAvailableModel])
 
   useEffect(() => {
     if (!selectedPaintingId) {

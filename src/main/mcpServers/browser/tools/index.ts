@@ -11,6 +11,7 @@ export {
   listTabsToolDefinition,
   switchTabToolDefinition
 } from './tabs'
+export { handleWaitForUser, waitForUserToolDefinition, WaitForUserSchema } from './waitForUser'
 
 import type { CdpBrowserController } from '../controller'
 import { executeToolDefinition, handleExecute } from './execute'
@@ -26,6 +27,7 @@ import {
   listTabsToolDefinition,
   switchTabToolDefinition
 } from './tabs'
+import { handleWaitForUser, waitForUserToolDefinition } from './waitForUser'
 import type { ToolContent } from './utils'
 
 export const toolDefinitions = [
@@ -36,6 +38,7 @@ export const toolDefinitions = [
   listTabsToolDefinition,
   switchTabToolDefinition,
   closeTabToolDefinition,
+  waitForUserToolDefinition,
   resetToolDefinition
 ]
 
@@ -50,5 +53,6 @@ export const toolHandlers: Record<
   list_tabs: handleListTabs,
   switch_tab: handleSwitchTab,
   close_tab: handleCloseTab,
+  wait_for_user: handleWaitForUser,
   reset: handleReset
 }

@@ -456,7 +456,7 @@ const TaskLogsInline: FC<{ taskId: string; agentId: string }> = ({ taskId, agent
       key: 'duration_ms',
       width: 80,
       render: (val: number, record: TaskRunLogEntity) => {
-        if (record.status === 'running') return '-'
+        if (record.status === 'running' || record.status === 'waiting_user') return '-'
         if (val < 1000) return `${val}ms`
         if (val < 60_000) return `${(val / 1000).toFixed(1)}s`
         return `${(val / 60_000).toFixed(1)}m`
@@ -468,10 +468,11 @@ const TaskLogsInline: FC<{ taskId: string; agentId: string }> = ({ taskId, agent
       key: 'status',
       width: 70,
       render: (val: string) => {
-        const color = val === 'success' ? 'green' : val === 'running' ? 'processing' : 'red'
+        const color = val === 'success' ? 'green' : val === 'running' ? 'processing' : val === 'waiting_user' ? 'warning' : 'red'
         const logStatusLabels: Record<string, string> = {
           success: t('agent.cherryClaw.tasks.logs.success'),
           running: t('agent.cherryClaw.tasks.logs.running'),
+          waiting_user: t('agent.cherryClaw.tasks.logs.waitingUser', 'Waiting for user'),
           error: t('agent.cherryClaw.tasks.logs.error')
         }
         return <Tag color={color}>{logStatusLabels[val] ?? val}</Tag>
@@ -484,7 +485,9 @@ const TaskLogsInline: FC<{ taskId: string; agentId: string }> = ({ taskId, agent
       ellipsis: true,
       render: (val: string | null, record: TaskRunLogEntity) => {
         const text =
-          record.status === 'running'
+          record.status === 'waiting_user'
+            ? t('agent.cherryClaw.tasks.logs.waitingUserDesc', 'Waiting for browser handoff')
+            : record.status === 'running'
             ? t('agent.cherryClaw.tasks.logs.running', 'Running...')
             : record.status === 'error'
               ? record.error

@@ -28,7 +28,8 @@ const TaskLogsModal: FC<TaskLogsModalProps> = ({ open, taskId, taskName, onClose
       dataIndex: 'duration_ms',
       key: 'duration_ms',
       width: 100,
-      render: (val: number) => {
+      render: (val: number, record: any) => {
+        if (record.status === 'running' || record.status === 'waiting_user') return '-'
         if (val < 1000) return `${val}ms`
         if (val < 60_000) return `${(val / 1000).toFixed(1)}s`
         return `${(val / 60_000).toFixed(1)}m`
@@ -39,7 +40,12 @@ const TaskLogsModal: FC<TaskLogsModalProps> = ({ open, taskId, taskName, onClose
       dataIndex: 'status',
       key: 'status',
       width: 80,
-      render: (val: string) => <Tag color={val === 'success' ? 'green' : 'red'}>{val}</Tag>
+      render: (val: string) => {
+        const color = val === 'success' ? 'green' : val === 'running' ? 'processing' : val === 'waiting_user' ? 'warning' : 'red'
+        const label =
+          val === 'waiting_user' ? t('agent.cherryClaw.tasks.logs.waitingUser', 'Waiting for user') : val
+        return <Tag color={color}>{label}</Tag>
+      }
     },
     {
       title: t('agent.cherryClaw.tasks.logs.result'),
@@ -47,7 +53,11 @@ const TaskLogsModal: FC<TaskLogsModalProps> = ({ open, taskId, taskName, onClose
       key: 'result',
       ellipsis: true,
       render: (val: string | null, record: any) =>
-        record.status === 'error' ? <span className="text-red-500">{record.error}</span> : (val ?? '-')
+        record.status === 'waiting_user'
+          ? t('agent.cherryClaw.tasks.logs.waitingUserDesc', 'Waiting for browser handoff')
+          : record.status === 'error'
+            ? <span className="text-red-500">{record.error}</span>
+            : (val ?? '-')
     }
   ]
 

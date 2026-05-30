@@ -37,6 +37,8 @@ import type {
   Assistant,
   BuiltinOcrProvider,
   Model,
+  PaintingAction,
+  PaintingsState,
   Provider,
   ProviderApiOptions,
   SidebarIcon,
@@ -83,6 +85,70 @@ function removeMiniAppIconsFromState(state: RootState) {
       logo: undefined
     }))
   }
+}
+
+const LEGACY_PAINTING_NAMESPACES: Array<keyof PaintingsState> = [
+  'siliconflow_paintings',
+  'dmxapi_paintings',
+  'tokenflux_paintings',
+  'zhipu_paintings',
+  'aihubmix_image_generate',
+  'aihubmix_image_remix',
+  'aihubmix_image_edit',
+  'aihubmix_image_upscale',
+  'openai_image_edit',
+  'ovms_paintings',
+  'ppio_draw',
+  'ppio_edit'
+]
+
+const LEGACY_PAINTING_PROVIDER_BY_NAMESPACE: Partial<Record<keyof PaintingsState, string>> = {
+  siliconflow_paintings: 'siliconflow',
+  dmxapi_paintings: 'dmxapi',
+  tokenflux_paintings: 'tokenflux',
+  zhipu_paintings: 'zhipu',
+  aihubmix_image_generate: 'aihubmix',
+  aihubmix_image_remix: 'aihubmix',
+  aihubmix_image_edit: 'aihubmix',
+  aihubmix_image_upscale: 'aihubmix',
+  openai_image_edit: 'openai',
+  ovms_paintings: 'ovms',
+  ppio_draw: 'ppio',
+  ppio_edit: 'ppio'
+}
+
+function mergeLegacyPaintingsIntoImageWorkspace(state: RootState) {
+  if (!state.paintings) {
+    return
+  }
+
+  const imageWorkspacePaintings = Array.isArray(state.paintings.openai_image_generate)
+    ? state.paintings.openai_image_generate
+    : []
+  const existingIds = new Set(imageWorkspacePaintings.map((painting) => painting.id).filter(Boolean))
+  const migratedPaintings: PaintingAction[] = []
+
+  LEGACY_PAINTING_NAMESPACES.forEach((namespace) => {
+    const paintings = state.paintings?.[namespace]
+    if (!Array.isArray(paintings)) {
+      return
+    }
+
+    paintings.forEach((painting) => {
+      if (!painting?.id || existingIds.has(painting.id)) {
+        return
+      }
+
+      existingIds.add(painting.id)
+      migratedPaintings.push({
+        ...painting,
+        providerId: painting.providerId || LEGACY_PAINTING_PROVIDER_BY_NAMESPACE[namespace],
+        migratedFromNamespace: namespace
+      })
+    })
+  })
+
+  state.paintings.openai_image_generate = [...imageWorkspacePaintings, ...migratedPaintings]
 }
 
 function removeMiniAppFromState(state: RootState, id: string) {
@@ -3521,6 +3587,17 @@ const migrateConfig = {
       return state
     } catch (error) {
       logger.error('migrate 213 error', error as Error)
+      return state
+    }
+  },
+  '214': (state: RootState) => {
+    try {
+      mergeLegacyPaintingsIntoImageWorkspace(state)
+
+      logger.info('migrate 214 success')
+      return state
+    } catch (error) {
+      logger.error('migrate 214 error', error as Error)
       return state
     }
   }

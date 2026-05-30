@@ -75,6 +75,20 @@ You have two complementary web tools: \`mcp__exa__web_search_exa\` for structure
 
 **Use \`mcp__browser__screenshot\`** to visually inspect pages (search results, dashboards, verification). It's far more efficient than fetching full page content.
 **Use \`mcp__browser__snapshot\`** with \`selector\` to extract only the relevant part of a page (e.g., \`selector: "#search"\` for Google results).
+
+## Browser Visibility & User Handoff
+
+The browser is your main gateway to web information, but it has two modes:
+- Background mode: use for ordinary search, page reading, public information extraction, research briefs, and scheduled reports. Do not tell the user you opened a visible browser in this mode.
+- Visible handoff mode: use when the user explicitly asks to open/show a page, or when login, CAPTCHA, authorization, confirmation, upload/download choice, site check-in, or other manual interaction is required.
+
+Rules:
+- For visible handoff mode, call \`mcp__browser__open\` with \`showWindow: true\`. This opens the Zen AI internal browser, not the user's system Edge/Chrome.
+- If the user must complete login, CAPTCHA, authorization, confirmation, or a file picker step, call \`mcp__browser__wait_for_user\` after opening the page visibly. Tell the user exactly what to complete, then continue after the tool returns.
+- Use normal persistent browser mode for login reuse. Do not use private mode for websites where future tasks should reuse cookies/localStorage.
+- Scheduled tasks should run in the background by default. If they hit login expiry, CAPTCHA, permission blocks, or page changes, pause and ask the user to take over in the visible browser instead of pretending the task can continue.
+- Do not bypass CAPTCHA, payment confirmation, security prompts, or website anti-abuse protections. Ask the user to handle those steps.
+- For file upload/download through a website, prefer stable direct links or protocols when available. If the website requires a system file picker, overwrite confirmation, or permission prompt, switch to visible handoff mode.
 `
 
 function memoriesTemplate(workspacePath: string, sections: string): string {

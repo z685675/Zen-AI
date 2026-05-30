@@ -131,7 +131,7 @@ export const TaskRunLogEntitySchema = z.object({
   session_id: z.string().nullable().optional(),
   run_at: z.string(),
   duration_ms: z.number(),
-  status: z.enum(['running', 'success', 'error']),
+  status: z.enum(['running', 'waiting_user', 'success', 'error']),
   result: z.string().nullable().optional(),
   error: z.string().nullable().optional()
 })

@@ -21,4 +21,14 @@ export interface WindowInfo {
   activeTabId: string | null
   lastActive: number
   tabBarView?: BrowserView
+  handoff?: BrowserHandoffInfo
+}
+
+export interface BrowserHandoffInfo {
+  id: string
+  message: string
+  reason?: string
+  createdAt: number
+  resolve: (value: { id: string; status: 'continued' | 'closed' }) => void
+  timeoutHandle?: ReturnType<typeof setTimeout>
 }
