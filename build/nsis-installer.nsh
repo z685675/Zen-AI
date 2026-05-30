@@ -26,9 +26,7 @@ Function bringInstallerToFront
   System::Call 'user32::SetWindowPos(p $HWNDPARENT, p -2, i 0, i 0, i 0, i 0, i 0x0003)'
 FunctionEnd
 
-Function .onGUIInit
-  Call bringInstallerToFront
-FunctionEnd
+!define MUI_CUSTOMFUNCTION_GUIINIT bringInstallerToFront
 
 Function closeRunningZenAI
   Push $0
