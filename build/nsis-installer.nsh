@@ -16,6 +16,20 @@
 ; directory. Close both current and legacy process names before electron-builder's
 ; app-running check, including the uninstall phase used during overwrite installs.
 !ifndef BUILD_UNINSTALLER
+Function bringInstallerToFront
+  ; electron-updater launches NSIS after Zen AI has started quitting. Bring the
+  ; wizard forward so the user can see that installation is ready to continue.
+  BringToFront
+  System::Call 'user32::SetForegroundWindow(p $HWNDPARENT)'
+  System::Call 'user32::SetWindowPos(p $HWNDPARENT, p -1, i 0, i 0, i 0, i 0, i 0x0003)'
+  Sleep 300
+  System::Call 'user32::SetWindowPos(p $HWNDPARENT, p -2, i 0, i 0, i 0, i 0, i 0x0003)'
+FunctionEnd
+
+Function .onGUIInit
+  Call bringInstallerToFront
+FunctionEnd
+
 Function closeRunningZenAI
   Push $0
   Push $1
