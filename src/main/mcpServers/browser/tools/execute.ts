@@ -14,7 +14,7 @@ export const ExecuteSchema = z.object({
 export const executeToolDefinition = {
   name: 'execute',
   description:
-    'Run JavaScript in the currently open page. Use after open to: click elements, fill forms, extract content (document.body.innerText), or interact with the page. The page must be opened first with open or fetch.',
+    'Run JavaScript in the currently open page. Use after open to: click elements, fill forms, extract content (document.body.innerText), or interact with the page. The page must be opened first with open or fetch. Do not use this to bypass CAPTCHA, 2FA, payment/security prompts, anti-abuse protections, or final high-impact confirmations. For publish/submit/delete/pay/overwrite or account-security confirmations, prepare drafts/previews where safe, then use visible browser handoff and wait for explicit user confirmation.',
   inputSchema: {
     type: 'object',
     properties: {

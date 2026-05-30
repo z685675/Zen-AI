@@ -20,13 +20,14 @@ export const WaitForUserSchema = z.object({
 export const waitForUserToolDefinition = {
   name: 'wait_for_user',
   description:
-    'Show the Zen AI internal browser window with a handoff bar and wait until the user clicks Continue. Use after opening a page visibly when login, CAPTCHA, authorization, confirmation, upload/download choice, or other manual browser interaction is required. Do not use this for ordinary background search or public page extraction.',
+    'Show the Zen AI internal browser window with a handoff bar and wait until the user clicks Continue. Use after opening a page visibly when login, CAPTCHA, 2FA, authorization, account access, final publish/submit/delete confirmation, upload/download choice, file picker, site check-in, dashboard/admin workflow, or other manual browser interaction is required. After the user clicks Continue, inspect the page and continue the original task rather than asking them to start over. Do not use this for ordinary background search or public page extraction.',
   inputSchema: {
     type: 'object',
     properties: {
       message: {
         type: 'string',
-        description: 'Message shown to the user in the browser handoff bar.'
+        description:
+          'Message shown to the user in the browser handoff bar. Be concrete: tell them what to finish, such as login, verification, file selection, or final confirmation review.'
       },
       reason: {
         type: 'string',
@@ -53,7 +54,9 @@ export async function handleWaitForUser(controller: CdpBrowserController, args: 
     logger.error('Wait for user failed', { error })
     const message = error instanceof Error ? error.message : String(error)
     if (message.toLowerCase().includes('timed out waiting for user')) {
-      return errorResponse('等待网页接管超时。请重新发起任务，或再次打开网页完成登录、验证或确认后继续。')
+      return errorResponse(
+        'Browser handoff timed out. Please start the task again, or reopen the page and complete login, verification, or confirmation before continuing.'
+      )
     }
     return errorResponse(message)
   }

@@ -89,6 +89,19 @@ Rules:
 - Scheduled tasks should run in the background by default. If they hit login expiry, CAPTCHA, permission blocks, or page changes, pause and ask the user to take over in the visible browser instead of pretending the task can continue.
 - Do not bypass CAPTCHA, payment confirmation, security prompts, or website anti-abuse protections. Ask the user to handle those steps.
 - For file upload/download through a website, prefer stable direct links or protocols when available. If the website requires a system file picker, overwrite confirmation, or permission prompt, switch to visible handoff mode.
+
+## General Task Recovery & External Workflow Policy
+
+Your job is to keep tasks moving to a recoverable state, not to stop at the first blocked node.
+
+Rules:
+- If a command, current directory, project path, login state, browser state, permission, network route, or local dependency is missing, first decide whether it is truly required, then try an equivalent path before saying the task cannot continue.
+- Missing tools are not automatically blockers. For example, GitHub CLI can often be replaced by git commands, GitHub web/API, or visible browser handoff; Python may not be needed for simple text/CSV/Markdown output; Git is not required merely to view a GitHub page.
+- If required software such as Git, Python, Node, package managers, GitHub CLI, document tools, browser drivers, or conversion utilities is missing, explain what is missing, why it is needed, and offer the safest repair path. Use an app-provided repair/install flow when available; otherwise ask before running installer/package-manager commands; if automatic install is not possible, open the official download page or give precise install steps, then continue the original task after the user finishes.
+- For external systems such as GitHub, NAS web consoles, cloud drives, admin dashboards, creator portals, email, Notion, Feishu, and similar sites, use background access when possible and visible browser handoff when login, 2FA, CAPTCHA, authorization, file picker, or final confirmation is required.
+- For simulated, dry-run, rehearsal, test, or ambiguous high-impact requests, default to dry-run mode: inspect state, prepare drafts, fill safe non-destructive fields when useful, and stop before the final irreversible action.
+- For high-impact actions such as publishing releases, submitting forms, posting announcements, changing remote settings, deleting remote resources, uploading public content, payment, or overwriting remote files, stop at draft/preview/pending-confirmation unless the user explicitly confirms the final action.
+- Scheduled tasks should pause and notify the user when they hit login expiry, CAPTCHA, dependency missing, permission blocks, browser handoff needs, final confirmation, or page structure changes. Do not silently fail or claim background continuation when no scheduler/notification/handoff path exists.
 `
 
 function memoriesTemplate(workspacePath: string, sections: string): string {

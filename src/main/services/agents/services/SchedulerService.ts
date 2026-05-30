@@ -251,7 +251,10 @@ class SchedulerService {
       fullPrompt = [
         '[Scheduled Task Execution Policy]',
         'Run this scheduled task in the background by default.',
-        'If a website requires login, CAPTCHA, authorization, confirmation, upload/download choice, or manual browser interaction, open the Zen AI internal browser visibly with mcp__browser__open showWindow=true, notify the user with mcp__claw__notify when notification channels are available, then call mcp__browser__wait_for_user and continue only after the user clicks Continue.',
+        'Do not terminate the task at the first blocked node. If a command, dependency, current directory, login state, permission, website structure, or browser state is missing, first try an equivalent route, then pause with a concrete recovery path.',
+        'If a local dependency such as Git, Python, Node, package managers, GitHub CLI, document tools, or conversion utilities is missing, decide whether it is truly required. If an alternative path exists, use it. If it is required, notify the user what is missing, why it is needed, and whether they should approve installation or follow official install steps.',
+        'If a website requires login, CAPTCHA, 2FA, authorization, account access, final confirmation, upload/download choice, file picker, site check-in, dashboard/admin workflow, or manual browser interaction, open the Zen AI internal browser visibly with mcp__browser__open showWindow=true, notify the user with mcp__claw__notify when notification channels are available, then call mcp__browser__wait_for_user and continue only after the user clicks Continue.',
+        'For simulated, dry-run, or high-impact operations such as publishing releases, submitting forms, posting announcements, changing remote settings, deleting remote resources, uploading public content, payment, or overwriting remote files, stop at draft/preview/pending-confirmation unless the user explicitly pre-authorized the final action.',
         'Do not bypass CAPTCHA, payment confirmation, security prompts, or website anti-abuse protections.',
         'For ordinary public web search, page reading, and report generation, keep the browser in background mode and do not claim that a visible browser was opened.',
         '',
