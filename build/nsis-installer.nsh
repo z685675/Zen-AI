@@ -80,6 +80,41 @@ Function closeRunningZenAI
   Pop $1
   Pop $0
 FunctionEnd
+
+Function prepareInstallDirForOverwrite
+  Push $0
+
+  ; Avoid relying on the old bundled uninstaller during app updates. Older
+  ; uninstallers can report "app cannot be closed" even after the app process is
+  ; gone, which blocks the new installer. User data lives outside $INSTDIR.
+  IfFileExists "$INSTDIR\${APP_EXECUTABLE_FILENAME}" 0 done
+
+  StrCpy $0 "$PLUGINSDIR\old-install-preclean"
+  RMDir /r "$0"
+  Rename "$INSTDIR" "$0"
+  ${If} ${Errors}
+    ClearErrors
+    DetailPrint "Could not move existing ${PRODUCT_NAME} directory; trying direct cleanup..."
+    RMDir /r "$INSTDIR"
+    Sleep 500
+  ${Else}
+    RMDir /r "$0"
+  ${EndIf}
+
+  ; Only bypass the old uninstaller when the old install directory is gone.
+  IfFileExists "$INSTDIR\*.*" done 0
+  DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\${UNINSTALL_APP_KEY}" "UninstallString"
+  DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\${UNINSTALL_APP_KEY}" "QuietUninstallString"
+  UserInfo::GetAccountType
+  Pop $0
+  ${If} $0 == "admin"
+    DeleteRegValue HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${UNINSTALL_APP_KEY}" "UninstallString"
+    DeleteRegValue HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${UNINSTALL_APP_KEY}" "QuietUninstallString"
+  ${EndIf}
+
+  done:
+    Pop $0
+FunctionEnd
 !endif
 
 !ifdef BUILD_UNINSTALLER
@@ -238,6 +273,7 @@ FunctionEnd
   Push $4
 
   Call closeRunningZenAI
+  Call prepareInstallDirForOverwrite
 
   ; Check architecture compatibility first
   Call checkArchitectureCompatibility
