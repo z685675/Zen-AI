@@ -154,6 +154,19 @@ jobs:
           RENDERER_VITE_AIHUBMIX_SECRET: ${{ secrets.RENDERER_VITE_AIHUBMIX_SECRET }}
           RENDERER_VITE_PPIO_APP_SECRET: ${{ secrets.RENDERER_VITE_PPIO_APP_SECRET }}
 
+      - name: Add macOS legacy DMG aliases
+        if: matrix.os == 'macos-latest'
+        shell: bash
+        run: |
+          shopt -s nullglob
+          for dmg in dist/Zen-AI-*-macos-*.dmg; do
+            legacy="${dmg/Zen-AI-/Zen AI-}"
+            if [ "$legacy" != "$dmg" ] && [ ! -e "$legacy" ]; then
+              cp "$dmg" "$legacy"
+              echo "Created legacy macOS installer alias: $legacy"
+            fi
+          done
+
       - name: Release Windows
         if: matrix.os == 'windows-latest'
         uses: ncipollo/release-action@v1
