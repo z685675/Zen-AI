@@ -164,7 +164,7 @@ describe('appUpdate', () => {
       openDownloadedInstaller: vi.fn().mockResolvedValue({
         success: true,
         status: 'manual-installer-opened',
-        installerPath: '/Users/test/Downloads/Zen AI Updates/Zen AI-1.1.14-macos-arm64.dmg',
+        installerPath: '/Users/test/Downloads/Zen AI Updates/Zen-AI-1.1.14-macos-arm64.dmg',
         fallbackToFolder: false
       })
     }
@@ -200,7 +200,7 @@ describe('appUpdate', () => {
       openDownloadedInstaller: vi.fn().mockResolvedValue({
         success: true,
         status: 'manual-installer-opened',
-        installerPath: '/Users/test/Downloads/Zen AI Updates/Zen AI-1.1.14-macos-arm64.dmg',
+        installerPath: '/Users/test/Downloads/Zen AI Updates/Zen-AI-1.1.14-macos-arm64.dmg',
         fallbackToFolder: true
       })
     }

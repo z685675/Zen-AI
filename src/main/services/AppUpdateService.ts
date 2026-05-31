@@ -885,7 +885,7 @@ export class AppUpdateService {
   }
 
   private getMacManualInstallerFilename(version: string) {
-    return `${APP_NAME}-${version}-macos-${process.arch}.dmg`
+    return `Zen-AI-${version}-macos-${process.arch}.dmg`
   }
 
   private async isExistingFile(filePath: string) {

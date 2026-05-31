@@ -383,7 +383,7 @@ describe('AppUpdateService', () => {
     ;(service as any).downloadedUpdateReady = true
     vi.spyOn(service as any, 'isExistingFile').mockResolvedValue(true)
 
-    const installerPath = path.join('mock', 'Downloads', 'Zen AI Updates', 'Zen AI-1.1.0-macos-x64.dmg')
+    const installerPath = path.join('mock', 'Downloads', 'Zen AI Updates', 'Zen-AI-1.1.0-macos-x64.dmg')
 
     await expect(service.quitAndInstall()).resolves.toEqual({
       success: true,
@@ -448,7 +448,7 @@ describe('AppUpdateService', () => {
     ;(service as any).downloadedUpdateReady = true
     vi.spyOn(service as any, 'isExistingFile').mockResolvedValue(true)
 
-    const installerPath = path.join('mock', 'Downloads', 'Zen AI Updates', 'Zen AI-1.1.0-macos-x64.dmg')
+    const installerPath = path.join('mock', 'Downloads', 'Zen AI Updates', 'Zen-AI-1.1.0-macos-x64.dmg')
 
     await expect(service.openDownloadedInstaller()).resolves.toEqual({
       success: true,
