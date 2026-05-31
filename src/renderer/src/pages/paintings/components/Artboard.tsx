@@ -163,13 +163,13 @@ const Container = styled.div`
   flex-direction: row;
   justify-content: center;
   align-items: center;
-  padding: 24px;
+  padding: 12px 20px 10px;
   background:
     linear-gradient(90deg, color-mix(in srgb, var(--color-border) 34%, transparent) 1px, transparent 1px),
     linear-gradient(0deg, color-mix(in srgb, var(--color-border) 34%, transparent) 1px, transparent 1px);
   background-size: 24px 24px;
 
-  --artboard-max: min(calc(100vh - 280px), calc(100vw - 520px));
+  --artboard-max: min(calc(100vh - 230px), calc(100vw - 500px));
 `
 
 const ImagePlaceholder = styled.div`
@@ -181,7 +181,7 @@ const ImagePlaceholder = styled.div`
   background-color: var(--color-background);
   align-items: center;
   justify-content: center;
-  padding: 24px;
+  padding: 18px;
   box-sizing: border-box;
   border: 1px solid var(--color-border);
   box-shadow:
@@ -209,7 +209,7 @@ const CanvasFrame = styled.div`
   justify-content: center;
   min-width: 320px;
   min-height: 320px;
-  padding: 18px;
+  padding: 10px;
   background: var(--color-background);
   border: 1px solid var(--color-border);
   box-shadow:
@@ -233,8 +233,8 @@ const PreviewGrid = styled.div<{ $columns: number }>`
   display: grid;
   grid-template-columns: repeat(${(props) => props.$columns}, minmax(0, 1fr));
   gap: 10px;
-  width: min(var(--artboard-max), 680px);
-  height: min(var(--artboard-max), 680px);
+  width: min(var(--artboard-max), 720px);
+  height: min(var(--artboard-max), 720px);
   padding: 4px;
 `
 

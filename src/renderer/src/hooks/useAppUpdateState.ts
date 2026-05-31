@@ -62,7 +62,7 @@ export function useAppUpdateState() {
     const removeAvailableListener = window.api.update.onAvailable((payload) => {
       setState((current) =>
         mergeState(current, {
-          status: current.autoUpdateEnabled && payload.source === 'auto' ? 'downloading' : 'available',
+          status: payload.status ?? 'available',
           source: payload.source,
           updateInfo: payload,
           progress: null

@@ -154,16 +154,19 @@ jobs:
           RENDERER_VITE_AIHUBMIX_SECRET: ${{ secrets.RENDERER_VITE_AIHUBMIX_SECRET }}
           RENDERER_VITE_PPIO_APP_SECRET: ${{ secrets.RENDERER_VITE_PPIO_APP_SECRET }}
 
-      - name: Add macOS legacy DMG aliases
+      - name: Remove macOS legacy aliases before release action
         if: matrix.os == 'macos-latest'
         shell: bash
         run: |
           shopt -s nullglob
-          for dmg in dist/Zen-AI-*-macos-*.dmg; do
-            legacy="${dmg/Zen-AI-/Zen AI-}"
-            if [ "$legacy" != "$dmg" ] && [ ! -e "$legacy" ]; then
-              cp "$dmg" "$legacy"
-              echo "Created legacy macOS installer alias: $legacy"
+          for dmg in dist/Zen\ AI-*-macos-*.dmg; do
+            rm -f "$dmg"
+            echo "Removed release-action incompatible alias: $dmg"
+          done
+          for dmg in dist/Zen.AI-*-macos-*.dmg; do
+            if [ -e "$dmg" ]; then
+              rm -f "$dmg"
+              echo "Removed dotted macOS alias from release-action upload set: $dmg"
             fi
           done
 
@@ -190,3 +193,22 @@ jobs:
           bodyFile: .release-body.md
           artifacts: "dist/*.zip,dist/*.dmg,dist/latest*.yml,dist/*.blockmap"
           token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload macOS legacy DMG aliases
+        if: matrix.os == 'macos-latest'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          shopt -s nullglob
+          for dmg in dist/Zen-AI-*-macos-*.dmg; do
+            for legacy in "${dmg/Zen-AI-/Zen AI-}" "${dmg/Zen-AI-/Zen.AI-}"; do
+              if [ "$legacy" != "$dmg" ]; then
+                cp "$dmg" "$legacy"
+                gh release upload "${{ steps.get-tag.outputs.tag }}" "$legacy" \
+                  --repo "${{ github.repository }}" \
+                  --clobber
+                echo "Uploaded legacy macOS installer alias: $legacy"
+              fi
+            done
+          done

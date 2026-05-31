@@ -9,6 +9,15 @@ import dayjs from 'dayjs'
 const logger = loggerService.withContext('FileManager')
 
 class FileManager {
+  static getStorageFileName(file: FileMetadata) {
+    if (file.name) {
+      return file.name
+    }
+
+    const ext = file.ext ? (file.ext.startsWith('.') ? file.ext : `.${file.ext}`) : ''
+    return `${file.id}${ext}`
+  }
+
   static async selectFiles(options?: Electron.OpenDialogOptions): Promise<FileMetadata[] | null> {
     return await window.api.file.select(options)
   }
@@ -31,12 +40,12 @@ class FileManager {
   }
 
   static async readBinaryImage(file: FileMetadata): Promise<Buffer> {
-    const fileData = await window.api.file.binaryImage(file.id + file.ext)
+    const fileData = await window.api.file.binaryImage(this.getStorageFileName(file))
     return fileData.data
   }
 
   static async readBase64File(file: FileMetadata): Promise<string> {
-    const fileData = await window.api.file.base64File(file.id + file.ext)
+    const fileData = await window.api.file.base64File(this.getStorageFileName(file))
     return fileData.data
   }
 
@@ -82,7 +91,7 @@ class FileManager {
 
     if (file) {
       const filesPath = store.getState().runtime.filesPath
-      file.path = filesPath + '/' + file.id + file.ext
+      file.path = filesPath + '/' + this.getStorageFileName(file)
     }
 
     return file
@@ -90,7 +99,7 @@ class FileManager {
 
   static getFilePath(file: FileMetadata) {
     const filesPath = store.getState().runtime.filesPath
-    return filesPath + '/' + file.id + file.ext
+    return filesPath + '/' + this.getStorageFileName(file)
   }
 
   static async deleteFile(id: string, force: boolean = false): Promise<void> {
@@ -112,7 +121,7 @@ class FileManager {
     await db.files.delete(id)
 
     try {
-      await window.api.file.delete(id + file.ext)
+      await window.api.file.delete(this.getStorageFileName(file))
     } catch (error) {
       logger.error('Failed to delete file:', error as Error)
     }

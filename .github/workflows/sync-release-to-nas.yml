@@ -66,6 +66,19 @@ jobs:
           RELEASE_ASSETS_DIR: release-assets
         run: node scripts/sync-release-metadata.js
 
+      - name: Add macOS legacy DMG aliases
+        shell: bash
+        run: |
+          shopt -s nullglob
+          for dmg in release-assets/Zen-AI-*-macos-*.dmg; do
+            for legacy in "${dmg/Zen-AI-/Zen AI-}" "${dmg/Zen-AI-/Zen.AI-}"; do
+              if [ "$legacy" != "$dmg" ] && [ ! -e "$legacy" ]; then
+                cp "$dmg" "$legacy"
+                echo "Created legacy macOS installer alias: $legacy"
+              fi
+            done
+          done
+
       - name: Prepare SSH key
         env:
           ALI_SSH_KEY: ${{ secrets.ALI_SSH_KEY }}

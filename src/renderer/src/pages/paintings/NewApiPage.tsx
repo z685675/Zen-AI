@@ -518,8 +518,9 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
         composerMode === 'continue' && selectedPainting?.files?.length
           ? await Promise.all(
               selectedPainting.files.map(async (file, index) => {
-                const { data, mime } = await window.api.file.binaryImage(file.id + file.ext)
-                const fileName = file.name || `image_${index + 1}${file.ext}`
+                const { data, mime } = await window.api.file.binaryImage(FileManager.getStorageFileName(file))
+                const ext = file.ext ? (file.ext.startsWith('.') ? file.ext : `.${file.ext}`) : ''
+                const fileName = file.origin_name || file.name || `image_${index + 1}${ext}`
                 return new File([data], fileName, {
                   type: mime,
                   lastModified: new Date(file.created_at).getTime()

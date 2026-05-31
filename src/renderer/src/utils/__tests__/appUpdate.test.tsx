@@ -178,12 +178,12 @@ describe('appUpdate', () => {
     expect(options.okText).toBe('打开安装包')
 
     render(<>{options.content}</>)
-    expect(screen.getByText(/自动打开已下载的 DMG 安装窗口/)).toBeInTheDocument()
+    expect(screen.getByText(/先确认本地安装包可用/)).toBeInTheDocument()
 
     await options.onOk()
     expect(window.api.openDownloadedInstaller).toHaveBeenCalledOnce()
     expect(window.api.quitAndInstallUpdate).not.toHaveBeenCalled()
-    expect(toastInfo).toHaveBeenCalledWith('正在打开安装程序…')
+    expect(toastInfo).toHaveBeenCalledWith('正在准备并打开安装包…')
     expect(toastInfo).toHaveBeenCalledWith('已打开安装程序，请在安装窗口中拖入 Applications 完成安装。')
   })
 
@@ -214,7 +214,7 @@ describe('appUpdate', () => {
     await options.onOk()
 
     expect(window.api.openDownloadedInstaller).toHaveBeenCalledOnce()
-    expect(toastInfo).toHaveBeenCalledWith('正在打开安装程序…')
+    expect(toastInfo).toHaveBeenCalledWith('正在准备并打开安装包…')
     expect(toastInfo).toHaveBeenCalledWith('没能直接打开安装包，已为你定位到安装包位置，请双击 DMG 完成安装。')
   })
 

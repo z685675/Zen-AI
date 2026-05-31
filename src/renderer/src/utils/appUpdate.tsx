@@ -134,8 +134,8 @@ export function showAppUpdateDownloadedModal(t: Translate, updateInfo: UpdateInf
       {statusText && <div style={installStatusStyle}>{statusText}</div>}
       {shouldUseManualMacInstall && (
         <div style={manualInstallNoticeStyle}>
-          macOS 当前采用手动安装更新。点击“打开安装包”后，会自动打开已下载的 DMG 安装窗口，请在窗口中将 Zen AI 拖入
-          Applications 覆盖安装。
+          macOS 当前采用 DMG 覆盖安装。点击“打开安装包”后，软件会先确认本地安装包可用，再打开 DMG
+          安装窗口；请在窗口中将 Zen AI 拖入 Applications 覆盖安装。
         </div>
       )}
       {renderUpdateContent(t, updateInfo, 'update.message')}
@@ -151,7 +151,7 @@ export function showAppUpdateDownloadedModal(t: Translate, updateInfo: UpdateInf
     maskClosable: false,
     content: renderDownloadedContent(),
     async onOk() {
-      const statusText = shouldUseManualMacInstall ? '正在打开安装程序…' : '正在准备安装包…'
+      const statusText = shouldUseManualMacInstall ? '正在准备并打开安装包…' : '正在准备安装包…'
       const restoreModal = () => {
         modal?.update({
           okText: shouldUseManualMacInstall ? '打开安装包' : t('update.installNow'),

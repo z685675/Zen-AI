@@ -781,6 +781,7 @@ const api = {
         releaseNotes?: string
         currentVersion: string
         source: 'auto' | 'manual'
+        status?: 'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'up-to-date' | 'error'
       }) => void
     ): (() => void) => {
       const channel = IpcChannel.UpdateAvailable
@@ -792,6 +793,7 @@ const api = {
           releaseNotes?: string
           currentVersion: string
           source: 'auto' | 'manual'
+          status?: 'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'up-to-date' | 'error'
         }
       ) => callback(payload)
       ipcRenderer.on(channel, listener)
@@ -837,6 +839,7 @@ const api = {
         releaseNotes?: string
         currentVersion: string
         source: 'auto' | 'manual'
+        status?: 'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'up-to-date' | 'error'
       }) => void
     ): (() => void) => {
       const channel = IpcChannel.UpdateDownloaded
@@ -848,6 +851,7 @@ const api = {
           releaseNotes?: string
           currentVersion: string
           source: 'auto' | 'manual'
+          status?: 'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'up-to-date' | 'error'
         }
       ) => callback(payload)
       ipcRenderer.on(channel, listener)

@@ -3,7 +3,7 @@ import { isMac, isPortable } from '@main/constant'
 import { configManager } from '@main/services/ConfigManager'
 import { APP_NAME, APP_UPDATE_FEED_URL } from '@shared/config/constant'
 import { IpcChannel } from '@shared/IpcChannel'
-import { createWriteStream } from 'node:fs'
+import { createWriteStream, statSync } from 'node:fs'
 import { mkdir, rename, stat, unlink } from 'node:fs/promises'
 import { request } from 'node:https'
 import path from 'node:path'
@@ -18,6 +18,12 @@ export interface AppUpdateInfo {
   version: string
   releaseDate?: string
   releaseNotes?: string
+}
+
+export interface AppUpdateEventInfo extends AppUpdateInfo {
+  currentVersion: string
+  source: AppUpdateCheckSource
+  status?: AppUpdateState['status']
 }
 
 export interface AppUpdateProgressInfo {
@@ -153,6 +159,9 @@ export class AppUpdateService {
     private readonly shouldAutoDownload: () => boolean
   ) {
     this.downloadedUpdateInfo = this.restorePendingUpdateInfo()
+    if (isMac && this.downloadedUpdateInfo && !this.hasMacManualInstaller(this.downloadedUpdateInfo.version)) {
+      this.clearPendingUpdateInfo()
+    }
     this.currentState = {
       status: this.downloadedUpdateInfo ? 'downloaded' : 'idle',
       source: 'auto',
@@ -188,8 +197,8 @@ export class AppUpdateService {
 
   async checkForUpdates(source: AppUpdateCheckSource = 'manual'): Promise<AppUpdateCheckResult> {
     this.currentSource = source
-    autoUpdater.autoDownload = source === 'manual' ? false : this.shouldAutoDownload()
-    const pendingUpdateInfo = this.downloadedUpdateInfo ?? this.restorePendingUpdateInfo()
+    autoUpdater.autoDownload = isMac ? false : source === 'manual' ? false : this.shouldAutoDownload()
+    const pendingUpdateInfo = this.getReadyPendingUpdateInfo()
     this.setState({
       status: 'checking',
       source,
@@ -306,6 +315,10 @@ export class AppUpdateService {
         progress: null
       })
 
+      if (isMac && source === 'auto' && this.shouldAutoDownload()) {
+        void this.downloadUpdate('auto')
+      }
+
       return {
         status: 'available',
         currentVersion: this.currentVersion,
@@ -319,18 +332,18 @@ export class AppUpdateService {
     }
   }
 
-  async downloadUpdate(): Promise<AppUpdateCheckResult> {
-    this.currentSource = 'manual'
+  async downloadUpdate(source: AppUpdateCheckSource = 'manual'): Promise<AppUpdateCheckResult> {
+    this.currentSource = source
     autoUpdater.autoDownload = false
-    const pendingUpdateInfo = this.downloadedUpdateInfo ?? this.restorePendingUpdateInfo()
+    const pendingUpdateInfo = this.getReadyPendingUpdateInfo()
 
     if (!app.isPackaged) {
-      return this.handleUpdateError('manual', `${APP_NAME} only supports auto update after installation packaging.`)
+      return this.handleUpdateError(source, `${APP_NAME} only supports auto update after installation packaging.`)
     }
 
     if (isPortable) {
       return this.handleUpdateError(
-        'manual',
+        source,
         'Portable builds do not support automatic in-place updates. Please use the installer build.'
       )
     }
@@ -349,7 +362,7 @@ export class AppUpdateService {
       } else {
         this.setState({
           status: 'downloaded',
-          source: 'manual',
+          source,
           autoUpdateEnabled: this.shouldAutoDownload(),
           currentVersion: this.currentVersion,
           updateInfo: pendingUpdateInfo,
@@ -358,7 +371,7 @@ export class AppUpdateService {
         return {
           status: 'downloaded',
           currentVersion: this.currentVersion,
-          source: 'manual',
+          source,
           updateInfo: pendingUpdateInfo
         }
       }
@@ -367,7 +380,7 @@ export class AppUpdateService {
     if (this.downloading) {
       this.setState({
         status: 'downloading',
-        source: 'manual',
+        source,
         autoUpdateEnabled: this.shouldAutoDownload(),
         currentVersion: this.currentVersion,
         updateInfo: this.latestUpdateInfo,
@@ -376,7 +389,7 @@ export class AppUpdateService {
       return {
         status: 'downloading',
         currentVersion: this.currentVersion,
-        source: 'manual',
+        source,
         updateInfo: this.latestUpdateInfo
       }
     }
@@ -392,12 +405,12 @@ export class AppUpdateService {
       this.downloading = true
       const updateInfo = this.latestUpdateInfo
       if (!updateInfo) {
-        return this.handleUpdateError('manual', 'No update is available to download.')
+        return this.handleUpdateError(source, 'No update is available to download.')
       }
 
       this.setState({
         status: 'downloading',
-        source: 'manual',
+        source,
         autoUpdateEnabled: this.shouldAutoDownload(),
         currentVersion: this.currentVersion,
         updateInfo,
@@ -409,7 +422,7 @@ export class AppUpdateService {
         return {
           status: 'downloaded',
           currentVersion: this.currentVersion,
-          source: 'manual',
+          source,
           updateInfo
         }
       }
@@ -421,17 +434,17 @@ export class AppUpdateService {
       return {
         status: 'downloading',
         currentVersion: this.currentVersion,
-        source: 'manual',
+        source,
         updateInfo
       }
     } catch (error) {
       this.downloading = false
-      return this.handleUpdateError('manual', error instanceof Error ? error.message : String(error))
+      return this.handleUpdateError(source, error instanceof Error ? error.message : String(error))
     }
   }
 
   async quitAndInstall(): Promise<AppUpdateInstallResult> {
-    const updateInfo = this.downloadedUpdateInfo ?? this.restorePendingUpdateInfo()
+    const updateInfo = this.getReadyPendingUpdateInfo()
 
     if (!updateInfo) {
       const message = 'Update package has not been downloaded yet.'
@@ -531,7 +544,7 @@ export class AppUpdateService {
       return this.quitAndInstall()
     }
 
-    const updateInfo = this.downloadedUpdateInfo ?? this.latestUpdateInfo ?? this.restorePendingUpdateInfo()
+    const updateInfo = this.getReadyPendingUpdateInfo() ?? this.latestUpdateInfo
 
     if (!updateInfo) {
       const message = 'Update package has not been downloaded yet.'
@@ -598,10 +611,10 @@ export class AppUpdateService {
     autoUpdater.on('update-available', (info) => {
       const updateInfo = this.normalizeUpdateInfo(info)
       this.latestUpdateInfo = updateInfo
-      this.downloading = autoUpdater.autoDownload
+      this.downloading = !isMac && autoUpdater.autoDownload
       this.progressInfo = null
       this.setState({
-        status: autoUpdater.autoDownload ? 'downloading' : 'available',
+        status: !isMac && autoUpdater.autoDownload ? 'downloading' : 'available',
         source: this.currentSource,
         autoUpdateEnabled: this.shouldAutoDownload(),
         currentVersion: this.currentVersion,
@@ -609,7 +622,12 @@ export class AppUpdateService {
         progress: this.progressInfo
       })
 
-      const payload = { ...updateInfo, currentVersion: this.currentVersion, source: this.currentSource }
+      const payload: AppUpdateEventInfo = {
+        ...updateInfo,
+        currentVersion: this.currentVersion,
+        source: this.currentSource,
+        status: this.currentState.status
+      }
       this.sendEvent(IpcChannel.UpdateAvailable, payload)
       logger.info('App update available', { ...payload, autoDownload: autoUpdater.autoDownload })
     })
@@ -636,6 +654,9 @@ export class AppUpdateService {
     })
 
     autoUpdater.on('download-progress', (progress) => {
+      if (isMac) {
+        return
+      }
       this.downloading = true
       this.progressInfo = this.normalizeProgressInfo(progress)
       this.setState({
@@ -650,6 +671,10 @@ export class AppUpdateService {
     })
 
     autoUpdater.on('update-downloaded', (event) => {
+      if (isMac) {
+        logger.info('Ignoring electron-updater downloaded event on macOS; waiting for manual DMG payload')
+        return
+      }
       this.downloading = false
       const updateInfo = this.normalizeUpdateInfo(event)
       this.latestUpdateInfo = updateInfo
@@ -666,7 +691,12 @@ export class AppUpdateService {
         progress: null
       })
 
-      const payload = { ...updateInfo, currentVersion: this.currentVersion, source: this.currentSource }
+      const payload: AppUpdateEventInfo = {
+        ...updateInfo,
+        currentVersion: this.currentVersion,
+        source: this.currentSource,
+        status: this.currentState.status
+      }
       this.sendEvent(IpcChannel.UpdateDownloaded, payload)
       logger.info('App update downloaded', payload)
     })
@@ -797,17 +827,19 @@ export class AppUpdateService {
       throw new Error('Missing update version.')
     }
 
-    const installerPath = this.getMacManualInstallerPath(updateInfo.version)
-    if (await this.isExistingFile(installerPath)) {
-      this.markMacManualInstallerReady(updateInfo)
-      return installerPath
+    const installerCandidates = this.getMacManualInstallerCandidates(updateInfo.version)
+    for (const candidate of installerCandidates) {
+      if (await this.isExistingFile(candidate.path)) {
+        this.markMacManualInstallerReady(updateInfo)
+        return candidate.path
+      }
     }
 
-    const installerUrl = this.getMacManualInstallerUrl(updateInfo.version)
+    const primaryCandidate = installerCandidates[0]
     logger.info('Downloading macOS manual update installer', {
       version: updateInfo.version,
-      url: installerUrl,
-      installerPath
+      url: primaryCandidate.url,
+      installerPath: primaryCandidate.path
     })
 
     this.downloading = true
@@ -822,10 +854,28 @@ export class AppUpdateService {
     })
 
     try {
-      await mkdir(path.dirname(installerPath), { recursive: true })
-      await this.downloadFile(installerUrl, installerPath)
-      this.markMacManualInstallerReady(updateInfo)
-      return installerPath
+      await mkdir(path.dirname(primaryCandidate.path), { recursive: true })
+      let lastError: unknown
+      for (const candidate of installerCandidates) {
+        try {
+          logger.info('Trying macOS manual update installer download', {
+            version: updateInfo.version,
+            url: candidate.url,
+            installerPath: candidate.path
+          })
+          await this.downloadFile(candidate.url, primaryCandidate.path)
+          this.markMacManualInstallerReady(updateInfo)
+          return primaryCandidate.path
+        } catch (error) {
+          lastError = error
+          logger.warn('macOS manual update installer download candidate failed', {
+            version: updateInfo.version,
+            url: candidate.url,
+            error: error instanceof Error ? error.message : String(error)
+          })
+        }
+      }
+      throw lastError instanceof Error ? lastError : new Error(String(lastError))
     } finally {
       this.downloading = false
     }
@@ -851,6 +901,64 @@ export class AppUpdateService {
     }
   }
 
+  private getReadyPendingUpdateInfo() {
+    const pendingUpdateInfo = this.downloadedUpdateInfo ?? this.restorePendingUpdateInfo()
+    if (!pendingUpdateInfo) {
+      return null
+    }
+
+    if (isMac && this.downloadedUpdateReady) {
+      return pendingUpdateInfo
+    }
+
+    if (isMac && !this.hasMacManualInstaller(pendingUpdateInfo.version)) {
+      this.clearPendingUpdateInfo()
+      return null
+    }
+
+    return pendingUpdateInfo
+  }
+
+  private hasMacManualInstaller(version: string) {
+    return this.getMacManualInstallerCandidates(version).some((candidate) => {
+      try {
+        return statSync(candidate.path).isFile()
+      } catch {
+        return false
+      }
+    })
+  }
+
+  private getMacManualInstallerCandidates(version: string) {
+    return this.getMacManualInstallerFilenames(version).map((filename) => ({
+      filename,
+      url: this.getMacManualInstallerUrl(filename),
+      path: this.getMacManualInstallerPath(filename)
+    }))
+  }
+
+  private getMacManualInstallerFilenames(version: string) {
+    const arch = process.arch
+    return [
+      `Zen-AI-${version}-macos-${arch}.dmg`,
+      `Zen AI-${version}-macos-${arch}.dmg`,
+      `Zen.AI-${version}-macos-${arch}.dmg`
+    ]
+  }
+
+  private getMacManualInstallerUrl(filename: string) {
+    const baseUrl = this.feedUrl || DEFAULT_UPDATE_FEED_URL
+    const encodedFilename = filename
+      .split('/')
+      .map((segment) => encodeURIComponent(segment))
+      .join('/')
+    return new URL(encodedFilename, baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`).toString()
+  }
+
+  private getMacManualInstallerPath(filename: string) {
+    return path.join(app.getPath('downloads'), MAC_MANUAL_UPDATE_DIR_NAME, filename)
+  }
+
   private markMacManualInstallerReady(updateInfo: AppUpdateInfo) {
     this.downloadedUpdateInfo = updateInfo
     this.latestUpdateInfo = updateInfo
@@ -866,26 +974,13 @@ export class AppUpdateService {
       progress: null
     })
 
-    const payload = { ...updateInfo, currentVersion: this.currentVersion, source: this.currentSource }
+    const payload: AppUpdateEventInfo = {
+      ...updateInfo,
+      currentVersion: this.currentVersion,
+      source: this.currentSource,
+      status: this.currentState.status
+    }
     this.sendEvent(IpcChannel.UpdateDownloaded, payload)
-  }
-
-  private getMacManualInstallerUrl(version: string) {
-    const baseUrl = this.feedUrl || DEFAULT_UPDATE_FEED_URL
-    const filename = this.getMacManualInstallerFilename(version)
-    const encodedFilename = filename
-      .split('/')
-      .map((segment) => encodeURIComponent(segment))
-      .join('/')
-    return new URL(encodedFilename, baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`).toString()
-  }
-
-  private getMacManualInstallerPath(version: string) {
-    return path.join(app.getPath('downloads'), MAC_MANUAL_UPDATE_DIR_NAME, this.getMacManualInstallerFilename(version))
-  }
-
-  private getMacManualInstallerFilename(version: string) {
-    return `Zen-AI-${version}-macos-${process.arch}.dmg`
   }
 
   private async isExistingFile(filePath: string) {
@@ -1050,6 +1145,8 @@ export class AppUpdateService {
   }
 
   private clearPendingUpdateInfo() {
+    this.downloadedUpdateInfo = null
+    this.downloadedUpdateReady = false
     configManager.setPendingUpdateInfo(null)
   }
 
