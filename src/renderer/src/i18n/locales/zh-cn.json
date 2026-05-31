@@ -359,6 +359,13 @@
         "label": "预先授权工具",
         "placeholder": "选择预先授权的工具"
       },
+      "archive": {
+        "badge": "已归档",
+        "empty": "暂无归档会话",
+        "move": "归档会话",
+        "restore": "恢复会话",
+        "title": "归档"
+      },
       "create": {
         "error": {
           "failed": "添加会话失败"
@@ -383,13 +390,6 @@
       },
       "label_one": "会话",
       "label_other": "会话",
-      "archive": {
-        "badge": "已归档",
-        "empty": "暂无归档会话",
-        "move": "归档会话",
-        "restore": "恢复会话",
-        "title": "归档"
-      },
       "reorder": {
         "error": {
           "failed": "会话排序失败"
@@ -1110,6 +1110,16 @@
       "generate_image": "生成图片",
       "generate_image_not_supported": "模型不支持生成图片",
       "knowledge_base": "知识库",
+      "more": {
+        "attachment": "上传图片、文档等内容到当前会话",
+        "create_session": "基于当前助手新建一个会话",
+        "quick_phrases": "插入常用短语、模板内容或快捷预设",
+        "resource_panel": "查看当前会话可用的文件与技能资源",
+        "slash_commands": "查看当前助手提供的快捷命令",
+        "thinking": "调整模型的思考模式或推理深度",
+        "title": "更多",
+        "toggle_expand": "展开或收起当前输入框"
+      },
       "new": {
         "context": "清除上下文 {{Command}}"
       },
@@ -1137,21 +1147,11 @@
         },
         "title": "资源"
       },
-      "more": {
-        "title": "更多",
-        "attachment": "上传图片、文档等内容到当前会话",
-        "create_session": "基于当前助手新建一个会话",
-        "quick_phrases": "插入常用短语、模板内容或快捷预设",
-        "resource_panel": "查看当前会话可用的文件与技能资源",
-        "slash_commands": "查看当前助手提供的快捷命令",
-        "thinking": "调整模型的思考模式或推理深度",
-        "toggle_expand": "展开或收起当前输入框"
-      },
       "send": "发送",
       "settings": "设置",
       "slash_commands": {
-        "empty": "当前没有可用的斜杠命令",
         "description": "代理会话斜杠命令",
+        "empty": "当前没有可用的斜杠命令",
         "title": "斜杠命令"
       },
       "thinking": {
@@ -1878,10 +1878,10 @@
     "attached_files": "附件",
     "conversation_details": "会话详情",
     "conversation_history": "会话历史",
-    "no_history": "暂无会话记录",
     "created": "创建时间",
     "last_updated": "最后更新",
     "messages": "消息数",
+    "no_history": "暂无会话记录",
     "notion": {
       "reasoning_truncated": "思维链无法分块，已截断"
     },
@@ -1929,14 +1929,15 @@
     "title": "GPUStack"
   },
   "history": {
-    "conversation_history": "会话记录",
     "continue_chat": "继续聊天",
+    "conversation_history": "会话记录",
     "error": {
       "topic_not_found": "话题不存在"
     },
     "locate": {
       "message": "定位到消息"
     },
+    "no_history": "暂无会话记录",
     "search": {
       "match": {
         "substring": "包含",
@@ -1952,7 +1953,6 @@
         "empty": "没有找到相关话题，点击回车键搜索所有消息"
       }
     },
-    "no_history": "暂无会话记录",
     "title": "话题搜索"
   },
   "html_artifacts": {
@@ -3105,7 +3105,6 @@
     "title": "Intel OVMS"
   },
   "paintings": {
-    "title": "图片生成",
     "aspect_ratio": "画幅比例",
     "aspect_ratios": {
       "landscape": "横图",
@@ -3131,6 +3130,14 @@
         "image": "新建图片"
       }
     },
+    "canvas_guide_primary": "请在下方输入你想要的图片内容，我来帮你生成。",
+    "canvas_guide_secondary": "也可以上传或粘贴一张或多张图片，在原图基础上继续修改和创作。",
+    "canvas_upload_action": "上传图片",
+    "composer_continue_hint": "基于当前图片继续创作，新结果会单独生成，不会覆盖原图。",
+    "composer_upload_hint": "正在基于上传图片编辑，结果会单独生成。",
+    "copy_prompt": "复制提示词",
+    "created_at": "创建时间",
+    "current_mode": "当前模式",
     "custom_size": "自定义尺寸",
     "dmxapi": {
       "generating_tip": "正在使用官方的模型生成，预计等待2~5分钟效果最好，本次消耗金额请到DMXAPI后台日志查看",
@@ -3248,12 +3255,6 @@
       "upload_edit": "上传图片编辑",
       "upscale": "高清增强"
     },
-    "current_mode": "当前模式",
-    "canvas_guide_primary": "请在下方输入你想要的图片内容，我来帮你生成。",
-    "canvas_guide_secondary": "也可以上传或粘贴一张或多张图片，在原图基础上继续修改和创作。",
-    "canvas_upload_action": "上传图片",
-    "composer_continue_hint": "基于当前图片继续创作，新结果会单独生成，不会覆盖原图。",
-    "composer_upload_hint": "正在基于上传图片编辑，结果会单独生成。",
     "model": "模型",
     "model_and_pricing": "模型与定价",
     "moderation": "敏感度",
@@ -3291,6 +3292,7 @@
     "prompt_placeholder": "建议先让 AI 对话帮你优化图片描述，再复制到这里生成，画面会更符合预期。",
     "prompt_placeholder_edit": "建议先让 AI 对话帮你优化图片描述，再复制到这里生成，画面会更符合预期。",
     "prompt_placeholder_en": "输入 \"英文\" 图片描述，目前仅支持英文提示词",
+    "prompt_used": "本次提示词",
     "proxy_required": "打开代理并开启 \"TUN 模式\" 查看生成图片或复制到浏览器打开，后续会支持国内直连",
     "quality": "质量",
     "quality_options": {

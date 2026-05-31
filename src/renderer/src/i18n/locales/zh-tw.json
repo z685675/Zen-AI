@@ -282,6 +282,7 @@
       "title": "編輯 Agent"
     },
     "empty": {
+      "action": "[to be translated]:去配置模型服务",
       "description": "建立 Agent 以透過 AI 驅動的工具處理複雜任務",
       "title": "尚無 Agent"
     },
@@ -358,6 +359,13 @@
         "label": "預先授權工具",
         "placeholder": "選擇預先授權的工具"
       },
+      "archive": {
+        "badge": "[to be translated]:已归档",
+        "empty": "[to be translated]:暂无归档会话",
+        "move": "[to be translated]:归档会话",
+        "restore": "[to be translated]:恢复会话",
+        "title": "[to be translated]:归档"
+      },
       "create": {
         "error": {
           "failed": "無法新增工作階段"
@@ -386,6 +394,11 @@
         "error": {
           "failed": "無法重新排序工作階段"
         }
+      },
+      "search": {
+        "empty": "[to be translated]:没有找到匹配的会话",
+        "error": "[to be translated]:搜索会话失败",
+        "placeholder": "[to be translated]:搜索智能助手会话..."
       },
       "update": {
         "error": {
@@ -420,6 +433,8 @@
       },
       "essential": "必要設定",
       "permissionMode": {
+        "currentModePrefix": "[to be translated]:当前模式：",
+        "simpleTitle": "[to be translated]:模式选择",
         "tab": "權限模式",
         "title": "權限模式"
       },
@@ -526,16 +541,13 @@
             "description": "切換模式會更新自動預先授權的工具。",
             "title": "確認切換權限模式？"
           },
-          "default": {
-            "description": "唯讀工具會自動預先授權，其它操作仍需核准。",
-            "title": "預設（繼續前先詢問）"
-          },
           "helper": "指定助手如何處理工具使用授權",
           "placeholder": "選擇權限模式",
           "plan": {
             "description": "沿用預設的唯讀工具集，並會在執行前先呈現計畫。",
             "title": "規劃模式"
           },
+          "simpleTitle": "[to be translated]:模式选择",
           "title": "權限模式"
         },
         "preapproved": {
@@ -1098,6 +1110,16 @@
       "generate_image": "產生圖片",
       "generate_image_not_supported": "模型不支援產生圖片",
       "knowledge_base": "知識庫",
+      "more": {
+        "attachment": "[to be translated]:上传图片、文档等内容到当前会话",
+        "create_session": "[to be translated]:基于当前助手新建一个会话",
+        "quick_phrases": "[to be translated]:插入常用短语、模板内容或快捷预设",
+        "resource_panel": "[to be translated]:查看当前会话可用的文件与技能资源",
+        "slash_commands": "[to be translated]:查看当前助手提供的快捷命令",
+        "thinking": "[to be translated]:调整模型的思考模式或推理深度",
+        "title": "[to be translated]:更多",
+        "toggle_expand": "[to be translated]:展开或收起当前输入框"
+      },
       "new": {
         "context": "清除上下文 {{Command}}"
       },
@@ -1129,6 +1151,7 @@
       "settings": "設定",
       "slash_commands": {
         "description": "Agent 工作階段斜線指令",
+        "empty": "[to be translated]:当前没有可用的斜杠命令",
         "title": "斜線指令"
       },
       "thinking": {
@@ -1858,6 +1881,7 @@
     "created": "建立時間",
     "last_updated": "最後更新",
     "messages": "訊息數",
+    "no_history": "[to be translated]:暂无会话记录",
     "notion": {
       "reasoning_truncated": "思維鏈無法分塊，已截斷"
     },
@@ -1906,12 +1930,14 @@
   },
   "history": {
     "continue_chat": "繼續聊天",
+    "conversation_history": "[to be translated]:会话记录",
     "error": {
       "topic_not_found": "話題不存在"
     },
     "locate": {
       "message": "定位到訊息"
     },
+    "no_history": "[to be translated]:暂无会话记录",
     "search": {
       "match": {
         "substring": "包含",
@@ -3104,6 +3130,14 @@
         "image": "新繪圖"
       }
     },
+    "canvas_guide_primary": "[to be translated]:请在下方输入你想要的图片内容，我来帮你生成。",
+    "canvas_guide_secondary": "[to be translated]:也可以上传或粘贴一张或多张图片，在原图基础上继续修改和创作。",
+    "canvas_upload_action": "[to be translated]:上传图片",
+    "composer_continue_hint": "[to be translated]:基于当前图片继续创作，新结果会单独生成，不会覆盖原图。",
+    "composer_upload_hint": "[to be translated]:正在基于上传图片编辑，结果会单独生成。",
+    "copy_prompt": "複製提示詞",
+    "created_at": "建立時間",
+    "current_mode": "[to be translated]:当前模式",
     "custom_size": "自訂尺寸",
     "dmxapi": {
       "generating_tip": "使用官方模型生成，預計等待時間為 2–5 分鐘以獲得最佳結果。請查看 DMXAPI 後端日誌以了解此操作的成本。",
@@ -3212,10 +3246,13 @@
     "learn_more": "了解更多",
     "magic_prompt_option": "提示詞增強",
     "mode": {
+      "continue_with_index": "[to be translated]:基于第 {{index}} 张图片继续创作",
+      "create": "[to be translated]:新建图片",
       "edit": "編輯",
       "generate": "繪圖",
       "merge": "合併",
       "remix": "混合",
+      "upload_edit": "[to be translated]:上传图片编辑",
       "upscale": "放大"
     },
     "model": "模型",
@@ -3255,6 +3292,7 @@
     "prompt_placeholder": "描述你想建立的圖片，例如：一個寧靜的湖泊，夕陽西下，遠處是群山",
     "prompt_placeholder_edit": "輸入你的圖片描述，文字繪製用 ' 雙引號 ' 包裹",
     "prompt_placeholder_en": "輸入英文圖片描述，目前僅支援英文提示詞",
+    "prompt_used": "本次提示詞",
     "proxy_required": "請開啟代理並啟用「TUN 模式」，即可查看產生的圖片；也可以複製到瀏覽器開啟。日後將支援免代理直接連線。",
     "quality": "品質",
     "quality_options": {
@@ -3990,6 +4028,55 @@
       "label": "預設助手",
       "model_params": "模型參數",
       "title": "預設助手"
+    },
+    "assistantEnvironment": {
+      "binariesDir": "[to be translated]:应用工具目录",
+      "checkFailed": "[to be translated]:环境检测失败",
+      "coreDescription": "[to be translated]:这些工具会影响智能助手调用扩展能力、技能和本地任务的稳定性。",
+      "coreTitle": "[to be translated]:核心能力准备",
+      "dependencies": {
+        "bun": {
+          "description": "[to be translated]:用于运行部分技能、工具服务和前端类自动化任务。",
+          "name": "[to be translated]:Bun 运行时"
+        },
+        "git": {
+          "description": "[to be translated]:可选增强项，用于 Git 来源的 Skill、仓库下载和代码类任务。",
+          "name": "[to be translated]:Git"
+        },
+        "pyodide": {
+          "description": "[to be translated]:用于浏览器内 Python 沙盒。当前版本首次使用需要联网加载，不要求用户安装本机 Python。",
+          "name": "[to be translated]:Python 沙盒联网"
+        },
+        "uv": {
+          "description": "[to be translated]:用于准备 Python 工具环境和部分本地技能依赖。",
+          "name": "[to be translated]:UV"
+        },
+        "uvx": {
+          "description": "[to be translated]:随 UV 一起提供，用于临时运行 Python 工具包和 MCP 服务。",
+          "name": "[to be translated]:UVX"
+        }
+      },
+      "description": "[to be translated]:检查智能助手完整能力所需的本地工具与联网条件。",
+      "install": "[to be translated]:安装",
+      "installFailed": "[to be translated]:安装失败",
+      "installSuccess": "[to be translated]:安装完成",
+      "intro": "[to be translated]:基础对话和普通本地文件操作可以直接使用。下面的检测主要用于扩展能力：技能市场、定时任务、Python 沙盒、Git 来源工具等。",
+      "noPath": "[to be translated]:暂未检测到可用路径",
+      "optionalDescription": "[to be translated]:这些不是基础对话的硬性要求，但会影响部分高级任务体验。",
+      "optionalTitle": "[to be translated]:可选增强",
+      "prepare": "[to be translated]:一键准备 Bun 和 UV",
+      "prepareSuccess": "[to be translated]:环境准备完成",
+      "refresh": "[to be translated]:重新检测",
+      "sources": {
+        "app": "[to be translated]:应用内置目录",
+        "network": "[to be translated]:网络可用",
+        "system": "[to be translated]:系统已安装"
+      },
+      "status": {
+        "error": "[to be translated]:检测失败",
+        "missing": "[to be translated]:未就绪"
+      },
+      "title": "[to be translated]:智能助手环境"
     },
     "channels": {
       "description": "將代理連接到 Telegram、飛書、Discord 等訊息平台。",

@@ -923,6 +923,7 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
             retry={handleRetry}
             previewUrls={taskPreviewUrls.length > 0 ? taskPreviewUrls : uploadedPreviewUrls}
             onDeletePreview={taskPreviewUrls.length > 0 ? undefined : handleDeleteUploadedImage}
+            prompt={artboardPainting.prompt}
             imageCover={
               <CanvasGuide>
                 <GuideText>{t('paintings.canvas_guide_primary')}</GuideText>

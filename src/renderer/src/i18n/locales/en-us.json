@@ -359,6 +359,13 @@
         "label": "Pre-approved tools",
         "placeholder": "Select pre-approved tools"
       },
+      "archive": {
+        "badge": "Archived",
+        "empty": "No archived sessions yet",
+        "move": "Archive Session",
+        "restore": "Restore Session",
+        "title": "Archived"
+      },
       "create": {
         "error": {
           "failed": "Failed to add a session"
@@ -383,13 +390,6 @@
       },
       "label_one": "Session",
       "label_other": "Sessions",
-      "archive": {
-        "badge": "Archived",
-        "empty": "No archived sessions yet",
-        "move": "Archive Session",
-        "restore": "Restore Session",
-        "title": "Archived"
-      },
       "reorder": {
         "error": {
           "failed": "Failed to reorder sessions"
@@ -1110,6 +1110,16 @@
       "generate_image": "Generate image",
       "generate_image_not_supported": "The model does not support generating images.",
       "knowledge_base": "Knowledge Base",
+      "more": {
+        "attachment": "Upload images, documents, or other files into the current conversation",
+        "create_session": "Create a new conversation under the current assistant",
+        "quick_phrases": "Insert a commonly used phrase or preset content",
+        "resource_panel": "Browse files and skills available to this session",
+        "slash_commands": "View quick commands provided by this assistant",
+        "thinking": "Adjust the model thinking mode or reasoning depth",
+        "title": "More",
+        "toggle_expand": "Expand or collapse the current input box"
+      },
       "new": {
         "context": "Clear Context {{Command}}"
       },
@@ -1137,21 +1147,11 @@
         },
         "title": "Resources"
       },
-      "more": {
-        "title": "More",
-        "attachment": "Upload images, documents, or other files into the current conversation",
-        "create_session": "Create a new conversation under the current assistant",
-        "quick_phrases": "Insert a commonly used phrase or preset content",
-        "resource_panel": "Browse files and skills available to this session",
-        "slash_commands": "View quick commands provided by this assistant",
-        "thinking": "Adjust the model thinking mode or reasoning depth",
-        "toggle_expand": "Expand or collapse the current input box"
-      },
       "send": "Send",
       "settings": "Settings",
       "slash_commands": {
-        "empty": "No slash commands available right now",
         "description": "Agent session slash commands",
+        "empty": "No slash commands available right now",
         "title": "Slash Commands"
       },
       "thinking": {
@@ -1878,10 +1878,10 @@
     "attached_files": "Attached Files",
     "conversation_details": "Conversation Details",
     "conversation_history": "Conversation History",
-    "no_history": "No conversation history",
     "created": "Created",
     "last_updated": "Last Updated",
     "messages": "Messages",
+    "no_history": "No conversation history",
     "notion": {
       "reasoning_truncated": "Chain of thought cannot be chunked and has been truncated."
     },
@@ -1929,14 +1929,15 @@
     "title": "GPUStack"
   },
   "history": {
-    "conversation_history": "Conversation History",
     "continue_chat": "Continue Chatting",
+    "conversation_history": "Conversation History",
     "error": {
       "topic_not_found": "Topic not found"
     },
     "locate": {
       "message": "Locate the message"
     },
+    "no_history": "No conversation history yet",
     "search": {
       "match": {
         "substring": "Contains",
@@ -1952,7 +1953,6 @@
         "empty": "No topics found, press Enter to search all messages"
       }
     },
-    "no_history": "No conversation history yet",
     "title": "Topics Search"
   },
   "html_artifacts": {
@@ -3105,7 +3105,6 @@
     "title": "Intel OVMS"
   },
   "paintings": {
-    "title": "Image Generation",
     "aspect_ratio": "Aspect Ratio",
     "aspect_ratios": {
       "landscape": "Landscape",
@@ -3131,6 +3130,14 @@
         "image": "New Image"
       }
     },
+    "canvas_guide_primary": "Describe the image you want below, and I'll generate it for you.",
+    "canvas_guide_secondary": "You can also upload or paste one or more images to keep editing and creating from them.",
+    "canvas_upload_action": "Upload Image",
+    "composer_continue_hint": "Continuing from this image; the result will be generated separately without overwriting it.",
+    "composer_upload_hint": "Editing from the uploaded image; the result will be generated separately.",
+    "copy_prompt": "Copy prompt",
+    "created_at": "Created at",
+    "current_mode": "Current Mode",
     "custom_size": "Custom Size",
     "dmxapi": {
       "generating_tip": "Generating with the official model, estimated wait time is 2-5 minutes for best results. Please check DMXAPI backend logs for the cost of this operation.",
@@ -3248,12 +3255,6 @@
       "upload_edit": "Upload Image Edit",
       "upscale": "Upscale"
     },
-    "current_mode": "Current Mode",
-    "canvas_guide_primary": "Describe the image you want below, and I'll generate it for you.",
-    "canvas_guide_secondary": "You can also upload or paste one or more images to keep editing and creating from them.",
-    "canvas_upload_action": "Upload Image",
-    "composer_continue_hint": "Continuing from this image; the result will be generated separately without overwriting it.",
-    "composer_upload_hint": "Editing from the uploaded image; the result will be generated separately.",
     "model": "Model",
     "model_and_pricing": "Model & Pricing",
     "moderation": "Moderation",
@@ -3291,6 +3292,7 @@
     "prompt_placeholder": "Describe the image you want to create, e.g. A serene lake at sunset with mountains in the background",
     "prompt_placeholder_edit": "Enter your image description, text drawing uses \"double quotes\" to wrap",
     "prompt_placeholder_en": "Enter your image description, currently only supports English prompts",
+    "prompt_used": "Prompt used",
     "proxy_required": "Open the proxy and enable \"TUN mode\" to view generated images or copy them to the browser for opening. In the future, domestic direct connection will be supported",
     "quality": "Quality",
     "quality_options": {

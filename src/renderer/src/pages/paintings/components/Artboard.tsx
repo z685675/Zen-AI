@@ -1,8 +1,10 @@
 import { CloseOutlined, LeftOutlined, RightOutlined } from '@ant-design/icons'
+import CopyButton from '@renderer/components/CopyButton'
 import ImageViewer from '@renderer/components/ImageViewer'
 import FileManager from '@renderer/services/FileManager'
 import type { Painting } from '@renderer/types'
-import { Button, Spin } from 'antd'
+import { Button, Popover, Spin } from 'antd'
+import dayjs from 'dayjs'
 import type { FC } from 'react'
 import React from 'react'
 import { useTranslation } from 'react-i18next'
@@ -20,6 +22,7 @@ interface ArtboardProps {
   loadText?: React.ReactNode
   previewUrls?: string[]
   onDeletePreview?: (index: number) => void
+  prompt?: string
 }
 
 const Artboard: FC<ArtboardProps> = ({
@@ -33,12 +36,17 @@ const Artboard: FC<ArtboardProps> = ({
   imageCover,
   loadText,
   previewUrls = [],
-  onDeletePreview
+  onDeletePreview,
+  prompt
 }) => {
   const { t } = useTranslation()
 
   const fileUrls = painting.files.map((file) => FileManager.getFileUrl(file))
   const displayUrls = fileUrls.length > 0 ? fileUrls : previewUrls
+  const promptText = prompt?.trim()
+  const createdAt = painting.files[currentImageIndex]?.created_at
+  const createdAtDate = createdAt ? dayjs(createdAt) : null
+  const createdAtText = createdAtDate?.isValid() ? createdAtDate.format('YYYY/MM/DD HH:mm:ss') : null
   const currentDisplayUrl = displayUrls[currentImageIndex] || ''
   const isPreviewGrid = fileUrls.length === 0 && previewUrls.length > 1
   const gridPageSize = 9
@@ -48,111 +56,144 @@ const Artboard: FC<ArtboardProps> = ({
   const gridColumnCount = previewPageUrls.length <= 1 ? 1 : previewPageUrls.length <= 4 ? 2 : 3
   const showGridPager = previewUrls.length > gridPageSize
 
+  const promptPopoverContent = promptText ? (
+    <PromptPopoverContent>
+      <PromptPopoverHeader>
+        <PromptTitle>{t('paintings.prompt_used')}</PromptTitle>
+        <CopyButton textToCopy={promptText} tooltip={t('paintings.copy_prompt')} />
+      </PromptPopoverHeader>
+      <PromptPopoverText>{promptText}</PromptPopoverText>
+    </PromptPopoverContent>
+  ) : null
+
   return (
     <Container>
-      <LoadingContainer spinning={isLoading}>
-        {isPreviewGrid ? (
-          <CanvasFrame>
-            {showGridPager && <GridNavigationButton onClick={onPrevImage} $side="left" icon={<LeftOutlined />} />}
-            <PreviewGrid $columns={gridColumnCount}>
-              {previewPageUrls.map((url, index) => {
-                const absoluteIndex = currentPage * gridPageSize + index
-                return (
-                  <PreviewTile key={`${url}-${absoluteIndex}`}>
-                    <ImageViewer
-                      src={url}
-                      preview={{ mask: false }}
-                      style={{
-                        width: '100%',
-                        height: '100%',
-                        objectFit: 'contain',
-                        cursor: 'pointer'
-                      }}
-                    />
-                    {onDeletePreview && (
-                      <DeletePreviewButton
-                        size="small"
-                        type="text"
-                        icon={<CloseOutlined />}
-                        onClick={(event) => {
-                          event.stopPropagation()
-                          onDeletePreview(absoluteIndex)
+      <ArtboardStack>
+        <LoadingContainer spinning={isLoading}>
+          {isPreviewGrid ? (
+            <CanvasFrame>
+              {showGridPager && <GridNavigationButton onClick={onPrevImage} $side="left" icon={<LeftOutlined />} />}
+              <PreviewGrid $columns={gridColumnCount}>
+                {previewPageUrls.map((url, index) => {
+                  const absoluteIndex = currentPage * gridPageSize + index
+                  return (
+                    <PreviewTile key={`${url}-${absoluteIndex}`}>
+                      <ImageViewer
+                        src={url}
+                        preview={{ mask: false }}
+                        style={{
+                          width: '100%',
+                          height: '100%',
+                          objectFit: 'contain',
+                          cursor: 'pointer'
                         }}
                       />
-                    )}
-                  </PreviewTile>
-                )
-              })}
-            </PreviewGrid>
-            {showGridPager && <GridNavigationButton onClick={onNextImage} $side="right" icon={<RightOutlined />} />}
-            <ImageCounter>
-              {currentPage + 1} / {totalPages}
-            </ImageCounter>
-          </CanvasFrame>
-        ) : displayUrls.length > 0 ? (
-          <CanvasFrame>
-            {displayUrls.length > 1 && (
-              <NavigationButton onClick={onPrevImage} style={{ left: 10 }}>
-                {'<'}
-              </NavigationButton>
-            )}
-            <ImageViewer
-              src={currentDisplayUrl}
-              preview={{ mask: false }}
-              style={{
-                maxWidth: 'var(--artboard-max)',
-                maxHeight: 'var(--artboard-max)',
-                objectFit: 'contain',
-                backgroundColor: 'var(--color-background-soft)',
-                cursor: 'pointer'
-              }}
-            />
-            {displayUrls.length > 1 && (
-              <NavigationButton onClick={onNextImage} style={{ right: 10 }}>
-                {'>'}
-              </NavigationButton>
-            )}
-            <ImageCounter>
-              {currentImageIndex + 1} / {displayUrls.length}
-            </ImageCounter>
-          </CanvasFrame>
-        ) : (
-          <ImagePlaceholder>
-            {painting.urls.length > 0 && retry ? (
-              <div>
-                <ImageList>
-                  {painting.urls.map((url, index) => (
-                    <ImageListItem key={url || index}>{url}</ImageListItem>
-                  ))}
-                </ImageList>
+                      {onDeletePreview && (
+                        <DeletePreviewButton
+                          size="small"
+                          type="text"
+                          icon={<CloseOutlined />}
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            onDeletePreview(absoluteIndex)
+                          }}
+                        />
+                      )}
+                    </PreviewTile>
+                  )
+                })}
+              </PreviewGrid>
+              {showGridPager && <GridNavigationButton onClick={onNextImage} $side="right" icon={<RightOutlined />} />}
+              <ImageCounter>
+                {currentPage + 1} / {totalPages}
+              </ImageCounter>
+            </CanvasFrame>
+          ) : displayUrls.length > 0 ? (
+            <CanvasFrame>
+              {displayUrls.length > 1 && (
+                <NavigationButton onClick={onPrevImage} style={{ left: 10 }}>
+                  {'<'}
+                </NavigationButton>
+              )}
+              <ImageViewer
+                src={currentDisplayUrl}
+                preview={{ mask: false }}
+                style={{
+                  maxWidth: 'var(--artboard-max)',
+                  maxHeight: 'var(--artboard-max)',
+                  objectFit: 'contain',
+                  backgroundColor: 'var(--color-background-soft)',
+                  cursor: 'pointer'
+                }}
+              />
+              {displayUrls.length > 1 && (
+                <NavigationButton onClick={onNextImage} style={{ right: 10 }}>
+                  {'>'}
+                </NavigationButton>
+              )}
+              <ImageCounter>
+                {currentImageIndex + 1} / {displayUrls.length}
+              </ImageCounter>
+            </CanvasFrame>
+          ) : (
+            <ImagePlaceholder>
+              {painting.urls.length > 0 && retry ? (
                 <div>
-                  {t('paintings.proxy_required')}
-                  <Button type="link" onClick={() => retry?.(painting)}>
-                    {t('paintings.image_retry')}
-                  </Button>
+                  <ImageList>
+                    {painting.urls.map((url, index) => (
+                      <ImageListItem key={url || index}>{url}</ImageListItem>
+                    ))}
+                  </ImageList>
+                  <div>
+                    {t('paintings.proxy_required')}
+                    <Button type="link" onClick={() => retry?.(painting)}>
+                      {t('paintings.image_retry')}
+                    </Button>
+                  </div>
                 </div>
-              </div>
-            ) : imageCover ? (
-              imageCover
-            ) : loadText && isLoading ? (
-              ''
-            ) : (
-              <div>{t('paintings.image_placeholder')}</div>
+              ) : imageCover ? (
+                imageCover
+              ) : loadText && isLoading ? (
+                ''
+              ) : (
+                <div>{t('paintings.image_placeholder')}</div>
+              )}
+            </ImagePlaceholder>
+          )}
+          {isLoading && (
+            <LoadingOverlay>
+              <LoadingStatus>
+                <Spin size="large" />
+                {loadText || ''}
+              </LoadingStatus>
+              <CancelButton danger type="primary" size="large" onClick={onCancel}>
+                {t('common.cancel')}
+              </CancelButton>
+            </LoadingOverlay>
+          )}
+        </LoadingContainer>
+        {(promptText || createdAtText) && (
+          <InfoBar>
+            {promptText && (
+              <Popover
+                content={promptPopoverContent}
+                placement="top"
+                trigger={['hover', 'click']}
+                styles={{ body: { padding: 0, background: 'transparent', boxShadow: 'none' } }}>
+                <PromptTrigger type="button">
+                  <PromptTitle>{t('paintings.prompt_used')}</PromptTitle>
+                  <PromptSummary>{promptText}</PromptSummary>
+                </PromptTrigger>
+              </Popover>
             )}
-          </ImagePlaceholder>
+            {createdAtText && (
+              <CreatedAtText>
+                {t('paintings.created_at')} {createdAtText}
+              </CreatedAtText>
+            )}
+          </InfoBar>
         )}
-        {isLoading && (
-          <LoadingOverlay>
-            <LoadingStatus>
-              <Spin size="large" />
-              {loadText || ''}
-            </LoadingStatus>
-            <CancelButton danger type="primary" size="large" onClick={onCancel}>
-              {t('common.cancel')}
-            </CancelButton>
-          </LoadingOverlay>
-        )}
-      </LoadingContainer>
+      </ArtboardStack>
     </Container>
   )
 }
@@ -170,6 +211,15 @@ const Container = styled.div`
   background-size: 24px 24px;
 
   --artboard-max: min(calc(100vh - 230px), calc(100vw - 500px));
+`
+
+const ArtboardStack = styled.div`
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  max-width: max(320px, min(calc(100vw - 500px), 780px));
 `
 
 const ImagePlaceholder = styled.div`
@@ -366,8 +416,8 @@ const ImageCounter = styled.div`
 
 const LoadingContainer = styled.div<{ spinning: boolean }>`
   position: relative;
-  width: 100%;
-  height: 100%;
+  width: fit-content;
+  height: fit-content;
   display: flex;
   justify-content: center;
   align-items: center;
@@ -377,6 +427,99 @@ const LoadingContainer = styled.div<{ spinning: boolean }>`
     opacity: ${(props) => (props.spinning ? 0.42 : 1)};
     transition: opacity 0.3s;
   }
+`
+
+const InfoBar = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: min(var(--artboard-max), 720px);
+  max-width: max(320px, calc(100vw - 560px));
+  padding: 8px 12px;
+  border: 1px solid color-mix(in srgb, var(--color-border) 78%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--color-background) 88%, var(--color-background-soft));
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
+`
+
+const PromptTrigger = styled.button`
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  color: inherit;
+  transition:
+    color 0.18s ease,
+    opacity 0.18s ease;
+
+  &:hover,
+  &:focus-visible {
+    color: var(--color-primary);
+    outline: none;
+  }
+`
+
+const PromptPopoverContent = styled.div`
+  width: min(560px, calc(100vw - 80px));
+  max-height: 240px;
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--color-border) 68%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--color-background) 78%, transparent);
+  backdrop-filter: blur(14px);
+  box-shadow:
+    0 18px 46px rgba(15, 23, 42, 0.16),
+    0 1px 0 rgba(255, 255, 255, 0.42) inset;
+`
+
+const PromptPopoverHeader = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+`
+
+const PromptTitle = styled.div`
+  flex-shrink: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-2);
+`
+
+const PromptSummary = styled.div`
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-text-1);
+  font-size: 12px;
+  line-height: 1.5;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+`
+
+const CreatedAtText = styled.div`
+  flex-shrink: 0;
+  color: var(--color-text-3);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: nowrap;
+`
+
+const PromptPopoverText = styled.div`
+  max-height: 184px;
+  overflow: auto;
+  color: var(--color-text-1);
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  user-select: text;
 `
 
 const LoadingOverlay = styled.div.attrs({ className: 'loading-overlay' })`
