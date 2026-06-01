@@ -255,6 +255,12 @@ const WelcomeState = styled.div`
   position: relative;
   overflow: hidden;
 
+  @media (max-height: 880px) {
+    padding: 14px 24px 12px;
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+
   &::before {
     content: '';
     position: absolute;
@@ -288,6 +294,10 @@ const WelcomeInner = styled.div`
   position: relative;
   z-index: 1;
   padding: 18px 0 40px;
+
+  @media (max-height: 880px) {
+    padding: 8px 0 18px;
+  }
 `
 
 const BrandHeader = styled.div`
@@ -326,6 +336,11 @@ const WelcomeTitle = styled.h1`
   color: #2b2f36;
   text-align: center;
   letter-spacing: -0.03em;
+
+  @media (max-height: 880px) {
+    margin-top: 16px;
+    font-size: 28px;
+  }
 `
 
 const CapabilityGrid = styled.div`
@@ -335,6 +350,11 @@ const CapabilityGrid = styled.div`
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
   margin-top: 30px;
+
+  @media (max-height: 880px) {
+    gap: 10px;
+    margin-top: 18px;
+  }
 
   @media (max-width: 820px) {
     grid-template-columns: 1fr;
@@ -353,6 +373,11 @@ const CapabilityCard = styled.div`
     0 8px 22px rgba(15, 23, 42, 0.03),
     0 1px 0 rgba(255, 255, 255, 0.78) inset;
   backdrop-filter: blur(10px);
+
+  @media (max-height: 880px) {
+    gap: 10px;
+    padding: 10px 13px;
+  }
 `
 
 const CapabilityIcon = styled.div`
@@ -384,12 +409,20 @@ const CapabilityDescription = styled.div`
   font-size: 12px;
   line-height: 1.65;
   color: rgba(138, 146, 160, 0.88);
+
+  @media (max-height: 880px) {
+    line-height: 1.42;
+  }
 `
 
 const WelcomeComposer = styled.div`
   width: 100%;
   max-width: 1040px;
   margin-top: 28px;
+
+  @media (max-height: 880px) {
+    margin-top: 18px;
+  }
 `
 
 const QuickEntrySection = styled.div`
@@ -404,6 +437,12 @@ const QuickEntrySection = styled.div`
     0 16px 40px rgba(15, 23, 42, 0.05),
     0 1px 0 rgba(255, 255, 255, 0.88) inset;
   backdrop-filter: blur(14px);
+
+  @media (max-height: 880px) {
+    margin-top: 24px;
+    padding: 12px 16px 14px;
+    border-radius: 24px;
+  }
 `
 
 const QuickEntryLabel = styled.div`
@@ -412,6 +451,10 @@ const QuickEntryLabel = styled.div`
   font-weight: 600;
   color: #7d8794;
   letter-spacing: 0.04em;
+
+  @media (max-height: 880px) {
+    margin-bottom: 10px;
+  }
 `
 
 const QuickEntryGrid = styled.div`
@@ -455,6 +498,11 @@ const QuickEntryButton = styled.button`
     background:
       linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(255, 248, 244, 0.94)),
       linear-gradient(135deg, rgba(255, 235, 239, 0.28), rgba(255, 245, 228, 0.28));
+  }
+
+  @media (max-height: 880px) {
+    min-height: 76px;
+    padding: 13px 16px;
   }
 `
 

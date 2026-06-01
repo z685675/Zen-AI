@@ -20,4 +20,20 @@ export const MessagesContainer = styled(Scrollbar)<ContainerProps>`
   overflow-x: hidden;
   z-index: 1;
   position: relative;
+
+  &::-webkit-scrollbar {
+    width: 12px;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    min-height: 56px;
+    border: 3px solid transparent;
+    border-radius: 999px;
+    background-clip: content-box;
+    background-color: var(--color-scrollbar-thumb);
+  }
+
+  &::-webkit-scrollbar-thumb:hover {
+    background-color: var(--color-scrollbar-thumb-hover);
+  }
 `
