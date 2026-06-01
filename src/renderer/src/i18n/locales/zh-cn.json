@@ -3172,6 +3172,7 @@
         "yarn_doll": "纱线娃娃"
       }
     },
+    "drag_reorder_hint": "拖动图片可排序",
     "edit": {
       "image_file": "输入图片",
       "image_required": "请先上传需要编辑的图片"
@@ -3332,6 +3333,8 @@
     "seed_random": "随机",
     "seed_tip": "相同的种子和提示词可以生成相似的图片",
     "select_model": "选择模型",
+    "source": "来源",
+    "source_deleted": "来源已删",
     "style_type": "风格",
     "style_types": {
       "3d": "3D",

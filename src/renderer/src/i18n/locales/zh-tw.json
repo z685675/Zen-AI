@@ -3172,6 +3172,7 @@
         "yarn_doll": "毛線娃娃"
       }
     },
+    "drag_reorder_hint": "拖曳圖片可排序",
     "edit": {
       "image_file": "編輯影像",
       "image_required": "請先上傳需要編輯的圖片"
@@ -3332,6 +3333,8 @@
     "seed_random": "隨機",
     "seed_tip": "相同的種子和提示詞可以產生相似的圖片",
     "select_model": "選擇模型",
+    "source": "來源",
+    "source_deleted": "來源已刪",
     "style_type": "風格",
     "style_types": {
       "3d": "3D",

@@ -450,20 +450,45 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
   }
 
   const createResultPainting = useCallback(
-    (prompt: string) => ({
-      ...createEmptyDraft(),
+    (prompt: string) => {
+      const sourceInfo =
+        composerMode === 'continue' && selectedPainting?.files?.length
+          ? {
+              sourcePaintingId: selectedPainting.id,
+              sourceImageIndex: currentImageIndex,
+              sourceImageCount: selectedPainting.files.length
+            }
+          : {}
+
+      return {
+        ...createEmptyDraft(),
+        providerId,
+        prompt,
+        model: draft.model,
+        size: draft.size,
+        quality: draft.quality,
+        moderation: draft.moderation,
+        background: draft.background,
+        n: draft.n,
+        files: [],
+        urls: [],
+        ...sourceInfo
+      }
+    },
+    [
+      composerMode,
+      createEmptyDraft,
+      currentImageIndex,
+      draft.background,
+      draft.model,
+      draft.moderation,
+      draft.n,
+      draft.quality,
+      draft.size,
       providerId,
-      prompt,
-      model: draft.model,
-      size: draft.size,
-      quality: draft.quality,
-      moderation: draft.moderation,
-      background: draft.background,
-      n: draft.n,
-      files: [],
-      urls: []
-    }),
-    [createEmptyDraft, draft.background, draft.model, draft.moderation, draft.n, draft.quality, draft.size, providerId]
+      selectedPainting?.files?.length,
+      selectedPainting?.id
+    ]
   )
 
   const onGenerate = async () => {
@@ -517,15 +542,17 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
       const continueImages =
         composerMode === 'continue' && selectedPainting?.files?.length
           ? await Promise.all(
-              selectedPainting.files.map(async (file, index) => {
-                const { data, mime } = await window.api.file.binaryImage(FileManager.getStorageFileName(file))
-                const ext = file.ext ? (file.ext.startsWith('.') ? file.ext : `.${file.ext}`) : ''
-                const fileName = file.origin_name || file.name || `image_${index + 1}${ext}`
-                return new File([data], fileName, {
-                  type: mime,
-                  lastModified: new Date(file.created_at).getTime()
+              selectedPainting.files
+                .filter((_, index) => index === currentImageIndex)
+                .map(async (file, index) => {
+                  const { data, mime } = await window.api.file.binaryImage(FileManager.getStorageFileName(file))
+                  const ext = file.ext ? (file.ext.startsWith('.') ? file.ext : `.${file.ext}`) : ''
+                  const fileName = file.origin_name || file.name || `image_${index + 1}${ext}`
+                  return new File([data], fileName, {
+                    type: mime,
+                    lastModified: new Date(file.created_at).getTime()
+                  })
                 })
-              })
             )
           : []
 

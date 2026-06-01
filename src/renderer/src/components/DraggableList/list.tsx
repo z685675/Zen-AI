@@ -10,6 +10,8 @@ import { droppableReorder } from '@renderer/utils'
 import type { HTMLAttributes, Key } from 'react'
 import { useCallback } from 'react'
 
+type DragAxis = 'vertical' | 'horizontal'
+
 interface Props<T> {
   list: T[]
   style?: React.CSSProperties
@@ -22,6 +24,30 @@ interface Props<T> {
   onDragStart?: OnDragStartResponder
   onDragEnd?: OnDragEndResponder
   droppableProps?: Partial<DroppableProps>
+  constrainDragAxis?: DragAxis
+}
+
+function constrainTransform(transform: string, axis: DragAxis) {
+  if (axis === 'vertical') {
+    return transform
+      .replace(/translate\(\s*[-\d.]+px,\s*([-\d.]+px)\s*\)/, 'translate(0px, $1)')
+      .replace(/translate3d\(\s*[-\d.]+px,\s*([-\d.]+px),\s*([-\d.]+px)\s*\)/, 'translate3d(0px, $1, $2)')
+  }
+
+  return transform
+    .replace(/translate\(\s*([-\d.]+px),\s*[-\d.]+px\s*\)/, 'translate($1, 0px)')
+    .replace(/translate3d\(\s*([-\d.]+px),\s*[-\d.]+px,\s*([-\d.]+px)\s*\)/, 'translate3d($1, 0px, $2)')
+}
+
+function constrainDragStyle(style: React.CSSProperties | undefined, axis?: DragAxis) {
+  if (!axis || !style?.transform || typeof style.transform !== 'string') {
+    return style
+  }
+
+  return {
+    ...style,
+    transform: constrainTransform(style.transform, axis)
+  }
 }
 
 function DraggableList<T>({
@@ -33,6 +59,7 @@ function DraggableList<T>({
   itemKey,
   isDragDisabled,
   droppableProps,
+  constrainDragAxis,
   onDragStart,
   onUpdate,
   onDragEnd
@@ -81,7 +108,7 @@ function DraggableList<T>({
                         {...provided.dragHandleProps}
                         style={{
                           ...listStyle,
-                          ...provided.draggableProps.style,
+                          ...constrainDragStyle(provided.draggableProps.style, constrainDragAxis),
                           marginBottom: 8
                         }}>
                         {children(item, index)}

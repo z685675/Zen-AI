@@ -364,6 +364,9 @@ export type PaintingParams = {
   providerId?: string
   // Legacy namespace retained for non-destructive image workspace migration.
   migratedFromNamespace?: string
+  sourcePaintingId?: string
+  sourceImageIndex?: number
+  sourceImageCount?: number
 }
 
 export type PaintingProvider = string

@@ -3172,6 +3172,7 @@
         "yarn_doll": "Yarn Doll"
       }
     },
+    "drag_reorder_hint": "Drag images to reorder",
     "edit": {
       "image_file": "Input Image",
       "image_required": "Please upload an image to edit first"
@@ -3332,6 +3333,8 @@
     "seed_random": "Random",
     "seed_tip": "The same seed and prompt can produce similar images",
     "select_model": "Select Model",
+    "source": "Source",
+    "source_deleted": "Source deleted",
     "style_type": "Style",
     "style_types": {
       "3d": "3D",

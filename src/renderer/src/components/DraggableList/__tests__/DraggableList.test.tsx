@@ -1,9 +1,13 @@
 /// <reference types="@vitest/browser/context" />
 
 import { render, screen } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { DraggableList } from '../'
+
+const dragStyleState = vi.hoisted(() => ({
+  enabled: false
+}))
 
 vi.mock('@renderer/store', () => ({
   default: {
@@ -30,11 +34,21 @@ vi.mock('@hello-pangea/dnd', () => {
         {children({ droppableProps: {}, innerRef: () => {}, placeholder: <div data-testid="placeholder" /> })}
       </div>
     ),
-    Draggable: ({ children, draggableId, index }: any) => (
-      <div data-testid={`draggable-${draggableId}-${index}`}>
-        {children({ draggableProps: { style: {} }, dragHandleProps: {}, innerRef: () => {} })}
-      </div>
-    )
+    Draggable: ({ children, draggableId, index }: any) => {
+      const style = dragStyleState.enabled
+        ? { transform: index === 0 ? 'translate(32px, 48px)' : 'translate3d(24px, 56px, 0px)' }
+        : undefined
+
+      return (
+        <div data-testid={`draggable-${draggableId}-${index}`}>
+          {children({
+            draggableProps: { style },
+            dragHandleProps: {},
+            innerRef: () => {}
+          })}
+        </div>
+      )
+    }
   }
 })
 
@@ -51,6 +65,10 @@ describe('DraggableList', () => {
     { id: 'b', name: 'B' },
     { id: 'c', name: 'C' }
   ]
+
+  beforeEach(() => {
+    dragStyleState.enabled = false
+  })
 
   it('renders all items', () => {
     render(
@@ -119,6 +137,18 @@ describe('DraggableList', () => {
 
     window.triggerOnDragEnd({ source: { index: 0 }, destination: { index: 2 } }, {})
     expect(onUpdate).toHaveBeenCalledWith(['B', 'C', 'A'])
+  })
+
+  it('can constrain drag movement to the vertical axis', () => {
+    dragStyleState.enabled = true
+
+    render(
+      <DraggableList list={objectList} onUpdate={() => {}} constrainDragAxis="vertical">
+        {(item) => <div data-testid="item">{item.name}</div>}
+      </DraggableList>
+    )
+
+    expect(screen.getAllByTestId('item')[0].parentElement).toHaveStyle({ transform: 'translate(0px, 48px)' })
   })
 
   it('renders placeholder and matches snapshot', () => {

@@ -33,6 +33,7 @@ const mockApp = Object.assign(new EventEmitter(), {
   isPackaged: true,
   isQuitting: false,
   isInstallingUpdate: false,
+  quit: vi.fn(),
   getPath: vi.fn(() => path.join('mock', 'Downloads'))
 })
 
@@ -103,6 +104,7 @@ describe('AppUpdateService', () => {
     mockShell.openPath.mockReset()
     mockShell.openPath.mockResolvedValue('')
     mockShell.showItemInFolder.mockReset()
+    mockApp.quit.mockReset()
     mockApp.getPath.mockReturnValue(mockDownloadsPath)
   })
 
@@ -370,6 +372,7 @@ describe('AppUpdateService', () => {
   })
 
   it('opens the local macOS DMG installer instead of using Squirrel auto install', async () => {
+    vi.useFakeTimers()
     mockIsMac = true
 
     const { AppUpdateService } = await import('../AppUpdateService')
@@ -400,8 +403,12 @@ describe('AppUpdateService', () => {
     expect(mockShell.showItemInFolder).not.toHaveBeenCalled()
     expect(mockAutoUpdater.quitAndInstall).not.toHaveBeenCalled()
     expect(configManagerMock.setPendingUpdateInfo).toHaveBeenCalledWith(null)
-    expect(mockApp.isInstallingUpdate).toBe(false)
-    expect(mockApp.isQuitting).toBe(false)
+    expect(mockApp.isInstallingUpdate).toBe(true)
+    expect(mockApp.isQuitting).toBe(true)
+    expect(mockApp.quit).not.toHaveBeenCalled()
+
+    await vi.advanceTimersByTimeAsync(1200)
+    expect(mockApp.quit).toHaveBeenCalledOnce()
   })
 
   it('can open a restored macOS pending update from the local manual installer folder', async () => {
@@ -486,6 +493,38 @@ describe('AppUpdateService', () => {
     })
     expect(mockShell.openPath).toHaveBeenCalledWith(installerPath)
     expect(mockShell.showItemInFolder).toHaveBeenCalledWith(installerPath)
+  })
+
+  it('does not quit automatically when macOS installer falls back to Finder reveal during install', async () => {
+    vi.useFakeTimers()
+    mockIsMac = true
+    mockShell.openPath.mockResolvedValueOnce('permission denied')
+
+    const { AppUpdateService } = await import('../AppUpdateService')
+    const service = new AppUpdateService(
+      {
+        isDestroyed: () => false,
+        webContents: { send: vi.fn() }
+      } as any,
+      '1.0.0',
+      () => true
+    )
+
+    ;(service as any).downloadedUpdateInfo = { version: '1.1.0' }
+    ;(service as any).downloadedUpdateReady = true
+    vi.spyOn(service as any, 'isExistingFile').mockResolvedValue(true)
+
+    await expect(service.quitAndInstall()).resolves.toMatchObject({
+      success: true,
+      status: 'manual-installer-opened',
+      fallbackToFolder: true,
+      message: 'permission denied'
+    })
+
+    await vi.advanceTimersByTimeAsync(1200)
+    expect(mockApp.quit).not.toHaveBeenCalled()
+    expect(mockApp.isInstallingUpdate).toBe(false)
+    expect(mockApp.isQuitting).toBe(false)
   })
 
   it('does not treat electron-updater macOS zip download as a ready DMG installer', async () => {

@@ -160,13 +160,13 @@ describe('appUpdate', () => {
     ;(window as any).toast = { info: toastInfo, error: vi.fn() }
     ;(window as any).api = {
       downloadUpdate: vi.fn(),
-      quitAndInstallUpdate: vi.fn(),
-      openDownloadedInstaller: vi.fn().mockResolvedValue({
+      quitAndInstallUpdate: vi.fn().mockResolvedValue({
         success: true,
         status: 'manual-installer-opened',
         installerPath: '/Users/test/Downloads/Zen AI Updates/Zen-AI-1.1.14-macos-arm64.dmg',
         fallbackToFolder: false
-      })
+      }),
+      openDownloadedInstaller: vi.fn()
     }
 
     showAppUpdateDownloadedModal(t, {
@@ -178,13 +178,15 @@ describe('appUpdate', () => {
     expect(options.okText).toBe('打开安装包')
 
     render(<>{options.content}</>)
-    expect(screen.getByText(/先确认本地安装包可用/)).toBeInTheDocument()
+    expect(screen.getByText(/自动退出 Zen AI/)).toBeInTheDocument()
 
     await options.onOk()
-    expect(window.api.openDownloadedInstaller).toHaveBeenCalledOnce()
-    expect(window.api.quitAndInstallUpdate).not.toHaveBeenCalled()
+    expect(window.api.quitAndInstallUpdate).toHaveBeenCalledOnce()
+    expect(window.api.openDownloadedInstaller).not.toHaveBeenCalled()
     expect(toastInfo).toHaveBeenCalledWith('正在准备并打开安装包…')
-    expect(toastInfo).toHaveBeenCalledWith('已打开安装程序，请在安装窗口中拖入 Applications 完成安装。')
+    expect(toastInfo).toHaveBeenCalledWith(
+      '已打开安装程序，Zen AI 将自动退出。请在安装窗口中拖入 Applications 完成安装。'
+    )
   })
 
   it('shows a Finder fallback message when macOS installer cannot be opened directly', async () => {
@@ -196,13 +198,13 @@ describe('appUpdate', () => {
     ;(window as any).toast = { info: toastInfo, error: vi.fn() }
     ;(window as any).api = {
       downloadUpdate: vi.fn(),
-      quitAndInstallUpdate: vi.fn(),
-      openDownloadedInstaller: vi.fn().mockResolvedValue({
+      quitAndInstallUpdate: vi.fn().mockResolvedValue({
         success: true,
         status: 'manual-installer-opened',
         installerPath: '/Users/test/Downloads/Zen AI Updates/Zen-AI-1.1.14-macos-arm64.dmg',
         fallbackToFolder: true
-      })
+      }),
+      openDownloadedInstaller: vi.fn()
     }
 
     showAppUpdateDownloadedModal(t, {
@@ -213,7 +215,8 @@ describe('appUpdate', () => {
     const options = confirm.mock.calls[0][0]
     await options.onOk()
 
-    expect(window.api.openDownloadedInstaller).toHaveBeenCalledOnce()
+    expect(window.api.quitAndInstallUpdate).toHaveBeenCalledOnce()
+    expect(window.api.openDownloadedInstaller).not.toHaveBeenCalled()
     expect(toastInfo).toHaveBeenCalledWith('正在准备并打开安装包…')
     expect(toastInfo).toHaveBeenCalledWith('没能直接打开安装包，已为你定位到安装包位置，请双击 DMG 完成安装。')
   })

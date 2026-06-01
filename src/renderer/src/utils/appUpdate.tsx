@@ -135,7 +135,7 @@ export function showAppUpdateDownloadedModal(t: Translate, updateInfo: UpdateInf
       {shouldUseManualMacInstall && (
         <div style={manualInstallNoticeStyle}>
           macOS 当前采用 DMG 覆盖安装。点击“打开安装包”后，软件会先确认本地安装包可用，再打开 DMG
-          安装窗口；请在窗口中将 Zen AI 拖入 Applications 覆盖安装。
+          安装窗口并自动退出 Zen AI；请在安装窗口中将 Zen AI 拖入 Applications 覆盖安装。
         </div>
       )}
       {renderUpdateContent(t, updateInfo, 'update.message')}
@@ -170,11 +170,11 @@ export function showAppUpdateDownloadedModal(t: Translate, updateInfo: UpdateInf
       window.toast.info?.(statusText)
 
       if (shouldUseManualMacInstall) {
-        const result = await window.api.openDownloadedInstaller()
+        const result = await window.api.quitAndInstallUpdate()
         if (result === true || result?.success === true) {
           const message = result?.fallbackToFolder
             ? '没能直接打开安装包，已为你定位到安装包位置，请双击 DMG 完成安装。'
-            : '已打开安装程序，请在安装窗口中拖入 Applications 完成安装。'
+            : '已打开安装程序，Zen AI 将自动退出。请在安装窗口中拖入 Applications 完成安装。'
           window.toast.info(message)
           return
         }

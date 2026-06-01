@@ -135,6 +135,7 @@ export type AppUpdateCheckResult =
 const logger = loggerService.withContext('AppUpdateService')
 const STARTUP_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000
 const WIN_INSTALL_START_TIMEOUT_MS = 60000
+const MAC_MANUAL_INSTALL_QUIT_DELAY_MS = 1200
 const DEFAULT_UPDATE_FEED_URL = 'https://download.925636.xyz/zen-ai/'
 const MAC_MANUAL_UPDATE_DIR_NAME = 'Zen AI Updates'
 
@@ -492,9 +493,13 @@ export class AppUpdateService {
       if (isMac) {
         const installerPath = await this.prepareMacManualInstaller(installUpdateInfo)
         const openResult = await this.openMacManualInstaller(installerPath)
-        this.clearPendingUpdateInfo()
-        app.isInstallingUpdate = false
-        app.isQuitting = false
+        if (openResult.fallbackToFolder) {
+          app.isInstallingUpdate = false
+          app.isQuitting = false
+        } else {
+          this.clearPendingUpdateInfo()
+          this.scheduleMacManualInstallQuit(installerPath)
+        }
         return {
           success: true,
           status: 'manual-installer-opened',
@@ -899,6 +904,13 @@ export class AppUpdateService {
       fallbackToFolder: true,
       message: openError
     }
+  }
+
+  private scheduleMacManualInstallQuit(installerPath: string) {
+    setTimeout(() => {
+      logger.info('Quitting app after opening macOS manual installer', { installerPath })
+      app.quit()
+    }, MAC_MANUAL_INSTALL_QUIT_DELAY_MS)
   }
 
   private getReadyPendingUpdateInfo() {

@@ -5,7 +5,7 @@ import { usePaintings } from '@renderer/hooks/usePaintings'
 import FileManager from '@renderer/services/FileManager'
 import type { Painting, PaintingsState } from '@renderer/types'
 import { classNames } from '@renderer/utils'
-import { Popconfirm } from 'antd'
+import { Popconfirm, Tooltip } from 'antd'
 import type { FC } from 'react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -33,28 +33,67 @@ const PaintingsList: FC<PaintingsListProps> = ({
   const { t } = useTranslation()
   const [dragging, setDragging] = useState(false)
   const { updatePaintings } = usePaintings()
+  const getPaintingIndexLabel = (painting: Painting) => String(paintings.length - paintings.indexOf(painting))
+  const getSourceLabel = (painting: Painting) => {
+    if (!painting.sourcePaintingId) {
+      return ''
+    }
+
+    const sourcePainting = paintings.find((item) => item.id === painting.sourcePaintingId)
+    if (!sourcePainting) {
+      return t('paintings.source_deleted')
+    }
+
+    const sourceIndex = getPaintingIndexLabel(sourcePainting)
+    const sourceImageIndex = painting.sourceImageIndex ?? 0
+    const sourceImageCount = painting.sourceImageCount ?? sourcePainting.files.length
+    const sourceImageSuffix = sourceImageCount > 1 ? `-${sourceImageIndex + 1}` : ''
+    return `${t('paintings.source')}${sourceIndex}${sourceImageSuffix}`
+  }
+  const getCanvasLabel = (painting: Painting) => {
+    const indexLabel = getPaintingIndexLabel(painting)
+    const sourceLabel = getSourceLabel(painting)
+    return sourceLabel ? `${indexLabel}--${sourceLabel}` : indexLabel
+  }
 
   return (
     <Container style={{ paddingBottom: dragging ? 80 : 10 }}>
       {!dragging && (
-        <NewPaintingButton onClick={onNewPainting}>
-          <PlusOutlined />
-        </NewPaintingButton>
+        <>
+          <Tooltip title={t('paintings.drag_reorder_hint')} placement="left">
+            <NewPaintingButton onClick={onNewPainting}>
+              <PlusOutlined />
+            </NewPaintingButton>
+          </Tooltip>
+          {paintings.length > 1 && <DragHint>{t('paintings.drag_reorder_hint')}</DragHint>}
+        </>
       )}
       <DraggableList
         list={paintings}
         onUpdate={(value) => updatePaintings(namespace, value)}
         onDragStart={() => setDragging(true)}
-        onDragEnd={() => setDragging(false)}>
+        onDragEnd={() => setDragging(false)}
+        constrainDragAxis="vertical"
+        droppableProps={{ direction: 'vertical' }}
+        listStyle={{ width: 84 }}
+        style={{ width: '100%' }}
+        listProps={{
+          style: {
+            width: '100%',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center'
+          }
+        }}>
         {(item: Painting) => (
           <CanvasWrapper key={item.id}>
             <Canvas
               className={classNames(selectedPainting?.id === item.id && 'selected')}
               onClick={() => onSelectPainting(item)}>
-              {item.files[0] && <ThumbnailImage src={FileManager.getFileUrl(item.files[0])} alt="" />}
+              {item.files[0] && <ThumbnailImage src={FileManager.getFileUrl(item.files[0])} alt="" draggable={false} />}
               {loadingPaintingIds?.has(item.id) && <GeneratingDot />}
             </Canvas>
-            <CanvasIndex>{paintings.length - paintings.findIndex((painting) => painting.id === item.id)}</CanvasIndex>
+            <CanvasIndex title={getCanvasLabel(item)}>{getCanvasLabel(item)}</CanvasIndex>
             <DeleteButton>
               <Popconfirm
                 title={t('paintings.button.delete.image.confirm')}
@@ -77,9 +116,12 @@ const Container = styled(Scrollbar)`
   flex-direction: column;
   align-items: center;
   gap: 10px;
-  padding: 10px;
-  background-color: var(--color-background);
+  width: 100px;
+  min-width: 100px;
   max-width: 100px;
+  box-sizing: border-box;
+  padding: 10px 8px;
+  background-color: var(--color-background);
   border-left: 0.5px solid var(--color-border);
   height: calc(100vh - var(--navbar-height));
   overflow-x: hidden;
@@ -87,6 +129,10 @@ const Container = styled(Scrollbar)`
 
 const CanvasWrapper = styled.div`
   position: relative;
+  width: 84px;
+  user-select: none;
+  touch-action: none;
+  will-change: transform;
 
   &:hover {
     .delete-button {
@@ -98,6 +144,7 @@ const CanvasWrapper = styled.div`
 const Canvas = styled.div`
   width: 80px;
   height: 80px;
+  margin: 0 auto;
   background-color: var(--color-background-soft);
   cursor: pointer;
   transition: background-color 0.2s ease;
@@ -155,6 +202,19 @@ const CanvasIndex = styled.div`
   text-align: center;
   font-size: 12px;
   color: var(--color-text-2);
+  max-width: 84px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+`
+
+const DragHint = styled.div`
+  width: 84px;
+  margin-top: -4px;
+  text-align: center;
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--color-text-3);
 `
 
 const NewPaintingButton = styled.div`
