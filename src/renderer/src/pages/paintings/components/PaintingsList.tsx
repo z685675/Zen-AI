@@ -1,4 +1,4 @@
-import { DeleteOutlined, PlusOutlined } from '@ant-design/icons'
+import { DeleteOutlined, PlusOutlined, UpOutlined } from '@ant-design/icons'
 import { DraggableList } from '@renderer/components/DraggableList'
 import Scrollbar from '@renderer/components/Scrollbar'
 import { usePaintings } from '@renderer/hooks/usePaintings'
@@ -7,7 +7,7 @@ import type { Painting, PaintingsState } from '@renderer/types'
 import { classNames } from '@renderer/utils'
 import { Popconfirm, Tooltip } from 'antd'
 import type { FC } from 'react'
-import { useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import styled from 'styled-components'
 
@@ -32,6 +32,8 @@ const PaintingsList: FC<PaintingsListProps> = ({
 }) => {
   const { t } = useTranslation()
   const [dragging, setDragging] = useState(false)
+  const [showScrollTop, setShowScrollTop] = useState(false)
+  const listRef = useRef<HTMLDivElement | null>(null)
   const { updatePaintings } = usePaintings()
   const getPaintingIndexLabel = (painting: Painting) => String(paintings.length - paintings.indexOf(painting))
   const getSourceLabel = (painting: Painting) => {
@@ -55,9 +57,16 @@ const PaintingsList: FC<PaintingsListProps> = ({
     const sourceLabel = getSourceLabel(painting)
     return sourceLabel ? `${indexLabel}--${sourceLabel}` : indexLabel
   }
+  const handleScroll = useCallback(() => {
+    setShowScrollTop((listRef.current?.scrollTop ?? 0) > 240)
+  }, [])
+  const scrollToTop = useCallback(() => {
+    listRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
+  }, [])
 
   return (
-    <Container style={{ paddingBottom: dragging ? 80 : 10 }}>
+    <ListShell>
+      <Container ref={listRef} onScroll={handleScroll} style={{ paddingBottom: dragging ? 80 : 10 }}>
       {!dragging && (
         <>
           <Tooltip title={t('paintings.drag_reorder_hint')} placement="left">
@@ -106,9 +115,26 @@ const PaintingsList: FC<PaintingsListProps> = ({
           </CanvasWrapper>
         )}
       </DraggableList>
-    </Container>
+      </Container>
+      {showScrollTop && !dragging && (
+        <Tooltip title={t('common.navigation.top')} placement="left">
+          <ScrollTopButton onClick={scrollToTop} aria-label={t('common.navigation.top')}>
+            <UpOutlined />
+          </ScrollTopButton>
+        </Tooltip>
+      )}
+    </ListShell>
   )
 }
+
+const ListShell = styled.div`
+  position: relative;
+  flex: 1;
+  width: 100px;
+  min-width: 100px;
+  max-width: 100px;
+  height: calc(100vh - var(--navbar-height));
+`
 
 const Container = styled(Scrollbar)`
   display: flex;
@@ -123,8 +149,25 @@ const Container = styled(Scrollbar)`
   padding: 10px 8px;
   background-color: var(--color-background);
   border-left: 0.5px solid var(--color-border);
-  height: calc(100vh - var(--navbar-height));
+  height: 100%;
   overflow-x: hidden;
+  scrollbar-width: auto;
+  scrollbar-color: color-mix(in srgb, var(--color-scrollbar-thumb) 72%, transparent) transparent;
+
+  &&::-webkit-scrollbar {
+    width: 12px;
+  }
+
+  &&::-webkit-scrollbar-thumb {
+    min-height: 48px;
+    border: 3px solid var(--color-background);
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--color-scrollbar-thumb) 72%, transparent);
+
+    &:hover {
+      background: var(--color-scrollbar-thumb-hover);
+    }
+  }
 `
 
 const CanvasWrapper = styled.div`
@@ -234,6 +277,36 @@ const NewPaintingButton = styled.div`
     background-color: var(--color-background-mute);
     border-color: var(--color-primary);
     color: var(--color-primary);
+  }
+`
+
+const ScrollTopButton = styled.button`
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  z-index: 5;
+  width: 34px;
+  height: 34px;
+  min-height: 34px;
+  border: 1px solid color-mix(in srgb, var(--color-border) 78%, transparent);
+  border-radius: 50%;
+  color: var(--color-text-2);
+  background: color-mix(in srgb, var(--color-background) 88%, transparent);
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--color-black) 16%, transparent);
+  cursor: pointer;
+  backdrop-filter: blur(10px);
+  transform: translateX(-50%);
+  transition:
+    color 0.2s ease,
+    border-color 0.2s ease,
+    background 0.2s ease,
+    transform 0.2s ease;
+
+  &:hover {
+    color: var(--color-primary);
+    border-color: var(--color-primary);
+    background: color-mix(in srgb, var(--color-background) 96%, var(--color-primary) 4%);
+    transform: translateX(-50%) translateY(-1px);
   }
 `
 

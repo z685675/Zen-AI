@@ -1,4 +1,4 @@
-import { isRerankModel } from '@renderer/config/models'
+import { isImageGenerationEndpointModel, isRerankModel } from '@renderer/config/models'
 import { checkModelsHealth } from '@renderer/services/HealthCheckService'
 import type { Model, Provider } from '@renderer/types'
 import type { ModelWithStatus } from '@renderer/types/healthCheck'
@@ -17,7 +17,7 @@ export const useHealthCheck = (provider: Provider, models: Model[]) => {
   const [isChecking, setIsChecking] = useState(false)
 
   const runHealthCheck = useCallback(async () => {
-    const modelsToCheck = models.filter((model) => !isRerankModel(model))
+    const modelsToCheck = models.filter((model) => !isRerankModel(model) && !isImageGenerationEndpointModel(model))
 
     if (isEmpty(modelsToCheck)) {
       window.toast.error({

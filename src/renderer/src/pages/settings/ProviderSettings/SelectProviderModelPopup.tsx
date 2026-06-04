@@ -11,6 +11,7 @@ import { useCallback, useMemo, useState } from 'react'
 
 interface ShowParams {
   provider: Provider
+  predicate?: (model: Model) => boolean
 }
 
 interface Props extends ShowParams {
@@ -18,16 +19,16 @@ interface Props extends ShowParams {
   resolve: (data: any) => void
 }
 
-const PopupContainer: React.FC<Props> = ({ provider, resolve, reject }) => {
+const PopupContainer: React.FC<Props> = ({ provider, predicate, resolve, reject }) => {
   const [open, setOpen] = useState(true)
   const { setTimeoutTimer } = useTimer()
 
+  const modelPredicate = useCallback((m: Model) => !isRerankModel(m) && (!predicate || predicate(m)), [predicate])
+
   // Keep the natural order of models
-  const models = useMemo(() => provider.models.filter((m) => !isRerankModel(m)), [provider])
+  const models = useMemo(() => provider.models.filter(modelPredicate), [provider.models, modelPredicate])
 
   const [model, setModel] = useState(first(models))
-
-  const modelPredicate = useCallback((m: Model) => !isRerankModel(m), [])
 
   const defaultModelValue = useMemo(() => {
     return model ? getModelUniqId(model) : undefined

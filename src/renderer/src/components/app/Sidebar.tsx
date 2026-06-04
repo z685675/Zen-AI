@@ -20,6 +20,7 @@ import {
   Folder,
   Languages,
   LayoutGrid,
+  Megaphone,
   MessageSquare,
   MousePointerClick,
   NotepadText,
@@ -130,6 +131,18 @@ const Sidebar: FC = () => {
             </Menus>
           </AppsContainer>
         )}
+        <AnnouncementMenus>
+          <SidebarMenuItem
+            active={pathname.startsWith('/announcements') && !minappShow}
+            label={t('announcements.title')}
+            onClick={async () => {
+              hideMinappPopup()
+              await to('/announcements')
+            }}
+            theme={theme}>
+            <Megaphone size={18} className="icon" />
+          </SidebarMenuItem>
+        </AnnouncementMenus>
       </MainMenusContainer>
       <BottomMenus>
         <SidebarMenuItem
@@ -372,6 +385,12 @@ const AppsContainer = styled.div`
 const BottomMenus = styled(Menus)`
   margin-top: auto;
   padding-top: 26px;
+  padding-bottom: 4px;
+`
+
+const AnnouncementMenus = styled(Menus)`
+  margin-top: auto;
+  padding-top: 10px;
   padding-bottom: 4px;
 `
 

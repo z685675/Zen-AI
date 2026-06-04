@@ -111,7 +111,8 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
   const { autoTranslateWithSpace } = useSettings()
   const textareaRef = useRef<any>(null)
   const spaceClickTimer = useRef<NodeJS.Timeout>(null)
-  const newApiProvider = providers.find((p) => p.id === routeName) || providers[0]
+  const selectableProviders = useMemo(() => providers.filter((provider) => Options.includes(provider.id)), [Options, providers])
+  const newApiProvider = selectableProviders.find((p) => p.id === routeName) || selectableProviders[0]
   const providerId = newApiProvider?.id ?? ''
   const providerModels = useMemo(() => newApiProvider?.models ?? [], [newApiProvider?.models])
   const providerApiHost = newApiProvider?.apiHost ?? ''

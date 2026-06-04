@@ -9,6 +9,7 @@ import { PersistGate } from 'redux-persist/integration/react'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import TopViewContainer from './components/TopView'
 import AntdProvider from './context/AntdProvider'
+import { AnnouncementProvider } from './context/AnnouncementProvider'
 import { CodeStyleProvider } from './context/CodeStyleProvider'
 import { NotificationProvider } from './context/NotificationProvider'
 import StyleSheetManager from './context/StyleSheetManager'
@@ -40,9 +41,11 @@ function App(): React.ReactElement {
                 <NotificationProvider>
                   <CodeStyleProvider>
                     <PersistGate loading={null} persistor={persistor}>
-                      <TopViewContainer>
-                        <Router />
-                      </TopViewContainer>
+                      <AnnouncementProvider>
+                        <TopViewContainer>
+                          <Router />
+                        </TopViewContainer>
+                      </AnnouncementProvider>
                     </PersistGate>
                   </CodeStyleProvider>
                 </NotificationProvider>

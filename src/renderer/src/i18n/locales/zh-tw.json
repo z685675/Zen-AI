@@ -692,6 +692,12 @@
       "server_not_running_description": "智能體功能需要 API 伺服器運行。你可以直接啟動伺服器，或前往設定頁面檢查配置。"
     }
   },
+  "announcements": {
+    "empty": "暫無公告",
+    "learn_more": "瞭解更多",
+    "subtitle": "最近 3 條產品公告會保留在這裡，方便你隨時回看。",
+    "title": "公告"
+  },
   "apiServer": {
     "actions": {
       "copy": "複製",

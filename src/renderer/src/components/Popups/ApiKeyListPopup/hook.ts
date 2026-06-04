@@ -1,5 +1,5 @@
 import { loggerService } from '@logger'
-import { isEmbeddingModel, isRerankModel } from '@renderer/config/models'
+import { isEmbeddingModel, isImageGenerationEndpointModel, isRerankModel } from '@renderer/config/models'
 import SelectProviderModelPopup from '@renderer/pages/settings/ProviderSettings/SelectProviderModelPopup'
 import { checkApi } from '@renderer/services/ApiService'
 import WebSearchService from '@renderer/services/WebSearchService'
@@ -296,7 +296,9 @@ export function isPreprocessProvider(provider: ApiProvider): provider is Preproc
 
 // 获取模型用于检查
 async function getModelForCheck(provider: Provider, t: TFunction): Promise<Model | null> {
-  const modelsToCheck = provider.models.filter((model) => !isEmbeddingModel(model) && !isRerankModel(model))
+  const modelPredicate = (model: Model) =>
+    !isEmbeddingModel(model) && !isRerankModel(model) && !isImageGenerationEndpointModel(model)
+  const modelsToCheck = provider.models.filter(modelPredicate)
 
   if (isEmpty(modelsToCheck)) {
     window.toast.error({
@@ -307,7 +309,7 @@ async function getModelForCheck(provider: Provider, t: TFunction): Promise<Model
   }
 
   try {
-    const selectedModel = await SelectProviderModelPopup.show({ provider })
+    const selectedModel = await SelectProviderModelPopup.show({ provider, predicate: modelPredicate })
     if (!selectedModel) return null
     return selectedModel
   } catch (error) {

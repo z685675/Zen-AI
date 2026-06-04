@@ -1,13 +1,7 @@
 import { isMac } from '@main/constant'
 import { windowService } from '@main/services/WindowService'
 import { locales } from '@main/utils/locales'
-import {
-  APP_DOCS_URL,
-  APP_FEEDBACK_URL,
-  APP_RELEASES_URL,
-  APP_SOURCE_URL,
-  APP_WEBSITE_URL
-} from '@shared/config/constant'
+import { APP_DOCS_URL, APP_RELEASES_URL, APP_SOURCE_URL } from '@shared/config/constant'
 import { IpcChannel } from '@shared/IpcChannel'
 import type { MenuItemConstructorOptions } from 'electron'
 import { app, Menu, shell } from 'electron'
@@ -104,21 +98,9 @@ export class AppMenuService {
         label: appMenu.help,
         submenu: [
           {
-            label: appMenu.website,
-            click: () => {
-              void shell.openExternal(APP_WEBSITE_URL)
-            }
-          },
-          {
             label: appMenu.documentation,
             click: () => {
               void shell.openExternal(APP_DOCS_URL)
-            }
-          },
-          {
-            label: appMenu.feedback,
-            click: () => {
-              void shell.openExternal(APP_FEEDBACK_URL)
             }
           },
           {

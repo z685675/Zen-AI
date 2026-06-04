@@ -6,7 +6,7 @@ import { HStack } from '@renderer/components/Layout'
 import { ApiKeyListPopup } from '@renderer/components/Popups/ApiKeyListPopup'
 import Selector from '@renderer/components/Selector'
 import { HelpTooltip } from '@renderer/components/TooltipIcons'
-import { isRerankModel } from '@renderer/config/models'
+import { isImageGenerationEndpointModel, isRerankModel } from '@renderer/config/models'
 import { PROVIDER_URLS } from '@renderer/config/providers'
 import { useTheme } from '@renderer/context/ThemeProvider'
 import { useAllProviders, useProvider, useProviders } from '@renderer/hooks/useProvider'
@@ -17,7 +17,7 @@ import { checkApi } from '@renderer/services/ApiService'
 import { isProviderSupportAuth } from '@renderer/services/ProviderService'
 import { useAppDispatch } from '@renderer/store'
 import { updateWebSearchProvider } from '@renderer/store/websearch'
-import type { SystemProviderId } from '@renderer/types'
+import type { Model, SystemProviderId } from '@renderer/types'
 import { isSystemProvider, isSystemProviderId, SystemProviderIds } from '@renderer/types'
 import type { ApiKeyConnectivity } from '@renderer/types/healthCheck'
 import { HealthStatus } from '@renderer/types/healthCheck'
@@ -266,7 +266,8 @@ const ProviderSetting: FC<Props> = ({ providerId, isOnboarding = false }) => {
       return
     }
 
-    const modelsToCheck = models.filter((model) => !isRerankModel(model))
+    const modelPredicate = (model: Model) => !isRerankModel(model) && !isImageGenerationEndpointModel(model)
+    const modelsToCheck = models.filter(modelPredicate)
 
     if (isEmpty(modelsToCheck)) {
       window.toast.error({
@@ -276,7 +277,7 @@ const ProviderSetting: FC<Props> = ({ providerId, isOnboarding = false }) => {
       return
     }
 
-    const model = await SelectProviderModelPopup.show({ provider })
+    const model = await SelectProviderModelPopup.show({ provider, predicate: modelPredicate })
 
     if (!model) {
       window.toast.error(i18n.t('message.error.enter.model'))

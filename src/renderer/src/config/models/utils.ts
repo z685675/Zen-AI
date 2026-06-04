@@ -197,6 +197,10 @@ export const isGenerateImageModels = (models: Model[]) => {
   return models.every((model) => isGenerateImageModel(model))
 }
 
+export const isImageGenerationEndpointModel = (model: Model): boolean => {
+  return model.endpoint_type === 'image-generation'
+}
+
 export const isAnthropicModel = (model?: Model): boolean => {
   if (!model) {
     return false

@@ -348,4 +348,21 @@ FunctionEnd
 
 !macro customUnInstall
   DeleteRegKey HKCU "Software\Classes\zenai"
+
+  ; Preserve user data for silent uninstall/update flows. Only manual uninstall
+  ; should ask whether to remove chats, settings, agents, image tasks, etc.
+  IfSilent preservePersonalDataOnUninstall 0
+
+  MessageBox MB_ICONQUESTION|MB_YESNO|MB_DEFBUTTON2 "\
+    Do you also want to delete your personal data?$\r$\n$\r$\n\
+    This will remove local chats, settings, agents, image generation history, and channel configuration.$\r$\n$\r$\n\
+    Choose No if you plan to reinstall or upgrade ${PRODUCT_NAME}." IDYES removePersonalDataOnUninstall IDNO preservePersonalDataOnUninstall
+
+  removePersonalDataOnUninstall:
+    DetailPrint "Removing ${PRODUCT_NAME} personal data..."
+    nsExec::ExecToStack `"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -Command "$$ErrorActionPreference = 'SilentlyContinue'; $$paths = New-Object System.Collections.Generic.List[string]; $$defaultPath = Join-Path $$env:APPDATA 'Zen AI'; $$paths.Add($$defaultPath); $$configPath = Join-Path $$env:USERPROFILE '.zen-ai\config\config.json'; if (Test-Path $$configPath) { try { $$config = Get-Content $$configPath -Raw | ConvertFrom-Json; $$appDataPath = $$config.appDataPath; if ($$appDataPath -is [string]) { $$paths.Add($$appDataPath) } elseif ($$appDataPath) { foreach ($$item in $$appDataPath) { if ($$item.dataPath) { $$paths.Add([string]$$item.dataPath) } } } } catch {} }; function Test-ZenAiDataPath($$path, $$defaultPath) { if (-not $$path) { return $$false }; $$resolved = [IO.Path]::GetFullPath($$path); if ($$resolved -eq [IO.Path]::GetPathRoot($$resolved)) { return $$false }; if ($$resolved -eq [IO.Path]::GetFullPath($$defaultPath)) { return $$true }; $$markers = @('Data', 'IndexedDB', 'Local Storage'); foreach ($$marker in $$markers) { if (Test-Path (Join-Path $$resolved $$marker)) { return $$true } }; return $$false }; $$paths | Where-Object { $$_ } | Select-Object -Unique | ForEach-Object { $$resolved = [IO.Path]::GetFullPath($$_); if (Test-ZenAiDataPath $$resolved $$defaultPath) { Remove-Item -LiteralPath $$resolved -Recurse -Force } }; Remove-Item -LiteralPath $$configPath -Force"`
+    Pop $0
+    Pop $1
+
+  preservePersonalDataOnUninstall:
 !macroend

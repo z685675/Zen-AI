@@ -692,6 +692,12 @@
       "server_not_running_description": "The API server needs to be running for agents to work. You can start it directly or check the settings."
     }
   },
+  "announcements": {
+    "empty": "No announcements yet",
+    "learn_more": "Learn more",
+    "subtitle": "The latest 3 product announcements are kept here for quick review.",
+    "title": "Announcements"
+  },
   "apiServer": {
     "actions": {
       "copy": "Copy",

@@ -140,6 +140,7 @@ export const getRestoreProgressLabel = (key: string): string => {
 }
 
 const titleKeyMap = {
+  announcements: 'announcements.title',
   // TODO: update i18n key
   store: 'title.store',
   apps: 'title.apps',

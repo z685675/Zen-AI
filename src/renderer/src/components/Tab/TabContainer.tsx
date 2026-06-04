@@ -22,6 +22,7 @@ import {
   Home,
   Languages,
   LayoutGrid,
+  Megaphone,
   MousePointerClick,
   NotepadText,
   Palette,
@@ -85,6 +86,8 @@ const getTabIcon = (
       return <Home size={14} />
     case 'agents':
       return <MousePointerClick size={14} />
+    case 'announcements':
+      return <Megaphone size={14} />
     case 'store':
       return <Sparkle size={14} />
     case 'translate':

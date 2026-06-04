@@ -1,4 +1,5 @@
 import { loggerService } from '@logger'
+import { isImageGenerationEndpointModel } from '@renderer/config/models'
 import { usePaintingProviders } from '@renderer/hooks/useProvider'
 import { useAppDispatch } from '@renderer/store'
 import { setDefaultPaintingProvider } from '@renderer/store/settings'
@@ -27,7 +28,12 @@ const PaintingsRoutePage: FC = () => {
   }, [])
 
   const validOptions = useMemo(
-    () => providers.map((item) => item.id).filter((option) => option !== 'ovms' || ovmsStatus === 'running'),
+    () =>
+      providers
+        .filter((provider) => provider.enabled)
+        .filter((provider) => provider.models.some(isImageGenerationEndpointModel))
+        .map((provider) => provider.id)
+        .filter((option) => option !== 'ovms' || ovmsStatus === 'running'),
     [providers, ovmsStatus]
   )
   const firstAvailableProvider = validOptions[0]

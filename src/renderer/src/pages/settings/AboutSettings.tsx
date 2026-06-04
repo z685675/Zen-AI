@@ -4,15 +4,9 @@ import { useTheme } from '@renderer/context/ThemeProvider'
 import { useAppUpdateState } from '@renderer/hooks/useAppUpdateState'
 import { runAsyncFunction } from '@renderer/utils'
 import { showAppUpdateAvailableModal, showAppUpdateDownloadedModal } from '@renderer/utils/appUpdate'
-import {
-  APP_DOWNLOADS_URL,
-  APP_FEEDBACK_URL,
-  APP_RELEASES_URL,
-  APP_SUPPORT_EMAIL,
-  APP_WEBSITE_URL
-} from '@shared/config/constant'
+import { APP_DOWNLOADS_URL, APP_RELEASES_URL, APP_SUPPORT_EMAIL, APP_WEBSITE_URL } from '@shared/config/constant'
 import { Avatar, Button, Row, Tag } from 'antd'
-import { Bug, Download, Globe, Mail } from 'lucide-react'
+import { Download, Mail } from 'lucide-react'
 import type { FC } from 'react'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -155,22 +149,6 @@ const AboutSettings: FC = () => {
             {t('settings.about.releases.title')}
           </SettingRowTitle>
           <Button onClick={() => onOpenWebsite(APP_DOWNLOADS_URL)}>{t('settings.about.releases.button')}</Button>
-        </SettingRow>
-        <SettingDivider />
-        <SettingRow>
-          <SettingRowTitle>
-            <Globe size={18} />
-            {t('settings.about.website.title')}
-          </SettingRowTitle>
-          <Button onClick={() => onOpenWebsite(APP_WEBSITE_URL)}>{t('settings.about.website.button')}</Button>
-        </SettingRow>
-        <SettingDivider />
-        <SettingRow>
-          <SettingRowTitle>
-            <Bug size={18} />
-            {t('settings.about.feedback.title')}
-          </SettingRowTitle>
-          <Button onClick={() => onOpenWebsite(APP_FEEDBACK_URL)}>{t('settings.about.feedback.button')}</Button>
         </SettingRow>
         <SettingDivider />
         <SettingRow>
