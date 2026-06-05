@@ -133,8 +133,6 @@ Function un.showPersonalDataOptionsPage
     Abort
   ${EndIf}
 
-  !insertmacro MUI_HEADER_TEXT "卸载选项" "选择是否在卸载 ${PRODUCT_NAME} 时同时清理本地数据。"
-
   ${NSD_CreateLabel} 0 0 100% 36u "如果你只是准备重装或升级 ${PRODUCT_NAME}，建议不要勾选。"
   Pop $1
 
