@@ -286,6 +286,13 @@
       "description": "建立 Agent 以透過 AI 驅動的工具處理複雜任務",
       "title": "尚無 Agent"
     },
+    "environmentGate": {
+      "action": "前往修復環境",
+      "checkFailed": "環境偵測失敗",
+      "description": "需要先完成執行環境修復後，才能穩定使用智能助手。",
+      "refresh": "重新偵測",
+      "title": "智能助手環境尚未準備好"
+    },
     "get": {
       "error": {
         "failed": "無法取得 Agent。",
@@ -4049,7 +4056,7 @@
           "name": "[to be translated]:Bun 运行时"
         },
         "git": {
-          "description": "[to be translated]:可选增强项，用于 Git 来源的 Skill、仓库下载和代码类任务。",
+          "description": "Windows 上智能助手需要 Git Bash 才能穩定執行本機任務；也用於 Git 來源的 Skill、倉庫下載和程式碼類任務。",
           "name": "[to be translated]:Git"
         },
         "pyodide": {
@@ -4066,14 +4073,20 @@
         }
       },
       "description": "[to be translated]:检查智能助手完整能力所需的本地工具与联网条件。",
+      "downloadGit": "下載 Git",
+      "downloadGitHint": "Git 需要依照安裝精靈完成安裝。安裝完成後，請回到這裡重新偵測。",
       "install": "[to be translated]:安装",
       "installFailed": "[to be translated]:安装失败",
+      "installGitAuto": "自動安裝 Git",
+      "installGitConfirmContent": "智能助手在 Windows 上需要 Git for Windows 提供的 Git Bash 才能穩定執行本機任務。軟體會嘗試透過 winget 自動安裝，過程中可能會出現系統權限確認；如果自動安裝失敗，會開啟官方下載頁作為備用方案。",
+      "installGitConfirmTitle": "是否自動安裝 Git for Windows？",
+      "installGitFailedFallback": "自動安裝 Git 失敗，已為你開啟官方下載頁",
       "installSuccess": "[to be translated]:安装完成",
       "intro": "[to be translated]:基础对话和普通本地文件操作可以直接使用。下面的检测主要用于扩展能力：技能市场、定时任务、Python 沙盒、Git 来源工具等。",
       "noPath": "[to be translated]:暂未检测到可用路径",
       "optionalDescription": "[to be translated]:这些不是基础对话的硬性要求，但会影响部分高级任务体验。",
       "optionalTitle": "[to be translated]:可选增强",
-      "prepare": "[to be translated]:一键准备 Bun 和 UV",
+      "prepare": "修復智能助手環境",
       "prepareSuccess": "[to be translated]:环境准备完成",
       "refresh": "[to be translated]:重新检测",
       "sources": {

@@ -127,11 +127,14 @@ You are expected to reliably complete these six baseline product capabilities:
 
 2. Output and file generation
 - When the user asks for MD, TXT, Word/DOCX, Excel/XLSX/CSV, PPT/PPTX, PDF, or other common file output, create the file in the requested location or a sensible default location.
+- For common output files, prefer mcp__assistant__create_file first. It creates valid basic MD/TXT/CSV/DOCX/XLSX/PPTX/PDF files with Zen AI's built-in generator and does not require pandas, python-docx, openpyxl, python-pptx, or system Python.
+- Do not create fake Office/PDF files by writing plain text with a .docx/.xlsx/.pptx/.pdf extension. If mcp__assistant__create_file cannot satisfy advanced formatting, create a basic verified draft first, then use an approved dependency or explain the limitation.
 - After writing files, verify that the files exist and briefly report file names and paths.
 - Do not merely describe how to create a file unless file creation is blocked.
 
 3. Local file and desktop operations
 - Use file and shell tools to read, search, organize, rename, summarize, extract, convert, or batch-process local files within the allowed workspace.
+- This is a real local desktop app, not a cloud coding sandbox. Never invent or use /mnt/data, C:\\mnt\\data, or paths under C:\\mnt as a substitute for the user's Desktop, Documents, Downloads, or home directory. Use the real OS paths provided by tools/session context, or ask a short clarification if the target folder is ambiguous.
 - Before editing, renaming, moving, overwriting, converting in-place, deleting, or batch-processing existing user files, pause once and explain the affected files, the risk, and the backup location you will use.
 - Default to creating a timestamped backup copy before changing existing user files, then perform the requested operation after the user confirms. A good default location is a clearly named folder such as ZenAI_Backups/<timestamp>/ next to the affected files or on the Desktop when the affected files are on the Desktop. Also tell the user that if the files are very large or they are sure no backup is needed, they can say so and proceed without backup.
 - For deletion requests, do not merely ask the user to type "confirm delete". Tell the user that you will first copy the matched file(s) into the backup folder, verify the backup exists, and only then delete the originals.
@@ -386,6 +389,7 @@ const buildFusionIntentGuidance = (prompt: string): string | undefined => {
   if (needsFileOutput) {
     guidance.push(
       'The user request appears to require creating, downloading, exporting, or saving file output.',
+      'For common MD/TXT/CSV/DOCX/XLSX/PPTX/PDF output, prefer mcp__assistant__create_file before Python or shell scripts. Do not write plain text with an Office/PDF extension.',
       'Create the requested file(s) in the requested location, or choose a sensible default location when none is specified.',
       'Before saying the task is complete, verify the file path, existence, and relevant count/size/content signals.',
       'If a required local dependency is missing, decide whether it is truly required, try an alternative path first, and if still required ask the user to approve installation or provide exact official installation steps before continuing.'
@@ -955,23 +959,28 @@ class ClaudeCodeService implements AgentServiceInterface {
       })
     }
 
-    // Cherry Assistant: inject navigate + diagnose MCP server
-    if (isAssistant) {
-      const assistantServer = new AssistantServer()
+    // Built-in assistants: inject app helper MCP server. Fusion primarily uses create_file;
+    // product-guide assistant also uses diagnose/navigate for troubleshooting.
+    if (shouldInjectAssistantContext) {
+      const assistantServer = new AssistantServer(session.accessible_paths)
       options.mcpServers.assistant = { type: 'sdk', name: 'assistant', instance: assistantServer.mcpServer }
 
       // Auto-approve assistant MCP tools
       if (Array.isArray(options.allowedTools) && options.allowedTools.length > 0) {
-        if (!options.allowedTools.includes('mcp__assistant__*')) {
-          options.allowedTools = [...options.allowedTools, 'mcp__assistant__*']
+        const requiredAssistantTools = isAssistant ? ['mcp__assistant__*'] : ['mcp__assistant__create_file']
+        for (const tool of requiredAssistantTools) {
+          if (!options.allowedTools.includes(tool)) {
+            options.allowedTools = [...options.allowedTools, tool]
+          }
         }
       } else {
         // When allowed_tools is empty/undefined, set it so assistant MCP tools are auto-approved
-        options.allowedTools = ['mcp__assistant__*']
+        options.allowedTools = isAssistant ? ['mcp__assistant__*'] : ['mcp__assistant__create_file']
       }
 
-      logger.debug('Cherry Assistant: injected assistant MCP server', {
+      logger.debug('Injected assistant MCP server', {
         agentId: session.agent_id,
+        builtinRole,
         totalMcpServers: Object.keys(options.mcpServers).length
       })
     }

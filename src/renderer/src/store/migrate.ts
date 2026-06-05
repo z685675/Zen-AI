@@ -117,6 +117,24 @@ const LEGACY_PAINTING_PROVIDER_BY_NAMESPACE: Partial<Record<keyof PaintingsState
   ppio_edit: 'ppio'
 }
 
+const DEFAULT_ASSISTANT_MODEL_ID = 'gpt-5.4'
+const DEFAULT_UTILITY_MODEL_ID = 'gpt-5.4-mini'
+
+const normalizeDefaultModelId = (value: string | undefined) =>
+  (value ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/^openai\//, '')
+
+function findEnabledDefaultModel(state: RootState, targetModelId: string): Model | undefined {
+  const normalizedTarget = normalizeDefaultModelId(targetModelId)
+
+  return state.llm.providers
+    .filter((provider) => provider.enabled)
+    .flatMap((provider) => provider.models)
+    .find((model) => normalizeDefaultModelId(model.id) === normalizedTarget)
+}
+
 function mergeLegacyPaintingsIntoImageWorkspace(state: RootState) {
   if (!state.paintings) {
     return
@@ -3598,6 +3616,22 @@ const migrateConfig = {
       return state
     } catch (error) {
       logger.error('migrate 214 error', error as Error)
+      return state
+    }
+  },
+  '215': (state: RootState) => {
+    try {
+      const assistantModel = findEnabledDefaultModel(state, DEFAULT_ASSISTANT_MODEL_ID)
+      const utilityModel = findEnabledDefaultModel(state, DEFAULT_UTILITY_MODEL_ID)
+
+      state.llm.defaultModel = assistantModel
+      state.llm.quickModel = utilityModel
+      state.llm.translateModel = utilityModel
+
+      logger.info('migrate 215 success')
+      return state
+    } catch (error) {
+      logger.error('migrate 215 error', error as Error)
       return state
     }
   }

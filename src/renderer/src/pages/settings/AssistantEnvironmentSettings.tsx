@@ -1,4 +1,5 @@
 import { CheckCircleOutlined, ReloadOutlined, WarningOutlined } from '@ant-design/icons'
+import { isWin } from '@renderer/config/constant'
 import { useTheme } from '@renderer/context/ThemeProvider'
 import { Alert, Button, Spin, Tag } from 'antd'
 import type { FC } from 'react'
@@ -37,8 +38,8 @@ interface AssistantEnvironmentCheckResult {
   checkedAt: number
 }
 
-const CORE_DEPENDENCIES: DependencyId[] = ['bun', 'uv', 'uvx']
-const OPTIONAL_DEPENDENCIES: DependencyId[] = ['git', 'pyodide']
+const CORE_DEPENDENCIES: DependencyId[] = isWin ? ['bun', 'uv', 'uvx', 'git'] : ['bun', 'uv', 'uvx']
+const OPTIONAL_DEPENDENCIES: DependencyId[] = isWin ? ['pyodide'] : ['git', 'pyodide']
 
 const AssistantEnvironmentSettings: FC = () => {
   const { theme } = useTheme()
@@ -89,6 +90,40 @@ const AssistantEnvironmentSettings: FC = () => {
     }
   }
 
+  const confirmGitInstall = () =>
+    new Promise<boolean>((resolve) => {
+      window.modal.confirm({
+        title: t('settings.assistantEnvironment.installGitConfirmTitle'),
+        content: t('settings.assistantEnvironment.installGitConfirmContent'),
+        okText: t('settings.assistantEnvironment.installGitAuto'),
+        cancelText: t('common.cancel'),
+        centered: true,
+        onOk: () => resolve(true),
+        onCancel: () => resolve(false)
+      })
+    })
+
+  const installGit = async () => {
+    const confirmed = await confirmGitInstall()
+    if (!confirmed) {
+      return false
+    }
+
+    try {
+      setInstalling(true)
+      await window.api.installGitForWindows()
+      window.toast.success(t('settings.assistantEnvironment.installSuccess'))
+      await checkEnvironment()
+      return true
+    } catch (error: any) {
+      window.toast.error(`${t('settings.assistantEnvironment.installGitFailedFallback')}: ${error.message}`)
+      void window.api.openWebsite('https://git-scm.com/download/win')
+      return false
+    } finally {
+      setInstalling(false)
+    }
+  }
+
   const prepareCoreDependencies = async () => {
     if (!result) return
 
@@ -103,6 +138,14 @@ const AssistantEnvironmentSettings: FC = () => {
         await window.api.installUVBinary()
       }
 
+      if (isWin && !result.git.installed) {
+        const gitInstalled = await installGit()
+        if (!gitInstalled) {
+          await checkEnvironment()
+          return
+        }
+      }
+
       window.toast.success(t('settings.assistantEnvironment.prepareSuccess'))
       await checkEnvironment()
     } catch (error: any) {
@@ -114,6 +157,7 @@ const AssistantEnvironmentSettings: FC = () => {
 
   const renderDependency = (dependency: DependencyStatus) => {
     const needsInstall = !dependency.installed && (dependency.id === 'bun' || dependency.id === 'uv')
+    const needsGitInstall = isWin && !dependency.installed && dependency.id === 'git'
 
     return (
       <DependencyCard key={dependency.id}>
@@ -148,6 +192,11 @@ const AssistantEnvironmentSettings: FC = () => {
             disabled={installing}
             onClick={dependency.id === 'bun' ? installBun : installUv}>
             {t('settings.assistantEnvironment.install')}
+          </Button>
+        )}
+        {needsGitInstall && (
+          <Button size="small" type="primary" loading={installing} disabled={installing} onClick={installGit}>
+            {t('settings.assistantEnvironment.installGitAuto')}
           </Button>
         )}
       </DependencyCard>

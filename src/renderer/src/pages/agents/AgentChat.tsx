@@ -9,15 +9,21 @@ import { useTopicMessages } from '@renderer/hooks/useMessageOperations'
 import { useRuntime } from '@renderer/hooks/useRuntime'
 import { useNavbarPosition, useSettings } from '@renderer/hooks/useSettings'
 import { useShortcut } from '@renderer/hooks/useShortcuts'
+import {
+  type AssistantEnvironmentCheckResult,
+  checkAssistantEnvironmentWithCache,
+  getFreshAssistantEnvironmentCache,
+  REQUIRED_ASSISTANT_DEPENDENCIES
+} from '@renderer/services/AssistantEnvironmentService'
 import { useAppDispatch, useAppSelector } from '@renderer/store'
 import { loadTopicMessagesThunk } from '@renderer/store/thunk/messageThunk'
 import { cn } from '@renderer/utils'
 import { buildAgentSessionTopicId, getChannelTypeIcon } from '@renderer/utils/agentSession'
 import { DEFAULT_FUSION_AGENT_ID, getAgentAvatar } from '@shared/config/agents'
-import { Alert, Spin } from 'antd'
-import { FolderOpen, ListTodo, ScrollText, Search, Sparkles } from 'lucide-react'
+import { Alert, Button, Spin } from 'antd'
+import { FolderOpen, ListTodo, RefreshCw, ScrollText, Search, Sparkles, Wrench } from 'lucide-react'
 import type { PropsWithChildren, ReactNode } from 'react'
-import { useEffect, useMemo } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import styled from 'styled-components'
 
@@ -64,6 +70,46 @@ const AgentChat = () => {
   )
   const isWelcomeState = hasLoadedSessionMessages && messages.length === 0
   const isSessionMessagesBootstrapping = !!activeSessionId && !!sessionTopicId && !hasLoadedSessionMessages
+  const [initialEnvironmentCache] = useState(() => getFreshAssistantEnvironmentCache())
+  const [environmentChecking, setEnvironmentChecking] = useState(!initialEnvironmentCache)
+  const [environmentResult, setEnvironmentResult] = useState<AssistantEnvironmentCheckResult | null>(
+    initialEnvironmentCache?.result ?? null
+  )
+  const [environmentError, setEnvironmentError] = useState<string | null>(initialEnvironmentCache?.error ?? null)
+
+  const checkAssistantEnvironment = useCallback(
+    async (options?: { blocking?: boolean }) => {
+      const blocking = options?.blocking ?? true
+      try {
+        if (blocking) {
+          setEnvironmentChecking(true)
+          setEnvironmentError(null)
+        }
+        const nextResult = await checkAssistantEnvironmentWithCache({ force: true })
+        setEnvironmentResult(nextResult)
+      } catch (error: any) {
+        const errorMessage = error?.message || t('agent.environmentGate.checkFailed')
+        setEnvironmentError(errorMessage)
+        setEnvironmentResult(null)
+      } finally {
+        if (blocking) {
+          setEnvironmentChecking(false)
+        }
+      }
+    },
+    [t]
+  )
+
+  useEffect(() => {
+    void checkAssistantEnvironment({ blocking: !initialEnvironmentCache })
+  }, [checkAssistantEnvironment, initialEnvironmentCache])
+
+  const missingRequiredDependencies = useMemo(
+    () => REQUIRED_ASSISTANT_DEPENDENCIES.filter((id) => !environmentResult?.[id]?.installed),
+    [environmentResult]
+  )
+  const hasMissingRequiredEnvironment =
+    !environmentChecking && (!!environmentError || (!!environmentResult && missingRequiredDependencies.length > 0))
 
   useEffect(() => {
     if (!activeSessionId || !sessionTopicId) {
@@ -143,20 +189,61 @@ const AgentChat = () => {
       void createDefaultSession()
     },
     {
-      enabled: true,
+      enabled: !hasMissingRequiredEnvironment,
       preventDefault: true,
       enableOnFormTags: true
     }
   )
 
   const isInitializing =
-    isAgentsLoading || isAgentLoading || !isSessionInitialized || !agents || (!activeAgentId && agents.length > 0)
+    environmentChecking ||
+    isAgentsLoading ||
+    isAgentLoading ||
+    !isSessionInitialized ||
+    !agents ||
+    (!activeAgentId && agents.length > 0)
   const brandAvatar = getAgentAvatar(DEFAULT_FUSION_AGENT_ID)
 
   if (isInitializing) {
     return (
       <Container className="flex flex-1 flex-col items-center justify-center">
         <Spin />
+      </Container>
+    )
+  }
+
+  if (hasMissingRequiredEnvironment) {
+    return (
+      <Container className="flex flex-1 flex-col items-center justify-center">
+        <EnvironmentGateCard>
+          <EnvironmentGateIcon>
+            <Wrench size={24} />
+          </EnvironmentGateIcon>
+          <EnvironmentGateTitle>{t('agent.environmentGate.title')}</EnvironmentGateTitle>
+          <EnvironmentGateDescription>{t('agent.environmentGate.description')}</EnvironmentGateDescription>
+          {environmentError ? (
+            <EnvironmentGateError>{environmentError}</EnvironmentGateError>
+          ) : (
+            <EnvironmentDependencyList>
+              {missingRequiredDependencies.map((id) => (
+                <EnvironmentDependencyPill key={id}>
+                  {t(`settings.assistantEnvironment.dependencies.${id}.name`)}
+                </EnvironmentDependencyPill>
+              ))}
+            </EnvironmentDependencyList>
+          )}
+          <EnvironmentGateActions>
+            <Button type="primary" onClick={() => window.navigate('/settings/assistant-environment')}>
+              {t('agent.environmentGate.action')}
+            </Button>
+            <Button
+              icon={<RefreshCw size={14} />}
+              onClick={() => checkAssistantEnvironment()}
+              loading={environmentChecking}>
+              {t('agent.environmentGate.refresh')}
+            </Button>
+          </EnvironmentGateActions>
+        </EnvironmentGateCard>
       </Container>
     )
   }
@@ -543,6 +630,79 @@ const QuickEntryDescription = styled.div`
   font-size: 12px;
   line-height: 1.55;
   color: #7f8896;
+`
+
+const EnvironmentGateCard = styled.div`
+  width: min(460px, calc(100vw - 48px));
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 30px 28px;
+  border-radius: 26px;
+  background: rgba(255, 255, 255, 0.86);
+  border: 1px solid rgba(255, 255, 255, 0.76);
+  box-shadow:
+    0 22px 56px rgba(15, 23, 42, 0.08),
+    0 1px 0 rgba(255, 255, 255, 0.9) inset;
+  text-align: center;
+`
+
+const EnvironmentGateIcon = styled.div`
+  width: 52px;
+  height: 52px;
+  border-radius: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #e25d74;
+  background: linear-gradient(135deg, rgba(255, 235, 239, 0.95), rgba(255, 245, 228, 0.95));
+`
+
+const EnvironmentGateTitle = styled.div`
+  margin-top: 18px;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--color-text-1);
+`
+
+const EnvironmentGateDescription = styled.div`
+  margin-top: 10px;
+  max-width: 360px;
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--color-text-2);
+`
+
+const EnvironmentGateError = styled.div`
+  margin-top: 14px;
+  max-width: 360px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--color-error);
+  word-break: break-word;
+`
+
+const EnvironmentDependencyList = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 16px;
+`
+
+const EnvironmentDependencyPill = styled.span`
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: rgba(226, 93, 116, 0.09);
+  color: #d9485f;
+  font-size: 12px;
+  font-weight: 500;
+`
+
+const EnvironmentGateActions = styled.div`
+  display: flex;
+  gap: 10px;
+  margin-top: 22px;
 `
 
 const Container = ({ children, className }: PropsWithChildren<{ className?: string }>) => {

@@ -14,6 +14,20 @@ vi.mock('@logger', () => ({
   }
 }))
 
+vi.mock('electron', () => ({
+  app: {
+    getPath: vi.fn((name: string) => {
+      const paths: Record<string, string> = {
+        home: 'C:\\Users\\tester',
+        desktop: 'C:\\Users\\tester\\Desktop',
+        documents: 'C:\\Users\\tester\\Documents',
+        downloads: 'C:\\Users\\tester\\Downloads'
+      }
+      return paths[name] ?? `C:\\Users\\tester\\${name}`
+    })
+  }
+}))
+
 vi.mock('../../security', () => ({
   wrapExternalContent: vi.fn((text: string) => text),
   sanitizeChannelOutput: vi.fn((text: string) => ({ text, redacted: false }))
@@ -223,12 +237,56 @@ describe('ChannelMessageHandler', () => {
       text: 'Hi from WeChat'
     })
 
-    expect(sessionMessageService.createSessionMessage).toHaveBeenCalledWith(
-      session,
-      { content: 'Hi from WeChat' },
-      expect.any(AbortController),
-      { persist: true, displayContent: 'Hi from WeChat', images: undefined }
+    const createCall = vi.mocked(sessionMessageService.createSessionMessage).mock.calls[0]
+    expect(createCall[0]).toBe(session)
+    expect(createCall[1].content).toContain('Trusted Local Path Context')
+    expect(createCall[1].content).toContain('C:\\Users\\tester\\Desktop')
+    expect(createCall[1].content).toContain('C:\\Users\\tester\\Documents')
+    expect(createCall[1].content).toContain('C:\\Users\\tester\\Downloads')
+    expect(createCall[1].content).toContain('Never invent or use /mnt/data')
+    expect(createCall[1].content).toContain('Hi from WeChat')
+    expect(createCall[2]).toBeInstanceOf(AbortController)
+    expect(createCall[3]).toEqual({
+      persist: true,
+      displayContent: 'Hi from WeChat',
+      images: undefined
+    })
+  })
+
+  it('adds trusted real OS folder guidance for WeChat file tasks without changing display text', async () => {
+    const adapter = createMockAdapter({ channelType: 'wechat' })
+    const session = {
+      id: 'session-1',
+      agent_id: 'agent-1',
+      agent_type: 'claude-code',
+      accessible_paths: ['C:\\Users\\tester\\ZenAIWorkspace'],
+      configuration: {}
+    }
+
+    vi.mocked(sessionService.createSession).mockResolvedValueOnce(session as any)
+    vi.mocked(sessionMessageService.createSessionMessage).mockResolvedValueOnce(
+      createMockStream([{ type: 'text-delta', text: 'OK' }]) as any
     )
+
+    await handleIncomingAndFlush(adapter, {
+      chatId: 'chat-1',
+      userId: 'user-1',
+      userName: 'User',
+      text: '帮我整理文件放到桌面'
+    })
+
+    const createCall = vi.mocked(sessionMessageService.createSessionMessage).mock.calls[0]
+    expect(createCall[1].content).toContain("This task is running on the user's real local desktop computer")
+    expect(createCall[1].content).toContain('Desktop / 桌面: C:\\Users\\tester\\Desktop')
+    expect(createCall[1].content).toContain('Documents / 文档: C:\\Users\\tester\\Documents')
+    expect(createCall[1].content).toContain('Downloads / 下载: C:\\Users\\tester\\Downloads')
+    expect(createCall[1].content).toContain('Agent workspace / 助手工作区: C:\\Users\\tester\\ZenAIWorkspace')
+    expect(createCall[1].content).toContain('C:\\mnt\\data')
+    expect(createCall[3]).toEqual({
+      persist: true,
+      displayContent: '帮我整理文件放到桌面',
+      images: undefined
+    })
   })
 
   it('handleCommand /new creates a new session', async () => {

@@ -1,8 +1,9 @@
 import { LoadingIcon } from '@renderer/components/Icons'
 import { selectNewTopicLoading } from '@renderer/hooks/useMessageOperations'
-import { useAppSelector } from '@renderer/store'
-import { MessageBlockType } from '@renderer/types/newMessage'
+import { getEffectiveStatus, getToolHasError } from '@renderer/pages/home/Messages/Tools/MessageAgentTools/GenericTools'
 import { getToolDisplayInfo, getToolStatusLabel } from '@renderer/pages/home/Messages/Tools/toolDisplay'
+import { useAppSelector } from '@renderer/store'
+import { AssistantMessageStatus, type Message, MessageBlockStatus, MessageBlockType } from '@renderer/types/newMessage'
 import { CheckCircle, TriangleAlert } from 'lucide-react'
 import { type FC, useEffect, useMemo, useState } from 'react'
 import styled from 'styled-components'
@@ -41,34 +42,41 @@ const AgentTaskStatusBar: FC<Props> = ({ topicId }) => {
   }, [loading, messageIds.length])
 
   const status = useMemo<AgentTaskStatus | undefined>(() => {
-    for (const messageId of messageIds.toReversed()) {
-      const message = messageEntities[messageId]
-      if (!message?.blocks?.length) continue
+    const latestAssistantMessage = getLatestAssistantMessageForCurrentTurn(messageIds, messageEntities)
 
-      for (const blockId of message.blocks.toReversed()) {
-        const block = blockEntities[blockId]
-        if (block?.type !== MessageBlockType.TOOL) continue
+    if (latestAssistantMessage?.blocks?.length) {
+      const blocks = latestAssistantMessage.blocks.map((blockId) => blockEntities[blockId]).filter(Boolean)
+      const latestToolBlock = [...blocks].reverse().find((block) => block?.type === MessageBlockType.TOOL)
+      const latestToolStatus = getToolTaskStatus(latestToolBlock)
+      const hasFinalContent = blocks.some(hasDeliverableContent)
+      const hasTerminalError =
+        latestAssistantMessage.status === AssistantMessageStatus.ERROR ||
+        blocks.some((block) => block?.type === MessageBlockType.ERROR || block?.status === MessageBlockStatus.ERROR)
 
-        const toolResponse = block.metadata?.rawMcpToolResponse
-        const tool = toolResponse?.tool
-        const toolName = tool?.name ?? block.toolName
-        const displayInfo = getToolDisplayInfo(toolName, tool?.type === 'mcp' ? tool : undefined)
-        const hasError = toolResponse?.response?.isError === true || toolResponse?.status === 'error'
-        const statusLabel = getToolStatusLabel(toolResponse?.status, displayInfo, hasError)
-
-        if (hasError) {
-          return { label: statusLabel ?? '任务处理失败', tone: 'error' }
+      if (loading) {
+        if (latestToolStatus?.tone === 'error') {
+          return { label: '遇到问题，正在尝试其他办法', tone: 'running' }
         }
 
-        if (loading) {
-          if (toolResponse?.status === 'done') {
-            return { label: '正在整理结果', tone: 'running' }
-          }
-
-          return { label: statusLabel ?? displayInfo.activeLabel ?? '正在处理任务', tone: 'running' }
+        if (latestToolStatus?.status === 'done') {
+          return { label: '正在整理结果', tone: 'running' }
         }
 
-        return { label: statusLabel ?? displayInfo.doneLabel ?? '任务已完成', tone: 'success' }
+        return latestToolStatus ?? { label: '正在处理任务', tone: 'running' }
+      }
+
+      // A tool can fail mid-task and the assistant may still recover with a later
+      // answer or file output. Treat the final message result as authoritative.
+      if (
+        latestAssistantMessage.status === AssistantMessageStatus.SUCCESS ||
+        hasFinalContent ||
+        (recentlyCompleted && !hasTerminalError)
+      ) {
+        return { label: latestToolStatus?.doneLabel ?? '任务已完成', tone: 'success' }
+      }
+
+      if (hasTerminalError || latestToolStatus?.tone === 'error') {
+        return { label: latestToolStatus?.label ?? '任务处理失败', tone: 'error' }
       }
     }
 
@@ -101,6 +109,64 @@ const AgentTaskStatusBar: FC<Props> = ({ topicId }) => {
       <StatusText>{status.label}</StatusText>
     </StatusContainer>
   )
+}
+
+const getLatestAssistantMessageForCurrentTurn = (
+  messageIds: string[],
+  messageEntities: Record<string, Message | undefined>
+): Message | undefined => {
+  const latestUserIndex = messageIds.findLastIndex((messageId) => messageEntities[messageId]?.role === 'user')
+  const currentTurnMessageIds = latestUserIndex >= 0 ? messageIds.slice(latestUserIndex + 1) : messageIds
+
+  for (const messageId of currentTurnMessageIds.toReversed()) {
+    const message = messageEntities[messageId]
+    if (message?.role === 'assistant' && message.blocks?.length) {
+      return message
+    }
+  }
+  return undefined
+}
+
+const hasDeliverableContent = (block: any): boolean => {
+  if (!block || block.status === MessageBlockStatus.ERROR) return false
+
+  switch (block.type) {
+    case MessageBlockType.MAIN_TEXT:
+    case MessageBlockType.CODE:
+    case MessageBlockType.COMPACT:
+      return typeof block.content === 'string' && block.content.trim().length > 0
+    case MessageBlockType.FILE:
+    case MessageBlockType.IMAGE:
+    case MessageBlockType.VIDEO:
+    case MessageBlockType.CITATION:
+      return block.status === MessageBlockStatus.SUCCESS
+    default:
+      return false
+  }
+}
+
+const getToolTaskStatus = (block: any): (AgentTaskStatus & { status?: string; doneLabel?: string }) | undefined => {
+  if (!block || block.type !== MessageBlockType.TOOL) return undefined
+
+  const toolResponse = block.metadata?.rawMcpToolResponse
+  const tool = toolResponse?.tool
+  const toolName = tool?.name ?? block.toolName
+  const displayInfo = getToolDisplayInfo(toolName, tool?.type === 'mcp' ? tool : undefined)
+  const hasError = getToolHasError(toolResponse)
+  const effectiveStatus = getEffectiveStatus(toolResponse?.status, false, hasError)
+  const statusLabel = getToolStatusLabel(effectiveStatus, displayInfo, hasError)
+
+  if (hasError) {
+    return { label: statusLabel ?? '任务处理失败', tone: 'error', status: effectiveStatus }
+  }
+
+  const tone = effectiveStatus === 'done' ? 'success' : 'running'
+  return {
+    label: statusLabel ?? (tone === 'success' ? displayInfo.doneLabel : displayInfo.activeLabel) ?? '正在处理任务',
+    doneLabel: displayInfo.doneLabel,
+    tone,
+    status: effectiveStatus
+  }
 }
 
 const getToneColor = (tone: AgentTaskStatus['tone']) => {

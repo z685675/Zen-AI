@@ -219,8 +219,8 @@ export function useDefaultModel() {
     defaultModel,
     quickModel,
     translateModel,
-    setDefaultModel: (model: Model) => dispatch(setDefaultModel({ model })),
-    setQuickModel: (model: Model) => dispatch(setQuickModel({ model })),
-    setTranslateModel: (model: Model) => dispatch(setTranslateModel({ model }))
+    setDefaultModel: (model?: Model) => dispatch(setDefaultModel({ model })),
+    setQuickModel: (model?: Model) => dispatch(setQuickModel({ model })),
+    setTranslateModel: (model?: Model) => dispatch(setTranslateModel({ model }))
   }
 }

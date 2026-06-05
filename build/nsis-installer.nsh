@@ -10,6 +10,12 @@
 !include LogicLib.nsh
 !include x64.nsh
 !include FileFunc.nsh
+!include nsDialogs.nsh
+
+!ifdef BUILD_UNINSTALLER
+Var un.DeletePersonalDataCheckbox
+Var un.DeletePersonalData
+!endif
 
 ; https://github.com/electron-userland/electron-builder/issues/1122
 ; Older builds can minimize to tray or leave helper processes below the install
@@ -118,6 +124,41 @@ FunctionEnd
 !endif
 
 !ifdef BUILD_UNINSTALLER
+Function un.showPersonalDataOptionsPage
+  IfSilent skipPersonalDataOptions
+
+  nsDialogs::Create 1018
+  Pop $0
+  ${If} $0 == error
+    Abort
+  ${EndIf}
+
+  !insertmacro MUI_HEADER_TEXT "卸载选项" "选择是否在卸载 ${PRODUCT_NAME} 时同时清理本地数据。"
+
+  ${NSD_CreateLabel} 0 0 100% 36u "如果你只是准备重装或升级 ${PRODUCT_NAME}，建议不要勾选。"
+  Pop $1
+
+  ${NSD_CreateCheckbox} 0 48u 100% 24u "同时清理本地数据和工具依赖（对话、设置、智能助手、图片历史、渠道配置、Bun/uv 等）"
+  Pop $un.DeletePersonalDataCheckbox
+  ${NSD_Uncheck} $un.DeletePersonalDataCheckbox
+
+  nsDialogs::Show
+
+  skipPersonalDataOptions:
+FunctionEnd
+
+Function un.leavePersonalDataOptionsPage
+  StrCpy $un.DeletePersonalData "0"
+  IfSilent done
+
+  ${NSD_GetState} $un.DeletePersonalDataCheckbox $0
+  ${If} $0 == ${BST_CHECKED}
+    StrCpy $un.DeletePersonalData "1"
+  ${EndIf}
+
+  done:
+FunctionEnd
+
 Function un.closeRunningZenAI
   Push $0
   Push $1
@@ -174,6 +215,10 @@ FunctionEnd
   !else
     Call closeRunningZenAI
   !endif
+!macroend
+
+!macro customUnWelcomePage
+  UninstPage custom un.showPersonalDataOptionsPage un.leavePersonalDataOptionsPage
 !macroend
 
 !ifndef BUILD_UNINSTALLER
@@ -349,18 +394,16 @@ FunctionEnd
 !macro customUnInstall
   DeleteRegKey HKCU "Software\Classes\zenai"
 
-  ; Preserve user data for silent uninstall/update flows. Only manual uninstall
-  ; should ask whether to remove chats, settings, agents, image tasks, etc.
+  ; Preserve local data for silent uninstall/update flows. Only manual uninstall
+  ; should ask whether to remove chats, settings, agents, image tasks, tools, etc.
   IfSilent preservePersonalDataOnUninstall 0
-
-  MessageBox MB_ICONQUESTION|MB_YESNO|MB_DEFBUTTON2 "\
-    Do you also want to delete your personal data?$\r$\n$\r$\n\
-    This will remove local chats, settings, agents, image generation history, and channel configuration.$\r$\n$\r$\n\
-    Choose No if you plan to reinstall or upgrade ${PRODUCT_NAME}." IDYES removePersonalDataOnUninstall IDNO preservePersonalDataOnUninstall
+  ${If} $un.DeletePersonalData != "1"
+    Goto preservePersonalDataOnUninstall
+  ${EndIf}
 
   removePersonalDataOnUninstall:
     DetailPrint "Removing ${PRODUCT_NAME} personal data..."
-    nsExec::ExecToStack `"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -Command "$$ErrorActionPreference = 'SilentlyContinue'; $$paths = New-Object System.Collections.Generic.List[string]; $$defaultPath = Join-Path $$env:APPDATA 'Zen AI'; $$paths.Add($$defaultPath); $$configPath = Join-Path $$env:USERPROFILE '.zen-ai\config\config.json'; if (Test-Path $$configPath) { try { $$config = Get-Content $$configPath -Raw | ConvertFrom-Json; $$appDataPath = $$config.appDataPath; if ($$appDataPath -is [string]) { $$paths.Add($$appDataPath) } elseif ($$appDataPath) { foreach ($$item in $$appDataPath) { if ($$item.dataPath) { $$paths.Add([string]$$item.dataPath) } } } } catch {} }; function Test-ZenAiDataPath($$path, $$defaultPath) { if (-not $$path) { return $$false }; $$resolved = [IO.Path]::GetFullPath($$path); if ($$resolved -eq [IO.Path]::GetPathRoot($$resolved)) { return $$false }; if ($$resolved -eq [IO.Path]::GetFullPath($$defaultPath)) { return $$true }; $$markers = @('Data', 'IndexedDB', 'Local Storage'); foreach ($$marker in $$markers) { if (Test-Path (Join-Path $$resolved $$marker)) { return $$true } }; return $$false }; $$paths | Where-Object { $$_ } | Select-Object -Unique | ForEach-Object { $$resolved = [IO.Path]::GetFullPath($$_); if (Test-ZenAiDataPath $$resolved $$defaultPath) { Remove-Item -LiteralPath $$resolved -Recurse -Force } }; Remove-Item -LiteralPath $$configPath -Force"`
+    nsExec::ExecToStack `"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -Command "$$ErrorActionPreference = 'SilentlyContinue'; $$paths = New-Object System.Collections.Generic.List[string]; $$defaultPath = Join-Path $$env:APPDATA 'zen-ai'; $$legacyPath = Join-Path $$env:APPDATA 'Zen AI'; $$defaultPaths = @($$defaultPath, $$legacyPath); $$paths.Add($$defaultPath); $$paths.Add($$legacyPath); $$configRoot = Join-Path $$env:USERPROFILE '.zen-ai'; $$configPath = Join-Path $$configRoot 'config\config.json'; if (Test-Path $$configPath) { try { $$config = Get-Content $$configPath -Raw | ConvertFrom-Json; $$appDataPath = $$config.appDataPath; if ($$appDataPath -is [string]) { $$paths.Add($$appDataPath) } elseif ($$appDataPath) { foreach ($$item in $$appDataPath) { if ($$item.dataPath) { $$paths.Add([string]$$item.dataPath) } } } } catch {} }; function Test-ZenAiDataPath($$path, $$defaultPaths) { if (-not $$path) { return $$false }; $$resolved = [IO.Path]::GetFullPath($$path); if ($$resolved -eq [IO.Path]::GetPathRoot($$resolved)) { return $$false }; foreach ($$defaultPathItem in $$defaultPaths) { if ($$resolved -eq [IO.Path]::GetFullPath($$defaultPathItem)) { return $$true } }; $$markers = @('Data', 'IndexedDB', 'Local Storage', 'config.json', '.updaterId'); foreach ($$marker in $$markers) { if (Test-Path (Join-Path $$resolved $$marker)) { return $$true } }; return $$false }; $$paths | Where-Object { $$_ } | Select-Object -Unique | ForEach-Object { $$resolved = [IO.Path]::GetFullPath($$_); if (Test-ZenAiDataPath $$resolved $$defaultPaths) { Remove-Item -LiteralPath $$resolved -Recurse -Force } }; if ((Test-Path $$configRoot) -and ([IO.Path]::GetFullPath($$configRoot) -ne [IO.Path]::GetPathRoot([IO.Path]::GetFullPath($$configRoot)))) { Remove-Item -LiteralPath $$configRoot -Recurse -Force }"`
     Pop $0
     Pop $1
 

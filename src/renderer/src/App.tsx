@@ -1,15 +1,18 @@
 import '@renderer/databases'
 
 import { loggerService } from '@logger'
+import { runStartupAssistantEnvironmentPreflight } from '@renderer/services/AssistantEnvironmentService'
+import { startProviderModelSyncScheduler } from '@renderer/services/ProviderModelSyncService'
 import store, { persistor } from '@renderer/store'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { useEffect } from 'react'
 import { Provider } from 'react-redux'
 import { PersistGate } from 'redux-persist/integration/react'
 
 import { ErrorBoundary } from './components/ErrorBoundary'
 import TopViewContainer from './components/TopView'
-import AntdProvider from './context/AntdProvider'
 import { AnnouncementProvider } from './context/AnnouncementProvider'
+import AntdProvider from './context/AntdProvider'
 import { CodeStyleProvider } from './context/CodeStyleProvider'
 import { NotificationProvider } from './context/NotificationProvider'
 import StyleSheetManager from './context/StyleSheetManager'
@@ -30,6 +33,11 @@ const queryClient = new QueryClient({
 
 function App(): React.ReactElement {
   logger.info('App initialized')
+
+  useEffect(() => {
+    void runStartupAssistantEnvironmentPreflight()
+    startProviderModelSyncScheduler()
+  }, [])
 
   return (
     <ErrorBoundary>

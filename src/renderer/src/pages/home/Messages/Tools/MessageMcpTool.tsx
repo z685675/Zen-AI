@@ -21,6 +21,7 @@ import styled from 'styled-components'
 import { useToolApproval } from './hooks/useToolApproval'
 import {
   getEffectiveStatus,
+  getToolHasError,
   SkeletonSpan,
   ToolStatusIndicator,
   TruncatedIndicator
@@ -57,11 +58,13 @@ const MessageMcpTool: FC<Props> = ({ block }) => {
 
   const toolResponse = block.metadata?.rawMcpToolResponse as MCPToolResponse
 
-  const { id, tool, status, response, partialArguments } = toolResponse
-  const isPending = status === 'pending'
-  const isDone = status === 'done'
-  const isError = status === 'error'
-  const isStreaming = status === 'streaming'
+  const { id, tool, status, partialArguments } = toolResponse
+  const hasError = getToolHasError(toolResponse)
+  const effectiveStatus = getEffectiveStatus(status, approval.isWaiting, hasError)
+  const isPending = effectiveStatus === 'pending' || effectiveStatus === 'invoking' || effectiveStatus === 'waiting'
+  const isDone = effectiveStatus === 'done'
+  const isError = effectiveStatus === 'error'
+  const isStreaming = effectiveStatus === 'streaming'
   const displayInfo = getToolDisplayInfo(tool.name, tool)
 
   useEffect(() => {
@@ -125,7 +128,6 @@ const MessageMcpTool: FC<Props> = ({ block }) => {
   // Format tool responses for collapse items
   const getCollapseItems = (): { key: string; label: React.ReactNode; children: React.ReactNode }[] => {
     const items: { key: string; label: React.ReactNode; children: React.ReactNode }[] = []
-    const hasError = response?.isError === true
     const result = {
       params: toolResponse.arguments,
       response: toolResponse.response
@@ -149,9 +151,9 @@ const MessageMcpTool: FC<Props> = ({ block }) => {
               <Progress type="circle" size={14} percent={Number((progress * 100)?.toFixed(0))} />
             ) : (
               <ToolStatusIndicator
-                status={getEffectiveStatus(status, approval.isWaiting)}
+                status={effectiveStatus}
                 hasError={hasError}
-                label={getToolStatusLabel(getEffectiveStatus(status, approval.isWaiting), displayInfo, hasError)}
+                label={getToolStatusLabel(effectiveStatus, displayInfo, hasError)}
               />
             )}
             {!isPending && (
@@ -201,7 +203,7 @@ const MessageMcpTool: FC<Props> = ({ block }) => {
           }
         }}>
         <ToolContainer>
-          <ToolContentWrapper className={isPending || approval.isWaiting ? 'pending' : status}>
+          <ToolContentWrapper className={isPending || approval.isWaiting ? 'pending' : effectiveStatus}>
             <CollapseContainer
               ghost
               activeKey={activeKeys}

@@ -7,14 +7,15 @@ import {
 } from '@renderer/components/DraggableList'
 import { DeleteIcon, EditIcon } from '@renderer/components/Icons'
 import { ProviderAvatar } from '@renderer/components/ProviderAvatar'
-import { useAssistants, useDefaultAssistant, useDefaultModel } from '@renderer/hooks/useAssistant'
+import { useDefaultModel } from '@renderer/hooks/useAssistant'
 import { useAllProviders, useProviders, useSystemProviders, useUserProviders } from '@renderer/hooks/useProvider'
 import { useTimer } from '@renderer/hooks/useTimer'
 import { fetchModels } from '@renderer/services/ApiService'
 import ImageStorage from '@renderer/services/ImageStorage'
-import type { Assistant, Model, Provider, ProviderType } from '@renderer/types'
+import { mergeSyncedProviderModels } from '@renderer/services/ProviderModelSyncUtils'
+import type { Model, Provider, ProviderType } from '@renderer/types'
 import { getFancyProviderName, matchKeywordsInModel, matchKeywordsInProvider, uuid } from '@renderer/utils'
-import { isAnthropicSupportedProvider } from '@renderer/utils/provider'
+import { isAnthropicSupportedProvider, isNewApiProvider } from '@renderer/utils/provider'
 import type { MenuProps } from 'antd'
 import { Button, Dropdown, Input, Tag } from 'antd'
 import { Check, FileUp, Filter, GripVertical, PlusIcon, Search, UserPen } from 'lucide-react'
@@ -34,6 +35,8 @@ const logger = loggerService.withContext('ProviderList')
 
 const BUTTON_WRAPPER_HEIGHT = 50
 const FOOTER_BUTTON_WRAPPER_HEIGHT = 96
+const DEFAULT_ASSISTANT_MODEL_ID = 'gpt-5.4'
+const DEFAULT_UTILITY_MODEL_ID = 'gpt-5.4-mini'
 
 const getIsOvmsSupported = async (): Promise<boolean> => {
   try {
@@ -71,53 +74,25 @@ function isProviderImportPayload(value: unknown): value is ProviderImportPayload
   return isNonEmptyString(payload.id) && isNonEmptyString(payload.apiKey) && isNonEmptyString(payload.baseUrl)
 }
 
-function remapModelToImportedProvider(
-  model: Model | undefined,
-  importedProvider: Provider,
-  disabledProviderIds: Set<string>
-): Model | undefined {
-  if (!model) {
-    return undefined
-  }
+const normalizeImportedDefaultModelId = (value: string | undefined) =>
+  (value ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/^openai\//, '')
 
-  const matchedModel = importedProvider.models.find((item) => item.id === model.id)
-  if (model.provider === importedProvider.id || disabledProviderIds.has(model.provider)) {
-    return matchedModel
-  }
-
-  return model
+function findImportedDefaultModel(importedProvider: Provider, targetModelId: string): Model | undefined {
+  const normalizedTarget = normalizeImportedDefaultModelId(targetModelId)
+  return importedProvider.models.find((model) => normalizeImportedDefaultModelId(model.id) === normalizedTarget)
 }
 
-function resolveImportedProviderModelFallback(
-  model: Model | undefined,
-  importedProvider: Provider,
-  disabledProviderIds: Set<string>
-): Model | undefined {
-  if (!model) {
-    return undefined
+function normalizeImportedProvider(updatedProvider: Provider): Provider {
+  if (!isNewApiProvider(updatedProvider)) {
+    return updatedProvider
   }
 
-  const remappedModel = remapModelToImportedProvider(model, importedProvider, disabledProviderIds)
-  if (remappedModel) {
-    return remappedModel
-  }
-
-  if (model.provider === importedProvider.id || disabledProviderIds.has(model.provider)) {
-    return importedProvider.models[0]
-  }
-
-  return model
-}
-
-function remapAssistantModels(
-  assistant: Assistant,
-  importedProvider: Provider,
-  disabledProviderIds: Set<string>
-): Assistant {
   return {
-    ...assistant,
-    model: remapModelToImportedProvider(assistant.model, importedProvider, disabledProviderIds),
-    defaultModel: remapModelToImportedProvider(assistant.defaultModel, importedProvider, disabledProviderIds)
+    ...updatedProvider,
+    anthropicApiHost: updatedProvider.apiHost
   }
 }
 
@@ -127,10 +102,7 @@ const ProviderList: FC<ProviderListProps> = ({ isOnboarding = false }) => {
   const allProviders = useAllProviders()
   const systemProviders = useSystemProviders()
   const { updateProviders, addProvider, removeProvider, updateProvider } = useProviders()
-  const { assistants, updateAssistants } = useAssistants()
-  const { defaultAssistant, updateDefaultAssistant } = useDefaultAssistant()
-  const { defaultModel, quickModel, translateModel, setDefaultModel, setQuickModel, setTranslateModel } =
-    useDefaultModel()
+  const { setDefaultModel, setQuickModel, setTranslateModel } = useDefaultModel()
   const { setTimeoutTimer } = useTimer()
   const [selectedProvider, _setSelectedProvider] = useState<Provider | undefined>(providers[0])
   const { t } = useTranslation()
@@ -229,13 +201,10 @@ const ProviderList: FC<ProviderListProps> = ({ isOnboarding = false }) => {
         return
       }
 
-      let finalProvider = updatedProvider
+      let finalProvider = normalizeImportedProvider(updatedProvider)
       const models = await fetchModels(updatedProvider)
       if (models.length > 0) {
-        finalProvider = {
-          ...updatedProvider,
-          models
-        }
+        finalProvider = mergeSyncedProviderModels({ ...finalProvider, models: [] }, models)
       }
 
       const disableOtherProviders = options?.disableOtherProviders === true
@@ -260,35 +229,12 @@ const ProviderList: FC<ProviderListProps> = ({ isOnboarding = false }) => {
 
       updateProviders(nextProviders)
 
-      if (disableOtherProviders) {
-        const disabledProviderIds = new Set<string>(
-          nextProviders
-            .filter((provider) => provider.id !== finalProvider.id && !provider.enabled)
-            .map((provider) => provider.id)
-        )
+      const nextDefaultModel = findImportedDefaultModel(finalProvider, DEFAULT_ASSISTANT_MODEL_ID)
+      const nextUtilityModel = findImportedDefaultModel(finalProvider, DEFAULT_UTILITY_MODEL_ID)
 
-        const nextDefaultModel = resolveImportedProviderModelFallback(defaultModel, finalProvider, disabledProviderIds)
-        const nextQuickModel = resolveImportedProviderModelFallback(quickModel, finalProvider, disabledProviderIds)
-        const nextTranslateModel = resolveImportedProviderModelFallback(
-          translateModel,
-          finalProvider,
-          disabledProviderIds
-        )
-
-        if (nextDefaultModel) {
-          setDefaultModel(nextDefaultModel)
-        }
-        if (nextQuickModel) {
-          setQuickModel(nextQuickModel)
-        }
-        if (nextTranslateModel) {
-          setTranslateModel(nextTranslateModel)
-        }
-        updateAssistants(
-          assistants.map((assistant) => remapAssistantModels(assistant, finalProvider, disabledProviderIds))
-        )
-        updateDefaultAssistant(remapAssistantModels(defaultAssistant, finalProvider, disabledProviderIds))
-      }
+      setDefaultModel(nextDefaultModel)
+      setQuickModel(nextUtilityModel)
+      setTranslateModel(nextUtilityModel)
 
       setSelectedProvider({
         ...finalProvider,
@@ -320,22 +266,7 @@ const ProviderList: FC<ProviderListProps> = ({ isOnboarding = false }) => {
         )
       }
     },
-    [
-      allProviders,
-      assistants,
-      defaultAssistant,
-      defaultModel,
-      quickModel,
-      setDefaultModel,
-      setQuickModel,
-      setSelectedProvider,
-      setTranslateModel,
-      t,
-      translateModel,
-      updateAssistants,
-      updateDefaultAssistant,
-      updateProviders
-    ]
+    [allProviders, setDefaultModel, setQuickModel, setSelectedProvider, setTranslateModel, t, updateProviders]
   )
 
   useEffect(() => {

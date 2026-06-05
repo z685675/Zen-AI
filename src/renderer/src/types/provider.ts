@@ -118,6 +118,14 @@ export type Provider = {
   isAnthropicModel?: (m: Model) => boolean
   apiVersion?: string
   models: Model[]
+  modelSync?: {
+    remoteModelIds: string[]
+    syncedAt: number
+    sourceFingerprint?: string
+    lastAttemptAt?: number
+    lastSuccessAt?: number
+    lastFailureAt?: number
+  }
   enabled?: boolean
   isSystem?: boolean
   isAuthed?: boolean

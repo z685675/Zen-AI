@@ -1,6 +1,6 @@
 {
   "name": "zen-ai",
-  "version": "1.1.46",
+  "version": "1.1.47",
   "private": true,
   "description": "An independent AI desktop workspace for Windows and macOS.",
   "desktopName": "ZenAI.desktop",
@@ -37,7 +37,6 @@
     "agents:push": "NODE_ENV='development' drizzle-kit push --config src/main/services/agents/drizzle.config.ts",
     "agents:studio": "NODE_ENV='development' drizzle-kit studio --config src/main/services/agents/drizzle.config.ts",
     "agents:drop": "NODE_ENV='development' drizzle-kit drop --config src/main/services/agents/drizzle.config.ts",
-    "announcements:manager": "node scripts/announcement-manager.js",
     "analyze:renderer": "VISUALIZER_RENDERER=true pnpm build",
     "analyze:main": "VISUALIZER_MAIN=true pnpm build",
     "typecheck": "pnpm --filter @cherrystudio/ai-sdk-provider build && concurrently -n \"node,web,aicore\" -c \"cyan,magenta,yellow\" \"npm run typecheck:node\" \"npm run typecheck:web\" \"pnpm --filter @cherrystudio/ai-core typecheck\"",
@@ -92,6 +91,7 @@
     "@napi-rs/canvas": "0.1.80",
     "@napi-rs/system-ocr": "1.0.2",
     "@paymoapp/electron-shutdown-handler": "1.1.2",
+    "@pdf-lib/fontkit": "^1.1.1",
     "cron-parser": "^5.0.8",
     "express": "5.1.0",
     "font-list": "2.0.0",

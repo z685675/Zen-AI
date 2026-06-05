@@ -2,7 +2,7 @@
 
 import { LoadingIcon } from '@renderer/components/Icons'
 import { SkeletonSpan } from '@renderer/components/Skeleton/InlineSkeleton'
-import type { MCPToolResponseStatus } from '@renderer/types'
+import type { MCPToolResponse, MCPToolResponseStatus, NormalToolResponse } from '@renderer/types'
 import { formatFileSize } from '@renderer/utils/file'
 import { Check, Ellipsis, TriangleAlert, X } from 'lucide-react'
 import { createContext, type ReactNode, use } from 'react'
@@ -113,6 +113,12 @@ export function StringOutputTool({
 // ToolStatus extends MCPToolResponseStatus with UI-derived statuses
 // 'waiting' is a UI status derived from 'pending' + needs approval
 export type ToolStatus = MCPToolResponseStatus | 'waiting'
+export type ToolResponseLike = Pick<MCPToolResponse | NormalToolResponse, 'status' | 'response'> | undefined | null
+
+export function getToolHasError(toolResponse?: ToolResponseLike, explicit?: boolean): boolean {
+  if (explicit !== undefined) return explicit
+  return toolResponse?.status === 'error' || toolResponse?.response?.isError === true
+}
 
 /**
  * Convert raw data layer status to UI display status
@@ -120,7 +126,11 @@ export type ToolStatus = MCPToolResponseStatus | 'waiting'
  * @param isWaiting - Whether the tool is waiting for user approval
  * @returns The effective UI status
  */
-export function getEffectiveStatus(status: MCPToolResponseStatus | undefined, isWaiting: boolean): ToolStatus {
+export function getEffectiveStatus(status: ToolStatus | undefined, isWaiting: boolean, hasError = false): ToolStatus {
+  if (hasError || status === 'error') {
+    return 'error'
+  }
+
   if (status === 'pending') {
     return isWaiting ? 'waiting' : 'invoking'
   }
@@ -144,7 +154,11 @@ export function ToolStatusIndicator({
       case 'streaming':
         return { label: label ?? t('message.tools.streaming', 'Streaming'), icon: <LoadingIcon />, color: 'primary' }
       case 'waiting':
-        return { label: label ?? t('message.tools.pending', 'Awaiting Approval'), icon: <LoadingIcon />, color: 'warning' }
+        return {
+          label: label ?? t('message.tools.pending', 'Awaiting Approval'),
+          icon: <LoadingIcon />,
+          color: 'warning'
+        }
       case 'pending':
       case 'invoking':
         return { label: label ?? t('message.tools.invoking'), icon: <LoadingIcon />, color: 'primary' }

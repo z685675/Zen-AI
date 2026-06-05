@@ -473,6 +473,7 @@ const api = {
   checkAssistantEnvironment: () => ipcRenderer.invoke(IpcChannel.App_CheckAssistantEnvironment),
   installUVBinary: () => ipcRenderer.invoke(IpcChannel.App_InstallUvBinary),
   installBunBinary: () => ipcRenderer.invoke(IpcChannel.App_InstallBunBinary),
+  installGitForWindows: () => ipcRenderer.invoke(IpcChannel.App_InstallGitForWindows),
   installOvmsBinary: () => ipcRenderer.invoke(IpcChannel.App_InstallOvmsBinary),
   protocol: {
     onReceiveData: (callback: (data: { url: string; params: any }) => void) => {

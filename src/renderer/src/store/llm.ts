@@ -55,20 +55,20 @@ type LlmSettings = {
 
 export interface LlmState {
   providers: Provider[]
-  defaultModel: Model
+  defaultModel?: Model
   /** @deprecated */
   topicNamingModel: Model
-  quickModel: Model
-  translateModel: Model
+  quickModel?: Model
+  translateModel?: Model
   quickAssistantId: string
   settings: LlmSettings
 }
 
 export const initialState: LlmState = {
-  defaultModel: SYSTEM_MODELS.defaultModel[0],
+  defaultModel: undefined,
   topicNamingModel: SYSTEM_MODELS.defaultModel[1],
-  quickModel: SYSTEM_MODELS.defaultModel[1],
-  translateModel: SYSTEM_MODELS.defaultModel[2],
+  quickModel: undefined,
+  translateModel: undefined,
   quickAssistantId: '',
   providers: SYSTEM_PROVIDERS,
   settings: {
@@ -191,13 +191,13 @@ const llmSlice = createSlice({
           : p
       )
     },
-    setDefaultModel: (state, action: PayloadAction<{ model: Model }>) => {
+    setDefaultModel: (state, action: PayloadAction<{ model?: Model }>) => {
       state.defaultModel = action.payload.model
     },
-    setQuickModel: (state, action: PayloadAction<{ model: Model }>) => {
+    setQuickModel: (state, action: PayloadAction<{ model?: Model }>) => {
       state.quickModel = action.payload.model
     },
-    setTranslateModel: (state, action: PayloadAction<{ model: Model }>) => {
+    setTranslateModel: (state, action: PayloadAction<{ model?: Model }>) => {
       state.translateModel = action.payload.model
     },
 

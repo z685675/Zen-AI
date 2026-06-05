@@ -5,6 +5,7 @@ import path from 'node:path'
 import { loggerService } from '@logger'
 import { HOME_CHERRY_DIR } from '@shared/config/constant'
 import type { GetAgentSessionResponse, PermissionMode } from '@types'
+import { app } from 'electron'
 
 import { agentService } from '../AgentService'
 import { channelService } from '../ChannelService'
@@ -38,6 +39,8 @@ const SESSION_TRACKER_MAX_SIZE = 500
  * agent round-trip and avoids concurrent stream interleaving.
  */
 const MESSAGE_BATCH_DELAY_MS = 8000
+
+const LOCAL_PATH_CONTEXT_TITLE = '## Trusted Local Path Context for External Channel Tasks'
 
 type BatchResolver = {
   resolve: () => void
@@ -237,13 +240,16 @@ export class ChannelMessageHandler {
         textWithAttachments += `\n\n[Attached files saved to workspace]\n${filePaths.map((p) => `- ${p}`).join('\n')}`
       }
 
-      // Wrap untrusted channel input with security boundary markers
-      const securedContent = wrapExternalContent(textWithAttachments, {
+      // Wrap untrusted channel input with security boundary markers.
+      // Keep the local path context outside that wrapper so it remains trusted
+      // product guidance rather than channel-provided text.
+      const securedExternalContent = wrapExternalContent(textWithAttachments, {
         chatId: message.chatId,
         userId: message.userId,
         userName: message.userName,
         channelType: adapter.channelType
       })
+      const securedContent = `${this.buildLocalPathContext(session)}\n\n${securedExternalContent}`
 
       // Build display text: append filenames so the user can see them in the UI
       let displayText = message.text
@@ -431,6 +437,48 @@ export class ChannelMessageHandler {
         ...session.configuration,
         permission_mode: channel.permissionMode as PermissionMode
       }
+    }
+  }
+
+  private buildLocalPathContext(session: GetAgentSessionResponse): string {
+    const pathEntries = [
+      ['User home / 用户目录', this.safeGetAppPath('home')],
+      ['Desktop / 桌面', this.safeGetAppPath('desktop')],
+      ['Documents / 文档', this.safeGetAppPath('documents')],
+      ['Downloads / 下载', this.safeGetAppPath('downloads')],
+      ['Agent workspace / 助手工作区', session.accessible_paths?.[0]]
+    ]
+
+    const seen = new Set<string>()
+    const pathLines = pathEntries
+      .filter((entry): entry is [string, string] => Boolean(entry[1]))
+      .filter(([, value]) => {
+        const normalized = path.normalize(value)
+        if (seen.has(normalized)) return false
+        seen.add(normalized)
+        return true
+      })
+      .map(([label, value]) => `- ${label}: ${value}`)
+
+    return [
+      LOCAL_PATH_CONTEXT_TITLE,
+      "This task is running on the user's real local desktop computer, not in a cloud sandbox.",
+      'Never invent or use /mnt/data, C:\\mnt\\data, or any path under C:\\mnt unless the user explicitly provides that exact path and it already exists.',
+      'When the user says Desktop/桌面, Documents/文档, or Downloads/下载, resolve it to the real OS path below:',
+      ...pathLines,
+      'If a requested local folder is ambiguous, ask one short clarification instead of guessing a sandbox path.'
+    ].join('\n')
+  }
+
+  private safeGetAppPath(name: Parameters<typeof app.getPath>[0]): string | undefined {
+    try {
+      return app.getPath(name)
+    } catch (error) {
+      logger.debug('Failed to resolve Electron app path for channel context', {
+        name,
+        error: error instanceof Error ? error.message : String(error)
+      })
+      return undefined
     }
   }
 

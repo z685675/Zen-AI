@@ -286,6 +286,13 @@
       "description": "Enable at least one Agent-compatible model in Model Services, then come back to use Lobster",
       "title": "Configure Model Service First"
     },
+    "environmentGate": {
+      "action": "Fix Environment",
+      "checkFailed": "Environment check failed",
+      "description": "Finish repairing the runtime environment first so the smart assistant can work reliably.",
+      "refresh": "Check Again",
+      "title": "Assistant environment is not ready"
+    },
     "get": {
       "error": {
         "failed": "Failed to get the agent.",
@@ -4049,7 +4056,7 @@
           "name": "Bun runtime"
         },
         "git": {
-          "description": "Optional enhancement for Git-based skills, repository downloads, and coding tasks.",
+          "description": "On Windows, the assistant needs Git Bash to run local tasks reliably. It is also used for Git-based skills, repository downloads, and coding tasks.",
           "name": "Git"
         },
         "pyodide": {
@@ -4066,14 +4073,20 @@
         }
       },
       "description": "Check local tools and network readiness for the full smart assistant experience.",
+      "downloadGit": "Download Git",
+      "downloadGitHint": "Please finish installing Git with the setup wizard, then come back and check again.",
       "install": "Install",
       "installFailed": "Install failed",
+      "installGitAuto": "Auto Install Git",
+      "installGitConfirmContent": "On Windows, the smart assistant needs Git Bash from Git for Windows to run local tasks reliably. The app will try to install it through winget. A system permission prompt may appear. If auto install fails, the official download page will open as a fallback.",
+      "installGitConfirmTitle": "Install Git for Windows automatically?",
+      "installGitFailedFallback": "Auto install failed. The official Git download page has been opened",
       "installSuccess": "Installed",
       "intro": "Basic chat and ordinary local file operations work out of the box. The checks below are mainly for extended capabilities such as the Skill marketplace, scheduled tasks, Python sandbox, and Git-based tools.",
       "noPath": "No available path detected yet",
       "optionalDescription": "These are not required for basic chat, but they improve some advanced tasks.",
       "optionalTitle": "Optional Enhancements",
-      "prepare": "Prepare Bun and UV",
+      "prepare": "Repair Assistant Environment",
       "prepareSuccess": "Environment prepared",
       "refresh": "Check Again",
       "sources": {

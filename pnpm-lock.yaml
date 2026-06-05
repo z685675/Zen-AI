@@ -110,6 +110,9 @@ importers:
       '@paymoapp/electron-shutdown-handler':
         specifier: 1.1.2
         version: 1.1.2
+      '@pdf-lib/fontkit':
+        specifier: ^1.1.1
+        version: 1.1.1
       cron-parser:
         specifier: ^5.0.8
         version: 5.5.0
@@ -3912,6 +3915,9 @@ packages:
 
   '@paymoapp/electron-shutdown-handler@1.1.2':
     resolution: {integrity: sha512-/MIC+wdRlVw1Sm56qJcT17O/KBpQARP2tOcAgg1OKB4W83B9IyBBtIoLXkRlpCOEJnGEleuv5HiSBryUgwbFvQ==}
+
+  '@pdf-lib/fontkit@1.1.1':
+    resolution: {integrity: sha512-KjMd7grNapIWS/Dm0gvfHEilSyAmeLvrEGVcqLGi0VYebuqqzTbgF29efCx7tvx+IEbG3zQciRSWl3GkUSvjZg==}
 
   '@pdf-lib/standard-fonts@1.0.0':
     resolution: {integrity: sha512-hU30BK9IUN/su0Mn9VdlVKsWBS6GyhVfqjwl1FjZN4TxP6cCw0jP2w7V3Hf5uX7M0AZJ16vey9yE0ny7Sa59ZA==}
@@ -15969,6 +15975,10 @@ snapshots:
     dependencies:
       node-addon-api: 5.1.0
       prebuild-install: 7.1.3
+
+  '@pdf-lib/fontkit@1.1.1':
+    dependencies:
+      pako: 1.0.11
 
   '@pdf-lib/standard-fonts@1.0.0':
     dependencies:

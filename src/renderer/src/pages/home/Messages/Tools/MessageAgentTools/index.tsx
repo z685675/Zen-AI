@@ -11,12 +11,19 @@ export * from './types'
 
 // 导入所有渲染器
 import { AskUserQuestionCard } from '../AskUserQuestionCard'
+import { getToolDisplayInfo, getToolStatusLabel } from '../toolDisplay'
 import ToolPermissionRequestCard from '../ToolPermissionRequestCard'
 import { BashOutputTool } from './BashOutputTool'
 import { BashTool } from './BashTool'
 import { EditTool } from './EditTool'
 import { ExitPlanModeTool } from './ExitPlanModeTool'
-import { getEffectiveStatus, StreamingContext, type ToolStatus, ToolStatusIndicator } from './GenericTools'
+import {
+  getEffectiveStatus,
+  getToolHasError,
+  StreamingContext,
+  type ToolStatus,
+  ToolStatusIndicator
+} from './GenericTools'
 import { GlobTool } from './GlobTool'
 import { GrepTool } from './GrepTool'
 import { MultiEditTool } from './MultiEditTool'
@@ -33,7 +40,6 @@ import { UnknownToolRenderer } from './UnknownToolRenderer'
 import { WebFetchTool } from './WebFetchTool'
 import { WebSearchTool } from './WebSearchTool'
 import { WriteTool } from './WriteTool'
-import { getToolDisplayInfo, getToolStatusLabel } from '../toolDisplay'
 
 // 创建工具渲染器映射
 export const toolRenderers = {
@@ -172,7 +178,8 @@ export function MessageAgentTools({ toolResponse }: { toolResponse: NormalToolRe
     return null
   }
 
-  const effectiveStatus = getEffectiveStatus(status, !!pendingPermission)
+  const hasError = getToolHasError(toolResponse)
+  const effectiveStatus = getEffectiveStatus(status, !!pendingPermission, hasError)
 
   if (effectiveStatus === 'waiting') {
     return <ToolPermissionRequestCard toolResponse={toolResponse} />
@@ -186,7 +193,7 @@ export function MessageAgentTools({ toolResponse }: { toolResponse: NormalToolRe
       output={isLoading ? undefined : response}
       isStreaming={isLoading}
       status={effectiveStatus}
-      hasError={status === 'error'}
+      hasError={hasError}
     />
   )
 }

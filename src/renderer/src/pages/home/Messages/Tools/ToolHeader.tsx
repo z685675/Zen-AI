@@ -23,7 +23,12 @@ import { memo } from 'react'
 import { useTranslation } from 'react-i18next'
 import styled from 'styled-components'
 
-import { type ToolStatus, ToolStatusIndicator } from './MessageAgentTools/GenericTools'
+import {
+  getEffectiveStatus,
+  getToolHasError,
+  type ToolStatus,
+  ToolStatusIndicator
+} from './MessageAgentTools/GenericTools'
 import { AgentToolsType } from './MessageAgentTools/types'
 import { getToolDisplayInfo, getToolStatusLabel } from './toolDisplay'
 
@@ -215,8 +220,8 @@ const ToolHeader: FC<ToolHeaderProps> = ({
 
   const toolName = propToolName || tool?.name || 'Tool'
 
-  const status = propStatus || (toolResponse?.status as ToolStatus)
-  const hasError = propHasError ?? toolResponse?.response?.isError === true
+  const hasError = getToolHasError(toolResponse, propHasError)
+  const status = getEffectiveStatus(propStatus || (toolResponse?.status as ToolStatus), false, hasError)
   const displayInfo = getToolDisplayInfo(toolName, tool?.type === 'mcp' ? (tool as MCPTool) : undefined)
   const statusLabel = getToolStatusLabel(status, displayInfo, hasError)
 
