@@ -47,7 +47,7 @@ import type {
   ThemeMode,
   WebDavConfig
 } from '@types'
-import type { OpenDialogOptions } from 'electron'
+import type { OpenDialogOptions, SaveDialogOptions } from 'electron'
 import { contextBridge, ipcRenderer, shell, webUtils } from 'electron'
 import type { CreateDirectoryOptions } from 'webdav'
 
@@ -232,6 +232,11 @@ const api = {
     openPath: (path: string) => ipcRenderer.invoke(IpcChannel.File_OpenPath, path),
     save: (path: string, content: string | NodeJS.ArrayBufferView, options?: any) =>
       ipcRenderer.invoke(IpcChannel.File_Save, path, content, options),
+    saveDiagnosticPackage: (
+      fileName: string,
+      files: Array<{ path: string; content: string }>,
+      options?: SaveDialogOptions
+    ): Promise<string> => ipcRenderer.invoke(IpcChannel.File_SaveDiagnosticPackage, fileName, files, options),
     selectFolder: (options?: OpenDialogOptions): Promise<string | null> =>
       ipcRenderer.invoke(IpcChannel.File_SelectFolder, options),
     saveImage: (name: string, data: string): Promise<boolean> =>

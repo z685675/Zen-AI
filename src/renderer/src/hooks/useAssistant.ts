@@ -89,9 +89,6 @@ export function useAssistant(id: string) {
     () => assistant?.model ?? assistant?.defaultModel ?? defaultModel ?? fallbackModel,
     [assistant, defaultModel, fallbackModel]
   )
-  if (!model) {
-    throw new Error(`Assistant model is not set for assistant with name: ${assistant?.name ?? 'unknown'}`)
-  }
 
   const normalizedTopics = useMemo(
     () => (Array.isArray(assistant?.topics) ? assistant.topics : []),
@@ -117,6 +114,10 @@ export function useAssistant(id: string) {
 
   // 当model变化时，同步reasoning effort为模型支持的合法值
   useEffect(() => {
+    if (!model) {
+      return
+    }
+
     const settings = settingsRef.current
     if (settings) {
       const currentReasoningEffort = settings.reasoning_effort

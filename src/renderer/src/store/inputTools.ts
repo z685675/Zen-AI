@@ -34,8 +34,7 @@ export const DEFAULT_TOOL_ORDER: ToolOrder = {
     'url_context',
     'knowledge_base',
     'mcp_tools',
-    'generate_image',
-    'mention_models'
+    'generate_image'
   ],
   hidden: ['quick_phrases', 'clear_topic', 'toggle_expand', 'new_context']
 }
@@ -47,10 +46,18 @@ export const DEFAULT_TOOL_ORDER_BY_SCOPE: Record<InputbarScope, ToolOrder> = {
   [TopicType.Chat]: DEFAULT_TOOL_ORDER,
   [TopicType.Session]: {
     visible: ['permission_mode', 'session_more'],
-    hidden: ['create_session', 'slash_commands', 'attachment', 'resource_panel', 'quick_phrases', 'thinking', 'toggle_expand']
+    hidden: [
+      'create_session',
+      'slash_commands',
+      'attachment',
+      'resource_panel',
+      'quick_phrases',
+      'thinking',
+      'toggle_expand'
+    ]
   },
   'mini-window': {
-    visible: ['attachment', 'mention_models', 'quick_phrases'],
+    visible: ['attachment', 'quick_phrases'],
     hidden: []
   }
 }

@@ -1,5 +1,4 @@
 import AddButton from '@renderer/components/AddButton'
-import AssistantAvatar from '@renderer/components/Avatar/AssistantAvatar'
 import type { DraggableVirtualListRef } from '@renderer/components/DraggableList'
 import { DraggableVirtualList } from '@renderer/components/DraggableList'
 import { CopyIcon, DeleteIcon, EditIcon } from '@renderer/components/Icons'
@@ -8,7 +7,7 @@ import PromptPopup from '@renderer/components/Popups/PromptPopup'
 import SaveToKnowledgePopup from '@renderer/components/Popups/SaveToKnowledgePopup'
 import { isMac } from '@renderer/config/constant'
 import { db } from '@renderer/databases'
-import { useAssistant, useAssistants } from '@renderer/hooks/useAssistant'
+import { useAssistant } from '@renderer/hooks/useAssistant'
 import { useInPlaceEdit } from '@renderer/hooks/useInPlaceEdit'
 import { useNotesSettings } from '@renderer/hooks/useNotesSettings'
 import { modelGenerating } from '@renderer/hooks/useRuntime'
@@ -41,7 +40,6 @@ import { findIndex } from 'lodash'
 import {
   BrushCleaning,
   CheckSquare,
-  FolderOpen,
   HelpCircle,
   ListChecks,
   MenuIcon,
@@ -72,8 +70,7 @@ interface Props {
 export const Topics: React.FC<Props> = ({ assistant: _assistant, activeTopic, setActiveTopic, position }) => {
   const { t } = useTranslation()
   const { notesPath } = useNotesSettings()
-  const { assistants } = useAssistants()
-  const { assistant, addTopic, removeTopic, moveTopic, updateTopic, updateTopics } = useAssistant(_assistant.id)
+  const { assistant, addTopic, removeTopic, updateTopic, updateTopics } = useAssistant(_assistant.id)
   const { showTopicTime, pinTopicsToTop, setTopicPosition, topicPosition } = useSettings()
 
   const renamingTopics = useSelector((state: RootState) => state.runtime.chat.renamingTopics)
@@ -239,20 +236,6 @@ export const Topics: React.FC<Props> = ({ assistant: _assistant, activeTopic, se
       removeTopic(topic)
     },
     [activeTopic, getReplacementTopic, removeTopic, setActiveTopic]
-  )
-
-  const onMoveTopic = useCallback(
-    async (topic: Topic, toAssistant: Assistant) => {
-      await modelGenerating()
-      if (topic.id === activeTopic.id) {
-        const replacementTopic = getReplacementTopic(topic.id)
-        if (replacementTopic) {
-          setActiveTopic(replacementTopic)
-        }
-      }
-      moveTopic(topic, toAssistant)
-    },
-    [activeTopic.id, getReplacementTopic, moveTopic, setActiveTopic]
   )
 
   const onSwitchTopic = useCallback(
@@ -495,23 +478,6 @@ export const Topics: React.FC<Props> = ({ assistant: _assistant, activeTopic, se
       }
     ]
 
-    if (assistants.length > 1 && assistant.topics.length > 1) {
-      menus.push({
-        label: t('chat.topics.move_to'),
-        key: 'move',
-        icon: <FolderOpen size={14} />,
-        popupClassName: 'move-to-submenu',
-        children: assistants
-          .filter((a) => a.id !== assistant.id)
-          .map((a) => ({
-            label: a.name,
-            key: a.id,
-            icon: <AssistantAvatar assistant={a} size={18} />,
-            onClick: () => onMoveTopic(topic, a)
-          }))
-      })
-    }
-
     if (assistant.topics.length > 1 && !topic.pinned) {
       menus.push({ type: 'divider' })
       menus.push({
@@ -537,7 +503,6 @@ export const Topics: React.FC<Props> = ({ assistant: _assistant, activeTopic, se
     exportMenuOptions.obsidian,
     exportMenuOptions.joplin,
     exportMenuOptions.siyuan,
-    assistants,
     notesPath,
     assistant,
     updateTopic,
@@ -546,7 +511,6 @@ export const Topics: React.FC<Props> = ({ assistant: _assistant, activeTopic, se
     onPinTopic,
     onClearMessages,
     setTopicPosition,
-    onMoveTopic,
     onDeleteTopic
   ])
 
@@ -735,11 +699,9 @@ export const Topics: React.FC<Props> = ({ assistant: _assistant, activeTopic, se
       {/* 管理模式底部面板 */}
       <TopicManagePanel
         assistant={assistant}
-        assistants={assistants}
         activeTopic={activeTopic}
         setActiveTopic={setActiveTopic}
         updateTopics={updateTopics}
-        moveTopic={moveTopic}
         manageState={manageState}
         filteredTopics={filteredTopics}
       />

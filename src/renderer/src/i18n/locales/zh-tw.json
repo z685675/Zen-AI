@@ -291,7 +291,26 @@
       "checkFailed": "環境偵測失敗",
       "description": "需要先完成執行環境修復後，才能穩定使用智能助手。",
       "refresh": "重新偵測",
+      "repairHint": "Bun、UV 會自動修復；Windows 缺少 Git 時，會在修復頁確認後透過 winget 安裝 Git for Windows。",
       "title": "智能助手環境尚未準備好"
+    },
+    "errorFallback": {
+      "assistant_name": "智能助手",
+      "connection_title": "任務連線中斷了",
+      "dependency_description": "這次任務需要的本機執行環境尚未準備好。先修復智能助手環境後，再重試這次任務會更穩定。",
+      "dependency_title": "缺少必要執行環境",
+      "description": "這次任務沒有順利完成。你可以先重試一次，如果連續失敗，再查看詳情或調整模型與網路設定。",
+      "detail": "查看詳情",
+      "export_failed": "診斷包匯出失敗，請稍後重試",
+      "export_package": "匯出診斷包",
+      "export_success": "診斷包已匯出：{{path}}",
+      "fix_environment": "修復環境",
+      "model_title": "模型暫時無法完成任務",
+      "privacy_notice": "這個診斷包用於排查智能助手任務失敗原因，可能包含目前任務的對話內容、錯誤詳情、本機檔案路徑和執行環境資訊。傳送給他人前，請先確認其中沒有你不希望分享的隱私內容。",
+      "retry": "重試任務",
+      "retry_missing_user": "找不到原始任務，無法自動重試",
+      "subtitle": "智能助手已停止本次任務，未完成的步驟不會繼續執行",
+      "title": "任務沒有完成"
     },
     "get": {
       "error": {
@@ -1238,7 +1257,8 @@
       "new": {
         "branch": {
           "created": "新分支已建立",
-          "label": "分支"
+          "label": "分支",
+          "tooltip": "建立新對話分支，原對話不受影響"
         },
         "context": "新上下文"
       },
@@ -2426,7 +2446,7 @@
       }
     },
     "mention": {
-      "title": "切換模型回答"
+      "title": "讓其他模型也回答，方便對比"
     },
     "message": {
       "code_style": "程式碼風格",
@@ -2520,6 +2540,12 @@
       "abort_failed": "工具呼叫中斷失敗",
       "aborted": "工具呼叫已中斷",
       "approvalRequired": "工具 \"{{tool}}\" 需要審批",
+      "assistantCreateFile": {
+        "open_file": "開啟檔案",
+        "open_folder": "開啟所在資料夾",
+        "title": "檔案已建立",
+        "verified": "已驗證"
+      },
       "autoApproveEnabled": "此工具已啟用自動批准",
       "cancelled": "已取消",
       "completed": "已完成",
@@ -3144,7 +3170,7 @@
       }
     },
     "canvas_guide_primary": "[to be translated]:请在下方输入你想要的图片内容，我来帮你生成。",
-    "canvas_guide_secondary": "[to be translated]:也可以上传或粘贴一张或多张图片，在原图基础上继续修改和创作。",
+    "canvas_guide_secondary": "支援上傳或貼上多張圖片進行二次編輯。",
     "canvas_upload_action": "[to be translated]:上传图片",
     "composer_continue_hint": "[to be translated]:基于当前图片继续创作，新结果会单独生成，不会覆盖原图。",
     "composer_upload_hint": "[to be translated]:正在基于上传图片编辑，结果会单独生成。",
@@ -4021,6 +4047,12 @@
       },
       "title": "關於我們",
       "updateAvailable": "發現新版本 {{version}}",
+      "updateDiagnostics": {
+        "copied": "更新診斷資訊已複製",
+        "copy": "複製診斷資訊",
+        "copyFailed": "複製更新診斷資訊失敗",
+        "title": "更新診斷資訊"
+      },
       "updateError": "更新錯誤",
       "updateNotAvailable": "您正在使用最新版本",
       "website": {

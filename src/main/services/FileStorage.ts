@@ -15,6 +15,7 @@ import { documentExts, imageExts, KB, MB } from '@shared/config/constant'
 import { parseDataUrl } from '@shared/utils'
 import type { FileMetadata, FileType, NotesTreeNode } from '@types'
 import { FILE_TYPE } from '@types'
+import AdmZip from 'adm-zip'
 import chardet from 'chardet'
 import type { FSWatcher } from 'chokidar'
 import chokidar from 'chokidar'
@@ -32,6 +33,23 @@ import { v4 as uuidv4 } from 'uuid'
 import WordExtractor from 'word-extractor'
 
 const logger = loggerService.withContext('FileStorage')
+
+type DiagnosticPackageFile = {
+  path: string
+  content: string
+}
+
+const sanitizeZipEntryName = (entryPath: string): string => {
+  const normalized = entryPath
+    .replace(/\\/g, '/')
+    .split('/')
+    .filter((part) => part && part !== '.' && part !== '..' && !part.includes(':'))
+    .join('/')
+
+  return normalized.slice(0, 180)
+}
+
+const SAVE_DIALOG_CANCELED = 'SAVE_DIALOG_CANCELED'
 
 // Get ripgrep binary path
 const getRipgrepBinaryPath = (): string | null => {
@@ -1450,6 +1468,45 @@ class FileStorage {
     } catch (err: any) {
       logger.error('[IPC - Error] An error occurred saving the file:', err as Error)
       return Promise.reject('An error occurred saving the file: ' + err?.message)
+    }
+  }
+
+  public saveDiagnosticPackage = async (
+    _: Electron.IpcMainInvokeEvent,
+    fileName: string,
+    files: DiagnosticPackageFile[],
+    options?: SaveDialogOptions
+  ): Promise<string> => {
+    try {
+      const result: SaveDialogReturnValue = await dialog.showSaveDialog({
+        title: t('dialog.save_file'),
+        defaultPath: fileName.endsWith('.zip') ? fileName : `${fileName}.zip`,
+        filters: [{ name: 'ZIP', extensions: ['zip'] }],
+        ...options
+      })
+
+      if (result.canceled || !result.filePath) {
+        return Promise.reject(new Error(SAVE_DIALOG_CANCELED))
+      }
+
+      const zip = new AdmZip()
+      for (const file of files) {
+        const entryName = sanitizeZipEntryName(file.path)
+        if (!entryName) {
+          continue
+        }
+        zip.addFile(entryName, Buffer.from(file.content ?? '', 'utf-8'))
+      }
+
+      await fs.promises.writeFile(result.filePath, zip.toBuffer())
+      return result.filePath
+    } catch (err: any) {
+      if (err?.message === SAVE_DIALOG_CANCELED) {
+        return Promise.reject(SAVE_DIALOG_CANCELED)
+      }
+
+      logger.error('[IPC - Error] An error occurred saving diagnostic package:', err as Error)
+      return Promise.reject('An error occurred saving diagnostic package: ' + err?.message)
     }
   }
 

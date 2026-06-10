@@ -1,7 +1,5 @@
 import { defineTool, registerTool, TopicType } from '@renderer/pages/home/Inputbar/types'
-import type React from 'react'
 
-import MentionModelsButton from './components/MentionModelsButton'
 import MentionModelsQuickPanelManager from './components/MentionModelsQuickPanelManager'
 
 /**
@@ -20,23 +18,7 @@ const mentionModelsTool = defineTool({
     actions: ['setMentionedModels', 'onTextChange'] as const
   },
 
-  render: function MentionModelsToolRender(context) {
-    const { state, actions, quickPanel, quickPanelController } = context
-    const { mentionedModels, files, couldMentionNotVisionModel } = state
-    const { setMentionedModels, onTextChange } = actions
-
-    return (
-      <MentionModelsButton
-        quickPanel={quickPanel}
-        quickPanelController={quickPanelController}
-        mentionedModels={mentionedModels}
-        setMentionedModels={setMentionedModels}
-        couldMentionNotVisionModel={couldMentionNotVisionModel}
-        files={files}
-        setText={onTextChange as React.Dispatch<React.SetStateAction<string>>}
-      />
-    )
-  },
+  render: null,
   quickPanelManager: MentionModelsQuickPanelManager
 })
 

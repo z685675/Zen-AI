@@ -1,5 +1,11 @@
 import { loggerService } from '@logger'
-import { chatModelFilter, isMandatoryWebSearchModel, isVisionModel, isVisionModels, isWebSearchModel } from '@renderer/config/models'
+import {
+  chatModelFilter,
+  isMandatoryWebSearchModel,
+  isVisionModel,
+  isVisionModels,
+  isWebSearchModel
+} from '@renderer/config/models'
 import db from '@renderer/databases'
 import { useAssistant } from '@renderer/hooks/useAssistant'
 import { useInputText } from '@renderer/hooks/useInputText'
@@ -252,6 +258,11 @@ const InputbarInner: FC<InputbarInnerProps> = ({
       return
     }
 
+    if (!assistant.model && mentionedModels.length === 0) {
+      window.toast.warning(t('agent.empty.description'))
+      return
+    }
+
     const requestModels = mentionedModels.length > 0 ? mentionedModels : [assistant.model]
     if (!requestModels.every(chatModelFilter)) {
       window.toast.warning('图片模型只能在“图片生成”入口中使用，请切换为对话模型后再发送。')
@@ -305,7 +316,8 @@ const InputbarInner: FC<InputbarInnerProps> = ({
     setFiles,
     setTimeoutTimer,
     resizeTextArea,
-    focusTextarea
+    focusTextarea,
+    t
   ])
 
   const tokenCountProps = useMemo(() => {
@@ -513,16 +525,9 @@ const InputbarInner: FC<InputbarInnerProps> = ({
                 'url_context',
                 'knowledge_base',
                 'mcp_tools',
-                'generate_image',
-                'mention_models'
+                'generate_image'
               ],
-              hidden: [
-                'new_topic',
-                'quick_phrases',
-                'clear_topic',
-                'toggle_expand',
-                'new_context'
-              ]
+              hidden: ['new_topic', 'quick_phrases', 'clear_topic', 'toggle_expand', 'new_context']
             }
           : {
               visible: [],

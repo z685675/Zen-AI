@@ -9,6 +9,7 @@ export type MessageMenubarButtonId =
   | 'assistant-regenerate'
   | 'assistant-mention-model'
   | 'translate'
+  | 'new-branch'
   | 'useful'
   | 'notes'
   | 'delete'
@@ -31,8 +32,8 @@ export const DEFAULT_MESSAGE_MENUBAR_BUTTON_IDS: MessageMenubarButtonId[] = [
   'assistant-regenerate',
   'assistant-mention-model',
   'translate',
+  'new-branch',
   'useful',
-  'notes',
   'delete',
   'trace',
   'inspect-data',
@@ -45,7 +46,7 @@ export const SESSION_MESSAGE_MENUBAR_BUTTON_IDS: MessageMenubarButtonId[] = [
   'copy',
   'assistant-regenerate',
   'translate',
-  'notes',
+  'new-branch',
   'delete',
   'more-menu'
 ]

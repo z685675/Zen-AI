@@ -1,5 +1,5 @@
-import { type CSSProperties } from 'react'
 import { isMac } from '@renderer/config/constant'
+import { type CSSProperties } from 'react'
 import ReactMarkdown from 'react-markdown'
 import rehypeRaw from 'rehype-raw'
 import remarkCjkFriendly from 'remark-cjk-friendly'
@@ -11,6 +11,15 @@ export interface UpdateInfo {
   version: string
   releaseDate?: string
   releaseNotes?: string
+}
+
+type InstallFailureResult = {
+  success?: false
+  status?: string
+  message?: string
+  updateInfo?: UpdateInfo | null
+  stage?: 'package-missing' | 'prepare-installer' | 'open-installer' | 'start-installer'
+  installerPath?: string
 }
 
 export function formatReleaseDate(value?: string) {
@@ -79,6 +88,23 @@ function renderReleaseNotes(releaseNotes: string) {
   )
 }
 
+function formatInstallFailureMessage(result: InstallFailureResult | undefined, fallback: string) {
+  const message = result?.message || fallback
+  const stageText = {
+    'package-missing': '安装包尚未准备好',
+    'prepare-installer': '准备安装包失败',
+    'open-installer': '打开安装程序失败',
+    'start-installer': '启动安装程序失败'
+  }[result?.stage ?? '']
+  const details = [
+    stageText ? `阶段：${stageText}` : undefined,
+    result?.updateInfo?.version ? `版本：${result.updateInfo.version}` : undefined,
+    result?.installerPath ? `安装包：${result.installerPath}` : undefined
+  ].filter(Boolean)
+
+  return details.length > 0 ? `${message}\n${details.join('\n')}` : message
+}
+
 function renderUpdateContent(t: Translate, updateInfo: UpdateInfo, messageKey: string) {
   const releaseDate = formatReleaseDate(updateInfo.releaseDate)
   const releaseNotes = updateInfo.releaseNotes?.trim() || t('update.noReleaseNotes')
@@ -134,8 +160,8 @@ export function showAppUpdateDownloadedModal(t: Translate, updateInfo: UpdateInf
       {statusText && <div style={installStatusStyle}>{statusText}</div>}
       {shouldUseManualMacInstall && (
         <div style={manualInstallNoticeStyle}>
-          macOS 当前采用 DMG 覆盖安装。点击“打开安装包”后，软件会先确认本地安装包可用，再打开 DMG
-          安装窗口并自动退出 Zen AI；请在安装窗口中将 Zen AI 拖入 Applications 覆盖安装。
+          macOS 当前采用 DMG 覆盖安装。点击“打开安装包”后，软件会先确认本地安装包可用，再打开 DMG 安装窗口并自动退出 Zen
+          AI；请在安装窗口中将 Zen AI 拖入 Applications 覆盖安装。
         </div>
       )}
       {renderUpdateContent(t, updateInfo, 'update.message')}
@@ -179,10 +205,10 @@ export function showAppUpdateDownloadedModal(t: Translate, updateInfo: UpdateInf
           return
         }
 
-        const message =
-          typeof result?.message === 'string' && result.message
-            ? result.message
-            : '安装包暂时没有准备好，请重新检查更新，或等待下载完成后再试。'
+        const message = formatInstallFailureMessage(
+          result,
+          '安装包暂时没有准备好，请重新检查更新，或等待下载完成后再试。'
+        )
         window.toast.error(message)
         restoreModal()
         throw new Error(message)
@@ -193,10 +219,10 @@ export function showAppUpdateDownloadedModal(t: Translate, updateInfo: UpdateInf
         return
       }
 
-      const message =
-        typeof result?.message === 'string' && result.message
-          ? result.message
-          : '更新安装包尚未准备好，请重新检查更新，或等待下载完成后再安装。'
+      const message = formatInstallFailureMessage(
+        result,
+        '更新安装包尚未准备好，请重新检查更新，或等待下载完成后再安装。'
+      )
       window.toast.error(message)
       restoreModal()
       throw new Error(message)

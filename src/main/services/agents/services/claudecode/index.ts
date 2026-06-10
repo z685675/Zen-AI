@@ -1405,6 +1405,18 @@ async function buildAssistantContext(): Promise<string> {
     `- Providers (${configuredProviders.length}): ${configuredProviders.join(', ') || 'none configured'}`,
     `- MCP Servers: ${activeMcp.length} active / ${mcpServers.length} total`,
     '',
+    '## Local Paths',
+    "This is the user's real local desktop, not a cloud sandbox.",
+    `- Home: ${app.getPath('home')}`,
+    `- Desktop / 桌面: ${app.getPath('desktop')}`,
+    `- Documents / 文档: ${app.getPath('documents')}`,
+    `- Downloads / 下载: ${app.getPath('downloads')}`,
+    'Never invent or use /mnt/data, C:\\mnt\\data, or paths under C:\\mnt for Desktop/Documents/Downloads.',
+    '',
+    '## Built-in File Output',
+    'For basic MD/TXT/CSV/DOCX/XLSX/PPTX/PDF creation, prefer mcp__assistant__create_file before using Python or external packages.',
+    'Do not write plain text into .docx/.xlsx/.pptx/.pdf files. Verify created files exist before saying the task is complete.',
+    '',
     '## Network',
     ...networkLines
   ].join('\n')

@@ -291,7 +291,26 @@
       "checkFailed": "Environment check failed",
       "description": "Finish repairing the runtime environment first so the smart assistant can work reliably.",
       "refresh": "Check Again",
+      "repairHint": "Bun and UV can be repaired automatically. On Windows, missing Git is installed through winget after confirmation on the repair page.",
       "title": "Assistant environment is not ready"
+    },
+    "errorFallback": {
+      "assistant_name": "Smart Assistant",
+      "connection_title": "The task connection was interrupted",
+      "dependency_description": "This task needs a local runtime component that is not ready yet. Repair the smart assistant environment first, then retry the task for a more stable run.",
+      "dependency_title": "Required runtime is missing",
+      "description": "This task did not finish successfully. Try again first; if it keeps failing, open the details or adjust the model and network settings.",
+      "detail": "View details",
+      "export_failed": "Failed to export diagnostic package. Please try again later.",
+      "export_package": "Export diagnostics",
+      "export_success": "Diagnostic package exported: {{path}}",
+      "fix_environment": "Fix environment",
+      "model_title": "The model could not complete this task",
+      "privacy_notice": "This diagnostic package is used to troubleshoot smart assistant task failures. It may include the current task conversation, error details, local file paths, and runtime environment information. Before sharing it with others, make sure it does not contain private content you do not want to share.",
+      "retry": "Retry task",
+      "retry_missing_user": "The original task could not be found, so it cannot be retried automatically.",
+      "subtitle": "The smart assistant has stopped this task. Unfinished steps will not continue in the background.",
+      "title": "Task not completed"
     },
     "get": {
       "error": {
@@ -1238,7 +1257,8 @@
       "new": {
         "branch": {
           "created": "New Branch Created",
-          "label": "New Branch"
+          "label": "New Branch",
+          "tooltip": "Create a new conversation branch without affecting the original"
         },
         "context": "New Context"
       },
@@ -2426,7 +2446,7 @@
       }
     },
     "mention": {
-      "title": "Switch model answer"
+      "title": "Ask another model too for comparison"
     },
     "message": {
       "code_style": "Code style",
@@ -2520,6 +2540,12 @@
       "abort_failed": "Tool call abort failed",
       "aborted": "Tool call aborted",
       "approvalRequired": "Tool \"{{tool}}\" requires approval",
+      "assistantCreateFile": {
+        "open_file": "Open file",
+        "open_folder": "Reveal in folder",
+        "title": "File created",
+        "verified": "Verified"
+      },
       "autoApproveEnabled": "Auto-approve enabled for this tool",
       "cancelled": "Cancelled",
       "completed": "Completed",
@@ -3144,7 +3170,7 @@
       }
     },
     "canvas_guide_primary": "Describe the image you want below, and I'll generate it for you.",
-    "canvas_guide_secondary": "You can also upload or paste one or more images to keep editing and creating from them.",
+    "canvas_guide_secondary": "You can upload or paste multiple images for image editing.",
     "canvas_upload_action": "Upload Image",
     "composer_continue_hint": "Continuing from this image; the result will be generated separately without overwriting it.",
     "composer_upload_hint": "Editing from the uploaded image; the result will be generated separately.",
@@ -4021,6 +4047,12 @@
       },
       "title": "About",
       "updateAvailable": "Found new version {{version}}",
+      "updateDiagnostics": {
+        "copied": "Update diagnostics copied",
+        "copy": "Copy Diagnostics",
+        "copyFailed": "Failed to copy update diagnostics",
+        "title": "Update Diagnostics"
+      },
       "updateError": "Update error",
       "updateNotAvailable": "You are using the latest version",
       "website": {

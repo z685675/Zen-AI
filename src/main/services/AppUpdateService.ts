@@ -1,13 +1,14 @@
+import { createWriteStream, statSync } from 'node:fs'
+import { mkdir, rename, stat, unlink } from 'node:fs/promises'
+import { request } from 'node:https'
+import path from 'node:path'
+
 import { loggerService } from '@logger'
 import { isMac, isPortable } from '@main/constant'
 import { configManager } from '@main/services/ConfigManager'
 import { APP_NAME, APP_UPDATE_FEED_URL } from '@shared/config/constant'
 import { IpcChannel } from '@shared/IpcChannel'
-import { createWriteStream, statSync } from 'node:fs'
-import { mkdir, rename, stat, unlink } from 'node:fs/promises'
-import { request } from 'node:https'
-import path from 'node:path'
-import { app, autoUpdater as nativeAutoUpdater, shell, type BrowserWindow } from 'electron'
+import { app, autoUpdater as nativeAutoUpdater, type BrowserWindow, shell } from 'electron'
 import type { ProgressInfo, UpdateDownloadedEvent, UpdateInfo } from 'electron-updater'
 import { autoUpdater } from 'electron-updater'
 import semver from 'semver'
@@ -123,7 +124,14 @@ export type AppUpdateInstallResult =
       fallbackToFolder?: boolean
       message?: string
     }
-  | { success: false; status: 'not-downloaded' | 'error'; message: string; updateInfo: AppUpdateInfo | null }
+  | {
+      success: false
+      status: 'not-downloaded' | 'error'
+      message: string
+      updateInfo: AppUpdateInfo | null
+      stage?: 'package-missing' | 'prepare-installer' | 'open-installer' | 'start-installer'
+      installerPath?: string
+    }
 
 export type AppUpdateCheckResult =
   | AppUpdateCheckResultAvailable
@@ -350,7 +358,8 @@ export class AppUpdateService {
     }
 
     if (pendingUpdateInfo) {
-      const hasNewerServerUpdate = this.latestUpdateInfo && this.isNewerUpdate(this.latestUpdateInfo.version, pendingUpdateInfo.version)
+      const hasNewerServerUpdate =
+        this.latestUpdateInfo && this.isNewerUpdate(this.latestUpdateInfo.version, pendingUpdateInfo.version)
       if (hasNewerServerUpdate) {
         logger.info('Downloading newer update instead of using stale pending package', {
           pendingVersion: pendingUpdateInfo.version,
@@ -454,6 +463,7 @@ export class AppUpdateService {
         success: false,
         status: 'not-downloaded',
         message,
+        stage: 'package-missing',
         updateInfo: null
       }
     }
@@ -467,6 +477,7 @@ export class AppUpdateService {
           success: false,
           status: 'error',
           message: readyResult.message,
+          stage: 'prepare-installer',
           updateInfo
         }
       }
@@ -521,6 +532,7 @@ export class AppUpdateService {
           success: false,
           status: 'error',
           message,
+          stage: 'start-installer',
           updateInfo: installUpdateInfo
         }
       }
@@ -539,6 +551,7 @@ export class AppUpdateService {
         success: false,
         status: 'error',
         message,
+        stage: isMac ? 'open-installer' : 'start-installer',
         updateInfo: installUpdateInfo
       }
     }
@@ -1030,7 +1043,10 @@ export class AppUpdateService {
         if (statusCode >= 300 && statusCode < 400 && response.headers.location) {
           file.close(() => {
             void unlink(temporaryPath).catch(() => undefined)
-            this.downloadFile(new URL(response.headers.location!, url).toString(), destinationPath).then(resolve, reject)
+            this.downloadFile(new URL(response.headers.location!, url).toString(), destinationPath).then(
+              resolve,
+              reject
+            )
           })
           return
         }

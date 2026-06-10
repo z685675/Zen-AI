@@ -6,7 +6,7 @@ import { runAsyncFunction } from '@renderer/utils'
 import { showAppUpdateAvailableModal, showAppUpdateDownloadedModal } from '@renderer/utils/appUpdate'
 import { APP_DOWNLOADS_URL, APP_RELEASES_URL, APP_SUPPORT_EMAIL, APP_WEBSITE_URL } from '@shared/config/constant'
 import { Avatar, Button, Row, Tag } from 'antd'
-import { Download, Mail } from 'lucide-react'
+import { ClipboardList, Download, Mail } from 'lucide-react'
 import type { FC } from 'react'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -101,6 +101,35 @@ const AboutSettings: FC = () => {
     return t('settings.about.checkUpdate.label')
   }
 
+  const onCopyUpdateDiagnostics = async () => {
+    const progress = updateState.progress
+      ? `${Math.round(updateState.progress.percent || 0)}% (${updateState.progress.transferred}/${updateState.progress.total} bytes, ${updateState.progress.bytesPerSecond} B/s)`
+      : 'none'
+    const diagnostics = [
+      `App: ${APP_NAME}`,
+      `Current version: ${updateState.currentVersion || version || 'unknown'}`,
+      `Portable: ${isPortable ? 'yes' : 'no'}`,
+      `Update status: ${updateState.status}`,
+      `Update source: ${updateState.source}`,
+      `Auto update enabled: ${updateState.autoUpdateEnabled ? 'yes' : 'no'}`,
+      `Target version: ${updateState.updateInfo?.version || 'none'}`,
+      `Latest version: ${updateState.latestVersion || 'none'}`,
+      `Release date: ${updateState.updateInfo?.releaseDate || 'none'}`,
+      `Progress: ${progress}`,
+      `Message: ${updateState.message || 'none'}`,
+      `Copied at: ${new Date().toISOString()}`
+    ].join('\n')
+
+    try {
+      await navigator.clipboard.writeText(diagnostics)
+      window.toast.success(t('settings.about.updateDiagnostics.copied'))
+    } catch (error) {
+      window.toast.error(
+        `${t('settings.about.updateDiagnostics.copyFailed')}: ${error instanceof Error ? error.message : String(error)}`
+      )
+    }
+  }
+
   return (
     <SettingContainer theme={theme}>
       <SettingGroup theme={theme}>
@@ -141,6 +170,14 @@ const AboutSettings: FC = () => {
           <Button loading={checkingUpdate} onClick={() => void onCheckForUpdate()}>
             {getUpdateButtonLabel()}
           </Button>
+        </SettingRow>
+        <SettingDivider />
+        <SettingRow>
+          <SettingRowTitle>
+            <ClipboardList size={18} />
+            {t('settings.about.updateDiagnostics.title')}
+          </SettingRowTitle>
+          <Button onClick={() => void onCopyUpdateDiagnostics()}>{t('settings.about.updateDiagnostics.copy')}</Button>
         </SettingRow>
         <SettingDivider />
         <SettingRow>

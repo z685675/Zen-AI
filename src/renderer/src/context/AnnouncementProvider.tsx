@@ -1,10 +1,11 @@
+import AnnouncementMarkdown from '@renderer/components/AnnouncementMarkdown'
+import { useNavbarPosition } from '@renderer/hooks/useSettings'
 import { announcementService, type AnnouncementViewItem } from '@renderer/services/AnnouncementService'
 import type { AnnouncementPayload } from '@renderer/types/announcement'
-import { useNavbarPosition } from '@renderer/hooks/useSettings'
 import { Button, Modal, Popover } from 'antd'
 import dayjs from 'dayjs'
 import type { FC, PropsWithChildren } from 'react'
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
+import { createContext, use, useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import styled, { keyframes } from 'styled-components'
 
@@ -22,7 +23,7 @@ const AnnouncementContext = createContext<AnnouncementContextValue>({
   refresh: async () => undefined
 })
 
-export const useAnnouncements = () => useContext(AnnouncementContext)
+export const useAnnouncements = () => use(AnnouncementContext)
 
 const formatTime = (value: string) => dayjs(value).format('YYYY/MM/DD HH:mm')
 
@@ -52,17 +53,13 @@ const AnnouncementModal: FC<{
   ].filter(Boolean)
 
   return (
-    <Modal
-      centered
-      open={Boolean(item)}
-      title={item?.title}
-      width={520}
-      footer={footer}
-      onCancel={onClose}>
+    <Modal centered open={Boolean(item)} title={item?.title} width={520} footer={footer} onCancel={onClose}>
       {item && (
         <ModalContent>
           <ModalTime>{formatTime(item.publishedAt)}</ModalTime>
-          <ModalText>{item.content}</ModalText>
+          <ModalText>
+            <AnnouncementMarkdown content={item.content} />
+          </ModalText>
         </ModalContent>
       )}
     </Modal>
@@ -77,7 +74,9 @@ const UrgentBanner: FC<{ items: AnnouncementViewItem[] }> = ({ items }) => {
       {items.map((item) => (
         <UrgentPopoverItem key={item.id}>
           <UrgentPopoverTitle>{item.title}</UrgentPopoverTitle>
-          <UrgentPopoverText>{item.content}</UrgentPopoverText>
+          <UrgentPopoverText>
+            <AnnouncementMarkdown content={item.content} compact />
+          </UrgentPopoverText>
           {item.link && (
             <UrgentLinkButton type="link" size="small" onClick={() => openAnnouncementLink(item)}>
               {item.link.label || t('announcements.learn_more')}
@@ -121,6 +120,8 @@ export const AnnouncementProvider: FC<PropsWithChildren> = ({ children }) => {
       const nextPayload = await announcementService.fetchPayload()
       if (nextPayload) {
         setPayload(nextPayload)
+      } else {
+        setPayload(null)
       }
     } catch {
       const cachedPayload = announcementService.getCachedPayload()
@@ -166,11 +167,11 @@ export const AnnouncementProvider: FC<PropsWithChildren> = ({ children }) => {
   }, [activePopup])
 
   return (
-    <AnnouncementContext.Provider value={{ announcements, urgentItems, refresh }}>
+    <AnnouncementContext value={{ announcements, urgentItems, refresh }}>
       {children}
       <UrgentBanner items={urgentItems} />
       <AnnouncementModal item={activePopup} onClose={handleClosePopup} />
-    </AnnouncementContext.Provider>
+    </AnnouncementContext>
   )
 }
 
@@ -187,8 +188,6 @@ const ModalTime = styled.div`
 
 const ModalText = styled.div`
   color: var(--color-text-1);
-  line-height: 1.7;
-  white-space: pre-wrap;
   user-select: text;
 `
 
@@ -282,8 +281,6 @@ const UrgentPopoverTitle = styled.div`
 
 const UrgentPopoverText = styled.div`
   color: var(--color-text-2);
-  line-height: 1.6;
-  white-space: pre-wrap;
 `
 
 const UrgentLinkButton = styled(Button)`

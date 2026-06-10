@@ -5,7 +5,7 @@ import { getToolDisplayInfo, getToolStatusLabel } from '@renderer/pages/home/Mes
 import { useAppSelector } from '@renderer/store'
 import { AssistantMessageStatus, type Message, MessageBlockStatus, MessageBlockType } from '@renderer/types/newMessage'
 import { CheckCircle, TriangleAlert } from 'lucide-react'
-import { type FC, useEffect, useMemo, useState } from 'react'
+import { type FC, useEffect, useMemo, useRef, useState } from 'react'
 import styled from 'styled-components'
 
 type Props = {
@@ -25,12 +25,24 @@ const AgentTaskStatusBar: FC<Props> = ({ topicId }) => {
   const messageEntities = useAppSelector((state) => state.messages.entities)
   const blockEntities = useAppSelector((state) => state.messageBlocks.entities)
   const [recentlyCompleted, setRecentlyCompleted] = useState(false)
+  const wasLoadingRef = useRef(false)
+
+  useEffect(() => {
+    wasLoadingRef.current = false
+    setRecentlyCompleted(false)
+  }, [topicId])
 
   useEffect(() => {
     if (loading) {
+      wasLoadingRef.current = true
       setRecentlyCompleted(false)
       return
     }
+
+    if (!wasLoadingRef.current) {
+      return
+    }
+    wasLoadingRef.current = false
 
     if (!messageIds.length) {
       return
@@ -91,7 +103,7 @@ const AgentTaskStatusBar: FC<Props> = ({ topicId }) => {
     return undefined
   }, [blockEntities, loading, messageEntities, messageIds, recentlyCompleted])
 
-  if (!status || (!loading && !recentlyCompleted && status.tone !== 'error')) {
+  if (!status || (!loading && !recentlyCompleted)) {
     return null
   }
 
@@ -157,7 +169,8 @@ const getToolTaskStatus = (block: any): (AgentTaskStatus & { status?: string; do
   const statusLabel = getToolStatusLabel(effectiveStatus, displayInfo, hasError)
 
   if (hasError) {
-    return { label: statusLabel ?? '任务处理失败', tone: 'error', status: effectiveStatus }
+    const dependencyErrorLabel = getDependencyErrorLabel(toolResponse)
+    return { label: dependencyErrorLabel ?? statusLabel ?? '任务处理失败', tone: 'error', status: effectiveStatus }
   }
 
   const tone = effectiveStatus === 'done' ? 'success' : 'running'
@@ -167,6 +180,40 @@ const getToolTaskStatus = (block: any): (AgentTaskStatus & { status?: string; do
     tone,
     status: effectiveStatus
   }
+}
+
+const getDependencyErrorLabel = (toolResponse: any): string | undefined => {
+  const text = [
+    toolResponse?.error,
+    toolResponse?.content,
+    toolResponse?.result,
+    toolResponse?.message,
+    toolResponse?.stderr,
+    toolResponse?.stdout
+  ]
+    .map((value) => {
+      if (!value) return ''
+      return typeof value === 'string' ? value : JSON.stringify(value)
+    })
+    .join('\n')
+    .toLowerCase()
+
+  if (!text) return undefined
+
+  if (
+    text.includes('modulenotfounderror') ||
+    text.includes('no module named') ||
+    text.includes('cannot find module') ||
+    text.includes('command not found') ||
+    text.includes('is not recognized as an internal or external command') ||
+    text.includes('enoent') ||
+    text.includes('git bash') ||
+    text.includes('git not found')
+  ) {
+    return '缺少运行依赖，请先修复智能助手环境'
+  }
+
+  return undefined
 }
 
 const getToneColor = (tone: AgentTaskStatus['tone']) => {

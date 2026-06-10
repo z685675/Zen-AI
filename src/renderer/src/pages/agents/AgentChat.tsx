@@ -221,6 +221,7 @@ const AgentChat = () => {
           </EnvironmentGateIcon>
           <EnvironmentGateTitle>{t('agent.environmentGate.title')}</EnvironmentGateTitle>
           <EnvironmentGateDescription>{t('agent.environmentGate.description')}</EnvironmentGateDescription>
+          <EnvironmentGateHint>{t('agent.environmentGate.repairHint')}</EnvironmentGateHint>
           {environmentError ? (
             <EnvironmentGateError>{environmentError}</EnvironmentGateError>
           ) : (
@@ -671,6 +672,14 @@ const EnvironmentGateDescription = styled.div`
   font-size: 13px;
   line-height: 1.65;
   color: var(--color-text-2);
+`
+
+const EnvironmentGateHint = styled.div`
+  margin-top: 8px;
+  max-width: 420px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--color-text-3);
 `
 
 const EnvironmentGateError = styled.div`

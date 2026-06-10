@@ -33,6 +33,7 @@ import { defaultAppHeaders } from '@shared/utils'
 import { cloneDeep, isEmpty } from 'lodash'
 
 import { createZenTraceId, runClientConnectivityCheck, ZEN_TRACE_HEADER } from '../../utils/clientErrorDiagnosis'
+import { getZenClientHeaders } from '../../utils/zenClientHeaders'
 import type { ProviderConfig } from '../types'
 import { COPILOT_DEFAULT_HEADERS } from './constants'
 import { getAiSdkProviderId } from './factory'
@@ -166,6 +167,7 @@ function buildCommonOptions(ctx: BuilderContext) {
   const options: Record<string, any> = {
     headers: {
       ...defaultAppHeaders(),
+      ...getZenClientHeaders(ctx.baseConfig.baseURL),
       ...ctx.actualProvider.extra_headers
     },
     fetch: withZenTraceFetch()
@@ -229,6 +231,7 @@ async function buildCopilotConfig(ctx: BuilderContext): Promise<ProviderConfig<'
 function buildOllamaConfig(ctx: BuilderContext): ProviderConfig<'ollama'> {
   const headers: ProviderConfig<'ollama'>['providerSettings']['headers'] = {
     ...defaultAppHeaders(),
+    ...getZenClientHeaders(ctx.baseConfig.baseURL),
     ...ctx.actualProvider.extra_headers
   }
   if (!isEmpty(ctx.baseConfig.apiKey)) {
@@ -293,7 +296,11 @@ function buildCherryinConfig(ctx: BuilderContext): ProviderConfig<'cherryin'> {
       endpointType: ctx.model.endpoint_type,
       anthropicBaseURL: cherryinProvider ? cherryinProvider.anthropicApiHost + '/v1' : undefined,
       geminiBaseURL: cherryinProvider ? cherryinProvider.apiHost + '/v1beta' : undefined,
-      headers: { ...defaultAppHeaders(), ...ctx.actualProvider.extra_headers }
+      headers: {
+        ...defaultAppHeaders(),
+        ...getZenClientHeaders(ctx.baseConfig.baseURL),
+        ...ctx.actualProvider.extra_headers
+      }
     }
   }
 }
@@ -305,7 +312,11 @@ async function buildCherryAIConfig(ctx: BuilderContext): Promise<ProviderConfig<
     providerSettings: {
       ...ctx.baseConfig,
       name: ctx.actualProvider.id,
-      headers: { ...defaultAppHeaders(), ...ctx.actualProvider.extra_headers },
+      headers: {
+        ...defaultAppHeaders(),
+        ...getZenClientHeaders(ctx.baseConfig.baseURL),
+        ...ctx.actualProvider.extra_headers
+      },
       fetch: async (input: RequestInfo | URL, init?: RequestInit) => {
         const traceId = createZenTraceId()
         const headers = new Headers(init?.headers)
@@ -359,7 +370,11 @@ function buildAzureConfig(
       providerSettings: {
         ...ctx.baseConfig,
         baseURL: formatAzureBaseURL(ctx.baseConfig.baseURL, true),
-        headers: { ...defaultAppHeaders(), ...ctx.actualProvider.extra_headers }
+        headers: {
+          ...defaultAppHeaders(),
+          ...getZenClientHeaders(ctx.baseConfig.baseURL),
+          ...ctx.actualProvider.extra_headers
+        }
       }
     }
   }
@@ -370,7 +385,11 @@ function buildAzureConfig(
   const providerSettings: ProviderConfig<'azure'>['providerSettings'] = {
     ...ctx.baseConfig,
     baseURL: formatAzureBaseURL(ctx.baseConfig.baseURL, false),
-    headers: { ...defaultAppHeaders(), ...ctx.actualProvider.extra_headers }
+    headers: {
+      ...defaultAppHeaders(),
+      ...getZenClientHeaders(ctx.baseConfig.baseURL),
+      ...ctx.actualProvider.extra_headers
+    }
   }
 
   if (apiVersion) {
@@ -434,7 +453,11 @@ function buildAiHubMixConfig(ctx: BuilderContext): ProviderConfig<'aihubmix'> {
     endpoint: ctx.endpoint,
     providerSettings: {
       ...ctx.baseConfig,
-      headers: { ...defaultAppHeaders(), ...ctx.actualProvider.extra_headers }
+      headers: {
+        ...defaultAppHeaders(),
+        ...getZenClientHeaders(ctx.baseConfig.baseURL),
+        ...ctx.actualProvider.extra_headers
+      }
     }
   }
 }
@@ -460,7 +483,7 @@ function buildNewApiConfig(ctx: BuilderContext): ProviderConfig<'newapi'> {
       ...ctx.baseConfig,
       baseURL,
       endpointType: ctx.model.endpoint_type,
-      headers: { ...defaultAppHeaders(), ...ctx.actualProvider.extra_headers },
+      headers: { ...defaultAppHeaders(), ...getZenClientHeaders(baseURL), ...ctx.actualProvider.extra_headers },
       fetch: withZenTraceFetch()
     }
   }

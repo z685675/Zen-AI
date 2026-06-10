@@ -591,6 +591,7 @@ export type WebDavConfig = {
 
 export type AppInfo = {
   version: string
+  clientId?: string
   isPackaged: boolean
   appPath: string
   configPath: string

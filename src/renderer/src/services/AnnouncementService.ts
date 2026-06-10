@@ -3,6 +3,7 @@ import type { AnnouncementItem, AnnouncementPayload, AnnouncementPlatform } from
 
 const CACHE_KEY = 'announcements.payload.v1'
 const DISMISSED_KEY = 'announcements.dismissed.ids.v1'
+const FEED_GONE_STATUS_CODES = new Set([404, 410])
 
 export type AnnouncementViewItem = AnnouncementItem & {
   publishedAt: string
@@ -130,6 +131,11 @@ export const announcementService = {
       cache: 'no-store'
     })
 
+    if (FEED_GONE_STATUS_CODES.has(response.status)) {
+      this.clearCachedPayload()
+      return null
+    }
+
     if (!response.ok) {
       throw new Error(`Announcement feed failed: ${response.status}`)
     }
@@ -154,6 +160,10 @@ export const announcementService = {
 
   saveCachedPayload(payload: AnnouncementPayload): void {
     localStorage.setItem(CACHE_KEY, JSON.stringify(payload))
+  },
+
+  clearCachedPayload(): void {
+    localStorage.removeItem(CACHE_KEY)
   },
 
   getDismissedIds(): string[] {

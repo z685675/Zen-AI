@@ -16,6 +16,7 @@ import {
 } from '@renderer/store/toolPermissions'
 import { checkDataLimit } from '@renderer/utils'
 import { sendToolApprovalNotification } from '@renderer/utils/userConfirmation'
+import { cacheZenClientInfo } from '@renderer/utils/zenClientHeaders'
 import { defaultLanguage } from '@shared/config/constant'
 import { IpcChannel } from '@shared/IpcChannel'
 import { useLiveQuery } from 'dexie-react-hooks'
@@ -124,6 +125,7 @@ export function useAppInit() {
   useEffect(() => {
     // set files path
     void window.api.getAppInfo().then((info) => {
+      cacheZenClientInfo(info)
       dispatch(setFilesPath(info.filesPath))
       dispatch(setResourcesPath(info.resourcesPath))
     })

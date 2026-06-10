@@ -1,3 +1,4 @@
+import AnnouncementMarkdown from '@renderer/components/AnnouncementMarkdown'
 import { Navbar, NavbarCenter } from '@renderer/components/app/Navbar'
 import { useAnnouncements } from '@renderer/context/AnnouncementProvider'
 import { Button, Empty } from 'antd'
@@ -43,7 +44,9 @@ const AnnouncementsPage: FC = () => {
                   <CardTitle>{item.title}</CardTitle>
                   <CardTime>{dayjs(item.publishedAt).format('YYYY/MM/DD HH:mm')}</CardTime>
                 </CardHeader>
-                <CardContent>{item.content}</CardContent>
+                <CardContent>
+                  <AnnouncementMarkdown content={item.content} />
+                </CardContent>
                 {item.link && (
                   <CardAction>
                     <Button size="small" onClick={() => openLink(item.link!.url)}>
@@ -140,8 +143,6 @@ const CardTime = styled.div`
 const CardContent = styled.div`
   margin-top: 12px;
   color: var(--color-text-2);
-  line-height: 1.7;
-  white-space: pre-wrap;
   user-select: text;
 `
 

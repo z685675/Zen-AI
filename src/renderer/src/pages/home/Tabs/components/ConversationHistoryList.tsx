@@ -1,5 +1,4 @@
 import AddButton from '@renderer/components/AddButton'
-import AssistantAvatar from '@renderer/components/Avatar/AssistantAvatar'
 import { Sortable } from '@renderer/components/dnd'
 import { CopyIcon, DeleteIcon, EditIcon } from '@renderer/components/Icons'
 import ObsidianExportPopup from '@renderer/components/Popups/ObsidianExportPopup'
@@ -7,7 +6,6 @@ import PromptPopup from '@renderer/components/Popups/PromptPopup'
 import SaveToKnowledgePopup from '@renderer/components/Popups/SaveToKnowledgePopup'
 import Scrollbar from '@renderer/components/Scrollbar'
 import { isMac } from '@renderer/config/constant'
-import { db } from '@renderer/databases'
 import { useAssistants } from '@renderer/hooks/useAssistant'
 import { useNotesSettings } from '@renderer/hooks/useNotesSettings'
 import { modelGenerating } from '@renderer/hooks/useRuntime'
@@ -21,7 +19,6 @@ import RecycleBinService, {
 } from '@renderer/services/RecycleBinService'
 import { useAppDispatch, useAppSelector } from '@renderer/store'
 import {
-  addTopic as addTopicAction,
   createConversationFolder,
   moveTopicToConversationFolder,
   removeTopic as removeTopicAction,
@@ -541,41 +538,6 @@ const ConversationHistoryList: FC<Props> = ({ activeTopic, setActiveTopic, onCre
     [dispatch, getAssistantByTopic, patchTopic, pinTopicsToTop]
   )
 
-  const onMoveTopic = useCallback(
-    async (topic: Topic, toAssistant: Assistant) => {
-      const fromAssistant = getAssistantByTopic(topic)
-      if (!fromAssistant) {
-        return
-      }
-
-      const nextActiveTopic = sortedTopics.find((item) => item.id !== topic.id) || null
-      if (topic.id === activeTopic?.id && nextActiveTopic) {
-        setActiveTopic(nextActiveTopic)
-      }
-
-      if (topic.id === activeTopic?.id && !nextActiveTopic) {
-        onCreateConversation()
-      }
-
-      await modelGenerating()
-      dispatch(addTopicAction({ assistantId: toAssistant.id, topic: { ...topic, assistantId: toAssistant.id } }))
-      dispatch(removeTopicAction({ assistantId: fromAssistant.id, topic }))
-
-      await db.topics
-        .where('id')
-        .equals(topic.id)
-        .modify((dbTopic) => {
-          if (dbTopic.messages) {
-            dbTopic.messages = dbTopic.messages.map((message) => ({
-              ...message,
-              assistantId: toAssistant.id
-            }))
-          }
-        })
-    },
-    [activeTopic?.id, dispatch, getAssistantByTopic, onCreateConversation, setActiveTopic, sortedTopics]
-  )
-
   const buildMenuItems = useCallback(
     (topic: Topic): MenuProps['items'] => {
       const assistant = getAssistantByTopic(topic)
@@ -831,23 +793,6 @@ const ConversationHistoryList: FC<Props> = ({ activeTopic, setActiveTopic, onCre
         }
       ]
 
-      if (assistants.length > 1) {
-        menus.push({
-          label: t('chat.topics.move_to'),
-          key: 'move',
-          icon: <FolderOpen size={14} />,
-          popupClassName: 'move-to-submenu',
-          children: assistants
-            .filter((item) => item.id !== assistant.id)
-            .map((item) => ({
-              label: item.name,
-              key: item.id,
-              icon: <AssistantAvatar assistant={item} size={18} />,
-              onClick: () => void onMoveTopic(topic, item)
-            }))
-        })
-      }
-
       if (!topic.pinned) {
         menus.push({ type: 'divider' })
         menus.push({
@@ -862,7 +807,6 @@ const ConversationHistoryList: FC<Props> = ({ activeTopic, setActiveTopic, onCre
       return menus
     },
     [
-      assistants,
       conversationFolders,
       exportMenuOptions.docx,
       exportMenuOptions.image,
@@ -878,7 +822,6 @@ const ConversationHistoryList: FC<Props> = ({ activeTopic, setActiveTopic, onCre
       handleMoveTopicIntoFolder,
       notesPath,
       onClearMessages,
-      onMoveTopic,
       onPinTopic,
       patchTopic,
       topicFolderMap,

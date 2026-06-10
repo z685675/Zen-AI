@@ -1,10 +1,9 @@
-import AssistantAvatar from '@renderer/components/Avatar/AssistantAvatar'
 import { modelGenerating } from '@renderer/hooks/useRuntime'
 import { TopicManager } from '@renderer/hooks/useTopic'
 import type { Assistant, Topic } from '@renderer/types'
 import { cn } from '@renderer/utils'
-import { Dropdown, Tooltip } from 'antd'
-import { CheckSquare, FolderOpen, Search, Square, Trash2, XIcon } from 'lucide-react'
+import { Tooltip } from 'antd'
+import { CheckSquare, Search, Square, Trash2, XIcon } from 'lucide-react'
 import type { FC, PropsWithChildren, Ref } from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -66,11 +65,9 @@ export function useTopicManageMode(): TopicManageModeState {
 
 interface TopicManagePanelProps {
   assistant: Assistant
-  assistants: Assistant[]
   activeTopic: Topic
   setActiveTopic: (topic: Topic) => void
   updateTopics: (topics: Topic[]) => void
-  moveTopic: (topic: Topic, toAssistant: Assistant) => void
   manageState: TopicManageModeState
   filteredTopics: Topic[]
 }
@@ -80,11 +77,9 @@ interface TopicManagePanelProps {
  */
 export const TopicManagePanel: React.FC<TopicManagePanelProps> = ({
   assistant,
-  assistants,
   activeTopic,
   setActiveTopic,
   updateTopics,
-  moveTopic,
   manageState,
   filteredTopics
 }) => {
@@ -103,9 +98,6 @@ export const TopicManagePanel: React.FC<TopicManagePanelProps> = ({
   const isAllSelected = useMemo(() => {
     return selectableTopics.length > 0 && selectableTopics.every((topic) => selectedIds.has(topic.id))
   }, [selectableTopics, selectedIds])
-
-  // Other assistants for move operation
-  const otherAssistants = useMemo(() => assistants.filter((a) => a.id !== assistant.id), [assistants, assistant.id])
 
   // Handle select all / deselect all
   const handleSelectAll = useCallback(() => {
@@ -175,42 +167,6 @@ export const TopicManagePanel: React.FC<TopicManagePanelProps> = ({
     }
     exitManageMode()
   }, [selectedIds, assistant.topics, activeTopic.id, setActiveTopic, t, exitManageMode, updateTopics])
-
-  // Handle move selected topics to another assistant
-  const handleMoveSelected = useCallback(
-    async (targetAssistantId: string) => {
-      if (selectedIds.size === 0) return
-
-      const targetAssistant = assistants.find((a) => a.id === targetAssistantId)
-      if (!targetAssistant) return
-
-      const remainingTopics = assistant.topics.filter((topic) => !selectedIds.has(topic.id))
-      const nextActiveTopic = remainingTopics[0]
-      if (!nextActiveTopic) {
-        window.toast.error(t('chat.topics.manage.error.at_least_one'))
-        return
-      }
-
-      await modelGenerating()
-
-      const movedCount = selectedIds.size
-      for (const id of selectedIds) {
-        const topic = assistant.topics.find((t) => t.id === id)
-        if (topic) {
-          moveTopic(topic, targetAssistant)
-        }
-      }
-
-      // Switch to first remaining topic if current topic was moved
-      if (selectedIds.has(activeTopic.id)) {
-        setActiveTopic(nextActiveTopic)
-      }
-
-      window.toast.success(t('chat.topics.manage.move.success', { count: movedCount }))
-      exitManageMode()
-    },
-    [selectedIds, assistant.topics, assistants, moveTopic, activeTopic.id, setActiveTopic, t, exitManageMode]
-  )
 
   // Enter search mode
   const enterSearchMode = useCallback(() => {
@@ -308,26 +264,6 @@ export const TopicManagePanel: React.FC<TopicManagePanelProps> = ({
               <Search size={16} />
             </ManageIconButton>
           </Tooltip>
-          {otherAssistants.length > 0 && (
-            <Dropdown
-              menu={{
-                items: otherAssistants.map((a) => ({
-                  key: a.id,
-                  label: a.name,
-                  icon: <AssistantAvatar assistant={a} size={18} />,
-                  onClick: () => handleMoveSelected(a.id),
-                  disabled: selectedIds.size === 0
-                }))
-              }}
-              trigger={['click']}
-              disabled={selectedIds.size === 0}>
-              <Tooltip title={t('chat.topics.move_to')}>
-                <ManageIconButton disabled={selectedIds.size === 0}>
-                  <FolderOpen size={16} />
-                </ManageIconButton>
-              </Tooltip>
-            </Dropdown>
-          )}
           <Tooltip title={t('common.delete')}>
             <ManageIconButton danger onClick={handleDeleteSelected} disabled={selectedIds.size === 0}>
               <Trash2 size={16} />

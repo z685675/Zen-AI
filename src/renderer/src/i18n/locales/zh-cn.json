@@ -291,7 +291,26 @@
       "checkFailed": "环境检测失败",
       "description": "需要先完成运行环境修复后，才能稳定使用智能助手。",
       "refresh": "重新检测",
+      "repairHint": "Bun、UV 会自动修复；Windows 缺少 Git 时，会在修复页确认后通过 winget 安装 Git for Windows。",
       "title": "智能助手环境未准备好"
+    },
+    "errorFallback": {
+      "assistant_name": "智能助手",
+      "connection_title": "任务连接中断了",
+      "dependency_description": "这次任务需要的本地运行环境还没准备好。先修复智能助手环境后，再重试这次任务会更稳定。",
+      "dependency_title": "缺少必要运行环境",
+      "description": "这次任务没有顺利完成。你可以先重试一次，如果连续失败，再查看详情或调整模型与网络设置。",
+      "detail": "查看详情",
+      "export_failed": "诊断包导出失败，请稍后重试",
+      "export_package": "导出诊断包",
+      "export_success": "诊断包已导出：{{path}}",
+      "fix_environment": "修复环境",
+      "model_title": "模型暂时无法完成任务",
+      "privacy_notice": "这个诊断包用于排查智能助手任务失败原因，可能包含当前任务的对话内容、错误详情、本地文件路径和运行环境信息。发送给他人前，请先确认其中没有你不希望分享的隐私内容。",
+      "retry": "重试任务",
+      "retry_missing_user": "找不到原始任务，无法自动重试",
+      "subtitle": "智能助手已停止本次任务，未完成的步骤不会继续执行",
+      "title": "任务没有完成"
     },
     "get": {
       "error": {
@@ -1238,7 +1257,8 @@
       "new": {
         "branch": {
           "created": "新分支已创建",
-          "label": "分支"
+          "label": "分支",
+          "tooltip": "创建新对话分支，原对话不受影响"
         },
         "context": "清除上下文"
       },
@@ -2426,7 +2446,7 @@
       }
     },
     "mention": {
-      "title": "切换模型回答"
+      "title": "让其他模型也回答，方便对比"
     },
     "message": {
       "code_style": "代码风格",
@@ -2520,6 +2540,12 @@
       "abort_failed": "工具调用中断失败",
       "aborted": "工具调用已中断",
       "approvalRequired": "工具 \"{{tool}}\" 需要审批",
+      "assistantCreateFile": {
+        "open_file": "打开文件",
+        "open_folder": "打开所在文件夹",
+        "title": "文件已创建",
+        "verified": "已验证"
+      },
       "autoApproveEnabled": "此工具已启用自动批准",
       "cancelled": "已取消",
       "completed": "已完成",
@@ -3144,7 +3170,7 @@
       }
     },
     "canvas_guide_primary": "请在下方输入你想要的图片内容，我来帮你生成。",
-    "canvas_guide_secondary": "也可以上传或粘贴一张或多张图片，在原图基础上继续修改和创作。",
+    "canvas_guide_secondary": "支持上传或粘贴多张图片进行二次编辑。",
     "canvas_upload_action": "上传图片",
     "composer_continue_hint": "基于当前图片继续创作，新结果会单独生成，不会覆盖原图。",
     "composer_upload_hint": "正在基于上传图片编辑，结果会单独生成。",
@@ -4021,6 +4047,12 @@
       },
       "title": "关于我们",
       "updateAvailable": "发现新版本 {{version}}",
+      "updateDiagnostics": {
+        "copied": "更新诊断信息已复制",
+        "copy": "复制诊断信息",
+        "copyFailed": "复制更新诊断信息失败",
+        "title": "更新诊断信息"
+      },
       "updateError": "更新出错",
       "updateNotAvailable": "你的软件已是最新版本",
       "website": {

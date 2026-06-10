@@ -27,6 +27,7 @@ import { translateText } from '@renderer/services/TranslateService'
 import type { FileMetadata, PaintingAction } from '@renderer/types'
 import { uuid } from '@renderer/utils'
 import { getFriendlyPaintingErrorMessage } from '@renderer/utils/friendlyError'
+import { getZenClientHeaders } from '@renderer/utils/zenClientHeaders'
 import { Button, Empty, InputNumber, Select, Upload } from 'antd'
 import TextArea from 'antd/es/input/TextArea'
 import type { FC } from 'react'
@@ -111,7 +112,10 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
   const { autoTranslateWithSpace } = useSettings()
   const textareaRef = useRef<any>(null)
   const spaceClickTimer = useRef<NodeJS.Timeout>(null)
-  const selectableProviders = useMemo(() => providers.filter((provider) => Options.includes(provider.id)), [Options, providers])
+  const selectableProviders = useMemo(
+    () => providers.filter((provider) => Options.includes(provider.id)),
+    [Options, providers]
+  )
   const newApiProvider = selectableProviders.find((p) => p.id === routeName) || selectableProviders[0]
   const providerId = newApiProvider?.id ?? ''
   const providerModels = useMemo(() => newApiProvider?.models ?? [], [newApiProvider?.models])
@@ -152,7 +156,11 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
   const resolveAvailableModel = useCallback(
     (...candidates: Array<string | undefined>) => {
       const modelIds = new Set(modelOptions.map((model) => model.value))
-      return candidates.find((modelId): modelId is string => Boolean(modelId && modelIds.has(modelId))) || modelOptions[0]?.value || ''
+      return (
+        candidates.find((modelId): modelId is string => Boolean(modelId && modelIds.has(modelId))) ||
+        modelOptions[0]?.value ||
+        ''
+      )
     },
     [modelOptions]
   )
@@ -369,20 +377,24 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
 
   const getClipboardImageFiles = (clipboardData: DataTransfer) => {
     const files = Array.from(clipboardData.files).filter((file) => file.type.startsWith('image/'))
-    const itemFiles = Array.from(clipboardData.items)
+
+    if (files.length > 0) {
+      return files
+    }
+
+    const seen = new Set<string>()
+    return Array.from(clipboardData.items)
       .filter((item) => item.kind === 'file' && item.type.startsWith('image/'))
       .map((item) => item.getAsFile())
       .filter((file): file is File => Boolean(file))
-
-    const seen = new Set<string>()
-    return [...files, ...itemFiles].filter((file) => {
-      const key = `${file.name}-${file.size}-${file.lastModified}`
-      if (seen.has(key)) {
-        return false
-      }
-      seen.add(key)
-      return true
-    })
+      .filter((file) => {
+        const key = `${file.type}-${file.size}`
+        if (seen.has(key)) {
+          return false
+        }
+        seen.add(key)
+        return true
+      })
   }
 
   const handleShowAddModelPopup = () => {
@@ -528,7 +540,8 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
 
     let body: string | FormData = ''
     const headers: Record<string, string> = {
-      Authorization: `Bearer ${ai.getApiKey()}`
+      Authorization: `Bearer ${ai.getApiKey()}`,
+      ...getZenClientHeaders(providerApiHost)
     }
     let generationUrl = providerApiHost.replace(/\/v1$/, '') + `/v1/images/generations`
     let editUrl = providerApiHost.replace(/\/v1$/, '') + `/v1/images/edits`

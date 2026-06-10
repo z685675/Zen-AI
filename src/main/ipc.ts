@@ -137,6 +137,7 @@ export async function registerIpc(mainWindow: BrowserWindow, app: Electron.App) 
 
   ipcMain.handle(IpcChannel.App_Info, () => ({
     version: app.getVersion(),
+    clientId: configManager.getClientId(),
     isPackaged: app.isPackaged,
     appPath: app.getAppPath(),
     filesPath: getFilesDir(),
@@ -603,6 +604,7 @@ export async function registerIpc(mainWindow: BrowserWindow, app: Electron.App) 
   ipcMain.handle(IpcChannel.File_Open, fileManager.open.bind(fileManager))
   ipcMain.handle(IpcChannel.File_OpenPath, fileManager.openPath.bind(fileManager))
   ipcMain.handle(IpcChannel.File_Save, fileManager.save.bind(fileManager))
+  ipcMain.handle(IpcChannel.File_SaveDiagnosticPackage, fileManager.saveDiagnosticPackage.bind(fileManager))
   ipcMain.handle(IpcChannel.File_Select, fileManager.selectFile.bind(fileManager))
   ipcMain.handle(IpcChannel.File_Upload, fileManager.uploadFile.bind(fileManager))
   ipcMain.handle(IpcChannel.File_Clear, fileManager.clear.bind(fileManager))

@@ -48,6 +48,12 @@ export const normalizeSyncedModel = (provider: Provider, model: Model): Model =>
   return processedModel
 }
 
+const mergeExistingModelMetadata = (existingModel: Model, remoteModel: Model): Model => ({
+  ...remoteModel,
+  endpoint_type: remoteModel.endpoint_type ?? existingModel.endpoint_type,
+  supported_endpoint_types: remoteModel.supported_endpoint_types ?? existingModel.supported_endpoint_types
+})
+
 export const mergeSyncedProviderModels = (
   provider: Provider,
   fetchedModels: Model[],
@@ -86,7 +92,10 @@ export const mergeSyncedProviderModels = (
 
       return nextRemoteIds.has(model.id)
     })
-    .map((model) => remoteModelById.get(model.id) ?? model)
+    .map((model) => {
+      const remoteModel = remoteModelById.get(model.id)
+      return remoteModel ? mergeExistingModelMetadata(model, remoteModel) : model
+    })
 
   const mergedModels = uniqBy([...keptExistingModels, ...remoteModels], 'id')
 

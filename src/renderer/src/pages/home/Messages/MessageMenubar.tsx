@@ -122,6 +122,7 @@ type MessageMenubarButtonContext = {
   onCopy: (e: React.MouseEvent) => void
   onEdit: () => void | Promise<void>
   onMentionModel: (e: React.MouseEvent) => void | Promise<void>
+  onNewBranch: (e?: React.MouseEvent) => void | Promise<void>
   onRegenerate: (e?: React.MouseEvent) => void | Promise<void>
   onUseful: (e: React.MouseEvent) => void
   removeMessageBlock: MessageOperationsHandlers['removeMessageBlock']
@@ -212,10 +213,14 @@ const MessageMenubar: FC<Props> = (props) => {
     [message, setCopied, t] // message is needed for message.id and as a fallback. t is for translation.
   )
 
-  const onNewBranch = useCallback(async () => {
-    void EventEmitter.emit(EVENT_NAMES.NEW_BRANCH, index)
-    window.toast.success(t('chat.message.new.branch.created'))
-  }, [index, t])
+  const onNewBranch = useCallback(
+    async (e?: React.MouseEvent) => {
+      e?.stopPropagation?.()
+      void EventEmitter.emit(EVENT_NAMES.NEW_BRANCH, index)
+      window.toast.success(t('chat.message.new.branch.created'))
+    },
+    [index, t]
+  )
 
   const handleResendUserMessage = useCallback(
     async (messageUpdate?: Message) => {
@@ -310,12 +315,6 @@ const MessageMenubar: FC<Props> = (props) => {
           ]
         : []),
       {
-        label: t('chat.message.new.branch.label'),
-        key: 'new-branch',
-        icon: <Split size={15} />,
-        onClick: onNewBranch
-      },
-      {
         label: t('chat.multiple.select.label'),
         key: 'multi-select',
         icon: <ListChecks size={15} />,
@@ -323,6 +322,20 @@ const MessageMenubar: FC<Props> = (props) => {
           toggleMultiSelectMode(true)
         }
       },
+      ...(isAssistantMessage
+        ? [
+            {
+              label: t('notes.save'),
+              key: 'notes',
+              icon: <NotebookPen size={15} />,
+              onClick: async () => {
+                const title = await getMessageTitle(message)
+                const markdown = messageToMarkdown(message)
+                void exportMessageToNotes(title, markdown, notesPath)
+              }
+            }
+          ]
+        : []),
       {
         label: t('chat.save.label'),
         key: 'save',
@@ -474,11 +487,12 @@ const MessageMenubar: FC<Props> = (props) => {
     exportMenuOptions.siyuan,
     exportMenuOptions.yuque,
     isEditable,
+    isAssistantMessage,
     mainTextContent,
     message,
     messageContainerRef,
+    notesPath,
     onEdit,
-    onNewBranch,
     t,
     toggleMultiSelectMode,
     topic.name
@@ -579,6 +593,7 @@ const MessageMenubar: FC<Props> = (props) => {
     onCopy,
     onEdit,
     onMentionModel,
+    onNewBranch,
     onRegenerate,
     onUseful,
     removeMessageBlock,
@@ -879,6 +894,19 @@ const buttonRenderers: Record<MessageMenubarButtonId, MessageMenubarButtonRender
           </ActionButton>
         </Tooltip>
       </Dropdown>
+    )
+  },
+  'new-branch': ({ isAssistantMessage, onNewBranch, softHoverBg, t }) => {
+    if (!isAssistantMessage) {
+      return null
+    }
+
+    return (
+      <Tooltip title={t('chat.message.new.branch.tooltip')} mouseEnterDelay={0.8}>
+        <ActionButton className="message-action-button" onClick={onNewBranch} $softHoverBg={softHoverBg}>
+          <Split size={15} />
+        </ActionButton>
+      </Tooltip>
     )
   },
   useful: ({ isAssistantMessage, isGrouped, onUseful, softHoverBg, message, t }) => {

@@ -198,6 +198,7 @@ export enum IpcChannel {
   File_Open = 'file:open',
   File_OpenPath = 'file:openPath',
   File_Save = 'file:save',
+  File_SaveDiagnosticPackage = 'file:saveDiagnosticPackage',
   File_Select = 'file:select',
   File_Upload = 'file:upload',
   File_Clear = 'file:clear',

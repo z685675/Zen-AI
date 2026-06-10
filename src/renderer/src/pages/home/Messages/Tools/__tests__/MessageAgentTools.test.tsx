@@ -4,6 +4,7 @@ import { parse as parsePartialJson } from 'partial-json'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { isValidAgentToolsType, MessageAgentTools } from '../MessageAgentTools'
+import { parseAssistantCreateFileResult } from '../MessageAgentTools/AssistantCreateFileTool'
 
 vi.mock('@renderer/services/AssistantService', () => ({
   getDefaultAssistant: vi.fn(() => ({
@@ -150,6 +151,10 @@ describe('MessageAgentTools', () => {
     'message.tools.labels.notebookEdit': 'NotebookEdit',
     'message.tools.labels.mcpServerTool': 'MCP Server Tool',
     'message.tools.labels.tool': 'Tool',
+    'message.tools.assistantCreateFile.open_file': 'Open file',
+    'message.tools.assistantCreateFile.open_folder': 'Reveal in folder',
+    'message.tools.assistantCreateFile.title': 'File created',
+    'message.tools.assistantCreateFile.verified': 'Verified',
     'message.tools.sections.command': 'Command',
     'message.tools.sections.output': 'Output',
     'message.tools.sections.prompt': 'Prompt',
@@ -365,6 +370,61 @@ describe('MessageAgentTools', () => {
       // Command should be visible in the dedicated renderer (ANSI colorizer splits tokens across spans)
       const container = screen.getByTestId('collapse-content-Bash')
       expect(container.textContent).toContain('npm install')
+    })
+  })
+
+  describe('Assistant create_file result', () => {
+    it('should parse JSON string tool output', () => {
+      const result = parseAssistantCreateFileResult(
+        JSON.stringify({
+          status: 'created',
+          path: 'C:\\Users\\tester\\Desktop\\report.docx',
+          format: 'docx',
+          size: 128,
+          verified: true
+        })
+      )
+
+      expect(result).toEqual({
+        status: 'created',
+        path: 'C:\\Users\\tester\\Desktop\\report.docx',
+        format: 'docx',
+        size: 128,
+        verified: true
+      })
+    })
+
+    it('should render dedicated file card for assistant create_file tool output', () => {
+      const toolResponse = createToolResponse({
+        tool: {
+          id: 'mcp__assistant__create_file',
+          name: 'mcp__assistant__create_file',
+          description: 'Create file',
+          type: 'provider'
+        },
+        status: 'done',
+        response: {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({
+                status: 'created',
+                path: 'C:\\Users\\tester\\Desktop\\report.docx',
+                format: 'docx',
+                size: 128,
+                verified: true
+              })
+            }
+          ]
+        }
+      })
+
+      render(<MessageAgentTools toolResponse={toolResponse} />)
+
+      expect(screen.getByText('File created')).toBeInTheDocument()
+      expect(screen.getByText('report.docx')).toBeInTheDocument()
+      expect(screen.getByText('Open file')).toBeInTheDocument()
+      expect(screen.getByText('Reveal in folder')).toBeInTheDocument()
     })
   })
 })

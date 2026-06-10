@@ -100,6 +100,52 @@ describe('ProviderModelSyncUtils', () => {
       expect(nextProvider.models.map((model) => model.id)).toEqual(['existing-model', 'remote-a'])
       expect(nextProvider.modelSync?.remoteModelIds).toEqual(['remote-a'])
     })
+
+    it('preserves manually configured endpoint type when synced model has no endpoint metadata', () => {
+      const provider = createProvider({
+        models: [
+          createModel('image-model', {
+            endpoint_type: 'image-generation'
+          })
+        ],
+        modelSync: {
+          remoteModelIds: ['image-model'],
+          syncedAt: 100
+        }
+      })
+
+      const nextProvider = mergeSyncedProviderModels(provider, [createModel('image-model')], { syncedAt: 200 })
+
+      const syncedModel = nextProvider.models.find((model) => model.id === 'image-model')
+      expect(syncedModel?.endpoint_type).toBe('image-generation')
+    })
+
+    it('uses remote endpoint metadata when the provider returns supported endpoint types', () => {
+      const provider = createProvider({
+        models: [
+          createModel('remote-a', {
+            endpoint_type: 'image-generation'
+          })
+        ],
+        modelSync: {
+          remoteModelIds: ['remote-a'],
+          syncedAt: 100
+        }
+      })
+
+      const nextProvider = mergeSyncedProviderModels(
+        provider,
+        [
+          createModel('remote-a', {
+            supported_endpoint_types: ['openai-response']
+          })
+        ],
+        { syncedAt: 200 }
+      )
+
+      const syncedModel = nextProvider.models.find((model) => model.id === 'remote-a')
+      expect(syncedModel?.endpoint_type).toBe('openai-response')
+    })
   })
 
   describe('getProviderModelSyncFingerprint', () => {
