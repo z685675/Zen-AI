@@ -5,12 +5,17 @@ import { Button, Empty } from 'antd'
 import dayjs from 'dayjs'
 import { Megaphone } from 'lucide-react'
 import type { FC } from 'react'
+import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import styled from 'styled-components'
 
 const AnnouncementsPage: FC = () => {
   const { t } = useTranslation()
-  const { announcements } = useAnnouncements()
+  const { announcements, markAnnouncementsRead } = useAnnouncements()
+
+  useEffect(() => {
+    markAnnouncementsRead()
+  }, [markAnnouncementsRead])
 
   const openLink = (url: string) => {
     void window.api.openWebsite(url)

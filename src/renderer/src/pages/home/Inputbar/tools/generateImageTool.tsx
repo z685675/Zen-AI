@@ -19,7 +19,7 @@ const generateImageTool = defineTool({
   key: 'generate_image',
   label: (t) => t('chat.input.generate_image'),
   visibleInScopes: [TopicType.Chat],
-  condition: ({ model }) => isGenerateImageModel(model),
+  condition: ({ model }) => Boolean(model && isGenerateImageModel(model)),
   render: (context) => <GenerateImageTool context={context} />
 })
 

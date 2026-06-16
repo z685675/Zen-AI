@@ -29,10 +29,14 @@ export function isEmbeddingModel(model: Model): boolean {
   return EMBEDDING_REGEX.test(modelId) || false
 }
 
-export function isRerankModel(model: Model): boolean {
+export function isRerankModel(model?: Model): boolean {
+  if (!model) {
+    return false
+  }
+
   if (isUserSelectedModelType(model, 'rerank') !== undefined) {
     return isUserSelectedModelType(model, 'rerank')!
   }
   const modelId = getLowerBaseModelName(model.id)
-  return model ? RERANKING_REGEX.test(modelId) || false : false
+  return RERANKING_REGEX.test(modelId) || false
 }

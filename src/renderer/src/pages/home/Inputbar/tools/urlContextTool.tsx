@@ -10,6 +10,10 @@ const urlContextTool = defineTool({
   label: (t) => t('chat.input.url_context'),
   visibleInScopes: [TopicType.Chat],
   condition: ({ model }) => {
+    if (!model) {
+      return false
+    }
+
     const provider = getProviderByModel(model)
     return (
       !!provider &&

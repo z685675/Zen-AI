@@ -67,7 +67,7 @@ interface Props {
 const AssistantSettingsTab = (props: Props) => {
   const { assistant } = useAssistant(props.assistant.id)
   const model = assistant.model || getDefaultModel()
-  const { provider } = useProvider(model.provider)
+  const { provider } = useProvider(model?.provider)
 
   const { messageStyle, fontSize, language } = useSettings()
   const { theme } = useTheme()
@@ -139,16 +139,17 @@ const AssistantSettingsTab = (props: Props) => {
   )
 
   const showOpenAiSettings =
-    isOpenAICompatibleProvider(provider) ||
-    isOpenAIModel(model) ||
-    isSupportServiceTierProvider(provider) ||
-    (isSupportVerbosityModel(model) && isSupportVerbosityProvider(provider))
+    Boolean(model) &&
+    (isOpenAICompatibleProvider(provider) ||
+      isOpenAIModel(model) ||
+      isSupportServiceTierProvider(provider) ||
+      (isSupportVerbosityModel(model) && isSupportVerbosityProvider(provider)))
 
   return (
     <Container className="settings-tab">
       {showOpenAiSettings && (
         <OpenAISettingsGroup
-          model={model}
+          model={model!}
           providerId={provider.id}
           SettingGroup={SettingGroup}
           SettingRowTitleSmall={SettingRowTitleSmall}

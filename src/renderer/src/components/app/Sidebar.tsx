@@ -1,7 +1,12 @@
 import EmojiAvatar from '@renderer/components/Avatar/EmojiAvatar'
 import { isMac } from '@renderer/config/constant'
 import { UserAvatar } from '@renderer/config/env'
-import { DEFAULT_DISABLED_SIDEBAR_ICONS, DEFAULT_SIDEBAR_ICONS, getAvailableSidebarIcons } from '@renderer/config/sidebar'
+import {
+  DEFAULT_DISABLED_SIDEBAR_ICONS,
+  DEFAULT_SIDEBAR_ICONS,
+  getAvailableSidebarIcons
+} from '@renderer/config/sidebar'
+import { useAnnouncements } from '@renderer/context/AnnouncementProvider'
 import { useTheme } from '@renderer/context/ThemeProvider'
 import useAvatar from '@renderer/hooks/useAvatar'
 import { useFullscreen } from '@renderer/hooks/useFullscreen'
@@ -70,6 +75,7 @@ const Sidebar: FC = () => {
   const { theme } = useTheme()
   const avatar = useAvatar()
   const { t } = useTranslation()
+  const { unreadCount } = useAnnouncements()
 
   const onEditUser = () => UserPopup.show()
 
@@ -140,7 +146,10 @@ const Sidebar: FC = () => {
               await to('/announcements')
             }}
             theme={theme}>
-            <Megaphone size={18} className="icon" />
+            <AnnouncementIconWrap>
+              <Megaphone size={18} className="icon" />
+              {unreadCount > 0 && <AnnouncementBadge>{Math.min(unreadCount, 9)}</AnnouncementBadge>}
+            </AnnouncementIconWrap>
           </SidebarMenuItem>
         </AnnouncementMenus>
       </MainMenusContainer>
@@ -392,6 +401,31 @@ const AnnouncementMenus = styled(Menus)`
   margin-top: auto;
   padding-top: 10px;
   padding-bottom: 4px;
+`
+
+const AnnouncementIconWrap = styled.span`
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+`
+
+const AnnouncementBadge = styled.span`
+  position: absolute;
+  top: -7px;
+  right: -9px;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: #ff4d4f;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 15px;
+  text-align: center;
+  box-shadow: 0 0 0 1.5px var(--color-background);
+  pointer-events: none;
 `
 
 const Divider = styled.div`

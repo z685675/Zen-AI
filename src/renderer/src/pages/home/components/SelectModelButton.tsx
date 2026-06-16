@@ -65,7 +65,7 @@ const SelectModelButton: FC<Props> = ({ assistant }) => {
         </ModelName>
       </ButtonContent>
       <ChevronsUpDown size={14} color="var(--color-icon)" />
-      {!provider && <Tag color="error">{t('models.invalid_model')}</Tag>}
+      {model && !provider && <Tag color="error">{t('models.invalid_model')}</Tag>}
     </DropdownButton>
   )
 }

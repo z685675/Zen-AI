@@ -15,7 +15,7 @@ const webSearchTool = defineTool({
   label: (t) => t('chat.input.web_search.label'),
 
   visibleInScopes: [TopicType.Chat],
-  condition: ({ model }) => !isMandatoryWebSearchModel(model),
+  condition: ({ model }) => !model || !isMandatoryWebSearchModel(model),
 
   render: function WebSearchToolRender(context) {
     const { assistant, quickPanelController } = context

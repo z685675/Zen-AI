@@ -87,6 +87,10 @@ describe('isEmbeddingModel', () => {
 })
 
 describe('isRerankModel', () => {
+  it('returns false when no model is configured yet', () => {
+    expect(isRerankModel(undefined)).toBe(false)
+  })
+
   it('identifies ids that match rerank regex', () => {
     expect(isRerankModel(createModel({ id: 'jina-rerank-v2-base' }))).toBe(true)
   })

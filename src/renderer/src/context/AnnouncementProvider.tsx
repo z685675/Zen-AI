@@ -14,12 +14,16 @@ const POLL_INTERVAL = 5 * 60 * 1000
 type AnnouncementContextValue = {
   announcements: AnnouncementViewItem[]
   urgentItems: AnnouncementViewItem[]
+  unreadCount: number
+  markAnnouncementsRead: () => void
   refresh: () => Promise<void>
 }
 
 const AnnouncementContext = createContext<AnnouncementContextValue>({
   announcements: [],
   urgentItems: [],
+  unreadCount: 0,
+  markAnnouncementsRead: () => undefined,
   refresh: async () => undefined
 })
 
@@ -113,6 +117,7 @@ export const AnnouncementProvider: FC<PropsWithChildren> = ({ children }) => {
   const [payload, setPayload] = useState<AnnouncementPayload | null>(() => announcementService.getCachedPayload())
   const [appVersion, setAppVersion] = useState('0.0.0')
   const [dismissedIds, setDismissedIds] = useState<string[]>(() => announcementService.getDismissedIds())
+  const [readVersionTick, setReadVersionTick] = useState(0)
   const [activePopup, setActivePopup] = useState<AnnouncementViewItem | null>(null)
 
   const refresh = useCallback(async () => {
@@ -147,6 +152,7 @@ export const AnnouncementProvider: FC<PropsWithChildren> = ({ children }) => {
 
   const announcements = useMemo(() => announcementService.getLatestAnnouncements(visibleItems, 3), [visibleItems])
   const urgentItems = useMemo(() => announcementService.getUrgentItems(visibleItems), [visibleItems])
+  const unreadCount = useMemo(() => announcementService.getUnreadCount(announcements), [announcements, readVersionTick])
 
   useEffect(() => {
     if (activePopup) {
@@ -162,12 +168,19 @@ export const AnnouncementProvider: FC<PropsWithChildren> = ({ children }) => {
   const handleClosePopup = useCallback(() => {
     if (activePopup) {
       setDismissedIds(announcementService.dismissAnnouncement(activePopup.id))
+      announcementService.markAnnouncementsRead([activePopup])
+      setReadVersionTick((tick) => tick + 1)
     }
     setActivePopup(null)
   }, [activePopup])
 
+  const markAnnouncementsRead = useCallback(() => {
+    announcementService.markAnnouncementsRead(announcements)
+    setReadVersionTick((tick) => tick + 1)
+  }, [announcements])
+
   return (
-    <AnnouncementContext value={{ announcements, urgentItems, refresh }}>
+    <AnnouncementContext value={{ announcements, urgentItems, unreadCount, markAnnouncementsRead, refresh }}>
       {children}
       <UrgentBanner items={urgentItems} />
       <AnnouncementModal item={activePopup} onClose={handleClosePopup} />

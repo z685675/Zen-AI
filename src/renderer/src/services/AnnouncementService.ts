@@ -3,6 +3,7 @@ import type { AnnouncementItem, AnnouncementPayload, AnnouncementPlatform } from
 
 const CACHE_KEY = 'announcements.payload.v1'
 const DISMISSED_KEY = 'announcements.dismissed.ids.v1'
+const READ_VERSIONS_KEY = 'announcements.read.versions.v1'
 const FEED_GONE_STATUS_CODES = new Set([404, 410])
 
 export type AnnouncementViewItem = AnnouncementItem & {
@@ -125,6 +126,30 @@ const getCurrentPlatform = (): AnnouncementPlatform | undefined => {
   return undefined
 }
 
+const getReadVersions = (): Record<string, string> => {
+  try {
+    const value = JSON.parse(localStorage.getItem(READ_VERSIONS_KEY) || '{}')
+    return isRecord(value)
+      ? Object.fromEntries(
+          Object.entries(value).filter((entry): entry is [string, string] => typeof entry[1] === 'string')
+        )
+      : {}
+  } catch {
+    return {}
+  }
+}
+
+const getAnnouncementVersion = (item: AnnouncementViewItem): string => {
+  return JSON.stringify({
+    id: item.id,
+    title: item.title,
+    content: item.content,
+    publishedAt: item.publishedAt,
+    priority: item.priority ?? 0,
+    link: item.link ?? null
+  })
+}
+
 export const announcementService = {
   async fetchPayload(): Promise<AnnouncementPayload | null> {
     const response = await fetch(`${ANNOUNCEMENT_FEED_URL}?t=${Date.now()}`, {
@@ -179,6 +204,24 @@ export const announcementService = {
     const ids = [...new Set([...this.getDismissedIds(), id])]
     localStorage.setItem(DISMISSED_KEY, JSON.stringify(ids))
     return ids
+  },
+
+  getUnreadCount(items: AnnouncementViewItem[]): number {
+    const readVersions = getReadVersions()
+    return items.filter((item) => readVersions[item.id] !== getAnnouncementVersion(item)).length
+  },
+
+  markAnnouncementsRead(items: AnnouncementViewItem[]): number {
+    if (items.length === 0) {
+      return this.getUnreadCount(items)
+    }
+
+    const readVersions = getReadVersions()
+    for (const item of items) {
+      readVersions[item.id] = getAnnouncementVersion(item)
+    }
+    localStorage.setItem(READ_VERSIONS_KEY, JSON.stringify(readVersions))
+    return this.getUnreadCount(items)
   },
 
   filterItems(payload: AnnouncementPayload | null, appVersion: string): AnnouncementViewItem[] {

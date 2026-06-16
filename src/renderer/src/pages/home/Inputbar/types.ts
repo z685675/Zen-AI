@@ -60,7 +60,7 @@ export interface ToolDependencies {
 export interface ToolContext {
   scope: InputbarScope
   assistant: Assistant
-  model: Model
+  model?: Model
   // Session data for Agent Session scope (only available when scope is TopicType.Session)
   session?: {
     agentId?: string

@@ -84,13 +84,17 @@ export function useAllProviders() {
   return useAppSelector(selectAllProviders)
 }
 
-export function useProvider(id: string) {
+export function useProvider(id?: string) {
   const allProviders = useAppSelector(selectAllProvidersWithCherryAI)
   const provider = useMemo(() => allProviders.find((p) => p.id === id) || getDefaultProvider(), [allProviders, id])
   const dispatch = useAppDispatch()
 
   const handleAddModel = useCallback(
     (model: Model) => {
+      if (!provider) {
+        return
+      }
+
       let processedModel = { ...model, supported_text_delta: !isNotSupportTextDeltaModel(model) }
 
       if (isNewApiProvider(provider)) {
@@ -103,24 +107,25 @@ export function useProvider(id: string) {
         }
       }
 
-      dispatch(addModel({ providerId: id, model: processedModel }))
+      dispatch(addModel({ providerId: provider.id, model: processedModel }))
     },
-    [dispatch, id, provider]
+    [dispatch, provider]
   )
 
   return {
     provider,
     models: provider?.models ?? [],
-    updateProvider: (updates: Partial<Provider>) => dispatch(updateProvider({ id, ...updates })),
+    updateProvider: (updates: Partial<Provider>) =>
+      provider && dispatch(updateProvider({ id: provider.id, ...updates })),
     addModel: handleAddModel,
-    removeModel: (model: Model) => dispatch(removeModel({ providerId: id, model })),
-    updateModel: (model: Model) => dispatch(updateModel({ providerId: id, model }))
+    removeModel: (model: Model) => provider && dispatch(removeModel({ providerId: provider.id, model })),
+    updateModel: (model: Model) => provider && dispatch(updateModel({ providerId: provider.id, model }))
   }
 }
 
 export function useProviderByAssistant(assistant: Assistant) {
   const { defaultModel } = useDefaultModel()
   const model = assistant.model || defaultModel
-  const { provider } = useProvider(model.provider)
+  const { provider } = useProvider(model?.provider)
   return provider
 }

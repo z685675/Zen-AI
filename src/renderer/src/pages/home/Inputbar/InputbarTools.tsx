@@ -35,7 +35,7 @@ import styled from 'styled-components'
 export interface InputbarToolsNewProps {
   scope: InputbarScope
   assistant: Assistant
-  model: Model
+  model?: Model
   session?: ToolContext['session']
   toolOrderOverride?: ToolOrderConfig
 }

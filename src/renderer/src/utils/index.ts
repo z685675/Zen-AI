@@ -202,7 +202,11 @@ export function getMcpConfigSampleFromReadme(readme: string): Record<string, any
  * @param {ModelType} type 模型类型
  * @returns {boolean} 是否为用户手动选择
  */
-export function isUserSelectedModelType(model: Model, type: ModelType): boolean | undefined {
+export function isUserSelectedModelType(model: Model | undefined | null, type: ModelType): boolean | undefined {
+  if (!model) {
+    return undefined
+  }
+
   const t = model.capabilities?.find((t) => t.type === type)
   return t ? t.isUserSelected : undefined
 }
