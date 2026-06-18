@@ -57,7 +57,13 @@ const AnnouncementModal: FC<{
   ].filter(Boolean)
 
   return (
-    <Modal centered open={Boolean(item)} title={item?.title} width={520} footer={footer} onCancel={onClose}>
+    <Modal
+      centered
+      open={Boolean(item)}
+      title={item?.title}
+      width="min(720px, calc(100vw - 48px))"
+      footer={footer}
+      onCancel={onClose}>
       {item && (
         <ModalContent>
           <ModalTime>{formatTime(item.publishedAt)}</ModalTime>

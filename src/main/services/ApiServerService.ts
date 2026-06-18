@@ -10,16 +10,32 @@ import { ipcMain } from 'electron'
 
 import { apiServer } from '../apiServer'
 import { config } from '../apiServer/config'
+import { bootstrapBuiltinAgents } from './agents/services/builtin/BuiltinAgentBootstrap'
 import { loggerService } from './LoggerService'
 const logger = loggerService.withContext('ApiServerService')
 
 export class ApiServerService {
+  private builtinBootstrapPromise: Promise<void> | null = null
+
   constructor() {
     // Use the new clean implementation
   }
 
-  async start(): Promise<void> {
+  private async ensureBuiltinAgents(): Promise<void> {
+    if (!this.builtinBootstrapPromise) {
+      this.builtinBootstrapPromise = bootstrapBuiltinAgents().finally(() => {
+        this.builtinBootstrapPromise = null
+      })
+    }
+
+    await this.builtinBootstrapPromise
+  }
+
+  async start(options: { ensureBuiltinAgents?: boolean } = {}): Promise<void> {
     try {
+      if (options.ensureBuiltinAgents !== false) {
+        await this.ensureBuiltinAgents()
+      }
       await apiServer.start()
       logger.info('API Server started successfully')
     } catch (error: any) {
@@ -40,6 +56,7 @@ export class ApiServerService {
 
   async restart(): Promise<void> {
     try {
+      await this.ensureBuiltinAgents()
       await apiServer.restart()
       logger.info('API Server restarted successfully')
     } catch (error: any) {

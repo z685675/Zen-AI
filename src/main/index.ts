@@ -231,7 +231,7 @@ if (!app.requestSingleInstanceLock()) {
         }
 
         if (shouldStart) {
-          await apiServerService.start()
+          await apiServerService.start({ ensureBuiltinAgents: false })
         }
 
         // Restore CherryClaw schedulers after services are ready
