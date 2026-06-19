@@ -634,7 +634,9 @@ const api = {
       return () => ipcRenderer.off(IpcChannel.WeChat_QrLogin, listener)
     },
     hasCredentials: (channelId: string): Promise<{ exists: boolean; userId?: string }> =>
-      ipcRenderer.invoke(IpcChannel.WeChat_HasCredentials, channelId)
+      ipcRenderer.invoke(IpcChannel.WeChat_HasCredentials, channelId),
+    reconnect: (channelId: string): Promise<{ success: boolean; error?: string }> =>
+      ipcRenderer.invoke(IpcChannel.WeChat_Reconnect, channelId)
   },
   feishu: {
     onQrLogin: (

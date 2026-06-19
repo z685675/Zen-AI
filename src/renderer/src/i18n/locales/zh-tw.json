@@ -132,6 +132,7 @@
           "loginHint": "首次登入需要掃描 QR 碼。請查看應用程式記錄以取得登入網址。",
           "qrHint": "打開手機上的微信，掃描 QR 碼登入。",
           "qrTitle": "微信 QR 碼登入",
+          "reconnect": "重新掃碼",
           "title": "微信",
           "whoamiTip": "提示：在微信中發送 /whoami 可取得使用者的 ID。"
         }

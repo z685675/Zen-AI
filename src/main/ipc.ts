@@ -1189,6 +1189,38 @@ export async function registerIpc(mainWindow: BrowserWindow, app: Electron.App) 
     }
   })
 
+  ipcMain.handle(IpcChannel.WeChat_Reconnect, async (_, channelId: string) => {
+    const tokenPath = path.join(getDataPath('Channels'), `weixin_bot_${channelId}.json`)
+    try {
+      const { DEFAULT_FUSION_AGENT_ID } = await import('@shared/config/agents')
+      const { channelService } = await import('@main/services/agents/services/ChannelService')
+      const { channelManager } = await import('@main/services/agents/services/channels/ChannelManager')
+      const channel = await channelService.getChannel(channelId)
+      if (!channel || channel.type !== 'wechat') {
+        return { success: false, error: 'WeChat channel not found' }
+      }
+
+      await fs.promises.rm(tokenPath, { force: true }).catch(() => {})
+      await fs.promises.rm(tokenPath.replace(/\.json$/, '.context-tokens.json'), { force: true }).catch(() => {})
+
+      if (!channel.isActive || !channel.agentId) {
+        await channelService.updateChannel(channelId, {
+          isActive: true,
+          agentId: channel.agentId ?? DEFAULT_FUSION_AGENT_ID
+        })
+      }
+
+      await channelManager.syncChannel(channelId)
+      return { success: true }
+    } catch (error) {
+      logger.error('Failed to reconnect WeChat channel', {
+        channelId,
+        error: error instanceof Error ? error.message : String(error)
+      })
+      return { success: false, error: error instanceof Error ? error.message : String(error) }
+    }
+  })
+
   // Analytics
   ipcMain.handle(IpcChannel.Analytics_TrackTokenUsage, (_, data: TokenUsageData) =>
     analyticsService.trackTokenUsage(data)

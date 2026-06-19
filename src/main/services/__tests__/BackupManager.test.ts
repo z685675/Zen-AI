@@ -350,7 +350,9 @@ describe('BackupManager.handleStartupRestore', () => {
 
     await BackupManager.handleStartupRestore()
 
-    expect(mockBackupPathMigrationService.migrateRestoredInternalPaths).toHaveBeenCalledTimes(1)
+    expect(mockBackupPathMigrationService.migrateRestoredInternalPaths).toHaveBeenCalledWith({
+      removeWeChatCredentials: false
+    })
   })
 
   it('restores pending directories and runs internal path migration after a restore', async () => {
@@ -365,6 +367,8 @@ describe('BackupManager.handleStartupRestore', () => {
     expect(fs.remove).toHaveBeenCalledWith('/mock/data')
     expect(fs.rename).toHaveBeenCalledWith('/mock/data.restore', '/mock/data')
     expect(mockBackupPathMigrationService.hasMigrationMarker).not.toHaveBeenCalled()
-    expect(mockBackupPathMigrationService.migrateRestoredInternalPaths).toHaveBeenCalledTimes(1)
+    expect(mockBackupPathMigrationService.migrateRestoredInternalPaths).toHaveBeenCalledWith({
+      removeWeChatCredentials: true
+    })
   })
 })

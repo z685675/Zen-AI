@@ -1,10 +1,11 @@
+import { ReloadOutlined } from '@ant-design/icons'
 import { AgentApiClient } from '@renderer/api/agent'
 import { useSettings } from '@renderer/hooks/useSettings'
 import { useAppDispatch } from '@renderer/store'
 import { setActiveAgentId, setActiveSessionIdAction } from '@renderer/store/runtime'
 import type { FeishuChannelConfig, FeishuDomain, PermissionMode } from '@renderer/types'
 import { DEFAULT_FUSION_AGENT_ID } from '@shared/config/agents'
-import { Input, Modal, Select } from 'antd'
+import { Button, Input, Modal, Select } from 'antd'
 import { QRCodeSVG } from 'qrcode.react'
 import type { ReactNode } from 'react'
 import { type FC, useCallback, useEffect, useRef, useState } from 'react'
@@ -46,6 +47,7 @@ type ChannelFormProps = {
   channel: ChannelData
   onConfigChange: (updates: Partial<ChannelData>) => void
   onConnected?: () => void
+  autoReconnectKey?: string | null
 }
 
 type ChannelFieldsFormProps = ChannelFormProps & {
@@ -384,7 +386,8 @@ type WeChatStatus = 'idle' | 'pending' | 'confirmed' | 'disconnected'
 export const WeChatForm: FC<ChannelFormProps & { onRemove?: () => void }> = ({
   channel,
   onConfigChange,
-  onRemove
+  onRemove,
+  autoReconnectKey
 }) => {
   const { t } = useTranslation()
   const dispatch = useAppDispatch()
@@ -394,7 +397,9 @@ export const WeChatForm: FC<ChannelFormProps & { onRemove?: () => void }> = ({
   const [loginUserId, setLoginUserId] = useState<string | null>(null)
   const [qrUrl, setQrUrl] = useState<string | null>(null)
   const [showSuccessModal, setShowSuccessModal] = useState(false)
+  const [isReconnecting, setIsReconnecting] = useState(false)
   const shouldReturnOnConfirmRef = useRef(false)
+  const handledAutoReconnectKeyRef = useRef<string | null>(null)
 
   useEffect(() => {
     void window.api.wechat.hasCredentials(channel.id).then((result) => {
@@ -431,6 +436,34 @@ export const WeChatForm: FC<ChannelFormProps & { onRemove?: () => void }> = ({
     })
     return cleanup
   }, [channel.id])
+
+  const handleReconnect = useCallback(async () => {
+    setIsReconnecting(true)
+    setStatus('idle')
+    setLoginUserId(null)
+    setQrUrl(null)
+    shouldReturnOnConfirmRef.current = true
+
+    const result = await window.api.wechat.reconnect(channel.id)
+    if (!result.success) {
+      shouldReturnOnConfirmRef.current = false
+      setStatus('disconnected')
+    }
+    setIsReconnecting(false)
+  }, [channel.id])
+
+  useEffect(() => {
+    if (
+      !autoReconnectKey ||
+      autoReconnectKey !== channel.id ||
+      handledAutoReconnectKeyRef.current === autoReconnectKey
+    ) {
+      return
+    }
+
+    handledAutoReconnectKeyRef.current = autoReconnectKey
+    void handleReconnect()
+  }, [autoReconnectKey, channel.id, handleReconnect])
 
   const handleWechatSuccessConfirm = useCallback(async () => {
     try {
@@ -491,6 +524,10 @@ export const WeChatForm: FC<ChannelFormProps & { onRemove?: () => void }> = ({
 
       <ChannelPermissionMode channel={channel} onConfigChange={onConfigChange} />
 
+      <Button size="small" icon={<ReloadOutlined />} loading={isReconnecting} onClick={() => void handleReconnect()}>
+        {t('agent.cherryClaw.channels.wechat.reconnect')}
+      </Button>
+
       <Modal
         open={!!qrUrl}
         title={t('agent.cherryClaw.channels.wechat.qrTitle')}
@@ -519,7 +556,7 @@ export const WeChatForm: FC<ChannelFormProps & { onRemove?: () => void }> = ({
         cancelButtonProps={{ style: { display: 'none' } }}
         centered
         width={420}>
-        <div className="py-2 text-sm leading-6 text-foreground">
+        <div className="py-2 text-foreground text-sm leading-6">
           微信已成功扫码连接，可以直接在手机微信上和我进行文字对话。图片和文件请回到桌面端发送，体验会更稳定。
         </div>
       </Modal>

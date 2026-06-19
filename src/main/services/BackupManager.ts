@@ -108,7 +108,7 @@ class BackupManager {
       }
 
       if (hasRestoreMarker || !(await BackupPathMigrationService.hasMigrationMarker())) {
-        await BackupPathMigrationService.migrateRestoredInternalPaths()
+        await BackupPathMigrationService.migrateRestoredInternalPaths({ removeWeChatCredentials: hasRestoreMarker })
       }
 
       logger.info('[handleStartupRestore] Restoration completed successfully')

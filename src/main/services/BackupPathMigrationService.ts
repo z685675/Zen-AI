@@ -34,13 +34,18 @@ export class BackupPathMigrationService {
     return fs.pathExists(this.getMigrationMarkerPath())
   }
 
-  static async migrateRestoredInternalPaths(): Promise<void> {
+  static async migrateRestoredInternalPaths(options: { removeWeChatCredentials?: boolean } = {}): Promise<void> {
     const currentUserDataPath = app.getPath('userData')
 
-    await Promise.all([
+    const migrations = [
       this.migrateAgentsDatabase(currentUserDataPath),
       this.migrateNotesInternalLinks(currentUserDataPath)
-    ])
+    ]
+    if (options.removeWeChatCredentials) {
+      migrations.push(this.removeRestoredWeChatCredentials())
+    }
+
+    await Promise.all(migrations)
 
     await fs.writeFile(this.getMigrationMarkerPath(), new Date().toISOString(), 'utf-8')
   }
@@ -137,6 +142,28 @@ export class BackupPathMigrationService {
       }
     } catch (error) {
       logger.error('Failed to migrate internal data links in notes', error as Error)
+    }
+  }
+
+  private static async removeRestoredWeChatCredentials(): Promise<void> {
+    const channelsDir = path.join(getDataPath(), 'Channels')
+    if (!(await fs.pathExists(channelsDir))) {
+      return
+    }
+
+    try {
+      const entries = await fs.readdir(channelsDir)
+      const restoredCredentials = entries.filter((name) => /^weixin_bot_[^\\/]+(\.context-tokens)?\.json$/.test(name))
+
+      await Promise.all(restoredCredentials.map((name) => fs.remove(path.join(channelsDir, name))))
+
+      if (restoredCredentials.length > 0) {
+        logger.info('Removed restored WeChat credentials; a fresh QR login is required', {
+          removed: restoredCredentials.length
+        })
+      }
+    } catch (error) {
+      logger.error('Failed to remove restored WeChat credentials', error as Error)
     }
   }
 

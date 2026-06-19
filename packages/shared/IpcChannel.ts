@@ -124,6 +124,7 @@ export enum IpcChannel {
   // WeChat channel
   WeChat_QrLogin = 'wechat:qr-login',
   WeChat_HasCredentials = 'wechat:has-credentials',
+  WeChat_Reconnect = 'wechat:reconnect',
 
   // Feishu channel
   Feishu_QrLogin = 'feishu:qr-login',

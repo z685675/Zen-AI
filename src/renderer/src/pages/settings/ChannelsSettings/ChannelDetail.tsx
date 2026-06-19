@@ -160,6 +160,7 @@ type EditModalProps = {
   open: boolean
   channel: ChannelData | null
   agents: Array<{ id: string; name: string }>
+  autoReconnectKey?: string | null
   onClose: () => void
   onSave: (id: string, updates: Partial<ChannelData>) => void
   onDelete: (id: string) => void
@@ -167,7 +168,7 @@ type EditModalProps = {
 
 const ChannelEditModal: FC<
   EditModalProps & { agentEntities?: Array<{ id: string; configuration?: AgentConfiguration }> }
-> = ({ open, channel, agents, onClose, onSave, onDelete, agentEntities }) => {
+> = ({ open, channel, agents, autoReconnectKey, onClose, onSave, onDelete, agentEntities }) => {
   const { t } = useTranslation()
   const [name, setName] = useState('')
   const [agentId, setAgentId] = useState<string | null>(null)
@@ -250,6 +251,7 @@ const ChannelEditModal: FC<
               onConfigChange={handleUpdate}
               onRemove={() => onDelete(channel.id)}
               onConnected={onClose}
+              autoReconnectKey={channel.type === 'wechat' ? autoReconnectKey : null}
             />
           )}
         </div>
@@ -355,6 +357,7 @@ const ChannelDetail: FC<ChannelDetailProps> = ({ channelDef }) => {
   const channelList = useMemo(() => channels ?? [], [channels])
 
   const [editingChannelId, setEditingChannelId] = useState<string | null>(null)
+  const [autoReconnectChannelId, setAutoReconnectChannelId] = useState<string | null>(null)
   const editingChannel = channelList.find((ch) => ch.id === editingChannelId) ?? null
   const hasHandledAutoOpenRef = useRef(false)
 
@@ -388,21 +391,25 @@ const ChannelDetail: FC<ChannelDetailProps> = ({ channelDef }) => {
     return unsub
   }, [mutate])
 
-  const createChannelEntry = useCallback(async (overrides?: { agentId?: string; name?: string }) => {
-    const existingCount = channels?.length ?? 0
-    try {
-      const newChannel = await createChannel({
-        type: channelDef.type,
-        name: overrides?.name ?? (existingCount > 0 ? `${channelDef.name} ${existingCount + 1}` : channelDef.name),
-        agent_id: overrides?.agentId,
-        config: channelDef.defaultConfig,
-        is_active: true
-      })
-      setEditingChannelId(newChannel.id)
-    } catch {
-      // ignore
-    }
-  }, [channels?.length, createChannel, channelDef])
+  const createChannelEntry = useCallback(
+    async (overrides?: { agentId?: string; name?: string }) => {
+      const existingCount = channels?.length ?? 0
+      try {
+        const newChannel = await createChannel({
+          type: channelDef.type,
+          name: overrides?.name ?? (existingCount > 0 ? `${channelDef.name} ${existingCount + 1}` : channelDef.name),
+          agent_id: overrides?.agentId,
+          config: channelDef.defaultConfig,
+          is_active: true
+        })
+        setEditingChannelId(newChannel.id)
+        return newChannel
+      } catch {
+        return null
+      }
+    },
+    [channels?.length, createChannel, channelDef]
+  )
 
   const handleAdd = useCallback(() => {
     void createChannelEntry()
@@ -467,8 +474,14 @@ const ChannelDetail: FC<ChannelDetailProps> = ({ channelDef }) => {
           agentId: requestedAgentId && targetChannel.agentId !== requestedAgentId ? requestedAgentId : undefined,
           isActive: true
         })
+        if (channelDef.type === 'wechat') {
+          setAutoReconnectChannelId(targetChannel.id)
+        }
       } else {
-        await createChannelEntry({ agentId: requestedAgentId })
+        const newChannel = await createChannelEntry({ agentId: requestedAgentId })
+        if (newChannel && channelDef.type === 'wechat') {
+          setAutoReconnectChannelId(newChannel.id)
+        }
       }
 
       const nextParams = new URLSearchParams(searchParams)
@@ -540,6 +553,7 @@ const ChannelDetail: FC<ChannelDetailProps> = ({ channelDef }) => {
         channel={editingChannel}
         agents={agents}
         agentEntities={agentEntities}
+        autoReconnectKey={autoReconnectChannelId}
         onClose={() => setEditingChannelId(null)}
         onSave={handleSave}
         onDelete={handleDelete}

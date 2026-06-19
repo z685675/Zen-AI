@@ -14,8 +14,9 @@ Zen AI 的备份中可能包含应用内部数据路径，例如：
 恢复流程完成 `.restore` 目录替换后，主进程会立即迁移已恢复数据中的应用内部路径：
 
 - `agents.db` 中的智能助手、会话、消息、定时任务和任务日志文本字段
-- `Data/Notes` 下 Markdown 文件中的内部链接
+- `Data/Notes` 中 Markdown 文件里的内部链接
 - 智能助手运行时读取到的 `accessible_paths`
+- 仅在真实恢复备份时，清理 `Data/Channels` 中恢复进来的微信登录 token
 
 迁移完成后会在 `Data` 目录写入 `.internal-path-migration-v1` 标记。没有新的恢复任务时，启动流程不会重复扫描数据库和笔记文件，避免大体量历史会话拖慢启动。
 
@@ -36,6 +37,19 @@ Zen AI 的备份中可能包含应用内部数据路径，例如：
 
 这样可以修复跨电脑恢复后的内部路径失效问题，同时避免误改用户真实文件位置。
 
+## 微信接入恢复
+
+微信手机端同一时间只能绑定一台电脑的登录会话。备份里的 `weixin_bot_*.json` 属于本机登录凭证，不适合从 A 电脑迁移到 B 电脑。
+
+因此导入备份后：
+
+- 微信通道、绑定的官方智能助手、权限模式等配置会继续保留。
+- 旧电脑的微信登录 token 会在恢复启动阶段删除。
+- 用户点击“微信扫码接入”时，设置页会自动触发重新扫码并弹出新的二维码。
+- 用户也可以在微信通道设置中点击“重新扫码”手动刷新二维码。
+
+普通升级或没有 `.restore` 标记的启动不会清理微信登录 token，避免影响当前电脑已有的微信接入。
+
 ## 覆盖格式
 
 路径迁移覆盖以下常见格式：
@@ -53,6 +67,7 @@ Zen AI 的备份中可能包含应用内部数据路径，例如：
 发版前至少运行：
 
 ```bash
-npx vitest run packages/shared/__tests__/internalDataPathMigration.test.ts --project shared src/main/services/__tests__/BackupManager.test.ts --project main
-npm run validate:release
+pnpm exec vitest run packages/shared/__tests__/internalDataPathMigration.test.ts --project shared src/main/services/__tests__/BackupManager.test.ts --project main
+pnpm run typecheck:node
+pnpm run typecheck:web
 ```

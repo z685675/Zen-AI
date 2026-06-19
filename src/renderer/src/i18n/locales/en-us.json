@@ -132,6 +132,7 @@
           "loginHint": "First login requires scanning a QR code. A QR code will appear automatically when the channel connects.",
           "qrHint": "Open WeChat on your phone, scan the QR code to log in.",
           "qrTitle": "WeChat QR Login",
+          "reconnect": "Rescan QR code",
           "title": "WeChat",
           "whoamiTip": "Tip: Send /whoami in WeChat to get a user's ID."
         }
