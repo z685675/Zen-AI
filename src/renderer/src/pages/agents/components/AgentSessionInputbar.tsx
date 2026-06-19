@@ -497,7 +497,15 @@ const AgentSessionInputbarInner: FC<InnerProps> = ({
   const sessionToolOrderOverride = useMemo<ToolOrderConfig>(
     () => ({
       visible: ['permission_mode', 'session_more'],
-      hidden: ['create_session', 'slash_commands', 'attachment', 'resource_panel', 'quick_phrases', 'thinking', 'toggle_expand']
+      hidden: [
+        'create_session',
+        'slash_commands',
+        'attachment',
+        'resource_panel',
+        'quick_phrases',
+        'thinking',
+        'toggle_expand'
+      ]
     }),
     []
   )
@@ -509,7 +517,7 @@ const AgentSessionInputbarInner: FC<InnerProps> = ({
           <InputbarTools
             scope={scope}
             assistant={assistant}
-            model={assistant.model!}
+            model={assistant.model}
             session={toolsSession}
             toolOrderOverride={sessionToolOrderOverride}
           />

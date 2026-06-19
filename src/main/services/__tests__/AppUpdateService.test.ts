@@ -1,6 +1,8 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { EventEmitter } from 'node:events'
+import type * as NodeFs from 'node:fs'
 import path from 'node:path'
+
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mockAutoUpdaterEmitter = new EventEmitter()
 const mockAutoUpdater = Object.assign(mockAutoUpdaterEmitter, {
@@ -742,7 +744,7 @@ describe('AppUpdateService', () => {
   })
 
   it('keeps macOS zip target configured for auto update compatibility', async () => {
-    const fs = await vi.importActual<typeof import('node:fs')>('node:fs')
+    const fs = await vi.importActual<typeof NodeFs>('node:fs')
     const configPath = path.join(process.cwd(), 'electron-builder.yml')
     const config = fs.readFileSync(configPath, 'utf8')
 

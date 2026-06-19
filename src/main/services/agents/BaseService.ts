@@ -4,6 +4,7 @@ import type { ModelValidationError } from '@main/apiServer/utils'
 import { validateModelId } from '@main/apiServer/utils'
 import { getDataPath } from '@main/utils'
 import { buildFunctionCallToolName } from '@shared/mcp'
+import { migrateInternalDataPathsInString } from '@shared/utils/internalDataPathMigration'
 import type { AgentType, MCPTool, SlashCommand, SystemProviderId, Tool } from '@types'
 import { objectKeys } from '@types'
 import fs from 'fs'
@@ -192,6 +193,13 @@ export abstract class BaseService {
       deserialized.agent_type = 'claude-code'
     }
 
+    if (Array.isArray(deserialized.accessible_paths)) {
+      const userDataPath = path.dirname(getDataPath())
+      deserialized.accessible_paths = deserialized.accessible_paths.map((item: unknown) =>
+        typeof item === 'string' ? migrateInternalDataPathsInString(item, userDataPath).value : item
+      )
+    }
+
     // convert null from db to undefined to satisfy type definition
     for (const key of objectKeys(data)) {
       if (deserialized[key] === null) {
@@ -222,12 +230,14 @@ export abstract class BaseService {
         continue
       }
 
-      if (!path.isAbsolute(rawPath)) {
-        throw new Error(`Accessible path must be absolute: ${rawPath}`)
+      const migratedPath = migrateInternalDataPathsInString(rawPath, path.dirname(getDataPath())).value
+
+      if (!path.isAbsolute(migratedPath)) {
+        throw new Error(`Accessible path must be absolute: ${migratedPath}`)
       }
 
       // Normalize to provide consistent values to downstream consumers.
-      const resolvedPath = path.normalize(rawPath)
+      const resolvedPath = path.normalize(migratedPath)
 
       let stats: fs.Stats | null = null
       try {

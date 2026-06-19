@@ -25,6 +25,7 @@ import type {
   MessageBlock
 } from '@renderer/types/newMessage'
 import { AssistantMessageStatus, MessageBlockStatus } from '@renderer/types/newMessage'
+import { migrateInternalDataPathsDeep } from '@shared/utils/internalDataPathMigration'
 import type { Transaction } from 'dexie'
 import { isEmpty } from 'lodash'
 
@@ -412,4 +413,53 @@ export async function upgradeToV8(tx: Transaction): Promise<void> {
     }
   }
   logger.info('DB migration to version 8 finished.')
+}
+
+export async function upgradeToV11(tx: Transaction): Promise<void> {
+  logger.info('DB migration to version 11 started: migrating restored internal data paths')
+
+  try {
+    const appInfo = await window.api.getAppInfo()
+    const currentUserDataPath = appInfo.appDataPath
+    let updatedFiles = 0
+    let updatedBlocks = 0
+    let updatedTopics = 0
+
+    await tx
+      .table('files')
+      .toCollection()
+      .each(async (file) => {
+        const result = migrateInternalDataPathsDeep(file, currentUserDataPath)
+        if (result.changed) {
+          await tx.table('files').put(result.value)
+          updatedFiles += 1
+        }
+      })
+
+    await tx
+      .table('message_blocks')
+      .toCollection()
+      .each(async (block) => {
+        const result = migrateInternalDataPathsDeep(block, currentUserDataPath)
+        if (result.changed) {
+          await tx.table('message_blocks').put(result.value)
+          updatedBlocks += 1
+        }
+      })
+
+    await tx
+      .table('topics')
+      .toCollection()
+      .each(async (topic) => {
+        const result = migrateInternalDataPathsDeep(topic, currentUserDataPath)
+        if (result.changed) {
+          await tx.table('topics').put(result.value)
+          updatedTopics += 1
+        }
+      })
+
+    logger.info('DB migration to version 11 finished', { updatedFiles, updatedBlocks, updatedTopics })
+  } catch (error) {
+    logger.error('DB migration to version 11 error', error as Error)
+  }
 }

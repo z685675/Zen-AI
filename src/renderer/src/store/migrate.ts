@@ -119,6 +119,12 @@ const LEGACY_PAINTING_PROVIDER_BY_NAMESPACE: Partial<Record<keyof PaintingsState
 
 const DEFAULT_ASSISTANT_MODEL_ID = 'gpt-5.4'
 const DEFAULT_UTILITY_MODEL_ID = 'gpt-5.4-mini'
+const INTERNAL_NOTES_PATH_PATTERN =
+  /(?:^|[\\/])(?:zen-ai|ZenAIDev|zen-aiDev|CherryStudio|Cherry Studio)[\\/]Data[\\/]Notes(?:[\\/]|$)/i
+
+function isInternalNotesPath(value: unknown): value is string {
+  return typeof value === 'string' && INTERNAL_NOTES_PATH_PATTERN.test(value)
+}
 
 const normalizeDefaultModelId = (value: string | undefined) =>
   (value ?? '')
@@ -3632,6 +3638,23 @@ const migrateConfig = {
       return state
     } catch (error) {
       logger.error('migrate 215 error', error as Error)
+      return state
+    }
+  },
+  '216': (state: RootState) => {
+    try {
+      if (isInternalNotesPath(state.note?.notesPath)) {
+        state.note.notesPath = ''
+      }
+
+      if (isInternalNotesPath(state.note?.activeFilePath)) {
+        state.note.activeFilePath = ''
+      }
+
+      logger.info('migrate 216 success')
+      return state
+    } catch (error) {
+      logger.error('migrate 216 error', error as Error)
       return state
     }
   }

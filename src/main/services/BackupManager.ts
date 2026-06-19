@@ -29,6 +29,7 @@ import type { CreateDirectoryOptions, FileStat } from 'webdav'
 
 import { getDataPath } from '../utils'
 import { resolveAndValidatePath } from '../utils/file'
+import { BackupPathMigrationService } from './BackupPathMigrationService'
 import S3Storage from './S3Storage'
 import selectionService from './SelectionService'
 import WebDav from './WebDav'
@@ -104,6 +105,8 @@ class BackupManager {
         await fs.remove(dataDest).catch(() => {})
         await fs.rename(dataRestore, dataDest)
       }
+
+      await BackupPathMigrationService.migrateRestoredInternalPaths()
 
       logger.info('[handleStartupRestore] Restoration completed successfully')
     } catch (error) {

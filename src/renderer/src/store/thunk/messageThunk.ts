@@ -133,7 +133,7 @@ const withAgentSessionSyncMetadata = (
   status: AgentSessionSyncMetadata['status'],
   reason?: string
 ): MessageProviderMetadata => ({
-  ...((message?.providerMetadata ?? {}) as MessageProviderMetadata),
+  ...message?.providerMetadata,
   agentSessionSync: buildAgentSessionSyncMetadata(status, reason)
 })
 
@@ -389,10 +389,7 @@ const hasPausedOrCancelledAgentSessionBlocks = (state: RootState, assistantMessa
         return true
       }
 
-      if (
-        block.type === MessageBlockType.TOOL &&
-        block.metadata?.rawMcpToolResponse?.status === 'cancelled'
-      ) {
+      if (block.type === MessageBlockType.TOOL && block.metadata?.rawMcpToolResponse?.status === 'cancelled') {
         return true
       }
     }

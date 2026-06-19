@@ -149,7 +149,7 @@ const AssistantSettingsTab = (props: Props) => {
     <Container className="settings-tab">
       {showOpenAiSettings && (
         <OpenAISettingsGroup
-          model={model!}
+          model={model}
           providerId={provider.id}
           SettingGroup={SettingGroup}
           SettingRowTitleSmall={SettingRowTitleSmall}

@@ -45,3 +45,7 @@ pnpm dev
 - 文档：<https://github.com/z685675/Zen-AI#readme>
 - 反馈：<https://github.com/z685675/Zen-AI/issues/new/choose>
 - 联系邮箱：<mailto:yewanzz@qq.com>
+
+## 维护参考
+
+- [备份恢复与内部路径迁移](./references/backup-restore.md)

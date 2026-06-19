@@ -26,7 +26,7 @@ import type { Message as NewMessage, MessageBlock } from '@renderer/types/newMes
 import { APP_DB_NAME } from '@shared/config/constant'
 import { Dexie, type EntityTable } from 'dexie'
 
-import { upgradeToV5, upgradeToV7, upgradeToV8 } from './upgrades'
+import { upgradeToV5, upgradeToV7, upgradeToV8, upgradeToV11 } from './upgrades'
 
 // Database declaration (move this to its own module also)
 export const db = new Dexie(APP_DB_NAME, {
@@ -135,5 +135,18 @@ db.version(10).stores({
   quick_phrases: 'id',
   message_blocks: 'id, messageId, file.id'
 })
+
+db.version(11)
+  .stores({
+    files: 'id, name, origin_name, path, size, ext, type, created_at, count',
+    topics: '&id',
+    settings: '&id, value',
+    knowledge_notes: '&id, baseId, type, content, created_at, updated_at',
+    translate_history: '&id, sourceText, targetText, sourceLanguage, targetLanguage, createdAt',
+    translate_languages: '&id, langCode',
+    quick_phrases: 'id',
+    message_blocks: 'id, messageId, file.id'
+  })
+  .upgrade((tx) => upgradeToV11(tx))
 
 export default db
