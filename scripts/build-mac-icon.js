@@ -1,92 +1,53 @@
 const fs = require('fs')
 const path = require('path')
-const { execFileSync } = require('child_process')
 
 const projectRoot = path.join(__dirname, '..')
 const buildDir = path.join(projectRoot, 'build')
+const iconsDir = path.join(buildDir, 'icons')
+const outputPath = path.join(buildDir, 'icon.icns')
 
-function resolveAppBuilderBinary() {
-  const candidatePackageJsonPaths = [
-    path.join(projectRoot, 'node_modules', 'app-builder-bin', 'package.json'),
-    path.join(
-      projectRoot,
-      'node_modules',
-      '.pnpm',
-      'app-builder-bin@5.0.0-alpha.12',
-      'node_modules',
-      'app-builder-bin',
-      'package.json'
-    )
-  ]
+const sourceMap = [
+  ['ic11', '32x32.png'],
+  ['ic12', '64x64.png'],
+  ['ic07', '128x128.png'],
+  ['ic08', '256x256.png'],
+  ['ic13', '256x256.png'],
+  ['ic09', '512x512.png'],
+  ['ic14', '512x512.png'],
+  ['ic10', '1024x1024.png']
+]
 
-  const packageJsonPath = candidatePackageJsonPaths.find((candidate) => fs.existsSync(candidate))
-
-  if (!packageJsonPath) {
-    throw new Error('app-builder-bin package.json not found in node_modules')
-  }
-
-  const packageDir = path.dirname(packageJsonPath)
-
-  if (process.platform === 'win32') {
-    return path.join(packageDir, 'win', process.arch === 'arm64' ? 'arm64' : 'x64', 'app-builder.exe')
-  }
-
-  if (process.platform === 'darwin') {
-    if (process.arch === 'arm64') {
-      return path.join(packageDir, 'mac', 'app-builder_arm64')
-    }
-    return path.join(packageDir, 'mac', 'app-builder_amd64')
-  }
-
-  return path.join(packageDir, 'linux', process.arch === 'arm64' ? 'arm64' : 'x64', 'app-builder')
-}
-
-function findSourcePng(inputPath) {
-  const resolved = path.resolve(inputPath)
-
-  if (!fs.existsSync(resolved)) {
-    throw new Error(`Input path does not exist: ${resolved}`)
-  }
-
-  const stats = fs.statSync(resolved)
-  if (stats.isFile()) {
-    return resolved
-  }
-
-  const candidates = fs
-    .readdirSync(resolved)
-    .filter((name) => name.toLowerCase().endsWith('.png'))
-    .map((name) => path.join(resolved, name))
-    .sort((left, right) => {
-      const leftScore = /1024/.test(path.basename(left)) ? 1 : 0
-      const rightScore = /1024/.test(path.basename(right)) ? 1 : 0
-      if (leftScore !== rightScore) {
-        return rightScore - leftScore
-      }
-      return fs.statSync(right).size - fs.statSync(left).size
-    })
-
-  if (candidates.length === 0) {
-    throw new Error(`No PNG files found in directory: ${resolved}`)
-  }
-
-  return candidates[0]
+function createIcnsChunk(type, data) {
+  const chunk = Buffer.alloc(8 + data.length)
+  chunk.write(type, 0, 4, 'ascii')
+  chunk.writeUInt32BE(chunk.length, 4)
+  data.copy(chunk, 8)
+  return chunk
 }
 
 function main() {
-  const inputArg = process.argv[2] || path.join(buildDir, 'icon.png')
-  const sourcePng = findSourcePng(inputArg)
-  const appBuilderBinary = resolveAppBuilderBinary()
+  const chunks = sourceMap.map(([type, fileName]) => {
+    const filePath = path.join(iconsDir, fileName)
 
-  if (!fs.existsSync(appBuilderBinary)) {
-    throw new Error(`app-builder binary not found: ${appBuilderBinary}`)
-  }
+    if (!fs.existsSync(filePath)) {
+      throw new Error(`Missing macOS icon source: ${filePath}`)
+    }
 
-  execFileSync(appBuilderBinary, ['icon', '--format', 'icns', '--input', sourcePng, '--out', buildDir], {
-    stdio: 'inherit'
+    return createIcnsChunk(type, fs.readFileSync(filePath))
   })
+  const length = 8 + chunks.reduce((total, chunk) => total + chunk.length, 0)
+  const header = Buffer.alloc(8)
 
-  console.log(`Generated mac icon from ${sourcePng}`)
+  header.write('icns', 0, 4, 'ascii')
+  header.writeUInt32BE(length, 4)
+  fs.writeFileSync(outputPath, Buffer.concat([header, ...chunks], length))
+
+  console.log(`Built mac icon: ${outputPath}`)
 }
 
-main()
+try {
+  main()
+} catch (error) {
+  console.error(error)
+  process.exitCode = 1
+}

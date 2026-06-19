@@ -50,3 +50,4 @@ pnpm dev
 
 - [备份恢复与内部路径迁移](./references/backup-restore.md)
 - [公告维护说明](./references/announcements.md)
+- [应用图标维护说明](./references/app-icons.md)
