@@ -720,10 +720,15 @@
     }
   },
   "announcements": {
+    "collapse": "收起",
     "empty": "暫無公告",
+    "expand": "展開",
     "learn_more": "瞭解更多",
     "subtitle": "最近 3 條產品公告會保留在這裡，方便你隨時回看。",
-    "title": "公告"
+    "title": "公告",
+    "updated_at": "最近更新 {{time}}",
+    "view_changes": "查看變更",
+    "view_content": "查看正文"
   },
   "apiServer": {
     "actions": {

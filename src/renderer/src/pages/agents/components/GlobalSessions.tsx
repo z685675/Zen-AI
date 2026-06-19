@@ -31,9 +31,11 @@ const GlobalSessions = ({ agentsById, onSelectItem }: GlobalSessionsProps) => {
   const { t } = useTranslation()
   const [viewMode, setViewMode] = useState<SessionViewMode>('active')
   const archivedFilter = viewMode === 'archived' ? 'only' : 'exclude'
-  const { sessions, isLoading, error, hasMore, loadMore, isLoadingMore, deleteSession, updateSession } = useAllSessions({
-    archived: archivedFilter
-  })
+  const { sessions, isLoading, error, hasMore, loadMore, isLoadingMore, deleteSession, updateSession } = useAllSessions(
+    {
+      archived: archivedFilter
+    }
+  )
   const { chat } = useRuntime()
   const { activeAgentId, activeSessionIdMap } = chat
   const { setActiveAgentId } = useActiveAgent()
@@ -42,18 +44,18 @@ const GlobalSessions = ({ agentsById, onSelectItem }: GlobalSessionsProps) => {
   const client = useAgentClient()
   const { createDefaultSession, creatingSession, canCreateSession } = useCreateDefaultSession(activeAgentId)
 
-  const [channelTypeMap, setChannelTypeMap] = useState<Record<string, string>>({})
+  const [channelMap, setChannelMap] = useState<Record<string, { type: string; isActive: boolean }>>({})
   useEffect(() => {
     client
       .listChannels()
       .then(({ data }) => {
-        const map: Record<string, string> = {}
+        const map: Record<string, { type: string; isActive: boolean }> = {}
         for (const ch of data) {
           if (ch.sessionId) {
-            map[ch.sessionId] = ch.type
+            map[ch.sessionId] = { type: ch.type, isActive: ch.isActive ?? ch.is_active ?? true }
           }
         }
-        setChannelTypeMap(map)
+        setChannelMap(map)
       })
       .catch(() => {})
   }, [client, sessions])
@@ -266,7 +268,8 @@ const GlobalSessions = ({ agentsById, onSelectItem }: GlobalSessionsProps) => {
               agent={agent}
               agentId={session.agent_id}
               isActive={activeAgentId === session.agent_id && activeSessionIdMap[session.agent_id] === session.id}
-              channelType={channelTypeMap[session.id]}
+              channelType={channelMap[session.id]?.type}
+              channelIsActive={channelMap[session.id]?.isActive}
               onDelete={() => {
                 void handleDelete(session.agent_id, session.id)
               }}

@@ -720,10 +720,15 @@
     }
   },
   "announcements": {
+    "collapse": "Collapse",
     "empty": "No announcements yet",
+    "expand": "Expand",
     "learn_more": "Learn more",
     "subtitle": "The latest 3 product announcements are kept here for quick review.",
-    "title": "Announcements"
+    "title": "Announcements",
+    "updated_at": "Recently updated {{time}}",
+    "view_changes": "View changes",
+    "view_content": "View content"
   },
   "apiServer": {
     "actions": {

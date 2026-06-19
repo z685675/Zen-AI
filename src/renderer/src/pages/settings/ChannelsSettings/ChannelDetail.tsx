@@ -392,7 +392,7 @@ const ChannelDetail: FC<ChannelDetailProps> = ({ channelDef }) => {
   }, [mutate])
 
   const createChannelEntry = useCallback(
-    async (overrides?: { agentId?: string; name?: string }) => {
+    async (overrides?: { agentId?: string; name?: string; isActive?: boolean }) => {
       const existingCount = channels?.length ?? 0
       try {
         const newChannel = await createChannel({
@@ -400,7 +400,7 @@ const ChannelDetail: FC<ChannelDetailProps> = ({ channelDef }) => {
           name: overrides?.name ?? (existingCount > 0 ? `${channelDef.name} ${existingCount + 1}` : channelDef.name),
           agent_id: overrides?.agentId,
           config: channelDef.defaultConfig,
-          is_active: true
+          is_active: overrides?.isActive ?? true
         })
         setEditingChannelId(newChannel.id)
         return newChannel
@@ -464,9 +464,14 @@ const ChannelDetail: FC<ChannelDetailProps> = ({ channelDef }) => {
     hasHandledAutoOpenRef.current = true
 
     const autoOpenChannel = async () => {
-      const targetChannel = requestedAgentId
-        ? channelList.find((channel) => channel.agentId === requestedAgentId)
-        : channelList[0]
+      const targetChannel =
+        channelDef.type === 'wechat'
+          ? channelList.find(
+              (channel) => channel.isActive && (!requestedAgentId || channel.agentId === requestedAgentId)
+            )
+          : requestedAgentId
+            ? channelList.find((channel) => channel.agentId === requestedAgentId)
+            : channelList[0]
 
       if (targetChannel) {
         setEditingChannelId(targetChannel.id)
@@ -474,11 +479,11 @@ const ChannelDetail: FC<ChannelDetailProps> = ({ channelDef }) => {
           agentId: requestedAgentId && targetChannel.agentId !== requestedAgentId ? requestedAgentId : undefined,
           isActive: true
         })
-        if (channelDef.type === 'wechat') {
-          setAutoReconnectChannelId(targetChannel.id)
-        }
       } else {
-        const newChannel = await createChannelEntry({ agentId: requestedAgentId })
+        const newChannel = await createChannelEntry({
+          agentId: requestedAgentId,
+          isActive: channelDef.type === 'wechat' ? false : true
+        })
         if (newChannel && channelDef.type === 'wechat') {
           setAutoReconnectChannelId(newChannel.id)
         }

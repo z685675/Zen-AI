@@ -43,6 +43,7 @@ export class BackupPathMigrationService {
     ]
     if (options.removeWeChatCredentials) {
       migrations.push(this.removeRestoredWeChatCredentials())
+      migrations.push(this.deactivateRestoredWeChatChannels())
     }
 
     await Promise.all(migrations)
@@ -164,6 +165,37 @@ export class BackupPathMigrationService {
       }
     } catch (error) {
       logger.error('Failed to remove restored WeChat credentials', error as Error)
+    }
+  }
+
+  private static async deactivateRestoredWeChatChannels(): Promise<void> {
+    const dbPath = path.join(getDataPath(), 'agents.db')
+    if (!(await fs.pathExists(dbPath))) {
+      return
+    }
+
+    const client = createClient({ url: `file:${dbPath}` })
+
+    try {
+      if (!(await this.hasColumn(client, 'channels', 'is_active'))) {
+        return
+      }
+
+      const result = await client.execute({
+        sql: "UPDATE channels SET is_active = 0 WHERE type = 'wechat'",
+        args: []
+      })
+
+      const rowsAffected = Number(result.rowsAffected ?? 0)
+      if (rowsAffected > 0) {
+        logger.info('Marked restored WeChat channels inactive; a new channel should be scanned on this device', {
+          updated: rowsAffected
+        })
+      }
+    } catch (error) {
+      logger.error('Failed to mark restored WeChat channels inactive', error as Error)
+    } finally {
+      client.close()
     }
   }
 

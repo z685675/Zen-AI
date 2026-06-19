@@ -21,6 +21,7 @@ export type AnnouncementItem = {
   minAppVersion?: string
   maxAppVersion?: string
   startsAt?: string
+  updatedAt?: string
   endsAt?: string
   link?: AnnouncementLink
 }

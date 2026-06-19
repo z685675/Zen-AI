@@ -49,3 +49,4 @@ pnpm dev
 ## 维护参考
 
 - [备份恢复与内部路径迁移](./references/backup-restore.md)
+- [公告维护说明](./references/announcements.md)

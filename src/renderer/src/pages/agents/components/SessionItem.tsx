@@ -33,6 +33,7 @@ interface SessionItemProps {
   agentId: string
   isActive?: boolean
   channelType?: string
+  channelIsActive?: boolean
   onDelete: () => void
   onTogglePinned?: () => void
   onToggleArchived?: () => void
@@ -45,6 +46,7 @@ const SessionItem = ({
   agentId,
   isActive: isActiveProp,
   channelType,
+  channelIsActive,
   onDelete,
   onTogglePinned,
   onToggleArchived,
@@ -131,6 +133,7 @@ const SessionItem = ({
   }, [activeSessionId, dispatch, isFulfilled, session.id, sessionTopicId])
 
   const channelIcon = getChannelTypeIcon(channelType)
+  const showOfflineBadge = !!channelType && channelIsActive === false
   const lastUsedAt = dayjs(session.updated_at).format('YYYY/MM/DD HH:mm')
 
   const { topicPosition, setTopicPosition } = useSettings()
@@ -250,6 +253,7 @@ const SessionItem = ({
             <>
               <SessionName>
                 {channelIcon && <ChannelIconImg src={channelIcon} />}
+                {showOfflineBadge && <OfflineBadge>{t('agent.cherryClaw.channels.disconnected')}</OfflineBadge>}
                 {session.is_pinned && <Pin size={11} className="shrink-0 text-(--color-text-secondary)" />}
                 <MarqueeText className="flex min-w-0 flex-1">
                   <SessionLabel
@@ -378,6 +382,17 @@ const ChannelIconImg = styled.img`
   flex-shrink: 0;
   border-radius: 2px;
   object-fit: contain;
+`
+
+const OfflineBadge = styled.span`
+  flex-shrink: 0;
+  border-radius: 4px;
+  border: 0.5px solid var(--color-border);
+  color: var(--color-text-3);
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 14px;
+  padding: 0 4px;
 `
 
 const SessionEditInput = styled.input`

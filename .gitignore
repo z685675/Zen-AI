@@ -47,6 +47,7 @@ resources/binaries/
 
 # Local
 local
+src/renderer/public/announcements-dev.json
 .aider*
 .cursorrules
 .cursor/*

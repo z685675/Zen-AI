@@ -46,19 +46,18 @@ const Sessions = ({ agentId, onSelectItem }: SessionsProps) => {
   const listRef = useRef<DraggableVirtualListRef>(null)
   const client = useAgentClient()
 
-  // Build sessionId → channelType map from channels table
-  const [channelTypeMap, setChannelTypeMap] = useState<Record<string, string>>({})
+  const [channelMap, setChannelMap] = useState<Record<string, { type: string; isActive: boolean }>>({})
   useEffect(() => {
     client
       .listChannels({ agent_id: agentId })
       .then(({ data }) => {
-        const map: Record<string, string> = {}
+        const map: Record<string, { type: string; isActive: boolean }> = {}
         for (const ch of data) {
           if (ch.sessionId) {
-            map[ch.sessionId] = ch.type
+            map[ch.sessionId] = { type: ch.type, isActive: ch.isActive ?? ch.is_active ?? true }
           }
         }
-        setChannelTypeMap(map)
+        setChannelMap(map)
       })
       .catch(() => {})
   }, [client, agentId, sessions])
@@ -202,7 +201,8 @@ const Sessions = ({ agentId, onSelectItem }: SessionsProps) => {
             key={session.id}
             session={session}
             agentId={agentId}
-            channelType={channelTypeMap[session.id]}
+            channelType={channelMap[session.id]?.type}
+            channelIsActive={channelMap[session.id]?.isActive}
             onDelete={() => handleDeleteSession(session.id)}
             onPress={() => {
               setActiveSessionId(agentId, session.id)

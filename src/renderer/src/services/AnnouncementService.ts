@@ -4,10 +4,22 @@ import type { AnnouncementItem, AnnouncementPayload, AnnouncementPlatform } from
 const CACHE_KEY = 'announcements.payload.v1'
 const DISMISSED_KEY = 'announcements.dismissed.ids.v1'
 const READ_VERSIONS_KEY = 'announcements.read.versions.v1'
+const PREVIOUS_VERSIONS_KEY = 'announcements.previous.versions.v1'
+const CHANGE_ACK_VERSIONS_KEY = 'announcements.change.ack.versions.v1'
 const FEED_GONE_STATUS_CODES = new Set([404, 410])
 
 export type AnnouncementViewItem = AnnouncementItem & {
   publishedAt: string
+}
+
+export type AnnouncementReadSnapshot = {
+  id: string
+  title: string
+  content: string
+  publishedAt: string
+  updatedAt?: string | null
+  priority?: number
+  link?: AnnouncementItem['link'] | null
 }
 
 const toTimestamp = (value?: string): number => {
@@ -17,6 +29,10 @@ const toTimestamp = (value?: string): number => {
 
   const timestamp = new Date(value).getTime()
   return Number.isFinite(timestamp) ? timestamp : 0
+}
+
+const getLatestItemTimestamp = (item: AnnouncementViewItem): number => {
+  return Math.max(toTimestamp(item.publishedAt), toTimestamp(item.updatedAt))
 }
 
 const normalizeVersionParts = (version: string): number[] => {
@@ -94,6 +110,7 @@ const normalizeItem = (value: unknown): AnnouncementItem | null => {
   if (typeof value.minAppVersion === 'string') item.minAppVersion = value.minAppVersion
   if (typeof value.maxAppVersion === 'string') item.maxAppVersion = value.maxAppVersion
   if (typeof value.startsAt === 'string') item.startsAt = value.startsAt
+  if (typeof value.updatedAt === 'string') item.updatedAt = value.updatedAt
   if (typeof value.endsAt === 'string') item.endsAt = value.endsAt
 
   if (isRecord(value.link) && typeof value.link.label === 'string' && typeof value.link.url === 'string') {
@@ -127,8 +144,12 @@ const getCurrentPlatform = (): AnnouncementPlatform | undefined => {
 }
 
 const getReadVersions = (): Record<string, string> => {
+  return getStringRecord(READ_VERSIONS_KEY)
+}
+
+const getStringRecord = (key: string): Record<string, string> => {
   try {
-    const value = JSON.parse(localStorage.getItem(READ_VERSIONS_KEY) || '{}')
+    const value = JSON.parse(localStorage.getItem(key) || '{}')
     return isRecord(value)
       ? Object.fromEntries(
           Object.entries(value).filter((entry): entry is [string, string] => typeof entry[1] === 'string')
@@ -139,12 +160,67 @@ const getReadVersions = (): Record<string, string> => {
   }
 }
 
+const getStoredSnapshots = (key: string): Record<string, AnnouncementReadSnapshot> => {
+  try {
+    const value = JSON.parse(localStorage.getItem(key) || '{}')
+    return isRecord(value)
+      ? Object.fromEntries(
+          Object.entries(value).flatMap(([id, raw]) => {
+            const snapshot = normalizeReadSnapshot(raw)
+            return snapshot ? [[id, snapshot]] : []
+          })
+        )
+      : {}
+  } catch {
+    return {}
+  }
+}
+
+const normalizeReadSnapshot = (value: unknown): AnnouncementReadSnapshot | null => {
+  if (
+    !isRecord(value) ||
+    typeof value.id !== 'string' ||
+    typeof value.title !== 'string' ||
+    typeof value.content !== 'string' ||
+    typeof value.publishedAt !== 'string'
+  ) {
+    return null
+  }
+
+  const snapshot: AnnouncementReadSnapshot = {
+    id: value.id,
+    title: value.title,
+    content: value.content,
+    publishedAt: value.publishedAt
+  }
+
+  if (typeof value.updatedAt === 'string' || value.updatedAt === null) {
+    snapshot.updatedAt = value.updatedAt
+  }
+
+  if (typeof value.priority === 'number' && Number.isFinite(value.priority)) {
+    snapshot.priority = value.priority
+  }
+
+  if (isRecord(value.link) && typeof value.link.label === 'string' && typeof value.link.url === 'string') {
+    snapshot.link = {
+      label: value.link.label,
+      url: value.link.url
+    }
+  } else if (value.link === null) {
+    snapshot.link = null
+  }
+
+  return snapshot
+}
+
 const getAnnouncementVersion = (item: AnnouncementViewItem): string => {
   return JSON.stringify({
     id: item.id,
     title: item.title,
     content: item.content,
     publishedAt: item.publishedAt,
+    updatedAt: item.updatedAt ?? null,
     priority: item.priority ?? 0,
     link: item.link ?? null
   })
@@ -206,6 +282,38 @@ export const announcementService = {
     return ids
   },
 
+  getReadSnapshots(): Record<string, AnnouncementReadSnapshot> {
+    return Object.fromEntries(
+      Object.entries(getReadVersions()).flatMap(([id, raw]) => {
+        try {
+          const snapshot = normalizeReadSnapshot(JSON.parse(raw))
+          return snapshot ? [[id, snapshot]] : []
+        } catch {
+          return []
+        }
+      })
+    )
+  },
+
+  getPreviousSnapshots(): Record<string, AnnouncementReadSnapshot> {
+    return getStoredSnapshots(PREVIOUS_VERSIONS_KEY)
+  },
+
+  getChangeAckVersions(): Record<string, string> {
+    return getStringRecord(CHANGE_ACK_VERSIONS_KEY)
+  },
+
+  getAnnouncementVersion(item: AnnouncementViewItem): string {
+    return getAnnouncementVersion(item)
+  },
+
+  acknowledgeAnnouncementChange(item: AnnouncementViewItem): Record<string, string> {
+    const versions = this.getChangeAckVersions()
+    versions[item.id] = getAnnouncementVersion(item)
+    localStorage.setItem(CHANGE_ACK_VERSIONS_KEY, JSON.stringify(versions))
+    return versions
+  },
+
   getUnreadCount(items: AnnouncementViewItem[]): number {
     const readVersions = getReadVersions()
     return items.filter((item) => readVersions[item.id] !== getAnnouncementVersion(item)).length
@@ -217,10 +325,24 @@ export const announcementService = {
     }
 
     const readVersions = getReadVersions()
+    const previousSnapshots = this.getPreviousSnapshots()
     for (const item of items) {
-      readVersions[item.id] = getAnnouncementVersion(item)
+      const nextVersion = getAnnouncementVersion(item)
+      const currentVersion = readVersions[item.id]
+      if (currentVersion && currentVersion !== nextVersion) {
+        try {
+          const currentSnapshot = normalizeReadSnapshot(JSON.parse(currentVersion))
+          if (currentSnapshot) {
+            previousSnapshots[item.id] = currentSnapshot
+          }
+        } catch {
+          // Ignore malformed old snapshots.
+        }
+      }
+      readVersions[item.id] = nextVersion
     }
     localStorage.setItem(READ_VERSIONS_KEY, JSON.stringify(readVersions))
+    localStorage.setItem(PREVIOUS_VERSIONS_KEY, JSON.stringify(previousSnapshots))
     return this.getUnreadCount(items)
   },
 
@@ -251,7 +373,7 @@ export const announcementService = {
   getLatestAnnouncements(items: AnnouncementViewItem[], limit = 3): AnnouncementViewItem[] {
     return items
       .filter((item) => item.type === 'announcement')
-      .sort((a, b) => toTimestamp(b.publishedAt) - toTimestamp(a.publishedAt))
+      .sort((a, b) => getLatestItemTimestamp(b) - getLatestItemTimestamp(a))
       .slice(0, limit)
   },
 
