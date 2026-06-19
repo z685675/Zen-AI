@@ -27,8 +27,13 @@ const AGENT_DB_TEXT_COLUMNS: TextColumnTarget[] = [
 ]
 
 const NOTE_EXTENSIONS = new Set(['.md', '.markdown'])
+const MIGRATION_MARKER_FILE = '.internal-path-migration-v1'
 
 export class BackupPathMigrationService {
+  static async hasMigrationMarker(): Promise<boolean> {
+    return fs.pathExists(this.getMigrationMarkerPath())
+  }
+
   static async migrateRestoredInternalPaths(): Promise<void> {
     const currentUserDataPath = app.getPath('userData')
 
@@ -36,6 +41,12 @@ export class BackupPathMigrationService {
       this.migrateAgentsDatabase(currentUserDataPath),
       this.migrateNotesInternalLinks(currentUserDataPath)
     ])
+
+    await fs.writeFile(this.getMigrationMarkerPath(), new Date().toISOString(), 'utf-8')
+  }
+
+  private static getMigrationMarkerPath(): string {
+    return path.join(getDataPath(), MIGRATION_MARKER_FILE)
   }
 
   private static async migrateAgentsDatabase(currentUserDataPath: string): Promise<void> {

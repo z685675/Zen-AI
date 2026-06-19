@@ -39,23 +39,37 @@ function getAppDataDirNames(currentUserDataPath: string, options?: InternalDataP
   return uniqueValues([...(options?.appDataDirNames ?? DEFAULT_APP_DATA_DIR_NAMES), currentName ?? ''])
 }
 
+function hasMigrationCandidate(value: string, appDataDirNames: string[]): boolean {
+  if (!value.includes('Data')) {
+    return false
+  }
+
+  const lowerValue = value.toLowerCase()
+  return appDataDirNames.some((name) => lowerValue.includes(name.toLowerCase()))
+}
+
 function replaceWithPatterns(value: string, currentUserDataPath: string, appDataDirNames: string[]): string {
   const namesPattern = appDataDirNames.map(escapeRegExp).join('|')
   const currentDataBackslash = `${normalizeSlashes(trimTrailingSeparators(currentUserDataPath), '\\')}\\Data`
   const currentDataSlash = `${normalizeSlashes(trimTrailingSeparators(currentUserDataPath), '/')}/Data`
   const currentDataEscaped = currentDataBackslash.replace(/\\/g, '\\\\')
+  const windowsSegment = '[^\\\\/"<>|\\r\\n]+'
+  const posixSegment = `[^/"'<>|\\r\\n]+`
 
   const windowsBackslash = new RegExp(
-    `(?<![A-Za-z])[A-Za-z]:\\\\[^"<>|\\r\\n]*?\\\\(?:${namesPattern})\\\\Data(?=\\\\|$)`,
-    'g'
+    `(?<![A-Za-z])[A-Za-z]:\\\\(?:${windowsSegment}\\\\){0,16}(?:${namesPattern})\\\\Data(?=\\\\|$)`,
+    'gi'
   )
-  const windowsSlash = new RegExp(`(?<![A-Za-z])[A-Za-z]:/[^"<>|\\r\\n]*?/(?:${namesPattern})/Data(?=/|$)`, 'g')
+  const windowsSlash = new RegExp(
+    `(?<![A-Za-z])[A-Za-z]:/(?:${windowsSegment}/){0,16}(?:${namesPattern})/Data(?=/|$)`,
+    'gi'
+  )
   const windowsEscaped = new RegExp(
-    `(?<![A-Za-z])[A-Za-z]:(?:\\\\\\\\)[^"<>|\\r\\n]*?(?:\\\\\\\\)(?:${namesPattern})(?:\\\\\\\\)Data(?=(?:\\\\\\\\)|$)`,
-    'g'
+    `(?<![A-Za-z])[A-Za-z]:(?:\\\\\\\\)(?:[^"<>|\\\\\\r\\n]+(?:\\\\\\\\)){0,16}(?:${namesPattern})(?:\\\\\\\\)Data(?=(?:\\\\\\\\)|$)`,
+    'gi'
   )
-  const posixFileUrl = new RegExp(`file://(/(?:[^"'<>|\\r\\n]+/)*?(?:${namesPattern})/Data)(?=/|$)`, 'g')
-  const posix = new RegExp(`(^|[\\s"'(=])(/(?:[^"'<>|\\r\\n]+/)*?(?:${namesPattern})/Data)(?=/|$)`, 'g')
+  const posixFileUrl = new RegExp(`file://(/(?:${posixSegment}/){0,32}(?:${namesPattern})/Data)(?=/|$)`, 'gi')
+  const posix = new RegExp(`(^|[\\s"'(=])(/(?:${posixSegment}/){0,32}(?:${namesPattern})/Data)(?=/|$)`, 'gi')
 
   return value
     .replace(windowsEscaped, currentDataEscaped)
@@ -75,6 +89,10 @@ export function migrateInternalDataPathsInString(
   }
 
   const appDataDirNames = getAppDataDirNames(currentUserDataPath, options)
+  if (!hasMigrationCandidate(value, appDataDirNames)) {
+    return { value, changed: false }
+  }
+
   const migrated = replaceWithPatterns(value, currentUserDataPath, appDataDirNames)
   return { value: migrated, changed: migrated !== value }
 }

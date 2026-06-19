@@ -84,6 +84,7 @@ class BackupManager {
       const hasIndexedDBRestore = await fs.pathExists(indexedDBRestore)
       const hasLocalStorageRestore = await fs.pathExists(localStorageRestore)
       const hasDataRestore = await fs.pathExists(dataRestore)
+      const hasRestoreMarker = hasIndexedDBRestore || hasLocalStorageRestore || hasDataRestore
 
       // Restore IndexedDB
       if (hasIndexedDBRestore) {
@@ -106,7 +107,9 @@ class BackupManager {
         await fs.rename(dataRestore, dataDest)
       }
 
-      await BackupPathMigrationService.migrateRestoredInternalPaths()
+      if (hasRestoreMarker || !(await BackupPathMigrationService.hasMigrationMarker())) {
+        await BackupPathMigrationService.migrateRestoredInternalPaths()
+      }
 
       logger.info('[handleStartupRestore] Restoration completed successfully')
     } catch (error) {

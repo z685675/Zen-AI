@@ -43,6 +43,14 @@ describe('internal data path migration', () => {
     expect(result.value).toBe(externalPath)
   })
 
+  it('quickly skips large text without an internal app data path candidate', () => {
+    const largeContent = `${'large message Data '.repeat(100_000)}C:\\Users\\zen\\Documents\\wechat\\image.jpg`
+    const result = migrateInternalDataPathsInString(largeContent, currentUserData)
+
+    expect(result.changed).toBe(false)
+    expect(result.value).toBe(largeContent)
+  })
+
   it('migrates nested objects', () => {
     const result = migrateInternalDataPathsDeep(
       {

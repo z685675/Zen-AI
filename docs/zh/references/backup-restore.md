@@ -17,6 +17,8 @@ Zen AI 的备份中可能包含应用内部数据路径，例如：
 - `Data/Notes` 下 Markdown 文件中的内部链接
 - 智能助手运行时读取到的 `accessible_paths`
 
+迁移完成后会在 `Data` 目录写入 `.internal-path-migration-v1` 标记。没有新的恢复任务时，启动流程不会重复扫描数据库和笔记文件，避免大体量历史会话拖慢启动。
+
 渲染进程启动后还会执行本地数据库和持久化状态迁移：
 
 - IndexedDB `files`
@@ -43,6 +45,8 @@ Zen AI 的备份中可能包含应用内部数据路径，例如：
 - JSON 转义路径：`C:\\Users\\old\\AppData\\Roaming\\zen-ai\\Data\\...`
 - `file://` 链接
 - macOS/Linux 风格路径
+
+迁移实现会先判断文本中是否同时包含 `Data` 和已知应用数据目录名，再执行路径替换。这样可以快速跳过大型普通消息内容，避免在数 MB 级会话文本上进行不必要的正则扫描。
 
 ## 验证建议
 

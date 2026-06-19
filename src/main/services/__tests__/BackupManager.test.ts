@@ -38,7 +38,11 @@ vi.mock('path', async () => {
 })
 
 // Use vi.hoisted to define mocks that are available during hoisting
-const { mockLogger } = vi.hoisted(() => ({
+const { mockBackupPathMigrationService, mockLogger } = vi.hoisted(() => ({
+  mockBackupPathMigrationService: {
+    hasMigrationMarker: vi.fn(),
+    migrateRestoredInternalPaths: vi.fn()
+  },
   mockLogger: {
     info: vi.fn(),
     warn: vi.fn(),
@@ -71,6 +75,7 @@ vi.mock('fs-extra', () => ({
     remove: vi.fn(),
     ensureDir: vi.fn(),
     copy: vi.fn(),
+    rename: vi.fn(),
     readdir: vi.fn(),
     stat: vi.fn(),
     readFile: vi.fn(),
@@ -82,6 +87,7 @@ vi.mock('fs-extra', () => ({
   remove: vi.fn(),
   ensureDir: vi.fn(),
   copy: vi.fn(),
+  rename: vi.fn(),
   readdir: vi.fn(),
   stat: vi.fn(),
   readFile: vi.fn(),
@@ -106,6 +112,10 @@ vi.mock('../S3Storage', () => ({
 
 vi.mock('../../utils', () => ({
   getDataPath: vi.fn(() => '/mock/data')
+}))
+
+vi.mock('../BackupPathMigrationService', () => ({
+  BackupPathMigrationService: mockBackupPathMigrationService
 }))
 
 vi.mock('archiver', () => ({
@@ -313,5 +323,48 @@ describe('BackupManager.deleteLanTransferBackup - Security Tests', () => {
       // path.normalize handles double slashes
       expect(result).toBe(true)
     })
+  })
+})
+
+describe('BackupManager.handleStartupRestore', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockBackupPathMigrationService.hasMigrationMarker.mockResolvedValue(true)
+    mockBackupPathMigrationService.migrateRestoredInternalPaths.mockResolvedValue(undefined)
+    vi.mocked(fs.remove).mockResolvedValue(undefined as never)
+    vi.mocked(fs.rename).mockResolvedValue(undefined as never)
+  })
+
+  it('skips internal path migration when no restore marker exists and migration already ran', async () => {
+    vi.mocked(fs.pathExists).mockResolvedValue(false as never)
+
+    await BackupManager.handleStartupRestore()
+
+    expect(mockBackupPathMigrationService.hasMigrationMarker).toHaveBeenCalled()
+    expect(mockBackupPathMigrationService.migrateRestoredInternalPaths).not.toHaveBeenCalled()
+  })
+
+  it('runs internal path migration once when no restore marker exists but migration marker is missing', async () => {
+    vi.mocked(fs.pathExists).mockResolvedValue(false as never)
+    mockBackupPathMigrationService.hasMigrationMarker.mockResolvedValue(false)
+
+    await BackupManager.handleStartupRestore()
+
+    expect(mockBackupPathMigrationService.migrateRestoredInternalPaths).toHaveBeenCalledTimes(1)
+  })
+
+  it('restores pending directories and runs internal path migration after a restore', async () => {
+    vi.mocked(fs.pathExists).mockImplementation(async (target) => String(target).endsWith('.restore') as never)
+
+    await BackupManager.handleStartupRestore()
+
+    expect(fs.remove).toHaveBeenCalledWith('/mock/userData/IndexedDB')
+    expect(fs.rename).toHaveBeenCalledWith('/mock/userData/IndexedDB.restore', '/mock/userData/IndexedDB')
+    expect(fs.remove).toHaveBeenCalledWith('/mock/userData/Local Storage')
+    expect(fs.rename).toHaveBeenCalledWith('/mock/userData/Local Storage.restore', '/mock/userData/Local Storage')
+    expect(fs.remove).toHaveBeenCalledWith('/mock/data')
+    expect(fs.rename).toHaveBeenCalledWith('/mock/data.restore', '/mock/data')
+    expect(mockBackupPathMigrationService.hasMigrationMarker).not.toHaveBeenCalled()
+    expect(mockBackupPathMigrationService.migrateRestoredInternalPaths).toHaveBeenCalledTimes(1)
   })
 })
