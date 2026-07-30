@@ -37,13 +37,12 @@ export async function bootstrapBuiltinAgents(): Promise<void> {
   await markLegacyAgentsDeprecated()
 }
 
-async function syncBuiltinSessionModel(agentId: string): Promise<void> {
+async function syncBuiltinSessionDefaults(agentId: string): Promise<void> {
   const agent = await agentService.getAgent(agentId)
-  if (!agent?.model) {
+  if (!agent) {
     return
   }
 
-  await sessionService.syncAgentSessionModel(agentId, agent.model)
   if (agent.instructions) {
     await sessionService.syncAgentSessionInstructions(agentId, agent.instructions)
   }
@@ -87,7 +86,7 @@ async function initFusionAgent(): Promise<void> {
       logger.info('Default session created for fusion agent')
     }
 
-    await syncBuiltinSessionModel(agentId)
+    await syncBuiltinSessionDefaults(agentId)
     await schedulerService.ensureHeartbeatTask(agentId, 30)
   } catch (error) {
     logger.warn('Failed to init fusion agent:', error as Error)

@@ -130,6 +130,38 @@ describe('vision helpers', () => {
       expect(isAutoEnableImageGenerationModel(createModel({ id: 'gemini-2.5-flash-image-ultra' }))).toBe(true)
     })
 
+    it.each([
+      'gpt-image-2',
+      'nano-banana',
+      'nano-banana-pro',
+      'gemini-2.5-flash-image',
+      'gemini-3.1-pro-image-preview',
+      'imagen-4.0-generate-001',
+      'grok-imagine-image',
+      'flux-2-pro',
+      'stable-image-ultra',
+      'sd3.5-large',
+      'seedream-4.5',
+      'seededit-3.0',
+      'qwen-image-edit',
+      'ideogram-v3',
+      'recraft-v3',
+      'hunyuan-image-3',
+      'kling-image-o1',
+      'wan2.6-image',
+      'hidream-i1',
+      'kolors'
+    ])('recognizes common image model family %s', (id) => {
+      expect(isDedicatedImageGenerationModel(createModel({ id }))).toBe(true)
+    })
+
+    it.each(['gemini-3-flash-preview', 'grok-4.5', 'wan2.6-video', 'kling-video-o1', 'usd3-chat'])(
+      'does not misclassify non-image model %s',
+      (id) => {
+        expect(isDedicatedImageGenerationModel(createModel({ id }))).toBe(false)
+      }
+    )
+
     it('returns false when models are not in dedicated or auto-enable sets', () => {
       expect(isDedicatedImageGenerationModel(createModel({ id: 'gpt-4o' }))).toBe(false)
       expect(isAutoEnableImageGenerationModel(createModel({ id: 'gpt-4o' }))).toBe(false)

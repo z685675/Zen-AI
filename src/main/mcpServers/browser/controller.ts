@@ -6,7 +6,7 @@ import TurndownService from 'turndown'
 
 import { SESSION_KEY_DEFAULT, SESSION_KEY_PRIVATE, TAB_BAR_HEIGHT } from './constants'
 import { TAB_BAR_HTML } from './tabbar-html'
-import { logger, type BrowserHandoffInfo, type TabInfo, userAgent, type WindowInfo } from './types'
+import { type BrowserHandoffInfo, logger, type TabInfo, userAgent, type WindowInfo } from './types'
 
 /**
  * Controller for managing browser windows via Chrome DevTools Protocol (CDP).

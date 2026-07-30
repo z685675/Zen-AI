@@ -155,8 +155,7 @@ const MessageHeader: FC<Props> = memo(({ assistant, model, message, topic, isGro
           )}
           {syncStatusLabel && (
             <>
-              |
-              <SyncStatusBadge status={syncStatus?.status}>{syncStatusLabel}</SyncStatusBadge>
+              |<SyncStatusBadge status={syncStatus?.status}>{syncStatusLabel}</SyncStatusBadge>
             </>
           )}
         </InfoWrap>

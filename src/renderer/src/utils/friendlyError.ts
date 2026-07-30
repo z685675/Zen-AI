@@ -16,11 +16,21 @@ export function getFriendlyPaintingErrorMessage(error: unknown): string {
     return '图片生成已取消。'
   }
 
-  if (message.includes('401') || message.includes('403') || message.includes('unauthorized') || message.includes('forbidden')) {
+  if (
+    message.includes('401') ||
+    message.includes('403') ||
+    message.includes('unauthorized') ||
+    message.includes('forbidden')
+  ) {
     return '图片生成服务暂时不可用。请检查当前服务商的 API Key、余额或模型权限。'
   }
 
-  if (message.includes('429') || message.includes('rate limit') || message.includes('quota') || message.includes('insufficient')) {
+  if (
+    message.includes('429') ||
+    message.includes('rate limit') ||
+    message.includes('quota') ||
+    message.includes('insufficient')
+  ) {
     return '图片生成服务当前额度不足或请求太频繁。请稍后重试，或切换其他服务商/模型。'
   }
 

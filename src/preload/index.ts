@@ -43,6 +43,7 @@ import type {
   Shortcut,
   StartApiServerStatusResult,
   StopApiServerStatusResult,
+  StructuredFileContent,
   SupportedOcrFile,
   ThemeMode,
   WebDavConfig
@@ -220,6 +221,8 @@ const api = {
     renameDir: (dirPath: string, newName: string) => ipcRenderer.invoke(IpcChannel.File_RenameDir, dirPath, newName),
     read: (fileId: string, detectEncoding?: boolean) =>
       ipcRenderer.invoke(IpcChannel.File_Read, fileId, detectEncoding),
+    readStructured: (fileId: string): Promise<StructuredFileContent> =>
+      ipcRenderer.invoke(IpcChannel.File_ReadStructured, fileId),
     readExternal: (filePath: string, detectEncoding?: boolean) =>
       ipcRenderer.invoke(IpcChannel.File_ReadExternal, filePath, detectEncoding),
     clear: (spanContext?: SpanContext) => ipcRenderer.invoke(IpcChannel.File_Clear, spanContext),
@@ -477,6 +480,7 @@ const api = {
   getBinaryPath: (name: string) => ipcRenderer.invoke(IpcChannel.App_GetBinaryPath, name),
   checkAssistantEnvironment: () => ipcRenderer.invoke(IpcChannel.App_CheckAssistantEnvironment),
   installUVBinary: () => ipcRenderer.invoke(IpcChannel.App_InstallUvBinary),
+  installManagedPython: () => ipcRenderer.invoke(IpcChannel.App_InstallManagedPython),
   installBunBinary: () => ipcRenderer.invoke(IpcChannel.App_InstallBunBinary),
   installGitForWindows: () => ipcRenderer.invoke(IpcChannel.App_InstallGitForWindows),
   installOvmsBinary: () => ipcRenderer.invoke(IpcChannel.App_InstallOvmsBinary),
@@ -608,11 +612,21 @@ const api = {
       return () => ipcRenderer.off(IpcChannel.AgentSessionStream_Chunk, listener)
     },
     onSessionChanged: (
-      callback: (data: { agentId: string; sessionId: string; headless?: boolean }) => void
+      callback: (data: {
+        agentId: string
+        sessionId: string
+        headless?: boolean
+        reason?: 'created' | 'completed'
+      }) => void
     ): (() => void) => {
       const listener = (
         _event: Electron.IpcRendererEvent,
-        data: { agentId: string; sessionId: string; headless?: boolean }
+        data: {
+          agentId: string
+          sessionId: string
+          headless?: boolean
+          reason?: 'created' | 'completed'
+        }
       ) => {
         callback(data)
       }

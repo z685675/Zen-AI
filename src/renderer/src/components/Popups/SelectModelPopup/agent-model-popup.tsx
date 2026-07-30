@@ -11,6 +11,8 @@ interface PopupParams {
   model?: ApiModel
   /** Api models filter */
   apiFilter?: ApiModelsFilter
+  /** Filter using API protocol metadata before adapting the model. */
+  apiModelFilter?: (model: ApiModel) => boolean
   /** model filter */
   modelFilter?: (model: Model) => boolean
   /** Show tag filter section */
@@ -41,13 +43,21 @@ const buildFallbackProvider = (providerId: string, model: AdaptedApiModel): Prov
   }
 }
 
-const PopupContainer: React.FC<Props> = ({ model, apiFilter, modelFilter, showTagFilter = true, resolve }) => {
+const PopupContainer: React.FC<Props> = ({
+  model,
+  apiFilter,
+  apiModelFilter,
+  modelFilter,
+  showTagFilter = true,
+  resolve
+}) => {
   const { models, isLoading } = useApiModels(apiFilter)
   const allProviders = useAllProviders()
 
   const providers = useMemo(() => {
     const providerOrderMap = new Map(allProviders.map((provider, index) => [provider.id, index]))
     const adaptedModels = models
+      .filter((item) => (apiModelFilter ? apiModelFilter(item) : true))
       .map((item) => apiModelAdapter(item))
       .filter((item) => (modelFilter ? modelFilter(item) : true))
     const groupedModels = groupBy(adaptedModels, (item) => item.provider)
@@ -73,7 +83,7 @@ const PopupContainer: React.FC<Props> = ({ model, apiFilter, modelFilter, showTa
         }
       })
       .filter((provider): provider is Provider => !!provider && provider.models.length > 0)
-  }, [allProviders, modelFilter, models])
+  }, [allProviders, apiModelFilter, modelFilter, models])
 
   const selectedModel = useMemo(() => (model ? apiModelAdapter(model) : undefined), [model])
 

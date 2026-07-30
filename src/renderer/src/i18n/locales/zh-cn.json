@@ -8,7 +8,7 @@
       },
       "model": {
         "supported_providers": "支持的服务商",
-        "tooltip": "目前，只有支持 Anthropic 端点的模型可用于 Agent 功能。",
+        "tooltip": "选择 Agent 的新对话默认模型。实际任务会由 Auto 匹配合适的底层运行时。",
         "view_providers": "查看支持的服务商"
       },
       "title": "添加 Agent",
@@ -347,7 +347,9 @@
       "tooltip": "在 Windows 上运行智能体需要 Git Bash。如果未安装，请从 git-scm.com 下载安装。"
     },
     "input": {
+      "hero_placeholder": "比如：帮我搜索资料、总结重点，再整理成结果给我",
       "placeholder": "在这里输入消息，按 {{key}} 发送 - @ 选择路径， / 选择命令",
+      "reasoning_effort": "思考强度",
       "soul_placeholder": "帮我连接微信"
     },
     "list": {
@@ -368,6 +370,7 @@
     "session": {
       "accessible_paths": {
         "add": "添加目录",
+        "current": "当前工作区",
         "default_hint": "未指定时将自动创建默认工作目录。",
         "duplicate": "该目录已添加。",
         "empty": "请选择至少一个智能体可访问的目录。",
@@ -375,7 +378,8 @@
           "at_least_one": "请至少选择一个可访问的目录"
         },
         "label": "工作目录",
-        "select_failed": "选择目录失败"
+        "select_failed": "选择目录失败",
+        "set_active": "设为当前"
       },
       "add": {
         "title": "添加会话"
@@ -409,6 +413,7 @@
       "edit": {
         "title": "编辑会话"
       },
+      "fallback_title": "智能助手任务",
       "get": {
         "error": {
           "failed": "获取会话失败",
@@ -456,9 +461,35 @@
           },
           "placeholder": "选择权限模式"
         },
+        "runtime": {
+          "codexDisabled": "当前版本未开放 Codex 运行时。Auto 会继续使用稳定的 Claude Code 主链路。",
+          "description": "选择此 Agent 使用的底层运行时。当前阶段 Auto 保持现有 Claude Code 主链路，Codex 仅用于受控测试。",
+          "helper": "建议保持 Auto。只有在使用已验证的 OpenAI 接口进行测试时，才手动选择 Codex。",
+          "incompatible": {
+            "claudeCode": {
+              "description": "运行时已切换，但当前模型不兼容 Claude Code。请在开始任务前选择提供 Anthropic Messages 接口的模型。",
+              "title": "请更换 Claude Code 兼容模型"
+            },
+            "codex": {
+              "description": "运行时已切换，但当前模型不兼容 Codex。请在开始任务前选择提供 OpenAI 或 OpenAI Responses 接口的模型。",
+              "title": "请更换 Codex 兼容模型"
+            }
+          },
+          "label": "Agent 运行时",
+          "options": {
+            "auto": "Auto",
+            "claudeCode": "Claude Code",
+            "codex": "Codex"
+          }
+        },
         "title": "高级设置"
       },
       "essential": "基础设置",
+      "model": {
+        "defaultLabel": "新对话默认模型",
+        "defaultTooltip": "仅作为之后新建对话的默认值，不会修改已有对话的模型。",
+        "sessionTooltip": "仅修改当前对话；已经开始的任务会继续使用启动时的模型。"
+      },
       "permissionMode": {
         "currentModePrefix": "当前模式：",
         "simpleTitle": "模式选择",
@@ -717,6 +748,20 @@
       "enable_server_description": "智能体功能需要启用 API 服务器。你可以直接启用，或前往设置页面进行配置。",
       "server_not_running": "API 服务器已启用但未运行，请检查服务器配置。",
       "server_not_running_description": "智能体功能需要 API 服务器运行。你可以直接启动服务器，或前往设置页面检查配置。"
+    },
+    "welcome": {
+      "capabilities": {
+        "files": "处理文件",
+        "files_desc": "可结合文件、目录和工作区内容一起完成任务。",
+        "search": "搜索资料",
+        "search_desc": "先帮你查找信息，再提炼重点和结论。",
+        "summary": "整理总结",
+        "summary_desc": "把零散内容整理成清晰、可继续使用的结果。",
+        "tasks": "连续任务",
+        "tasks_desc": "适合需要多步推进、持续执行的复杂工作。"
+      },
+      "model_label": "本次对话模型",
+      "title": "把任务交给我，轻松一点开始"
     }
   },
   "announcements": {
@@ -986,18 +1031,18 @@
         "auto_description": "灵活决定推理力度",
         "default": "默认",
         "default_description": "依赖模型默认行为，不作任何配置",
-        "high": "沉思",
+        "high": "高",
         "high_description": "高强度推理",
-        "label": "思维链长度",
-        "low": "浮想",
+        "label": "推理强度",
+        "low": "低",
         "low_description": "低强度推理",
-        "medium": "斟酌",
+        "medium": "中",
         "medium_description": "中强度推理",
         "minimal": "微念",
         "minimal_description": "最小程度的推理",
         "off": "关闭",
         "off_description": "禁用推理",
-        "xhigh": "穷究",
+        "xhigh": "超高",
         "xhigh_description": "超高强度推理"
       },
       "regular_phrases": {
@@ -1136,7 +1181,23 @@
       },
       "collapse": "收起",
       "context_count": {
-        "tip": "上下文数 / 最大上下文数"
+        "tip": "上下文 Token / 安全输入容量"
+      },
+      "context_manager": {
+        "cache": "解析缓存",
+        "cache_value": "{{hits}} 次命中 / {{total}} 次解析",
+        "compressions": "历史整理",
+        "error": "资料准备失败",
+        "managed": "资料与历史已管理",
+        "managed_resources": "已管理 {{count}} 份资料",
+        "note": "这里只显示资料、历史和容量处理，不代表模型仍在回答。",
+        "processing": "正在准备资料与上下文",
+        "ready": "资料与上下文已就绪",
+        "resources": "已索引资料",
+        "retries": "容量重试",
+        "retrieval_value": "{{count}} 次 / {{chunks}} 个片段",
+        "retrievals": "相关资料调用",
+        "title": "资料与上下文"
       },
       "estimated_tokens": {
         "tip": "预估 Token 数"
@@ -1286,6 +1347,7 @@
     "navigation": {
       "bottom": "回到底部",
       "close": "关闭",
+      "earlier": "查看更早对话",
       "first": "已经是第一条消息",
       "history": "聊天历史",
       "last": "已经是最后一条消息",
@@ -1411,8 +1473,8 @@
       },
       "code_wrappable": "代码块可换行",
       "context_count": {
-        "label": "上下文数",
-        "tip": "要保留在上下文中的消息数量，数值越大，上下文越长，消耗的 Token 越多。普通聊天建议 5-10"
+        "label": "上下文管理",
+        "tip": "对话上下文由系统按照模型 Token 容量自动管理"
       },
       "max": "不限",
       "max_tokens": {
@@ -3222,6 +3284,7 @@
       "image_file": "输入图片",
       "image_required": "请先上传需要编辑的图片"
     },
+    "expand_prompt_editor": "展开提示词编辑器",
     "generate": {
       "height": "高度",
       "magic_prompt_option_tip": "智能优化提示词以提升生成效果",
@@ -3333,6 +3396,7 @@
       "watermark_tip": "是否在生成的图片上添加水印，默认不添加"
     },
     "pricing": "定价",
+    "prompt_editor_title": "编辑图片提示词",
     "prompt_enhancement": "提示词增强",
     "prompt_enhancement_tip": "开启后将提示重写为详细的、适合模型的版本",
     "prompt_placeholder": "建议先让 AI 对话帮你优化图片描述，再复制到这里生成，画面会更符合预期。",
@@ -4101,6 +4165,10 @@
           "description": "用于浏览器内 Python 沙盒。当前版本首次使用需要联网加载，不要求用户安装本机 Python。",
           "name": "Python 沙盒联网"
         },
+        "python": {
+          "description": "Zen AI 私有的 CPython 3.12 环境，用于数据处理、文档脚本和复杂本地任务，不会修改系统 Python。",
+          "name": "Zen Python 运行时"
+        },
         "uv": {
           "description": "用于准备 Python 工具环境和部分本地技能依赖。",
           "name": "UV"
@@ -4120,7 +4188,7 @@
       "installGitConfirmTitle": "是否自动安装 Git for Windows？",
       "installGitFailedFallback": "自动安装 Git 失败，已为你打开官方下载页",
       "installSuccess": "安装完成",
-      "intro": "基础对话和普通本地文件操作可以直接使用。下面的检测主要用于扩展能力：技能市场、定时任务、Python 沙盒、Git 来源工具等。",
+      "intro": "Zen AI 会为所有用户准备私有 Python 环境和本地工具，相关组件只保存在 Zen AI 内，不会修改系统 Python。",
       "noPath": "暂未检测到可用路径",
       "optionalDescription": "这些不是基础对话的硬性要求，但会影响部分高级任务体验。",
       "optionalTitle": "可选增强",
@@ -5268,6 +5336,10 @@
       "add": {
         "add_model": "添加模型",
         "batch_add_models": "批量添加模型",
+        "context_window_tokens": {
+          "label": "上下文容量",
+          "tooltip": "该模型输入和输出合计可使用的 Token 容量"
+        },
         "endpoint_type": {
           "label": "端点类型",
           "placeholder": "选择端点类型",
@@ -5278,6 +5350,10 @@
           "label": "分组名称",
           "placeholder": "例如 ChatGPT",
           "tooltip": "例如 ChatGPT"
+        },
+        "max_output_tokens": {
+          "label": "最大输出容量",
+          "tooltip": "Provider 声明的模型最大输出 Token"
         },
         "model_id": {
           "label": "模型 ID",

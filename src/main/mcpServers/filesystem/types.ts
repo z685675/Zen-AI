@@ -5,7 +5,9 @@ import fs from 'fs/promises'
 import os from 'os'
 import path from 'path'
 
-export const logger = loggerService.withContext('MCP:FileSystemServer')
+type McpLogger = Pick<typeof loggerService, 'debug' | 'error' | 'info' | 'silly' | 'verbose' | 'warn'>
+
+export const logger: McpLogger = loggerService.withContext('MCP:FileSystemServer')
 
 // Constants
 export const MAX_LINE_LENGTH = 2000

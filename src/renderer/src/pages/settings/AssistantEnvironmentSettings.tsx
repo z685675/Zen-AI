@@ -1,6 +1,13 @@
 import { CheckCircleOutlined, ReloadOutlined, WarningOutlined } from '@ant-design/icons'
 import { isWin } from '@renderer/config/constant'
 import { useTheme } from '@renderer/context/ThemeProvider'
+import {
+  ASSISTANT_DEPENDENCY_I18N_KEYS,
+  ASSISTANT_DEPENDENCY_SOURCE_I18N_KEYS,
+  type AssistantEnvironmentCheckResult,
+  type DependencyId,
+  type DependencyStatus
+} from '@renderer/services/AssistantEnvironmentService'
 import { Alert, Button, Spin, Tag } from 'antd'
 import type { FC } from 'react'
 import { useCallback, useEffect, useState } from 'react'
@@ -17,28 +24,7 @@ import {
   SettingTitle
 } from '.'
 
-type DependencyId = 'bun' | 'uv' | 'uvx' | 'git' | 'pyodide'
-type DependencySource = 'app' | 'system' | 'network' | 'missing' | 'error'
-
-interface DependencyStatus {
-  id: DependencyId
-  installed: boolean
-  source: DependencySource
-  path?: string
-  message?: string
-}
-
-interface AssistantEnvironmentCheckResult {
-  bun: DependencyStatus
-  uv: DependencyStatus
-  uvx: DependencyStatus
-  git: DependencyStatus
-  pyodide: DependencyStatus
-  binariesDir: string
-  checkedAt: number
-}
-
-const CORE_DEPENDENCIES: DependencyId[] = isWin ? ['bun', 'uv', 'uvx', 'git'] : ['bun', 'uv', 'uvx']
+const CORE_DEPENDENCIES: DependencyId[] = isWin ? ['bun', 'uv', 'uvx', 'git', 'python'] : ['bun', 'uv', 'uvx', 'python']
 const OPTIONAL_DEPENDENCIES: DependencyId[] = isWin ? ['pyodide'] : ['git', 'pyodide']
 
 const AssistantEnvironmentSettings: FC = () => {
@@ -81,6 +67,19 @@ const AssistantEnvironmentSettings: FC = () => {
     try {
       setInstalling(true)
       await window.api.installUVBinary()
+      window.toast.success(t('settings.assistantEnvironment.installSuccess'))
+      await checkEnvironment()
+    } catch (error: any) {
+      window.toast.error(`${t('settings.assistantEnvironment.installFailed')}: ${error.message}`)
+    } finally {
+      setInstalling(false)
+    }
+  }
+
+  const installPython = async () => {
+    try {
+      setInstalling(true)
+      await window.api.installManagedPython()
       window.toast.success(t('settings.assistantEnvironment.installSuccess'))
       await checkEnvironment()
     } catch (error: any) {
@@ -138,6 +137,10 @@ const AssistantEnvironmentSettings: FC = () => {
         await window.api.installUVBinary()
       }
 
+      if (!result.python.installed) {
+        await window.api.installManagedPython()
+      }
+
       if (isWin && !result.git.installed) {
         const gitInstalled = await installGit()
         if (!gitInstalled) {
@@ -156,7 +159,8 @@ const AssistantEnvironmentSettings: FC = () => {
   }
 
   const renderDependency = (dependency: DependencyStatus) => {
-    const needsInstall = !dependency.installed && (dependency.id === 'bun' || dependency.id === 'uv')
+    const needsInstall =
+      !dependency.installed && (dependency.id === 'bun' || dependency.id === 'uv' || dependency.id === 'python')
     const needsGitInstall = isWin && !dependency.installed && dependency.id === 'git'
 
     return (
@@ -165,11 +169,11 @@ const AssistantEnvironmentSettings: FC = () => {
           <DependencyHeader>
             <DependencyName>
               {dependency.installed ? <CheckCircleOutlined /> : <WarningOutlined />}
-              {t(`settings.assistantEnvironment.dependencies.${dependency.id}.name`)}
+              {t(ASSISTANT_DEPENDENCY_I18N_KEYS[dependency.id].name)}
             </DependencyName>
             <StatusTag color={dependency.installed ? 'success' : dependency.source === 'error' ? 'error' : 'warning'}>
               {dependency.installed
-                ? t(`settings.assistantEnvironment.sources.${dependency.source}`)
+                ? t(ASSISTANT_DEPENDENCY_SOURCE_I18N_KEYS[dependency.source])
                 : t(
                     dependency.source === 'error'
                       ? 'settings.assistantEnvironment.status.error'
@@ -177,9 +181,7 @@ const AssistantEnvironmentSettings: FC = () => {
                   )}
             </StatusTag>
           </DependencyHeader>
-          <DependencyDescription>
-            {t(`settings.assistantEnvironment.dependencies.${dependency.id}.description`)}
-          </DependencyDescription>
+          <DependencyDescription>{t(ASSISTANT_DEPENDENCY_I18N_KEYS[dependency.id].description)}</DependencyDescription>
           <DependencyPath>
             {dependency.path || dependency.message || t('settings.assistantEnvironment.noPath')}
           </DependencyPath>
@@ -190,7 +192,7 @@ const AssistantEnvironmentSettings: FC = () => {
             type="primary"
             loading={installing}
             disabled={installing}
-            onClick={dependency.id === 'bun' ? installBun : installUv}>
+            onClick={dependency.id === 'bun' ? installBun : dependency.id === 'python' ? installPython : installUv}>
             {t('settings.assistantEnvironment.install')}
           </Button>
         )}

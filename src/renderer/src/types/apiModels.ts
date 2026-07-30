@@ -3,6 +3,15 @@ import * as z from 'zod'
 
 import { ProviderTypeSchema } from './provider'
 
+const ApiEndpointTypeSchema = z.enum([
+  'openai',
+  'openai-response',
+  'anthropic',
+  'gemini',
+  'image-generation',
+  'jina-rerank'
+])
+
 // Request schema for /v1/models
 export const ApiModelsFilterSchema = z.object({
   providerType: ProviderTypeSchema.optional(),
@@ -20,7 +29,10 @@ export const ApiModelSchema = z.object({
   provider: z.string().optional(),
   provider_name: z.string().optional(),
   provider_type: ProviderTypeSchema.optional(),
-  provider_model_id: z.string().optional()
+  provider_model_id: z.string().optional(),
+  endpoint_type: ApiEndpointTypeSchema.optional(),
+  supported_endpoint_types: z.array(ApiEndpointTypeSchema).optional(),
+  agent_runtime_compatibility: z.array(z.enum(['claude-code', 'codex'])).optional()
 })
 
 // Response schema for /v1/models

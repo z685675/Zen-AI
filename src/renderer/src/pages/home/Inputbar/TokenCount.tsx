@@ -1,5 +1,4 @@
 import { HStack, VStack } from '@renderer/components/Layout'
-import MaxContextCount from '@renderer/components/MaxContextCount'
 import { useSettings } from '@renderer/hooks/useSettings'
 import type { Model } from '@renderer/types'
 import { getModelCachePathLabel } from '@renderer/utils/provider'
@@ -34,9 +33,9 @@ const TokenCount: FC<Props> = ({ estimateTokenCount, inputTokenCount, contextCou
           <Text>{t('chat.input.context_count.tip')}</Text>
           <Text>
             <HStack style={{ alignItems: 'center' }}>
-              {contextCount.current}
+              {formatTokenCountCompact(contextCount.current)}
               <SlashSeparatorSpan>/</SlashSeparatorSpan>
-              <MaxContextCount maxContext={contextCount.max} />
+              {formatTokenCountCompact(contextCount.max)}
             </HStack>
           </Text>
         </HStack>
@@ -82,9 +81,9 @@ const TokenCount: FC<Props> = ({ estimateTokenCount, inputTokenCount, contextCou
         <HStack>
           <HStack style={{ alignItems: 'center' }}>
             <MenuIcon size={12} className="icon" />
-            {contextCount.current}
+            {formatTokenCountCompact(contextCount.current)}
             <SlashSeparatorSpan>/</SlashSeparatorSpan>
-            <MaxContextCount maxContext={contextCount.max} />
+            {formatTokenCountCompact(contextCount.max)}
           </HStack>
           <Divider type="vertical" style={{ marginTop: 3, marginLeft: 5, marginRight: 3 }} />
           <HStack style={{ alignItems: 'center' }}>

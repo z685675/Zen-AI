@@ -50,13 +50,17 @@ function includesInstructionUpdate(payload: UpdateAgentRequest | ReplaceAgentReq
 async function syncAgentSessionsAfterAgentUpdate(
   agentId: string,
   updatePayload: UpdateAgentRequest | ReplaceAgentRequest,
-  agent: { model?: string; instructions?: string; configuration?: AgentEntity['configuration'] }
+  agent: {
+    instructions?: string
+    configuration?: AgentEntity['configuration']
+    accessible_paths?: string[]
+  },
+  previousAgent?: { accessible_paths?: string[] } | null
 ): Promise<void> {
   const syncJobs: Promise<unknown>[] = []
 
-  if (Object.prototype.hasOwnProperty.call(updatePayload, 'model') && agent.model) {
-    syncJobs.push(sessionService.syncAgentSessionModel(agentId, agent.model))
-  }
+  // Agent.model is the default for future sessions. Existing sessions own
+  // their selected model and must not change when the Agent default changes.
 
   if (Object.prototype.hasOwnProperty.call(updatePayload, 'instructions') && agent.instructions !== undefined) {
     syncJobs.push(sessionService.syncAgentSessionInstructions(agentId, agent.instructions))
@@ -64,6 +68,20 @@ async function syncAgentSessionsAfterAgentUpdate(
 
   if (Object.prototype.hasOwnProperty.call(updatePayload, 'configuration')) {
     syncJobs.push(sessionService.syncAgentSessionConfiguration(agentId, agent.configuration))
+  }
+
+  if (
+    Object.prototype.hasOwnProperty.call(updatePayload, 'accessible_paths') &&
+    previousAgent?.accessible_paths &&
+    agent.accessible_paths
+  ) {
+    syncJobs.push(
+      sessionService.syncInheritedAgentSessionAccessiblePaths(
+        agentId,
+        previousAgent.accessible_paths,
+        agent.accessible_paths
+      )
+    )
   }
 
   if (syncJobs.length === 0) return
@@ -402,6 +420,9 @@ export const updateAgent = async (req: Request, res: Response): Promise<Response
       return res.status(403).json(officialPromptLockedBody)
     }
 
+    const previousAgent = Object.prototype.hasOwnProperty.call(replacePayload, 'accessible_paths')
+      ? await agentService.getAgent(agentId)
+      : undefined
     const agent = await agentService.updateAgent(agentId, replacePayload, { replace: true })
 
     if (!agent) {
@@ -415,7 +436,7 @@ export const updateAgent = async (req: Request, res: Response): Promise<Response
       })
     }
 
-    await syncAgentSessionsAfterAgentUpdate(agentId, replacePayload, agent)
+    await syncAgentSessionsAfterAgentUpdate(agentId, replacePayload, agent, previousAgent)
     syncSchedulerIfNeeded(agentId, agent)
 
     logger.info('Agent updated', { agentId })
@@ -555,6 +576,9 @@ export const patchAgent = async (req: Request, res: Response): Promise<Response>
       return res.status(403).json(officialPromptLockedBody)
     }
 
+    const previousAgent = Object.prototype.hasOwnProperty.call(updatePayload, 'accessible_paths')
+      ? await agentService.getAgent(agentId)
+      : undefined
     const agent = await agentService.updateAgent(agentId, updatePayload)
 
     if (!agent) {
@@ -568,7 +592,7 @@ export const patchAgent = async (req: Request, res: Response): Promise<Response>
       })
     }
 
-    await syncAgentSessionsAfterAgentUpdate(agentId, updatePayload, agent)
+    await syncAgentSessionsAfterAgentUpdate(agentId, updatePayload, agent, previousAgent)
     syncSchedulerIfNeeded(agentId, agent)
 
     logger.info('Agent patched', { agentId })

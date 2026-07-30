@@ -16,10 +16,34 @@
  */
 import { loggerService } from '@logger'
 import { AiSdkToChunkAdapter } from '@renderer/aiCore/chunk/AiSdkToChunkAdapter'
-import { AgentApiClient } from '@renderer/api/agent'
+import { AgentApiClient, DEFAULT_SESSION_PAGE_SIZE } from '@renderer/api/agent'
 import db from '@renderer/databases'
 import { getModel } from '@renderer/hooks/useModel'
-import { fetchMessagesSummary, transformMessagesAndFetch } from '@renderer/services/ApiService'
+import { fetchGenerate, fetchMessagesSummary, transformMessagesAndFetch } from '@renderer/services/ApiService'
+import { getAssistantSettings, getProviderByModel } from '@renderer/services/AssistantService'
+import {
+  clearContextCheckpoint,
+  loadContextCheckpoint,
+  manageStandaloneInput
+} from '@renderer/services/context/ContextCompactionService'
+import {
+  deleteContextResources,
+  deleteContextResourcesForMessages,
+  formatResourceSearchContext,
+  listContextResources,
+  saveTextContextResource,
+  searchContextResources
+} from '@renderer/services/context/ContextResourceService'
+import {
+  clearContextTelemetry,
+  markContextProcessingError,
+  recordContextCompression,
+  recordContextResourceCount,
+  recordContextRetrieval,
+  recordContextRetry,
+  setContextProcessingStatus
+} from '@renderer/services/context/ContextTelemetryService'
+import { createContextBudget } from '@renderer/services/context/ContextWindowService'
 import { dbService } from '@renderer/services/db'
 import { DbService } from '@renderer/services/db/DbService'
 import FileManager from '@renderer/services/FileManager'
@@ -27,14 +51,15 @@ import { BlockManager } from '@renderer/services/messageStreaming/BlockManager'
 import { createCallbacks } from '@renderer/services/messageStreaming/callbacks'
 import { endSpan } from '@renderer/services/SpanManagerService'
 import { createStreamProcessor, type StreamProcessorCallbacks } from '@renderer/services/StreamProcessingService'
+import { estimateTextTokens } from '@renderer/services/TokenService'
 import store from '@renderer/store'
 import { updateTopicUpdatedAt } from '@renderer/store/assistants'
 import { type ApiServerConfig, type Assistant, type FileMetadata, type Model, type Topic } from '@renderer/types'
 import type {
   AgentEffort,
-  AgentSessionEntity,
   AgentThinkingConfig,
-  GetAgentSessionResponse
+  GetAgentSessionResponse,
+  ListAgentSessionsResponse
 } from '@renderer/types/agent'
 import { ChunkType } from '@renderer/types/chunk'
 import type {
@@ -59,11 +84,18 @@ import {
   isAgentSessionTopicId
 } from '@renderer/utils/agentSession'
 import {
+  deriveAgentSessionFallbackTitle,
+  isUnnamedAgentSessionName,
+  normalizeAgentSessionTitle
+} from '@renderer/utils/agentSessionTitle'
+import { isAbortError } from '@renderer/utils/error'
+import { resolveRetryModelSelection } from '@renderer/utils/messageRetryModel'
+import {
   createAssistantMessage,
   createTranslationBlock,
   resetAssistantMessage
 } from '@renderer/utils/messageUtils/create'
-import { getMainTextContent } from '@renderer/utils/messageUtils/find'
+import { getContentWithTools, getMainTextContent } from '@renderer/utils/messageUtils/find'
 import { getTopicQueue, waitForTopicQueue } from '@renderer/utils/queue'
 import { IpcChannel } from '@shared/IpcChannel'
 import { defaultAppHeaders } from '@shared/utils'
@@ -72,6 +104,7 @@ import { t } from 'i18next'
 import { isEmpty, throttle } from 'lodash'
 import { LRUCache } from 'lru-cache'
 import { mutate } from 'swr'
+import { unstable_serialize } from 'swr/infinite'
 
 import type { AppDispatch, RootState } from '../index'
 import { removeManyBlocks, updateOneBlock, upsertManyBlocks, upsertOneBlock } from '../messageBlock'
@@ -97,6 +130,11 @@ const finishTopicLoading = async (topicId: string) => {
   store.dispatch(newMessagesActions.setTopicFulfilled({ topicId, fulfilled: true }))
 }
 
+const getCurrentTopicModel = (state: RootState, topicId: string, assistant: Assistant): Model => {
+  const storedAssistant = state.assistants.assistants.find((item) => item.id === assistant.id)
+  return storedAssistant?.topics.find((topic) => topic.id === topicId)?.model ?? assistant.model
+}
+
 type AgentSessionContext = {
   agentId: string
   sessionId: string
@@ -114,6 +152,10 @@ const AGENT_SESSION_RECOVERY_INSTRUCTION = [
 ].join('\n')
 const AGENT_SESSION_INTERRUPTED_CACHE_TTL = 1000 * 60 * 60 * 24
 const AGENT_SESSION_CHANNEL_STALL_TIMEOUT_MS = 1000 * 60 * 3
+const AGENT_SESSION_RENAME_MESSAGE_RETRY_DELAYS_MS = [0, 150, 500]
+const AGENT_SESSION_RENAME_UPDATE_RETRY_DELAYS_MS = [0, 250]
+const AGENT_RECOVERY_CONTEXT_TOKEN_BUDGET = 64_000
+const AGENT_LARGE_RESULT_TOKEN_THRESHOLD = 16_000
 
 const agentSessionRenameLocks = new Set<string>()
 const dbFacade = DbService.getInstance()
@@ -586,29 +628,24 @@ const buildAgentBaseURL = (apiServer: ApiServerConfig) => {
 export const renameAgentSessionIfNeeded = async (
   agentSession: AgentSessionContext,
   topicId: string,
-  getState: () => RootState
-): Promise<void> => {
+  getState: () => RootState,
+  options: {
+    force?: boolean
+    preferGeneratedTitle?: boolean
+  } = {}
+): Promise<boolean> => {
   const lockId = `${agentSession.agentId}:${agentSession.sessionId}`
   if (agentSessionRenameLocks.has(lockId)) {
-    return
+    return false
   }
+
+  agentSessionRenameLocks.add(lockId)
 
   try {
     const state = getState()
     const apiServer = state.settings.apiServer
     if (!apiServer?.apiKey) {
-      return
-    }
-
-    const { messages } = await dbFacade.fetchMessages(topicId, true)
-    if (!messages.length) {
-      return
-    }
-
-    const { text: summary } = await fetchMessagesSummary({ messages })
-    const summaryText = summary?.trim()
-    if (!summaryText) {
-      return
+      return false
     }
 
     const baseURL = buildAgentBaseURL(apiServer)
@@ -619,59 +656,191 @@ export const renameAgentSessionIfNeeded = async (
       }
     })
 
-    agentSessionRenameLocks.add(lockId)
-
     let session: GetAgentSessionResponse
     try {
       session = await client.getSession(agentSession.agentId, agentSession.sessionId)
     } catch (error) {
       logger.warn('Failed to fetch agent session for rename', error as Error)
-      return
+      return false
     }
 
     const currentName = (session.name ?? '').trim()
-    if (currentName === summaryText) {
-      return
+    if (!options.force && !isUnnamedAgentSessionName(currentName, t('common.unnamed'))) {
+      return false
     }
 
-    let updatedSession: GetAgentSessionResponse
-    try {
-      updatedSession = await client.updateSession(agentSession.agentId, {
-        id: agentSession.sessionId,
-        name: summaryText
-      })
-    } catch (error) {
-      logger.warn('Failed to update agent session name', error as Error)
-      return
+    const liveState = getState()
+    const liveMessages = selectMessagesForTopic(liveState, topicId)
+    const liveBlocks = liveMessages.flatMap((message) =>
+      message.blocks
+        .map((blockId) => liveState.messageBlocks.entities[blockId])
+        .filter((block): block is MessageBlock => !!block)
+    )
+
+    let namingMessages = liveMessages
+    let namingBlocks = liveBlocks
+    let fallbackTitle = deriveAgentSessionFallbackTitle({
+      messages: namingMessages,
+      blocks: namingBlocks
+    })
+
+    if (!fallbackTitle) {
+      for (const delayMs of AGENT_SESSION_RENAME_MESSAGE_RETRY_DELAYS_MS) {
+        if (delayMs > 0) {
+          await new Promise((resolve) => setTimeout(resolve, delayMs))
+        }
+
+        try {
+          const persisted = await dbFacade.fetchMessages(topicId, true)
+          namingMessages = persisted.messages
+          namingBlocks = persisted.blocks
+          fallbackTitle = deriveAgentSessionFallbackTitle({
+            messages: namingMessages,
+            blocks: namingBlocks
+          })
+          if (fallbackTitle) {
+            break
+          }
+        } catch (error) {
+          logger.debug('Agent session messages are not ready for rename yet', {
+            sessionId: agentSession.sessionId,
+            error
+          })
+        }
+      }
+    }
+
+    fallbackTitle ??= deriveAgentSessionFallbackTitle({
+      messages: namingMessages,
+      blocks: namingBlocks,
+      genericTitle: t('agent.session.fallback_title')
+    })
+
+    if (!fallbackTitle) {
+      return false
     }
 
     const paths = client.getSessionPaths(agentSession.agentId)
+    const sessionListKey = unstable_serialize(() => [paths.base, 0, DEFAULT_SESSION_PAGE_SIZE])
+    const allSessionListKeys = (['exclude', 'include', 'only'] as const).map((archived) =>
+      unstable_serialize(() => [client.allSessionsPath, archived, 0, DEFAULT_SESSION_PAGE_SIZE])
+    )
 
-    try {
-      await mutate(paths.withId(agentSession.sessionId), updatedSession, {
-        revalidate: false
-      })
+    const updateSessionCaches = async (renamedSession: GetAgentSessionResponse) => {
+      const updateSessionInPages = (pages: ListAgentSessionsResponse[] | undefined) =>
+        pages?.map((page) => ({
+          ...page,
+          data: page.data.map((sessionItem) =>
+            sessionItem.id === renamedSession.id ? { ...sessionItem, ...renamedSession } : sessionItem
+          )
+        })) ?? pages
 
-      await mutate<AgentSessionEntity[]>(
-        paths.base,
-        (prev) =>
-          prev?.map((sessionItem) =>
-            sessionItem.id === updatedSession.id
-              ? ({
-                  ...sessionItem,
-                  name: updatedSession.name
-                } as AgentSessionEntity)
-              : sessionItem
-          ) ?? prev,
-        {
-          revalidate: false
-        }
-      )
-    } catch (error) {
-      logger.warn('Failed to update agent session cache after rename', error as Error)
+      try {
+        await Promise.all([
+          mutate(paths.withId(agentSession.sessionId), renamedSession, { revalidate: false }),
+          mutate<ListAgentSessionsResponse[]>(sessionListKey, updateSessionInPages, { revalidate: false }),
+          ...allSessionListKeys.map((key) =>
+            mutate<ListAgentSessionsResponse[]>(key, updateSessionInPages, { revalidate: false })
+          )
+        ])
+      } catch (error) {
+        logger.warn('Failed to update agent session cache after rename', error as Error)
+      }
     }
+
+    const updateSessionName = async (nextName: string): Promise<GetAgentSessionResponse | null> => {
+      for (const delayMs of AGENT_SESSION_RENAME_UPDATE_RETRY_DELAYS_MS) {
+        if (delayMs > 0) {
+          await new Promise((resolve) => setTimeout(resolve, delayMs))
+        }
+
+        try {
+          const renamedSession = await client.updateSession(agentSession.agentId, {
+            id: agentSession.sessionId,
+            name: nextName
+          })
+          await updateSessionCaches(renamedSession)
+          return renamedSession
+        } catch (error) {
+          logger.warn('Failed to update agent session name', error as Error)
+        }
+      }
+
+      return null
+    }
+
+    let fallbackSession: GetAgentSessionResponse | null = null
+    if (!options.force) {
+      let latestSession: GetAgentSessionResponse
+      try {
+        latestSession = await client.getSession(agentSession.agentId, agentSession.sessionId)
+      } catch (error) {
+        logger.warn('Failed to recheck agent session before fallback rename', error as Error)
+        return false
+      }
+
+      const latestName = (latestSession.name ?? '').trim()
+      if (!isUnnamedAgentSessionName(latestName, t('common.unnamed'))) {
+        return false
+      }
+
+      fallbackSession = await updateSessionName(fallbackTitle)
+    }
+
+    let generatedTitle: string | null = null
+    const shouldGenerateTitle =
+      options.preferGeneratedTitle !== false && getState().settings.enableTopicNaming && liveMessages.length > 0
+
+    if (shouldGenerateTitle) {
+      try {
+        const { text: summary, error } = await fetchMessagesSummary({ messages: liveMessages })
+        generatedTitle = summary ? normalizeAgentSessionTitle(summary) : null
+        if (!generatedTitle && error) {
+          logger.debug('Keeping local agent session title after summary failed', {
+            sessionId: agentSession.sessionId,
+            error
+          })
+        }
+      } catch (error) {
+        logger.debug('Keeping local agent session title after summary threw', {
+          sessionId: agentSession.sessionId,
+          error
+        })
+      }
+    }
+
+    const nextName =
+      generatedTitle && !isUnnamedAgentSessionName(generatedTitle, t('common.unnamed')) ? generatedTitle : fallbackTitle
+
+    if (!options.force && fallbackSession && nextName === fallbackTitle) {
+      return true
+    }
+
+    let latestSession: GetAgentSessionResponse
+    try {
+      latestSession = await client.getSession(agentSession.agentId, agentSession.sessionId)
+    } catch (error) {
+      logger.warn('Failed to recheck agent session before final rename', error as Error)
+      return !!fallbackSession
+    }
+
+    const latestName = (latestSession.name ?? '').trim()
+    if (latestName === nextName) {
+      return !!fallbackSession
+    }
+
+    const nameChangedDuringRename = options.force
+      ? latestName !== currentName
+      : !isUnnamedAgentSessionName(latestName, t('common.unnamed')) && latestName !== fallbackTitle
+    if (nameChangedDuringRename) {
+      return !!fallbackSession
+    }
+
+    const finalSession = await updateSessionName(nextName)
+    return !!fallbackSession || !!finalSession
   } catch (error) {
     logger.warn('Unexpected error during agent session rename', error as Error)
+    return false
   } finally {
     agentSessionRenameLocks.delete(lockId)
   }
@@ -821,6 +990,7 @@ const createAgentMessageStream = async (
   apiServer: ApiServerConfig,
   agentSession: AgentSessionContext,
   content: string,
+  recoveryContext: string | undefined,
   signal: AbortSignal
 ): Promise<ReadableStream<TextStreamPart<Record<string, any>>>> => {
   if (!apiServer.enabled) {
@@ -846,7 +1016,8 @@ const createAgentMessageStream = async (
     body: JSON.stringify({
       content: normalizedContent,
       ...(agentSession.effort ? { effort: agentSession.effort } : {}),
-      ...(agentSession.thinking ? { thinking: agentSession.thinking } : {})
+      ...(agentSession.thinking ? { thinking: agentSession.thinking } : {}),
+      ...(recoveryContext ? { recovery_context: recoveryContext } : {})
     }),
     signal
   })
@@ -862,6 +1033,70 @@ const createAgentMessageStream = async (
 
   const sseStream = createSSEReadableStream(response.body, signal)
   return withAbortStreamPart(sseStream, signal)
+}
+
+const buildAgentRecoveryContext = (
+  topicId: string,
+  currentUserMessageId: string,
+  state: RootState
+): string | undefined => {
+  const messages = selectMessagesForTopic(state, topicId).filter(
+    (message) =>
+      message.id !== currentUserMessageId &&
+      (message.role === 'user' || message.role === 'assistant') &&
+      getContentWithTools(message).trim()
+  )
+  if (messages.length === 0) {
+    return undefined
+  }
+
+  const checkpoint = loadContextCheckpoint(topicId)
+  const checkpointBoundary = checkpoint
+    ? messages.findIndex((message) => message.id === checkpoint.includedThroughMessageId)
+    : -1
+  const recentMessages = checkpointBoundary >= 0 ? messages.slice(checkpointBoundary + 1) : messages
+  const selectedRecent: Message[] = []
+  let selectedTokens = checkpoint ? estimateTextTokens(checkpoint.summary) : 0
+
+  for (let index = recentMessages.length - 1; index >= 0; index -= 1) {
+    const text = getContentWithTools(recentMessages[index]).trim()
+    const tokens = estimateTextTokens(text)
+    if (selectedRecent.length > 0 && selectedTokens + tokens > AGENT_RECOVERY_CONTEXT_TOKEN_BUDGET) {
+      break
+    }
+    selectedRecent.unshift(recentMessages[index])
+    selectedTokens += tokens
+  }
+
+  const sections: string[] = []
+  if (checkpoint) {
+    sections.push(`<conversation-checkpoint>\n${checkpoint.summary}\n</conversation-checkpoint>`)
+  } else if (selectedRecent.length < recentMessages.length) {
+    const firstMessages = recentMessages.slice(0, 2).filter((message) => !selectedRecent.includes(message))
+    if (firstMessages.length > 0) {
+      sections.push(
+        `<conversation-opening>\n${firstMessages
+          .map(
+            (message) =>
+              `<message role="${message.role}" id="${message.id}">\n${getContentWithTools(message).trim()}\n</message>`
+          )
+          .join('\n\n')}\n</conversation-opening>`
+      )
+    }
+    sections.push(
+      '[Some middle turns were omitted from this recovery payload; exact details remain in local resources.]'
+    )
+  }
+
+  sections.push(
+    `<recent-transcript>\n${selectedRecent
+      .map(
+        (message) =>
+          `<message role="${message.role}" id="${message.id}">\n${getContentWithTools(message).trim()}\n</message>`
+      )
+      .join('\n\n')}\n</recent-transcript>`
+  )
+  return sections.join('\n\n').slice(0, 240_000)
 }
 // TODO: 后续可以将db操作移到Listener Middleware中
 // export const saveMessageAndBlocksToDB = async (message: Message, blocks: MessageBlock[], messageIndex: number = -1) => {
@@ -1062,6 +1297,7 @@ const fetchAndProcessAgentResponseImpl = async (
 ) => {
   let callbacks: StreamProcessorCallbacks = {}
   let shouldShowWechatSync = false
+  let completedSuccessfully = false
   const syncMessageIds = [userMessageId, assistantMessage.id]
   try {
     dispatch(newMessagesActions.setTopicLoading({ topicId, loading: true }))
@@ -1090,7 +1326,7 @@ const fetchAndProcessAgentResponseImpl = async (
     const streamProcessorCallbacks = createStreamProcessor(callbacks)
 
     // Emit initial chunk to mirror assistant behaviour and ensure pending UI state
-    streamProcessorCallbacks({ type: ChunkType.LLM_RESPONSE_CREATED })
+    await streamProcessorCallbacks({ type: ChunkType.LLM_RESPONSE_CREATED })
 
     const userMessage = getState().messages.entities[userMessageId]
     const userContent = await resolveAgentSessionUserContent(topicId, userMessageId, getState)
@@ -1098,14 +1334,99 @@ const fetchAndProcessAgentResponseImpl = async (
       ? await resolveAgentSessionChannelAttachments(topicId, userMessage, getState)
       : { imagePaths: [] }
     const contentWithChannelAttachments = withChannelImagePathInstruction(userContent, channelAttachments.imagePaths)
-    const requestContent = recoveryMode
+    const rawRequestContent = recoveryMode
       ? withAgentSessionRecoveryInstruction(contentWithChannelAttachments)
       : contentWithChannelAttachments
 
     const abortController = new AbortController()
     addAbortController(userMessageId, () => abortController.abort())
+    const model = assistant.model
+    const contextBudget = model
+      ? createContextBudget({
+          model,
+          provider: getProviderByModel(model),
+          fixedInputTokens: 24_000,
+          requestedOutputTokens: getAssistantSettings(assistant).maxTokens
+        })
+      : undefined
+    let inputWithResources = rawRequestContent
+
+    if (contextBudget && estimateTextTokens(rawRequestContent) <= contextBudget.compactionTriggerTokens) {
+      try {
+        setContextProcessingStatus(topicId, 'retrieving', '正在召回智能助手相关资料')
+        const resourceResults = await searchContextResources({
+          conversationId: topicId,
+          query: rawRequestContent.slice(0, 8_000),
+          tokenBudget: Math.min(12_000, Math.max(0, contextBudget.safeInputTokens - 1_000))
+        })
+        recordContextRetrieval(topicId, resourceResults.length)
+        const resourceContext = formatResourceSearchContext(resourceResults)
+        if (resourceContext) {
+          inputWithResources = `${resourceContext}\n\n<current-user-request>\n${rawRequestContent}\n</current-user-request>`
+        }
+      } catch (error) {
+        logger.warn('Failed to retrieve Agent context resources', error as Error)
+      }
+    }
+
+    const managedInput = model
+      ? await manageStandaloneInput({
+          content: inputWithResources,
+          budget: contextBudget!,
+          sourceLabel: 'current Agent input',
+          generate: (prompt, content) =>
+            fetchGenerate({
+              prompt,
+              content,
+              model,
+              signal: abortController.signal,
+              maxOutputTokens: Math.min(8_000, model.maxOutputTokens ?? 8_000)
+            })
+        })
+      : {
+          content: rawRequestContent,
+          action: 'full' as const,
+          usageBeforeTokens: 0,
+          usageAfterTokens: 0
+        }
+    const requestContent = managedInput.content
+
+    if (managedInput.action !== 'full') {
+      recordContextCompression(topicId, managedInput.action)
+      try {
+        await saveTextContextResource({
+          conversationId: topicId,
+          sourceMessageId: userMessageId,
+          sourceName: `agent-input-${userMessageId}`,
+          text: rawRequestContent,
+          kind: 'text',
+          metadata: { agentId: agentSession.agentId, sessionId: agentSession.sessionId }
+        })
+      } catch (error) {
+        logger.warn('Failed to persist oversized Agent input as a context resource', error as Error)
+      }
+      logger.info('Agent input context plan applied', {
+        topicId,
+        action: managedInput.action,
+        usageBeforeTokens: managedInput.usageBeforeTokens,
+        usageAfterTokens: managedInput.usageAfterTokens
+      })
+    }
 
     const state = getState()
+    const recoveryContext = buildAgentRecoveryContext(topicId, userMessageId, state)
+    const originalContextOnRawData = callbacks.onRawData
+    callbacks.onRawData = async (content, metadata) => {
+      await originalContextOnRawData?.(content, metadata)
+      if (
+        typeof content === 'object' &&
+        content !== null &&
+        (content as { type?: string }).type === 'context_recovery'
+      ) {
+        recordContextRetry(topicId, 'agent-session-recovery')
+        setContextProcessingStatus(topicId, 'retrying', '运行会话已失效，正在从本地上下文恢复')
+      }
+    }
     const hasExistingWechatSync = syncMessageIds.some(
       (messageId) => state.messages.entities[messageId]?.providerMetadata?.agentSessionSync?.target === 'wechat'
     )
@@ -1116,8 +1437,8 @@ const fetchAndProcessAgentResponseImpl = async (
     if (shouldShowWechatSync) {
       await updateAgentSessionSyncStatus(dispatch, getState, topicId, syncMessageIds, 'pending')
       const originalOnRawData = callbacks.onRawData
-      callbacks.onRawData = (content, metadata) => {
-        originalOnRawData?.(content, metadata)
+      callbacks.onRawData = async (content, metadata) => {
+        await originalOnRawData?.(content, metadata)
 
         if (
           typeof content === 'object' &&
@@ -1151,6 +1472,7 @@ const fetchAndProcessAgentResponseImpl = async (
       state.settings.apiServer,
       agentSession,
       requestContent,
+      recoveryContext,
       abortController.signal
     )
 
@@ -1168,6 +1490,16 @@ const fetchAndProcessAgentResponseImpl = async (
 
       latestAgentSessionId = sessionId
       agentSession.agentSessionId = sessionId
+
+      if (sessionWasCleared) {
+        clearContextCheckpoint(topicId)
+        try {
+          await deleteContextResources(topicId)
+        } catch (error) {
+          logger.warn('Failed to clear Agent context resources after session reset', error as Error)
+        }
+        clearContextTelemetry(topicId)
+      }
 
       logger.debug(`Agent session ID updated`, {
         topicId,
@@ -1248,18 +1580,47 @@ const fetchAndProcessAgentResponseImpl = async (
     })
     await finalizeStaleAssistantBlocksAfterStream(dispatch, getState, topicId, assistantMessage.id)
 
+    const completedAssistantMessage = getState().messages.entities[assistantMessage.id]
+    const completedContent = completedAssistantMessage ? getContentWithTools(completedAssistantMessage).trim() : ''
+    if (completedContent && estimateTextTokens(completedContent) >= AGENT_LARGE_RESULT_TOKEN_THRESHOLD) {
+      try {
+        await saveTextContextResource({
+          conversationId: topicId,
+          sourceMessageId: assistantMessage.id,
+          sourceName: `agent-result-${assistantMessage.id}`,
+          text: completedContent,
+          kind: 'tool-result',
+          metadata: {
+            agentId: agentSession.agentId,
+            sessionId: agentSession.sessionId,
+            largeResult: true
+          }
+        })
+        const resources = await listContextResources(topicId)
+        recordContextResourceCount(topicId, resources.length)
+      } catch (error) {
+        logger.warn('Failed to persist a large Agent result as a local context resource', error as Error)
+      }
+    }
+
     if (latestAgentSessionId) {
       await persistAgentSessionId(latestAgentSessionId)
     }
 
-    await renameAgentSessionIfNeeded(agentSession, topicId, getState)
     if (shouldShowWechatSync && !agentSessionSyncResolved) {
       await updateAgentSessionSyncStatus(dispatch, getState, topicId, syncMessageIds, 'failed', 'sync_result_missing')
     }
+    completedSuccessfully = true
+    setContextProcessingStatus(topicId, 'complete', '上下文已就绪')
   } catch (error: any) {
     logger.error('Error in fetchAndProcessAgentResponseImpl:', error)
+    if (isAbortError(error)) {
+      setContextProcessingStatus(topicId, 'complete', '任务已停止')
+    } else {
+      markContextProcessingError(topicId, error)
+    }
     try {
-      callbacks.onError?.(error)
+      await callbacks.onError?.(error)
     } catch (callbackError) {
       logger.error('Error in agent onError callback:', callbackError as Error)
     }
@@ -1274,7 +1635,14 @@ const fetchAndProcessAgentResponseImpl = async (
       )
     }
   } finally {
+    if (
+      !completedSuccessfully &&
+      getState().messages.entities[assistantMessage.id]?.status === AssistantMessageStatus.SUCCESS
+    ) {
+      setContextProcessingStatus(topicId, 'complete', '上下文已就绪')
+    }
     dispatch(newMessagesActions.setTopicLoading({ topicId, loading: false }))
+    void renameAgentSessionIfNeeded(agentSession, topicId, getState)
   }
 }
 
@@ -1451,7 +1819,7 @@ const fetchAndProcessAssistantResponseImpl = async (
     })
     // 统一错误处理：确保 loading 状态被正确设置，避免队列任务卡住
     try {
-      callbacks.onError?.(error)
+      await callbacks.onError?.(error)
     } catch (callbackError) {
       logger.error('Error in onError callback:', callbackError as Error)
     } finally {
@@ -1649,6 +2017,9 @@ export const deleteSingleMessageThunk =
       dispatch(newMessagesActions.removeMessage({ topicId, messageId }))
       cleanupMultipleBlocks(dispatch, blockIdsToDelete)
       await deleteMessageFromDB(topicId, messageId)
+      clearContextCheckpoint(topicId)
+      clearContextTelemetry(topicId)
+      await deleteContextResourcesForMessages(topicId, [messageId])
     } catch (error) {
       logger.error(`[deleteSingleMessage] Failed to delete message ${messageId}:`, error as Error)
     }
@@ -1688,6 +2059,9 @@ export const deleteMessageGroupThunk =
       dispatch(newMessagesActions.removeMessagesByAskId({ topicId, askId }))
       cleanupMultipleBlocks(dispatch, blockIdsToDelete)
       await deleteMessagesFromDB(topicId, messageIdsToDelete)
+      clearContextCheckpoint(topicId)
+      clearContextTelemetry(topicId)
+      await deleteContextResourcesForMessages(topicId, messageIdsToDelete)
     } catch (error) {
       logger.error(`[deleteMessageGroup] Failed to delete messages with askId ${askId}:`, error as Error)
     }
@@ -1713,6 +2087,9 @@ export const clearTopicMessagesThunk =
       dispatch(newMessagesActions.clearTopicMessages(topicId))
       cleanupMultipleBlocks(dispatch, blockIdsToDelete)
       await clearMessagesFromDB(topicId)
+      clearContextCheckpoint(topicId)
+      await deleteContextResources(topicId)
+      clearContextTelemetry(topicId)
     } catch (error) {
       logger.error(`[clearTopicMessagesThunk] Failed to clear messages for topic ${topicId}:`, error as Error)
     }
@@ -1733,6 +2110,7 @@ export const resendMessageThunk =
       }
 
       const state = getState()
+      const conversationModel = getCurrentTopicModel(state, topicId, assistant)
       // Use selector to get all messages for the topic
       const allMessagesForTopic = selectMessagesForTopic(state, topicId)
 
@@ -1757,7 +2135,7 @@ export const resendMessageThunk =
 
         const assistantMessage = createAssistantMessage(assistant.id, topicId, {
           askId: userMessageToResend.id,
-          model: assistant.model
+          model: conversationModel
         })
         assistantMessage.traceId = userMessageToResend.traceId
         resetDataList.push(assistantMessage)
@@ -1777,15 +2155,16 @@ export const resendMessageThunk =
 
       // 先处理已有的重传
       for (const originalMsg of assistantMessagesToReset) {
-        const modelToSet =
-          assistantMessagesToReset.length === 1 && !userMessageToResend?.mentions?.length
-            ? assistant.model
-            : originalMsg.model
+        const retryModel = resolveRetryModelSelection({
+          conversationModel,
+          originalAssistantMessage: originalMsg,
+          preserveOriginalModel: assistantMessagesToReset.length > 1 || Boolean(userMessageToResend.mentions?.length)
+        })
         const blockIdsToDelete = [...(originalMsg.blocks || [])]
         const resetMsg = resetAssistantMessage(originalMsg, {
           status: AssistantMessageStatus.PENDING,
           updatedAt: new Date().toISOString(),
-          model: modelToSet
+          ...retryModel
         })
 
         resetDataList.push(resetMsg)
@@ -1884,6 +2263,7 @@ export const regenerateAssistantResponseThunk =
       }
 
       const state = getState()
+      const conversationModel = getCurrentTopicModel(state, topicId, assistant)
 
       // 1. Use selector to get all messages for the topic
       const allMessagesForTopic = selectMessagesForTopic(state, topicId)
@@ -1931,20 +2311,22 @@ export const regenerateAssistantResponseThunk =
       const blockIdsToDelete = [...(messageToResetEntity.blocks || [])]
 
       // 5. Reset the message entity in Redux
-      const resetAssistantMsg = resetAssistantMessage(
-        messageToResetEntity,
-        // Grouped message (mentioned model message) should not reset model and modelId, always use the original model
-        assistantMessageToRegenerate.modelId
-          ? {
-              status: AssistantMessageStatus.PENDING,
-              updatedAt: new Date().toISOString()
-            }
-          : {
-              status: AssistantMessageStatus.PENDING,
-              updatedAt: new Date().toISOString(),
-              model: assistant.model
-            }
+      const hasSiblingAssistantResponses = allMessagesForTopic.some(
+        (message) =>
+          message.role === 'assistant' &&
+          message.askId === originalUserQuery.id &&
+          message.id !== messageToResetEntity.id
       )
+      const retryModel = resolveRetryModelSelection({
+        conversationModel,
+        originalAssistantMessage: messageToResetEntity,
+        preserveOriginalModel: Boolean(originalUserQuery.mentions?.length) || hasSiblingAssistantResponses
+      })
+      const resetAssistantMsg = resetAssistantMessage(messageToResetEntity, {
+        status: AssistantMessageStatus.PENDING,
+        updatedAt: new Date().toISOString(),
+        ...retryModel
+      })
 
       dispatch(
         newMessagesActions.updateMessage({
@@ -2781,7 +3163,7 @@ export const setupChannelStream = (
   })
 
   const streamProcessorCallbacks = createStreamProcessor(callbacks)
-  streamProcessorCallbacks({ type: ChunkType.LLM_RESPONSE_CREATED })
+  void streamProcessorCallbacks({ type: ChunkType.LLM_RESPONSE_CREATED })
 
   const adapter = new AiSdkToChunkAdapter(streamProcessorCallbacks, [], false, false)
   let streamSettled = false

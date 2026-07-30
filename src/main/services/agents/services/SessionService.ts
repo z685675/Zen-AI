@@ -29,6 +29,7 @@ import {
 } from '../database/schema'
 import type { AgentModelField } from '../errors'
 import { builtinSlashCommands } from './claudecode/commands'
+import { haveSameAccessiblePaths } from './sessionWorkspace'
 
 const logger = loggerService.withContext('SessionService')
 
@@ -106,6 +107,52 @@ export class SessionService extends BaseService {
     return configManager.getLanguage() === 'zh-CN' ? 'zh-CN' : 'en-US'
   }
 
+  private async repairAgentAccessiblePaths(
+    database: Awaited<ReturnType<SessionService['getDatabase']>>,
+    agent: AgentEntity
+  ): Promise<AgentEntity> {
+    const reconciled = this.reconcileAccessiblePaths(agent.accessible_paths, agent.id)
+    if (!reconciled.changed) {
+      return agent
+    }
+
+    await database
+      .update(agentsTable)
+      .set({
+        accessible_paths: this.serializeJsonFields({ accessible_paths: reconciled.paths }).accessible_paths,
+        updated_at: new Date().toISOString()
+      })
+      .where(eq(agentsTable.id, agent.id))
+
+    return {
+      ...agent,
+      accessible_paths: reconciled.paths
+    }
+  }
+
+  private async repairSessionAccessiblePaths(
+    database: Awaited<ReturnType<SessionService['getDatabase']>>,
+    session: GetAgentSessionResponse
+  ): Promise<GetAgentSessionResponse> {
+    const reconciled = this.reconcileAccessiblePaths(session.accessible_paths, session.agent_id)
+    if (!reconciled.changed) {
+      return session
+    }
+
+    await database
+      .update(sessionsTable)
+      .set({
+        accessible_paths: this.serializeJsonFields({ accessible_paths: reconciled.paths }).accessible_paths,
+        updated_at: new Date().toISOString()
+      })
+      .where(eq(sessionsTable.id, session.id))
+
+    return {
+      ...session,
+      accessible_paths: reconciled.paths
+    }
+  }
+
   private normalizeSlashCommandEntry(command: SlashCommand | string | null | undefined): SlashCommand | null {
     if (!command) {
       return null
@@ -172,7 +219,8 @@ export class SessionService extends BaseService {
 
     const database = await this.getDatabase()
     const result = await database.select().from(agentsTable).where(eq(agentsTable.id, agentId)).limit(1)
-    const agent = result[0] ? (this.deserializeJsonFields(result[0]) as AgentEntity) : null
+    const rawAgent = result[0] ? (this.deserializeJsonFields(result[0]) as AgentEntity) : null
+    const agent = rawAgent ? await this.repairAgentAccessiblePaths(database, rawAgent) : null
     return agent?.accessible_paths?.[0]
   }
 
@@ -230,6 +278,17 @@ export class SessionService extends BaseService {
 
     const supplementalCommands = await this.listSlashCommands(agentType, agentId)
     for (const command of supplementalCommands) {
+      this.mergeSlashCommand(commandMap, command, knownDescriptions)
+    }
+
+    return Array.from(commandMap.values())
+  }
+
+  private hydrateStoredSlashCommands(commands: Array<SlashCommand | string>): SlashCommand[] {
+    const commandMap = new Map<string, SlashCommand>()
+    const knownDescriptions = this.getKnownSlashCommandDescriptions()
+
+    for (const command of commands) {
       this.mergeSlashCommand(commandMap, command, knownDescriptions)
     }
 
@@ -399,7 +458,12 @@ export class SessionService extends BaseService {
 
             try {
               const filePath = path.join(commandsDir, entry.name)
-              const metadata = await parsePluginMetadata(filePath, path.join('commands', entry.name), 'commands', 'command')
+              const metadata = await parsePluginMetadata(
+                filePath,
+                path.join('commands', entry.name),
+                'commands',
+                'command'
+              )
               const commandName = entry.name.replace(/\.(md|txt)$/i, '')
               this.mergeSlashCommand(
                 commandMap,
@@ -454,7 +518,8 @@ export class SessionService extends BaseService {
     if (!agents[0]) {
       throw new Error('Agent not found')
     }
-    const agent = this.deserializeJsonFields(agents[0]) as AgentEntity
+    const rawAgent = this.deserializeJsonFields(agents[0]) as AgentEntity
+    const agent = await this.repairAgentAccessiblePaths(database, rawAgent)
 
     const id = `session_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`
     const now = new Date().toISOString()
@@ -530,7 +595,8 @@ export class SessionService extends BaseService {
       return null
     }
 
-    const session = this.deserializeJsonFields(result[0]) as GetAgentSessionResponse
+    let session = this.deserializeJsonFields(result[0]) as GetAgentSessionResponse
+    session = await this.repairSessionAccessiblePaths(database, session)
     const { tools, legacyIdMap } = await this.listMcpTools(session.agent_type, session.mcps)
     session.tools = tools
     session.allowed_tools = this.normalizeAllowedTools(session.allowed_tools, session.tools, legacyIdMap)
@@ -542,7 +608,7 @@ export class SessionService extends BaseService {
     const enrichedSlashCommands =
       originalSlashCommands.length === 0
         ? await this.listSlashCommands(session.agent_type, agentId)
-        : await this.enrichSlashCommands(originalSlashCommands, session.agent_type, agentId)
+        : this.hydrateStoredSlashCommands(originalSlashCommands)
 
     session.slash_commands = enrichedSlashCommands
 
@@ -613,7 +679,12 @@ export class SessionService extends BaseService {
           : await baseQuery.limit(options.limit)
         : await baseQuery
 
-    const sessions = result.map((row) => this.deserializeJsonFields(row)) as GetAgentSessionResponse[]
+    const sessions = await Promise.all(
+      result.map(async (row) => {
+        const session = this.deserializeJsonFields(row) as GetAgentSessionResponse
+        return this.repairSessionAccessiblePaths(database, session)
+      })
+    )
 
     await Promise.all(
       sessions.map(async (session) => {
@@ -629,7 +700,10 @@ export class SessionService extends BaseService {
   async searchSessions(
     query: string,
     options: ListOptions = {}
-  ): Promise<{ results: Array<{ session: AgentSessionEntity; snippet?: string; matched_at?: string }>; total: number }> {
+  ): Promise<{
+    results: Array<{ session: AgentSessionEntity; snippet?: string; matched_at?: string }>
+    total: number
+  }> {
     const trimmedQuery = query.trim()
     if (!trimmedQuery) {
       return { results: [], total: 0 }
@@ -728,25 +802,6 @@ export class SessionService extends BaseService {
     return await this.getSession(agentId, id)
   }
 
-  async syncAgentSessionModel(agentId: string, model: string): Promise<number> {
-    const database = await this.getDatabase()
-    const result = await database
-      .update(sessionsTable)
-      .set({
-        model,
-        updated_at: new Date().toISOString()
-      })
-      .where(eq(sessionsTable.agent_id, agentId))
-
-    logger.info('Synchronized session model for agent', {
-      agentId,
-      model,
-      updated: result.rowsAffected
-    })
-
-    return result.rowsAffected
-  }
-
   async syncAgentSessionInstructions(agentId: string, instructions: string): Promise<number> {
     const database = await this.getDatabase()
     const result = await database
@@ -783,6 +838,48 @@ export class SessionService extends BaseService {
     return result.rowsAffected
   }
 
+  async syncInheritedAgentSessionAccessiblePaths(
+    agentId: string,
+    previousPaths: string[],
+    accessiblePaths: string[]
+  ): Promise<number> {
+    const database = await this.getDatabase()
+    const rows = await database
+      .select({
+        id: sessionsTable.id,
+        accessible_paths: sessionsTable.accessible_paths
+      })
+      .from(sessionsTable)
+      .where(eq(sessionsTable.agent_id, agentId))
+
+    const inheritedSessionIds = rows
+      .filter((row) => {
+        const session = this.deserializeJsonFields(row) as Pick<AgentSessionEntity, 'accessible_paths'>
+        return haveSameAccessiblePaths(session.accessible_paths, previousPaths)
+      })
+      .map((row) => row.id)
+
+    if (inheritedSessionIds.length === 0) {
+      return 0
+    }
+
+    const serialized = this.serializeJsonFields({ accessible_paths: accessiblePaths })
+    const result = await database
+      .update(sessionsTable)
+      .set({
+        accessible_paths: serialized.accessible_paths ?? null,
+        updated_at: new Date().toISOString()
+      })
+      .where(and(eq(sessionsTable.agent_id, agentId), inArray(sessionsTable.id, inheritedSessionIds)))
+
+    logger.info('Synchronized inherited session workspaces for agent', {
+      agentId,
+      updated: result.rowsAffected
+    })
+
+    return result.rowsAffected
+  }
+
   async deleteSession(agentId: string, id: string): Promise<boolean> {
     const database = await this.getDatabase()
     const result = await database
@@ -798,18 +895,16 @@ export class SessionService extends BaseService {
     }
 
     const database = await this.getDatabase()
-    const result = await database
-      .delete(sessionsTable)
-      .where(
-        and(
-          inArray(sessionsTable.agent_id, agentIds),
-          sql`not exists (
+    const result = await database.delete(sessionsTable).where(
+      and(
+        inArray(sessionsTable.agent_id, agentIds),
+        sql`not exists (
             select 1
             from ${sessionMessagesTable}
             where ${sessionMessagesTable.session_id} = ${sessionsTable.id}
           )`
-        )
       )
+    )
 
     if (result.rowsAffected > 0) {
       logger.info('Deleted empty sessions for legacy built-in agents', {

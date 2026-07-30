@@ -39,13 +39,18 @@ function checkGitignore(filePath: string, expected: string, displayPath: string,
  */
 function checkClaudeSkillSymlink(skillName: string, errors: string[]) {
   const claudeSkillDir = path.join(CLAUDE_SKILLS_DIR, skillName)
-  const expectedTarget = path.join('..', '..', '.agents', 'skills', skillName)
+  const expectedTarget = path.posix.join('..', '..', '.agents', 'skills', skillName)
 
   let stat: fs.Stats
   try {
     stat = fs.lstatSync(claudeSkillDir)
   } catch {
     errors.push(`.claude/skills/${skillName} is missing (run pnpm skills:sync)`)
+    return
+  }
+
+  // Git checks out symlinks as small target files when core.symlinks=false on Windows.
+  if (process.platform === 'win32' && stat.isFile() && readFileSafe(claudeSkillDir) === expectedTarget) {
     return
   }
 

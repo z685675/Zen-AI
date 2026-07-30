@@ -106,7 +106,7 @@ export type SessionLabelProps = {
 
 export const SessionLabel = ({ session, className }: SessionLabelProps) => {
   const displayName = session?.name ?? session?.id
-  return <span className={cn('truncate text-(--color-text) text-[13px] font-normal', className)}>{displayName}</span>
+  return <span className={cn('truncate font-normal text-(--color-text) text-[13px]', className)}>{displayName}</span>
 }
 
 export interface SettingsItemProps extends React.ComponentPropsWithRef<'div'> {

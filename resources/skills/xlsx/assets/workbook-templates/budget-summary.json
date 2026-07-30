@@ -1,0 +1,10 @@
+{
+  "title": "Budget Summary",
+  "rows": [
+    ["Category", "Budget", "Actual", "Variance", "Owner", "Notes"],
+    ["People", "", "", "", "TBD", ""],
+    ["Tools", "", "", "", "TBD", ""],
+    ["Marketing", "", "", "", "TBD", ""],
+    ["Contingency", "", "", "", "TBD", ""]
+  ]
+}

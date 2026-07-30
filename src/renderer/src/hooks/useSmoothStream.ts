@@ -12,85 +12,93 @@ const segmenter = new Intl.Segmenter(languages)
 
 export const useSmoothStream = ({ onUpdate, streamDone, minDelay = 10, initialText = '' }: UseSmoothStreamOptions) => {
   const chunkQueueRef = useRef<string[]>([])
+  const chunkQueueOffsetRef = useRef(0)
   const animationFrameRef = useRef<number | null>(null)
-  const displayedTextRef = useRef<string>(initialText)
-  const lastUpdateTimeRef = useRef<number>(0)
+  const displayedTextRef = useRef(initialText)
+  const lastUpdateTimeRef = useRef(0)
+  const onUpdateRef = useRef(onUpdate)
+  const streamDoneRef = useRef(streamDone)
+  const minDelayRef = useRef(minDelay)
+  const renderLoopRef = useRef<(currentTime: number) => void>(() => {})
 
-  const addChunk = useCallback((chunk: string) => {
-    const chars = Array.from(segmenter.segment(chunk)).map((s) => s.segment)
-    chunkQueueRef.current = [...chunkQueueRef.current, ...(chars || [])]
+  onUpdateRef.current = onUpdate
+  streamDoneRef.current = streamDone
+  minDelayRef.current = minDelay
+
+  const scheduleRender = useCallback(() => {
+    if (animationFrameRef.current !== null) return
+    animationFrameRef.current = requestAnimationFrame((currentTime) => renderLoopRef.current(currentTime))
   }, [])
 
-  const reset = useCallback(
-    (newText = '') => {
-      if (animationFrameRef.current) {
-        cancelAnimationFrame(animationFrameRef.current)
+  const addChunk = useCallback(
+    (chunk: string) => {
+      if (!chunk) return
+
+      for (const segment of segmenter.segment(chunk)) {
+        chunkQueueRef.current.push(segment.segment)
       }
+      scheduleRender()
+    },
+    [scheduleRender]
+  )
+
+  const reset = useCallback((newText = '') => {
+    if (animationFrameRef.current !== null) {
+      cancelAnimationFrame(animationFrameRef.current)
+      animationFrameRef.current = null
+    }
+    chunkQueueRef.current = []
+    chunkQueueOffsetRef.current = 0
+    displayedTextRef.current = newText
+    onUpdateRef.current(newText)
+  }, [])
+
+  renderLoopRef.current = (currentTime: number) => {
+    animationFrameRef.current = null
+
+    const queue = chunkQueueRef.current
+    const availableCount = queue.length - chunkQueueOffsetRef.current
+    if (availableCount <= 0) return
+
+    if (!streamDoneRef.current && currentTime - lastUpdateTimeRef.current < minDelayRef.current) {
+      scheduleRender()
+      return
+    }
+    lastUpdateTimeRef.current = currentTime
+
+    const charsToRenderCount = streamDoneRef.current ? availableCount : Math.max(1, Math.floor(availableCount / 5))
+    const startIndex = chunkQueueOffsetRef.current
+    const endIndex = startIndex + charsToRenderCount
+    displayedTextRef.current += queue.slice(startIndex, endIndex).join('')
+    chunkQueueOffsetRef.current = endIndex
+    onUpdateRef.current(displayedTextRef.current)
+
+    if (chunkQueueOffsetRef.current >= queue.length) {
       chunkQueueRef.current = []
-      displayedTextRef.current = newText
-      onUpdate(newText)
-    },
-    [onUpdate]
-  )
+      chunkQueueOffsetRef.current = 0
+      return
+    }
 
-  const renderLoop = useCallback(
-    (currentTime: number) => {
-      // 1. 如果队列为空
-      if (chunkQueueRef.current.length === 0) {
-        // 如果流已结束，确保显示最终状态并停止循环
-        if (streamDone) {
-          const finalText = displayedTextRef.current
-          onUpdate(finalText)
-          return
-        }
-        // 如果流还没结束但队列空了，等待下一帧
-        animationFrameRef.current = requestAnimationFrame(renderLoop)
-        return
-      }
-
-      // 2. 时间控制，确保最小延迟
-      if (currentTime - lastUpdateTimeRef.current < minDelay) {
-        animationFrameRef.current = requestAnimationFrame(renderLoop)
-        return
-      }
-      lastUpdateTimeRef.current = currentTime
-
-      // 3. 动态计算本次渲染的字符数
-      let charsToRenderCount = Math.max(1, Math.floor(chunkQueueRef.current.length / 5))
-
-      // 如果流已结束，一次性渲染所有剩余字符
-      if (streamDone) {
-        charsToRenderCount = chunkQueueRef.current.length
-      }
-
-      const charsToRender = chunkQueueRef.current.slice(0, charsToRenderCount)
-      displayedTextRef.current += charsToRender.join('')
-
-      // 4. 立即更新UI
-      onUpdate(displayedTextRef.current)
-
-      // 5. 更新队列
-      chunkQueueRef.current = chunkQueueRef.current.slice(charsToRenderCount)
-
-      // 6. 如果还有内容需要渲染，继续下一帧
-      if (chunkQueueRef.current.length > 0) {
-        animationFrameRef.current = requestAnimationFrame(renderLoop)
-      }
-    },
-    [streamDone, onUpdate, minDelay]
-  )
+    if (chunkQueueOffsetRef.current >= 4096 && chunkQueueOffsetRef.current * 2 >= queue.length) {
+      chunkQueueRef.current = queue.slice(chunkQueueOffsetRef.current)
+      chunkQueueOffsetRef.current = 0
+    }
+    scheduleRender()
+  }
 
   useEffect(() => {
-    // 启动渲染循环
-    animationFrameRef.current = requestAnimationFrame(renderLoop)
+    if (streamDone && chunkQueueRef.current.length > chunkQueueOffsetRef.current) {
+      scheduleRender()
+    }
+  }, [scheduleRender, streamDone])
 
-    // 组件卸载时清理
+  useEffect(() => {
     return () => {
-      if (animationFrameRef.current) {
+      if (animationFrameRef.current !== null) {
         cancelAnimationFrame(animationFrameRef.current)
       }
     }
-  }, [renderLoop])
+  }, [])
 
   return { addChunk, reset }
 }

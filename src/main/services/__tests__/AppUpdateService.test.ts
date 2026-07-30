@@ -129,6 +129,7 @@ describe('AppUpdateService', () => {
       success: false,
       status: 'not-downloaded',
       message: 'Update package has not been downloaded yet.',
+      stage: 'package-missing',
       updateInfo: null
     })
     expect(mockAutoUpdater.quitAndInstall).not.toHaveBeenCalled()
@@ -339,6 +340,7 @@ describe('AppUpdateService', () => {
       success: false,
       status: 'error',
       message: expect.stringContaining('更新安装器暂时没有启动'),
+      stage: 'start-installer',
       updateInfo: { version: '1.1.0' }
     })
     expect(configManagerMock.setPendingUpdateInfo).not.toHaveBeenCalledWith(null)
@@ -367,6 +369,7 @@ describe('AppUpdateService', () => {
       success: false,
       status: 'error',
       message: 'installer failed',
+      stage: 'start-installer',
       updateInfo: { version: '1.1.0' }
     })
     expect(mockApp.isInstallingUpdate).toBe(false)
@@ -650,6 +653,7 @@ describe('AppUpdateService', () => {
       success: false,
       status: 'not-downloaded',
       message: 'Update package has not been downloaded yet.',
+      stage: 'package-missing',
       updateInfo: null
     })
     expect(mockAutoUpdater.checkForUpdates).not.toHaveBeenCalled()

@@ -1,0 +1,71 @@
+{
+  "title": "智能助手验收结果表",
+  "workbook": {
+    "creator": "Zen AI",
+    "sheets": [
+      {
+        "name": "测试明细",
+        "header_rows": 1,
+        "freeze_rows": 1,
+        "auto_filter": "A1:I7",
+        "column_widths": [14, 18, 22, 16, 28, 28, 12, 12, 24],
+        "rows": [
+          ["测试编号", "模型", "Provider", "任务类型", "预期结果", "实际结果", "是否通过", "耗时（秒）", "备注"],
+          ["AUTO-01", "gpt-5.6-luna", "OpenAI-compatible", "普通对话", "正常回答", "回答完成", "通过", 3.2, ""],
+          ["FILE-01", "gpt-5.6-luna", "OpenAI-compatible", "文件操作", "创建文件", "文件已创建", "通过", 8.4, ""],
+          ["PPT-01", "gpt-5.6-luna", "OpenAI-compatible", "PPT", "生成并打开", "已生成", "通过", 95.6, "视觉待评分"],
+          ["DOCX-01", "gpt-5.6-luna", "OpenAI-compatible", "Word", "目录和表格正常", "已生成", "通过", 28.1, ""],
+          ["XLSX-01", "gpt-5.6-luna", "OpenAI-compatible", "Excel", "公式和图表正常", "待测试", "待确认", 0, "当前测试项"],
+          ["PDF-01", "gpt-5.6-luna", "OpenAI-compatible", "PDF", "中文和分页正常", "待测试", "待确认", 0, ""]
+        ],
+        "conditional_formats": [
+          { "range": "G2:G1000", "operator": "equal", "value": "通过", "style": "pass" },
+          { "range": "G2:G1000", "operator": "equal", "value": "失败", "style": "fail" },
+          { "range": "G2:G1000", "operator": "equal", "value": "待确认", "style": "warning" }
+        ]
+      },
+      {
+        "name": "汇总看板",
+        "header_rows": 0,
+        "column_widths": [18, 14, 18, 18],
+        "merges": ["A1:D1"],
+        "rows": [
+          [{ "value": "智能助手验收汇总", "style": "title" }, null, null, null],
+          [null, null, null, null],
+          [{ "value": "核心指标", "style": "header" }, { "value": "数值", "style": "header" }, { "value": "统计口径", "style": "header" }, { "value": "状态", "style": "header" }],
+          ["通过数", { "formula": "COUNTIF('测试明细'!G2:G1000,\"通过\")", "result": 4, "style": "integer" }, "明细中状态为通过", "通过"],
+          ["失败数", { "formula": "COUNTIF('测试明细'!G2:G1000,\"失败\")", "result": 0, "style": "integer" }, "明细中状态为失败", "通过"],
+          ["通过率", { "formula": "IFERROR(B4/(B4+B5),0)", "result": 1, "style": "percent" }, "通过数 / 已完成数", "通过"],
+          [null, null, null, null],
+          [{ "value": "任务类型", "style": "header" }, { "value": "通过数", "style": "header" }, { "value": "失败数", "style": "header" }, { "value": "通过率", "style": "header" }],
+          ["普通对话", { "formula": "COUNTIFS('测试明细'!D:D,A9,'测试明细'!G:G,\"通过\")", "result": 1, "style": "integer" }, { "formula": "COUNTIFS('测试明细'!D:D,A9,'测试明细'!G:G,\"失败\")", "result": 0, "style": "integer" }, { "formula": "IFERROR(B9/(B9+C9),0)", "result": 1, "style": "percent" }],
+          ["文件操作", { "formula": "COUNTIFS('测试明细'!D:D,A10,'测试明细'!G:G,\"通过\")", "result": 1, "style": "integer" }, { "formula": "COUNTIFS('测试明细'!D:D,A10,'测试明细'!G:G,\"失败\")", "result": 0, "style": "integer" }, { "formula": "IFERROR(B10/(B10+C10),0)", "result": 1, "style": "percent" }],
+          ["PPT", { "formula": "COUNTIFS('测试明细'!D:D,A11,'测试明细'!G:G,\"通过\")", "result": 1, "style": "integer" }, { "formula": "COUNTIFS('测试明细'!D:D,A11,'测试明细'!G:G,\"失败\")", "result": 0, "style": "integer" }, { "formula": "IFERROR(B11/(B11+C11),0)", "result": 1, "style": "percent" }],
+          ["Word", { "formula": "COUNTIFS('测试明细'!D:D,A12,'测试明细'!G:G,\"通过\")", "result": 1, "style": "integer" }, { "formula": "COUNTIFS('测试明细'!D:D,A12,'测试明细'!G:G,\"失败\")", "result": 0, "style": "integer" }, { "formula": "IFERROR(B12/(B12+C12),0)", "result": 1, "style": "percent" }],
+          ["Excel", { "formula": "COUNTIFS('测试明细'!D:D,A13,'测试明细'!G:G,\"通过\")", "result": 0, "style": "integer" }, { "formula": "COUNTIFS('测试明细'!D:D,A13,'测试明细'!G:G,\"失败\")", "result": 0, "style": "integer" }, { "formula": "IFERROR(B13/(B13+C13),0)", "result": 0, "style": "percent" }],
+          ["PDF", { "formula": "COUNTIFS('测试明细'!D:D,A14,'测试明细'!G:G,\"通过\")", "result": 0, "style": "integer" }, { "formula": "COUNTIFS('测试明细'!D:D,A14,'测试明细'!G:G,\"失败\")", "result": 0, "style": "integer" }, { "formula": "IFERROR(B14/(B14+C14),0)", "result": 0, "style": "percent" }]
+        ],
+        "charts": [
+          {
+            "type": "column",
+            "title": "按任务类型统计通过数",
+            "from_col": 5,
+            "from_row": 1,
+            "to_col": 13,
+            "to_row": 18,
+            "series": [
+              {
+                "name": "通过数",
+                "categories": ["普通对话", "文件操作", "PPT", "Word", "Excel", "PDF"],
+                "values": [1, 1, 1, 1, 0, 0],
+                "category_range": "'汇总看板'!$A$9:$A$14",
+                "value_range": "'汇总看板'!$B$9:$B$14",
+                "color": "2563EB"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

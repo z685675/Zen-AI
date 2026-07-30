@@ -161,7 +161,7 @@ export function buildProviderOptions(
   providerOptions: Record<string, Record<string, JSONValue>>
   standardParams: Partial<Record<AiSdkParam, any>>
 } {
-  const rawProviderId = getAiSdkProviderId(actualProvider)
+  const rawProviderId = getAiSdkProviderId(actualProvider, model)
   logger.debug('buildProviderOptions', { assistant, model, actualProvider, capabilities, rawProviderId })
   // 构建 provider 特定的选项
   let providerSpecificOptions: Record<string, any> = {}

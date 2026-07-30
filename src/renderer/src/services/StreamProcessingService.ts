@@ -12,173 +12,211 @@ import type { Response } from '@renderer/types/newMessage'
 import { AssistantMessageStatus } from '@renderer/types/newMessage'
 
 const logger = loggerService.withContext('StreamProcessingService')
+type StreamCallbackResult = void | Promise<void>
 
 // Define the structure for the callbacks that the StreamProcessor will invoke
 export interface StreamProcessorCallbacks {
   // LLM response created
-  onLLMResponseCreated?: () => void
+  onLLMResponseCreated?: () => StreamCallbackResult
   // Text content start
-  onTextStart?: () => void
+  onTextStart?: () => StreamCallbackResult
   // Text content chunk received
-  onTextChunk?: (text: string, providerMetadata?: ProviderMetadata) => void
+  onTextChunk?: (text: string, providerMetadata?: ProviderMetadata) => StreamCallbackResult
   // Full text content received
-  onTextComplete?: (text: string, providerMetadata?: ProviderMetadata) => void
+  onTextComplete?: (text: string, providerMetadata?: ProviderMetadata) => StreamCallbackResult
   // thinking content start
-  onThinkingStart?: () => void
+  onThinkingStart?: () => StreamCallbackResult
   // Thinking/reasoning content chunk received (e.g., from Claude)
-  onThinkingChunk?: (text: string, thinking_millsec?: number) => void
-  onThinkingComplete?: (text: string, thinking_millsec?: number) => void
+  onThinkingChunk?: (text: string, thinking_millsec?: number) => StreamCallbackResult
+  onThinkingComplete?: (text: string, thinking_millsec?: number) => StreamCallbackResult
   // A tool call response chunk (from MCP)
-  onToolCallPending?: (toolResponse: MCPToolResponse | NormalToolResponse) => void
-  onToolCallInProgress?: (toolResponse: MCPToolResponse | NormalToolResponse) => void
-  onToolCallComplete?: (toolResponse: MCPToolResponse | NormalToolResponse) => void
+  onToolCallPending?: (toolResponse: MCPToolResponse | NormalToolResponse) => StreamCallbackResult
+  onToolCallInProgress?: (toolResponse: MCPToolResponse | NormalToolResponse) => StreamCallbackResult
+  onToolCallComplete?: (toolResponse: MCPToolResponse | NormalToolResponse) => StreamCallbackResult
   // Tool argument streaming (partial arguments during streaming)
-  onToolArgumentStreaming?: (toolResponse: MCPToolResponse | NormalToolResponse) => void
+  onToolArgumentStreaming?: (toolResponse: MCPToolResponse | NormalToolResponse) => StreamCallbackResult
   // External tool call in progress
-  onExternalToolInProgress?: () => void
+  onExternalToolInProgress?: () => StreamCallbackResult
   // Citation data received (e.g., from Internet and  Knowledge Base)
-  onExternalToolComplete?: (externalToolResult: ExternalToolResult) => void | Promise<void>
+  onExternalToolComplete?: (externalToolResult: ExternalToolResult) => StreamCallbackResult
   // LLM Web search in progress
-  onLLMWebSearchInProgress?: () => void
+  onLLMWebSearchInProgress?: () => StreamCallbackResult
   // LLM Web search complete
-  onLLMWebSearchComplete?: (llmWebSearchResult: WebSearchResponse) => void
+  onLLMWebSearchComplete?: (llmWebSearchResult: WebSearchResponse) => StreamCallbackResult
   // Get citation block ID
   getCitationBlockId?: () => string | null
   // Set citation block ID
   setCitationBlockId?: (blockId: string) => void
   // Image generation chunk received
-  onImageCreated?: () => void
-  onImageDelta?: (imageData: GenerateImageResponse) => void
-  onImageGenerated?: (imageData?: GenerateImageResponse) => void
-  onLLMResponseComplete?: (response?: Response) => void
+  onImageCreated?: () => StreamCallbackResult
+  onImageDelta?: (imageData: GenerateImageResponse) => StreamCallbackResult
+  onImageGenerated?: (imageData?: GenerateImageResponse) => StreamCallbackResult
+  onLLMResponseComplete?: (response?: Response) => StreamCallbackResult
   // Called when an error occurs during chunk processing
-  onError?: (error: any) => void
+  onError?: (error: any) => StreamCallbackResult
   // Called when the entire stream processing is signaled as complete (success or failure)
-  onComplete?: (status: AssistantMessageStatus, response?: Response) => void
-  onVideoSearched?: (video?: { type: 'url' | 'path'; content: string }, metadata?: Record<string, any>) => void
+  onComplete?: (status: AssistantMessageStatus, response?: Response) => StreamCallbackResult
+  onVideoSearched?: (
+    video?: { type: 'url' | 'path'; content: string },
+    metadata?: Record<string, any>
+  ) => StreamCallbackResult
   // Called when a block is created
-  onBlockCreated?: () => void
+  onBlockCreated?: () => StreamCallbackResult
   // Called when raw data is received (e.g., session_id updates from Agent SDK)
-  onRawData?: (content: unknown, metadata?: Record<string, any>) => void
+  onRawData?: (content: unknown, metadata?: Record<string, any>) => StreamCallbackResult
 }
 
 // Function to create a stream processor instance
 export function createStreamProcessor(callbacks: StreamProcessorCallbacks = {}) {
+  let processingQueue = Promise.resolve()
+  let terminalState: 'open' | 'error' | 'complete' = 'open'
+
   // The returned function processes a single chunk or a final signal
   return (chunk: Chunk) => {
-    try {
-      const data = chunk
-      // logger.debug('data: ', data)
-      switch (data.type) {
-        case ChunkType.BLOCK_COMPLETE: {
-          if (callbacks.onComplete) callbacks.onComplete(AssistantMessageStatus.SUCCESS, data?.response)
-          break
+    processingQueue = processingQueue
+      .then(async () => {
+        if (terminalState !== 'open') {
+          logger.debug('Ignoring stream chunk after terminal state', {
+            terminalState,
+            chunkType: chunk.type
+          })
+          return
         }
-        case ChunkType.LLM_RESPONSE_CREATED: {
-          if (callbacks.onLLMResponseCreated) callbacks.onLLMResponseCreated()
-          break
-        }
-        case ChunkType.TEXT_START: {
-          if (callbacks.onTextStart) callbacks.onTextStart()
-          break
-        }
-        case ChunkType.TEXT_DELTA: {
-          if (callbacks.onTextChunk) callbacks.onTextChunk(data.text, data.providerMetadata)
-          break
-        }
-        case ChunkType.TEXT_COMPLETE: {
-          if (callbacks.onTextComplete) callbacks.onTextComplete(data.text, data.providerMetadata)
-          break
-        }
-        case ChunkType.THINKING_START: {
-          if (callbacks.onThinkingStart) callbacks.onThinkingStart()
-          break
-        }
-        case ChunkType.THINKING_DELTA: {
-          if (callbacks.onThinkingChunk) callbacks.onThinkingChunk(data.text, data.thinking_millsec)
-          break
-        }
-        case ChunkType.THINKING_COMPLETE: {
-          if (callbacks.onThinkingComplete) callbacks.onThinkingComplete(data.text, data.thinking_millsec)
-          break
-        }
-        case ChunkType.MCP_TOOL_PENDING: {
-          if (callbacks.onToolCallPending) data.responses.forEach((toolResp) => callbacks.onToolCallPending!(toolResp))
-          break
-        }
-        case ChunkType.MCP_TOOL_IN_PROGRESS: {
-          if (callbacks.onToolCallInProgress)
-            data.responses.forEach((toolResp) => callbacks.onToolCallInProgress!(toolResp))
-          break
-        }
-        case ChunkType.MCP_TOOL_COMPLETE: {
-          if (callbacks.onToolCallComplete && data.responses.length > 0) {
-            data.responses.forEach((toolResp) => callbacks.onToolCallComplete!(toolResp))
+
+        const data = chunk
+        // logger.debug('data: ', data)
+        switch (data.type) {
+          case ChunkType.BLOCK_COMPLETE: {
+            break
           }
-          break
-        }
-        case ChunkType.MCP_TOOL_STREAMING: {
-          if (callbacks.onToolArgumentStreaming) {
-            data.responses.forEach((toolResp) => callbacks.onToolArgumentStreaming!(toolResp))
+          case ChunkType.LLM_RESPONSE_CREATED: {
+            if (callbacks.onLLMResponseCreated) await callbacks.onLLMResponseCreated()
+            break
           }
-          break
+          case ChunkType.TEXT_START: {
+            if (callbacks.onTextStart) await callbacks.onTextStart()
+            break
+          }
+          case ChunkType.TEXT_DELTA: {
+            if (callbacks.onTextChunk) await callbacks.onTextChunk(data.text, data.providerMetadata)
+            break
+          }
+          case ChunkType.TEXT_COMPLETE: {
+            if (callbacks.onTextComplete) await callbacks.onTextComplete(data.text, data.providerMetadata)
+            break
+          }
+          case ChunkType.THINKING_START: {
+            if (callbacks.onThinkingStart) await callbacks.onThinkingStart()
+            break
+          }
+          case ChunkType.THINKING_DELTA: {
+            if (callbacks.onThinkingChunk) await callbacks.onThinkingChunk(data.text, data.thinking_millsec)
+            break
+          }
+          case ChunkType.THINKING_COMPLETE: {
+            if (callbacks.onThinkingComplete) await callbacks.onThinkingComplete(data.text, data.thinking_millsec)
+            break
+          }
+          case ChunkType.MCP_TOOL_PENDING: {
+            if (callbacks.onToolCallPending) {
+              for (const toolResp of data.responses) {
+                await callbacks.onToolCallPending(toolResp)
+              }
+            }
+            break
+          }
+          case ChunkType.MCP_TOOL_IN_PROGRESS: {
+            if (callbacks.onToolCallInProgress) {
+              for (const toolResp of data.responses) {
+                await callbacks.onToolCallInProgress(toolResp)
+              }
+            }
+            break
+          }
+          case ChunkType.MCP_TOOL_COMPLETE: {
+            if (callbacks.onToolCallComplete && data.responses.length > 0) {
+              for (const toolResp of data.responses) {
+                await callbacks.onToolCallComplete(toolResp)
+              }
+            }
+            break
+          }
+          case ChunkType.MCP_TOOL_STREAMING: {
+            if (callbacks.onToolArgumentStreaming) {
+              for (const toolResp of data.responses) {
+                await callbacks.onToolArgumentStreaming(toolResp)
+              }
+            }
+            break
+          }
+          case ChunkType.EXTERNEL_TOOL_IN_PROGRESS: {
+            if (callbacks.onExternalToolInProgress) await callbacks.onExternalToolInProgress()
+            break
+          }
+          case ChunkType.EXTERNEL_TOOL_COMPLETE: {
+            if (callbacks.onExternalToolComplete) await callbacks.onExternalToolComplete(data.external_tool)
+            break
+          }
+          case ChunkType.LLM_WEB_SEARCH_IN_PROGRESS: {
+            if (callbacks.onLLMWebSearchInProgress) await callbacks.onLLMWebSearchInProgress()
+            break
+          }
+          case ChunkType.LLM_WEB_SEARCH_COMPLETE: {
+            if (callbacks.onLLMWebSearchComplete) await callbacks.onLLMWebSearchComplete(data.llm_web_search)
+            break
+          }
+          case ChunkType.IMAGE_CREATED: {
+            if (callbacks.onImageCreated) await callbacks.onImageCreated()
+            break
+          }
+          case ChunkType.IMAGE_DELTA: {
+            if (callbacks.onImageDelta) await callbacks.onImageDelta(data.image)
+            break
+          }
+          case ChunkType.IMAGE_COMPLETE: {
+            if (callbacks.onImageGenerated) await callbacks.onImageGenerated(data.image)
+            break
+          }
+          case ChunkType.LLM_RESPONSE_COMPLETE: {
+            terminalState = 'complete'
+            if (callbacks.onLLMResponseComplete) await callbacks.onLLMResponseComplete(data.response)
+            if (callbacks.onComplete) await callbacks.onComplete(AssistantMessageStatus.SUCCESS, data.response)
+            break
+          }
+          case ChunkType.ERROR: {
+            terminalState = 'error'
+            if (callbacks.onError) await callbacks.onError(data.error)
+            break
+          }
+          case ChunkType.VIDEO_SEARCHED: {
+            if (callbacks.onVideoSearched) await callbacks.onVideoSearched(data.video, data.metadata)
+            break
+          }
+          case ChunkType.BLOCK_CREATED: {
+            if (callbacks.onBlockCreated) await callbacks.onBlockCreated()
+            break
+          }
+          case ChunkType.RAW: {
+            if (callbacks.onRawData) await callbacks.onRawData(data.content, data.metadata)
+            break
+          }
+          default: {
+            // Handle unknown chunk types or log an error
+            logger.warn(`Unknown chunk type: ${data.type}`)
+          }
         }
-        case ChunkType.EXTERNEL_TOOL_IN_PROGRESS: {
-          if (callbacks.onExternalToolInProgress) callbacks.onExternalToolInProgress()
-          break
+      })
+      .catch(async (error) => {
+        logger.error('Error processing stream chunk:', error as Error)
+        if (terminalState !== 'open') {
+          return
         }
-        case ChunkType.EXTERNEL_TOOL_COMPLETE: {
-          if (callbacks.onExternalToolComplete) void callbacks.onExternalToolComplete(data.external_tool)
-          break
+        terminalState = 'error'
+        if (callbacks.onError) {
+          await callbacks.onError(error)
         }
-        case ChunkType.LLM_WEB_SEARCH_IN_PROGRESS: {
-          if (callbacks.onLLMWebSearchInProgress) callbacks.onLLMWebSearchInProgress()
-          break
-        }
-        case ChunkType.LLM_WEB_SEARCH_COMPLETE: {
-          if (callbacks.onLLMWebSearchComplete) callbacks.onLLMWebSearchComplete(data.llm_web_search)
-          break
-        }
-        case ChunkType.IMAGE_CREATED: {
-          if (callbacks.onImageCreated) callbacks.onImageCreated()
-          break
-        }
-        case ChunkType.IMAGE_DELTA: {
-          if (callbacks.onImageDelta) callbacks.onImageDelta(data.image)
-          break
-        }
-        case ChunkType.IMAGE_COMPLETE: {
-          if (callbacks.onImageGenerated) callbacks.onImageGenerated(data.image)
-          break
-        }
-        case ChunkType.LLM_RESPONSE_COMPLETE: {
-          if (callbacks.onLLMResponseComplete) callbacks.onLLMResponseComplete(data.response)
-          break
-        }
-        case ChunkType.ERROR: {
-          if (callbacks.onError) callbacks.onError(data.error)
-          break
-        }
-        case ChunkType.VIDEO_SEARCHED: {
-          if (callbacks.onVideoSearched) callbacks.onVideoSearched(data.video, data.metadata)
-          break
-        }
-        case ChunkType.BLOCK_CREATED: {
-          if (callbacks.onBlockCreated) callbacks.onBlockCreated()
-          break
-        }
-        case ChunkType.RAW: {
-          if (callbacks.onRawData) callbacks.onRawData(data.content, data.metadata)
-          break
-        }
-        default: {
-          // Handle unknown chunk types or log an error
-          logger.warn(`Unknown chunk type: ${data.type}`)
-        }
-      }
-    } catch (error) {
-      logger.error('Error processing stream chunk:', error as Error)
-      callbacks.onError?.(error)
-    }
+      })
+
+    return processingQueue
   }
 }

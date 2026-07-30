@@ -4,10 +4,12 @@ import { useAgentClient } from '@renderer/hooks/agents/useAgentClient'
 import { useCreateDefaultSession } from '@renderer/hooks/agents/useCreateDefaultSession'
 import { useSessions } from '@renderer/hooks/agents/useSessions'
 import { useRuntime } from '@renderer/hooks/useRuntime'
-import { useAppDispatch } from '@renderer/store'
+import store, { useAppDispatch, useAppSelector } from '@renderer/store'
 import { newMessagesActions } from '@renderer/store/newMessage'
 import { setActiveSessionIdAction } from '@renderer/store/runtime'
+import { renameAgentSessionIfNeeded } from '@renderer/store/thunk/messageThunk'
 import { buildAgentSessionTopicId } from '@renderer/utils/agentSession'
+import { isUnnamedAgentSessionName } from '@renderer/utils/agentSessionTitle'
 import { formatErrorMessage } from '@renderer/utils/error'
 import { Alert, Button, Spin } from 'antd'
 import { motion } from 'framer-motion'
@@ -44,7 +46,9 @@ const Sessions = ({ agentId, onSelectItem }: SessionsProps) => {
   const dispatch = useAppDispatch()
   const { createDefaultSession, creatingSession, canCreateSession } = useCreateDefaultSession(agentId)
   const listRef = useRef<DraggableVirtualListRef>(null)
+  const titleRepairAttemptsRef = useRef(new Set<string>())
   const client = useAgentClient()
+  const topicLoadingQuery = useAppSelector((state) => state.messages.loadingByTopic)
 
   const [channelMap, setChannelMap] = useState<Record<string, { type: string; isActive: boolean }>>({})
   useEffect(() => {
@@ -146,6 +150,37 @@ const Sessions = ({ agentId, onSelectItem }: SessionsProps) => {
       )
     }
   }, [activeSessionId, dispatch])
+
+  useEffect(() => {
+    let cancelled = false
+
+    const repairMissingTitles = async () => {
+      for (const session of sessions) {
+        if (cancelled) {
+          return
+        }
+
+        const topicId = buildAgentSessionTopicId(session.id)
+        if (
+          titleRepairAttemptsRef.current.has(session.id) ||
+          topicLoadingQuery[topicId] ||
+          !isUnnamedAgentSessionName(session.name, t('common.unnamed'))
+        ) {
+          continue
+        }
+
+        titleRepairAttemptsRef.current.add(session.id)
+        await renameAgentSessionIfNeeded({ agentId, sessionId: session.id }, topicId, store.getState, {
+          preferGeneratedTitle: false
+        })
+      }
+    }
+
+    void repairMissingTitles()
+    return () => {
+      cancelled = true
+    }
+  }, [agentId, sessions, t, topicLoadingQuery])
 
   if (isLoading) {
     return (

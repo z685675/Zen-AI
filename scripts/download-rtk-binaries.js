@@ -10,6 +10,7 @@ const fs = require('fs')
 const path = require('path')
 const os = require('os')
 const { execFileSync } = require('child_process')
+const AdmZip = require('adm-zip')
 
 const RTK_VERSION = '0.30.1'
 
@@ -18,12 +19,30 @@ const RTK_PACKAGES = {
   'darwin-x64': { file: 'rtk-x86_64-apple-darwin.tar.gz', binary: 'rtk' },
   'linux-x64': { file: 'rtk-x86_64-unknown-linux-musl.tar.gz', binary: 'rtk' },
   'linux-arm64': { file: 'rtk-aarch64-unknown-linux-gnu.tar.gz', binary: 'rtk' },
-  'win32-x64': { file: 'rtk-x86_64-pc-windows-msvc.zip', binary: 'rtk.exe' }
+  'win32-x64': { file: 'rtk-x86_64-pc-windows-msvc.zip', binary: 'rtk.exe' },
+  // Windows on ARM can run x64 applications through the system emulation layer.
+  'win32-arm64': { file: 'rtk-x86_64-pc-windows-msvc.zip', binary: 'rtk.exe' }
 }
 
 function downloadFile(url, destPath) {
   console.log(`Downloading: ${url}`)
-  execFileSync('curl', ['-fSL', '--retry', '3', '-o', destPath, url], { stdio: 'inherit' })
+  execFileSync(
+    'curl',
+    [
+      '-fSL',
+      '--retry',
+      '5',
+      '--retry-all-errors',
+      '--retry-delay',
+      '2',
+      '--connect-timeout',
+      '30',
+      '-o',
+      destPath,
+      url
+    ],
+    { stdio: 'inherit' }
+  )
   if (!fs.existsSync(destPath)) {
     throw new Error(`Download failed: ${destPath} not found`)
   }
@@ -46,7 +65,7 @@ function downloadRtk(platformKey, outputDir) {
     if (pkg.file.endsWith('.tar.gz')) {
       execFileSync('tar', ['-xzf', tempFile, '-C', tempDir], { stdio: 'inherit' })
     } else if (pkg.file.endsWith('.zip')) {
-      execFileSync('unzip', ['-o', tempFile, '-d', tempDir], { stdio: 'inherit' })
+      new AdmZip(tempFile).extractAllTo(tempDir, true)
     }
 
     // rtk archives extract the binary at the root level
@@ -75,11 +94,25 @@ function main() {
 
   const outputDir = path.join(__dirname, '..', 'resources', 'binaries', platformKey)
   fs.mkdirSync(outputDir, { recursive: true })
+  const pkg = RTK_PACKAGES[platformKey]
+  const versionFile = path.join(outputDir, '.rtk-version')
+
+  if (
+    pkg &&
+    fs.existsSync(path.join(outputDir, pkg.binary)) &&
+    fs.existsSync(versionFile) &&
+    fs.readFileSync(versionFile, 'utf8').trim() === RTK_VERSION
+  ) {
+    console.log(`[rtk] ${platformKey} v${RTK_VERSION} is already available`)
+    return
+  }
 
   downloadRtk(platformKey, outputDir)
 
   // Write version file for upgrade detection at runtime
-  fs.writeFileSync(path.join(outputDir, '.rtk-version'), RTK_VERSION, 'utf8')
+  if (pkg) {
+    fs.writeFileSync(versionFile, RTK_VERSION, 'utf8')
+  }
 
   console.log(`All binaries downloaded to ${outputDir}`)
 }
@@ -88,5 +121,5 @@ try {
   main()
 } catch (error) {
   console.error('Failed to download binaries:', error.message)
-  // Non-fatal: don't block the build if binary download fails
+  process.exitCode = 1
 }

@@ -1,0 +1,49 @@
+{
+  "title": "Pitch Deck",
+  "document_type": "investor-pitch",
+  "slides": [
+    {
+      "title": "这个机会来自一个正在扩大的高频痛点",
+      "subtitle": "Pitch deck",
+      "layout": "cover",
+      "takeaway": "Make the opportunity feel specific and timely.",
+      "visual": "cover with market tags",
+      "bullets": ["Problem", "Proof", "Ask"]
+    },
+    {
+      "title": "目标用户正在为低效流程付出真实成本",
+      "layout": "quote",
+      "takeaway": "The pain should feel concrete before the product appears.",
+      "visual": "customer proof quote",
+      "bullets": ["痛点证据：待填", "频次与成本：待填"]
+    },
+    {
+      "title": "我们的方案把复杂任务压缩成可复用流程",
+      "layout": "cards",
+      "takeaway": "Show product value as outcomes.",
+      "visual": "value proposition cards",
+      "bullets": ["更快完成", "更少返工", "更易复用"]
+    },
+    {
+      "title": "早期指标证明方案具备继续放大的基础",
+      "layout": "chart",
+      "takeaway": "Use traction to build trust.",
+      "visual": "bar chart of traction metrics",
+      "bullets": ["用户数：待填", "留存：待填", "付费意愿：待填"]
+    },
+    {
+      "title": "竞争差异在于质量闭环而不是单点能力",
+      "layout": "comparison",
+      "takeaway": "Position the product against alternatives.",
+      "visual": "competitive comparison",
+      "bullets": ["替代方案：待填", "替代方案：待填", "我们：待填", "我们：待填"]
+    },
+    {
+      "title": "下一阶段资金将用于验证增长和交付稳定性",
+      "layout": "summary",
+      "takeaway": "Make the ask explicit.",
+      "visual": "use-of-funds action rows",
+      "bullets": ["产品交付", "用户增长", "质量验证", "团队补齐"]
+    }
+  ]
+}

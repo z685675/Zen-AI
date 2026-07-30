@@ -864,6 +864,25 @@ describe('providerToAiSdkConfig', () => {
       const settings = config.providerSettings as NewApiProviderSettings
       expect(settings.endpointType).toBe('openai-response')
     })
+
+    it('uses New API runtime for OpenAI protocol models with gateway metadata', async () => {
+      const provider = makeProvider({
+        id: 'imported-panel',
+        type: 'openai',
+        apiHost: 'https://api.newapi.com'
+      })
+      const model = makeModel('grok-4.5', provider.id, {
+        endpoint_type: 'openai',
+        supported_endpoint_types: ['openai']
+      })
+
+      const config = await providerToAiSdkConfig(provider, model)
+
+      expect(config.providerId).toBe('newapi')
+      const settings = config.providerSettings as NewApiProviderSettings
+      expect(settings.endpointType).toBe('openai')
+      expect(settings.baseURL).toBe('https://api.newapi.com/v1')
+    })
   })
 
   describe('AiHubMix builder', () => {

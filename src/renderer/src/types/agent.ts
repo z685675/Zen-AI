@@ -28,6 +28,9 @@ export type SessionMessageType = TextStreamPart<Record<string, any>>['type']
 export const AgentTypeSchema = z.enum(['claude-code'])
 export type AgentType = z.infer<typeof AgentTypeSchema>
 
+export const AgentRuntimeSchema = z.enum(['auto', 'claude-code', 'codex'])
+export type AgentRuntime = z.infer<typeof AgentRuntimeSchema>
+
 // ------------------ CherryClaw-specific types ------------------
 export const SchedulerTypeSchema = z.enum(['cron', 'interval', 'one-time'])
 export type SchedulerType = z.infer<typeof SchedulerTypeSchema>
@@ -73,6 +76,7 @@ export const AgentConfigurationSchema = z
 
     // https://docs.claude.com/en/docs/claude-code/sdk/sdk-permissions#mode-specific-behaviors
     permission_mode: PermissionModeSchema.optional().default('default'), // Permission mode, default to 'default'
+    agent_runtime: AgentRuntimeSchema.optional(), // Internal runtime override; missing/auto keeps current default routing.
     max_turns: z.number().optional().default(100), // Maximum number of interaction turns, default to 100
     env_vars: z.record(z.string(), z.string()).optional().default({}), // Custom environment variables for the agent runtime
 
@@ -528,12 +532,10 @@ const sessionCreatableSchema = AgentBaseSchema.extend({
 
 export const CreateSessionRequestSchema = sessionCreatableSchema
 
-export const UpdateSessionRequestSchema = sessionCreatableSchema
-  .partial()
-  .extend({
-    is_pinned: z.boolean().optional(),
-    is_archived: z.boolean().optional()
-  })
+export const UpdateSessionRequestSchema = sessionCreatableSchema.partial().extend({
+  is_pinned: z.boolean().optional(),
+  is_archived: z.boolean().optional()
+})
 
 export const ReplaceSessionRequestSchema = sessionCreatableSchema
 
@@ -553,7 +555,8 @@ export type AgentThinkingConfig = z.infer<typeof AgentThinkingConfigSchema>
 export const CreateSessionMessageRequestSchema = z.object({
   content: z.string().min(1, 'Content must be a valid string'),
   effort: AgentEffortSchema.optional(),
-  thinking: AgentThinkingConfigSchema.optional()
+  thinking: AgentThinkingConfigSchema.optional(),
+  recovery_context: z.string().max(240_000).optional()
 })
 
 export type PermissionModeCard = {

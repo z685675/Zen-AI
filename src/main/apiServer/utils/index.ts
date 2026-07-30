@@ -1,4 +1,5 @@
 import { formatProviderApiHost } from '@main/aiCore/provider/providerConfig'
+import { getAgentRuntimeCompatibility } from '@main/services/agents/services/runtime/compatibility'
 import { loggerService } from '@main/services/LoggerService'
 import { reduxService } from '@main/services/ReduxService'
 import { isSiliconAnthropicCompatibleModel } from '@shared/config/providers'
@@ -15,7 +16,15 @@ export async function getAvailableProviders(): Promise<Provider[]> {
     }
 
     // Support OpenAI-compatible and Anthropic-compatible providers for API server
-    const supportedTypes: ProviderType[] = ['openai', 'anthropic', 'ollama', 'new-api']
+    const supportedTypes: ProviderType[] = [
+      'openai',
+      'openai-response',
+      'azure-openai',
+      'anthropic',
+      'gemini',
+      'ollama',
+      'new-api'
+    ]
     const supportedProviders = providers.filter((p: Provider) => p.enabled && supportedTypes.includes(p.type))
 
     // Format provider apiHost according to their type
@@ -206,7 +215,10 @@ export function transformModelToOpenAI(model: Model, provider?: Provider): ApiMo
     provider: model.provider,
     provider_name: providerDisplayName,
     provider_type: provider?.type,
-    provider_model_id: model.id
+    provider_model_id: model.id,
+    endpoint_type: model.endpoint_type,
+    supported_endpoint_types: model.supported_endpoint_types,
+    agent_runtime_compatibility: getAgentRuntimeCompatibility(provider, model)
   }
 }
 
@@ -259,8 +271,8 @@ export function validateProvider(provider: Provider): boolean {
       return false
     }
 
-    // Support OpenAI and Anthropic type providers
-    if (provider.type !== 'openai' && provider.type !== 'anthropic') {
+    // Support providers exposed by the local API and Agent protocol bridge.
+    if (!['openai', 'openai-response', 'anthropic', 'gemini', 'ollama', 'new-api'].includes(provider.type)) {
       logger.debug('Provider type not supported', {
         providerId: provider.id,
         providerType: provider.type

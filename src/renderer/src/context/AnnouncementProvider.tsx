@@ -158,7 +158,10 @@ export const AnnouncementProvider: FC<PropsWithChildren> = ({ children }) => {
 
   const announcements = useMemo(() => announcementService.getLatestAnnouncements(visibleItems, 3), [visibleItems])
   const urgentItems = useMemo(() => announcementService.getUrgentItems(visibleItems), [visibleItems])
-  const unreadCount = useMemo(() => announcementService.getUnreadCount(announcements), [announcements, readVersionTick])
+  const unreadCount = useMemo(() => {
+    void readVersionTick
+    return announcementService.getUnreadCount(announcements)
+  }, [announcements, readVersionTick])
 
   useEffect(() => {
     if (activePopup) {

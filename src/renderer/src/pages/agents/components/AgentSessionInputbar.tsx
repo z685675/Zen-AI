@@ -10,7 +10,9 @@ import { getModel } from '@renderer/hooks/useModel'
 import { useSettings } from '@renderer/hooks/useSettings'
 import { useTextareaResize } from '@renderer/hooks/useTextareaResize'
 import { useTimer } from '@renderer/hooks/useTimer'
+import ContextStatusIndicator from '@renderer/pages/home/Inputbar/components/ContextStatusIndicator'
 import { InputbarCore } from '@renderer/pages/home/Inputbar/components/InputbarCore'
+import ScrollToBottomButton from '@renderer/pages/home/Inputbar/components/ScrollToBottomButton'
 import {
   InputbarToolsProvider,
   useInputbarToolsDispatch,
@@ -34,8 +36,10 @@ import type { MessageBlock } from '@renderer/types/newMessage'
 import { MessageBlockStatus } from '@renderer/types/newMessage'
 import { abortCompletion } from '@renderer/utils/abortController'
 import { buildAgentSessionTopicId } from '@renderer/utils/agentSession'
+import { getAgentSessionDraftCacheKey } from '@renderer/utils/agentSessionDraft'
 import { getSendMessageShortcutLabel } from '@renderer/utils/input'
 import { createMainTextBlock, createMessage } from '@renderer/utils/messageUtils/create'
+import { toAgentEffort } from '@renderer/utils/reasoningEffort'
 import { documentExts, imageExts, textExts } from '@shared/config/constant'
 import type { FC } from 'react'
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -46,8 +50,6 @@ import { v4 as uuid } from 'uuid'
 const logger = loggerService.withContext('AgentSessionInputbar')
 
 const DRAFT_CACHE_TTL = 24 * 60 * 60 * 1000 // 24 hours
-
-const getAgentDraftCacheKey = (agentId: string) => `agent-session-draft-${agentId}`
 
 type Props = {
   agentId: string
@@ -114,6 +116,7 @@ const AgentSessionInputbar = ({ agentId, sessionId, variant = 'default' }: Props
 
   return (
     <InputbarToolsProvider
+      key={`${agentId}:${sessionId}`}
       initialState={initialState}
       actions={{
         resizeTextArea: () => actionsRef.current.resizeTextArea(),
@@ -162,7 +165,7 @@ const AgentSessionInputbarInner: FC<InnerProps> = ({
   const isHero = variant === 'hero'
 
   // Use shared hooks for text and textarea management with draft persistence
-  const draftCacheKey = getAgentDraftCacheKey(agentId)
+  const draftCacheKey = getAgentSessionDraftCacheKey(agentId, sessionId)
   const {
     text,
     setText,
@@ -185,7 +188,7 @@ const AgentSessionInputbarInner: FC<InnerProps> = ({
   const { t } = useTranslation()
   const quickPanel = useQuickPanel()
 
-  const [reasoningEffort, setReasoningEffort] = useState<ThinkingOption>('default')
+  const [reasoningEffort, setReasoningEffort] = useState<ThinkingOption>('low')
 
   const { files } = useInputbarToolsState()
   const { toolsRegistry, setIsExpanded, setFiles } = useInputbarToolsDispatch()
@@ -426,10 +429,13 @@ const AgentSessionInputbarInner: FC<InnerProps> = ({
       })
 
       const thinkingParams = assistant.model
-        ? getAnthropicReasoningParams(
-            { ...assistant, settings: { ...assistant.settings, reasoning_effort: reasoningEffort } },
-            assistant.model
-          )
+        ? {
+            ...getAnthropicReasoningParams(
+              { ...assistant, settings: { ...assistant.settings, reasoning_effort: reasoningEffort } },
+              assistant.model
+            ),
+            effort: toAgentEffort(reasoningEffort)
+          }
         : {}
 
       void dispatch(
@@ -496,16 +502,8 @@ const AgentSessionInputbarInner: FC<InnerProps> = ({
   }, [sessionData, reasoningEffort])
   const sessionToolOrderOverride = useMemo<ToolOrderConfig>(
     () => ({
-      visible: ['permission_mode', 'session_more'],
-      hidden: [
-        'create_session',
-        'slash_commands',
-        'attachment',
-        'resource_panel',
-        'quick_phrases',
-        'thinking',
-        'toggle_expand'
-      ]
+      visible: ['permission_mode', 'thinking', 'session_more'],
+      hidden: ['create_session', 'slash_commands', 'attachment', 'resource_panel', 'quick_phrases', 'toggle_expand']
     }),
     []
   )
@@ -551,6 +549,14 @@ const AgentSessionInputbarInner: FC<InnerProps> = ({
       isLoading={canAbort}
       handleSendMessage={sendMessage}
       leftToolbar={leftToolbar}
+      pinnedContent={
+        isHero ? undefined : (
+          <>
+            <ScrollToBottomButton conversationKey={sessionId} />
+            <ContextStatusIndicator conversationId={buildAgentSessionTopicId(sessionId)} />
+          </>
+        )
+      }
       forceEnableQuickPanelTriggers
       layoutMaxWidth={isHero ? '1040px' : '960px'}
       minimal={isHero}

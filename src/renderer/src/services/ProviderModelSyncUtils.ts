@@ -1,6 +1,5 @@
-import { isNotSupportTextDeltaModel } from '@renderer/config/models'
+import { getEffectiveModelEndpointType, isNotSupportTextDeltaModel } from '@renderer/config/models'
 import type { Model, Provider } from '@renderer/types'
-import { isNewApiProvider } from '@renderer/utils/provider'
 import { uniqBy } from 'lodash'
 
 const normalizeSyncSourceValue = (value: string | undefined) => (value ?? '').trim().replace(/\/+$/, '')
@@ -29,30 +28,40 @@ export const getProviderModelSyncFingerprint = (provider: Provider): string =>
   })
 
 export const normalizeSyncedModel = (provider: Provider, model: Model): Model => {
-  let processedModel: Model = {
+  return {
     ...model,
     provider: provider.id,
+    endpoint_type: getEffectiveModelEndpointType(model, provider),
     supported_text_delta: !isNotSupportTextDeltaModel(model)
   }
-
-  if (isNewApiProvider(provider)) {
-    const endpointTypes = model.supported_endpoint_types
-    if (endpointTypes && endpointTypes.length > 0) {
-      processedModel = {
-        ...processedModel,
-        endpoint_type: endpointTypes.includes('image-generation') ? 'image-generation' : endpointTypes[0]
-      }
-    }
-  }
-
-  return processedModel
 }
 
-const mergeExistingModelMetadata = (existingModel: Model, remoteModel: Model): Model => ({
-  ...remoteModel,
-  endpoint_type: remoteModel.endpoint_type ?? existingModel.endpoint_type,
-  supported_endpoint_types: remoteModel.supported_endpoint_types ?? existingModel.supported_endpoint_types
-})
+const mergeExistingModelMetadata = (
+  existingModel: Model,
+  remoteModel: Model,
+  remoteDeclaresEndpoint: boolean
+): Model => {
+  const preserveUserCapacity = existingModel.contextCapacitySource === 'user'
+  return {
+    ...remoteModel,
+    endpoint_type: remoteDeclaresEndpoint
+      ? (remoteModel.endpoint_type ?? existingModel.endpoint_type)
+      : (existingModel.endpoint_type ?? remoteModel.endpoint_type),
+    supported_endpoint_types: remoteModel.supported_endpoint_types ?? existingModel.supported_endpoint_types,
+    contextWindowTokens: preserveUserCapacity
+      ? (existingModel.contextWindowTokens ?? remoteModel.contextWindowTokens)
+      : (remoteModel.contextWindowTokens ?? existingModel.contextWindowTokens),
+    maxOutputTokens: preserveUserCapacity
+      ? (existingModel.maxOutputTokens ?? remoteModel.maxOutputTokens)
+      : (remoteModel.maxOutputTokens ?? existingModel.maxOutputTokens),
+    contextCapacitySource: preserveUserCapacity
+      ? existingModel.contextCapacitySource
+      : (remoteModel.contextCapacitySource ?? existingModel.contextCapacitySource),
+    contextCapacityConfidence: preserveUserCapacity
+      ? existingModel.contextCapacityConfidence
+      : (remoteModel.contextCapacityConfidence ?? existingModel.contextCapacityConfidence)
+  }
+}
 
 export const mergeSyncedProviderModels = (
   provider: Provider,
@@ -79,6 +88,12 @@ export const mergeSyncedProviderModels = (
   const nextRemoteIds = new Set(remoteModels.map((model) => model.id))
   const preserveModelIds = new Set(options?.preserveModelIds ?? [])
   const remoteModelById = new Map(remoteModels.map((model) => [model.id, model]))
+  const remoteEndpointDeclarations = new Map(
+    fetchedModels.map((model) => [
+      model.id,
+      Boolean(model.endpoint_type || (model.supported_endpoint_types && model.supported_endpoint_types.length > 0))
+    ])
+  )
 
   const keptExistingModels = provider.models
     .filter((model) => {
@@ -94,7 +109,9 @@ export const mergeSyncedProviderModels = (
     })
     .map((model) => {
       const remoteModel = remoteModelById.get(model.id)
-      return remoteModel ? mergeExistingModelMetadata(model, remoteModel) : model
+      return remoteModel
+        ? mergeExistingModelMetadata(model, remoteModel, remoteEndpointDeclarations.get(remoteModel.id) === true)
+        : model
     })
 
   const mergedModels = uniqBy([...keptExistingModels, ...remoteModels], 'id')

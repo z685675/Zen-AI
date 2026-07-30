@@ -124,6 +124,46 @@ describe('Integrated Provider Registry', () => {
       expect(result).toBe('unknown-provider')
     })
 
+    it('should keep the custom provider scope for imported OpenAI protocol providers', () => {
+      const provider = createTestProvider('custom-panel', 'openai')
+      const model = {
+        id: 'grok-4.5',
+        name: 'grok-4.5',
+        group: 'grok',
+        provider: provider.id,
+        endpoint_type: 'openai'
+      } as Model
+
+      expect(getAiSdkProviderId(provider, model)).toBe('custom-panel')
+    })
+
+    it('should use the gateway runtime when New API endpoint metadata is available', () => {
+      const provider = createTestProvider('custom-panel', 'openai')
+      const model = {
+        id: 'grok-4.5',
+        name: 'grok-4.5',
+        group: 'grok',
+        provider: provider.id,
+        endpoint_type: 'openai',
+        supported_endpoint_types: ['openai']
+      } as Model
+
+      expect(getAiSdkProviderId(provider, model)).toBe('newapi')
+    })
+
+    it('should use the multi-protocol runtime for a native endpoint exposed by a gateway', () => {
+      const provider = createTestProvider('custom-panel', 'openai')
+      const model = {
+        id: 'gemini-3-flash-preview',
+        name: 'gemini-3-flash-preview',
+        group: 'gemini',
+        provider: provider.id,
+        endpoint_type: 'gemini'
+      } as Model
+
+      expect(getAiSdkProviderId(provider, model)).toBe('newapi')
+    })
+
     it('should handle Azure OpenAI providers correctly', () => {
       const azureProvider = createAzureProvider('azure-test', '2024-02-15', 'gpt-4o')
       const result = getAiSdkProviderId(azureProvider)

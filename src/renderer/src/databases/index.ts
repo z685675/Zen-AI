@@ -15,6 +15,7 @@
  * --------------------------------------------------------------------------
  */
 import type {
+  ContextResource,
   CustomTranslateLanguage,
   FileMetadata,
   KnowledgeNoteItem,
@@ -40,6 +41,7 @@ export const db = new Dexie(APP_DB_NAME, {
   quick_phrases: EntityTable<QuickPhrase, 'id'>
   message_blocks: EntityTable<MessageBlock, 'id'> // Correct type for message_blocks
   translate_languages: EntityTable<CustomTranslateLanguage, 'id'>
+  context_resources: EntityTable<ContextResource, 'id'>
 }
 
 db.version(1).stores({
@@ -148,5 +150,17 @@ db.version(11)
     message_blocks: 'id, messageId, file.id'
   })
   .upgrade((tx) => upgradeToV11(tx))
+
+db.version(12).stores({
+  files: 'id, name, origin_name, path, size, ext, type, created_at, count',
+  topics: '&id',
+  settings: '&id, value',
+  knowledge_notes: '&id, baseId, type, content, created_at, updated_at',
+  translate_history: '&id, sourceText, targetText, sourceLanguage, targetLanguage, createdAt',
+  translate_languages: '&id, langCode',
+  quick_phrases: 'id',
+  message_blocks: 'id, messageId, file.id',
+  context_resources: '&id, conversationId, contentHash, kind, status, updatedAt'
+})
 
 export default db

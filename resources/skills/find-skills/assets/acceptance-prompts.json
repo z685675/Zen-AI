@@ -1,0 +1,68 @@
+[
+  {
+    "id": "pptx-executive-report",
+    "prompt": "帮我做一份 8 页左右的 PPT，主题是 AI 助手旗舰版功能规划，面向管理层汇报，要求成熟、好看、能直接拿去改。",
+    "expected_skills": ["presentation-planner", "pptx"],
+    "expected_behavior": "Plan a deck spec, use PPTX templates or validation, create a real PPTX file, and report the verified path."
+  },
+  {
+    "id": "pptx-pitch",
+    "prompt": "做一份融资路演 PPT，讲清楚市场痛点、产品价值、早期数据、竞争优势和融资用途。",
+    "expected_skills": ["presentation-planner", "pptx"],
+    "expected_behavior": "Use pitch-deck structure, include chart or metric slides, create and verify PPTX."
+  },
+  {
+    "id": "xlsx-cleaning",
+    "prompt": "把这段粘贴的数据清洗成 Excel，字段要规范，空行去掉，顺便给我一个简单汇总。",
+    "expected_skills": ["xlsx"],
+    "expected_behavior": "Normalize table rows, preserve assumptions, create a real XLSX or CSV output."
+  },
+  {
+    "id": "docx-proposal",
+    "prompt": "根据这些要点生成一份正式产品方案 Word 文档，结构要专业，包含目标、范围、里程碑、风险和下一步。",
+    "expected_skills": ["docx"],
+    "expected_behavior": "Use document template, check structure for long draft, create and verify DOCX."
+  },
+  {
+    "id": "pdf-extraction",
+    "prompt": "读取这个 PDF，提取重点、表格和不确定内容，最后按页码给我总结。",
+    "expected_skills": ["pdf"],
+    "expected_behavior": "Preserve page references, check extraction quality when needed, avoid inventing unreadable text."
+  },
+  {
+    "id": "markdown-readme",
+    "prompt": "帮我生成一份项目 README.md，包含安装、配置、使用示例、常见问题和本地图片链接，并检查 Markdown 是否能正常渲染。",
+    "expected_skills": ["markdown"],
+    "expected_behavior": "Create a real Markdown file, keep one H1, close code fences, validate tables and local link targets."
+  },
+  {
+    "id": "research-report",
+    "prompt": "帮我做一份竞品调研报告，要求有来源、有判断、有建议，不要只是罗列信息。",
+    "expected_skills": ["research-report"],
+    "expected_behavior": "Use source-backed findings, source matrix, uncertainty notes, and actionable recommendations."
+  },
+  {
+    "id": "wechat-copy",
+    "prompt": "帮我写一篇公众号文章，主题是为什么 AI 助手需要内置高质量 Skill，语气专业但不要空泛。",
+    "expected_skills": ["content-writer-cn"],
+    "expected_behavior": "Use WeChat article pattern, avoid generic slogans, produce platform-aware Chinese copy."
+  },
+  {
+    "id": "xiaohongshu-copy",
+    "prompt": "写一篇小红书笔记，介绍一个能帮我自动做 PPT 和整理资料的 AI 助手，语气真实一点。",
+    "expected_skills": ["content-writer-cn"],
+    "expected_behavior": "Use Xiaohongshu pattern, concrete scenario, short paragraphs, natural CTA."
+  },
+  {
+    "id": "meeting-notes",
+    "prompt": "把下面这段会议记录整理成会议纪要，重点是决议、待办、负责人、截止时间和风险。",
+    "expected_skills": ["meeting-notes"],
+    "expected_behavior": "Extract decisions and action items, mark missing owner/deadline as TBD, produce a usable summary."
+  },
+  {
+    "id": "skill-discovery",
+    "prompt": "有什么适合创作 PPT 的 Skill？它只是提示词还是也能带脚本？",
+    "expected_skills": ["find-skills"],
+    "expected_behavior": "Recommend built-in PPTX and Presentation Planner first, explain SKILL.md/scripts/references/assets."
+  }
+]

@@ -22,8 +22,15 @@ import {
   DEFAULT_TEMPERATURE,
   isMac
 } from '@renderer/config/constant'
+import { getCurrentDefaultModels } from '@renderer/config/defaultModelPolicy'
 import { allMinApps } from '@renderer/config/minapps'
-import { isFunctionCallingModel, isNotSupportTextDeltaModel, qwenModel, SYSTEM_MODELS } from '@renderer/config/models'
+import {
+  getEffectiveModelEndpointType,
+  isFunctionCallingModel,
+  isNotSupportTextDeltaModel,
+  qwenModel,
+  SYSTEM_MODELS
+} from '@renderer/config/models'
 import { BUILTIN_OCR_PROVIDERS, BUILTIN_OCR_PROVIDERS_MAP, DEFAULT_OCR_PROVIDER } from '@renderer/config/ocr'
 import { TRANSLATE_PROMPT } from '@renderer/config/prompts'
 import { SYSTEM_PROVIDERS } from '@renderer/config/providers'
@@ -3655,6 +3662,43 @@ const migrateConfig = {
       return state
     } catch (error) {
       logger.error('migrate 216 error', error as Error)
+      return state
+    }
+  },
+  '217': (state: RootState) => {
+    try {
+      const enabledModels = state.llm.providers
+        .filter((provider) => provider.enabled)
+        .flatMap((provider) => provider.models)
+      const currentDefaults = getCurrentDefaultModels(enabledModels)
+
+      if (currentDefaults.defaultModel) {
+        state.llm.defaultModel = currentDefaults.defaultModel
+        state.llm.quickModel = currentDefaults.quickModel
+        state.llm.translateModel = currentDefaults.translateModel
+      }
+
+      logger.info('migrate 217 success')
+      return state
+    } catch (error) {
+      logger.error('migrate 217 error', error as Error)
+      return state
+    }
+  },
+  '218': (state: RootState) => {
+    try {
+      state.llm.providers = state.llm.providers.map((provider) => ({
+        ...provider,
+        models: provider.models.map((model) => ({
+          ...model,
+          endpoint_type: model.endpoint_type ?? getEffectiveModelEndpointType(model, provider)
+        }))
+      }))
+
+      logger.info('migrate 218 success')
+      return state
+    } catch (error) {
+      logger.error('migrate 218 error', error as Error)
       return state
     }
   }

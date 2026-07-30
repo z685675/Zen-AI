@@ -1,0 +1,9 @@
+{
+  "title": "Research Matrix",
+  "rows": [
+    ["Source ID", "Title", "URL", "Date", "Claim Supported", "Confidence", "Notes"],
+    ["S1", "", "", "", "", "Medium", ""],
+    ["S2", "", "", "", "", "Medium", ""],
+    ["S3", "", "", "", "", "Medium", ""]
+  ]
+}

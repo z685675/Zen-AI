@@ -153,6 +153,23 @@ describe('clientErrorDiagnosis', () => {
     })
   })
 
+  it('distinguishes missing local Codex resume state from a network interruption', () => {
+    const diagnosis = diagnoseClientError(
+      makeError('thread/resume failed: no rollout found for thread id stale-thread (code -32600)'),
+      baseOptions
+    )
+
+    expect(diagnosis).toMatchObject({
+      category: 'response',
+      title: '任务续接失败：本地会话状态已失效',
+      stage: '会话续接',
+      errorType: '执行会话已失效',
+      serviceReceived: '否',
+      startedGenerating: '否',
+      suggestion: '请重试一次；智能助手将新建执行会话继续任务。'
+    })
+  })
+
   it('uses exact reviewed Chinese copy for content restriction errors', () => {
     const diagnosis = diagnoseClientError(makeError('content_filter safety', 400), baseOptions)
 

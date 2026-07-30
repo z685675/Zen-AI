@@ -1,8 +1,10 @@
-import { agentService, sessionService } from '@main/services/agents'
 import type { Request, Response } from 'express'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { deleteSession } from '../sessions'
+const mocks = vi.hoisted(() => ({
+  broadcastSessionChanged: vi.fn(),
+  createSession: vi.fn()
+}))
 
 vi.mock('@logger', () => ({
   loggerService: {
@@ -17,60 +19,40 @@ vi.mock('@logger', () => ({
 
 vi.mock('@main/services/agents', () => ({
   AgentModelValidationError: class AgentModelValidationError extends Error {},
-  agentService: {
-    agentExists: vi.fn()
-  },
+  agentService: {},
   sessionService: {
-    getSession: vi.fn(),
-    deleteSession: vi.fn(),
-    listSessions: vi.fn(),
-    createSession: vi.fn()
+    createSession: (...args: unknown[]) => mocks.createSession(...args)
   }
 }))
 
-const createResponse = () => {
-  const res = {
-    status: vi.fn(),
-    json: vi.fn(),
-    send: vi.fn()
-  } as unknown as Response
+vi.mock('@main/services/agents/services/channels/sessionStreamIpc', () => ({
+  broadcastSessionChanged: (...args: unknown[]) => mocks.broadcastSessionChanged(...args)
+}))
 
-  vi.mocked(res.status).mockReturnValue(res)
-  vi.mocked(res.json).mockReturnValue(res)
-  vi.mocked(res.send).mockReturnValue(res)
-
-  return res
-}
+import { createSession } from '../sessions'
 
 describe('agent session handlers', () => {
   beforeEach(() => {
     vi.clearAllMocks()
   })
 
-  it('deletes an orphan session without recreating a default session for a deleted agent', async () => {
-    vi.mocked(sessionService.getSession).mockResolvedValueOnce({
-      id: 'session-old',
-      agent_id: 'deleted-agent',
-      agent_type: 'claude-code'
-    } as any)
-    vi.mocked(sessionService.deleteSession).mockResolvedValueOnce(true)
-    vi.mocked(agentService.agentExists).mockResolvedValueOnce(false)
+  it('broadcasts newly created sessions before returning them', async () => {
+    const session = { id: 'session-1', agent_id: 'agent-1', name: 'Untitled' }
+    mocks.createSession.mockResolvedValue(session)
 
     const req = {
-      params: {
-        agentId: 'deleted-agent',
-        sessionId: 'session-old'
-      }
+      params: { agentId: 'agent-1' },
+      body: { name: 'Untitled' }
     } as unknown as Request
-    const res = createResponse()
+    const json = vi.fn()
+    const status = vi.fn(() => ({ json }))
+    const res = { status } as unknown as Response
 
-    await deleteSession(req, res)
+    await createSession(req, res)
 
-    expect(sessionService.deleteSession).toHaveBeenCalledWith('deleted-agent', 'session-old')
-    expect(agentService.agentExists).toHaveBeenCalledWith('deleted-agent')
-    expect(sessionService.listSessions).not.toHaveBeenCalled()
-    expect(sessionService.createSession).not.toHaveBeenCalled()
-    expect(res.status).toHaveBeenCalledWith(204)
-    expect(res.send).toHaveBeenCalled()
+    expect(mocks.createSession).toHaveBeenCalledWith('agent-1', { name: 'Untitled' })
+    expect(mocks.broadcastSessionChanged).toHaveBeenCalledWith('agent-1', 'session-1', false, 'created')
+    expect(status).toHaveBeenCalledWith(201)
+    expect(json).toHaveBeenCalledWith(session)
   })
 })

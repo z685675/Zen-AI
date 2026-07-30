@@ -51,7 +51,7 @@ export const DEFAULT_ASSISTANT_SETTINGS = {
   streamOutput: true,
   defaultModel: undefined,
   customParameters: [],
-  reasoning_effort: 'default',
+  reasoning_effort: 'medium',
   reasoning_effort_cache: undefined,
   qwenThinkMode: undefined,
   // It would gracefully fallback to prompt if not supported by model.
@@ -160,10 +160,11 @@ export function getDefaultAssistantSettings() {
   return store.getState().assistants.defaultAssistant.settings
 }
 
-export function getDefaultTopic(assistantId: string): Topic {
+export function getDefaultTopic(assistantId: string, model?: Model): Topic {
   return {
     id: uuid(),
     assistantId,
+    model,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     name: i18n.t('chat.default.topic.name'),

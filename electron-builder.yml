@@ -78,6 +78,8 @@ files:
 asarUnpack:
   - out/proxy/**
   - resources/**
+  - "node_modules/@openai/codex*/**"
+  - "node_modules/.pnpm/@openai+codex*/**"
   - "**/*.{metal,exp,lib}"
   - "node_modules/@img/sharp-libvips-*/**"
 

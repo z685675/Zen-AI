@@ -11,7 +11,7 @@ export {
   listTabsToolDefinition,
   switchTabToolDefinition
 } from './tabs'
-export { handleWaitForUser, waitForUserToolDefinition, WaitForUserSchema } from './waitForUser'
+export { handleWaitForUser, WaitForUserSchema, waitForUserToolDefinition } from './waitForUser'
 
 import type { CdpBrowserController } from '../controller'
 import { executeToolDefinition, handleExecute } from './execute'
@@ -27,8 +27,8 @@ import {
   listTabsToolDefinition,
   switchTabToolDefinition
 } from './tabs'
-import { handleWaitForUser, waitForUserToolDefinition } from './waitForUser'
 import type { ToolContent } from './utils'
+import { handleWaitForUser, waitForUserToolDefinition } from './waitForUser'
 
 export const toolDefinitions = [
   openToolDefinition,

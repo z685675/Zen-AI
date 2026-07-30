@@ -22,7 +22,12 @@ export const useAllSessions = (options: UseAllSessionsOptions = {}, pageSize = D
     return [client.allSessionsPath, archived, pageIndex, pageSize]
   }
 
-  const fetcher = async ([, archivedFilter, pageIndex, pageLimit]: [string, ListOptions['archived'], number, number]) => {
+  const fetcher = async ([, archivedFilter, pageIndex, pageLimit]: [
+    string,
+    ListOptions['archived'],
+    number,
+    number
+  ]) => {
     return await client.listAllSessions({
       limit: pageLimit,
       offset: pageIndex * pageLimit,

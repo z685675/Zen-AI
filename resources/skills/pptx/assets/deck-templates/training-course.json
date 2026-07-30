@@ -1,0 +1,49 @@
+{
+  "title": "Training Course",
+  "document_type": "training-course",
+  "slides": [
+    {
+      "title": "这节课要帮助学员掌握一个可执行方法",
+      "subtitle": "Training course",
+      "layout": "cover",
+      "takeaway": "State the learning outcome clearly.",
+      "visual": "course cover",
+      "bullets": ["Concept", "Example", "Practice"]
+    },
+    {
+      "title": "学习路径分为理解、演示和练习",
+      "layout": "agenda",
+      "takeaway": "Make the learning journey predictable.",
+      "visual": "three-part agenda",
+      "bullets": ["核心概念", "案例拆解", "动手练习", "复盘总结"]
+    },
+    {
+      "title": "先理解概念边界，才能避免错误使用",
+      "layout": "insight",
+      "takeaway": "Define what the concept is and is not.",
+      "visual": "definition plus examples",
+      "bullets": ["概念定义：待填", "适用场景：待填", "不适用场景：待填"]
+    },
+    {
+      "title": "案例拆解要展示从问题到结果的全过程",
+      "layout": "process",
+      "takeaway": "Learners need a visible path they can copy.",
+      "visual": "step-by-step flow",
+      "bullets": ["识别问题", "选择方法", "执行步骤", "检查结果"]
+    },
+    {
+      "title": "练习任务需要让学员当场产出结果",
+      "layout": "cards",
+      "takeaway": "Practice should be concrete and observable.",
+      "visual": "exercise cards",
+      "bullets": ["任务一：待填", "任务二：待填", "任务三：待填"]
+    },
+    {
+      "title": "课后行动决定学习是否真正转化",
+      "layout": "summary",
+      "takeaway": "End with a simple practice plan.",
+      "visual": "recap and next actions",
+      "bullets": ["复盘关键点", "完成练习", "提交反馈", "持续应用"]
+    }
+  ]
+}

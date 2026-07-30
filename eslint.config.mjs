@@ -57,6 +57,7 @@ export default defineConfig([
       'build/**',
       'dist/**',
       'out/**',
+      'tmp/**',
       'local/**',
       'tests/**',
       '.yarn/**',

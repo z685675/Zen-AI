@@ -3,12 +3,48 @@ import { isWin } from '@renderer/config/constant'
 
 const logger = loggerService.withContext('RendererAssistantEnvironmentService')
 
-export type DependencyId = 'bun' | 'uv' | 'uvx' | 'git' | 'pyodide'
+export type DependencyId = 'bun' | 'uv' | 'uvx' | 'git' | 'python' | 'pyodide'
+export type DependencySource = 'app' | 'system' | 'network' | 'missing' | 'error'
+
+export const ASSISTANT_DEPENDENCY_I18N_KEYS = {
+  bun: {
+    name: 'settings.assistantEnvironment.dependencies.bun.name',
+    description: 'settings.assistantEnvironment.dependencies.bun.description'
+  },
+  uv: {
+    name: 'settings.assistantEnvironment.dependencies.uv.name',
+    description: 'settings.assistantEnvironment.dependencies.uv.description'
+  },
+  uvx: {
+    name: 'settings.assistantEnvironment.dependencies.uvx.name',
+    description: 'settings.assistantEnvironment.dependencies.uvx.description'
+  },
+  git: {
+    name: 'settings.assistantEnvironment.dependencies.git.name',
+    description: 'settings.assistantEnvironment.dependencies.git.description'
+  },
+  python: {
+    name: 'settings.assistantEnvironment.dependencies.python.name',
+    description: 'settings.assistantEnvironment.dependencies.python.description'
+  },
+  pyodide: {
+    name: 'settings.assistantEnvironment.dependencies.pyodide.name',
+    description: 'settings.assistantEnvironment.dependencies.pyodide.description'
+  }
+} as const satisfies Record<DependencyId, { name: string; description: string }>
+
+export const ASSISTANT_DEPENDENCY_SOURCE_I18N_KEYS = {
+  app: 'settings.assistantEnvironment.sources.app',
+  system: 'settings.assistantEnvironment.sources.system',
+  network: 'settings.assistantEnvironment.sources.network',
+  missing: 'settings.assistantEnvironment.status.missing',
+  error: 'settings.assistantEnvironment.status.error'
+} as const satisfies Record<DependencySource, string>
 
 export interface DependencyStatus {
   id: DependencyId
   installed: boolean
-  source: 'app' | 'system' | 'network' | 'missing' | 'error'
+  source: DependencySource
   path?: string
   message?: string
 }
@@ -18,14 +54,15 @@ export interface AssistantEnvironmentCheckResult {
   uv: DependencyStatus
   uvx: DependencyStatus
   git: DependencyStatus
+  python: DependencyStatus
   pyodide: DependencyStatus
   binariesDir: string
   checkedAt: number
 }
 
 export const REQUIRED_ASSISTANT_DEPENDENCIES: DependencyId[] = isWin
-  ? ['bun', 'uv', 'uvx', 'git']
-  : ['bun', 'uv', 'uvx']
+  ? ['bun', 'uv', 'uvx', 'git', 'python']
+  : ['bun', 'uv', 'uvx', 'python']
 
 const ASSISTANT_ENVIRONMENT_CACHE_TTL_MS = 5 * 60 * 1000
 
@@ -35,6 +72,18 @@ let cachedEnvironmentCheckedAt = 0
 let checkPromise: Promise<AssistantEnvironmentCheckResult> | null = null
 let repairPromise: Promise<AssistantEnvironmentCheckResult> | null = null
 let startupPreflightStarted = false
+const environmentListeners = new Set<
+  (state: { result: AssistantEnvironmentCheckResult | null; error: string | null }) => void
+>()
+
+export const subscribeAssistantEnvironment = (
+  listener: (state: { result: AssistantEnvironmentCheckResult | null; error: string | null }) => void
+) => {
+  environmentListeners.add(listener)
+  return () => {
+    environmentListeners.delete(listener)
+  }
+}
 
 export const getFreshAssistantEnvironmentCache = () => {
   if (!cachedEnvironmentCheckedAt || Date.now() - cachedEnvironmentCheckedAt > ASSISTANT_ENVIRONMENT_CACHE_TTL_MS) {
@@ -51,6 +100,7 @@ const setEnvironmentCache = (result: AssistantEnvironmentCheckResult | null, err
   cachedEnvironmentResult = result
   cachedEnvironmentError = error
   cachedEnvironmentCheckedAt = Date.now()
+  for (const listener of environmentListeners) listener({ result, error })
 }
 
 export const checkAssistantEnvironmentWithCache = async (options?: {
@@ -112,6 +162,14 @@ export const repairRequiredAssistantEnvironment = async (options?: {
         await window.api.installUVBinary()
       } catch (error) {
         logger.warn('Failed to auto install UV', { error })
+      }
+    }
+
+    if (!initialResult.python.installed) {
+      try {
+        await window.api.installManagedPython()
+      } catch (error) {
+        logger.warn('Failed to prepare Zen AI managed Python', { error })
       }
     }
 

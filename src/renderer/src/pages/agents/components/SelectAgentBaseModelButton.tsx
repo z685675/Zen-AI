@@ -1,7 +1,9 @@
 import ModelAvatar from '@renderer/components/Avatar/ModelAvatar'
 import { SelectAgentModelPopup } from '@renderer/components/Popups/SelectModelPopup'
+import { isStandardAgentModel } from '@renderer/config/agentModelPolicy'
 import { agentModelFilter } from '@renderer/config/models'
 import { useApiModel } from '@renderer/hooks/agents/useModel'
+import { useEnableDeveloperMode } from '@renderer/hooks/useSettings'
 import { getProviderNameById } from '@renderer/services/ProviderService'
 import type { AgentBaseWithId, ApiModel } from '@renderer/types'
 import { isAgentSessionEntity } from '@renderer/types'
@@ -12,6 +14,7 @@ import type { ButtonProps } from 'antd'
 import { Button } from 'antd'
 import { ChevronsUpDown } from 'lucide-react'
 import type { CSSProperties } from 'react'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 interface Props {
@@ -47,24 +50,31 @@ const SelectAgentBaseModelButton = ({
   containerClassName
 }: Props) => {
   const { t } = useTranslation()
+  const { enableDeveloperMode } = useEnableDeveloperMode()
+  const [isUpdating, setIsUpdating] = useState(false)
   const model = useApiModel({ id: agent?.model })
 
   const apiFilter = isAgentEntity(agent)
-    ? getModelFilterByAgentType(agent.type)
+    ? getModelFilterByAgentType(agent.type, agent.configuration)
     : isAgentSessionEntity(agent)
-      ? getModelFilterByAgentType(agent.agent_type)
+      ? getModelFilterByAgentType(agent.agent_type, agent.configuration)
       : undefined
-
   if (!agent) return null
 
   const onSelectModel = async () => {
     const selectedModel = await SelectAgentModelPopup.show({
       model,
       apiFilter: apiFilter,
+      apiModelFilter: enableDeveloperMode ? undefined : isStandardAgentModel,
       modelFilter: agentModelFilter
     })
     if (selectedModel && selectedModel.id !== agent.model) {
-      void onSelect(selectedModel)
+      setIsUpdating(true)
+      try {
+        await onSelect(selectedModel)
+      } finally {
+        setIsUpdating(false)
+      }
     }
   }
 
@@ -85,7 +95,8 @@ const SelectAgentBaseModelButton = ({
       className={className}
       style={mergedStyle}
       onClick={onSelectModel}
-      disabled={isDisabled}>
+      disabled={isDisabled || isUpdating}
+      loading={isUpdating}>
       <div className={containerClassName || 'flex w-full items-center gap-1.5'}>
         <div className="flex flex-1 items-center gap-1.5 overflow-x-hidden">
           <ModelAvatar model={model ? apiModelAdapter(model) : undefined} size={avatarSize} />

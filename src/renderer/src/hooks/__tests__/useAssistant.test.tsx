@@ -1,6 +1,8 @@
 import { renderHook } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { useAssistant } from '../useAssistant'
+
 const mockDispatch = vi.fn()
 
 vi.mock('@renderer/store', () => ({
@@ -81,9 +83,7 @@ describe('useAssistant', () => {
     }
   })
 
-  it('does not crash on a fresh install before any model is configured', async () => {
-    const { useAssistant } = await import('../useAssistant')
-
+  it('does not crash on a fresh install before any model is configured', () => {
     const { result } = renderHook(() => useAssistant('default'))
 
     expect(result.current.assistant.id).toBe('default')

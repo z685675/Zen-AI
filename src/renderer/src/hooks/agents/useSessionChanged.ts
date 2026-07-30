@@ -1,6 +1,6 @@
 import store, { useAppDispatch } from '@renderer/store'
 import { newMessagesActions } from '@renderer/store/newMessage'
-import { loadTopicMessagesThunk } from '@renderer/store/thunk/messageThunk'
+import { loadTopicMessagesThunk, renameAgentSessionIfNeeded } from '@renderer/store/thunk/messageThunk'
 import { buildAgentSessionTopicId } from '@renderer/utils/agentSession'
 import { useEffect } from 'react'
 
@@ -14,7 +14,20 @@ export function useSessionChanged(agentId: string | undefined, mutate: () => voi
       }
 
       mutate()
+      if (data.reason === 'created') {
+        return
+      }
+
       const topicId = buildAgentSessionTopicId(data.sessionId)
+      void renameAgentSessionIfNeeded(
+        { agentId: data.agentId, sessionId: data.sessionId },
+        topicId,
+        store.getState
+      ).then((renamed) => {
+        if (renamed) {
+          mutate()
+        }
+      })
       // Show fulfilled indicator (green dot) on the session item
       dispatch(
         newMessagesActions.setTopicFulfilled({

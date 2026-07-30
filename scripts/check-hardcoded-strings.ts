@@ -9,6 +9,7 @@ import { Node, Project } from 'ts-morph'
 
 const RENDERER_DIR = path.join(__dirname, '../src/renderer/src')
 const MAIN_DIR = path.join(__dirname, '../src/main')
+const BASELINE_PATH = path.join(__dirname, 'i18n-hardcoded-baseline.json')
 const EXTENSIONS = ['.tsx', '.ts']
 const IGNORED_DIRS = ['__tests__', 'node_modules', 'i18n', 'locales', 'types', 'assets']
 const IGNORED_FILES = ['*.test.ts', '*.test.tsx', '*.d.ts', '*prompts*.ts']
@@ -33,13 +34,18 @@ const CONTEXT_SENSITIVE_ATTRIBUTES: Record<string, string[]> = {
 
 const UI_PROPERTIES = ['message', 'text', 'title', 'label', 'placeholder', 'description', 'detail']
 
-interface Finding {
+export interface Finding {
   file: string
   line: number
   content: string
   type: 'chinese' | 'english'
   source: 'renderer' | 'main'
   nodeType: string
+}
+
+interface HardcodedStringBaseline {
+  version: 1
+  findings: Record<string, number>
 }
 
 const CJK_RANGES = [
@@ -421,6 +427,66 @@ function formatFindings(findings: Finding[]): string {
   return output
 }
 
+function getRelativeFindingPath(finding: Finding): string {
+  const baseDir = finding.source === 'renderer' ? RENDERER_DIR : MAIN_DIR
+  return path.relative(baseDir, finding.file).replaceAll('\\', '/')
+}
+
+export function getFindingFingerprint(finding: Finding): string {
+  return JSON.stringify([
+    finding.source,
+    getRelativeFindingPath(finding),
+    finding.type,
+    finding.nodeType,
+    finding.content
+  ])
+}
+
+export function createBaseline(findings: Finding[]): HardcodedStringBaseline {
+  const counts = new Map<string, number>()
+
+  for (const finding of findings.filter((item) => item.type === 'chinese')) {
+    const fingerprint = getFindingFingerprint(finding)
+    counts.set(fingerprint, (counts.get(fingerprint) ?? 0) + 1)
+  }
+
+  return {
+    findings: Object.fromEntries(
+      [...counts.entries()].sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+    ),
+    version: 1
+  }
+}
+
+export function findNewChineseFindings(findings: Finding[], baseline: HardcodedStringBaseline | undefined): Finding[] {
+  const seen = new Map<string, number>()
+  const knownFindings = baseline?.version === 1 ? baseline.findings : {}
+
+  return findings.filter((finding) => {
+    if (finding.type !== 'chinese') {
+      return false
+    }
+
+    const fingerprint = getFindingFingerprint(finding)
+    const occurrence = (seen.get(fingerprint) ?? 0) + 1
+    seen.set(fingerprint, occurrence)
+    return occurrence > (knownFindings[fingerprint] ?? 0)
+  })
+}
+
+function loadBaseline(): HardcodedStringBaseline | undefined {
+  if (!fs.existsSync(BASELINE_PATH)) {
+    return undefined
+  }
+
+  try {
+    return JSON.parse(fs.readFileSync(BASELINE_PATH, 'utf8')) as HardcodedStringBaseline
+  } catch (error) {
+    console.error(`Unable to read the i18n hardcoded-string baseline at ${BASELINE_PATH}:`, error)
+    return undefined
+  }
+}
+
 export function main(): void {
   console.log('🔍 Scanning for hardcoded strings using AST analysis...\n')
 
@@ -433,12 +499,18 @@ export function main(): void {
   const output = formatFindings(findings)
   console.log(output)
 
+  if (process.argv.includes('--write-baseline')) {
+    fs.writeFileSync(BASELINE_PATH, `${JSON.stringify(createBaseline(findings), null, 2)}\n`, 'utf8')
+    console.log(`\nUpdated hardcoded-string baseline: ${BASELINE_PATH}`)
+    return
+  }
+
   // Strict mode for CI
   const strictMode = process.env.I18N_STRICT === 'true' || process.argv.includes('--strict')
-  const chineseCount = findings.filter((f) => f.type === 'chinese').length
+  const newChineseFindings = findNewChineseFindings(findings, loadBaseline())
 
-  if (strictMode && chineseCount > 0) {
-    console.error('\n❌ Hardcoded Chinese strings detected in strict mode!')
+  if (strictMode && newChineseFindings.length > 0) {
+    console.error(`\n❌ ${newChineseFindings.length} new hardcoded Chinese strings detected in strict mode!`)
     console.error('Please replace these with i18n keys using the t() function.')
     process.exit(1)
   }

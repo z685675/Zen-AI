@@ -1,5 +1,5 @@
 import { isEmbeddingModel, isRerankModel } from '@renderer/config/models/embedding'
-import type { Model } from '@renderer/types'
+import type { Model, Provider } from '@renderer/types'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { isOpenAIReasoningModel } from '../openai'
@@ -7,6 +7,7 @@ import { isQwenMTModel } from '../qwen'
 import {
   agentModelFilter,
   chatModelFilter,
+  getEffectiveModelEndpointType,
   getModelSupportedVerbosity,
   groupQwenModels,
   isAnthropicModel,
@@ -17,6 +18,7 @@ import {
   isGeminiModel,
   isGemmaModel,
   isGenerateImageModels,
+  isImageGenerationEndpointModel,
   isMaxTemperatureOneModel,
   isNotSupportSystemMessageModel,
   isNotSupportTextDeltaModel,
@@ -98,6 +100,17 @@ const createModel = (overrides: Partial<Model> = {}): Model => ({
   name: 'gpt-4o',
   provider: 'openai',
   group: 'OpenAI',
+  ...overrides
+})
+
+const createProvider = (overrides: Partial<Provider> = {}): Provider => ({
+  id: 'provider-id',
+  type: 'openai',
+  name: 'Provider',
+  apiKey: 'key',
+  apiHost: 'https://example.com/v1',
+  models: [],
+  enabled: true,
   ...overrides
 })
 
@@ -566,6 +579,77 @@ describe('model utils', () => {
         const models = [createModel({ id: 'gpt-4o' }), createModel({ id: 'gpt-4o-mini' })]
         generateImageMock.mockReturnValueOnce(true).mockReturnValueOnce(false)
         expect(isGenerateImageModels(models)).toBe(false)
+      })
+    })
+
+    describe('image generation endpoint detection', () => {
+      it('keeps an explicitly configured image endpoint', () => {
+        const model = createModel({ endpoint_type: 'image-generation' })
+
+        expect(getEffectiveModelEndpointType(model)).toBe('image-generation')
+        expect(isImageGenerationEndpointModel(model)).toBe(true)
+      })
+
+      it('infers the image endpoint for dedicated image models', () => {
+        const model = createModel({ id: 'gpt-image-2', endpoint_type: undefined })
+        textToImageMock.mockReturnValue(true)
+
+        expect(getEffectiveModelEndpointType(model)).toBe('image-generation')
+        expect(isImageGenerationEndpointModel(model)).toBe(true)
+      })
+
+      it('does not classify regular chat models as image endpoints', () => {
+        const model = createModel({ id: 'gpt-5.6-luna', endpoint_type: 'openai' })
+
+        expect(getEffectiveModelEndpointType(model)).toBe('openai')
+        expect(isImageGenerationEndpointModel(model)).toBe(false)
+      })
+
+      it('infers Nano Banana on OpenAI-compatible providers', () => {
+        const model = createModel({ id: 'nano-banana-pro', endpoint_type: 'openai' })
+        const provider = createProvider()
+        textToImageMock.mockReturnValue(true)
+
+        expect(getEffectiveModelEndpointType(model, provider)).toBe('image-generation')
+        expect(isImageGenerationEndpointModel(model, provider)).toBe(true)
+      })
+
+      it('preserves native Gemini routing for Gemini image models', () => {
+        const model = createModel({ id: 'gemini-2.5-flash-image', endpoint_type: 'gemini' })
+        const provider = createProvider({ id: 'gemini', type: 'gemini' })
+        textToImageMock.mockReturnValue(true)
+
+        expect(getEffectiveModelEndpointType(model, provider)).toBe('gemini')
+        expect(isImageGenerationEndpointModel(model, provider)).toBe(false)
+      })
+
+      it('inherits the provider protocol without inferring it from the model name', () => {
+        const provider = createProvider({ id: 'custom-panel', type: 'openai' })
+        const model = createModel({ id: 'grok-4.5', endpoint_type: undefined })
+
+        expect(getEffectiveModelEndpointType(model, provider)).toBe('openai')
+      })
+
+      it('prefers the provider protocol from a multi-protocol model declaration', () => {
+        const provider = createProvider({ id: 'custom-panel', type: 'openai' })
+        const model = createModel({
+          id: 'claude-opus-4-6',
+          endpoint_type: undefined,
+          supported_endpoint_types: ['anthropic', 'openai']
+        })
+
+        expect(getEffectiveModelEndpointType(model, provider)).toBe('openai')
+      })
+
+      it('uses a single native protocol explicitly reported by the provider', () => {
+        const provider = createProvider({ id: 'custom-panel', type: 'openai' })
+        const model = createModel({
+          id: 'gemini-3-flash-preview',
+          endpoint_type: undefined,
+          supported_endpoint_types: ['gemini']
+        })
+
+        expect(getEffectiveModelEndpointType(model, provider)).toBe('gemini')
       })
     })
   })

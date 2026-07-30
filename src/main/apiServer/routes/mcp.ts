@@ -6,7 +6,7 @@ import { mcpApiService } from '../services/mcp'
 
 const logger = loggerService.withContext('ApiServerMCPRoutes')
 
-const router = express.Router()
+const router: express.Router = express.Router()
 
 /**
  * @swagger

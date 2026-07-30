@@ -14,14 +14,17 @@ import { and, desc, eq, not } from 'drizzle-orm'
 import { BaseService } from '../BaseService'
 import { sessionMessagesTable } from '../database/schema'
 import { agentMessageRepository } from '../database/sessionMessageRepository'
-import type { AgentStreamEvent } from '../interfaces/AgentStreamInterface'
+import type { AgentStream, AgentStreamEvent } from '../interfaces/AgentStreamInterface'
 import { channelManager } from './channels/ChannelManager'
 import { channelService } from './ChannelService'
-import ClaudeCodeService from './claudecode'
-
-const claudeCodeService = new ClaudeCodeService()
+import { isRecoverableAgentContextError, withAgentRecoveryContext } from './runtime/contextRecovery'
+import { AgentRuntimeNoOutputTimeoutError, isRuntimeBootstrapChunk, shouldFallbackRuntime } from './runtime/fallback'
+import { getAgentRuntimeServiceById, resolveAgentRuntime } from './runtime/registry'
+import { findCompatibleAgentSessionId } from './runtime/resume'
 
 const logger = loggerService.withContext('SessionMessageService')
+const RUNTIME_START_TIMEOUT_MS = 45_000
+const RUNTIME_VISIBLE_OUTPUT_TIMEOUT_MS = 180_000
 
 type SessionStreamResult = {
   stream: ReadableStream<TextStreamPart<Record<string, any>>>
@@ -65,6 +68,22 @@ function serializeError(error: unknown): { message: string; name?: string; stack
   return {
     message: 'Unknown error'
   }
+}
+
+function toStreamError(error: unknown): Error {
+  if (error instanceof Error) {
+    return error
+  }
+
+  if (typeof error === 'string') {
+    return new Error(error)
+  }
+
+  if (error && typeof error === 'object' && 'message' in error && typeof error.message === 'string') {
+    return new Error(error.message)
+  }
+
+  return new Error('Stream error')
 }
 
 class TextStreamAccumulator {
@@ -191,20 +210,58 @@ export class SessionMessageService extends BaseService {
     abortController: AbortController,
     options?: CreateMessageOptions
   ): Promise<SessionStreamResult> {
-    const agentSessionId = await this.getLastAgentSessionId(session.id)
-    logger.debug('Session Message stream message data:', { message: req, session_id: agentSessionId })
+    const runtimeResolution = await resolveAgentRuntime(session)
+    const agentSessionId = await this.getLastAgentSessionId(session.id, session.model)
+    logger.debug('Session Message stream message data:', {
+      message: req,
+      session_id: agentSessionId,
+      runtime_id: runtimeResolution.runtimeId,
+      model: session.model
+    })
 
-    const claudeStream = await claudeCodeService.invoke(
-      req.content,
-      session,
-      abortController,
-      agentSessionId,
-      {
-        effort: req.effort,
-        thinking: req.thinking
-      },
-      undefined
-    )
+    let activeRuntimeId = runtimeResolution.runtimeId
+    let activeCandidateIndex = 0
+    let activeRuntimeAbortController = new AbortController()
+    const forwardParentAbort = () => {
+      if (!activeRuntimeAbortController.signal.aborted) {
+        activeRuntimeAbortController.abort(abortController.signal.reason ?? 'session stream aborted')
+      }
+    }
+    if (abortController.signal.aborted) {
+      forwardParentAbort()
+    } else {
+      abortController.signal.addEventListener('abort', forwardParentAbort)
+    }
+
+    const initialPrompt = agentSessionId ? req.content : withAgentRecoveryContext(req.content, req.recovery_context)
+    let agentStream: AgentStream
+    try {
+      agentStream = await getAgentRuntimeServiceById(activeRuntimeId).invoke(
+        initialPrompt,
+        session,
+        activeRuntimeAbortController,
+        agentSessionId,
+        {
+          effort: req.effort,
+          thinking: req.thinking,
+          recoveryContext: req.recovery_context
+        },
+        undefined
+      )
+    } catch (error) {
+      abortController.signal.removeEventListener('abort', forwardParentAbort)
+      throw error
+    }
+    logger.info('Resolved agent runtime for session message stream', {
+      sessionId: session.id,
+      runtimeId: activeRuntimeId,
+      candidates: runtimeResolution.candidates,
+      source: runtimeResolution.source,
+      reason: runtimeResolution.reason,
+      configuredRuntime: runtimeResolution.configuredRuntime,
+      capabilities: runtimeResolution.capabilities,
+      model: session.model
+    })
     const accumulator = new TextStreamAccumulator()
 
     let resolveCompletion!: (value: {
@@ -222,16 +279,171 @@ export class SessionMessageService extends BaseService {
     })
 
     let finished = false
+    let runtimeCommitted = false
+    let fallbackAttempted = false
+    let contextRecoveryAttempted = false
+    let runtimeStarted = false
+    let pendingRuntimeChunks: TextStreamPart<Record<string, any>>[] = []
+    let firstRuntimeEventTimer: ReturnType<typeof setTimeout> | undefined
+
+    const clearFirstRuntimeEventTimer = () => {
+      if (!firstRuntimeEventTimer) return
+      clearTimeout(firstRuntimeEventTimer)
+      firstRuntimeEventTimer = undefined
+    }
 
     const cleanup = () => {
       if (finished) return
       finished = true
-      claudeStream.removeAllListeners()
+      clearFirstRuntimeEventTimer()
+      abortController.signal.removeEventListener('abort', forwardParentAbort)
+      agentStream.removeAllListeners()
     }
 
     const stream = new ReadableStream<TextStreamPart<Record<string, any>>>({
       start: (controller) => {
-        claudeStream.on('data', async (event: AgentStreamEvent) => {
+        const startFirstRuntimeEventTimer = (
+          timeoutMs = RUNTIME_START_TIMEOUT_MS,
+          phase: 'startup' | 'visible-output' = 'startup'
+        ) => {
+          clearFirstRuntimeEventTimer()
+          firstRuntimeEventTimer = setTimeout(async () => {
+            if (finished) return
+
+            const timeoutSeconds = Math.round(timeoutMs / 1000)
+            const timeoutError = new AgentRuntimeNoOutputTimeoutError(
+              phase === 'startup'
+                ? `The Agent runtime did not start within ${timeoutSeconds} seconds.`
+                : `The Agent runtime started but did not produce a visible result within ${timeoutSeconds} seconds.`
+            )
+            logger.warn('Agent runtime timed out before visible output', {
+              sessionId: session.id,
+              runtimeId: activeRuntimeId,
+              candidates: runtimeResolution.candidates,
+              model: session.model,
+              timeoutMs,
+              phase
+            })
+
+            try {
+              if (await tryFallback(timeoutError)) return
+            } catch (fallbackError) {
+              logger.error('Failed to start fallback runtime after timeout', fallbackError as Error)
+            }
+
+            cleanup()
+            activeRuntimeAbortController.abort(`agent runtime ${phase} timeout`)
+            abortController.abort(`agent runtime ${phase} timeout`)
+            controller.error(timeoutError)
+            rejectCompletion(serializeError(timeoutError))
+          }, timeoutMs)
+        }
+
+        const tryFallback = async (error: Error): Promise<boolean> => {
+          const nextCandidate = runtimeResolution.candidates[activeCandidateIndex + 1]
+          const canFallback =
+            runtimeResolution.source === 'auto' &&
+            !runtimeCommitted &&
+            !fallbackAttempted &&
+            Boolean(nextCandidate) &&
+            shouldFallbackRuntime(error, abortController)
+
+          if (!canFallback || !nextCandidate) return false
+
+          fallbackAttempted = true
+          clearFirstRuntimeEventTimer()
+          agentStream.removeAllListeners()
+          activeRuntimeAbortController.abort('switching to fallback runtime')
+          activeRuntimeAbortController = new AbortController()
+          if (abortController.signal.aborted) {
+            activeRuntimeAbortController.abort(abortController.signal.reason ?? 'session stream aborted')
+            return false
+          }
+          pendingRuntimeChunks = []
+          runtimeStarted = false
+          const previousRuntimeId = activeRuntimeId
+          activeCandidateIndex += 1
+          activeRuntimeId = nextCandidate
+
+          logger.warn('Auto runtime failed before output; trying one fallback candidate', {
+            sessionId: session.id,
+            model: session.model,
+            previousRuntimeId,
+            fallbackRuntimeId: activeRuntimeId,
+            error: error.message
+          })
+
+          agentStream = await getAgentRuntimeServiceById(activeRuntimeId).invoke(
+            withAgentRecoveryContext(req.content, req.recovery_context),
+            session,
+            activeRuntimeAbortController,
+            undefined,
+            {
+              effort: req.effort,
+              thinking: req.thinking,
+              recoveryContext: req.recovery_context
+            },
+            undefined
+          )
+          startFirstRuntimeEventTimer()
+          attachRuntimeStream()
+          return true
+        }
+
+        const tryContextRecovery = async (error: Error): Promise<boolean> => {
+          const canRecover =
+            !runtimeCommitted &&
+            !contextRecoveryAttempted &&
+            !abortController.signal.aborted &&
+            Boolean(req.recovery_context?.trim()) &&
+            isRecoverableAgentContextError(error)
+
+          if (!canRecover) return false
+
+          contextRecoveryAttempted = true
+          clearFirstRuntimeEventTimer()
+          agentStream.removeAllListeners()
+          activeRuntimeAbortController.abort('rebuilding runtime session context')
+          activeRuntimeAbortController = new AbortController()
+          if (abortController.signal.aborted) {
+            activeRuntimeAbortController.abort(abortController.signal.reason ?? 'session stream aborted')
+            return false
+          }
+          pendingRuntimeChunks = []
+          runtimeStarted = false
+          logger.warn('Agent runtime session was unavailable; rebuilding continuity from local context', {
+            sessionId: session.id,
+            runtimeId: activeRuntimeId,
+            model: session.model,
+            error: error.message
+          })
+
+          controller.enqueue({
+            type: 'raw',
+            rawValue: {
+              type: 'context_recovery',
+              status: 'retrying',
+              runtime_id: activeRuntimeId
+            }
+          } as TextStreamPart<Record<string, any>>)
+          agentStream = await getAgentRuntimeServiceById(activeRuntimeId).invoke(
+            withAgentRecoveryContext(req.content, req.recovery_context),
+            session,
+            activeRuntimeAbortController,
+            undefined,
+            {
+              effort: req.effort,
+              thinking: req.thinking,
+              recoveryContext: req.recovery_context
+            },
+            undefined
+          )
+          startFirstRuntimeEventTimer()
+          attachRuntimeStream()
+          return true
+        }
+
+        const handleRuntimeEvent = async (event: AgentStreamEvent) => {
           if (finished) return
           try {
             switch (event.type) {
@@ -242,26 +454,77 @@ export class SessionMessageService extends BaseService {
                   return
                 }
 
+                // AI SDK error parts are terminal. Converting them into a single
+                // stream rejection prevents repeated error chunks from creating
+                // multiple UI cards before the runtime emits its final event.
+                if (chunk.type === 'error') {
+                  const streamError = toStreamError(chunk.error)
+                  if (await tryContextRecovery(streamError)) return
+                  if (await tryFallback(streamError)) return
+                  cleanup()
+                  controller.error(streamError)
+                  rejectCompletion(serializeError(streamError))
+                  break
+                }
+
+                if (!runtimeCommitted && isRuntimeBootstrapChunk(chunk)) {
+                  pendingRuntimeChunks.push(chunk)
+                  if (!runtimeStarted) {
+                    runtimeStarted = true
+                    startFirstRuntimeEventTimer(RUNTIME_VISIBLE_OUTPUT_TIMEOUT_MS, 'visible-output')
+                  }
+                  return
+                }
+
+                clearFirstRuntimeEventTimer()
+                for (const pendingChunk of pendingRuntimeChunks) {
+                  accumulator.add(pendingChunk)
+                  controller.enqueue(pendingChunk)
+                }
+                pendingRuntimeChunks = []
+                runtimeCommitted = true
                 accumulator.add(chunk)
                 controller.enqueue(chunk)
                 break
               }
 
               case 'error': {
+                clearFirstRuntimeEventTimer()
                 const stderrMessage = (event as any)?.data?.stderr as string | undefined
                 const underlyingError = event.error ?? (stderrMessage ? new Error(stderrMessage) : undefined)
-                cleanup()
                 const streamError = underlyingError ?? new Error('Stream error')
+                if (await tryContextRecovery(streamError)) return
+                if (await tryFallback(streamError)) return
+                cleanup()
                 controller.error(streamError)
                 rejectCompletion(serializeError(streamError))
                 break
               }
 
               case 'complete': {
+                clearFirstRuntimeEventTimer()
+                if (!runtimeCommitted) {
+                  const emptyResultError = new Error('Agent runtime completed before producing a user-visible result')
+                  if (await tryContextRecovery(emptyResultError)) return
+                  if (await tryFallback(emptyResultError)) return
+                  cleanup()
+                  controller.error(emptyResultError)
+                  rejectCompletion(serializeError(emptyResultError))
+                  return
+                }
+                for (const pendingChunk of pendingRuntimeChunks) {
+                  accumulator.add(pendingChunk)
+                  controller.enqueue(pendingChunk)
+                }
+                pendingRuntimeChunks = []
                 cleanup()
                 const assistantText = accumulator.getText()
                 if (options?.mirrorToBoundChannel) {
-                  this.mirrorSessionExchangeToBoundChannel(session, options?.displayContent ?? req.content, assistantText)
+                  this.mirrorSessionExchangeToBoundChannel(
+                    session,
+                    options?.displayContent ?? req.content,
+                    assistantText
+                  )
                     .then((result) => {
                       controller.enqueue({
                         type: 'raw',
@@ -296,9 +559,10 @@ export class SessionMessageService extends BaseService {
                 }
                 if (options?.persist) {
                   // Read SDK session_id from the stream object (set by ClaudeCodeService on init)
-                  const resolvedSessionId = claudeStream.sdkSessionId || agentSessionId
+                  const resolvedSessionId = agentStream.sdkSessionId || agentSessionId
                   logger.debug('Persisting headless exchange with agent session ID', {
-                    sdkSessionId: claudeStream.sdkSessionId,
+                    runtimeId: activeRuntimeId,
+                    sdkSessionId: agentStream.sdkSessionId,
                     fallback: agentSessionId,
                     resolved: resolvedSessionId
                   })
@@ -321,6 +585,7 @@ export class SessionMessageService extends BaseService {
               }
 
               case 'cancelled': {
+                clearFirstRuntimeEventTimer()
                 cleanup()
                 const partialText = accumulator.getText()
                 if (options?.mirrorToBoundChannel && partialText) {
@@ -358,7 +623,7 @@ export class SessionMessageService extends BaseService {
                   controller.close()
                 }
                 if (options?.persist) {
-                  const resolvedSessionId = claudeStream.sdkSessionId || agentSessionId
+                  const resolvedSessionId = agentStream.sdkSessionId || agentSessionId
                   if (partialText) {
                     this.persistHeadlessExchange(
                       session,
@@ -392,11 +657,18 @@ export class SessionMessageService extends BaseService {
             controller.error(error)
             rejectCompletion(serializeError(error))
           }
-        })
+        }
+
+        function attachRuntimeStream() {
+          agentStream.on('data', handleRuntimeEvent)
+        }
+
+        startFirstRuntimeEventTimer()
+        attachRuntimeStream()
       },
       cancel: (reason) => {
-        cleanup()
         abortController.abort(typeof reason === 'string' ? reason : 'stream cancelled')
+        cleanup()
         resolveCompletion({})
       }
     })
@@ -540,18 +812,37 @@ export class SessionMessageService extends BaseService {
     return { target: 'wechat', status: 'synced' }
   }
 
-  private async getLastAgentSessionId(sessionId: string): Promise<string> {
+  private async getLastAgentSessionId(sessionId: string, modelId?: string): Promise<string> {
+    if (!modelId) {
+      return ''
+    }
+
     try {
       const database = await this.getDatabase()
       const result = await database
-        .select({ agent_session_id: sessionMessagesTable.agent_session_id })
+        .select({
+          agent_session_id: sessionMessagesTable.agent_session_id,
+          content: sessionMessagesTable.content
+        })
         .from(sessionMessagesTable)
-        .where(and(eq(sessionMessagesTable.session_id, sessionId), not(eq(sessionMessagesTable.agent_session_id, ''))))
+        .where(
+          and(
+            eq(sessionMessagesTable.session_id, sessionId),
+            eq(sessionMessagesTable.role, 'assistant'),
+            not(eq(sessionMessagesTable.agent_session_id, ''))
+          )
+        )
         .orderBy(desc(sessionMessagesTable.created_at))
-        .limit(1)
+        .limit(20)
 
-      logger.silly('Last agent session ID result:', { agentSessionId: result[0]?.agent_session_id, sessionId })
-      return result[0]?.agent_session_id || ''
+      const agentSessionId = findCompatibleAgentSessionId(result, modelId)
+
+      logger.silly('Last compatible agent session ID result:', {
+        agentSessionId,
+        sessionId,
+        modelId
+      })
+      return agentSessionId
     } catch (error) {
       logger.error('Failed to get last agent session ID', {
         sessionId,

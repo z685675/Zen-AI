@@ -8,6 +8,7 @@ import { authMiddleware } from './middleware/auth'
 import { errorHandler } from './middleware/error'
 import { setupOpenAPIDocumentation } from './middleware/openapi'
 import { agentsRoutes } from './routes/agents'
+import { assistantMcpRoutes } from './routes/assistant-mcp'
 import { channelsRouter } from './routes/channels'
 import { chatRoutes } from './routes/chat'
 import { clawMcpRoutes } from './routes/claw-mcp'
@@ -25,7 +26,7 @@ const extendMessagesTimeout: express.RequestHandler = (req, res, next) => {
   next()
 }
 
-const app = express()
+const app: express.Express = express()
 app.use(
   express.json({
     limit: '50mb'
@@ -151,7 +152,7 @@ setupOpenAPIDocumentation(app)
 app.use('/:provider/v1/messages', authMiddleware, extendMessagesTimeout, messagesProviderRoutes)
 
 // API v1 routes with auth
-const apiRouter = express.Router()
+const apiRouter: express.Router = express.Router()
 apiRouter.use(authMiddleware)
 // Mount routes
 apiRouter.use('/chat', chatRoutes)
@@ -162,6 +163,7 @@ apiRouter.use('/agents', agentsRoutes)
 apiRouter.use('/channels', channelsRouter)
 apiRouter.use('/tasks', tasksRouter)
 apiRouter.use('/claw', clawMcpRoutes)
+apiRouter.use('/assistant', assistantMcpRoutes)
 apiRouter.use('/knowledge-bases', knowledgeRoutes)
 app.use('/v1', apiRouter)
 

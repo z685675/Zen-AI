@@ -1,0 +1,7 @@
+interface:
+  display_name: "Markdown Writer"
+  short_description: "Create and validate portable Markdown documents"
+  brand_color: "#0F766E"
+  default_prompt: "Use $markdown to create a well-structured Markdown document."
+policy:
+  allow_implicit_invocation: true

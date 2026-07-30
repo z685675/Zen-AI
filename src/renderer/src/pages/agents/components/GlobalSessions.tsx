@@ -296,7 +296,7 @@ const GlobalSessions = ({ agentsById, onSelectItem }: GlobalSessionsProps) => {
 }
 
 const HeaderRow = ({ children }: PropsWithChildren) => (
-  <div className="flex items-center justify-between gap-3 px-3 pb-1 pt-2">{children}</div>
+  <div className="flex items-center justify-between gap-3 px-3 pt-2 pb-1">{children}</div>
 )
 
 const HeaderButton = ({ children, ...props }: ButtonHTMLAttributes<HTMLButtonElement>) => (

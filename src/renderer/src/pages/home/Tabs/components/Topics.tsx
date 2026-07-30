@@ -7,7 +7,7 @@ import PromptPopup from '@renderer/components/Popups/PromptPopup'
 import SaveToKnowledgePopup from '@renderer/components/Popups/SaveToKnowledgePopup'
 import { isMac } from '@renderer/config/constant'
 import { db } from '@renderer/databases'
-import { useAssistant } from '@renderer/hooks/useAssistant'
+import { useAssistant, useDefaultModel } from '@renderer/hooks/useAssistant'
 import { useInPlaceEdit } from '@renderer/hooks/useInPlaceEdit'
 import { useNotesSettings } from '@renderer/hooks/useNotesSettings'
 import { modelGenerating } from '@renderer/hooks/useRuntime'
@@ -22,6 +22,7 @@ import { newMessagesActions } from '@renderer/store/newMessage'
 import { setGenerating } from '@renderer/store/runtime'
 import type { Assistant, Topic } from '@renderer/types'
 import { classNames, removeSpecialCharactersForFileName } from '@renderer/utils'
+import { getNewConversationModel } from '@renderer/utils/conversationModel'
 import { copyTopicAsMarkdown, copyTopicAsPlainText } from '@renderer/utils/copy'
 import {
   exportMarkdownToJoplin,
@@ -71,6 +72,7 @@ export const Topics: React.FC<Props> = ({ assistant: _assistant, activeTopic, se
   const { t } = useTranslation()
   const { notesPath } = useNotesSettings()
   const { assistant, addTopic, removeTopic, updateTopic, updateTopics } = useAssistant(_assistant.id)
+  const { defaultModel } = useDefaultModel()
   const { showTopicTime, pinTopicsToTop, setTopicPosition, topicPosition } = useSettings()
 
   const renamingTopics = useSelector((state: RootState) => state.runtime.chat.renamingTopics)
@@ -169,7 +171,7 @@ export const Topics: React.FC<Props> = ({ assistant: _assistant, activeTopic, se
     async (topic: Topic, e: React.MouseEvent) => {
       e.stopPropagation()
       if (assistant.topics.length === 1) {
-        const newTopic = getDefaultTopic(assistant.id)
+        const newTopic = getDefaultTopic(assistant.id, getNewConversationModel(assistant, defaultModel))
         await db.topics.add({ id: newTopic.id, messages: [] })
         addTopic(newTopic)
         setActiveTopic(newTopic)
@@ -183,7 +185,7 @@ export const Topics: React.FC<Props> = ({ assistant: _assistant, activeTopic, se
       removeTopic(topic)
       setDeletingTopicId(null)
     },
-    [activeTopic.id, addTopic, assistant.id, assistant.topics.length, getReplacementTopic, removeTopic, setActiveTopic]
+    [activeTopic.id, addTopic, assistant, defaultModel, getReplacementTopic, removeTopic, setActiveTopic]
   )
 
   const onPinTopic = useCallback(

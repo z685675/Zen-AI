@@ -67,10 +67,14 @@ CLAUDE.local.md
 coverage
 .vitest-cache
 vitest.config.*.timestamp-*
-.context/vitest-temp/
+.context/
 
 # TypeScript incremental build
 .tsbuildinfo
+
+# Python bytecode
+__pycache__/
+*.py[cod]
 
 # playwright
 playwright-report

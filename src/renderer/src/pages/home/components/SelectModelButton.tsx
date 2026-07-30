@@ -2,10 +2,10 @@ import ModelAvatar from '@renderer/components/Avatar/ModelAvatar'
 import { SelectChatModelPopup } from '@renderer/components/Popups/SelectModelPopup'
 import { isLocalAi } from '@renderer/config/env'
 import { chatModelFilter, isWebSearchModel } from '@renderer/config/models'
-import { useAssistant } from '@renderer/hooks/useAssistant'
+import { useAssistant, useDefaultModel } from '@renderer/hooks/useAssistant'
 import { useProvider } from '@renderer/hooks/useProvider'
 import { getProviderName } from '@renderer/services/ProviderService'
-import type { Assistant } from '@renderer/types'
+import type { Assistant, Topic } from '@renderer/types'
 import { Button, Tag } from 'antd'
 import { ChevronsUpDown } from 'lucide-react'
 import type { FC } from 'react'
@@ -15,10 +15,13 @@ import styled from 'styled-components'
 
 interface Props {
   assistant: Assistant
+  topic?: Topic
 }
 
-const SelectModelButton: FC<Props> = ({ assistant }) => {
-  const { model, updateAssistant } = useAssistant(assistant.id)
+const SelectModelButton: FC<Props> = ({ assistant, topic }) => {
+  const { model: storedModel, updateAssistant, updateTopic } = useAssistant(assistant.id)
+  const { setDefaultModel } = useDefaultModel()
+  const model = topic?.model ?? assistant.model ?? storedModel
   const { t } = useTranslation()
   const timerRef = useRef<NodeJS.Timeout>(undefined)
   const assistantRef = useRef(assistant)
@@ -32,10 +35,16 @@ const SelectModelButton: FC<Props> = ({ assistant }) => {
       clearTimeout(timerRef.current)
       timerRef.current = setTimeout(() => {
         const enabledWebSearch = isWebSearchModel(selectedModel)
-        updateAssistant({
-          model: selectedModel,
-          enableWebSearch: enabledWebSearch && assistantRef.current.enableWebSearch
-        })
+        setDefaultModel(selectedModel)
+        if (topic) {
+          updateTopic({ ...topic, model: selectedModel })
+          updateAssistant({ enableWebSearch: enabledWebSearch && assistantRef.current.enableWebSearch })
+        } else {
+          updateAssistant({
+            model: selectedModel,
+            enableWebSearch: enabledWebSearch && assistantRef.current.enableWebSearch
+          })
+        }
       }, 200)
     }
   }

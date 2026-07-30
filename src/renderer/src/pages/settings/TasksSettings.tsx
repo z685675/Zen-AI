@@ -468,7 +468,8 @@ const TaskLogsInline: FC<{ taskId: string; agentId: string }> = ({ taskId, agent
       key: 'status',
       width: 70,
       render: (val: string) => {
-        const color = val === 'success' ? 'green' : val === 'running' ? 'processing' : val === 'waiting_user' ? 'warning' : 'red'
+        const color =
+          val === 'success' ? 'green' : val === 'running' ? 'processing' : val === 'waiting_user' ? 'warning' : 'red'
         const logStatusLabels: Record<string, string> = {
           success: t('agent.cherryClaw.tasks.logs.success'),
           running: t('agent.cherryClaw.tasks.logs.running'),
@@ -488,10 +489,10 @@ const TaskLogsInline: FC<{ taskId: string; agentId: string }> = ({ taskId, agent
           record.status === 'waiting_user'
             ? t('agent.cherryClaw.tasks.logs.waitingUserDesc', 'Waiting for browser handoff')
             : record.status === 'running'
-            ? t('agent.cherryClaw.tasks.logs.running', 'Running...')
-            : record.status === 'error'
-              ? record.error
-              : (val ?? '-')
+              ? t('agent.cherryClaw.tasks.logs.running', 'Running...')
+              : record.status === 'error'
+                ? record.error
+                : (val ?? '-')
         const hasSession = !!record.session_id
 
         return (

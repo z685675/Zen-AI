@@ -14,7 +14,10 @@ export const WaitForUserSchema = z.object({
     .optional()
     .describe('Short reason for the handoff, e.g. login_required, captcha, authorization, confirmation.'),
   timeout: z.number().optional().describe('How long to wait in milliseconds. Default: 15 minutes.'),
-  privateMode: z.boolean().optional().describe('Target private session (default: false). Avoid private mode for login reuse.')
+  privateMode: z
+    .boolean()
+    .optional()
+    .describe('Target private session (default: false). Avoid private mode for login reuse.')
 })
 
 export const waitForUserToolDefinition = {

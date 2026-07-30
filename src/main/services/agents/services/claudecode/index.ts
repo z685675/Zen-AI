@@ -2,7 +2,6 @@
 import { fork } from 'node:child_process'
 import { EventEmitter } from 'node:events'
 import * as fs from 'node:fs'
-import { createRequire } from 'node:module'
 import os from 'node:os'
 import path from 'node:path'
 
@@ -31,6 +30,7 @@ import {
   getProxyEnvironment,
   getProxyProtocol
 } from '@main/services/proxy/nodeProxy'
+import { managedPythonService } from '@main/services/python/ManagedPythonService'
 import { toAsarUnpackedPath } from '@main/utils'
 import { autoDiscoverGitBash, getBinaryPath } from '@main/utils/process'
 import { rtkRewrite } from '@main/utils/rtk'
@@ -52,15 +52,23 @@ import type {
   AgentThinkingOptions
 } from '../../interfaces/AgentStreamInterface'
 import { agentService } from '../AgentService'
-import { isProvisioned, provisionBuiltinAgent } from '../builtin/BuiltinAgentProvisioner'
+import {
+  ensureBuiltinAgentRuntimeSkillRoots,
+  isProvisioned,
+  provisionBuiltinAgent
+} from '../builtin/BuiltinAgentProvisioner'
 import { channelService } from '../ChannelService'
 import { PromptBuilder } from '../cherryclaw/prompt'
+import { isModelCompatibleWithAgentRuntime } from '../runtime/compatibility'
+import { getAgentProtocolBridgeTarget, shouldUseAgentProtocolBridge } from '../runtime/protocol'
 import { sessionService } from '../SessionService'
 import { buildNamespacedToolCallId } from './claude-stream-state'
+import { resolveClaudeExecutablePath } from './executable'
+import { failAgentStreamBeforeStart } from './preflight'
+import { buildClaudeThinkingOptions } from './thinking'
 import { promptForToolApproval } from './tool-permissions'
 import { ClaudeStreamState, transformSDKMessageToStreamParts } from './transform'
 
-const require_ = createRequire(import.meta.url)
 const logger = loggerService.withContext('ClaudeCodeService')
 const promptBuilder = new PromptBuilder()
 const DEFAULT_AUTO_ALLOW_TOOLS = new Set(['Read', 'Glob', 'Grep'])
@@ -127,7 +135,13 @@ You are expected to reliably complete these six baseline product capabilities:
 
 2. Output and file generation
 - When the user asks for MD, TXT, Word/DOCX, Excel/XLSX/CSV, PPT/PPTX, PDF, or other common file output, create the file in the requested location or a sensible default location.
+- Before drafting complex artifacts, check whether a built-in Skill fits the task. Use built-in Skills as high-reliability workflows, not as optional decorations.
+- For presentation, spreadsheet, document, PDF, research, Chinese content, and meeting-summary tasks, prefer the matching built-in Skill workflow: $presentation-planner, $pptx, $xlsx, $docx, $pdf, $research-report, $content-writer-cn, or $meeting-notes.
+- For PPT/PPTX tasks, plan or adapt a deck spec, use the PPTX Skill's templates or validation script when appropriate, then create a real PPTX file with mcp__assistant__create_file and verify the result.
+- For XLSX/DOCX/PDF tasks, use the matching Skill's bundled templates or quality scripts when the input is messy, long, high-stakes, or file output is requested.
 - For common output files, prefer mcp__assistant__create_file first. It creates valid basic MD/TXT/CSV/DOCX/XLSX/PPTX/PDF files with Zen AI's built-in generator and does not require pandas, python-docx, openpyxl, python-pptx, or system Python.
+- For data cleaning, analysis, complex transformations, and bundled Python Skill scripts, use mcp__assistant__python_execute or the Zen-managed python command. Do not probe or install into the user's system Python.
+- For images or scanned PDFs that need OCR, use mcp__assistant__ocr_file. Do not install an ad hoc OCR package.
 - Do not create fake Office/PDF files by writing plain text with a .docx/.xlsx/.pptx/.pdf extension. If mcp__assistant__create_file cannot satisfy advanced formatting, create a basic verified draft first, then use an approved dependency or explain the limitation.
 - After writing files, verify that the files exist and briefly report file names and paths.
 - Do not merely describe how to create a file unless file creation is blocked.
@@ -322,6 +336,82 @@ const FUSION_SKILL_INTENT_KEYWORDS = [
   'plugin'
 ]
 
+const FUSION_BUILTIN_SKILL_WORKFLOWS = [
+  {
+    skill: '$pptx',
+    companionSkills: ['$presentation-planner'],
+    keywords: [
+      'ppt',
+      'pptx',
+      'powerpoint',
+      'slide',
+      'slides',
+      'deck',
+      'presentation',
+      '幻灯片',
+      '演示文稿',
+      '路演',
+      '课件',
+      '汇报材料',
+      '汇报ppt',
+      '融资路演'
+    ],
+    guidance:
+      'For presentation work, plan or adapt a structured deck spec, use bundled templates/validation for 5+ slides or polished output, then create and verify a real PPTX file.'
+  },
+  {
+    skill: '$xlsx',
+    companionSkills: [],
+    keywords: ['excel', 'xlsx', 'spreadsheet', 'csv', '表格', '数据清洗', '数据分析', '预算表', '台账', '统计表'],
+    guidance:
+      'For spreadsheet work, normalize messy rows when needed, use workbook templates for common trackers/budgets/research matrices, then create and verify XLSX/CSV output.'
+  },
+  {
+    skill: '$docx',
+    companionSkills: [],
+    keywords: ['word', 'docx', '正式文档', '文档排版', '方案文档', 'proposal', 'memo', '合同草稿', '产品方案'],
+    guidance:
+      'For professional document work, use a structured DOCX draft, apply the document templates or structure checker for long drafts, then create and verify a real DOCX file.'
+  },
+  {
+    skill: '$pdf',
+    companionSkills: [],
+    keywords: ['pdf', 'ocr', '扫描件', '扫描pdf', 'pdf处理', 'pdf读取', '文档提取', '提取表格'],
+    guidance:
+      'For PDF work, preserve page/source references, check extraction quality for scanned or table-heavy files, and avoid inventing unreadable text.'
+  },
+  {
+    skill: '$research-report',
+    companionSkills: [],
+    keywords: [
+      '深度研究',
+      '调研报告',
+      '行业分析',
+      '竞品分析',
+      'market research',
+      'research report',
+      '竞品调研',
+      '市场调研'
+    ],
+    guidance:
+      'For research reports, build source-backed findings, use current sources when facts may change, maintain a source matrix, and separate evidence from recommendations.'
+  },
+  {
+    skill: '$content-writer-cn',
+    companionSkills: [],
+    keywords: ['公众号', '小红书', '短视频脚本', '中文创作', '文案', '种草', '营销内容', '标题党', '润色改写'],
+    guidance:
+      'For Chinese content work, choose the target platform pattern, avoid empty slogans, use templates when helpful, and run copy quality checks for important public copy.'
+  },
+  {
+    skill: '$meeting-notes',
+    companionSkills: [],
+    keywords: ['会议纪要', '会议记录', '会议总结', 'action items', '待办事项', '决议', '整理会议', 'transcript'],
+    guidance:
+      'For meeting notes, extract decisions, action items, owners, deadlines, risks, and open questions; mark unknown owners/dates as TBD instead of inventing them.'
+  }
+] as const
+
 const FUSION_MEMORY_INTENT_KEYWORDS = [
   '记住',
   '记下来',
@@ -359,6 +449,13 @@ const detectFusionSkillIntent = (prompt: string): boolean => {
   return includesAnyKeyword(normalizedPrompt, FUSION_SKILL_INTENT_KEYWORDS)
 }
 
+const detectFusionBuiltinSkillWorkflows = (prompt: string) => {
+  const normalizedPrompt = prompt.toLowerCase()
+  return FUSION_BUILTIN_SKILL_WORKFLOWS.filter((workflow) =>
+    workflow.keywords.some((keyword) => normalizedPrompt.includes(keyword.toLowerCase()))
+  )
+}
+
 const detectFusionMemoryIntent = (prompt: string): boolean => {
   const normalizedPrompt = prompt.toLowerCase()
   return includesAnyKeyword(normalizedPrompt, FUSION_MEMORY_INTENT_KEYWORDS)
@@ -370,7 +467,11 @@ const buildFusionIntentGuidance = (prompt: string): string | undefined => {
   const needsSchedule = detectFusionScheduleIntent(prompt)
   const needsSkill = detectFusionSkillIntent(prompt)
   const needsMemory = detectFusionMemoryIntent(prompt)
-  if (!needsSearch && !needsFileOutput && !needsSchedule && !needsSkill && !needsMemory) return undefined
+  const builtinSkillWorkflows = detectFusionBuiltinSkillWorkflows(prompt)
+  const needsBuiltinSkillWorkflow = builtinSkillWorkflows.length > 0
+  if (!needsSearch && !needsFileOutput && !needsSchedule && !needsSkill && !needsMemory && !needsBuiltinSkillWorkflow) {
+    return undefined
+  }
 
   const guidance: string[] = [
     '<zen-ai-official-assistant-internal-intent-guidance>',
@@ -390,10 +491,27 @@ const buildFusionIntentGuidance = (prompt: string): string | undefined => {
     guidance.push(
       'The user request appears to require creating, downloading, exporting, or saving file output.',
       'For common MD/TXT/CSV/DOCX/XLSX/PPTX/PDF output, prefer mcp__assistant__create_file before Python or shell scripts. Do not write plain text with an Office/PDF extension.',
+      'For data analysis or bundled Python Skill scripts, use mcp__assistant__python_execute or the Zen-managed python command. Do not probe or modify system Python.',
+      'For OCR, use mcp__assistant__ocr_file instead of installing an OCR package.',
       'Create the requested file(s) in the requested location, or choose a sensible default location when none is specified.',
       'Before saying the task is complete, verify the file path, existence, and relevant count/size/content signals.',
       'If a required local dependency is missing, decide whether it is truly required, try an alternative path first, and if still required ask the user to approve installation or provide exact official installation steps before continuing.'
     )
+  }
+
+  if (needsBuiltinSkillWorkflow) {
+    const skillNames = builtinSkillWorkflows
+      .flatMap((workflow) => [workflow.skill, ...workflow.companionSkills])
+      .filter((value, index, array) => array.indexOf(value) === index)
+      .join(', ')
+    guidance.push(
+      `The user request matches high-value built-in Skill workflow(s): ${skillNames}.`,
+      'Use the matching built-in Skill workflow before producing the final artifact. If the Skill is available in context, invoke it explicitly by name; otherwise follow its bundled workflow from the installed skill resources.',
+      'Do not satisfy these requests with a shallow plain-text draft when the user asked for a usable artifact, file, structured analysis, or polished output.'
+    )
+    for (const workflow of builtinSkillWorkflows) {
+      guidance.push(`${workflow.skill}: ${workflow.guidance}`)
+    }
   }
 
   if (needsSchedule) {
@@ -444,15 +562,20 @@ class ClaudeCodeStream extends EventEmitter implements AgentStream {
 }
 
 class ClaudeCodeService implements AgentServiceInterface {
-  private claudeExecutablePath: string
+  private claudeExecutablePath?: string
   private claudeProxyBootstrapPath: string
 
   constructor() {
-    // Resolve Claude Code CLI robustly (works in dev and in asar)
-    this.claudeExecutablePath = toAsarUnpackedPath(
-      path.join(path.dirname(require_.resolve('@anthropic-ai/claude-agent-sdk')), 'cli.js')
-    )
+    this.claudeExecutablePath = resolveClaudeExecutablePath()
     this.claudeProxyBootstrapPath = toAsarUnpackedPath(path.join(app.getAppPath(), 'out', 'proxy', 'index.js'))
+
+    if (this.claudeExecutablePath) {
+      logger.info('Resolved Claude executable path', {
+        claudeExecutablePath: this.claudeExecutablePath
+      })
+    } else {
+      logger.warn('Claude executable path was not resolved; falling back to SDK auto-discovery')
+    }
   }
 
   async invoke(
@@ -468,45 +591,43 @@ class ClaudeCodeService implements AgentServiceInterface {
     // Validate session accessible paths and make sure it exists as a directory
     const cwd = session.accessible_paths[0]
     if (!cwd) {
-      aiStream.emit('data', {
-        type: 'error',
-        error: new Error('No accessible paths defined for the agent session')
-      })
-      return aiStream
+      return failAgentStreamBeforeStart(aiStream, new Error('No accessible paths defined for the agent session'))
     }
 
     // Validate model info
     const modelInfo = await validateModelId(session.model)
     if (!modelInfo.valid) {
-      aiStream.emit('data', {
-        type: 'error',
-        error: new Error(`Invalid model ID '${session.model}': ${JSON.stringify(modelInfo.error)}`)
-      })
-      return aiStream
+      return failAgentStreamBeforeStart(
+        aiStream,
+        new Error(`Invalid model ID '${session.model}': ${JSON.stringify(modelInfo.error)}`)
+      )
     }
     const provider = modelInfo.provider
     if (!provider) {
-      aiStream.emit('data', {
-        type: 'error',
-        error: new Error('Provider not found for model')
-      })
-      return aiStream
+      return failAgentStreamBeforeStart(aiStream, new Error('Provider not found for model'))
     }
 
     const isAzureOpenAI = provider.type === 'azure-openai'
-    const isAnthropicType = provider.type === 'anthropic'
-    const hasAnthropicHost = provider.anthropicApiHost?.trim()
+    const selectedModel = provider.models?.find((model) => model.id === modelInfo.modelId)
+    const useProtocolBridge = shouldUseAgentProtocolBridge(provider, selectedModel)
+    const protocolBridgeTarget = getAgentProtocolBridgeTarget(provider, selectedModel)
 
-    if (!isAnthropicType && !isAzureOpenAI && !hasAnthropicHost) {
-      logger.error('Anthropic provider configuration is missing', {
-        modelInfo
+    if (!isModelCompatibleWithAgentRuntime(provider, selectedModel, 'claude-code')) {
+      logger.error('Claude Code provider protocol is explicitly unsupported', {
+        modelId: modelInfo.modelId,
+        providerId: provider.id,
+        providerType: provider.type,
+        endpointType: selectedModel?.endpoint_type,
+        supportedEndpointTypes: selectedModel?.supported_endpoint_types,
+        hasAnthropicHost: Boolean(provider.anthropicApiHost?.trim())
       })
 
-      aiStream.emit('data', {
-        type: 'error',
-        error: new Error(`Invalid provider type '${provider.type}'. Expected 'anthropic' provider type.`)
-      })
-      return aiStream
+      return failAgentStreamBeforeStart(
+        aiStream,
+        new Error(
+          'The selected model explicitly excludes the Anthropic Messages protocol required by the current Auto route. Choose a model or endpoint that supports Anthropic Messages.'
+        )
+      )
     }
 
     // Providers like Ollama and LM Studio don't require real API keys,
@@ -517,6 +638,7 @@ class ClaudeCodeService implements AgentServiceInterface {
 
     const apiConfig = await apiConfigService.get()
     const loginShellEnv = await getLoginShellEnvironment()
+    const managedPythonEnv = await managedPythonService.getAgentEnvironment(loginShellEnv)
 
     // Auto-discover Git Bash path on Windows (already logs internally)
     const customGitBashPath = isWin ? autoDiscoverGitBash() : null
@@ -527,6 +649,11 @@ class ClaudeCodeService implements AgentServiceInterface {
     // by stripping any trailing API version (e.g. `/v1`).
     // For Azure OpenAI providers, the Anthropic endpoint lives under /anthropic.
     const resolveAnthropicBaseUrl = (): string => {
+      if (useProtocolBridge) {
+        const localHost =
+          apiConfig.host === '0.0.0.0' ? '127.0.0.1' : apiConfig.host === '::' ? '[::1]' : apiConfig.host
+        return `http://${localHost}:${apiConfig.port}/${encodeURIComponent(provider.id)}`
+      }
       if (isAzureOpenAI) {
         const host = withoutTrailingApiVersion(provider.apiHost).replace(/\/openai$/, '')
         return `${host}/anthropic`
@@ -534,9 +661,19 @@ class ClaudeCodeService implements AgentServiceInterface {
       return withoutTrailingApiVersion(provider.anthropicApiHost?.trim() || provider.apiHost)
     }
     const anthropicBaseUrl = resolveAnthropicBaseUrl()
+    const anthropicAuthToken = useProtocolBridge ? apiConfig.apiKey : provider.apiKey
+
+    logger.info('Resolved Claude Code model transport', {
+      providerId: provider.id,
+      providerType: provider.type,
+      modelId: modelInfo.modelId,
+      transport: useProtocolBridge ? 'zen-protocol-bridge' : 'anthropic-direct',
+      bridgeTarget: protocolBridgeTarget
+    })
 
     const env = {
       ...loginShellEnv,
+      ...managedPythonEnv,
       ...getProxyEnvironment(process.env),
       // prevent claude agent sdk using bedrock api
       CLAUDE_CODE_USE_BEDROCK: '0',
@@ -544,8 +681,8 @@ class ClaudeCodeService implements AgentServiceInterface {
       // ANTHROPIC_API_KEY: apiConfig.apiKey,
       // ANTHROPIC_AUTH_TOKEN: apiConfig.apiKey,
       // ANTHROPIC_BASE_URL: `http://${apiConfig.host}:${apiConfig.port}/${modelInfo.provider.id}`,
-      ANTHROPIC_API_KEY: provider.apiKey,
-      ANTHROPIC_AUTH_TOKEN: provider.apiKey,
+      ANTHROPIC_API_KEY: anthropicAuthToken,
+      ANTHROPIC_AUTH_TOKEN: anthropicAuthToken,
       ANTHROPIC_BASE_URL: anthropicBaseUrl,
       ANTHROPIC_MODEL: modelInfo.modelId,
       ANTHROPIC_DEFAULT_OPUS_MODEL: modelInfo.modelId,
@@ -789,7 +926,10 @@ class ClaudeCodeService implements AgentServiceInterface {
     const shouldInjectAssistantContext = builtinRole === 'assistant' || builtinRole === 'fusion'
 
     // Provision built-in agent workspace (copy skills/plugins to working directory)
-    if (builtinRole && cwd && !isProvisioned(cwd)) {
+    if (builtinRole && cwd) {
+      ensureBuiltinAgentRuntimeSkillRoots(cwd)
+    }
+    if (builtinRole && cwd && !isProvisioned(cwd, builtinRole)) {
       const agentConfig = await provisionBuiltinAgent(cwd, builtinRole)
       if (agentConfig?.instructions && !session.instructions) {
         session = { ...session, instructions: agentConfig.instructions }
@@ -818,12 +958,17 @@ class ClaudeCodeService implements AgentServiceInterface {
     }
 
     // Build SDK options from session configuration
+    const claudeThinkingOptions = buildClaudeThinkingOptions({
+      thinkingOptions,
+      useProtocolBridge,
+      modelId: modelInfo.modelId ?? session.model
+    })
     const options: Options = {
       abortController,
       cwd,
       env,
       // model: modelInfo.modelId,
-      pathToClaudeCodeExecutable: this.claudeExecutablePath,
+      ...(this.claudeExecutablePath ? { pathToClaudeCodeExecutable: this.claudeExecutablePath } : {}),
       spawnClaudeCodeProcess: (spawnOptions) => {
         const childEnv = { ...spawnOptions.env } as NodeJS.ProcessEnv
         let execArgv = process.execArgv
@@ -892,8 +1037,7 @@ class ClaudeCodeService implements AgentServiceInterface {
         // Cherry Assistant is a read-only guide; it should not ask users questions via tool
         ...(isAssistant ? ['AskUserQuestion'] : [])
       ],
-      ...(thinkingOptions?.effort ? { effort: thinkingOptions.effort } : {}),
-      ...(thinkingOptions?.thinking ? { thinking: thinkingOptions.thinking } : {})
+      ...claudeThinkingOptions
     }
 
     if (session.accessible_paths.length > 1) {
@@ -1304,14 +1448,22 @@ class ClaudeCodeService implements AgentServiceInterface {
             chunk
           })
 
-          // Close prompt stream when SDK signals completion or error
-          if (chunk.type === 'finish' || chunk.type === 'error') {
-            logger.info('Closing prompt stream as SDK signaled completion', {
-              chunkType: chunk.type,
-              reason: chunk.type === 'finish' ? 'finished' : 'error_occurred'
-            })
+          // Result chunks are terminal. Stop consuming the SDK iterator
+          // immediately so repeated result/error messages cannot leak into
+          // the renderer as duplicate cards.
+          if (chunk.type === 'error') {
+            hasCompleted = true
             closePromptStream()
-            logger.info('Prompt stream closed successfully')
+            return
+          }
+
+          if (chunk.type === 'finish') {
+            hasCompleted = true
+            closePromptStream()
+            stream.emit('data', {
+              type: 'complete'
+            })
+            return
           }
         }
       }
@@ -1323,9 +1475,11 @@ class ClaudeCodeService implements AgentServiceInterface {
         messageCount: jsonOutput.length
       })
 
-      stream.emit('data', {
-        type: 'complete'
-      })
+      if (!hasCompleted) {
+        stream.emit('data', {
+          type: 'complete'
+        })
+      }
     } catch (error) {
       if (hasCompleted) return
       hasCompleted = true
@@ -1416,6 +1570,10 @@ async function buildAssistantContext(): Promise<string> {
     '## Built-in File Output',
     'For basic MD/TXT/CSV/DOCX/XLSX/PPTX/PDF creation, prefer mcp__assistant__create_file before using Python or external packages.',
     'Do not write plain text into .docx/.xlsx/.pptx/.pdf files. Verify created files exist before saying the task is complete.',
+    '',
+    '## Managed Python and OCR',
+    'Zen AI provides a private managed Python runtime for data processing and bundled Skill scripts. Use mcp__assistant__python_execute; do not inspect or install into system Python.',
+    'Use mcp__assistant__ocr_file for local image or scanned-PDF OCR.',
     '',
     '## Network',
     ...networkLines

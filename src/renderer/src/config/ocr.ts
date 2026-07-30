@@ -21,7 +21,6 @@ const tesseract: OcrTesseractProvider = {
   config: {
     langs: {
       chi_sim: true,
-      chi_tra: true,
       eng: true
     }
   }

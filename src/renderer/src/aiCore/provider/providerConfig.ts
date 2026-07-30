@@ -1,4 +1,5 @@
 import { formatPrivateKey, hasProviderConfig, type StringKeys } from '@cherrystudio/ai-core/provider'
+import { loggerService } from '@logger'
 import type { AppProviderId, AppProviderSettingsMap } from '@renderer/aiCore/types'
 import {
   getAwsBedrockAccessKeyId,
@@ -37,6 +38,8 @@ import { getZenClientHeaders } from '../../utils/zenClientHeaders'
 import type { ProviderConfig } from '../types'
 import { COPILOT_DEFAULT_HEADERS } from './constants'
 import { getAiSdkProviderId } from './factory'
+
+const logger = loggerService.withContext('ProviderConfig')
 
 // === Types ===
 
@@ -111,7 +114,7 @@ export function providerToAiSdkConfig(
   actualProvider: Provider,
   model: Model
 ): ProviderConfig | Promise<ProviderConfig> {
-  const aiSdkProviderId = getAiSdkProviderId(actualProvider)
+  const aiSdkProviderId = getAiSdkProviderId(actualProvider, model)
   const { baseURL, endpoint } = routeToEndpoint(actualProvider.apiHost)
 
   const ctx: BuilderContext = {
@@ -186,6 +189,19 @@ function withZenTraceFetch(baseFetch: typeof fetch = fetch): typeof fetch {
 
     try {
       const response = await baseFetch(input, { ...init, headers })
+      if (!response.ok) {
+        logger.warn('Provider request returned an HTTP error', {
+          traceId,
+          requestUrl: getSafeRequestUrl(input),
+          status: response.status,
+          upstreamRequestId:
+            response.headers.get('x-oneapi-request-id') ??
+            response.headers.get('x-request-id') ??
+            response.headers.get('request-id'),
+          request: summarizeProviderRequest(init),
+          upstream: await summarizeProviderError(response)
+        })
+      }
       return response
     } catch (error) {
       if (error && typeof error === 'object') {
@@ -203,6 +219,65 @@ function withZenTraceFetch(baseFetch: typeof fetch = fetch): typeof fetch {
       throw error
     }
   }
+}
+
+function getSafeRequestUrl(input: RequestInfo | URL): string {
+  const rawUrl = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
+
+  try {
+    const url = new URL(rawUrl)
+    url.username = ''
+    url.password = ''
+    url.search = ''
+    url.hash = ''
+    return url.toString()
+  } catch {
+    return rawUrl.split(/[?#]/, 1)[0]
+  }
+}
+
+function summarizeProviderRequest(init?: RequestInit): Record<string, unknown> | undefined {
+  if (typeof init?.body !== 'string') return undefined
+
+  try {
+    const body = JSON.parse(init.body) as Record<string, unknown>
+    return {
+      fields: Object.keys(body).sort(),
+      model: typeof body.model === 'string' ? body.model : undefined,
+      stream: typeof body.stream === 'boolean' ? body.stream : undefined,
+      messageCount: Array.isArray(body.messages) ? body.messages.length : undefined,
+      inputCount: Array.isArray(body.input) ? body.input.length : undefined,
+      toolCount: Array.isArray(body.tools) ? body.tools.length : undefined
+    }
+  } catch {
+    return { bodyType: 'non-json-string' }
+  }
+}
+
+async function summarizeProviderError(response: Response): Promise<Record<string, unknown> | undefined> {
+  try {
+    const rawText = await response.clone().text()
+    if (!rawText) return undefined
+
+    const payload = JSON.parse(rawText) as Record<string, unknown>
+    const nestedError =
+      payload.error && typeof payload.error === 'object' ? (payload.error as Record<string, unknown>) : payload
+
+    return {
+      type: toShortDiagnosticText(nestedError.type),
+      code: toShortDiagnosticText(nestedError.code),
+      param: toShortDiagnosticText(nestedError.param),
+      message: toShortDiagnosticText(nestedError.message)
+    }
+  } catch {
+    return { message: 'Upstream returned a non-JSON error response' }
+  }
+}
+
+function toShortDiagnosticText(value: unknown): string | number | boolean | undefined {
+  if (typeof value === 'number' || typeof value === 'boolean') return value
+  if (typeof value !== 'string') return undefined
+  return value.slice(0, 512)
 }
 
 function isAbortLikeError(error: unknown): boolean {

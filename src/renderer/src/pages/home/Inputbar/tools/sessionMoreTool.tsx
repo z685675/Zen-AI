@@ -3,7 +3,7 @@ import { useResourcePanel } from '@renderer/pages/home/Inputbar/tools/components
 import { defineTool, registerTool, TopicType } from '@renderer/pages/home/Inputbar/types'
 import { filterSupportedFiles } from '@renderer/utils/file'
 import { Popover } from 'antd'
-import { ChevronDown, FolderOpen, Lightbulb, Paperclip, Terminal, Zap } from 'lucide-react'
+import { ChevronDown, FolderOpen, Paperclip, Terminal, Zap } from 'lucide-react'
 import type React from 'react'
 import { useCallback, useMemo, useState } from 'react'
 import styled from 'styled-components'
@@ -124,11 +124,6 @@ const sessionMoreTool = defineTool({
       quickPhrasesButton?.click()
     }, [])
 
-    const openThinking = useCallback(() => {
-      const thinkingButton = document.querySelector('[data-key="thinking"] button') as HTMLButtonElement | null
-      thinkingButton?.click()
-    }, [])
-
     const moreItems = useMemo(
       () => [
         {
@@ -144,13 +139,6 @@ const sessionMoreTool = defineTool({
           description: t('chat.input.more.attachment', 'Upload images or documents'),
           icon: <Paperclip size={16} />,
           onClick: openAttachmentPicker
-        },
-        {
-          key: 'thinking',
-          label: t('chat.input.thinking.label'),
-          description: t('chat.input.more.thinking', 'Adjust the model thinking mode or reasoning depth'),
-          icon: <Lightbulb size={16} />,
-          onClick: () => runAfterClose(openThinking)
         },
         {
           key: 'slash-commands',
@@ -174,7 +162,6 @@ const sessionMoreTool = defineTool({
         openQuickPhrases,
         openResourcePanel,
         openSlashCommands,
-        openThinking,
         runAfterClose,
         t
       ]

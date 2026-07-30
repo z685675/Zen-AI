@@ -1,0 +1,7 @@
+interface:
+  display_name: "Presentation Planner"
+  short_description: "Plan slide storylines, outlines, and speaker notes"
+  brand_color: "#059669"
+  default_prompt: "Use $presentation-planner to turn my rough idea into a slide-by-slide presentation plan."
+policy:
+  allow_implicit_invocation: true

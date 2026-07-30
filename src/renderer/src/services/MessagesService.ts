@@ -1,6 +1,5 @@
 import { loggerService } from '@logger'
 import SearchPopup from '@renderer/components/Popups/SearchPopup'
-import { DEFAULT_CONTEXTCOUNT, MAX_CONTEXT_COUNT, UNLIMITED_CONTEXT_COUNT } from '@renderer/config/constant'
 import { getTopicById } from '@renderer/hooks/useTopic'
 import i18n from '@renderer/i18n'
 import { fetchMessagesSummary } from '@renderer/services/ApiService'
@@ -21,13 +20,13 @@ import {
   createMessage,
   resetMessage
 } from '@renderer/utils/messageUtils/create'
-import { filterContextMessages } from '@renderer/utils/messageUtils/filters'
 import { getMainTextContent } from '@renderer/utils/messageUtils/find'
 import dayjs from 'dayjs'
 import { t } from 'i18next'
 import type { NavigateFunction } from 'react-router'
 
-import { getAssistantById, getAssistantProvider, getDefaultModel } from './AssistantService'
+import { getAssistantById, getAssistantProvider, getAssistantSettings, getDefaultModel } from './AssistantService'
+import { createContextBudget } from './context/ContextWindowService'
 import { EVENT_NAMES, EventEmitter } from './EventService'
 import FileManager from './FileManager'
 
@@ -43,15 +42,17 @@ export {
   getGroupedMessages
 } from '@renderer/utils/messageUtils/filters'
 
-export function getContextCount(assistant: Assistant, messages: Message[]) {
-  const settingContextCount = assistant?.settings?.contextCount ?? DEFAULT_CONTEXTCOUNT
-  const actualContextCount = settingContextCount === MAX_CONTEXT_COUNT ? UNLIMITED_CONTEXT_COUNT : settingContextCount
-
-  const contextMsgs = filterContextMessages(messages, actualContextCount)
+export function getContextCount(assistant: Assistant, _messages: Message[], estimatedTokens = 0) {
+  const model = assistant.model || getDefaultModel()
+  const budget = createContextBudget({
+    model,
+    provider: getAssistantProvider({ ...assistant, model }),
+    requestedOutputTokens: getAssistantSettings(assistant).maxTokens
+  })
 
   return {
-    current: contextMsgs.length,
-    max: settingContextCount
+    current: estimatedTokens,
+    max: budget.safeInputTokens
   }
 }
 

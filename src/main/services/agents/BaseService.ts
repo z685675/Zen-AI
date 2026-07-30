@@ -210,14 +210,7 @@ export abstract class BaseService {
     return deserialized
   }
 
-  /**
-   * Validate, normalize, and ensure filesystem access for a set of absolute paths.
-   *
-   * - Requires every entry to be an absolute path and throws if not.
-   * - Normalizes each path and deduplicates while preserving order.
-   * - Creates missing directories (or parent directories for file-like paths).
-   */
-  protected ensurePathsExist(paths?: string[]): string[] {
+  protected normalizeAccessiblePaths(paths?: string[]): string[] {
     if (!paths?.length) {
       return []
     }
@@ -236,9 +229,28 @@ export abstract class BaseService {
         throw new Error(`Accessible path must be absolute: ${migratedPath}`)
       }
 
-      // Normalize to provide consistent values to downstream consumers.
       const resolvedPath = path.normalize(migratedPath)
+      if (seenPaths.has(resolvedPath)) {
+        continue
+      }
 
+      seenPaths.add(resolvedPath)
+      sanitizedPaths.push(resolvedPath)
+    }
+
+    return sanitizedPaths
+  }
+
+  /**
+   * Validate, normalize, and ensure filesystem access for a set of absolute paths.
+   *
+   * - Requires every entry to be an absolute path and throws if not.
+   * - Normalizes each path and deduplicates while preserving order.
+   * - Creates missing directories (or parent directories for file-like paths).
+   */
+  protected ensurePathsExist(paths?: string[]): string[] {
+    const sanitizedPaths = this.normalizeAccessiblePaths(paths)
+    for (const resolvedPath of sanitizedPaths) {
       let stats: fs.Stats | null = null
       try {
         // Attempt to stat the path to understand whether it already exists and if it is a file.
@@ -247,7 +259,7 @@ export abstract class BaseService {
         }
       } catch (error) {
         logger.warn('Failed to inspect accessible path', {
-          path: rawPath,
+          path: resolvedPath,
           error: error instanceof Error ? error.message : String(error)
         })
       }
@@ -271,13 +283,45 @@ export abstract class BaseService {
       }
 
       // Preserve the first occurrence only to avoid duplicates while keeping caller order stable.
-      if (!seenPaths.has(resolvedPath)) {
-        seenPaths.add(resolvedPath)
-        sanitizedPaths.push(resolvedPath)
-      }
     }
 
     return sanitizedPaths
+  }
+
+  /**
+   * Drop inaccessible workspaces so deleted paths do not block current-session UX or get recreated later.
+   */
+  protected reconcileAccessiblePaths(
+    paths: string[] | undefined,
+    fallbackOwnerId?: string
+  ): { paths: string[]; changed: boolean } {
+    const normalizedPaths = this.normalizeAccessiblePaths(paths)
+    const existingPaths: string[] = []
+
+    for (const resolvedPath of normalizedPaths) {
+      try {
+        if (fs.existsSync(resolvedPath)) {
+          existingPaths.push(resolvedPath)
+        }
+      } catch (error) {
+        logger.warn('Failed to inspect accessible path during reconciliation', {
+          path: resolvedPath,
+          error: error instanceof Error ? error.message : String(error)
+        })
+      }
+    }
+
+    let reconciledPaths = [...existingPaths]
+
+    if (!reconciledPaths.length && fallbackOwnerId) {
+      const [defaultWorkspace] = this.resolveAccessiblePaths([], fallbackOwnerId)
+      reconciledPaths = [defaultWorkspace]
+    }
+
+    return {
+      paths: reconciledPaths,
+      changed: JSON.stringify(reconciledPaths) !== JSON.stringify(normalizedPaths)
+    }
   }
 
   /**

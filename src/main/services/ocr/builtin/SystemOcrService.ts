@@ -16,10 +16,16 @@ export class SystemOcrService extends OcrBaseService {
     if (isLinux) {
       return { text: '' }
     }
-    const buffer = await loadOcrImage(file)
+    const buffer = await loadOcrImage(file, options?.preprocess)
     const langs = isWin ? options?.langs : undefined
     const result = await recognize(buffer, OcrAccuracy.Accurate, langs)
-    return { text: result.text }
+    const confidence =
+      isWin || !Number.isFinite(result.confidence)
+        ? undefined
+        : result.confidence <= 1
+          ? result.confidence * 100
+          : result.confidence
+    return { text: result.text, confidence }
   }
 
   public ocr = async (file: SupportedOcrFile, options?: OcrSystemConfig): Promise<OcrResult> => {

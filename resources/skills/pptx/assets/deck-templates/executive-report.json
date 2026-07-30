@@ -1,0 +1,49 @@
+{
+  "title": "Executive Report",
+  "document_type": "executive-report",
+  "slides": [
+    {
+      "title": "核心结论需要在开场直接说清",
+      "subtitle": "Executive report",
+      "layout": "cover",
+      "takeaway": "This deck leads with the decision and then proves it.",
+      "visual": "cover with three context tags",
+      "bullets": ["Decision", "Evidence", "Next actions"]
+    },
+    {
+      "title": "本次汇报围绕三件事推进决策",
+      "layout": "agenda",
+      "takeaway": "Keep the conversation focused on alignment.",
+      "visual": "numbered roadmap",
+      "bullets": ["当前状态", "关键证据", "建议动作"]
+    },
+    {
+      "title": "关键指标显示问题已经进入优先处理区间",
+      "layout": "metric",
+      "takeaway": "Use metrics to create urgency without overclaiming.",
+      "visual": "three metric cards",
+      "bullets": ["完成率：待填", "复用率：待填", "满意度：待填"]
+    },
+    {
+      "title": "当前方案和目标体验之间存在明确差距",
+      "layout": "comparison",
+      "takeaway": "Show the gap before proposing the plan.",
+      "visual": "two-column current versus target comparison",
+      "bullets": ["当前：待填", "当前：待填", "目标：待填", "目标：待填"]
+    },
+    {
+      "title": "落地路径应分阶段降低风险",
+      "layout": "timeline",
+      "takeaway": "A staged path makes execution easier to approve.",
+      "visual": "milestone timeline",
+      "bullets": ["验证场景", "补齐能力", "扩大使用", "复盘优化"]
+    },
+    {
+      "title": "下一步需要明确责任和验收标准",
+      "layout": "summary",
+      "takeaway": "End with ownership and measurable next steps.",
+      "visual": "action rows",
+      "bullets": ["确认决策", "指定负责人", "定义验收指标", "安排复盘时间"]
+    }
+  ]
+}

@@ -19,7 +19,7 @@ import {
 } from './validators'
 
 // Create main agents router
-const agentsRouter = express.Router()
+const agentsRouter: express.Router = express.Router()
 
 /**
  * @swagger
@@ -1057,4 +1057,4 @@ agentsRouter.use(
 )
 
 // Export main router and convenience router
-export const agentsRoutes = agentsRouter
+export const agentsRoutes: express.Router = agentsRouter

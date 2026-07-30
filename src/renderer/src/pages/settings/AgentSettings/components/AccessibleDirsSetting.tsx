@@ -1,8 +1,8 @@
 import { loggerService } from '@logger'
 import type { AgentBaseWithId, UpdateAgentBaseForm, UpdateAgentFunctionUnion } from '@renderer/types'
-import { Button, Tooltip } from 'antd'
+import { Button, Tag, Tooltip } from 'antd'
 import { Plus } from 'lucide-react'
-import { useCallback } from 'react'
+import { useCallback, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { SettingsItem, SettingsTitle } from '../shared'
@@ -16,13 +16,20 @@ const logger = loggerService.withContext('AccessibleDirsSetting')
 
 export const AccessibleDirsSetting = ({ base, update }: AccessibleDirsSettingProps) => {
   const { t } = useTranslation()
+  const [updatingPath, setUpdatingPath] = useState<string | null>(null)
 
   const updateAccessiblePaths = useCallback(
-    (accessible_paths: UpdateAgentBaseForm['accessible_paths']) => {
-      if (!base) return
-      void update({ id: base.id, accessible_paths })
+    async (accessible_paths: UpdateAgentBaseForm['accessible_paths'], path: string) => {
+      if (!base || updatingPath) return false
+
+      setUpdatingPath(path)
+      try {
+        return Boolean(await update({ id: base.id, accessible_paths }))
+      } finally {
+        setUpdatingPath(null)
+      }
     },
-    [base, update]
+    [base, update, updatingPath]
   )
 
   const addAccessiblePath = useCallback(async () => {
@@ -39,7 +46,7 @@ export const AccessibleDirsSetting = ({ base, update }: AccessibleDirsSettingPro
         return
       }
 
-      updateAccessiblePaths([...base.accessible_paths, selected])
+      await updateAccessiblePaths([...base.accessible_paths, selected], selected)
     } catch (error) {
       logger.error('Failed to select accessible path:', error as Error)
       window.toast.error(t('agent.session.accessible_paths.select_failed'))
@@ -50,7 +57,16 @@ export const AccessibleDirsSetting = ({ base, update }: AccessibleDirsSettingPro
     (path: string) => {
       if (!base) return
       const newPaths = base.accessible_paths.filter((p) => p !== path)
-      updateAccessiblePaths(newPaths)
+      void updateAccessiblePaths(newPaths, path)
+    },
+    [base, updateAccessiblePaths]
+  )
+
+  const setActiveAccessiblePath = useCallback(
+    (targetPath: string) => {
+      if (!base) return
+      const reorderedPaths = [targetPath, ...base.accessible_paths.filter((path) => path !== targetPath)]
+      void updateAccessiblePaths(reorderedPaths, targetPath)
     },
     [base, updateAccessiblePaths]
   )
@@ -62,32 +78,55 @@ export const AccessibleDirsSetting = ({ base, update }: AccessibleDirsSettingPro
       <SettingsTitle
         contentAfter={
           <Tooltip title={t('agent.session.accessible_paths.add')}>
-            <Button type="text" icon={<Plus size={16} />} shape="circle" onClick={addAccessiblePath} />
+            <Button
+              type="text"
+              icon={<Plus size={16} />}
+              shape="circle"
+              disabled={updatingPath !== null}
+              onClick={addAccessiblePath}
+            />
           </Tooltip>
         }>
         {t('agent.session.accessible_paths.label')}
       </SettingsTitle>
       <ul className="flex flex-col">
-        {base.accessible_paths.map((path) => (
+        {base.accessible_paths.map((path, index) => (
           <li key={path} className="flex items-center justify-between gap-2 py-1">
             <span
               className="w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-[var(--color-text-2)] text-sm"
               title={path}>
               {path}
             </span>
-            <Tooltip
-              title={
-                base.accessible_paths.length <= 1 ? t('agent.session.accessible_paths.error.at_least_one') : undefined
-              }>
-              <Button
-                size="small"
-                type="text"
-                danger
-                disabled={base.accessible_paths.length <= 1}
-                onClick={() => removeAccessiblePath(path)}>
-                {t('common.delete')}
-              </Button>
-            </Tooltip>
+            <div className="flex shrink-0 items-center gap-1">
+              {index === 0 ? (
+                <Tag color="blue" className="mr-0">
+                  {t('agent.session.accessible_paths.current', '当前工作区')}
+                </Tag>
+              ) : (
+                <Button
+                  size="small"
+                  type="text"
+                  loading={updatingPath === path}
+                  disabled={updatingPath !== null}
+                  onClick={() => setActiveAccessiblePath(path)}>
+                  {t('agent.session.accessible_paths.set_active', '设为当前')}
+                </Button>
+              )}
+              <Tooltip
+                title={
+                  base.accessible_paths.length <= 1 ? t('agent.session.accessible_paths.error.at_least_one') : undefined
+                }>
+                <Button
+                  size="small"
+                  type="text"
+                  danger
+                  loading={updatingPath === path}
+                  disabled={base.accessible_paths.length <= 1 || updatingPath !== null}
+                  onClick={() => removeAccessiblePath(path)}>
+                  {t('common.delete')}
+                </Button>
+              </Tooltip>
+            </div>
           </li>
         ))}
       </ul>

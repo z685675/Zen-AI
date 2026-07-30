@@ -1,0 +1,7 @@
+interface:
+  display_name: "DOCX Writer"
+  short_description: "Draft and polish professional Word documents"
+  brand_color: "#2563EB"
+  default_prompt: "Use $docx to draft a professional Word document from my notes."
+policy:
+  allow_implicit_invocation: true

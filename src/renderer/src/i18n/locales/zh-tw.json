@@ -8,7 +8,7 @@
       },
       "model": {
         "supported_providers": "支援的服務商",
-        "tooltip": "目前，僅支援 Anthropic 端點的模型可供 Agent 功能使用。",
+        "tooltip": "選擇 Agent 新對話的預設模型。實際任務會由 Auto 配對合適的底層執行環境。",
         "view_providers": "檢視支援的服務商"
       },
       "title": "新增 Agent",
@@ -283,9 +283,9 @@
       "title": "編輯 Agent"
     },
     "empty": {
-      "action": "[to be translated]:去配置模型服务",
-      "description": "建立 Agent 以透過 AI 驅動的工具處理複雜任務",
-      "title": "尚無 Agent"
+      "action": "前往配置模型服務",
+      "description": "請先在模型服務中啟用至少一個支援 Agent 的模型，然後再回來使用智能助手",
+      "title": "請先配置模型服務"
     },
     "environmentGate": {
       "action": "前往修復環境",
@@ -347,7 +347,9 @@
       "tooltip": "在 Windows 上執行 Agent 需要 Git Bash。如未安裝，請從 git-scm.com 下載安裝。"
     },
     "input": {
+      "hero_placeholder": "例如：幫我搜尋資料、總結重點，再整理成結果給我",
       "placeholder": "在這裡輸入您的訊息，使用 {{key}} 傳送 - @ 選擇路徑，/ 選擇命令",
+      "reasoning_effort": "思考強度",
       "soul_placeholder": "幫我連接微信"
     },
     "list": {
@@ -368,6 +370,7 @@
     "session": {
       "accessible_paths": {
         "add": "新增目錄",
+        "current": "目前工作區",
         "default_hint": "未指定時將自動建立預設工作目錄。",
         "duplicate": "此目錄已包含在內。",
         "empty": "選擇至少一個代理可以存取的目錄。",
@@ -375,7 +378,8 @@
           "at_least_one": "請至少選取一個可存取的目錄。"
         },
         "label": "可存取的目錄",
-        "select_failed": "無法選擇目錄。"
+        "select_failed": "無法選擇目錄。",
+        "set_active": "設為目前工作區"
       },
       "add": {
         "title": "新增工作階段"
@@ -409,6 +413,7 @@
       "edit": {
         "title": "編輯工作階段"
       },
+      "fallback_title": "智能助手任務",
       "get": {
         "error": {
           "failed": "無法取得工作階段",
@@ -456,9 +461,35 @@
           },
           "placeholder": "選擇權限模式"
         },
+        "runtime": {
+          "codexDisabled": "目前版本尚未開放 Codex 執行環境。Auto 會繼續使用穩定的 Claude Code 主鏈路。",
+          "description": "選擇此 Agent 使用的底層執行環境。目前階段 Auto 保持既有 Claude Code 主鏈路，Codex 僅用於受控測試。",
+          "helper": "建議保持 Auto。只有在使用已驗證的 OpenAI 介面進行測試時，才手動選擇 Codex。",
+          "incompatible": {
+            "claudeCode": {
+              "description": "執行環境已切換，但目前模型不相容 Claude Code。請在開始任務前選擇提供 Anthropic Messages 介面的模型。",
+              "title": "請更換 Claude Code 相容模型"
+            },
+            "codex": {
+              "description": "執行環境已切換，但目前模型不相容 Codex。請在開始任務前選擇提供 OpenAI 或 OpenAI Responses 介面的模型。",
+              "title": "請更換 Codex 相容模型"
+            }
+          },
+          "label": "Agent 執行環境",
+          "options": {
+            "auto": "Auto",
+            "claudeCode": "Claude Code",
+            "codex": "Codex"
+          }
+        },
         "title": "進階設定"
       },
       "essential": "必要設定",
+      "model": {
+        "defaultLabel": "新對話預設模型",
+        "defaultTooltip": "僅作為之後新建對話的預設值，不會修改既有對話的模型。",
+        "sessionTooltip": "僅修改目前對話；已經開始的任務會繼續使用啟動時的模型。"
+      },
       "permissionMode": {
         "currentModePrefix": "[to be translated]:当前模式：",
         "simpleTitle": "[to be translated]:模式选择",
@@ -717,6 +748,20 @@
       "enable_server_description": "智能體功能需要啟用 API 伺服器。你可以直接啟用，或前往設定頁面進行配置。",
       "server_not_running": "API 伺服器已啟用但未執行。請檢查伺服器設定。",
       "server_not_running_description": "智能體功能需要 API 伺服器運行。你可以直接啟動伺服器，或前往設定頁面檢查配置。"
+    },
+    "welcome": {
+      "capabilities": {
+        "files": "處理檔案",
+        "files_desc": "可結合檔案、目錄和工作區內容一起完成任務。",
+        "search": "搜尋資料",
+        "search_desc": "先幫你查找資訊，再提煉重點和結論。",
+        "summary": "整理總結",
+        "summary_desc": "把零散內容整理成清晰、可繼續使用的結果。",
+        "tasks": "連續任務",
+        "tasks_desc": "適合需要多步推進、持續執行的複雜工作。"
+      },
+      "model_label": "本次對話模型",
+      "title": "把任務交給我，輕鬆一點開始"
     }
   },
   "announcements": {
@@ -986,18 +1031,18 @@
         "auto_description": "彈性決定推理投入的心力",
         "default": "預設",
         "default_description": "依賴模型的預設行為，無需任何配置。",
-        "high": "盡力思考",
+        "high": "高",
         "high_description": "高級推理",
-        "label": "思維鏈長度",
-        "low": "稍微思考",
+        "label": "推理強度",
+        "low": "低",
         "low_description": "低階推理",
-        "medium": "正常思考",
+        "medium": "中",
         "medium_description": "中等程度推理",
         "minimal": "最少思考",
         "minimal_description": "最少推理",
         "off": "關閉",
         "off_description": "禁用推理",
-        "xhigh": "極力思考",
+        "xhigh": "超高",
         "xhigh_description": "超高階推理"
       },
       "regular_phrases": {
@@ -1136,7 +1181,23 @@
       },
       "collapse": "折疊",
       "context_count": {
-        "tip": "上下文數 / 最大上下文數"
+        "tip": "上下文 Token / 安全輸入容量"
+      },
+      "context_manager": {
+        "cache": "解析快取",
+        "cache_value": "{{hits}} 次命中 / {{total}} 次解析",
+        "compressions": "歷史整理",
+        "error": "資料準備失敗",
+        "managed": "資料與歷史已管理",
+        "managed_resources": "已管理 {{count}} 份資料",
+        "note": "這裡只顯示資料、歷史與容量處理，不代表模型仍在回答。",
+        "processing": "正在準備資料與上下文",
+        "ready": "資料與上下文已就緒",
+        "resources": "已索引資料",
+        "retries": "容量重試",
+        "retrieval_value": "{{count}} 次 / {{chunks}} 個片段",
+        "retrievals": "相關資料調用",
+        "title": "資料與上下文"
       },
       "estimated_tokens": {
         "tip": "預估 Token 數"
@@ -1286,6 +1347,7 @@
     "navigation": {
       "bottom": "回到底端",
       "close": "關閉",
+      "earlier": "查看更早對話",
       "first": "已經是第一條訊息",
       "history": "聊天歷史",
       "last": "已經是最後一條訊息",
@@ -1411,8 +1473,8 @@
       },
       "code_wrappable": "程式碼區塊可自動換行",
       "context_count": {
-        "label": "上下文",
-        "tip": "在上下文中保留的前幾則訊息"
+        "label": "上下文管理",
+        "tip": "對話上下文由系統按照模型 Token 容量自動管理"
       },
       "max": "不限",
       "max_tokens": {
@@ -3222,6 +3284,7 @@
       "image_file": "編輯影像",
       "image_required": "請先上傳需要編輯的圖片"
     },
+    "expand_prompt_editor": "展開提示詞編輯器",
     "generate": {
       "height": "高度",
       "magic_prompt_option_tip": "開啟後會自動調整提示詞，以提升效果",
@@ -3333,6 +3396,7 @@
       "watermark_tip": "是否在生成的圖片上添加浮水印，預設不添加"
     },
     "pricing": "定價",
+    "prompt_editor_title": "編輯圖片提示詞",
     "prompt_enhancement": "提示詞增強",
     "prompt_enhancement_tip": "開啟後將提示重寫為詳細的、適合模型的版本",
     "prompt_placeholder": "描述你想建立的圖片，例如：一個寧靜的湖泊，夕陽西下，遠處是群山",
@@ -4100,6 +4164,10 @@
         "pyodide": {
           "description": "[to be translated]:用于浏览器内 Python 沙盒。当前版本首次使用需要联网加载，不要求用户安装本机 Python。",
           "name": "[to be translated]:Python 沙盒联网"
+        },
+        "python": {
+          "description": "Zen AI 私有的 CPython 3.12 環境，用於資料處理、文件腳本和複雜本機任務，不會修改系統 Python。",
+          "name": "Zen Python 執行環境"
         },
         "uv": {
           "description": "[to be translated]:用于准备 Python 工具环境和部分本地技能依赖。",
@@ -5268,6 +5336,10 @@
       "add": {
         "add_model": "新增模型",
         "batch_add_models": "批次新增模型",
+        "context_window_tokens": {
+          "label": "上下文容量",
+          "tooltip": "此模型輸入和輸出合計可使用的 Token 容量"
+        },
         "endpoint_type": {
           "label": "端點類型",
           "placeholder": "選擇端點類型",
@@ -5278,6 +5350,10 @@
           "label": "群組名稱",
           "placeholder": "選填，例如 ChatGPT",
           "tooltip": "選填，例如 ChatGPT"
+        },
+        "max_output_tokens": {
+          "label": "最大輸出容量",
+          "tooltip": "Provider 聲明的模型最大輸出 Token"
         },
         "model_id": {
           "label": "模型 ID",

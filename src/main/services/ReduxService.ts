@@ -53,6 +53,11 @@ export class ReduxService {
     })
   }
 
+  async waitUntilReady(): Promise<void> {
+    if (this.isReady) return
+    await this.readyPromise
+  }
+
   private async waitForStoreReady(): Promise<void> {
     if (this.isReady) return
 
@@ -61,7 +66,7 @@ export class ReduxService {
       timer = setTimeout(() => reject(new Error('Timeout waiting for Redux store to be ready')), STORE_READY_TIMEOUT)
     })
 
-    await Promise.race([this.readyPromise, timeout]).finally(() => clearTimeout(timer))
+    await Promise.race([this.waitUntilReady(), timeout]).finally(() => clearTimeout(timer))
   }
 
   private async getWebContents(): Promise<Electron.WebContents> {

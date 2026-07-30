@@ -7,9 +7,8 @@
 import type { LanguageModelV3FilePart, LanguageModelV3Message } from '@ai-sdk/provider'
 import { definePlugin } from '@cherrystudio/ai-core/core/plugins'
 import { loggerService } from '@logger'
-import { isAnthropicModel, isGeminiModel } from '@renderer/config/models'
-import { isOpenAILLMModel } from '@renderer/config/models/openai'
-import type { Model, Provider, ProviderType } from '@renderer/types'
+import { supportsNativePdfInput } from '@renderer/aiCore/prepareParams/pdfCapabilities'
+import type { Model, Provider } from '@renderer/types'
 import { extractPdfText } from '@shared/utils/pdf'
 import type { LanguageModelMiddleware } from 'ai'
 import i18n from 'i18next'
@@ -18,59 +17,8 @@ const logger = loggerService.withContext('pdfCompatibilityPlugin')
 
 type ContentPart = Exclude<LanguageModelV3Message['content'], string>[number]
 
-/**
- * Provider types whose API natively supports PDF file input.
- * Only first-party provider protocols (OpenAI, Anthropic, Google) are included.
- * Aggregators (new-api, gateway) and generic 'openai' type are excluded
- * because they may route to backends that don't support the 'file' part type.
- */
-const PDF_NATIVE_PROVIDER_TYPES = new Set<ProviderType>([
-  'openai-response', // OpenAI Responses API
-  'anthropic', // Anthropic API
-  'gemini', // Google Gemini API
-  'azure-openai', // Azure OpenAI
-  'vertexai', // Google Vertex AI
-  'aws-bedrock', // AWS Bedrock
-  'vertex-anthropic' // Vertex AI with Anthropic models
-])
-
 function isPdfFilePart(part: ContentPart): part is LanguageModelV3FilePart & { mediaType: 'application/pdf' } {
   return part.type === 'file' && part.mediaType === 'application/pdf'
-}
-
-function supportsNativePdf(provider: Provider, model: Model, runtimeProviderId?: string): boolean {
-  // Prefer the resolved runtime provider id when available because aggregators and OpenAI-compatible
-  // providers can route the same model family to different SDK implementations.
-  if (runtimeProviderId === 'openai' || runtimeProviderId === 'google' || runtimeProviderId === 'anthropic') {
-    return true
-  }
-  if (runtimeProviderId === 'google-vertex' && isGeminiModel(model)) {
-    return true
-  }
-  if (runtimeProviderId === 'google-vertex-anthropic' && isAnthropicModel(model)) {
-    return true
-  }
-  if (PDF_NATIVE_PROVIDER_TYPES.has(provider.type)) {
-    return true
-  }
-  if (
-    model.endpoint_type === 'openai-response' ||
-    model.endpoint_type === 'anthropic' ||
-    model.endpoint_type === 'gemini'
-  ) {
-    return true
-  }
-  if ((provider.type === 'openai-response' || provider.type === 'azure-openai') && isOpenAILLMModel(model)) {
-    return true
-  }
-  if (provider.type === 'vertex-anthropic' && isAnthropicModel(model)) {
-    return true
-  }
-  if (provider.type === 'vertexai' && isGeminiModel(model)) {
-    return true
-  }
-  // TODO: allow user to configure native pdf compatibility for provider/model
-  return false
 }
 
 function pdfCompatibilityMiddleware(
@@ -81,7 +29,7 @@ function pdfCompatibilityMiddleware(
   return {
     specificationVersion: 'v3',
     transformParams: async ({ params }) => {
-      if (supportsNativePdf(provider, model, runtimeProviderId)) {
+      if (supportsNativePdfInput(provider, model, runtimeProviderId)) {
         return params
       }
 

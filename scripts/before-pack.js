@@ -1,5 +1,5 @@
 const { Arch } = require('electron-builder')
-const { execSync } = require('child_process')
+const { execFileSync, execSync } = require('child_process')
 const fs = require('fs')
 const path = require('path')
 const { parse, stringify } = require('yaml')
@@ -42,7 +42,13 @@ const packages = [
   '@napi-rs/canvas-darwin-arm64',
   '@napi-rs/canvas-win32-x64-msvc',
   '@napi-rs/canvas-win32-arm64-msvc',
-  '@strongtz/win32-arm64-msvc'
+  '@strongtz/win32-arm64-msvc',
+  '@openai/codex-darwin-arm64',
+  '@openai/codex-darwin-x64',
+  '@openai/codex-linux-arm64',
+  '@openai/codex-linux-x64',
+  '@openai/codex-win32-arm64',
+  '@openai/codex-win32-x64'
 ]
 
 const platformToArch = {
@@ -57,12 +63,17 @@ exports.default = async function (context) {
   const platformName = context.packager.platform.name
   const platform = platformToArch[platformName]
 
-  // Download rtk binary for the target platform
+  // The runtime expects this binary to be present in every packaged build.
+  console.log(`Downloading rtk binary for ${platform}-${arch}...`)
   try {
-    console.log(`Downloading rtk binary for ${platform}-${arch}...`)
-    execSync(`node "${path.join(__dirname, 'download-rtk-binaries.js')}" ${platform} ${arch}`, { stdio: 'inherit' })
+    execFileSync(process.execPath, [path.join(__dirname, 'download-rtk-binaries.js'), platform, arch], {
+      stdio: 'inherit'
+    })
   } catch (error) {
-    console.warn(`Warning: rtk binary download failed (non-fatal): ${error.message}`)
+    if (process.env.CI === 'true') {
+      throw new Error(`Required RTK binary download failed for ${platform}-${arch}: ${error.message}`)
+    }
+    console.warn(`Warning: optional RTK binary is unavailable in this local build: ${error.message}`)
   }
 
   const downloadPackages = async () => {
@@ -136,7 +147,7 @@ exports.default = async function (context) {
 
   // Exclude rtk binaries for other platform-arch combinations
   const currentPlatformKey = `${platform}-${arch}`
-  const allRtkPlatforms = ['darwin-arm64', 'darwin-x64', 'linux-x64', 'linux-arm64', 'win32-x64']
+  const allRtkPlatforms = ['darwin-arm64', 'darwin-x64', 'linux-x64', 'linux-arm64', 'win32-x64', 'win32-arm64']
   const excludeRtkFilters = allRtkPlatforms
     .filter((p) => p !== currentPlatformKey)
     .map((p) => '!resources/binaries/' + p + '/**')

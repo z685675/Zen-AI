@@ -1,6 +1,6 @@
 import { ErrorBoundary } from '@renderer/components/ErrorBoundary'
 import db from '@renderer/databases'
-import { useAssistants } from '@renderer/hooks/useAssistant'
+import { useAssistants, useDefaultModel } from '@renderer/hooks/useAssistant'
 import { useNavbarPosition, useSettings } from '@renderer/hooks/useSettings'
 import { useShortcut } from '@renderer/hooks/useShortcuts'
 import { useShowAssistants, useShowTopics } from '@renderer/hooks/useStore'
@@ -8,9 +8,14 @@ import { useActiveTopic } from '@renderer/hooks/useTopic'
 import { getDefaultTopic } from '@renderer/services/AssistantService'
 import { EVENT_NAMES, EventEmitter } from '@renderer/services/EventService'
 import NavigationService from '@renderer/services/NavigationService'
-import { addTopic as addTopicAction, removeTopic as removeTopicAction } from '@renderer/store/assistants'
+import {
+  addTopic as addTopicAction,
+  removeTopic as removeTopicAction,
+  updateTopic as updateTopicAction
+} from '@renderer/store/assistants'
 import { newMessagesActions } from '@renderer/store/newMessage'
 import type { Assistant, Topic } from '@renderer/types'
+import { getNewConversationModel, isSameModel } from '@renderer/utils/conversationModel'
 import { MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH, SECOND_MIN_WINDOW_WIDTH } from '@shared/config/constant'
 import { AnimatePresence, motion } from 'motion/react'
 import type { FC } from 'react'
@@ -35,6 +40,7 @@ const sortTopicsByUpdatedAtDesc = (topics: Topic[]) =>
 
 const HomePage: FC = () => {
   const { assistants } = useAssistants()
+  const { defaultModel } = useDefaultModel()
   const navigate = useNavigate()
   const { isLeftNavbar } = useNavbarPosition()
   const location = useLocation()
@@ -63,26 +69,32 @@ const HomePage: FC = () => {
 
   const createTopicForAssistant = useCallback(
     async (assistant: Assistant) => {
-      const topic = getDefaultTopic(assistant.id)
+      const topic = getDefaultTopic(assistant.id, getNewConversationModel(assistant, defaultModel))
       await db.topics.add({ id: topic.id, messages: [] })
       dispatch(addTopicAction({ assistantId: assistant.id, topic }))
       return topic
     },
-    [dispatch]
+    [defaultModel, dispatch]
   )
 
   const getOrCreateEmptyTopicForAssistant = useCallback(
     async (assistant: Assistant) => {
+      const expectedModel = getNewConversationModel(assistant, defaultModel)
       for (const topic of sortTopicsByUpdatedAtDesc(assistant.topics || [])) {
         const dbTopic = await db.topics.get(topic.id)
         if ((dbTopic?.messages?.length || 0) === 0) {
+          if (!isSameModel(topic.model, expectedModel)) {
+            const alignedTopic = { ...topic, model: expectedModel }
+            dispatch(updateTopicAction({ assistantId: assistant.id, topic: alignedTopic }))
+            return alignedTopic
+          }
           return topic
         }
       }
 
       return await createTopicForAssistant(assistant)
     },
-    [createTopicForAssistant]
+    [createTopicForAssistant, defaultModel, dispatch]
   )
 
   const setActiveAssistant = useCallback(
@@ -104,13 +116,13 @@ const HomePage: FC = () => {
     (newTopic: Topic) => {
       const topicAssistant = assistants.find((assistant) => assistant.id === newTopic.assistantId) || activeAssistant
 
-      startTransition(() => {
-        if (topicAssistant && topicAssistant.id !== activeAssistant?.id) {
-          _setActiveAssistant(topicAssistant)
-        }
-        _setActiveTopic((prev) => (newTopic.id === prev?.id ? prev : newTopic))
-        dispatch(newMessagesActions.setTopicFulfilled({ topicId: newTopic.id, fulfilled: false }))
-      })
+      // A direct user navigation must remain urgent. Streaming and context preparation
+      // can continuously pre-empt a transition and make a history item appear unresponsive.
+      if (topicAssistant && topicAssistant.id !== activeAssistant?.id) {
+        _setActiveAssistant(topicAssistant)
+      }
+      _setActiveTopic((prev) => (newTopic.id === prev?.id ? prev : newTopic))
+      dispatch(newMessagesActions.setTopicFulfilled({ topicId: newTopic.id, fulfilled: false }))
     },
     [_setActiveTopic, activeAssistant, assistants, dispatch]
   )
@@ -186,13 +198,13 @@ const HomePage: FC = () => {
       return
     }
 
-    const topic = await getOrCreateEmptyTopicForAssistant(defaultConversationAssistant)
-    startTransition(() => {
-      _setActiveAssistant(defaultConversationAssistant)
-      _setActiveTopic(topic)
-      dispatch(newMessagesActions.setTopicFulfilled({ topicId: topic.id, fulfilled: false }))
-    })
-  }, [_setActiveTopic, defaultConversationAssistant, dispatch, getOrCreateEmptyTopicForAssistant])
+    // An explicit "new conversation" action must always create a visible topic.
+    // Draft reuse is reserved for automatic initialization and assistant switching.
+    const topic = await createTopicForAssistant(defaultConversationAssistant)
+    _setActiveAssistant(defaultConversationAssistant)
+    _setActiveTopic(topic)
+    dispatch(newMessagesActions.setTopicFulfilled({ topicId: topic.id, fulfilled: false }))
+  }, [_setActiveTopic, createTopicForAssistant, defaultConversationAssistant, dispatch])
 
   useShortcut('toggle_show_assistants', () => {
     if (topicPosition === 'right') {

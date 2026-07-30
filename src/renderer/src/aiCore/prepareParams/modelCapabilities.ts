@@ -26,7 +26,7 @@ function modelSupportValidator(
   }
 ): boolean {
   const provider = getProviderByModel(model)
-  const aiSdkId = getAiSdkProviderId(provider)
+  const aiSdkId = getAiSdkProviderId(provider, model)
 
   // 黑名单：命中不支持的模型直接拒绝
   if (unsupportedModels.some((name) => model.name.includes(name))) {
@@ -70,7 +70,7 @@ export function supportsLargeFileUpload(model: Model): boolean {
  */
 export function getFileSizeLimit(model: Model, fileType: FileType): number {
   const provider = getProviderByModel(model)
-  const aiSdkId = getAiSdkProviderId(provider)
+  const aiSdkId = getAiSdkProviderId(provider, model)
 
   // Anthropic PDF限制32MB
   if (aiSdkId === 'anthropic' && fileType === FILE_TYPE.DOCUMENT) {

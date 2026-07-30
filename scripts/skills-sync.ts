@@ -18,7 +18,7 @@ import {
 function ensureClaudeSkillSymlink(skillName: string): boolean {
   const agentsSkillDir = path.join(AGENTS_SKILLS_DIR, skillName)
   const claudeSkillDir = path.join(CLAUDE_SKILLS_DIR, skillName)
-  const expectedTarget = path.join('..', '..', '.agents', 'skills', skillName)
+  const expectedTarget = path.posix.join('..', '..', '.agents', 'skills', skillName)
 
   if (!fs.existsSync(agentsSkillDir)) {
     throw new Error(`.agents/skills/${skillName} is missing`)
@@ -40,6 +40,14 @@ function ensureClaudeSkillSymlink(skillName: string): boolean {
       if (currentTarget === expectedTarget) {
         return false
       }
+    }
+    // Git uses this representation when Windows symlink checkout is disabled.
+    if (
+      process.platform === 'win32' &&
+      existing.isFile() &&
+      fs.readFileSync(claudeSkillDir, 'utf8') === expectedTarget
+    ) {
+      return false
     }
     fs.rmSync(claudeSkillDir, { force: true, recursive: true })
   }

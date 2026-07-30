@@ -1,0 +1,7 @@
+interface:
+  display_name: "Research Report"
+  short_description: "Produce sourced, decision-oriented research reports"
+  brand_color: "#7C3AED"
+  default_prompt: "Use $research-report to produce a sourced research report for this question."
+policy:
+  allow_implicit_invocation: true

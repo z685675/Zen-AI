@@ -96,11 +96,7 @@ const permissionModeTool = defineTool({
           const selected = card.mode === currentMode
 
           return (
-            <ModeOption
-              key={card.mode}
-              type="button"
-              $selected={selected}
-              onClick={() => handleSelectMode(card.mode)}>
+            <ModeOption key={card.mode} type="button" $selected={selected} onClick={() => handleSelectMode(card.mode)}>
               <ModeOptionIcon $selected={selected}>{getPermissionModeIcon(card.mode)}</ModeOptionIcon>
               <ModeOptionBody>
                 <ModeOptionTitleRow>
@@ -193,9 +189,7 @@ const ModeOption = styled.button<{ $selected: boolean }>`
   border: 0;
   border-radius: 14px;
   background: ${(props) =>
-    props.$selected
-      ? 'linear-gradient(135deg, rgba(255, 244, 246, 0.98), rgba(255, 248, 237, 0.98))'
-      : 'transparent'};
+    props.$selected ? 'linear-gradient(135deg, rgba(255, 244, 246, 0.98), rgba(255, 248, 237, 0.98))' : 'transparent'};
   text-align: left;
   transition:
     background-color 0.18s ease,

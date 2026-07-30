@@ -1,6 +1,6 @@
 import { loggerService } from '@logger'
-import { DEFAULT_FUSION_AGENT_ID } from '@shared/config/agents'
 import { windowService } from '@main/services/WindowService'
+import { DEFAULT_FUSION_AGENT_ID } from '@shared/config/agents'
 import type { ChannelLogEntry, ChannelStatusEvent } from '@shared/config/types'
 import { IpcChannel } from '@shared/IpcChannel'
 

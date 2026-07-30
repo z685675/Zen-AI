@@ -25,7 +25,7 @@ const AgentSidePanel = ({ onSelectItem }: AgentSidePanelProps) => {
         height: 'calc(100vh - var(--navbar-height))',
         background: 'transparent'
       }}>
-      <SectionShell className="min-h-[180px] max-h-[34%]" tone="agents">
+      <SectionShell className="max-h-[34%] min-h-[180px]" tone="agents">
         <Agents onSelectItem={onSelectItem} />
       </SectionShell>
 

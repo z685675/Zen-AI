@@ -3,9 +3,11 @@ import { isWin } from '@main/constant'
 import { autoDiscoverGitBash, findExecutableInEnv, getBinaryPath, isBinaryExists } from '@main/utils/process'
 import { spawn } from 'child_process'
 
+import { managedPythonService } from './python/ManagedPythonService'
+
 const logger = loggerService.withContext('AssistantEnvironmentService')
 
-export type AssistantEnvironmentDependencyId = 'bun' | 'uv' | 'uvx' | 'git' | 'pyodide'
+export type AssistantEnvironmentDependencyId = 'bun' | 'uv' | 'uvx' | 'git' | 'python' | 'pyodide'
 
 export type AssistantEnvironmentDependencySource = 'app' | 'system' | 'network' | 'missing' | 'error'
 
@@ -22,6 +24,7 @@ export interface AssistantEnvironmentCheckResult {
   uv: AssistantEnvironmentDependencyStatus
   uvx: AssistantEnvironmentDependencyStatus
   git: AssistantEnvironmentDependencyStatus
+  python: AssistantEnvironmentDependencyStatus
   pyodide: AssistantEnvironmentDependencyStatus
   binariesDir: string
   checkedAt: number
@@ -167,12 +170,42 @@ async function checkPyodideNetwork(): Promise<AssistantEnvironmentDependencyStat
   }
 }
 
+async function checkManagedPython(): Promise<AssistantEnvironmentDependencyStatus> {
+  try {
+    const status = await managedPythonService.getStatus()
+    return {
+      id: 'python',
+      installed: status.ready,
+      source: status.installed ? 'app' : 'missing',
+      path: status.executablePath,
+      message:
+        status.message ||
+        (status.missingPackages.length > 0
+          ? `Missing managed packages: ${status.missingPackages.join(', ')}`
+          : undefined)
+    }
+  } catch (error) {
+    logger.warn('Failed to check managed Python', { error })
+    return {
+      id: 'python',
+      installed: false,
+      source: 'error',
+      message: error instanceof Error ? error.message : String(error)
+    }
+  }
+}
+
+export async function installManagedPython(): Promise<void> {
+  await managedPythonService.ensureReady()
+}
+
 export async function checkAssistantEnvironment(): Promise<AssistantEnvironmentCheckResult> {
-  const [bun, uv, uvx, git, pyodide] = await Promise.all([
+  const [bun, uv, uvx, git, python, pyodide] = await Promise.all([
     checkBinary('bun'),
     checkBinary('uv'),
     checkBinary('uvx'),
     checkBinary('git'),
+    checkManagedPython(),
     checkPyodideNetwork()
   ])
 
@@ -181,6 +214,7 @@ export async function checkAssistantEnvironment(): Promise<AssistantEnvironmentC
     uv,
     uvx,
     git,
+    python,
     pyodide,
     binariesDir: await getBinaryPath(),
     checkedAt: Date.now()

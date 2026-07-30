@@ -75,6 +75,8 @@ export type OcrProviderBaseConfig = {
   models?: OcrModel[]
   /** Not used for now. Could safely remove. */
   enabled?: boolean
+  /** Local image preprocessing used by built-in OCR engines. */
+  preprocess?: 'auto' | 'high-contrast' | 'none'
 }
 
 export type OcrProviderConfig = OcrApiProviderConfig | OcrTesseractConfig | OcrSystemConfig | OcrPpocrConfig
@@ -135,6 +137,14 @@ export const isSupportedOcrFile = (file: FileMetadata): file is SupportedOcrFile
 
 export type OcrResult = {
   text: string
+  /** Normalized recognition confidence from 0 to 100 when the engine provides a meaningful value. */
+  confidence?: number
+  lines?: Array<{
+    text: string
+    confidence?: number
+    bbox?: { x0: number; y0: number; x1: number; y1: number }
+    paragraph?: number
+  }>
 }
 
 export type OcrHandler = (file: SupportedOcrFile, options?: OcrProviderBaseConfig) => Promise<OcrResult>
@@ -144,6 +154,7 @@ export type OcrImageHandler = (file: ImageFileMetadata, options?: OcrProviderBas
 // Tesseract Types
 export type OcrTesseractConfig = OcrProviderBaseConfig & {
   langs?: Partial<Record<TesseractLangCode, boolean>>
+  pageSegMode?: Tesseract.PSM
 }
 
 export type OcrTesseractProvider = {

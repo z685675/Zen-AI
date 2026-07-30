@@ -13,7 +13,7 @@ import {
 import { t } from '@main/utils/locales'
 import { documentExts, imageExts, KB, MB } from '@shared/config/constant'
 import { parseDataUrl } from '@shared/utils'
-import type { FileMetadata, FileType, NotesTreeNode } from '@types'
+import type { FileMetadata, FileType, NotesTreeNode, StructuredFileContent, StructuredFileSection } from '@types'
 import { FILE_TYPE } from '@types'
 import AdmZip from 'adm-zip'
 import chardet from 'chardet'
@@ -29,6 +29,7 @@ import { isBinaryFile } from 'isbinaryfile'
 import officeParser from 'officeparser'
 import * as path from 'path'
 import { PDFDocument } from 'pdf-lib'
+import { PDFParse } from 'pdf-parse'
 import { v4 as uuidv4 } from 'uuid'
 import WordExtractor from 'word-extractor'
 
@@ -50,6 +51,60 @@ const sanitizeZipEntryName = (entryPath: string): string => {
 }
 
 const SAVE_DIALOG_CANCELED = 'SAVE_DIALOG_CANCELED'
+const STRUCTURED_FILE_PARSER_VERSION = 1
+
+const decodeXmlText = (value: string): string =>
+  value
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, '&')
+    .replace(/&#(\d+);/g, (_, code) => String.fromCodePoint(Number(code)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, code) => String.fromCodePoint(Number.parseInt(code, 16)))
+
+const extractXmlTagText = (xml: string, tag: string): string[] =>
+  Array.from(xml.matchAll(new RegExp(`<${tag}(?:\\s[^>]*)?>([\\s\\S]*?)<\\/${tag}>`, 'g'))).map((match) =>
+    decodeXmlText(match[1].replace(/<[^>]+>/g, '')).trim()
+  )
+
+const getZipEntryText = (zip: AdmZip, entryName: string): string =>
+  zip.getEntry(entryName)?.getData().toString('utf8') ?? ''
+
+const parseXmlAttributes = (value: string): Record<string, string> =>
+  Object.fromEntries(
+    Array.from(value.matchAll(/([\w:.-]+)\s*=\s*(?:"([^"]*)"|'([^']*)')/g)).map((match) => [
+      match[1],
+      decodeXmlText(match[2] ?? match[3] ?? '')
+    ])
+  )
+
+const numericSuffix = (value: string): number => Number(value.match(/(\d+)(?:\.[^.]+)?$/)?.[1] ?? 0)
+
+const columnNameToNumber = (value: string): number =>
+  value
+    .toUpperCase()
+    .split('')
+    .reduce((total, character) => total * 26 + character.charCodeAt(0) - 64, 0)
+
+const numberToColumnName = (value: number): string => {
+  let current = Math.max(1, value)
+  let result = ''
+  while (current > 0) {
+    current -= 1
+    result = String.fromCharCode(65 + (current % 26)) + result
+    current = Math.floor(current / 26)
+  }
+  return result
+}
+
+const parseCellReference = (reference: string): { column: number; row: number } => {
+  const match = reference.match(/^([A-Z]+)(\d+)$/i)
+  return {
+    column: match ? columnNameToNumber(match[1]) : 1,
+    row: match ? Number(match[2]) : 1
+  }
+}
 
 // Get ripgrep binary path
 const getRipgrepBinaryPath = (): string | null => {
@@ -550,6 +605,234 @@ class FileStorage {
     } catch (error) {
       logger.error('Failed to read text file:', error as Error)
       throw new Error(`Failed to read file: ${filePath}.`)
+    }
+  }
+
+  private readStructuredDocx(filePath: string): StructuredFileSection[] {
+    const zip = new AdmZip(filePath)
+    const documentXml = getZipEntryText(zip, 'word/document.xml')
+    if (!documentXml) return []
+
+    const sections: StructuredFileSection[] = []
+    let page = 1
+    let currentSection = ''
+    let currentText: string[] = []
+
+    const flush = () => {
+      const text = currentText.join('\n').trim()
+      if (text) {
+        sections.push({
+          text,
+          metadata: {
+            page,
+            ...(currentSection ? { section: currentSection } : {})
+          }
+        })
+      }
+      currentText = []
+    }
+
+    const blocks = documentXml.match(/<w:(p|tbl)(?:\s[^>]*)?>[\s\S]*?<\/w:\1>/g) ?? []
+    let table = 0
+    for (const block of blocks) {
+      if (block.startsWith('<w:tbl')) {
+        flush()
+        table += 1
+        const rows = (block.match(/<w:tr(?:\s[^>]*)?>[\s\S]*?<\/w:tr>/g) ?? [])
+          .map((row) =>
+            (row.match(/<w:tc(?:\s[^>]*)?>[\s\S]*?<\/w:tc>/g) ?? [])
+              .map((cell) => extractXmlTagText(cell, 'w:t').join(''))
+              .filter(Boolean)
+              .join(' | ')
+          )
+          .filter(Boolean)
+        if (rows.length > 0) {
+          sections.push({
+            text: rows.join('\n'),
+            metadata: { page, table, ...(currentSection ? { section: currentSection } : {}) }
+          })
+        }
+        continue
+      }
+
+      const paragraphText = extractXmlTagText(block, 'w:t').join('')
+      const style = block.match(/<w:pStyle[^>]*w:val="([^"]+)"/)?.[1] ?? ''
+      if (/heading|title|标题/i.test(style) && paragraphText) {
+        flush()
+        currentSection = paragraphText
+      }
+      if (paragraphText) {
+        currentText.push(paragraphText)
+      }
+      if (/<w:(?:br\b[^>]*w:type="page"|lastRenderedPageBreak\b)/i.test(block)) {
+        flush()
+        page += 1
+      }
+    }
+    flush()
+    return sections
+  }
+
+  private readStructuredPptx(filePath: string): StructuredFileSection[] {
+    const zip = new AdmZip(filePath)
+    return zip
+      .getEntries()
+      .filter((entry) => /^ppt\/slides\/slide\d+\.xml$/i.test(entry.entryName))
+      .sort((left, right) => numericSuffix(left.entryName) - numericSuffix(right.entryName))
+      .map((entry, index) => {
+        const text = extractXmlTagText(entry.getData().toString('utf8'), 'a:t').filter(Boolean)
+        return {
+          text: text.join('\n'),
+          metadata: {
+            slide: index + 1,
+            ...(text[0] ? { section: text[0] } : {})
+          }
+        }
+      })
+      .filter((section) => section.text.trim())
+  }
+
+  private readStructuredXlsx(filePath: string): StructuredFileSection[] {
+    const zip = new AdmZip(filePath)
+    const sharedStringsXml = getZipEntryText(zip, 'xl/sharedStrings.xml')
+    const sharedStrings = (sharedStringsXml.match(/<si(?:\s[^>]*)?>[\s\S]*?<\/si>/g) ?? []).map((item) =>
+      extractXmlTagText(item, 't').join('')
+    )
+    const workbookXml = getZipEntryText(zip, 'xl/workbook.xml')
+    const workbookRels = getZipEntryText(zip, 'xl/_rels/workbook.xml.rels')
+    const relationTargets = new Map(
+      Array.from(workbookRels.matchAll(/<Relationship\b([^>]*)\/?>/g))
+        .map((match) => parseXmlAttributes(match[1]))
+        .filter((attributes) => attributes.Id && attributes.Target)
+        .map((attributes) => [attributes.Id, attributes.Target])
+    )
+    const sheets = Array.from(workbookXml.matchAll(/<sheet\b([^>]*)\/?>/g))
+      .map((match) => parseXmlAttributes(match[1]))
+      .filter((attributes) => attributes.name)
+      .map((attributes, index) => ({
+        name: attributes.name,
+        relationId: attributes['r:id'] ?? attributes.id ?? '',
+        fallbackTarget: `worksheets/sheet${index + 1}.xml`
+      }))
+    const sections: StructuredFileSection[] = []
+
+    for (const sheet of sheets) {
+      const target = relationTargets.get(sheet.relationId) ?? sheet.fallbackTarget
+      const normalizedTarget = target.startsWith('/xl/')
+        ? target.slice(1)
+        : target.startsWith('xl/')
+          ? target
+          : path.posix.normalize(path.posix.join('xl', target))
+      const sheetXml = getZipEntryText(zip, normalizedTarget)
+      if (!sheetXml) continue
+
+      const rows = new Map<number, Array<{ reference: string; column: number; value: string }>>()
+      for (const match of sheetXml.matchAll(/<c\b([^>]*)>([\s\S]*?)<\/c>/g)) {
+        const attributes = match[1]
+        const body = match[2]
+        const reference = attributes.match(/\br="([^"]+)"/)?.[1] ?? 'A1'
+        const type = attributes.match(/\bt="([^"]+)"/)?.[1] ?? ''
+        const formula = extractXmlTagText(body, 'f')[0]
+        const rawValue = extractXmlTagText(body, type === 'inlineStr' ? 't' : 'v')[0] ?? ''
+        const value = type === 's' ? (sharedStrings[Number(rawValue)] ?? rawValue) : rawValue
+        const displayValue = formula ? `=${formula}${value ? ` -> ${value}` : ''}` : value
+        if (!displayValue) continue
+        const position = parseCellReference(reference)
+        const cells = rows.get(position.row) ?? []
+        cells.push({ reference, column: position.column, value: displayValue })
+        rows.set(position.row, cells)
+      }
+
+      const sortedRows = [...rows.entries()].sort(([left], [right]) => left - right)
+      let table = 0
+      let tableRows: typeof sortedRows = []
+      let previousRow = -2
+
+      const flushTable = () => {
+        if (tableRows.length === 0) return
+        table += 1
+        for (let offset = 0; offset < tableRows.length; offset += 100) {
+          const batch = tableRows.slice(offset, offset + 100)
+          const firstRow = batch[0][0]
+          const lastRow = batch.at(-1)?.[0] ?? firstRow
+          const maxColumn = Math.max(...batch.flatMap(([, cells]) => cells.map((cell) => cell.column)))
+          sections.push({
+            text: batch
+              .map(([, cells]) =>
+                cells
+                  .sort((left, right) => left.column - right.column)
+                  .map((cell) => `${cell.reference}: ${cell.value}`)
+                  .join(' | ')
+              )
+              .join('\n'),
+            metadata: {
+              sheet: sheet.name,
+              table,
+              cellRange: `A${firstRow}:${numberToColumnName(maxColumn)}${lastRow}`
+            }
+          })
+        }
+        tableRows = []
+      }
+
+      for (const row of sortedRows) {
+        if (tableRows.length > 0 && row[0] - previousRow > 1) {
+          flushTable()
+        }
+        tableRows.push(row)
+        previousRow = row[0]
+      }
+      flushTable()
+    }
+
+    return sections
+  }
+
+  private async readStructuredPdf(filePath: string): Promise<StructuredFileSection[]> {
+    const parser = new PDFParse({ data: await fs.promises.readFile(filePath) })
+    try {
+      const result = await parser.getText()
+      return result.pages
+        .map((page) => ({ text: page.text.trim(), metadata: { page: page.num } }))
+        .filter((section) => section.text)
+    } finally {
+      await parser.destroy()
+    }
+  }
+
+  public readStructuredFile = async (_: Electron.IpcMainInvokeEvent, id: string): Promise<StructuredFileContent> => {
+    const filePath = path.join(this.storageDir, id)
+    const format = path.extname(filePath).toLowerCase().replace(/^\./, '')
+    let sections: StructuredFileSection[] = []
+
+    switch (format) {
+      case 'docx':
+        sections = this.readStructuredDocx(filePath)
+        break
+      case 'pptx':
+        sections = this.readStructuredPptx(filePath)
+        break
+      case 'xlsx':
+        sections = this.readStructuredXlsx(filePath)
+        break
+      case 'pdf':
+        sections = await this.readStructuredPdf(filePath)
+        break
+      default: {
+        const text = await this.readFileCore(filePath, true)
+        sections = text.trim() ? [{ text, metadata: { section: path.basename(filePath) } }] : []
+      }
+    }
+
+    if (sections.length === 0) {
+      const fallbackText = await this.readFileCore(filePath, true)
+      sections = fallbackText.trim() ? [{ text: fallbackText, metadata: {} }] : []
+    }
+
+    return {
+      parserVersion: STRUCTURED_FILE_PARSER_VERSION,
+      format,
+      sections
     }
   }
 

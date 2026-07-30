@@ -223,8 +223,7 @@ const createMockCallbacks = (
 const processChunks = async (chunks: Chunk[], callbacks: ReturnType<typeof createCallbacks>) => {
   const process = createStreamProcessor(callbacks)
   for (const chunk of chunks) {
-    process(chunk)
-    await new Promise((resolve) => setTimeout(resolve, 0))
+    await process(chunk)
   }
 }
 
@@ -294,14 +293,14 @@ describe('streamCallback integration', () => {
       { type: ChunkType.TEXT_DELTA, text: 'Hello world!' },
       { type: ChunkType.TEXT_COMPLETE, text: 'Hello world!' },
       {
-        type: ChunkType.LLM_RESPONSE_COMPLETE,
+        type: ChunkType.BLOCK_COMPLETE,
         response: {
           usage: { prompt_tokens: 100, completion_tokens: 50, total_tokens: 150 },
           metrics: { completion_tokens: 50, time_completion_millsec: 1000 }
         }
       },
       {
-        type: ChunkType.BLOCK_COMPLETE,
+        type: ChunkType.LLM_RESPONSE_COMPLETE,
         response: {
           usage: { prompt_tokens: 100, completion_tokens: 50, total_tokens: 150 },
           metrics: { completion_tokens: 50, time_completion_millsec: 1000 }
@@ -323,6 +322,33 @@ describe('streamCallback integration', () => {
     expect(message?.usage?.total_tokens).toBe(150)
   })
 
+  it('creates only one error block and ignores late terminal chunks', async () => {
+    const callbacks = createMockCallbacks(assistantMsgId, topicId, assistant, dispatch, getState)
+    const chunks: Chunk[] = [
+      { type: ChunkType.LLM_RESPONSE_CREATED },
+      { type: ChunkType.ERROR, error: new Error('connection interrupted') },
+      { type: ChunkType.ERROR, error: new Error('duplicate connection interrupted') },
+      {
+        type: ChunkType.LLM_RESPONSE_COMPLETE,
+        response: {
+          usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+          metrics: { completion_tokens: 0, time_completion_millsec: 0 }
+        }
+      }
+    ]
+
+    await processChunks(chunks, callbacks)
+
+    const state = getState()
+    const errorBlocks = Object.values(state.messageBlocks.entities).filter(
+      (block) => block.type === MessageBlockType.ERROR
+    )
+    const message = state.messages.entities[assistantMsgId]
+
+    expect(errorBlocks).toHaveLength(1)
+    expect(message?.status).toBe(AssistantMessageStatus.ERROR)
+  })
+
   it('handles a thinking flow', async () => {
     const callbacks = createMockCallbacks(assistantMsgId, topicId, assistant, dispatch, getState)
     const chunks: Chunk[] = [
@@ -331,7 +357,14 @@ describe('streamCallback integration', () => {
       { type: ChunkType.THINKING_DELTA, text: 'Let me think...', thinking_millsec: 1000 },
       { type: ChunkType.THINKING_DELTA, text: 'Final thoughts', thinking_millsec: 3000 },
       { type: ChunkType.THINKING_COMPLETE, text: 'Final thoughts' },
-      { type: ChunkType.BLOCK_COMPLETE }
+      { type: ChunkType.BLOCK_COMPLETE },
+      {
+        type: ChunkType.LLM_RESPONSE_COMPLETE,
+        response: {
+          usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+          metrics: { completion_tokens: 0, time_completion_millsec: 1000 }
+        }
+      }
     ]
 
     await processChunks(chunks, callbacks)

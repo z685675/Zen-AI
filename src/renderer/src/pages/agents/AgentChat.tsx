@@ -4,16 +4,17 @@ import { useActiveAgent } from '@renderer/hooks/agents/useActiveAgent'
 import { useAgents } from '@renderer/hooks/agents/useAgents'
 import { useCreateDefaultSession } from '@renderer/hooks/agents/useCreateDefaultSession'
 import { useSession } from '@renderer/hooks/agents/useSession'
-import { useUpdateSession } from '@renderer/hooks/agents/useUpdateSession'
 import { useTopicMessages } from '@renderer/hooks/useMessageOperations'
 import { useRuntime } from '@renderer/hooks/useRuntime'
 import { useNavbarPosition, useSettings } from '@renderer/hooks/useSettings'
 import { useShortcut } from '@renderer/hooks/useShortcuts'
 import {
+  ASSISTANT_DEPENDENCY_I18N_KEYS,
   type AssistantEnvironmentCheckResult,
   checkAssistantEnvironmentWithCache,
   getFreshAssistantEnvironmentCache,
-  REQUIRED_ASSISTANT_DEPENDENCIES
+  REQUIRED_ASSISTANT_DEPENDENCIES,
+  subscribeAssistantEnvironment
 } from '@renderer/services/AssistantEnvironmentService'
 import { useAppDispatch, useAppSelector } from '@renderer/store'
 import { loadTopicMessagesThunk } from '@renderer/store/thunk/messageThunk'
@@ -34,6 +35,7 @@ import AgentChatNavbar from './components/AgentChatNavbar'
 import AgentSessionInputbar from './components/AgentSessionInputbar'
 import AgentSessionMessages from './components/AgentSessionMessages'
 import AgentTaskStatusBar from './components/AgentTaskStatusBar'
+import SessionModelSelectButton from './components/SessionModelSelectButton'
 
 type CapabilityCardItem = {
   key: string
@@ -61,8 +63,7 @@ const AgentChat = () => {
   const { agent: activeAgent, isLoading: isAgentLoading } = useActiveAgent()
   const { isLoading: isAgentsLoading, agents } = useAgents()
   const { createDefaultSession } = useCreateDefaultSession(activeAgentId)
-  useSession(activeAgentId, activeSessionId)
-  useUpdateSession(activeAgentId)
+  const { session: activeSession } = useSession(activeAgentId, activeSessionId)
   const sessionTopicId = activeSessionId ? buildAgentSessionTopicId(activeSessionId) : ''
   const messages = useTopicMessages(sessionTopicId)
   const hasLoadedSessionMessages = useAppSelector((state) =>
@@ -103,6 +104,15 @@ const AgentChat = () => {
   useEffect(() => {
     void checkAssistantEnvironment({ blocking: !initialEnvironmentCache })
   }, [checkAssistantEnvironment, initialEnvironmentCache])
+
+  useEffect(
+    () =>
+      subscribeAssistantEnvironment(({ result, error }) => {
+        setEnvironmentResult(result)
+        setEnvironmentError(error)
+      }),
+    []
+  )
 
   const missingRequiredDependencies = useMemo(
     () => REQUIRED_ASSISTANT_DEPENDENCIES.filter((id) => !environmentResult?.[id]?.installed),
@@ -228,7 +238,7 @@ const AgentChat = () => {
             <EnvironmentDependencyList>
               {missingRequiredDependencies.map((id) => (
                 <EnvironmentDependencyPill key={id}>
-                  {t(`settings.assistantEnvironment.dependencies.${id}.name`)}
+                  {t(ASSISTANT_DEPENDENCY_I18N_KEYS[id].name)}
                 </EnvironmentDependencyPill>
               ))}
             </EnvironmentDependencyList>
@@ -308,6 +318,22 @@ const AgentChat = () => {
                     ))}
                   </CapabilityGrid>
                   <WelcomeComposer>
+                    {activeSession && (
+                      <WelcomeModelRow>
+                        <WelcomeModelLabel>{t('agent.welcome.model_label', '本次对话模型')}</WelcomeModelLabel>
+                        <SessionModelSelectButton
+                          agentId={activeAgentId}
+                          session={activeSession}
+                          className="min-w-0 max-w-full"
+                          buttonStyle={{
+                            minHeight: 32,
+                            maxWidth: '100%',
+                            padding: '4px 10px',
+                            border: '1px solid var(--color-border)'
+                          }}
+                        />
+                      </WelcomeModelRow>
+                    )}
                     <AgentSessionInputbar agentId={activeAgentId} sessionId={activeSessionId} variant="hero" />
                   </WelcomeComposer>
                   {renderQuickEntrySection()}
@@ -511,6 +537,29 @@ const WelcomeComposer = styled.div`
   @media (max-height: 880px) {
     margin-top: 18px;
   }
+`
+
+const WelcomeModelRow = styled.div`
+  display: flex;
+  min-width: 0;
+  min-height: 34px;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 0 10px;
+  margin-bottom: 8px;
+
+  & > button {
+    min-width: 0;
+    max-width: min(420px, 72%);
+  }
+`
+
+const WelcomeModelLabel = styled.span`
+  flex-shrink: 0;
+  color: var(--color-text-2);
+  font-size: 12px;
+  line-height: 1.4;
 `
 
 const QuickEntrySection = styled.div`

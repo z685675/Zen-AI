@@ -1,13 +1,11 @@
 import HorizontalScrollContainer from '@renderer/components/HorizontalScrollContainer'
 import { useActiveSession } from '@renderer/hooks/agents/useActiveSession'
-import { useUpdateSession } from '@renderer/hooks/agents/useUpdateSession'
 import { AgentSettingsPopup, SessionSettingsPopup } from '@renderer/pages/settings/AgentSettings'
 import { AgentLabel, SessionLabel } from '@renderer/pages/settings/AgentSettings/shared'
-import type { AgentEntity, ApiModel } from '@renderer/types'
+import type { AgentEntity } from '@renderer/types'
 import { ChevronRight } from 'lucide-react'
-import { useCallback } from 'react'
 
-import SelectAgentBaseModelButton from '../SelectAgentBaseModelButton'
+import SessionModelSelectButton from '../SessionModelSelectButton'
 import OpenExternalAppButton from './OpenExternalAppButton'
 import SessionWorkspaceMeta from './SessionWorkspaceMeta'
 import Tools from './Tools'
@@ -18,15 +16,6 @@ type AgentContentProps = {
 
 const AgentContent = ({ activeAgent }: AgentContentProps) => {
   const { session: activeSession } = useActiveSession()
-  const { updateModel } = useUpdateSession(activeAgent?.id ?? null)
-
-  const handleUpdateModel = useCallback(
-    async (model: ApiModel) => {
-      if (!activeAgent || !activeSession) return
-      return updateModel(activeSession.id, model.id, { showSuccessToast: false })
-    },
-    [activeAgent, activeSession, updateModel]
-  )
 
   return (
     <div className="flex w-full justify-between pr-2">
@@ -64,12 +53,7 @@ const AgentContent = ({ activeAgent }: AgentContentProps) => {
                 <ChevronRight className="h-4 w-4 text-gray-400" />
 
                 {/* Model Button */}
-                <SelectAgentBaseModelButton
-                  agentBase={activeSession}
-                  onSelect={async (model) => {
-                    await handleUpdateModel(model)
-                  }}
-                />
+                <SessionModelSelectButton agentId={activeAgent.id} session={activeSession} />
 
                 {/* Separator */}
                 <ChevronRight className="h-4 w-4 text-gray-400" />

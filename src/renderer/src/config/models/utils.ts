@@ -1,7 +1,7 @@
 import type OpenAI from '@cherrystudio/openai'
 import { isEmbeddingModel, isRerankModel } from '@renderer/config/models/embedding'
-import type { Assistant } from '@renderer/types'
-import { type Model, SystemProviderIds } from '@renderer/types'
+import type { Assistant, EndpointType, Model, Provider } from '@renderer/types'
+import { SystemProviderIds } from '@renderer/types'
 import type { OpenAIVerbosity, ValidOpenAIVerbosity } from '@renderer/types/aiCoreTypes'
 import { getLowerBaseModelName } from '@renderer/utils'
 
@@ -197,8 +197,75 @@ export const isGenerateImageModels = (models: Model[]) => {
   return models.every((model) => isGenerateImageModel(model))
 }
 
-export const isImageGenerationEndpointModel = (model: Model): boolean => {
-  return model.endpoint_type === 'image-generation'
+const OPENAI_IMAGE_ENDPOINT_PROVIDER_TYPES = new Set(['openai', 'openai-response', 'new-api'])
+const OPENAI_IMAGE_ENDPOINT_PROVIDER_IDS = new Set(['new-api', 'cherryin', 'aionly'])
+const PROVIDER_DEFAULT_ENDPOINT_TYPES: Partial<Record<Provider['type'], EndpointType>> = {
+  openai: 'openai',
+  'openai-response': 'openai-response',
+  anthropic: 'anthropic',
+  gemini: 'gemini',
+  'azure-openai': 'openai',
+  vertexai: 'gemini',
+  mistral: 'openai',
+  'vertex-anthropic': 'anthropic',
+  'new-api': 'openai',
+  ollama: 'openai'
+}
+
+const supportsOpenAIImageEndpoint = (provider: Provider): boolean => {
+  return OPENAI_IMAGE_ENDPOINT_PROVIDER_TYPES.has(provider.type) || OPENAI_IMAGE_ENDPOINT_PROVIDER_IDS.has(provider.id)
+}
+
+export const getEffectiveModelEndpointType = (model: Model, provider?: Provider): EndpointType | undefined => {
+  if (model.endpoint_type === 'image-generation') {
+    return 'image-generation'
+  }
+
+  const declaredEndpointTypes = model.supported_endpoint_types ?? []
+  const singleDeclaredEndpoint = declaredEndpointTypes.length === 1 ? declaredEndpointTypes[0] : undefined
+  if (!model.endpoint_type && (singleDeclaredEndpoint === 'gemini' || singleDeclaredEndpoint === 'anthropic')) {
+    return singleDeclaredEndpoint
+  }
+
+  const canUseOpenAIImageEndpoint = !provider || supportsOpenAIImageEndpoint(provider)
+  if (
+    canUseOpenAIImageEndpoint &&
+    isTextToImageModel(model) &&
+    model.endpoint_type !== 'gemini' &&
+    model.endpoint_type !== 'anthropic'
+  ) {
+    return 'image-generation'
+  }
+
+  if (model.endpoint_type) {
+    return model.endpoint_type
+  }
+
+  if (declaredEndpointTypes.length > 0) {
+    const providerDefault = provider ? PROVIDER_DEFAULT_ENDPOINT_TYPES[provider.type] : undefined
+    if (providerDefault && declaredEndpointTypes.includes(providerDefault)) {
+      return providerDefault
+    }
+
+    if (declaredEndpointTypes.length === 1) {
+      return declaredEndpointTypes[0]
+    }
+
+    const preferredEndpoint = (
+      ['openai', 'openai-response', 'anthropic', 'gemini', 'image-generation', 'jina-rerank'] as EndpointType[]
+    ).find((endpointType) => declaredEndpointTypes.includes(endpointType))
+    if (preferredEndpoint) {
+      return preferredEndpoint
+    }
+
+    return declaredEndpointTypes[0]
+  }
+
+  return provider ? PROVIDER_DEFAULT_ENDPOINT_TYPES[provider.type] : undefined
+}
+
+export const isImageGenerationEndpointModel = (model: Model, provider?: Provider): boolean => {
+  return getEffectiveModelEndpointType(model, provider) === 'image-generation'
 }
 
 export const isAnthropicModel = (model?: Model): boolean => {

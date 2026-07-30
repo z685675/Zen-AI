@@ -8,7 +8,6 @@ import { useMessageOperations, useTopicMessages } from '@renderer/hooks/useMessa
 import useScrollPosition from '@renderer/hooks/useScrollPosition'
 import { useSettings } from '@renderer/hooks/useSettings'
 import { useShortcut } from '@renderer/hooks/useShortcuts'
-import { useTimer } from '@renderer/hooks/useTimer'
 import SelectionBox from '@renderer/pages/home/Messages/SelectionBox'
 import { getDefaultTopic } from '@renderer/services/AssistantService'
 import { EVENT_NAMES, EventEmitter } from '@renderer/services/EventService'
@@ -68,7 +67,6 @@ const Messages: React.FC<MessagesProps> = ({ assistant, topic, setActiveTopic, o
   const dispatch = useAppDispatch()
   const messages = useTopicMessages(topic.id)
   const { displayCount, clearTopicMessages, deleteMessage, createTopicBranch } = useMessageOperations(topic)
-  const { setTimeoutTimer } = useTimer()
 
   const { isMultiSelectMode, handleSelectMessage } = useChatContext(topic)
 
@@ -170,7 +168,7 @@ const Messages: React.FC<MessagesProps> = ({ assistant, topic, setActiveTopic, o
         }
       }),
       EventEmitter.on(EVENT_NAMES.NEW_BRANCH, async (index: number) => {
-        const newTopic = getDefaultTopic(assistant.id)
+        const newTopic = getDefaultTopic(assistant.id, topic.model ?? assistant.model)
         newTopic.name = `${topic.name} - 新分支`
         newTopic.isNameManuallyEdited = true
         const currentMessages = messagesRef.current
@@ -248,9 +246,10 @@ const Messages: React.FC<MessagesProps> = ({ assistant, topic, setActiveTopic, o
 
   useEffect(() => {
     void runAsyncFunction(async () => {
+      const tokensCount = await estimateHistoryTokens(assistant, messages)
       void EventEmitter.emit(EVENT_NAMES.ESTIMATED_TOKEN_COUNT, {
-        tokensCount: await estimateHistoryTokens(assistant, messages),
-        contextCount: getContextCount(assistant, messages)
+        tokensCount,
+        contextCount: getContextCount(assistant, messages, tokensCount)
       })
     }).then(() => onFirstUpdate?.())
   }, [assistant, messages, onFirstUpdate])
@@ -259,19 +258,24 @@ const Messages: React.FC<MessagesProps> = ({ assistant, topic, setActiveTopic, o
     if (!hasMore || isLoadingMore) return
 
     setIsLoadingMore(true)
-    setTimeoutTimer(
-      'loadMoreMessages',
-      () => {
-        const currentLength = displayMessages.length
-        const newMessages = computeDisplayMessages(messages, currentLength, LOAD_MORE_COUNT)
+    const currentLength = displayMessages.length
+    const newMessages = computeDisplayMessages(messages, currentLength, LOAD_MORE_COUNT)
 
-        setDisplayMessages((prev) => [...prev, ...newMessages])
-        setHasMore(currentLength + LOAD_MORE_COUNT < messages.length)
-        setIsLoadingMore(false)
-      },
-      300
-    )
-  }, [displayMessages.length, hasMore, isLoadingMore, messages, setTimeoutTimer])
+    setDisplayMessages((prev) => [...prev, ...newMessages])
+    setHasMore(currentLength + newMessages.length < messages.length)
+    setIsLoadingMore(false)
+  }, [displayMessages.length, hasMore, isLoadingMore, messages])
+
+  const revealMessageForNavigation = useCallback(
+    (message: Message) => {
+      const targetIndex = messages.findIndex((item) => item.id === message.id)
+      if (targetIndex < 0) return
+
+      setDisplayMessages(messages.slice(targetIndex).toReversed())
+      setHasMore(targetIndex > 0)
+    },
+    [messages]
+  )
 
   useShortcut('copy_last_message', () => {
     const lastMessage: Message | undefined = last(messages)
@@ -336,7 +340,9 @@ const Messages: React.FC<MessagesProps> = ({ assistant, topic, setActiveTopic, o
       ref={scrollContainerRef}
       key={assistant.id}
       onScroll={handleScrollPosition}>
-      <NarrowLayout style={{ display: 'flex', flexDirection: 'column-reverse' }}>
+      <NarrowLayout
+        reserveNavigationSpace={messageNavigation === 'anchor'}
+        style={{ display: 'flex', flexDirection: 'column-reverse' }}>
         <InfiniteScroll
           dataLength={displayMessages.length}
           next={loadMoreMessages}
@@ -389,7 +395,13 @@ const Messages: React.FC<MessagesProps> = ({ assistant, topic, setActiveTopic, o
 
         {showPrompt && <Prompt assistant={assistant} key={assistant.prompt} topic={topic} />}
       </NarrowLayout>
-      {messageNavigation === 'anchor' && <MessageAnchorLine messages={displayMessages} />}
+      {messageNavigation === 'anchor' && (
+        <MessageAnchorLine
+          messages={messages}
+          renderedMessages={displayMessages}
+          onRequestMessageRender={revealMessageForNavigation}
+        />
+      )}
       <SelectionBox
         isMultiSelectMode={isMultiSelectMode}
         scrollContainerRef={scrollContainerRef}

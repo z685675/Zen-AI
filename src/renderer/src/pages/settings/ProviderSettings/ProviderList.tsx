@@ -7,13 +7,14 @@ import {
 } from '@renderer/components/DraggableList'
 import { DeleteIcon, EditIcon } from '@renderer/components/Icons'
 import { ProviderAvatar } from '@renderer/components/ProviderAvatar'
+import { getCurrentDefaultModels } from '@renderer/config/defaultModelPolicy'
 import { useDefaultModel } from '@renderer/hooks/useAssistant'
 import { useAllProviders, useProviders, useSystemProviders, useUserProviders } from '@renderer/hooks/useProvider'
 import { useTimer } from '@renderer/hooks/useTimer'
 import { fetchModels } from '@renderer/services/ApiService'
 import ImageStorage from '@renderer/services/ImageStorage'
 import { mergeSyncedProviderModels } from '@renderer/services/ProviderModelSyncUtils'
-import type { Model, Provider, ProviderType } from '@renderer/types'
+import type { Provider, ProviderType } from '@renderer/types'
 import { getFancyProviderName, matchKeywordsInModel, matchKeywordsInProvider, uuid } from '@renderer/utils'
 import { isAnthropicSupportedProvider, isNewApiProvider } from '@renderer/utils/provider'
 import type { MenuProps } from 'antd'
@@ -35,8 +36,6 @@ const logger = loggerService.withContext('ProviderList')
 
 const BUTTON_WRAPPER_HEIGHT = 50
 const FOOTER_BUTTON_WRAPPER_HEIGHT = 96
-const DEFAULT_ASSISTANT_MODEL_ID = 'gpt-5.4'
-const DEFAULT_UTILITY_MODEL_ID = 'gpt-5.4-mini'
 
 const getIsOvmsSupported = async (): Promise<boolean> => {
   try {
@@ -72,17 +71,6 @@ function isProviderImportPayload(value: unknown): value is ProviderImportPayload
 
   const payload = value as Record<string, unknown>
   return isNonEmptyString(payload.id) && isNonEmptyString(payload.apiKey) && isNonEmptyString(payload.baseUrl)
-}
-
-const normalizeImportedDefaultModelId = (value: string | undefined) =>
-  (value ?? '')
-    .trim()
-    .toLowerCase()
-    .replace(/^openai\//, '')
-
-function findImportedDefaultModel(importedProvider: Provider, targetModelId: string): Model | undefined {
-  const normalizedTarget = normalizeImportedDefaultModelId(targetModelId)
-  return importedProvider.models.find((model) => normalizeImportedDefaultModelId(model.id) === normalizedTarget)
 }
 
 function normalizeImportedProvider(updatedProvider: Provider): Provider {
@@ -229,12 +217,12 @@ const ProviderList: FC<ProviderListProps> = ({ isOnboarding = false }) => {
 
       updateProviders(nextProviders)
 
-      const nextDefaultModel = findImportedDefaultModel(finalProvider, DEFAULT_ASSISTANT_MODEL_ID)
-      const nextUtilityModel = findImportedDefaultModel(finalProvider, DEFAULT_UTILITY_MODEL_ID)
-
-      setDefaultModel(nextDefaultModel)
-      setQuickModel(nextUtilityModel)
-      setTranslateModel(nextUtilityModel)
+      const importedDefaults = getCurrentDefaultModels(finalProvider.models)
+      if (importedDefaults.defaultModel) {
+        setDefaultModel(importedDefaults.defaultModel)
+        setQuickModel(importedDefaults.quickModel)
+        setTranslateModel(importedDefaults.translateModel)
+      }
 
       setSelectedProvider({
         ...finalProvider,

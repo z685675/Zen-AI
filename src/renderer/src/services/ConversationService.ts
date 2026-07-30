@@ -3,9 +3,9 @@ import { convertMessagesToSdkMessages } from '@renderer/aiCore/prepareParams'
 import type { Assistant, Message } from '@renderer/types'
 import { filterAdjacentUserMessaegs, filterLastAssistantMessage } from '@renderer/utils/messageUtils/filters'
 import type { ModelMessage } from 'ai'
-import { findLast, isEmpty, takeRight } from 'lodash'
+import { findLast, isEmpty } from 'lodash'
 
-import { getAssistantSettings, getDefaultModel } from './AssistantService'
+import { getDefaultModel } from './AssistantService'
 import {
   filterAfterContextClearMessages,
   filterEmptyMessages,
@@ -21,15 +21,15 @@ export class ConversationService {
    * Applies the filtering pipeline that prepares UI messages for model consumption.
    * This keeps the logic testable and prevents future regressions when the pipeline changes.
    */
-  static filterMessagesPipeline(messages: Message[], contextCount: number): Message[] {
+  static filterMessagesPipeline(messages: Message[], _legacyContextCount?: number): Message[] {
+    void _legacyContextCount
     const messagesAfterContextClear = filterAfterContextClearMessages(messages)
     const usefulMessages = filterUsefulMessages(messagesAfterContextClear)
     // Run the error-only filter before trimming trailing assistant responses so the pair is removed together.
     const withoutErrorOnlyPairs = filterErrorOnlyMessagesWithRelated(usefulMessages)
     const withoutTrailingAssistant = filterLastAssistantMessage(withoutErrorOnlyPairs)
     const withoutAdjacentUsers = filterAdjacentUserMessaegs(withoutTrailingAssistant)
-    const limitedByContext = takeRight(withoutAdjacentUsers, contextCount + 2)
-    const contextClearFiltered = filterAfterContextClearMessages(limitedByContext)
+    const contextClearFiltered = filterAfterContextClearMessages(withoutAdjacentUsers)
     const nonEmptyMessages = filterEmptyMessages(contextClearFiltered)
     const userRoleStartMessages = filterUserRoleStartMessages(nonEmptyMessages)
     return userRoleStartMessages
@@ -39,9 +39,6 @@ export class ConversationService {
     messages: Message[],
     assistant: Assistant
   ): Promise<{ modelMessages: ModelMessage[]; uiMessages: Message[] }> {
-    const { contextCount } = getAssistantSettings(assistant)
-    // This logic is extracted from the original ApiService.fetchChatCompletion
-    // const contextMessages = filterContextMessages(messages)
     const lastUserMessage = findLast(messages, (m) => m.role === 'user')
     if (!lastUserMessage) {
       return {
@@ -50,7 +47,7 @@ export class ConversationService {
       }
     }
 
-    const uiMessagesFromPipeline = ConversationService.filterMessagesPipeline(messages, contextCount)
+    const uiMessagesFromPipeline = ConversationService.filterMessagesPipeline(messages)
     logger.debug('uiMessagesFromPipeline', uiMessagesFromPipeline)
 
     // Fallback: ensure at least the last user message is present to avoid empty payloads

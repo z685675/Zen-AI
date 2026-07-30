@@ -3,11 +3,48 @@
 Quick validation script for skills - minimal version
 """
 
-import sys
-import os
 import re
-import yaml
+import sys
 from pathlib import Path
+
+
+def parse_frontmatter(frontmatter_text):
+    """Parse the top-level YAML fields used by SKILL.md without third-party packages."""
+    result = {}
+    lines = frontmatter_text.splitlines()
+    index = 0
+    while index < len(lines):
+        line = lines[index]
+        if not line.strip() or line.lstrip().startswith('#'):
+            index += 1
+            continue
+        if line[:1].isspace():
+            index += 1
+            continue
+
+        match = re.match(r'^([A-Za-z0-9_-]+):(?:\s*(.*))?$', line)
+        if not match:
+            raise ValueError(f"Invalid top-level frontmatter line {index + 1}: {line}")
+        key, raw_value = match.group(1), (match.group(2) or '').strip()
+        if key in result:
+            raise ValueError(f"Duplicate frontmatter key: {key}")
+
+        if raw_value in {'|', '>', '|-', '>-', '|+', '>+'}:
+            block_lines = []
+            index += 1
+            while index < len(lines) and (not lines[index].strip() or lines[index][:1].isspace()):
+                block_lines.append(lines[index].lstrip())
+                index += 1
+            separator = '\n' if raw_value.startswith('|') else ' '
+            result[key] = separator.join(block_lines).strip()
+            continue
+
+        if len(raw_value) >= 2 and raw_value[0] == raw_value[-1] and raw_value[0] in {'"', "'"}:
+            raw_value = raw_value[1:-1]
+        result[key] = raw_value if raw_value else {}
+        index += 1
+
+    return result
 
 def validate_skill(skill_path):
     """Basic validation of a skill"""
@@ -19,7 +56,7 @@ def validate_skill(skill_path):
         return False, "SKILL.md not found"
 
     # Read and validate frontmatter
-    content = skill_md.read_text()
+    content = skill_md.read_text(encoding='utf-8')
     if not content.startswith('---'):
         return False, "No YAML frontmatter found"
 
@@ -30,12 +67,10 @@ def validate_skill(skill_path):
 
     frontmatter_text = match.group(1)
 
-    # Parse YAML frontmatter
+    # Parse the small top-level frontmatter contract without requiring PyYAML.
     try:
-        frontmatter = yaml.safe_load(frontmatter_text)
-        if not isinstance(frontmatter, dict):
-            return False, "Frontmatter must be a YAML dictionary"
-    except yaml.YAMLError as e:
+        frontmatter = parse_frontmatter(frontmatter_text)
+    except ValueError as e:
         return False, f"Invalid YAML in frontmatter: {e}"
 
     # Define allowed properties

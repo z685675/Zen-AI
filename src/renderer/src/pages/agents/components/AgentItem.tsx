@@ -124,10 +124,7 @@ export const AssistantNameRow: React.FC<React.HTMLAttributes<HTMLDivElement>> = 
 
 export const MenuButton: React.FC<React.HTMLAttributes<HTMLDivElement>> = ({ className, ...props }) => (
   <div
-    className={cn(
-      'flex h-5 min-h-5 min-w-5 flex-row items-center justify-center rounded-md',
-      className
-    )}
+    className={cn('flex h-5 min-h-5 min-w-5 flex-row items-center justify-center rounded-md', className)}
     {...props}
   />
 )

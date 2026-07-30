@@ -3,6 +3,10 @@ import { Node, Project } from 'ts-morph'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
+  createBaseline,
+  type Finding,
+  findNewChineseFindings,
+  getFindingFingerprint,
   HardcodedStringDetector,
   hasCJK,
   hasEnglishUIText,
@@ -10,6 +14,18 @@ import {
   isNonUIString,
   shouldSkipNode
 } from '../check-hardcoded-strings'
+
+function createFinding(overrides: Partial<Finding> = {}): Finding {
+  return {
+    file: path.join(process.cwd(), 'src/renderer/src/components/Example.tsx'),
+    line: 10,
+    content: "'保存'",
+    type: 'chinese',
+    source: 'renderer',
+    nodeType: 'StringLiteral',
+    ...overrides
+  }
+}
 
 function createTestProject() {
   return new Project({
@@ -184,6 +200,28 @@ describe('check-hardcoded-strings', () => {
     it('should be instantiable', () => {
       const detector = new HardcodedStringDetector()
       expect(detector).toBeDefined()
+    })
+  })
+
+  describe('hardcoded-string baseline', () => {
+    it('keeps fingerprints stable when only line numbers change', () => {
+      expect(getFindingFingerprint(createFinding({ line: 10 }))).toBe(
+        getFindingFingerprint(createFinding({ line: 90 }))
+      )
+    })
+
+    it('does not report findings already recorded in the baseline', () => {
+      const finding = createFinding()
+      expect(findNewChineseFindings([finding], createBaseline([finding]))).toEqual([])
+    })
+
+    it('reports additional duplicate occurrences and new content', () => {
+      const known = createFinding()
+      const duplicate = createFinding({ line: 20 })
+      const added = createFinding({ line: 30, content: "'新建对话'" })
+      const baseline = createBaseline([known])
+
+      expect(findNewChineseFindings([known, duplicate, added], baseline)).toEqual([duplicate, added])
     })
   })
 

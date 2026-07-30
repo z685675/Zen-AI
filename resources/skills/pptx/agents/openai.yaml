@@ -1,0 +1,7 @@
+interface:
+  display_name: "PPTX Creator"
+  short_description: "Create polished presentation-ready PPTX decks"
+  brand_color: "#2563EB"
+  default_prompt: "Use $pptx to create a polished presentation-ready PPTX deck from my topic or source material."
+policy:
+  allow_implicit_invocation: true

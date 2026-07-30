@@ -270,6 +270,25 @@ describe('listModels', () => {
       expect(models[1].owned_by).toBe('Groq')
       expect(models).toMatchSnapshot()
     })
+
+    it('preserves endpoint metadata returned by an OpenAI-compatible panel', async () => {
+      mockGetFromApi.mockResolvedValue({
+        value: {
+          data: [
+            {
+              id: 'grok-4.5',
+              object: 'model',
+              owned_by: 'xAI',
+              supported_endpoint_types: ['openai']
+            }
+          ]
+        }
+      })
+
+      const models = await listModels(makeProvider({ id: 'custom-panel', type: 'openai' }))
+
+      expect(models[0].supported_endpoint_types).toEqual(['openai'])
+    })
   })
 
   describe('Gemini', () => {

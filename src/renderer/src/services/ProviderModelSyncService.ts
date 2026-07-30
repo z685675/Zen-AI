@@ -4,6 +4,7 @@ import store from '@renderer/store'
 import { updateProviders } from '@renderer/store/llm'
 import type { Model, Provider } from '@renderer/types'
 import { isSystemProvider } from '@renderer/types'
+import { isZenManagedApiHost } from '@renderer/utils/zenClientHeaders'
 
 import {
   getProviderModelSyncFingerprint,
@@ -14,8 +15,8 @@ import {
 const logger = loggerService.withContext('ProviderModelSyncService')
 
 const STARTUP_SYNC_DELAY_MS = 60 * 1000
-const PROVIDER_MODEL_SYNC_INTERVAL_MS = 24 * 60 * 60 * 1000
-const PROVIDER_MODEL_SYNC_RETRY_INTERVAL_MS = 6 * 60 * 60 * 1000
+const PROVIDER_MODEL_SYNC_INTERVAL_MS = 6 * 60 * 60 * 1000
+const PROVIDER_MODEL_SYNC_RETRY_INTERVAL_MS = 3 * 60 * 60 * 1000
 const PROVIDER_SYNC_GAP_MS = 1500
 
 let schedulerStarted = false
@@ -25,7 +26,12 @@ let startupTimer: ReturnType<typeof setTimeout> | undefined
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
-const shouldSyncProvider = (provider: Provider): boolean => {
+type SyncProviderModelsOptions = {
+  force?: boolean
+  officialOnly?: boolean
+}
+
+const isProviderSyncEligible = (provider: Provider): boolean => {
   if (!provider.enabled || isSystemProvider(provider)) {
     return false
   }
@@ -38,6 +44,39 @@ const shouldSyncProvider = (provider: Provider): boolean => {
     return false
   }
 
+  return true
+}
+
+const isOfficialZenProvider = (provider: Provider): boolean => {
+  return isZenManagedApiHost(provider.apiHost) || isZenManagedApiHost(provider.anthropicApiHost)
+}
+
+const isProviderInFailureCooldown = (provider: Provider): boolean => {
+  const now = Date.now()
+  const lastAttemptAt = provider.modelSync?.lastAttemptAt ?? 0
+  const lastSuccessAt = provider.modelSync?.lastSuccessAt ?? provider.modelSync?.syncedAt ?? 0
+  const lastFailureAt = provider.modelSync?.lastFailureAt ?? 0
+
+  return lastFailureAt > lastSuccessAt && now - lastAttemptAt < PROVIDER_MODEL_SYNC_RETRY_INTERVAL_MS
+}
+
+const shouldSyncProvider = (provider: Provider, options?: SyncProviderModelsOptions): boolean => {
+  if (!isProviderSyncEligible(provider)) {
+    return false
+  }
+
+  if (options?.officialOnly && !isOfficialZenProvider(provider)) {
+    return false
+  }
+
+  if (isProviderInFailureCooldown(provider)) {
+    return false
+  }
+
+  if (options?.force) {
+    return true
+  }
+
   const now = Date.now()
   const sourceFingerprint = getProviderModelSyncFingerprint(provider)
   const previousSourceFingerprint = provider.modelSync?.sourceFingerprint
@@ -46,14 +85,7 @@ const shouldSyncProvider = (provider: Provider): boolean => {
     return true
   }
 
-  const lastAttemptAt = provider.modelSync?.lastAttemptAt ?? 0
   const lastSuccessAt = provider.modelSync?.lastSuccessAt ?? provider.modelSync?.syncedAt ?? 0
-  const lastFailureAt = provider.modelSync?.lastFailureAt ?? 0
-
-  if (lastFailureAt > lastSuccessAt && now - lastAttemptAt < PROVIDER_MODEL_SYNC_RETRY_INTERVAL_MS) {
-    return false
-  }
-
   return now - lastSuccessAt >= PROVIDER_MODEL_SYNC_INTERVAL_MS
 }
 
@@ -65,7 +97,7 @@ const getProtectedModelIds = (providerId: string): string[] => {
     .filter((id): id is string => Boolean(id))
 }
 
-export const syncProviderModelsOnce = async (): Promise<void> => {
+export const syncProviderModelsOnce = async (options?: SyncProviderModelsOptions): Promise<void> => {
   if (syncRunning) {
     return
   }
@@ -74,7 +106,7 @@ export const syncProviderModelsOnce = async (): Promise<void> => {
 
   try {
     const state = store.getState()
-    const providersToSync = state.llm.providers.filter(shouldSyncProvider)
+    const providersToSync = state.llm.providers.filter((provider) => shouldSyncProvider(provider, options))
 
     if (providersToSync.length === 0) {
       return
@@ -169,7 +201,7 @@ export const startProviderModelSyncScheduler = (): void => {
   schedulerStarted = true
 
   startupTimer = setTimeout(() => {
-    void syncProviderModelsOnce()
+    void syncProviderModelsOnce({ force: true, officialOnly: true })
   }, STARTUP_SYNC_DELAY_MS)
 
   syncTimer = setInterval(() => {

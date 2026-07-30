@@ -10,7 +10,7 @@ import { isEqual } from 'lodash'
 import path from 'path'
 import type { LanguageCode } from 'tesseract.js'
 import type Tesseract from 'tesseract.js'
-import { createWorker } from 'tesseract.js'
+import { createWorker, PSM } from 'tesseract.js'
 
 import { OcrBaseService } from './OcrBaseService'
 
@@ -18,18 +18,18 @@ const logger = loggerService.withContext('TesseractService')
 
 // config
 const MB_SIZE_THRESHOLD = 50
-const defaultLangs = ['chi_sim', 'chi_tra', 'eng'] satisfies LanguageCode[]
+const defaultLangs = ['chi_sim', 'eng'] satisfies LanguageCode[]
 enum TesseractLangsDownloadUrl {
   CN = 'https://gitcode.com/beyondkmp/tessdata-best/releases/download/1.0.0/'
 }
 
 export class TesseractService extends OcrBaseService {
   private worker: Tesseract.Worker | null = null
-  private previousLangs: OcrTesseractConfig['langs']
+  private previousLangs: LanguageCode[]
 
   constructor() {
     super()
-    this.previousLangs = {}
+    this.previousLangs = []
   }
 
   async getWorker(options?: OcrTesseractConfig): Promise<Tesseract.Worker> {
@@ -66,6 +66,7 @@ export class TesseractService extends OcrBaseService {
           .catch(reject)
       })
       this.worker = await promise
+      this.previousLangs = [...langsArray]
     }
     return this.worker
   }
@@ -76,9 +77,27 @@ export class TesseractService extends OcrBaseService {
     if (stat.size > MB_SIZE_THRESHOLD * MB) {
       throw new Error(`This image is too large (max ${MB_SIZE_THRESHOLD}MB)`)
     }
-    const buffer = await loadOcrImage(file)
-    const result = await worker.recognize(buffer)
-    return { text: result.data.text }
+    const buffer = await loadOcrImage(file, options?.preprocess)
+    await worker.setParameters({
+      tessedit_pageseg_mode: options?.pageSegMode ?? PSM.AUTO,
+      preserve_interword_spaces: '1',
+      user_defined_dpi: '300'
+    })
+    const result = await worker.recognize(buffer, { rotateAuto: true }, { blocks: true, text: true })
+    let paragraph = 0
+    const lines =
+      result.data.blocks?.flatMap((block) =>
+        block.paragraphs.flatMap((entry) => {
+          const paragraphIndex = paragraph++
+          return entry.lines.map((line) => ({
+            text: line.text.trimEnd(),
+            confidence: line.confidence,
+            bbox: line.bbox,
+            paragraph: paragraphIndex
+          }))
+        })
+      ) ?? undefined
+    return { text: result.data.text, confidence: result.data.confidence, lines }
   }
 
   public ocr = async (file: SupportedOcrFile, options?: OcrTesseractConfig): Promise<OcrResult> => {
@@ -111,6 +130,7 @@ export class TesseractService extends OcrBaseService {
     if (this.worker) {
       await this.worker.terminate()
       this.worker = null
+      this.previousLangs = []
     }
   }
 }

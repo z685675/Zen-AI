@@ -1,11 +1,14 @@
 import { loggerService } from '@logger'
 import { useAgent } from '@renderer/hooks/agents/useAgent'
+import { useAgentClient } from '@renderer/hooks/agents/useAgentClient'
 import { useSessions } from '@renderer/hooks/agents/useSessions'
+import { useUpdateSession } from '@renderer/hooks/agents/useUpdateSession'
 import { DbService } from '@renderer/services/db/DbService'
 import { useAppDispatch } from '@renderer/store'
 import { setActiveSessionIdAction } from '@renderer/store/runtime'
 import type { CreateSessionForm } from '@renderer/types'
 import { buildAgentSessionTopicId } from '@renderer/utils/agentSession'
+import { isUnnamedAgentSessionName } from '@renderer/utils/agentSessionTitle'
 import { canCreateAgentSession } from '@shared/config/agents'
 import { useCallback, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -18,34 +21,53 @@ const dbService = DbService.getInstance()
  */
 export const useCreateDefaultSession = (agentId: string | null) => {
   const { agent } = useAgent(agentId)
+  const client = useAgentClient()
   const { sessions, createSession } = useSessions(agentId)
+  const { updateSession } = useUpdateSession(agentId)
   const dispatch = useAppDispatch()
   const { t } = useTranslation()
   const [creatingSession, setCreatingSession] = useState(false)
   const canCreateSession = canCreateAgentSession(agentId)
 
-  const resolveExistingEmptySession = useCallback(async () => {
-    if (!agentId || sessions.length === 0) {
-      return null
-    }
-
-    const unnamedSessionName = t('common.unnamed')
-    const unnamedCandidates = sessions.filter((session) => session.name === unnamedSessionName)
-
-    for (const candidate of unnamedCandidates) {
-      const topicId = buildAgentSessionTopicId(candidate.id)
-      const { messages } = await dbService.fetchMessages(topicId, true)
-      const hasMessages = messages.length > 0
-      if (hasMessages) {
-        continue
+  const resolveExistingEmptySession = useCallback(
+    async (defaultModel: string) => {
+      if (!agentId || sessions.length === 0) {
+        return null
       }
 
-      dispatch(setActiveSessionIdAction({ agentId, sessionId: candidate.id }))
-      return candidate
-    }
+      const unnamedSessionName = t('common.unnamed')
+      const unnamedCandidates = sessions.filter((session) =>
+        isUnnamedAgentSessionName(session.name, unnamedSessionName)
+      )
 
-    return null
-  }, [agentId, dispatch, sessions, t])
+      for (const emptyCandidate of unnamedCandidates) {
+        let candidate = emptyCandidate
+        const topicId = buildAgentSessionTopicId(candidate.id)
+        const { messages } = await dbService.fetchMessages(topicId, true)
+        const hasMessages = messages.length > 0
+        if (hasMessages) {
+          continue
+        }
+
+        if (candidate.model !== defaultModel) {
+          const alignedSession = await updateSession(
+            { id: candidate.id, model: defaultModel },
+            { showSuccessToast: false }
+          )
+          if (!alignedSession) {
+            continue
+          }
+          candidate = alignedSession
+        }
+
+        dispatch(setActiveSessionIdAction({ agentId, sessionId: candidate.id }))
+        return candidate
+      }
+
+      return null
+    },
+    [agentId, dispatch, sessions, t, updateSession]
+  )
 
   const createDefaultSession = useCallback(async () => {
     if (!agentId || !agent || creatingSession || !canCreateSession) {
@@ -54,13 +76,20 @@ export const useCreateDefaultSession = (agentId: string | null) => {
 
     setCreatingSession(true)
     try {
-      const existingEmptySession = await resolveExistingEmptySession()
+      let sessionDefaults = agent
+      try {
+        sessionDefaults = await client.getAgent(agentId)
+      } catch (error) {
+        logger.warn('Failed to refresh agent defaults before creating a session; using cached defaults', error as Error)
+      }
+
+      const existingEmptySession = await resolveExistingEmptySession(sessionDefaults.model)
       if (existingEmptySession) {
         return existingEmptySession
       }
 
       const session = {
-        ...agent,
+        ...sessionDefaults,
         id: undefined,
         name: t('common.unnamed')
       } satisfies CreateSessionForm
@@ -78,7 +107,17 @@ export const useCreateDefaultSession = (agentId: string | null) => {
     } finally {
       setCreatingSession(false)
     }
-  }, [agentId, agent, canCreateSession, createSession, creatingSession, dispatch, resolveExistingEmptySession, t])
+  }, [
+    agentId,
+    agent,
+    canCreateSession,
+    client,
+    createSession,
+    creatingSession,
+    dispatch,
+    resolveExistingEmptySession,
+    t
+  ])
 
   return {
     createDefaultSession,

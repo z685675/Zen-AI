@@ -56,6 +56,7 @@ export const createBaseCallbacks = (deps: BaseCallbacksDependencies) => {
 
   const startTime = Date.now()
   const notificationService = NotificationService.getInstance()
+  let terminalStatus: AssistantMessageStatus | null = null
 
   // 通用的 block 查找函数
   const findBlockIdForCompletion = (message?: any) => {
@@ -132,11 +133,21 @@ export const createBaseCallbacks = (deps: BaseCallbacksDependencies) => {
     },
 
     onError: async (error: AISDKError) => {
+      if (terminalStatus !== null) {
+        logger.debug('Ignoring duplicate stream error after terminal state', {
+          assistantMsgId,
+          terminalStatus,
+          error: error?.message
+        })
+        return
+      }
+
       logger.debug('onError', error)
       if (NoOutputGeneratedError.isInstance(error)) {
         return
       }
       const isErrorTypeAbort = isAbortError(error)
+      terminalStatus = isErrorTypeAbort ? AssistantMessageStatus.SUCCESS : AssistantMessageStatus.ERROR
       const isErrorTypeTimeout = isTimeoutError(error)
       const serializableError = serializeError(error)
       if (isErrorTypeAbort) {
@@ -285,6 +296,16 @@ export const createBaseCallbacks = (deps: BaseCallbacksDependencies) => {
     },
 
     onComplete: async (status: AssistantMessageStatus, response?: Response) => {
+      if (terminalStatus !== null) {
+        logger.debug('Ignoring duplicate stream completion after terminal state', {
+          assistantMsgId,
+          terminalStatus,
+          incomingStatus: status
+        })
+        return
+      }
+      terminalStatus = status
+
       const finalStateOnComplete = getState()
       const finalAssistantMsg = finalStateOnComplete.messages.entities[assistantMsgId]
 

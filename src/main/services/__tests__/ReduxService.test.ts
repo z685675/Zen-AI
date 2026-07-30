@@ -58,4 +58,8 @@ describe('ReduxService provider cache invalidation', () => {
 
     expect(mockCacheRemove).not.toHaveBeenCalled()
   })
+
+  it('exposes renderer store readiness to startup services', async () => {
+    await expect(reduxService.waitUntilReady()).resolves.toBeUndefined()
+  })
 })

@@ -1,5 +1,5 @@
 import { createSelector } from '@reduxjs/toolkit'
-import { isNotSupportTextDeltaModel } from '@renderer/config/models'
+import { getEffectiveModelEndpointType, isNotSupportTextDeltaModel } from '@renderer/config/models'
 import { CHERRYAI_PROVIDER } from '@renderer/config/providers'
 import { getDefaultProvider } from '@renderer/services/AssistantService'
 import { type RootState, useAppDispatch, useAppSelector } from '@renderer/store'
@@ -15,7 +15,6 @@ import {
 import type { Assistant, Model, Provider } from '@renderer/types'
 import { isSystemProvider } from '@renderer/types'
 import { withoutTrailingSlash } from '@renderer/utils/api'
-import { isNewApiProvider } from '@renderer/utils/provider'
 import { useCallback, useMemo } from 'react'
 
 import { useDefaultModel } from './useAssistant'
@@ -95,16 +94,10 @@ export function useProvider(id?: string) {
         return
       }
 
-      let processedModel = { ...model, supported_text_delta: !isNotSupportTextDeltaModel(model) }
-
-      if (isNewApiProvider(provider)) {
-        const endpointTypes = model.supported_endpoint_types
-        if (endpointTypes && endpointTypes.length > 0) {
-          processedModel = {
-            ...processedModel,
-            endpoint_type: endpointTypes.includes('image-generation') ? 'image-generation' : endpointTypes[0]
-          }
-        }
+      const processedModel = {
+        ...model,
+        endpoint_type: getEffectiveModelEndpointType(model, provider),
+        supported_text_delta: !isNotSupportTextDeltaModel(model)
       }
 
       dispatch(addModel({ providerId: provider.id, model: processedModel }))

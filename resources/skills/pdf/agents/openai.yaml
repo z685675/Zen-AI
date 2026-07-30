@@ -1,0 +1,7 @@
+interface:
+  display_name: "PDF Assistant"
+  short_description: "Extract, summarize, validate, and create PDFs"
+  brand_color: "#DC2626"
+  default_prompt: "Use $pdf to extract and summarize this PDF with source-aware notes."
+policy:
+  allow_implicit_invocation: true

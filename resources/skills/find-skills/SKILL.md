@@ -1,174 +1,85 @@
 ---
 name: find-skills
-description: Helps users discover and install agent skills when they ask questions like "how do I do X", "find a skill for X", "is there a skill that can...", or express interest in extending capabilities. This skill should be used when the user is looking for functionality that might exist as an installable skill.
+description: Helps users discover built-in or installable agent skills when they ask what skill can do a task, ask "how do I do X", "find a skill for X", "is there a skill for X", "有什么 skill", "有什么技能", or express interest in extending capabilities. Use this skill before answering skill-discovery questions.
 ---
 
 # Find Skills
 
-This skill helps you discover and install skills from the open agent skills ecosystem.
+Help users discover whether an existing Skill can solve their task, starting with built-in Skills before searching external marketplaces.
 
-## When to Use This Skill
+## Operating Rules
 
-Use this skill when the user:
+- First check the currently available or built-in Skills.
+- Read `references/builtin-catalog.md` when the user asks what Skills exist or asks for common document, PPT, spreadsheet, research, content, meeting, PDF, or Skill creation capabilities.
+- Use `scripts/audit_builtin_skills.py` when validating the built-in Skill bundle during development or release checks.
+- Use `assets/acceptance-prompts.json` as the standard prompt set when manually testing built-in Skill routing and artifact quality.
+- Recommend a built-in Skill when it covers the need. Explain the practical workflow, not just the Skill name.
+- Search external Skills only when the built-in set does not cover the need or the user explicitly asks for marketplace/community Skills.
+- If the user asks whether Skills are "just prompts", explain that a Skill can include `SKILL.md`, `scripts/`, `references/`, and `assets/`.
 
-- Asks "how do I do X" where X might be a common task with an existing skill
-- Says "find a skill for X" or "is there a skill for X"
-- Asks "can you do X" where X is a specialized capability
-- Expresses interest in extending agent capabilities
-- Wants to search for tools, templates, or workflows
-- Mentions they wish they had help with a specific domain (design, testing, deployment, etc.)
+## Built-In First Workflow
 
-## What is the Skills CLI?
+1. Identify the user's task domain and desired artifact.
+2. Match it against the built-in catalog.
+3. If there is a good match, name the Skill and describe how it helps.
+4. If there is no good match, search external Skills.
+5. If external install is needed, show source and security warning before installing.
 
-The Skills CLI (`npx skills`) is the package manager for the open agent skills ecosystem. Skills are modular packages that extend agent capabilities with specialized knowledge, workflows, and tools.
+## Built-In Audit
 
-**Key commands:**
+During development or release checks, run:
 
-- `npx skills find [query]` - Search for skills interactively or by keyword
-- `npx skills add <package>` - Install a skill from GitHub or other sources
-- `npx skills check` - Check for skill updates
-- `npx skills update` - Update all installed skills
+Call `mcp__assistant__python_execute` with the installed `scripts/audit_builtin_skills.py` as `script_path` and the built-in Skill root as its only argument.
 
-**Browse skills at:** https://skills.sh/
+Fix missing frontmatter, broken resource links, Python syntax errors, and bundled cache files before shipping.
 
-## Runtime Detection
+For manual acceptance testing, run the prompts in `assets/acceptance-prompts.json` and check that the expected Skill workflow is used before final output.
 
-Before running any `npx skills` command, check if `npx` is available:
+## External Search
 
-```bash
-which npx
-```
-
-If `npx` is **not found**, fall back to the bundled bun shipped with Zen AI.
-Zen AI sets the `CHERRY_STUDIO_BUN_PATH` environment variable pointing to its
-bundled bun binary. Use it as follows:
+Use the Skills CLI when marketplace discovery is needed:
 
 ```bash
-if [ -n "$CHERRY_STUDIO_BUN_PATH" ] && [ -x "$CHERRY_STUDIO_BUN_PATH" ]; then
-  "$CHERRY_STUDIO_BUN_PATH" x skills <subcommand> [args]
-else
-  echo "Error: Neither npx nor bundled bun found. Install Node.js or run Zen AI's bun installer."
-fi
+npx skills find <query>
 ```
 
-For example, `npx skills find react` becomes `"$CHERRY_STUDIO_BUN_PATH" x skills find react`.
-
-Always try `npx` first. Only use the bun fallback when npx is unavailable.
-
-## How to Help Users Find Skills
-
-### Step 1: Understand What They Need
-
-When a user asks for help with something, identify:
-
-1. The domain (e.g., React, testing, design, deployment)
-2. The specific task (e.g., writing tests, creating animations, reviewing PRs)
-3. Whether this is a common enough task that a skill likely exists
-
-### Step 2: Search for Skills
-
-Run the find command with a relevant query:
+If `npx` is unavailable, use the bundled bun exposed by Zen AI:
 
 ```bash
-npx skills find [query]
+"$CHERRY_STUDIO_BUN_PATH" x skills find <query>
 ```
 
-For example:
+Try specific queries such as:
 
-- User asks "how do I make my React app faster?" 鈫?`npx skills find react performance`
-- User asks "can you help me with PR reviews?" 鈫?`npx skills find pr review`
-- User asks "I need to create a changelog" 鈫?`npx skills find changelog`
+- `pptx presentation design`
+- `react testing`
+- `pdf extraction`
+- `research report`
+- `browser automation`
 
-The command will return results like:
+## Install Safety
 
-```
-Install with npx skills add <owner/repo@skill>
+Skills from external sources may include scripts and run with agent file access. Before installing:
 
-vercel-labs/agent-skills@vercel-react-best-practices
-鈹?https://skills.sh/vercel-labs/agent-skills/vercel-react-best-practices
-```
-
-### Step 3: Present Options to the User
-
-When you find relevant skills, present them to the user with:
-
-1. The skill name and what it does
-2. The source repository link so the user can review the code
-3. The install command they can run
-
-Example response:
-
-```
-I found a skill that might help! The "vercel-react-best-practices" skill provides
-React and Next.js performance optimization guidelines from Vercel Engineering.
-
-Source: https://skills.sh/vercel-labs/agent-skills/vercel-react-best-practices
-
-To install it (after you've reviewed the source):
-npx skills add vercel-labs/agent-skills@vercel-react-best-practices
-```
-
-### Step 4: Install (Requires User Confirmation)
-
-**鈿狅笍 Security:** Skills are third-party code that runs with full agent
-permissions. A malicious skill could read, modify, or delete files in your
-project.
-
-Before installing any skill you **MUST**:
-
-1. **Show a security warning** 鈥?tell the user that the skill is third-party
-   code and will have access to their project files.
-2. **Provide the source link** so the user can review the skill's SKILL.md and
-   any scripts it contains.
-3. **Ask the user for explicit confirmation** 鈥?do NOT run `npx skills add`
-   until the user says "yes" or equivalent. Never install silently.
-
-Only after the user confirms, run:
+- Show the source link.
+- Explain that third-party Skills can read or modify project files.
+- Ask for explicit user confirmation.
+- Only after confirmation run:
 
 ```bash
 npx skills add <owner/repo@skill> -y
 ```
 
-The `-y` flag is required for non-interactive execution, but the user
-confirmation step above ensures the user has reviewed and approved the install.
+## Response Pattern
 
-Skills are installed to the current project's `.claude/skills/` directory.
+When a built-in Skill fits:
 
-## Common Skill Categories
-
-When searching, consider these common categories:
-
-| Category        | Example Queries                          |
-| --------------- | ---------------------------------------- |
-| Web Development | react, nextjs, typescript, css, tailwind |
-| Testing         | testing, jest, playwright, e2e           |
-| DevOps          | deploy, docker, kubernetes, ci-cd        |
-| Documentation   | docs, readme, changelog, api-docs        |
-| Code Quality    | review, lint, refactor, best-practices   |
-| Design          | ui, ux, design-system, accessibility     |
-| Productivity    | workflow, automation, git                |
-
-## Tips for Effective Searches
-
-1. **Use specific keywords**: "react testing" is better than just "testing"
-2. **Try alternative terms**: If "deploy" doesn't work, try "deployment" or "ci-cd"
-3. **Check popular sources**: Many skills come from `vercel-labs/agent-skills` or `ComposioHQ/awesome-claude-skills`
-
-## When No Skills Are Found
-
-If no relevant skills exist:
-
-1. Acknowledge that no existing skill was found
-2. Offer to help with the task directly using your general capabilities
-3. Suggest the user could create their own skill with `npx skills init`
-
-Example:
-
-```
-I searched for skills related to "xyz" but didn't find any matches.
-I can still help you with this task directly! Would you like me to proceed?
-
-If this is something you do often, you could create your own skill:
-npx skills init my-xyz-skill
+```text
+有，优先用内置的 `pptx` Skill。它不只是提示词，还会按 deck spec 规划页面，并可用脚本校验标题、布局、takeaway、视觉建议和内容密度，然后再生成真实 PPTX。
 ```
 
+When no Skill fits:
+
+```text
+目前内置 Skill 没覆盖这个细分场景。我可以直接处理，也可以帮你搜索外部 Skill；外部 Skill 安装前需要先看来源和确认权限风险。
+```

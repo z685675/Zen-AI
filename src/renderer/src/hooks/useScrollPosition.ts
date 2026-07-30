@@ -10,7 +10,7 @@ import { useTimer } from './useTimer'
  *  - containerRef: React ref for the scrollable container
  *  - handleScroll: Throttled scroll event handler that saves scroll position
  */
-export default function useScrollPosition(key: string, throttleWait?: number) {
+export default function useScrollPosition(key: string, throttleWait?: number, restorePosition = true) {
   const containerRef = useRef<HTMLDivElement>(null)
   const scrollKey = useMemo(() => `scroll:${key}`, [key])
   const scrollKeyRef = useRef(scrollKey)
@@ -28,10 +28,12 @@ export default function useScrollPosition(key: string, throttleWait?: number) {
   }, throttleWait ?? 100)
 
   useEffect(() => {
+    if (!restorePosition) return
+
     const scroll = () => containerRef.current?.scrollTo({ top: window.keyv.get(scrollKey) || 0 })
     scroll()
     setTimeoutTimer('scrollEffect', scroll, 50)
-  }, [scrollKey, setTimeoutTimer])
+  }, [restorePosition, scrollKey, setTimeoutTimer])
 
   useEffect(() => {
     return () => handleScroll.cancel()

@@ -15,7 +15,16 @@ export const OpenAIModelsResponseSchema = z.object({
       id: z.string(),
       object: z.string().optional().default('model'),
       created: z.number().optional(),
-      owned_by: z.string().optional()
+      owned_by: z.string().optional(),
+      context_length: z.number().optional(),
+      max_output_tokens: z.number().optional(),
+      inputTokenLimit: z.number().optional(),
+      outputTokenLimit: z.number().optional(),
+      supported_endpoint_types: z
+        .array(z.string())
+        .nullable()
+        .optional()
+        .transform((v) => v ?? undefined)
     })
   ),
   object: z.string().optional()
@@ -103,6 +112,10 @@ export const NewApiModelsResponseSchema = z.object({
       object: z.string().optional().default('model'),
       created: z.number().optional(),
       owned_by: z.string().optional(),
+      context_length: z.number().optional(),
+      max_output_tokens: z.number().optional(),
+      inputTokenLimit: z.number().optional(),
+      outputTokenLimit: z.number().optional(),
       supported_endpoint_types: z
         .array(z.string())
         .nullable()

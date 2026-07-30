@@ -25,9 +25,24 @@ import { seedWorkspaceTemplates } from './cherryclaw/seedWorkspace'
 
 const logger = loggerService.withContext('AgentService')
 
+type PreferredBuiltinRuntimeModel = {
+  modelId: string
+}
+
 export class AgentService extends BaseService {
   static readonly DEFAULT_AGENT_ID = DEFAULT_CHERRY_CLAW_AGENT_ID
-  static readonly PREFERRED_BUILTIN_MODEL_IDS = ['gpt-5.4-mini', 'gpt-5-mini', 'gpt-5.4', 'gpt-5'] as const
+  static readonly DEFAULT_BUILTIN_MODEL_ID = 'gpt-5.6-luna'
+  static readonly PREFERRED_BUILTIN_MODEL_IDS = [
+    AgentService.DEFAULT_BUILTIN_MODEL_ID,
+    'gpt-5.4-mini',
+    'gpt-5-mini',
+    'gpt-5.4',
+    'gpt-5'
+  ] as const
+  private static readonly BUILTIN_MODEL_POLICY_KEY = 'builtin_default_model_policy'
+  private static readonly BUILTIN_NEW_SESSION_MODEL_POLICY_KEY = 'builtin_new_session_model_policy'
+  private static readonly NON_TEXT_MODEL_ID_PATTERN =
+    /\b(embedding|rerank|image-generation|image|dall-e|tts|whisper|audio|speech|moderation)\b/i
 
   private static instance: AgentService | null = null
   private readonly modelFields: AgentModelField[] = ['model', 'plan_model', 'small_model']
@@ -108,7 +123,8 @@ export class AgentService extends BaseService {
       return null
     }
 
-    const agent = this.deserializeJsonFields(result[0]) as GetAgentResponse
+    let agent = this.deserializeJsonFields(result[0]) as GetAgentResponse
+    agent = await this.repairAgentAccessiblePaths(database, agent)
     const { tools, legacyIdMap } = await this.listMcpTools(agent.type, agent.mcps)
     agent.tools = tools
     agent.allowed_tools = this.normalizeAllowedTools(agent.allowed_tools, agent.tools, legacyIdMap)
@@ -140,7 +156,12 @@ export class AgentService extends BaseService {
           : await baseQuery.limit(options.limit)
         : await baseQuery
 
-    const agents = result.map((row) => this.deserializeJsonFields(row)) as GetAgentResponse[]
+    const agents = await Promise.all(
+      result.map(async (row) => {
+        const agent = this.deserializeJsonFields(row) as GetAgentResponse
+        return this.repairAgentAccessiblePaths(database, agent)
+      })
+    )
 
     await Promise.all(
       agents.map(async (agent) => {
@@ -155,6 +176,34 @@ export class AgentService extends BaseService {
 
   private extractProviderModelId(modelId: string): string {
     return modelId.includes(':') ? modelId.split(':').slice(1).join(':') : modelId
+  }
+
+  private normalizeProviderModelId(modelId: string): string {
+    const providerModelId = this.extractProviderModelId(modelId).toLowerCase()
+    return providerModelId.includes('/') ? providerModelId.split('/').pop() || providerModelId : providerModelId
+  }
+
+  private async repairAgentAccessiblePaths(
+    database: Awaited<ReturnType<AgentService['getDatabase']>>,
+    agent: GetAgentResponse
+  ): Promise<GetAgentResponse> {
+    const reconciled = this.reconcileAccessiblePaths(agent.accessible_paths, agent.id)
+    if (!reconciled.changed) {
+      return agent
+    }
+
+    await database
+      .update(agentsTable)
+      .set({
+        accessible_paths: this.serializeJsonFields({ accessible_paths: reconciled.paths }).accessible_paths,
+        updated_at: new Date().toISOString()
+      })
+      .where(eq(agentsTable.id, agent.id))
+
+    return {
+      ...agent,
+      accessible_paths: reconciled.paths
+    }
   }
 
   private getDeprecatedAgentDisplayName(name: string | undefined): string | null {
@@ -177,7 +226,7 @@ export class AgentService extends BaseService {
 
     const normalizedModels = models.map((model) => ({
       id: model.id,
-      providerModelId: (model.provider_model_id ?? this.extractProviderModelId(model.id)).toLowerCase()
+      providerModelId: this.normalizeProviderModelId(model.provider_model_id ?? model.id)
     }))
 
     for (const preferredModelId of AgentService.PREFERRED_BUILTIN_MODEL_IDS) {
@@ -187,20 +236,29 @@ export class AgentService extends BaseService {
       }
     }
 
-    return models[0]?.id ?? null
+    const gptMatch = normalizedModels.find((model) => model.providerModelId.includes('gpt'))
+    return gptMatch?.id ?? models[0]?.id ?? null
   }
 
   async getPreferredBuiltinModelId(): Promise<string | null> {
-    const modelsRes = await modelsService.getModels({ providerType: 'anthropic' })
-    const modelId = this.findPreferredBuiltinModelId(modelsRes.data ?? [])
+    const modelsRes = await modelsService.getModels({})
+    const availableTextModels = (modelsRes.data ?? []).filter(
+      (model) => !AgentService.NON_TEXT_MODEL_ID_PATTERN.test(model.provider_model_id ?? model.id)
+    )
+    const modelId = this.findPreferredBuiltinModelId(availableTextModels)
 
     if (modelId) {
       logger.info('Resolved preferred built-in agent model', { modelId })
     } else {
-      logger.info('No compatible built-in agent model available')
+      logger.info('No available text model found for built-in agent')
     }
 
     return modelId
+  }
+
+  async getPreferredBuiltinRuntimeModel(): Promise<PreferredBuiltinRuntimeModel | null> {
+    const modelId = await this.getPreferredBuiltinModelId()
+    return modelId ? { modelId } : null
   }
 
   async listCompatibleAgents(): Promise<GetAgentResponse[]> {
@@ -322,21 +380,50 @@ export class AgentService extends BaseService {
         .limit(1)
 
       if (existing.length > 0) {
-        // Keep built-in agents editable. Startup should provision bundled workspaces and fill
-        // missing defaults, but it must not reset user-edited name/prompt/model/settings.
+        // Keep user-editable defaults intact. The official fusion prompt is
+        // product-managed and refreshed so routing and safety rules stay current.
         const resolvedPaths = this.resolveAccessiblePaths([], id)
         const workspace = resolvedPaths[0]
         const agentConfig = workspace ? await provisionWorkspace(workspace, builtinRole) : undefined
         const existingAgent = await this.getAgent(id)
+        let currentConfiguration = (existingAgent?.configuration ?? {}) as Record<string, unknown>
 
         if (workspace && agentConfig?.configuration?.soul_enabled === true) {
           await seedWorkspaceTemplates(workspace)
         }
 
         const updateData: Partial<InsertAgentRow> = {}
+        let defaultModelPolicyUpdated = false
 
-        if (agentConfig && (agentConfig.name || agentConfig.description || agentConfig.instructions || agentConfig.configuration)) {
-          const currentConfiguration = (existingAgent?.configuration ?? {}) as Record<string, unknown>
+        if (
+          builtinRole === 'fusion' &&
+          currentConfiguration[AgentService.BUILTIN_NEW_SESSION_MODEL_POLICY_KEY] !==
+            AgentService.DEFAULT_BUILTIN_MODEL_ID
+        ) {
+          const preferredModel = await this.getPreferredBuiltinRuntimeModel()
+          if (
+            preferredModel &&
+            this.normalizeProviderModelId(preferredModel.modelId) === AgentService.DEFAULT_BUILTIN_MODEL_ID
+          ) {
+            updateData.model = preferredModel.modelId
+            currentConfiguration = {
+              ...currentConfiguration,
+              [AgentService.BUILTIN_MODEL_POLICY_KEY]: AgentService.DEFAULT_BUILTIN_MODEL_ID,
+              [AgentService.BUILTIN_NEW_SESSION_MODEL_POLICY_KEY]: AgentService.DEFAULT_BUILTIN_MODEL_ID
+            }
+            defaultModelPolicyUpdated = true
+            logger.info('Migrating built-in assistant to the current new-session model policy', {
+              agentId: id,
+              modelId: preferredModel.modelId,
+              policy: AgentService.DEFAULT_BUILTIN_MODEL_ID
+            })
+          }
+        }
+
+        if (
+          agentConfig &&
+          (agentConfig.name || agentConfig.description || agentConfig.instructions || agentConfig.configuration)
+        ) {
           const mergedConfiguration = agentConfig.configuration
             ? {
                 ...agentConfig.configuration,
@@ -349,12 +436,18 @@ export class AgentService extends BaseService {
           if (!existingAgent?.description && agentConfig.description) updateData.description = agentConfig.description
           if (!existingAgent?.instructions && agentConfig.instructions) {
             updateData.instructions = agentConfig.instructions
-          } else if (this.shouldRefreshBuiltinInstructions(existingAgent?.instructions, agentConfig.instructions)) {
+          } else if (
+            agentConfig.instructions &&
+            (builtinRole === 'fusion' ||
+              this.shouldRefreshBuiltinInstructions(existingAgent?.instructions, agentConfig.instructions))
+          ) {
             updateData.instructions = agentConfig.instructions
           }
           if (agentConfig.configuration) {
             updateData.configuration = this.serializeJsonFields({ configuration: mergedConfiguration }).configuration
           }
+        } else if (defaultModelPolicyUpdated) {
+          updateData.configuration = this.serializeJsonFields({ configuration: currentConfiguration }).configuration
         }
 
         if (Object.keys(updateData).length > 0) {
@@ -365,9 +458,9 @@ export class AgentService extends BaseService {
         return id
       }
 
-      const preferredModelId = await this.getPreferredBuiltinModelId()
-      if (!preferredModelId) {
-        logger.info(`No Anthropic-compatible models available yet, skipping ${builtinRole} creation`)
+      const preferredModel = await this.getPreferredBuiltinRuntimeModel()
+      if (!preferredModel) {
+        logger.info(`No available text models yet, skipping ${builtinRole} creation`)
         return null
       }
 
@@ -384,7 +477,13 @@ export class AgentService extends BaseService {
         permission_mode: 'default',
         max_turns: 100,
         env_vars: {},
-        ...agentConfig?.configuration
+        ...agentConfig?.configuration,
+        ...(this.normalizeProviderModelId(preferredModel.modelId) === AgentService.DEFAULT_BUILTIN_MODEL_ID
+          ? {
+              [AgentService.BUILTIN_MODEL_POLICY_KEY]: AgentService.DEFAULT_BUILTIN_MODEL_ID,
+              [AgentService.BUILTIN_NEW_SESSION_MODEL_POLICY_KEY]: AgentService.DEFAULT_BUILTIN_MODEL_ID
+            }
+          : {})
       }
 
       const req: CreateAgentRequest = {
@@ -392,7 +491,7 @@ export class AgentService extends BaseService {
         name: agentConfig?.name || builtinRole,
         description: agentConfig?.description || `Built-in ${builtinRole} agent`,
         instructions: agentConfig?.instructions || 'You are a helpful assistant.',
-        model: preferredModelId,
+        model: preferredModel.modelId,
         accessible_paths: resolvedPaths,
         configuration
       }
@@ -447,22 +546,12 @@ export class AgentService extends BaseService {
         .limit(1)
 
       if (existing.length > 0) {
-        const preferredModelId = await this.getPreferredBuiltinModelId()
-        if (preferredModelId) {
-          const existingAgent = await this.getAgent(id)
-          if (existingAgent?.model !== preferredModelId) {
-            await database
-              .update(agentsTable)
-              .set({ model: preferredModelId, updated_at: new Date().toISOString() })
-              .where(eq(agentsTable.id, id))
-          }
-        }
         return id
       }
 
-      const preferredModelId = await this.getPreferredBuiltinModelId()
-      if (!preferredModelId) {
-        logger.info('No Anthropic-compatible models available yet, skipping default Zen Agent creation')
+      const preferredModel = await this.getPreferredBuiltinRuntimeModel()
+      if (!preferredModel) {
+        logger.info('No available text models yet, skipping default Zen Agent creation')
         return null
       }
 
@@ -483,7 +572,7 @@ export class AgentService extends BaseService {
         type: 'claude-code',
         name: 'Zen Agent',
         description: 'Default autonomous Zen AI agent',
-        model: preferredModelId,
+        model: preferredModel.modelId,
         accessible_paths: [],
         configuration
       }

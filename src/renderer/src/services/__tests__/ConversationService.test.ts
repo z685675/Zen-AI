@@ -163,4 +163,35 @@ describe('ConversationService.filterMessagesPipeline', () => {
     expect(filtered[0].role).toBe('user')
     expect(filtered[filtered.length - 1].role).toBe('user')
   })
+
+  it('does not truncate valid history when a legacy one-round context setting is passed', () => {
+    const topicId = 'topic-legacy-context'
+    const assistantId = 'assistant-1'
+    const messages = Array.from({ length: 4 }, (_, index) => {
+      const userId = `legacy-user-${index}`
+      const assistantMessageId = `legacy-assistant-${index}`
+      const userBlock = createMainTextBlock(userId, `Question ${index}`, {
+        status: MessageBlockStatus.SUCCESS
+      })
+      const assistantBlock = createMainTextBlock(assistantMessageId, `Answer ${index}`, {
+        status: MessageBlockStatus.SUCCESS
+      })
+
+      mockStore.dispatch(messageBlocksSlice.actions.upsertOneBlock(userBlock))
+      mockStore.dispatch(messageBlocksSlice.actions.upsertOneBlock(assistantBlock))
+
+      return [
+        createMessage('user', topicId, assistantId, { id: userId, blocks: [userBlock.id] }),
+        createMessage('assistant', topicId, assistantId, {
+          id: assistantMessageId,
+          askId: userId,
+          blocks: [assistantBlock.id]
+        })
+      ]
+    }).flat()
+
+    const filtered = ConversationService.filterMessagesPipeline(messages, 1)
+
+    expect(filtered.map((message) => message.id)).toEqual(messages.slice(0, -1).map((message) => message.id))
+  })
 })

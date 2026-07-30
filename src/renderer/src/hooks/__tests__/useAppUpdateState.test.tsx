@@ -12,7 +12,9 @@ type UpdateAvailablePayload = {
 
 describe('useAppUpdateState', () => {
   let availableListener: ((payload: UpdateAvailablePayload) => void) | undefined
-  let progressListener: ((payload: { percent: number; transferred: number; total: number; bytesPerSecond: number }) => void) | undefined
+  let progressListener:
+    | ((payload: { percent: number; transferred: number; total: number; bytesPerSecond: number }) => void)
+    | undefined
 
   beforeEach(() => {
     availableListener = undefined

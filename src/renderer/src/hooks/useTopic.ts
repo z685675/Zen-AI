@@ -2,6 +2,8 @@ import { loggerService } from '@logger'
 import db from '@renderer/databases'
 import i18n from '@renderer/i18n'
 import { fetchMessagesSummary } from '@renderer/services/ApiService'
+import { clearContextCheckpoint } from '@renderer/services/context/ContextCompactionService'
+import { clearContextTelemetry } from '@renderer/services/context/ContextTelemetryService'
 import { EVENT_NAMES, EventEmitter } from '@renderer/services/EventService'
 import { safeDeleteFiles } from '@renderer/services/MessagesService'
 import store from '@renderer/store'
@@ -39,6 +41,12 @@ export function useActiveTopic(assistantId: string, topic?: Topic) {
   }, [activeTopic])
 
   useEffect(() => {
+    // During a cross-assistant topic switch, the selected topic can arrive one
+    // render before its assistant. Do not let the previous assistant pull it back.
+    if (activeTopic?.assistantId && activeTopic.assistantId !== assistant?.id) {
+      return
+    }
+
     if (assistant?.topics?.length && (!activeTopic || !assistant.topics.find((item) => item.id === activeTopic.id))) {
       const newestTopic = [...assistant.topics].sort((a, b) => {
         const bTime = new Date(b.updatedAt || b.createdAt || 0).getTime()
@@ -55,11 +63,15 @@ export function useActiveTopic(assistantId: string, topic?: Topic) {
       return
     }
 
+    if (activeTopic.assistantId && activeTopic.assistantId !== assistant.id) {
+      return
+    }
+
     const latestTopic = assistant.topics.find((item) => item.id === activeTopic.id)
     if (latestTopic && latestTopic !== activeTopic) {
       setActiveTopic(latestTopic)
     }
-  }, [assistant?.topics, activeTopic])
+  }, [assistant.id, assistant?.topics, activeTopic])
 
   return { activeTopic, setActiveTopic }
 }
@@ -218,10 +230,11 @@ export const TopicManager = {
     let filesToDelete: FileMetadata[] = []
 
     try {
-      await db.transaction('rw', [db.topics, db.message_blocks], async () => {
+      await db.transaction('rw', [db.topics, db.message_blocks, db.context_resources], async () => {
         const topic = await db.topics.get(id)
 
         if (!topic || !topic.messages || topic.messages.length === 0) {
+          await db.context_resources.where('conversationId').equals(id).delete()
           return
         }
 
@@ -242,7 +255,10 @@ export const TopicManager = {
         }
 
         await db.topics.update(id, { messages: [] })
+        await db.context_resources.where('conversationId').equals(id).delete()
       })
+      clearContextCheckpoint(id)
+      clearContextTelemetry(id)
     } catch (dbError) {
       logger.error(`Failed to clear database records for topic ${id}:`, dbError as Error)
       throw dbError

@@ -1,6 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-
 import { DEFAULT_FUSION_AGENT_ID } from '@shared/config/agents'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { channelService } from '../../ChannelService'
 import { ChannelAdapter, type ChannelAdapterConfig } from '../ChannelAdapter'

@@ -13,7 +13,7 @@ import type { IdleTimeoutHandle } from '@renderer/utils/IdleTimeoutController'
  */
 export interface AiSdkMiddlewareConfig {
   streamOutput: boolean
-  onChunk?: (chunk: Chunk) => void
+  onChunk?: (chunk: Chunk) => void | Promise<void>
   assistant?: Assistant
   enableReasoning: boolean
   isPromptToolUse: boolean

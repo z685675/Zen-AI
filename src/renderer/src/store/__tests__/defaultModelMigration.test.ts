@@ -1,3 +1,5 @@
+import { getCurrentDefaultModels } from '@renderer/config/defaultModelPolicy'
+import { getEffectiveModelEndpointType } from '@renderer/config/models'
 import { createMigrate } from 'redux-persist'
 import { describe, expect, it } from 'vitest'
 
@@ -97,6 +99,153 @@ describe('default model migration', () => {
       expect(migrated.llm.defaultModel).toBeUndefined()
       expect(migrated.llm.quickModel).toBeUndefined()
       expect(migrated.llm.translateModel).toBeUndefined()
+    })
+  })
+
+  describe('migration 217: gpt-5.6-luna default model upgrade', () => {
+    const migrate217 = (state: any) => {
+      const enabledModels = state.llm.providers
+        .filter((provider: any) => provider.enabled)
+        .flatMap((provider: any) => provider.models)
+      const currentDefaults = getCurrentDefaultModels(enabledModels)
+
+      if (currentDefaults.defaultModel) {
+        state.llm.defaultModel = currentDefaults.defaultModel
+        state.llm.quickModel = currentDefaults.quickModel
+        state.llm.translateModel = currentDefaults.translateModel
+      }
+
+      return state
+    }
+
+    const migrate = createMigrate({ '217': migrate217 as any })
+
+    it('overrides all three defaults without changing historical conversations', async () => {
+      const historicalTopics = [
+        {
+          id: 'topic-1',
+          assistantId: 'default',
+          name: 'Existing GPT-5.4 conversation',
+          messages: [{ id: 'message-1', modelId: 'gpt-5.4' }]
+        }
+      ]
+      const state = {
+        llm: {
+          defaultModel: { id: 'gpt-5.4', provider: 'new-api', name: 'GPT 5.4', group: 'OpenAI' },
+          quickModel: { id: 'gpt-5.4-mini', provider: 'new-api', name: 'GPT 5.4 mini', group: 'OpenAI' },
+          translateModel: { id: 'gpt-5.4-mini', provider: 'new-api', name: 'GPT 5.4 mini', group: 'OpenAI' },
+          providers: [
+            {
+              id: 'new-api',
+              enabled: true,
+              models: [
+                { id: 'gpt-5.4', provider: 'new-api', name: 'GPT 5.4', group: 'OpenAI' },
+                { id: 'openai/gpt-5.6-luna', provider: 'new-api', name: 'GPT 5.6 Luna', group: 'OpenAI' },
+                { id: 'gpt-5.4-mini', provider: 'new-api', name: 'GPT 5.4 mini', group: 'OpenAI' }
+              ]
+            }
+          ]
+        },
+        assistants: {
+          assistants: [{ id: 'default', topics: historicalTopics }]
+        },
+        _persist: { version: 216, rehydrated: false }
+      }
+
+      const migrated: any = await migrate(state, 217)
+
+      expect(migrated.llm.defaultModel.id).toBe('openai/gpt-5.6-luna')
+      expect(migrated.llm.quickModel).toBe(migrated.llm.defaultModel)
+      expect(migrated.llm.translateModel).toBe(migrated.llm.defaultModel)
+      expect(migrated.assistants.assistants[0].topics).toEqual(historicalTopics)
+    })
+
+    it('preserves existing defaults when luna is unavailable on enabled providers', async () => {
+      const existingDefault = { id: 'gpt-5.4', provider: 'new-api', name: 'GPT 5.4', group: 'OpenAI' }
+      const existingUtility = {
+        id: 'gpt-5.4-mini',
+        provider: 'new-api',
+        name: 'GPT 5.4 mini',
+        group: 'OpenAI'
+      }
+      const state = {
+        llm: {
+          defaultModel: existingDefault,
+          quickModel: existingUtility,
+          translateModel: existingUtility,
+          providers: [
+            {
+              id: 'disabled-provider',
+              enabled: false,
+              models: [
+                {
+                  id: 'gpt-5.6-luna',
+                  provider: 'disabled-provider',
+                  name: 'GPT 5.6 Luna',
+                  group: 'OpenAI'
+                }
+              ]
+            },
+            {
+              id: 'new-api',
+              enabled: true,
+              models: [existingDefault, existingUtility]
+            }
+          ]
+        },
+        _persist: { version: 216, rehydrated: false }
+      }
+
+      const migrated: any = await migrate(state, 217)
+
+      expect(migrated.llm.defaultModel).toEqual(existingDefault)
+      expect(migrated.llm.quickModel).toEqual(existingUtility)
+      expect(migrated.llm.translateModel).toEqual(existingUtility)
+    })
+  })
+
+  describe('migration 218: provider protocol backfill', () => {
+    const migrate218 = (state: any) => {
+      state.llm.providers = state.llm.providers.map((provider: any) => ({
+        ...provider,
+        models: provider.models.map((model: any) => ({
+          ...model,
+          endpoint_type: model.endpoint_type ?? getEffectiveModelEndpointType(model, provider)
+        }))
+      }))
+      return state
+    }
+
+    const migrate = createMigrate({ '218': migrate218 as any })
+
+    it('uses provider protocol for existing models without overriding explicit endpoints', async () => {
+      const state = {
+        llm: {
+          providers: [
+            {
+              id: 'custom-panel',
+              type: 'openai',
+              enabled: true,
+              models: [
+                { id: 'grok-4.5', provider: 'custom-panel', name: 'Grok 4.5', group: 'xAI' },
+                {
+                  id: 'gemini-3-flash-preview',
+                  provider: 'custom-panel',
+                  name: 'Gemini 3 Flash',
+                  group: 'Gemini',
+                  endpoint_type: 'gemini'
+                }
+              ]
+            }
+          ]
+        },
+        _persist: { version: 217, rehydrated: false }
+      }
+
+      const migrated: any = await migrate(state, 218)
+
+      expect(migrated.llm.providers[0].models[0].endpoint_type).toBe('openai')
+      expect(migrated.llm.providers[0].models[1].endpoint_type).toBe('gemini')
     })
   })
 })

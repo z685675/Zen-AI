@@ -33,7 +33,13 @@ describe('sidebar icons migration', () => {
       const migrated: any = await migrate(state, 210)
 
       expect(migrated.settings.sidebarIcons.visible).toEqual(['assistants', 'translate', 'paintings'])
-      expect(migrated.settings.sidebarIcons.disabled).toEqual(['openclaw', 'knowledge', 'store', 'minapp', 'code_tools'])
+      expect(migrated.settings.sidebarIcons.disabled).toEqual([
+        'openclaw',
+        'knowledge',
+        'store',
+        'minapp',
+        'code_tools'
+      ])
     })
   })
 
@@ -75,7 +81,13 @@ describe('sidebar icons migration', () => {
         'files',
         'paintings'
       ])
-      expect(migrated.settings.sidebarIcons.disabled).toEqual(['minapp', 'knowledge', 'openclaw', 'store', 'code_tools'])
+      expect(migrated.settings.sidebarIcons.disabled).toEqual([
+        'minapp',
+        'knowledge',
+        'openclaw',
+        'store',
+        'code_tools'
+      ])
     })
   })
 
@@ -118,7 +130,13 @@ describe('sidebar icons migration', () => {
         'files',
         'paintings'
       ])
-      expect(migrated.settings.sidebarIcons.disabled).toEqual(['openclaw', 'store', 'minapp', 'code_tools', 'knowledge'])
+      expect(migrated.settings.sidebarIcons.disabled).toEqual([
+        'openclaw',
+        'store',
+        'minapp',
+        'code_tools',
+        'knowledge'
+      ])
     })
   })
 })

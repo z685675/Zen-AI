@@ -9,7 +9,7 @@ const thinkingTool = defineTool({
   condition: ({ model }) => {
     return isReasoningModel(model)
   },
-  render: ({ assistant, model, quickPanel, session }) =>
+  render: ({ assistant, model, quickPanel, session, scope }) =>
     model ? (
       <ThinkingButton
         quickPanel={quickPanel}
@@ -17,6 +17,7 @@ const thinkingTool = defineTool({
         assistantId={assistant.id}
         reasoningEffort={session?.reasoningEffort}
         onReasoningEffortChange={session?.onReasoningEffortChange}
+        variant={scope === TopicType.Session ? 'agent' : 'chat'}
       />
     ) : null
 })

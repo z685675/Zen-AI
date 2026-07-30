@@ -16,13 +16,26 @@ export const useUpdateAgent = () => {
     async (form: UpdateAgentForm, options?: UpdateAgentBaseOptions): Promise<AgentEntity | undefined> => {
       try {
         const itemKey = client.agentPaths.withId(form.id)
-        // may change to optimistic update
         const result = await client.updateAgent(form)
-        void mutate<ListAgentsResponse['data']>(
-          listKey,
-          (prev) => prev?.map((a) => (a.id === result.id ? result : a)) ?? []
-        )
-        void mutate(itemKey, result)
+        const cacheUpdates: Promise<unknown>[] = [
+          mutate<ListAgentsResponse['data']>(
+            listKey,
+            (prev) => prev?.map((a) => (a.id === result.id ? result : a)) ?? []
+          ),
+          mutate(itemKey, result, { revalidate: false })
+        ]
+
+        if (form.accessible_paths !== undefined) {
+          const sessionBase = client.getSessionPaths(form.id).base
+          cacheUpdates.push(
+            mutate((key?: unknown) =>
+              typeof key === 'string' ? key.startsWith(`${sessionBase}/`) : Array.isArray(key) && key[0] === sessionBase
+            ),
+            mutate((key?: unknown) => Array.isArray(key) && key[0] === client.allSessionsPath)
+          )
+        }
+
+        await Promise.all(cacheUpdates)
         if (options?.showSuccessToast ?? true) {
           window.toast.success({ key: 'update-agent', title: t('common.update_success') })
         }

@@ -1,0 +1,7 @@
+interface:
+  display_name: "Find Skills"
+  short_description: "Discover built-in and installable assistant Skills"
+  brand_color: "#475569"
+  default_prompt: "Use $find-skills to find the best built-in or installable Skill for my task."
+policy:
+  allow_implicit_invocation: true

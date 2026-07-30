@@ -1,0 +1,20 @@
+{
+  "sources": [
+    {
+      "id": "S1",
+      "title": "",
+      "url": "",
+      "date": "",
+      "supports": [""],
+      "confidence": "medium"
+    }
+  ],
+  "findings": [
+    {
+      "finding": "",
+      "source_ids": ["S1"],
+      "confidence": "medium",
+      "uncertainty": ""
+    }
+  ]
+}

@@ -1,0 +1,7 @@
+interface:
+  display_name: "XLSX Assistant"
+  short_description: "Clean, analyze, and create Excel workbooks"
+  brand_color: "#16A34A"
+  default_prompt: "Use $xlsx to clean this table and create a usable Excel workbook."
+policy:
+  allow_implicit_invocation: true

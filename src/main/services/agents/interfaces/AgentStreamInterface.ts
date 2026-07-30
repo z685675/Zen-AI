@@ -3,7 +3,6 @@
 
 import type { EventEmitter } from 'node:events'
 
-import type { Options } from '@anthropic-ai/claude-agent-sdk'
 import type { GetAgentSessionResponse } from '@types'
 import type { TextStreamPart } from 'ai'
 
@@ -24,8 +23,9 @@ export interface AgentStream extends EventEmitter {
 }
 
 export interface AgentThinkingOptions {
-  effort?: Options['effort']
-  thinking?: Options['thinking']
+  effort?: 'minimal' | 'low' | 'medium' | 'high' | 'max' | 'xhigh'
+  thinking?: { type: 'enabled'; budgetTokens?: number } | { type: 'disabled' } | { type: 'adaptive' }
+  recoveryContext?: string
 }
 
 // Base agent service interface

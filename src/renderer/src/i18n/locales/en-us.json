@@ -8,7 +8,7 @@
       },
       "model": {
         "supported_providers": "Supported Providers",
-        "tooltip": "Currently, only models that support Anthropic endpoints are available for the Agent feature.",
+        "tooltip": "Choose the default model for new Agent conversations. Auto matches each task to an appropriate runtime.",
         "view_providers": "View supported providers"
       },
       "title": "Add Agent",
@@ -284,7 +284,7 @@
     },
     "empty": {
       "action": "Configure Model Service",
-      "description": "Enable at least one Agent-compatible model in Model Services, then come back to use Lobster",
+      "description": "Enable at least one Agent-compatible model in Model Services, then come back to use Smart Assistant.",
       "title": "Configure Model Service First"
     },
     "environmentGate": {
@@ -347,7 +347,9 @@
       "tooltip": "Git Bash is required to run agents on Windows. Install from git-scm.com if not available."
     },
     "input": {
+      "hero_placeholder": "For example: research a topic, summarize the key points, and organize the result",
       "placeholder": "Enter your message here, send with {{key}} - @ select path, / select command",
+      "reasoning_effort": "Thinking effort",
       "soul_placeholder": "Help me connect to Telegram"
     },
     "list": {
@@ -368,6 +370,7 @@
     "session": {
       "accessible_paths": {
         "add": "Add directory",
+        "current": "Current workspace",
         "default_hint": "A default workspace will be created automatically if not specified.",
         "duplicate": "This directory is already included.",
         "empty": "Select at least one directory that the agent can access.",
@@ -375,7 +378,8 @@
           "at_least_one": "Please select at least one accessible directory."
         },
         "label": "Accessible directories",
-        "select_failed": "Failed to select directory."
+        "select_failed": "Failed to select directory.",
+        "set_active": "Make current"
       },
       "add": {
         "title": "Add a session"
@@ -409,6 +413,7 @@
       "edit": {
         "title": "Edit session"
       },
+      "fallback_title": "Assistant Task",
       "get": {
         "error": {
           "failed": "Failed to get the session",
@@ -425,7 +430,7 @@
       "search": {
         "empty": "No matching sessions found",
         "error": "Failed to search sessions",
-        "placeholder": "Search Lobster sessions..."
+        "placeholder": "Search Smart Assistant sessions..."
       },
       "update": {
         "error": {
@@ -456,9 +461,35 @@
           },
           "placeholder": "Choose a permission behavior"
         },
+        "runtime": {
+          "codexDisabled": "Codex runtime is not enabled in this build. Auto continues to use the stable Claude Code path.",
+          "description": "Choose the underlying runtime for this agent. At this stage Auto keeps the existing Claude Code path, while Codex is limited to controlled testing.",
+          "helper": "Keep Auto unless you are testing Codex with a verified OpenAI-compatible endpoint.",
+          "incompatible": {
+            "claudeCode": {
+              "description": "The runtime changed, but the current model is not Claude Code compatible. Before starting a task, select a model that exposes the Anthropic Messages protocol.",
+              "title": "Choose a Claude Code model"
+            },
+            "codex": {
+              "description": "The runtime changed, but the current model is not Codex compatible. Before starting a task, select a model that exposes an OpenAI or OpenAI Responses endpoint.",
+              "title": "Choose a Codex model"
+            }
+          },
+          "label": "Agent runtime",
+          "options": {
+            "auto": "Auto",
+            "claudeCode": "Claude Code",
+            "codex": "Codex"
+          }
+        },
         "title": "Advanced Settings"
       },
       "essential": "Essential Settings",
+      "model": {
+        "defaultLabel": "Default for new chats",
+        "defaultTooltip": "Used only as the default for future chats. Existing chat models are not changed.",
+        "sessionTooltip": "Changes only this chat. A task already in progress continues with the model it started with."
+      },
       "permissionMode": {
         "currentModePrefix": "Current Mode: ",
         "simpleTitle": "Mode Selection",
@@ -717,6 +748,20 @@
       "enable_server_description": "The API server must be enabled for agents to work. You can enable it directly or configure it in settings.",
       "server_not_running": "API Server is enabled but not running. Please check the server configuration.",
       "server_not_running_description": "The API server needs to be running for agents to work. You can start it directly or check the settings."
+    },
+    "welcome": {
+      "capabilities": {
+        "files": "Work with files",
+        "files_desc": "Complete tasks using files, folders, and workspace content.",
+        "search": "Research",
+        "search_desc": "Find information first, then extract the key points and conclusions.",
+        "summary": "Organize and summarize",
+        "summary_desc": "Turn scattered content into a clear, reusable result.",
+        "tasks": "Multi-step tasks",
+        "tasks_desc": "Handle complex work that needs multiple steps and sustained execution."
+      },
+      "model_label": "Model for this chat",
+      "title": "Hand over the task and get started with ease"
     }
   },
   "announcements": {
@@ -1136,7 +1181,23 @@
       },
       "collapse": "Collapse",
       "context_count": {
-        "tip": "Context / Max Context"
+        "tip": "Context tokens / safe input capacity"
+      },
+      "context_manager": {
+        "cache": "Parse cache",
+        "cache_value": "{{hits}} hits / {{total}} parses",
+        "compressions": "History compactions",
+        "error": "Resource preparation failed",
+        "managed": "Resources and history managed",
+        "managed_resources": "{{count}} resources managed",
+        "note": "This shows resource, history, and capacity handling. It does not mean the model is still responding.",
+        "processing": "Preparing resources and context",
+        "ready": "Resources and context ready",
+        "resources": "Indexed resources",
+        "retries": "Capacity retries",
+        "retrieval_value": "{{count}} calls / {{chunks}} chunks",
+        "retrievals": "Relevant resource calls",
+        "title": "Resources and context"
       },
       "estimated_tokens": {
         "tip": "Estimated tokens"
@@ -1286,6 +1347,7 @@
     "navigation": {
       "bottom": "Back to bottom",
       "close": "Close",
+      "earlier": "View earlier turns",
       "first": "Already at the first message",
       "history": "Chat History",
       "last": "Already at the last message",
@@ -1411,8 +1473,8 @@
       },
       "code_wrappable": "Code block wrappable",
       "context_count": {
-        "label": "Context",
-        "tip": "The number of previous messages to keep in the context."
+        "label": "Context management",
+        "tip": "Conversation context is managed automatically using the model token capacity."
       },
       "max": "Unlimited",
       "max_tokens": {
@@ -3222,6 +3284,7 @@
       "image_file": "Input Image",
       "image_required": "Please upload an image to edit first"
     },
+    "expand_prompt_editor": "Expand prompt editor",
     "generate": {
       "height": "Height",
       "magic_prompt_option_tip": "Intelligently enhances prompts for better results",
@@ -3333,6 +3396,7 @@
       "watermark_tip": "Whether to add watermark to generated images, disabled by default"
     },
     "pricing": "Pricing",
+    "prompt_editor_title": "Edit image prompt",
     "prompt_enhancement": "Prompt Enhancement",
     "prompt_enhancement_tip": "Rewrite prompts into detailed, model-friendly versions when switched on",
     "prompt_placeholder": "Describe the image you want to create, e.g. A serene lake at sunset with mountains in the background",
@@ -4101,6 +4165,10 @@
           "description": "Powers the in-browser Python sandbox. This version loads it from the network on first use and does not require system Python.",
           "name": "Python sandbox network"
         },
+        "python": {
+          "description": "Zen AI's private CPython 3.12 environment for data processing, document scripts, and complex local tasks. It does not modify system Python.",
+          "name": "Zen Python runtime"
+        },
         "uv": {
           "description": "Prepares Python tool environments and dependencies for some local skills.",
           "name": "UV"
@@ -4120,7 +4188,7 @@
       "installGitConfirmTitle": "Install Git for Windows automatically?",
       "installGitFailedFallback": "Auto install failed. The official Git download page has been opened",
       "installSuccess": "Installed",
-      "intro": "Basic chat and ordinary local file operations work out of the box. The checks below are mainly for extended capabilities such as the Skill marketplace, scheduled tasks, Python sandbox, and Git-based tools.",
+      "intro": "Zen AI prepares a private Python environment and local tools for every user. These components stay inside Zen AI and do not modify system Python.",
       "noPath": "No available path detected yet",
       "optionalDescription": "These are not required for basic chat, but they improve some advanced tasks.",
       "optionalTitle": "Optional Enhancements",
@@ -5268,6 +5336,10 @@
       "add": {
         "add_model": "Add Model",
         "batch_add_models": "Batch Add Models",
+        "context_window_tokens": {
+          "label": "Context Capacity",
+          "tooltip": "The combined input and output token capacity supported by this model"
+        },
         "endpoint_type": {
           "label": "Endpoint Type",
           "placeholder": "Select endpoint type",
@@ -5278,6 +5350,10 @@
           "label": "Group Name",
           "placeholder": "Optional e.g. ChatGPT",
           "tooltip": "Optional e.g. ChatGPT"
+        },
+        "max_output_tokens": {
+          "label": "Maximum Output",
+          "tooltip": "The maximum output token capacity reported by the provider"
         },
         "model_id": {
           "label": "Model ID",

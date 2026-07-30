@@ -1,0 +1,49 @@
+{
+  "title": "Product Proposal",
+  "document_type": "product-plan",
+  "slides": [
+    {
+      "title": "产品提案需要先证明用户痛点真实存在",
+      "subtitle": "Product proposal",
+      "layout": "cover",
+      "takeaway": "Start with the user problem, not the feature list.",
+      "visual": "cover with scenario tags",
+      "bullets": ["User pain", "Solution", "Roadmap"]
+    },
+    {
+      "title": "用户在当前流程中反复遇到三个阻力",
+      "layout": "cards",
+      "takeaway": "Make the pain concrete and observable.",
+      "visual": "three pain cards",
+      "bullets": ["阻力一：待填", "阻力二：待填", "阻力三：待填"]
+    },
+    {
+      "title": "新方案的价值来自更短路径和更稳定结果",
+      "layout": "insight",
+      "takeaway": "Connect the feature to outcome quality.",
+      "visual": "takeaway band plus evidence points",
+      "bullets": ["减少重复操作", "降低返工概率", "让结果更容易验证"]
+    },
+    {
+      "title": "方案范围需要先聚焦最能验证价值的能力",
+      "layout": "comparison",
+      "takeaway": "Separate must-have from later expansion.",
+      "visual": "scope comparison",
+      "bullets": ["第一阶段：待填", "第一阶段：待填", "后续阶段：待填", "后续阶段：待填"]
+    },
+    {
+      "title": "路线图按验证、交付、优化三步推进",
+      "layout": "process",
+      "takeaway": "A clear roadmap reduces delivery ambiguity.",
+      "visual": "three-step process",
+      "bullets": ["验证需求", "交付 MVP", "扩展场景", "持续优化"]
+    },
+    {
+      "title": "本轮需要获得范围、优先级和资源确认",
+      "layout": "summary",
+      "takeaway": "End with the decision needed.",
+      "visual": "decision rows",
+      "bullets": ["确认产品范围", "确认优先级", "确认资源", "确认时间表"]
+    }
+  ]
+}

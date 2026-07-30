@@ -1,5 +1,6 @@
 import { loggerService } from '@logger'
 import { AgentModelValidationError, agentService, sessionService } from '@main/services/agents'
+import { broadcastSessionChanged } from '@main/services/agents/services/channels/sessionStreamIpc'
 import type { ListAgentSessionsResponse, SearchAgentSessionsResponse, UpdateSessionResponse } from '@types'
 import { type ReplaceSessionRequest } from '@types'
 import type { Request, Response } from 'express'
@@ -25,6 +26,10 @@ export const createSession = async (req: Request, res: Response): Promise<Respon
     logger.debug('Session payload', { sessionData })
 
     const session = await sessionService.createSession(agentId, sessionData)
+    if (!session) {
+      throw new Error('Session service returned no session')
+    }
+    broadcastSessionChanged(agentId, session.id, false, 'created')
 
     logger.info('Session created', { agentId, sessionId: session?.id })
     return res.status(201).json(session)
@@ -56,8 +61,7 @@ export const listSessions = async (req: Request, res: Response): Promise<Respons
   try {
     const validationReq = req as ValidationRequest
     const limit = validationReq.validatedQuery?.limit ?? (req.query.limit ? parseInt(req.query.limit as string) : 20)
-    const offset =
-      validationReq.validatedQuery?.offset ?? (req.query.offset ? parseInt(req.query.offset as string) : 0)
+    const offset = validationReq.validatedQuery?.offset ?? (req.query.offset ? parseInt(req.query.offset as string) : 0)
     const archived = validationReq.validatedQuery?.archived ?? 'exclude'
     const status = req.query.status as any
 
@@ -372,8 +376,7 @@ export const listAllSessions = async (req: Request, res: Response): Promise<Resp
   try {
     const validationReq = req as ValidationRequest
     const limit = validationReq.validatedQuery?.limit ?? (req.query.limit ? parseInt(req.query.limit as string) : 20)
-    const offset =
-      validationReq.validatedQuery?.offset ?? (req.query.offset ? parseInt(req.query.offset as string) : 0)
+    const offset = validationReq.validatedQuery?.offset ?? (req.query.offset ? parseInt(req.query.offset as string) : 0)
     const archived = validationReq.validatedQuery?.archived ?? 'exclude'
     const status = req.query.status as any
 

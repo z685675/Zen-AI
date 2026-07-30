@@ -146,6 +146,143 @@ describe('ProviderModelSyncUtils', () => {
       const syncedModel = nextProvider.models.find((model) => model.id === 'remote-a')
       expect(syncedModel?.endpoint_type).toBe('openai-response')
     })
+
+    it.each(['grok-4.5', 'claude-opus-4-6', 'gemini-3-flash-preview'])(
+      'inherits the OpenAI protocol for %s on an OpenAI-compatible provider',
+      (modelId) => {
+        const provider = createProvider({ type: 'openai' })
+
+        const nextProvider = mergeSyncedProviderModels(provider, [createModel(modelId)], { syncedAt: 200 })
+
+        expect(nextProvider.models.find((model) => model.id === modelId)?.endpoint_type).toBe('openai')
+      }
+    )
+
+    it('prefers the provider protocol when the panel reports multiple supported endpoints', () => {
+      const provider = createProvider({ type: 'openai' })
+      const model = createModel('claude-opus-4-6', {
+        supported_endpoint_types: ['anthropic', 'openai']
+      })
+
+      const nextProvider = mergeSyncedProviderModels(provider, [model], { syncedAt: 200 })
+
+      expect(nextProvider.models.find((item) => item.id === model.id)?.endpoint_type).toBe('openai')
+    })
+
+    it('preserves user-defined context capacity when provider metadata is refreshed', () => {
+      const provider = createProvider({
+        models: [
+          createModel('remote-a', {
+            contextWindowTokens: 180_000,
+            maxOutputTokens: 12_000,
+            contextCapacitySource: 'user',
+            contextCapacityConfidence: 'high'
+          })
+        ],
+        modelSync: {
+          remoteModelIds: ['remote-a'],
+          syncedAt: 100
+        }
+      })
+
+      const nextProvider = mergeSyncedProviderModels(
+        provider,
+        [
+          createModel('remote-a', {
+            contextWindowTokens: 256_000,
+            maxOutputTokens: 32_000,
+            contextCapacitySource: 'provider',
+            contextCapacityConfidence: 'medium'
+          })
+        ],
+        { syncedAt: 200 }
+      )
+
+      const syncedModel = nextProvider.models.find((model) => model.id === 'remote-a')
+      expect(syncedModel).toMatchObject({
+        contextWindowTokens: 180_000,
+        maxOutputTokens: 12_000,
+        contextCapacitySource: 'user',
+        contextCapacityConfidence: 'high'
+      })
+    })
+
+    it('preserves only the capacity fields a user defined and fills the rest from the provider', () => {
+      const provider = createProvider({
+        models: [
+          createModel('remote-a', {
+            maxOutputTokens: 16_000,
+            contextCapacitySource: 'user',
+            contextCapacityConfidence: 'high'
+          })
+        ],
+        modelSync: {
+          remoteModelIds: ['remote-a'],
+          syncedAt: 100
+        }
+      })
+
+      const nextProvider = mergeSyncedProviderModels(
+        provider,
+        [
+          createModel('remote-a', {
+            contextWindowTokens: 256_000,
+            maxOutputTokens: 32_000,
+            contextCapacitySource: 'provider',
+            contextCapacityConfidence: 'medium'
+          })
+        ],
+        { syncedAt: 200 }
+      )
+
+      expect(nextProvider.models.find((model) => model.id === 'remote-a')).toMatchObject({
+        contextWindowTokens: 256_000,
+        maxOutputTokens: 16_000,
+        contextCapacitySource: 'user',
+        contextCapacityConfidence: 'high'
+      })
+    })
+
+    it.each([
+      'gpt-image-2',
+      'nano-banana-pro',
+      'gemini-2.5-flash-image',
+      'grok-imagine-image',
+      'imagen-4.0-generate-001',
+      'flux-2-pro',
+      'seedream-4.5',
+      'ideogram-v3',
+      'recraft-v3',
+      'stable-image-ultra',
+      'qwen-image-edit'
+    ])('classifies %s for regular OpenAI-compatible providers', (modelId) => {
+      const provider = createProvider({ type: 'openai' })
+
+      const nextProvider = mergeSyncedProviderModels(provider, [createModel(modelId)], { syncedAt: 200 })
+
+      expect(nextProvider.models.find((model) => model.id === modelId)?.endpoint_type).toBe('image-generation')
+    })
+
+    it('assigns the Gemini protocol to models imported from a Gemini provider', () => {
+      const provider = createProvider({ id: 'gemini', type: 'gemini' })
+
+      const nextProvider = mergeSyncedProviderModels(provider, [createModel('gemini-2.5-flash-image')], {
+        syncedAt: 200
+      })
+
+      expect(nextProvider.models.find((model) => model.id === 'gemini-2.5-flash-image')?.endpoint_type).toBe('gemini')
+    })
+
+    it('respects native endpoint metadata returned by a New API provider', () => {
+      const provider = createProvider({ type: 'new-api' })
+      const model = createModel('gemini-2.5-flash-image', {
+        supported_endpoint_types: ['gemini']
+      })
+
+      const nextProvider = mergeSyncedProviderModels(provider, [model], { syncedAt: 200 })
+
+      expect(nextProvider.models.find((item) => item.id === model.id)?.endpoint_type).toBe('gemini')
+    })
   })
 
   describe('getProviderModelSyncFingerprint', () => {

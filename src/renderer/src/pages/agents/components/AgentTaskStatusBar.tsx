@@ -25,24 +25,47 @@ const AgentTaskStatusBar: FC<Props> = ({ topicId }) => {
   const messageEntities = useAppSelector((state) => state.messages.entities)
   const blockEntities = useAppSelector((state) => state.messageBlocks.entities)
   const [recentlyCompleted, setRecentlyCompleted] = useState(false)
-  const wasLoadingRef = useRef(false)
+  const wasRunningRef = useRef(false)
+
+  const latestAssistantMessage = useMemo(
+    () => getLatestAssistantMessageForCurrentTurn(messageIds, messageEntities),
+    [messageEntities, messageIds]
+  )
+  const latestAssistantBlocks = useMemo(
+    () => latestAssistantMessage?.blocks?.map((blockId) => blockEntities[blockId]).filter(Boolean) ?? [],
+    [blockEntities, latestAssistantMessage?.blocks]
+  )
+
+  const hasInFlightBlocks = latestAssistantBlocks.some(isBlockInFlight)
+  const hasTerminalMessageStatus =
+    latestAssistantMessage?.status === AssistantMessageStatus.SUCCESS ||
+    latestAssistantMessage?.status === AssistantMessageStatus.ERROR
+  const isRunning = !hasTerminalMessageStatus && (loading || hasInFlightBlocks)
+  const hasTerminalSuccess = latestAssistantMessage?.status === AssistantMessageStatus.SUCCESS && !hasInFlightBlocks
+  const hasTerminalError =
+    latestAssistantMessage?.status === AssistantMessageStatus.ERROR ||
+    (!isRunning &&
+      latestAssistantMessage?.status !== AssistantMessageStatus.SUCCESS &&
+      latestAssistantBlocks.some(
+        (block) => block?.type === MessageBlockType.ERROR || block?.status === MessageBlockStatus.ERROR
+      ))
 
   useEffect(() => {
-    wasLoadingRef.current = false
+    wasRunningRef.current = false
     setRecentlyCompleted(false)
   }, [topicId])
 
   useEffect(() => {
-    if (loading) {
-      wasLoadingRef.current = true
+    if (isRunning) {
+      wasRunningRef.current = true
       setRecentlyCompleted(false)
       return
     }
 
-    if (!wasLoadingRef.current) {
+    if (!wasRunningRef.current) {
       return
     }
-    wasLoadingRef.current = false
+    wasRunningRef.current = false
 
     if (!messageIds.length) {
       return
@@ -51,21 +74,15 @@ const AgentTaskStatusBar: FC<Props> = ({ topicId }) => {
     setRecentlyCompleted(true)
     const timer = window.setTimeout(() => setRecentlyCompleted(false), COMPLETED_VISIBLE_MS)
     return () => window.clearTimeout(timer)
-  }, [loading, messageIds.length])
+  }, [isRunning, messageIds.length])
 
   const status = useMemo<AgentTaskStatus | undefined>(() => {
-    const latestAssistantMessage = getLatestAssistantMessageForCurrentTurn(messageIds, messageEntities)
-
     if (latestAssistantMessage?.blocks?.length) {
-      const blocks = latestAssistantMessage.blocks.map((blockId) => blockEntities[blockId]).filter(Boolean)
-      const latestToolBlock = [...blocks].reverse().find((block) => block?.type === MessageBlockType.TOOL)
+      const latestToolBlock = latestAssistantBlocks.toReversed().find((block) => block?.type === MessageBlockType.TOOL)
       const latestToolStatus = getToolTaskStatus(latestToolBlock)
-      const hasFinalContent = blocks.some(hasDeliverableContent)
-      const hasTerminalError =
-        latestAssistantMessage.status === AssistantMessageStatus.ERROR ||
-        blocks.some((block) => block?.type === MessageBlockType.ERROR || block?.status === MessageBlockStatus.ERROR)
+      const hasFinalContent = latestAssistantBlocks.some(hasDeliverableContent)
 
-      if (loading) {
+      if (isRunning) {
         if (latestToolStatus?.tone === 'error') {
           return { label: '遇到问题，正在尝试其他办法', tone: 'running' }
         }
@@ -77,22 +94,24 @@ const AgentTaskStatusBar: FC<Props> = ({ topicId }) => {
         return latestToolStatus ?? { label: '正在处理任务', tone: 'running' }
       }
 
-      // A tool can fail mid-task and the assistant may still recover with a later
-      // answer or file output. Treat the final message result as authoritative.
+      if (hasTerminalError) {
+        return { label: latestToolStatus?.tone === 'error' ? latestToolStatus.label : '任务处理失败', tone: 'error' }
+      }
+
       if (
-        latestAssistantMessage.status === AssistantMessageStatus.SUCCESS ||
+        hasTerminalSuccess ||
         hasFinalContent ||
-        (recentlyCompleted && !hasTerminalError)
+        (recentlyCompleted && latestAssistantMessage.status !== AssistantMessageStatus.ERROR)
       ) {
         return { label: latestToolStatus?.doneLabel ?? '任务已完成', tone: 'success' }
       }
 
-      if (hasTerminalError || latestToolStatus?.tone === 'error') {
-        return { label: latestToolStatus?.label ?? '任务处理失败', tone: 'error' }
+      if (latestToolStatus?.tone === 'error') {
+        return { label: latestToolStatus.label ?? '任务处理失败', tone: 'error' }
       }
     }
 
-    if (loading) {
+    if (isRunning) {
       return { label: '正在处理任务', tone: 'running' }
     }
 
@@ -101,9 +120,16 @@ const AgentTaskStatusBar: FC<Props> = ({ topicId }) => {
     }
 
     return undefined
-  }, [blockEntities, loading, messageEntities, messageIds, recentlyCompleted])
+  }, [
+    hasTerminalError,
+    hasTerminalSuccess,
+    isRunning,
+    latestAssistantBlocks,
+    latestAssistantMessage,
+    recentlyCompleted
+  ])
 
-  if (!status || (!loading && !recentlyCompleted)) {
+  if (!status || (!isRunning && !recentlyCompleted)) {
     return null
   }
 
@@ -137,6 +163,27 @@ const getLatestAssistantMessageForCurrentTurn = (
     }
   }
   return undefined
+}
+
+const isBlockInFlight = (block: any): boolean => {
+  if (!block) {
+    return false
+  }
+
+  if (
+    block.status === MessageBlockStatus.PENDING ||
+    block.status === MessageBlockStatus.PROCESSING ||
+    block.status === MessageBlockStatus.STREAMING
+  ) {
+    return true
+  }
+
+  if (block.type !== MessageBlockType.TOOL) {
+    return false
+  }
+
+  const toolStatus = block.metadata?.rawMcpToolResponse?.status
+  return Boolean(toolStatus && toolStatus !== 'done' && toolStatus !== 'error' && toolStatus !== 'cancelled')
 }
 
 const hasDeliverableContent = (block: any): boolean => {

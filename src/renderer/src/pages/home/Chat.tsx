@@ -7,7 +7,7 @@ import PromptPopup from '@renderer/components/Popups/PromptPopup'
 import { SelectChatModelPopup } from '@renderer/components/Popups/SelectModelPopup'
 import { QuickPanelProvider } from '@renderer/components/QuickPanel'
 import { chatModelFilter, isWebSearchModel } from '@renderer/config/models'
-import { useAssistant } from '@renderer/hooks/useAssistant'
+import { useAssistant, useDefaultModel } from '@renderer/hooks/useAssistant'
 import { useChatContext } from '@renderer/hooks/useChatContext'
 import { useTopicMessages } from '@renderer/hooks/useMessageOperations'
 import { useNavbarPosition, useSettings } from '@renderer/hooks/useSettings'
@@ -18,11 +18,12 @@ import { EVENT_NAMES, EventEmitter } from '@renderer/services/EventService'
 import { useAppSelector } from '@renderer/store'
 import type { Assistant, Topic } from '@renderer/types'
 import { classNames } from '@renderer/utils'
+import { getTopicConversationModel } from '@renderer/utils/conversationModel'
 import { Flex } from 'antd'
 import { debounce } from 'lodash'
 import { AnimatePresence, motion } from 'motion/react'
 import type { FC } from 'react'
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useHotkeys } from 'react-hotkeys-hook'
 import { useTranslation } from 'react-i18next'
 import styled from 'styled-components'
@@ -54,7 +55,8 @@ const Chat: FC<Props> = ({
   setActiveTopic,
   setActiveAssistant
 }) => {
-  const { assistant, updateAssistant, updateTopic } = useAssistant(activeAssistant.id)
+  const { assistant: storedAssistant, updateAssistant, updateTopic } = useAssistant(activeAssistant.id)
+  const { setDefaultModel } = useDefaultModel()
   const { t } = useTranslation()
   const { topicPosition, messageStyle, messageNavigation } = useSettings()
   const { showTopics } = useShowTopics()
@@ -65,6 +67,13 @@ const Chat: FC<Props> = ({
   const hasLoadedTopicMessages = useAppSelector((state) => !!state.messages.loadedByTopic[activeTopic.id])
   const isLoadingTopicMessages = useAppSelector((state) => !!state.messages.loadingByTopic[activeTopic.id])
   const isWelcomeState = hasLoadedTopicMessages && !isLoadingTopicMessages && messages.length === 0
+  const assistant = useMemo(
+    () => ({
+      ...storedAssistant,
+      model: getTopicConversationModel(activeTopic, storedAssistant)
+    }),
+    [activeTopic, storedAssistant]
+  )
 
   const selectableAssistants = useMemo(() => {
     const defaultAssistant = assistants.find((item) => item.id === 'default') || assistants[0]
@@ -150,8 +159,9 @@ const Chat: FC<Props> = ({
 
     if (selectedModel) {
       const enabledWebSearch = isWebSearchModel(selectedModel)
+      updateTopic({ ...activeTopic, model: selectedModel })
+      setDefaultModel(selectedModel)
       updateAssistant({
-        model: selectedModel,
         enableWebSearch: enabledWebSearch && assistantRef.current.enableWebSearch
       })
     }
@@ -193,21 +203,35 @@ const Chat: FC<Props> = ({
     })
   }
 
-  let firstUpdateCompleted = false
-  const firstUpdateOrNoFirstUpdateHandler = debounce(() => {
-    contentSearchRef.current?.silentSearch()
-  }, 10)
+  const firstUpdateCompletedRef = useRef(false)
+  const firstUpdateOrNoFirstUpdateHandler = useMemo(
+    () =>
+      debounce(() => {
+        contentSearchRef.current?.silentSearch()
+      }, 10),
+    []
+  )
 
-  const messagesComponentUpdateHandler = () => {
-    if (firstUpdateCompleted) {
+  useEffect(() => {
+    return () => firstUpdateOrNoFirstUpdateHandler.cancel()
+  }, [firstUpdateOrNoFirstUpdateHandler])
+
+  const messagesComponentUpdateHandler = useCallback(() => {
+    if (firstUpdateCompletedRef.current) {
       firstUpdateOrNoFirstUpdateHandler()
     }
-  }
+  }, [firstUpdateOrNoFirstUpdateHandler])
 
-  const messagesComponentFirstUpdateHandler = () => {
-    setTimeoutTimer('messagesComponentFirstUpdateHandler', () => (firstUpdateCompleted = true), 300)
+  const messagesComponentFirstUpdateHandler = useCallback(() => {
+    setTimeoutTimer(
+      'messagesComponentFirstUpdateHandler',
+      () => {
+        firstUpdateCompletedRef.current = true
+      },
+      300
+    )
     firstUpdateOrNoFirstUpdateHandler()
-  }
+  }, [firstUpdateOrNoFirstUpdateHandler, setTimeoutTimer])
 
   const mainHeight = isTopNavbar ? 'calc(100vh - var(--navbar-height) - 6px)' : 'calc(100vh - var(--navbar-height))'
 
@@ -249,7 +273,7 @@ const Chat: FC<Props> = ({
                         assistants={selectableAssistants}
                         onSelectAssistant={setActiveAssistant}
                       />
-                      <SelectModelButton assistant={assistant} />
+                      <SelectModelButton assistant={assistant} topic={activeTopic} />
                     </WelcomeMeta>
                     <WelcomeComposer>
                       <Inputbar

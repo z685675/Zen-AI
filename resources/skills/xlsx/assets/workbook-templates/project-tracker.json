@@ -1,0 +1,9 @@
+{
+  "title": "Project Tracker",
+  "rows": [
+    ["Task", "Owner", "Status", "Priority", "Start Date", "Due Date", "Progress", "Risk", "Next Step"],
+    ["Define scope", "TBD", "Not started", "High", "", "", "0%", "", ""],
+    ["Build draft", "TBD", "Not started", "Medium", "", "", "0%", "", ""],
+    ["Review output", "TBD", "Not started", "Medium", "", "", "0%", "", ""]
+  ]
+}

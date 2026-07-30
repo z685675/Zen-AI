@@ -7,7 +7,6 @@ import { useTopicMessages } from '@renderer/hooks/useMessageOperations'
 import { getModel } from '@renderer/hooks/useModel'
 import useScrollPosition from '@renderer/hooks/useScrollPosition'
 import { useSettings } from '@renderer/hooks/useSettings'
-import { useTimer } from '@renderer/hooks/useTimer'
 import MessageAnchorLine from '@renderer/pages/home/Messages/MessageAnchorLine'
 import MessageGroup from '@renderer/pages/home/Messages/MessageGroup'
 import NarrowLayout from '@renderer/pages/home/Messages/NarrowLayout'
@@ -15,7 +14,11 @@ import { MessagesContainer, ScrollContainer } from '@renderer/pages/home/Message
 import { EVENT_NAMES, EventEmitter } from '@renderer/services/EventService'
 import { getGroupedMessages } from '@renderer/services/MessagesService'
 import store, { useAppDispatch } from '@renderer/store'
-import { addChannelUserMessage, type ChannelStreamController, setupChannelStream } from '@renderer/store/thunk/messageThunk'
+import {
+  addChannelUserMessage,
+  type ChannelStreamController,
+  setupChannelStream
+} from '@renderer/store/thunk/messageThunk'
 import type { Assistant } from '@renderer/types'
 import { type Topic, TopicType } from '@renderer/types'
 import type { Message } from '@renderer/types/newMessage'
@@ -133,7 +136,14 @@ const AgentSessionMessages = ({ agentId, sessionId }: Props) => {
             })
           }
         } else if (event.type === 'chunk' && event.chunk) {
-          getOrCreateStream()?.pushChunk(event.chunk)
+          const ctrl = getOrCreateStream()
+          ctrl?.pushChunk(event.chunk)
+
+          if (event.chunk.type === 'error' || event.chunk.type === 'abort') {
+            exchangeDoneRef.current = true
+            ctrl?.complete()
+            streamCtrlRef.current = null
+          }
         } else if (event.type === 'complete') {
           exchangeDoneRef.current = true
           streamCtrlRef.current?.complete()
@@ -168,10 +178,10 @@ const AgentSessionMessages = ({ agentId, sessionId }: Props) => {
   }, [sessionId, sessionTopicId, agentId, dispatch])
 
   const { containerRef: scrollContainerRef, handleScroll: handleScrollPosition } = useScrollPosition(
-    `agent-session-${sessionId}`
+    `agent-session-${sessionId}`,
+    undefined,
+    false
   )
-
-  const { setTimeoutTimer } = useTimer()
 
   const [displayMessages, setDisplayMessages] = useState<Message[]>([])
   const [hasMore, setHasMore] = useState(false)
@@ -208,19 +218,24 @@ const AgentSessionMessages = ({ agentId, sessionId }: Props) => {
     if (!hasMore || isLoadingMore || isRestoringScrollRef.current) return
 
     setIsLoadingMore(true)
-    setTimeoutTimer(
-      'loadMoreMessages',
-      () => {
-        const currentLength = displayMessages.length
-        const newMessages = computeDisplayMessages(messages, currentLength, AGENT_PAGE_SIZE)
+    const currentLength = displayMessages.length
+    const newMessages = computeDisplayMessages(messages, currentLength, AGENT_PAGE_SIZE)
 
-        setDisplayMessages((prev) => [...prev, ...newMessages])
-        setHasMore(currentLength + AGENT_PAGE_SIZE < messages.length)
-        setIsLoadingMore(false)
-      },
-      300
-    )
-  }, [displayMessages.length, hasMore, isLoadingMore, messages, setTimeoutTimer])
+    setDisplayMessages((prev) => [...prev, ...newMessages])
+    setHasMore(currentLength + newMessages.length < messages.length)
+    setIsLoadingMore(false)
+  }, [displayMessages.length, hasMore, isLoadingMore, messages])
+
+  const revealMessageForNavigation = useCallback(
+    (message: Message) => {
+      const targetIndex = messages.findIndex((item) => item.id === message.id)
+      if (targetIndex < 0) return
+
+      setDisplayMessages(messages.slice(targetIndex).toReversed())
+      setHasMore(targetIndex > 0)
+    },
+    [messages]
+  )
 
   const sessionAssistantId = session?.agent_id ?? agentId
   const sessionName = session?.name ?? sessionId
@@ -256,11 +271,27 @@ const AgentSessionMessages = ({ agentId, sessionId }: Props) => {
     }
   }, [scrollContainerRef])
 
+  const positionedSessionRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (displayMessages.length === 0 || positionedSessionRef.current === sessionId) {
+      return
+    }
+
+    positionedSessionRef.current = sessionId
+    scrollToBottom()
+  }, [displayMessages.length, scrollToBottom, sessionId])
+
   // Listen for send message events to auto-scroll to bottom
   useEffect(() => {
-    const unsubscribes = [EventEmitter.on(EVENT_NAMES.SEND_MESSAGE, scrollToBottom)]
+    const unsubscribes = [
+      EventEmitter.on(EVENT_NAMES.SEND_MESSAGE, (data?: { topicId?: string }) => {
+        if (!data?.topicId || data.topicId === sessionTopicId) {
+          scrollToBottom()
+        }
+      })
+    ]
     return () => unsubscribes.forEach((unsub) => unsub())
-  }, [scrollToBottom])
+  }, [scrollToBottom, sessionTopicId])
 
   return (
     <MessagesContainer
@@ -297,7 +328,13 @@ const AgentSessionMessages = ({ agentId, sessionId }: Props) => {
           </ContextMenu>
         </InfiniteScroll>
       </NarrowLayout>
-      {messageNavigation === 'anchor' && <MessageAnchorLine messages={displayMessages} />}
+      {messageNavigation === 'anchor' && (
+        <MessageAnchorLine
+          messages={messages}
+          renderedMessages={displayMessages}
+          onRequestMessageRender={revealMessageForNavigation}
+        />
+      )}
     </MessagesContainer>
   )
 }

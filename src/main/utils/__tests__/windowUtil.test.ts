@@ -1,69 +1,21 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 
-const originalGetSystemVersion = process.getSystemVersion
-
-async function loadWindowUtil({ isWin, systemVersion = '' }: { isWin: boolean; systemVersion?: string }) {
-  vi.resetModules()
-  vi.doMock('../../constant', () => ({
-    isDev: false,
-    isWin
-  }))
-
-  const getSystemVersionMock = vi.fn(() => systemVersion)
-  Object.defineProperty(process, 'getSystemVersion', {
-    value: getSystemVersionMock,
-    configurable: true
-  })
-
-  const windowUtil = await import('../windowUtil')
-  return { ...windowUtil }
-}
-
-afterEach(() => {
-  vi.resetModules()
-  vi.restoreAllMocks()
-  vi.doUnmock('../../constant')
-
-  Object.defineProperty(process, 'getSystemVersion', {
-    value: originalGetSystemVersion,
-    configurable: true
-  })
-})
+import { resolveWindowsBackgroundMaterial } from '../windowUtil'
 
 describe('getWindowsBackgroundMaterial', () => {
-  it('returns mica on Windows 11 22H2 and newer', async () => {
-    const { getWindowsBackgroundMaterial } = await loadWindowUtil({
-      isWin: true,
-      systemVersion: '10.0.22621'
-    })
-
-    expect(getWindowsBackgroundMaterial()).toBe('mica')
+  it('returns true on Windows 11 22H2 and newer', () => {
+    expect(resolveWindowsBackgroundMaterial(true, '10.0.22621')).toBe(true)
   })
 
-  it('returns undefined below the Windows 11 22H2 build threshold', async () => {
-    const { getWindowsBackgroundMaterial } = await loadWindowUtil({
-      isWin: true,
-      systemVersion: '10.0.22000'
-    })
-
-    expect(getWindowsBackgroundMaterial()).toBeUndefined()
+  it('returns false below the Windows 11 22H2 build threshold', () => {
+    expect(resolveWindowsBackgroundMaterial(true, '10.0.22000')).toBe(false)
   })
 
-  it('returns undefined when the system version cannot be parsed', async () => {
-    const { getWindowsBackgroundMaterial } = await loadWindowUtil({
-      isWin: true,
-      systemVersion: 'Windows 11'
-    })
-
-    expect(getWindowsBackgroundMaterial()).toBeUndefined()
+  it('returns false when the system version cannot be parsed', () => {
+    expect(resolveWindowsBackgroundMaterial(true, 'Windows 11')).toBe(false)
   })
 
-  it('returns undefined on non-Windows platforms', async () => {
-    const { getWindowsBackgroundMaterial } = await loadWindowUtil({
-      isWin: false,
-      systemVersion: '10.0.22621'
-    })
-
-    expect(getWindowsBackgroundMaterial()).toBeUndefined()
+  it('returns false on non-Windows platforms', () => {
+    expect(resolveWindowsBackgroundMaterial(false, '10.0.22621')).toBe(false)
   })
 })

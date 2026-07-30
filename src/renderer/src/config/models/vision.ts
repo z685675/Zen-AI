@@ -87,39 +87,60 @@ const VISION_REGEX = new RegExp(
 const DEDICATED_IMAGE_MODELS = [
   // OpenAI series
   'dall-e(?:-[\\w-]+)?',
-  'gpt-image(?:-[\\w-]+)?',
+  'gpt-image(?:-[\\w.-]+)?',
+  // Google Gemini image generation (Nano Banana family) and Imagen
+  'nano[-_.]?banana(?:[-_.]?[\\w.-]+)?',
+  'gemini-\\d+(?:\\.\\d+)?-(?:flash|pro)-image(?:[-\\w.]*)?',
+  'gemini-\\d+(?:\\.\\d+)?-flash-preview-image-generation',
+  'imagen(?:-[\\w.-]+)?',
   // xAI
   'grok-2-image(?:-[\\w-]+)?',
-  // Google
-  'imagen(?:-[\\w-]+)?',
+  'grok[-_.]?imagine(?:[-_.]?image)?(?:[-_.]?[\\w.-]+)?',
   // Stable Diffusion series
-  'flux(?:-[\\w-]+)?',
-  'stable-?diffusion(?:-[\\w-]+)?',
-  'stabilityai(?:-[\\w-]+)?',
-  'sd-[\\w-]+',
-  'sdxl(?:-[\\w-]+)?',
+  'flux(?:[-_.]?[\\w.-]+)?',
+  'stable-?diffusion(?:[-_.]?[\\w.-]+)?',
+  'stable-?image(?:[-_.]?[\\w.-]+)?',
+  'stabilityai(?:[-_.]?[\\w.-]+)?',
+  '(?:^|[-_.])sd-?[\\d.xl]+(?:[-_.]?[\\w.-]+)?',
   // zhipu
   'cogview(?:-[\\w-]+)?',
   // Alibaba
-  'qwen-image(?:-[\\w-]+)?',
+  'qwen-image(?:[-_.]?[\\w.-]+)?',
   // Others
-  'janus(?:-[\\w-]+)?',
-  'midjourney(?:-[\\w-]+)?',
-  'mj-[\\w-]+',
-  'z-image(?:-[\\w-]+)?',
-  'longcat-image(?:-[\\w-]+)?',
-  'hunyuanimage(?:-[\\w-]+)?',
-  'seedream(?:-[\\w-]+)?',
-  'kandinsky(?:-[\\w-]+)?'
+  'ideogram(?:[-_.]?[\\w.-]+)?',
+  'recraft(?:[-_.]?[\\w.-]+)?',
+  'seedream(?:[-_.]?[\\w.-]+)?',
+  'seededit(?:[-_.]?[\\w.-]+)?',
+  'hunyuan-?image(?:[-_.]?[\\w.-]+)?',
+  'kling-?image(?:[-_.]?[\\w.-]+)?',
+  'wan(?:\\d+(?:\\.\\d+)?)?-image(?:[-_.]?[\\w.-]+)?',
+  'hidream(?:[-_.]?[\\w.-]+)?',
+  'kolors(?:[-_.]?[\\w.-]+)?',
+  'playground(?:[-_.]?[\\w.-]+)?',
+  'pixart(?:[-_.]?[\\w.-]+)?',
+  'auraflow(?:[-_.]?[\\w.-]+)?',
+  'luma-?photon(?:[-_.]?[\\w.-]+)?',
+  'bria(?:[-_.]?[\\w.-]+)?',
+  'minimax-?image(?:[-_.]?[\\w.-]+)?',
+  'janus(?:[-_.]?[\\w.-]+)?',
+  'midjourney(?:[-_.]?[\\w.-]+)?',
+  'mj-[\\w.-]+',
+  'z-image(?:[-_.]?[\\w.-]+)?',
+  'longcat-image(?:[-_.]?[\\w.-]+)?',
+  'kandinsky(?:[-_.]?[\\w.-]+)?'
 ]
 
 const IMAGE_ENHANCEMENT_MODELS = [
   'grok-2-image(?:-[\\w-]+)?',
+  'grok[-_.]?imagine(?:[-_.]?image)?(?:[-_.]?[\\w.-]+)?',
   'qwen-image-edit',
-  'gpt-image-1',
+  'gpt-image(?:-[\\w.-]+)?',
+  'nano[-_.]?banana(?:[-_.]?[\\w.-]+)?',
+  'flux(?:[-_.]?)kontext(?:[-_.]?[\\w.-]+)?',
+  'seededit(?:[-_.]?[\\w.-]+)?',
   'gemini-2.5-flash-image(?:-[\\w-]+)?',
   'gemini-2.0-flash-preview-image-generation',
-  'gemini-3(?:\\.\\d+)?-pro-image(?:-[\\w-]+)?'
+  'gemini-3(?:\\.\\d+)?-(?:flash|pro)-image(?:-[\\w-]+)?'
 ]
 
 const IMAGE_ENHANCEMENT_MODELS_REGEX = new RegExp(IMAGE_ENHANCEMENT_MODELS.join('|'), 'i')

@@ -161,10 +161,10 @@ const SessionItem = ({
             agentId: agentId,
             sessionId: targetSession.id
           }
-          void dispatch(loadTopicMessagesThunk(sessionTopicId))
           try {
             startTopicRenaming(sessionTopicId)
-            await renameAgentSessionIfNeeded(agentSession, sessionTopicId, store.getState)
+            await dispatch(loadTopicMessagesThunk(sessionTopicId))
+            await renameAgentSessionIfNeeded(agentSession, sessionTopicId, store.getState, { force: true })
           } finally {
             finishTopicRenaming(sessionTopicId)
           }

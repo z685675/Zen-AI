@@ -4,7 +4,7 @@ import { getKnowledgeBase, listKnowledgeBases, searchKnowledge } from './handler
 import { validateKnowledgeBaseId, validateKnowledgeSearch, validatePagination } from './validators'
 
 // Create main knowledge router
-const knowledgeRouter = express.Router()
+const knowledgeRouter: express.Router = express.Router()
 
 /**
  * @swagger

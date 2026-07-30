@@ -20,6 +20,7 @@ import type { BaseTool, MCPTool } from './tool'
 export * from './agent'
 export * from './apiModels'
 export * from './apiServer'
+export * from './context'
 export * from './knowledge'
 export * from './mcp'
 export * from './notification'
@@ -275,6 +276,8 @@ export type Topic = {
   id: string
   type?: TopicType
   assistantId: string
+  /** Model snapshot for this conversation. Legacy topics fall back to their assistant model. */
+  model?: Model
   name: string
   createdAt: string
   updatedAt: string
@@ -350,6 +353,14 @@ export type Model = {
   endpoint_type?: EndpointType
   supported_endpoint_types?: EndpointType[]
   supported_text_delta?: boolean
+  /** Total input and output context supported by this provider/model pair. */
+  contextWindowTokens?: number
+  /** Maximum output tokens reported by the provider, when available. */
+  maxOutputTokens?: number
+  /** Where the context capacity came from. */
+  contextCapacitySource?: 'provider' | 'builtin' | 'user' | 'fallback' | 'adaptive'
+  /** Confidence in the configured context capacity. */
+  contextCapacityConfidence?: 'high' | 'medium' | 'low'
 }
 
 export type Suggestion = {
@@ -599,7 +610,9 @@ export type AppInfo = {
   resourcesPath: string
   filesPath: string
   logsPath: string
+  platform?: string
   arch: string
+  hardwareArch?: string
   isPortable: boolean
   installPath: string
 }
@@ -1253,7 +1266,7 @@ export type FetchChatCompletionRequestOptions = {
 type BaseParams = {
   assistant: Assistant
   requestOptions?: FetchChatCompletionRequestOptions
-  onChunkReceived: (chunk: Chunk) => void
+  onChunkReceived: (chunk: Chunk) => void | Promise<void>
   topicId?: string // 添加 topicId 参数
   allowedTools?: string[]
   uiMessages?: Message[]

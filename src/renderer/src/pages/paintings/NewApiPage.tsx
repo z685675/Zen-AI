@@ -5,6 +5,7 @@ import { Navbar, NavbarCenter } from '@renderer/components/app/Navbar'
 import Scrollbar from '@renderer/components/Scrollbar'
 import InfoTooltip from '@renderer/components/TooltipIcons/InfoTooltip'
 import TranslateButton from '@renderer/components/TranslateButton'
+import { isImageGenerationEndpointModel } from '@renderer/config/models'
 import { LanguagesEnum } from '@renderer/config/translate'
 import { usePaintings } from '@renderer/hooks/usePaintings'
 import { usePaintingProviders } from '@renderer/hooks/useProvider'
@@ -28,8 +29,9 @@ import type { FileMetadata, PaintingAction } from '@renderer/types'
 import { uuid } from '@renderer/utils'
 import { getFriendlyPaintingErrorMessage } from '@renderer/utils/friendlyError'
 import { getZenClientHeaders } from '@renderer/utils/zenClientHeaders'
-import { Button, Empty, InputNumber, Select, Upload } from 'antd'
+import { Button, Empty, InputNumber, Modal, Select, Tooltip, Upload } from 'antd'
 import TextArea from 'antd/es/input/TextArea'
+import { Maximize2 } from 'lucide-react'
 import type { FC } from 'react'
 import React from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -102,6 +104,7 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
   const [selectedPaintingId, setSelectedPaintingId] = useState<string | null>(null)
   const [composerMode, setComposerMode] = useState<ComposerMode>('create')
   const [uploadedEditFiles, setUploadedEditFiles] = useState<File[]>([])
+  const [isPromptEditorOpen, setIsPromptEditorOpen] = useState(false)
   const [draft, setDraft] = useState<PaintingAction>({ ...DEFAULT_PAINTING })
 
   const { t } = useTranslation()
@@ -144,14 +147,14 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
 
   const modelOptions = useMemo(() => {
     return providerModels
-      .filter((model) => model.endpoint_type === 'image-generation')
+      .filter((model) => Boolean(newApiProvider && isImageGenerationEndpointModel(model, newApiProvider)))
       .map((model) => ({
         label: model.name,
         value: model.id,
         custom: !SUPPORTED_MODELS.includes(model.id),
         group: model.group
       }))
-  }, [providerModels])
+  }, [newApiProvider, providerModels])
 
   const resolveAvailableModel = useCallback(
     (...candidates: Array<string | undefined>) => {
@@ -758,11 +761,6 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
       }
       return
     }
-
-    if (event.key === 'Enter' && !event.shiftKey) {
-      event.preventDefault()
-      void onGenerate()
-    }
   }
 
   const handlePaste = (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
@@ -1001,6 +999,16 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
             />
             <Toolbar>
               <ToolbarMenu>
+                <Tooltip title={t('paintings.expand_prompt_editor')}>
+                  <ExpandPromptButton
+                    type="text"
+                    shape="circle"
+                    icon={<Maximize2 size={17} />}
+                    aria-label={t('paintings.expand_prompt_editor')}
+                    disabled={isArtboardLoading}
+                    onClick={() => setIsPromptEditorOpen(true)}
+                  />
+                </Tooltip>
                 <TranslateButton
                   text={textareaRef.current?.resizableTextArea?.textArea?.value}
                   onTranslated={(translatedText) => updateDraft({ prompt: translatedText })}
@@ -1012,6 +1020,32 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
               </ToolbarMenu>
             </Toolbar>
           </InputContainer>
+          <Modal
+            title={t('paintings.prompt_editor_title')}
+            open={isPromptEditorOpen}
+            width={920}
+            centered
+            onCancel={() => setIsPromptEditorOpen(false)}
+            footer={
+              <Button type="primary" onClick={() => setIsPromptEditorOpen(false)}>
+                {t('common.close')}
+              </Button>
+            }>
+            <ExpandedPromptTextarea
+              autoFocus
+              value={draft.prompt}
+              disabled={isArtboardLoading}
+              spellCheck={false}
+              onChange={(event) => updateDraft({ prompt: event.target.value })}
+              placeholder={
+                isTranslating
+                  ? t('paintings.translating')
+                  : draft.model?.startsWith('imagen-')
+                    ? t('paintings.prompt_placeholder_en')
+                    : t('paintings.prompt_placeholder_edit')
+              }
+            />
+          </Modal>
         </MainContainer>
 
         <PaintingsList
@@ -1066,13 +1100,23 @@ const MainContainer = styled.div`
 const InputContainer = styled.div`
   display: flex;
   flex-direction: column;
+  height: 95px;
   min-height: 95px;
   max-height: 95px;
+  flex-shrink: 0;
   position: relative;
   border: 1px solid var(--color-border-soft);
-  transition: all 0.3s ease;
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease;
   margin: 0 20px 15px 20px;
   border-radius: 10px;
+  overflow: hidden;
+
+  &:focus-within {
+    border-color: var(--color-border);
+    box-shadow: 0 0 0 1px var(--color-border-soft);
+  }
 `
 
 const Textarea = styled(TextArea)`
@@ -1081,8 +1125,8 @@ const Textarea = styled(TextArea)`
   display: flex;
   flex: 1;
   resize: none !important;
-  overflow: auto;
-  width: auto;
+  overflow-y: auto !important;
+  width: 100%;
 `
 
 const Toolbar = styled.div`
@@ -1098,6 +1142,20 @@ const ToolbarMenu = styled.div`
   flex-direction: row;
   align-items: center;
   gap: 6px;
+`
+
+const ExpandPromptButton = styled(Button)`
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+`
+
+const ExpandedPromptTextarea = styled(TextArea)`
+  height: min(56vh, 560px) !important;
+  min-height: 280px;
+  padding: 12px;
+  line-height: 1.65;
+  resize: vertical !important;
 `
 
 const SettingTitleRow = styled.div`

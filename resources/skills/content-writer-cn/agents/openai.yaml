@@ -1,0 +1,7 @@
+interface:
+  display_name: "Chinese Content Writer"
+  short_description: "Write and polish Chinese platform-aware content"
+  brand_color: "#DB2777"
+  default_prompt: "Use $content-writer-cn to write platform-aware Chinese content for my audience."
+policy:
+  allow_implicit_invocation: true

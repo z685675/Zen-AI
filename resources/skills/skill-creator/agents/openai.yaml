@@ -1,0 +1,7 @@
+interface:
+  display_name: "Skill Creator"
+  short_description: "Create and validate reusable assistant Skills"
+  brand_color: "#7C3AED"
+  default_prompt: "Use $skill-creator to create a reusable Skill with instructions, scripts, and references."
+policy:
+  allow_implicit_invocation: true

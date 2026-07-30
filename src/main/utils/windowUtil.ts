@@ -77,19 +77,18 @@ export const replaceDevtoolsFont = (browserWindow: BrowserWindow) => {
   }
 }
 
-const isWindowsMicaSupported = () => {
-  if (!isWin) {
+export const resolveWindowsBackgroundMaterial = (isWindows: boolean, systemVersion: string) => {
+  if (!isWindows) {
     return false
   }
 
-  const systemVersion = process.getSystemVersion()
   const buildNumber = Number.parseInt(systemVersion.split('.')[2] ?? '', 10)
 
   return Number.isFinite(buildNumber) && buildNumber >= WINDOWS_11_22H2_BUILD
 }
 
 export const getWindowsBackgroundMaterial = () => {
-  return isWindowsMicaSupported() ? 'mica' : undefined
+  return resolveWindowsBackgroundMaterial(isWin, process.getSystemVersion()) ? 'mica' : undefined
 }
 
 export { isTilingWindowManager }

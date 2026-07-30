@@ -4,13 +4,22 @@ import type { Provider } from '@types'
 import type { Request, Response } from 'express'
 import express from 'express'
 
+import { shouldUseAgentProtocolBridge } from '../../services/agents/services/runtime/protocol'
+import { anthropicProtocolBridge } from '../services/anthropicProtocolBridge'
 import { messagesService } from '../services/messages'
 import { getProviderById, validateModelId } from '../utils'
 
 const logger = loggerService.withContext('ApiServerMessagesRoutes')
 
-const router = express.Router()
-const providerRouter = express.Router({ mergeParams: true })
+const router: express.Router = express.Router()
+const providerRouter: express.Router = express.Router({ mergeParams: true })
+
+function logMessageProcessingError(error: unknown): void {
+  logger.error('Message processing error', {
+    error: error instanceof Error ? error.message : String(error),
+    stack: error instanceof Error ? error.stack : undefined
+  })
+}
 
 // Helper function for basic request validation
 async function validateRequestBody(req: Request): Promise<{ valid: boolean; error?: any }> {
@@ -60,6 +69,18 @@ async function handleMessageProcessing({
       return
     }
 
+    const resolvedModelId = modelId ?? request.model
+    const selectedModel = provider.models?.find((model) => model.id === resolvedModelId)
+    if (shouldUseAgentProtocolBridge(provider, selectedModel)) {
+      const abortController = new AbortController()
+      req.once('aborted', () => abortController.abort('client request aborted'))
+      res.once('close', () => {
+        if (!res.writableEnded) abortController.abort('client connection closed')
+      })
+      await anthropicProtocolBridge.handle(provider, request, resolvedModelId, res, abortController.signal)
+      return
+    }
+
     const extraHeaders = messagesService.prepareHeaders(req.headers)
     const { client, anthropicRequest } = await messagesService.processMessage({
       provider,
@@ -76,7 +97,7 @@ async function handleMessageProcessing({
     const response = await client.messages.create(anthropicRequest)
     res.json(response)
   } catch (error: any) {
-    logger.error('Message processing error', { error })
+    logMessageProcessingError(error)
     const { statusCode, errorResponse } = messagesService.transformError(error)
     res.status(statusCode).json(errorResponse)
   }
@@ -237,7 +258,7 @@ router.post('/', async (req: Request, res: Response) => {
 
     return handleMessageProcessing({ req, res, provider, request, modelId })
   } catch (error: any) {
-    logger.error('Message processing error', { error })
+    logMessageProcessingError(error)
     const { statusCode, errorResponse } = messagesService.transformError(error)
     return res.status(statusCode).json(errorResponse)
   }

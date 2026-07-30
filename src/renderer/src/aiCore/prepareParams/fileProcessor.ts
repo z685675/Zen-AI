@@ -15,6 +15,7 @@ import i18n from 'i18next'
 
 import { getAiSdkProviderId } from '../provider/factory'
 import { getFileSizeLimit, supportsImageInput, supportsLargeFileUpload } from './modelCapabilities'
+import { supportsNativePdfInput } from './pdfCapabilities'
 
 const logger = loggerService.withContext('fileProcessor')
 
@@ -29,6 +30,24 @@ function buildTextPartFromContent(fileName: string, rawContent: string | null | 
     type: 'text',
     text: `${fileName}\n${fileContent}`
   }
+}
+
+function formatStructuredDocument(sections: Awaited<ReturnType<typeof window.api.file.readStructured>>): string {
+  return sections.sections
+    .map(({ text, metadata }) => {
+      const locator = [
+        metadata.page ? `page ${metadata.page}` : '',
+        metadata.slide ? `slide ${metadata.slide}` : '',
+        metadata.sheet ? `sheet ${metadata.sheet}` : '',
+        metadata.cellRange ? `range ${metadata.cellRange}` : '',
+        metadata.section ? `section ${metadata.section}` : ''
+      ]
+        .filter(Boolean)
+        .join(', ')
+      return locator ? `[${locator}]\n${text.trim()}` : text.trim()
+    })
+    .filter(Boolean)
+    .join('\n\n')
 }
 
 /**
@@ -78,7 +97,17 @@ export async function convertFileBlockToTextPart(fileBlock: FileMessageBlock): P
   // Handle document files by extracting text content.
   if (file.type === FILE_TYPE.DOCUMENT) {
     try {
-      const fileContent = await window.api.file.read(file.id + file.ext, true) // force text extraction
+      let fileContent: string
+      try {
+        const structured = await window.api.file.readStructured(file.id + file.ext)
+        fileContent = formatStructuredDocument(structured)
+      } catch (structuredError) {
+        logger.warn(
+          `Structured extraction failed for ${file.origin_name}; using plain text fallback`,
+          structuredError as Error
+        )
+        fileContent = await window.api.file.read(file.id + file.ext, true)
+      }
       const textPart = buildTextPartFromContent(file.origin_name, fileContent)
 
       if (!textPart) {
@@ -194,7 +223,7 @@ export async function handleLargeFileUpload(
   model: Model
 ): Promise<(FilePart & { id?: string }) | null> {
   const provider = getProviderByModel(model)
-  const aiSdkId = getAiSdkProviderId(provider)
+  const aiSdkId = getAiSdkProviderId(provider, model)
 
   if (['google', 'google-vertex'].includes(aiSdkId)) {
     return await handleGeminiFileUpload(file, model)
@@ -217,6 +246,16 @@ export async function convertFileBlockToFilePart(fileBlock: FileMessageBlock, mo
   try {
     // 处理PDF文档（始终生成 FilePart，由下游插件处理兼容性）
     if (file.type === FILE_TYPE.DOCUMENT && file.ext === '.pdf') {
+      const provider = getProviderByModel(model)
+      const runtimeProviderId = getAiSdkProviderId(provider, model)
+
+      // Compatible and gateway providers often reject native PDF parts. Extracting text here also
+      // prevents the context planner from counting the raw base64 bytes as hundreds of thousands of tokens.
+      if (!supportsNativePdfInput(provider, model, runtimeProviderId)) {
+        logger.debug(`PDF ${file.origin_name} will use local text extraction for provider ${provider.id}`)
+        return null
+      }
+
       // 检查文件大小限制
       if (file.size > fileSizeLimit) {
         // 如果支持大文件上传（如Gemini File API），尝试上传
@@ -265,7 +304,7 @@ export async function convertFileBlockToFilePart(fileBlock: FileMessageBlock, mo
       // 处理MIME类型，特别是jpg->jpeg的转换（Anthropic要求）
       let mediaType = base64Data.mime
       const provider = getProviderByModel(model)
-      const aiSdkId = getAiSdkProviderId(provider)
+      const aiSdkId = getAiSdkProviderId(provider, model)
 
       if (aiSdkId === 'anthropic' && mediaType === 'image/jpg') {
         mediaType = 'image/jpeg'

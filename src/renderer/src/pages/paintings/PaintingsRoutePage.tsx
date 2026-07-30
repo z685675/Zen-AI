@@ -31,7 +31,7 @@ const PaintingsRoutePage: FC = () => {
     () =>
       providers
         .filter((provider) => provider.enabled)
-        .filter((provider) => provider.models.some(isImageGenerationEndpointModel))
+        .filter((provider) => provider.models.some((model) => isImageGenerationEndpointModel(model, provider)))
         .map((provider) => provider.id)
         .filter((option) => option !== 'ovms' || ovmsStatus === 'running'),
     [providers, ovmsStatus]

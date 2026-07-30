@@ -7,7 +7,7 @@ import {
   isWebSearchModel
 } from '@renderer/config/models'
 import db from '@renderer/databases'
-import { useAssistant } from '@renderer/hooks/useAssistant'
+import { useAssistant, useDefaultModel } from '@renderer/hooks/useAssistant'
 import { useInputText } from '@renderer/hooks/useInputText'
 import { useMessageOperations, useTopicLoading } from '@renderer/hooks/useMessageOperations'
 import { useSettings } from '@renderer/hooks/useSettings'
@@ -41,15 +41,18 @@ import {
 } from '@renderer/types'
 import type { MessageInputBaseParams } from '@renderer/types/newMessage'
 import { delay } from '@renderer/utils'
+import { getNewConversationModel, getTopicConversationModel } from '@renderer/utils/conversationModel'
 import { getSendMessageShortcutLabel } from '@renderer/utils/input'
 import { aggregateUsageCacheStats } from '@renderer/utils/usage'
 import { documentExts, imageExts, textExts } from '@shared/config/constant'
 import { debounce } from 'lodash'
 import type { FC } from 'react'
-import React, { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import ContextStatusIndicator from './components/ContextStatusIndicator'
 import { InputbarCore } from './components/InputbarCore'
+import ScrollToBottomButton from './components/ScrollToBottomButton'
 import InputbarTools from './InputbarTools'
 import KnowledgeBaseInput from './KnowledgeBaseInput'
 import MentionModelsInput from './MentionModelsInput'
@@ -62,10 +65,10 @@ const INPUTBAR_DRAFT_CACHE_KEY = 'inputbar-draft'
 const DRAFT_CACHE_TTL = 24 * 60 * 60 * 1000 // 24 hours
 const HERO_PLACEHOLDER = 'Zen AI可以帮你写作、总结、翻译内容，也可以处理附件与文件。'
 
-const getMentionedModelsCacheKey = (assistantId: string) => `inputbar-mentioned-models-${assistantId}`
+const getMentionedModelsCacheKey = (conversationId: string) => `inputbar-mentioned-models-${conversationId}`
 
-const getValidatedCachedModels = (assistantId: string): Model[] => {
-  const cached = CacheService.get<Model[]>(getMentionedModelsCacheKey(assistantId))
+const getValidatedCachedModels = (conversationId: string): Model[] => {
+  const cached = CacheService.get<Model[]>(getMentionedModelsCacheKey(conversationId))
   if (!Array.isArray(cached)) return []
   return cached.filter((model) => model?.id && model?.name)
 }
@@ -112,7 +115,7 @@ const Inputbar: FC<InputbarProps> = ({
   })
   const actionsRef = externalActionsRef ?? internalActionsRef
 
-  const [initialMentionedModels] = useState(() => getValidatedCachedModels(initialAssistant.id))
+  const [initialMentionedModels] = useState(() => getValidatedCachedModels(topic.id))
 
   const initialState = useMemo(
     () => ({
@@ -180,7 +183,16 @@ const InputbarInner: FC<InputbarInnerProps> = ({
     minHeight: 30
   })
 
-  const { assistant, addTopic, model, setModel, updateAssistant } = useAssistant(initialAssistant.id)
+  const { assistant: storedAssistant, addTopic, updateAssistant } = useAssistant(initialAssistant.id)
+  const { defaultModel } = useDefaultModel()
+  const assistant = useMemo(
+    () => ({
+      ...storedAssistant,
+      model: getTopicConversationModel(topic, storedAssistant, defaultModel)
+    }),
+    [defaultModel, storedAssistant, topic]
+  )
+  const model = assistant.model
   const { sendMessageShortcut, showInputEstimatedTokens, enableQuickPanelTriggers } = useSettings()
   const [estimateTokenCount, setEstimateTokenCount] = useState(0)
   const [contextCount, setContextCount] = useState({ current: 0, max: 0 })
@@ -233,14 +245,21 @@ const InputbarInner: FC<InputbarInnerProps> = ({
     setCouldAddImageFile(canAddImageFile)
   }, [canAddImageFile, setCouldAddImageFile])
 
-  const onUnmount = useEffectEvent((id: string) => {
-    CacheService.set(getMentionedModelsCacheKey(id), mentionedModels, DRAFT_CACHE_TTL)
-  })
+  const mentionedModelsRef = useRef(mentionedModels)
+  mentionedModelsRef.current = mentionedModels
 
   useEffect(() => {
-    return () => onUnmount(assistant.id)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [assistant.id])
+    const cachedModels = getValidatedCachedModels(topic.id)
+    setMentionedModels((currentModels) => {
+      const isSameSelection =
+        currentModels.length === cachedModels.length &&
+        currentModels.every((model, index) => model.id === cachedModels[index]?.id)
+      return isSameSelection ? currentModels : cachedModels
+    })
+    return () => {
+      CacheService.set(getMentionedModelsCacheKey(topic.id), mentionedModelsRef.current, DRAFT_CACHE_TTL)
+    }
+  }, [setMentionedModels, topic.id])
 
   const placeholderText = isHero
     ? HERO_PLACEHOLDER
@@ -297,6 +316,8 @@ const InputbarInner: FC<InputbarInnerProps> = ({
 
       setText('')
       setFiles([])
+      setMentionedModels([])
+      CacheService.remove(getMentionedModelsCacheKey(topic.id))
       setTimeoutTimer('sendMessage_1', () => setText(''), 500)
       setTimeoutTimer('sendMessage_2', () => resizeTextArea(), 0)
       // Restore focus to textarea after sending to maintain IME state (fcitx5 issue)
@@ -314,6 +335,7 @@ const InputbarInner: FC<InputbarInnerProps> = ({
     dispatch,
     setText,
     setFiles,
+    setMentionedModels,
     setTimeoutTimer,
     resizeTextArea,
     focusTextarea,
@@ -357,17 +379,13 @@ const InputbarInner: FC<InputbarInnerProps> = ({
   }, [loading, onPause])
 
   const addNewTopic = useCallback(async () => {
-    const newTopic = getDefaultTopic(assistant.id)
+    const newTopic = getDefaultTopic(assistant.id, getNewConversationModel(assistant, defaultModel))
 
     await db.topics.add({ id: newTopic.id, messages: [] })
 
-    if (assistant.defaultModel) {
-      setModel(assistant.defaultModel)
-    }
-
     addTopic(newTopic)
     setActiveTopic(newTopic)
-  }, [addTopic, assistant.defaultModel, assistant.id, setActiveTopic, setModel])
+  }, [addTopic, assistant, defaultModel, setActiveTopic])
 
   const handleRemoveModel = useCallback(
     (modelToRemove: Model) => {
@@ -571,6 +589,14 @@ const InputbarInner: FC<InputbarInnerProps> = ({
       leftToolbar={leftToolbar}
       rightToolbar={rightToolbar}
       topContent={topContent}
+      pinnedContent={
+        isHero ? undefined : (
+          <>
+            <ScrollToBottomButton conversationKey={topic.id} />
+            <ContextStatusIndicator conversationId={topic.id} />
+          </>
+        )
+      }
       forceEnableQuickPanelTriggers={!isHero}
       minimal={isHero}
     />

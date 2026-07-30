@@ -10,6 +10,8 @@ import {
 import { WarnTooltip } from '@renderer/components/TooltipIcons'
 import { endpointTypeOptions } from '@renderer/config/endpointTypes'
 import {
+  getEffectiveModelEndpointType,
+  isDedicatedImageGenerationModel,
   isEmbeddingModel,
   isFunctionCallingModel,
   isReasoningModel,
@@ -18,9 +20,10 @@ import {
   isWebSearchModel
 } from '@renderer/config/models'
 import { useDynamicLabelWidth } from '@renderer/hooks/useDynamicLabelWidth'
+import { clearAdaptiveContextWindowTokens } from '@renderer/services/context/ContextWindowService'
 import type { Model, ModelCapability, ModelType, Provider } from '@renderer/types'
 import { getDefaultGroupName, getDifference, getUnion, uniqueObjectArray } from '@renderer/utils'
-import { isNewApiProvider } from '@renderer/utils/provider'
+import { isNewApiProvider, isOpenAICompatibleProvider } from '@renderer/utils/provider'
 import type { ModalProps } from 'antd'
 import { Button, Divider, Flex, Form, Input, InputNumber, message, Modal, Select, Switch, Tooltip } from 'antd'
 import { cloneDeep } from 'lodash'
@@ -48,6 +51,12 @@ const ModelEditContent: FC<ModelEditContentProps & ModalProps> = ({ provider, mo
   const [supportedTextDelta, setSupportedTextDelta] = useState(model.supported_text_delta)
   const [hasUserModified, setHasUserModified] = useState(false)
 
+  const canConfigureEndpointType =
+    isNewApiProvider(provider) || isOpenAICompatibleProvider(provider) || provider.type === 'openai-response'
+  const isDedicatedImageModel = isDedicatedImageGenerationModel(model)
+  const availableEndpointTypeOptions = isNewApiProvider(provider)
+    ? endpointTypeOptions
+    : endpointTypeOptions.filter((option) => ['openai', 'openai-response', 'image-generation'].includes(option.value))
   const labelWidth = useDynamicLabelWidth([t('settings.models.add.endpoint_type.label')])
 
   // 自动保存函数
@@ -63,38 +72,76 @@ const ModelEditContent: FC<ModelEditContentProps & ModalProps> = ({ provider, mo
     const finalCurrencySymbol = currentIsCustomCurrency
       ? formValues.customCurrencySymbol || currentCurrencySymbol
       : formValues.currencySymbol || currentCurrencySymbol || '$'
+    const contextWindowTokens = Number(formValues.contextWindowTokens) || undefined
+    const maxOutputTokens = Number(formValues.maxOutputTokens) || undefined
+    const contextCapacityWasEdited =
+      form.isFieldTouched('contextWindowTokens') || form.isFieldTouched('maxOutputTokens')
     const updatedModel: Model = {
       ...model,
       id: formValues.id || model.id,
       name: formValues.name || model.name,
       group: formValues.group || model.group,
-      endpoint_type: isNewApiProvider(provider) ? formValues.endpointType : model.endpoint_type,
+      endpoint_type: canConfigureEndpointType ? formValues.endpointType : model.endpoint_type,
       capabilities: overrides?.capabilities ?? modelCapabilities,
       supported_text_delta: overrides?.supported_text_delta ?? supportedTextDelta,
+      contextWindowTokens,
+      maxOutputTokens,
+      contextCapacitySource: contextCapacityWasEdited
+        ? contextWindowTokens || maxOutputTokens
+          ? 'user'
+          : undefined
+        : model.contextCapacitySource,
+      contextCapacityConfidence: contextCapacityWasEdited
+        ? contextWindowTokens || maxOutputTokens
+          ? 'high'
+          : undefined
+        : model.contextCapacityConfidence,
       pricing: {
         input_per_million_tokens: Number(formValues.input_per_million_tokens) || 0,
         output_per_million_tokens: Number(formValues.output_per_million_tokens) || 0,
         currencySymbol: finalCurrencySymbol
       }
     }
+    if (contextCapacityWasEdited) {
+      clearAdaptiveContextWindowTokens(model, provider)
+    }
     onUpdateModel(updatedModel)
   }
 
   const onFinish = (values: any) => {
     const finalCurrencySymbol = isCustomCurrency ? values.customCurrencySymbol : values.currencySymbol
+    const contextWindowTokens = Number(values.contextWindowTokens) || undefined
+    const maxOutputTokens = Number(values.maxOutputTokens) || undefined
+    const contextCapacityWasEdited =
+      form.isFieldTouched('contextWindowTokens') || form.isFieldTouched('maxOutputTokens')
     const updatedModel: Model = {
       ...model,
       id: values.id || model.id,
       name: values.name || model.name,
       group: values.group || model.group,
-      endpoint_type: isNewApiProvider(provider) ? values.endpointType : model.endpoint_type,
+      endpoint_type: canConfigureEndpointType ? values.endpointType : model.endpoint_type,
       capabilities: modelCapabilities,
       supported_text_delta: supportedTextDelta,
+      contextWindowTokens,
+      maxOutputTokens,
+      contextCapacitySource: contextCapacityWasEdited
+        ? contextWindowTokens || maxOutputTokens
+          ? 'user'
+          : undefined
+        : model.contextCapacitySource,
+      contextCapacityConfidence: contextCapacityWasEdited
+        ? contextWindowTokens || maxOutputTokens
+          ? 'high'
+          : undefined
+        : model.contextCapacityConfidence,
       pricing: {
         input_per_million_tokens: Number(values.input_per_million_tokens) || 0,
         output_per_million_tokens: Number(values.output_per_million_tokens) || 0,
         currencySymbol: finalCurrencySymbol || '$'
       }
+    }
+    if (contextCapacityWasEdited) {
+      clearAdaptiveContextWindowTokens(model, provider)
     }
     onUpdateModel(updatedModel)
     setShowMoreSettings(false)
@@ -237,7 +284,7 @@ const ModelEditContent: FC<ModelEditContentProps & ModalProps> = ({ provider, mo
     <Modal title={t('models.edit')} footer={null} transitionName="animation-move-down" centered {...props}>
       <Form
         form={form}
-        labelCol={{ flex: isNewApiProvider(provider) ? labelWidth : '110px' }}
+        labelCol={{ flex: canConfigureEndpointType ? labelWidth : '110px' }}
         labelAlign="left"
         colon={false}
         style={{ marginTop: 15 }}
@@ -245,7 +292,9 @@ const ModelEditContent: FC<ModelEditContentProps & ModalProps> = ({ provider, mo
           id: model.id,
           name: model.name,
           group: model.group,
-          endpointType: model.endpoint_type,
+          endpointType: getEffectiveModelEndpointType(model, provider),
+          contextWindowTokens: model.contextWindowTokens,
+          maxOutputTokens: model.maxOutputTokens,
           input_per_million_tokens: model.pricing?.input_per_million_tokens ?? 0,
           output_per_million_tokens: model.pricing?.output_per_million_tokens ?? 0,
           currencySymbol: symbols.includes(model.pricing?.currencySymbol || '$')
@@ -299,14 +348,14 @@ const ModelEditContent: FC<ModelEditContentProps & ModalProps> = ({ provider, mo
           tooltip={t('settings.models.add.group_name.tooltip')}>
           <Input placeholder={t('settings.models.add.group_name.placeholder')} spellCheck={false} />
         </Form.Item>
-        {isNewApiProvider(provider) && (
+        {canConfigureEndpointType && (
           <Form.Item
             name="endpointType"
             label={t('settings.models.add.endpoint_type.label')}
             tooltip={t('settings.models.add.endpoint_type.tooltip')}
             rules={[{ required: true, message: t('settings.models.add.endpoint_type.required') }]}>
-            <Select placeholder={t('settings.models.add.endpoint_type.placeholder')}>
-              {endpointTypeOptions.map((opt) => (
+            <Select disabled={isDedicatedImageModel} placeholder={t('settings.models.add.endpoint_type.placeholder')}>
+              {availableEndpointTypeOptions.map((opt) => (
                 <Select.Option key={opt.value} value={opt.value}>
                   {t(opt.label)}
                 </Select.Option>
@@ -350,6 +399,33 @@ const ModelEditContent: FC<ModelEditContentProps & ModalProps> = ({ provider, mo
                   // 直接传递新值给autoSave
                   autoSave({ supported_text_delta: checked })
                 }}
+              />
+            </Form.Item>
+            <Divider style={{ margin: '12px 0 16px 0' }} />
+            <Form.Item
+              name="contextWindowTokens"
+              label={t('settings.models.add.context_window_tokens.label')}
+              tooltip={t('settings.models.add.context_window_tokens.tooltip')}
+              style={{ marginBottom: 10 }}>
+              <InputNumber
+                min={16_000}
+                step={1_000}
+                style={{ width: '240px' }}
+                addonAfter="Token"
+                onChange={() => autoSave()}
+              />
+            </Form.Item>
+            <Form.Item
+              name="maxOutputTokens"
+              label={t('settings.models.add.max_output_tokens.label')}
+              tooltip={t('settings.models.add.max_output_tokens.tooltip')}
+              style={{ marginBottom: 10 }}>
+              <InputNumber
+                min={1_000}
+                step={1_000}
+                style={{ width: '240px' }}
+                addonAfter="Token"
+                onChange={() => autoSave()}
               />
             </Form.Item>
             <Divider style={{ margin: '12px 0 16px 0' }} />

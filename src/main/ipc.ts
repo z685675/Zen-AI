@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
 import { arch } from 'node:os'
 import path from 'node:path'
@@ -44,7 +45,11 @@ import { analyticsService } from './services/AnalyticsService'
 import { apiServerService } from './services/ApiServerService'
 import appService from './services/AppService'
 import { AppUpdateService } from './services/AppUpdateService'
-import { checkAssistantEnvironment, installGitForWindows } from './services/AssistantEnvironmentService'
+import {
+  checkAssistantEnvironment,
+  installGitForWindows,
+  installManagedPython
+} from './services/AssistantEnvironmentService'
 import BackupManager from './services/BackupManager'
 import CherryINOAuthService from './services/CherryINOAuthService'
 import { codeToolsService } from './services/CodeToolsService'
@@ -117,6 +122,23 @@ const vertexAIService = VertexAIService.getInstance()
 const memoryService = MemoryService.getInstance()
 const dxtService = new DxtService()
 
+function getHardwareArch() {
+  if (process.platform !== 'darwin') {
+    return arch()
+  }
+
+  try {
+    const isAppleSilicon = execFileSync('/usr/sbin/sysctl', ['-n', 'hw.optional.arm64'], {
+      encoding: 'utf8',
+      timeout: 1000
+    }).trim()
+
+    return isAppleSilicon === '1' ? 'arm64' : 'x64'
+  } catch {
+    return arch()
+  }
+}
+
 export async function registerIpc(mainWindow: BrowserWindow, app: Electron.App) {
   const notificationService = new NotificationService()
   const appUpdateService = new AppUpdateService(mainWindow, app.getVersion(), () => configManager.getAutoUpdate())
@@ -146,7 +168,9 @@ export async function registerIpc(mainWindow: BrowserWindow, app: Electron.App) 
     appDataPath: app.getPath('userData'),
     resourcesPath: getResourcePath(),
     logsPath: logger.getLogsDir(),
+    platform: process.platform,
     arch: arch(),
+    hardwareArch: getHardwareArch(),
     isPortable: isWin && 'PORTABLE_EXECUTABLE_DIR' in process.env,
     installPath: path.dirname(app.getPath('exe'))
   }))
@@ -609,6 +633,7 @@ export async function registerIpc(mainWindow: BrowserWindow, app: Electron.App) 
   ipcMain.handle(IpcChannel.File_Upload, fileManager.uploadFile.bind(fileManager))
   ipcMain.handle(IpcChannel.File_Clear, fileManager.clear.bind(fileManager))
   ipcMain.handle(IpcChannel.File_Read, fileManager.readFile.bind(fileManager))
+  ipcMain.handle(IpcChannel.File_ReadStructured, fileManager.readStructuredFile.bind(fileManager))
   ipcMain.handle(IpcChannel.File_ReadExternal, fileManager.readExternalFile.bind(fileManager))
   ipcMain.handle(IpcChannel.File_Delete, fileManager.deleteFile.bind(fileManager))
   ipcMain.handle(IpcChannel.File_DeleteDir, fileManager.deleteDir.bind(fileManager))
@@ -862,6 +887,7 @@ export async function registerIpc(mainWindow: BrowserWindow, app: Electron.App) 
   ipcMain.handle(IpcChannel.App_GetBinaryPath, (_, name: string) => getBinaryPath(name))
   ipcMain.handle(IpcChannel.App_CheckAssistantEnvironment, () => checkAssistantEnvironment())
   ipcMain.handle(IpcChannel.App_InstallUvBinary, () => runInstallScript('install-uv.js'))
+  ipcMain.handle(IpcChannel.App_InstallManagedPython, () => installManagedPython())
   ipcMain.handle(IpcChannel.App_InstallBunBinary, () => runInstallScript('install-bun.js'))
   ipcMain.handle(IpcChannel.App_InstallGitForWindows, () => installGitForWindows())
   ipcMain.handle(IpcChannel.App_InstallOvmsBinary, () => runInstallScript('install-ovms.js'))

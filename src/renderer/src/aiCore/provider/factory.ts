@@ -1,6 +1,7 @@
 import { extensionRegistry } from '@cherrystudio/ai-core/provider'
 import { loggerService } from '@logger'
-import { type Provider, SystemProviderIds } from '@renderer/types'
+import { getEffectiveModelEndpointType } from '@renderer/config/models'
+import { type Model, type Provider, SystemProviderIds } from '@renderer/types'
 import { isAzureOpenAIProvider, isAzureResponsesEndpoint } from '@renderer/utils/provider'
 
 import { type AppProviderId, appProviderIds } from '../types'
@@ -23,7 +24,7 @@ for (const extension of extensions) {
  * @param provider - Provider 配置对象
  * @returns AI SDK 标准 provider ID
  */
-export function getAiSdkProviderId(provider: Provider): AppProviderId {
+export function getAiSdkProviderId(provider: Provider, model?: Model): AppProviderId {
   // 1. 特殊处理：Azure 的 responses 端点检测（必须在别名解析之前）
   if (isAzureOpenAIProvider(provider)) {
     return isAzureResponsesEndpoint(provider) ? appProviderIds['azure-responses'] : appProviderIds.azure
@@ -39,6 +40,21 @@ export function getAiSdkProviderId(provider: Provider): AppProviderId {
 
   if (provider.type !== 'openai' && provider.type in appProviderIds) {
     return appProviderIds[provider.type]
+  }
+
+  const endpointType = model ? getEffectiveModelEndpointType(model, provider) : undefined
+  const hasGatewayEndpointMetadata =
+    Array.isArray(model?.supported_endpoint_types) && model.supported_endpoint_types.length > 0
+
+  // New API exposes supported_endpoint_types even when its imported provider type is OpenAI.
+  // Keep the selected endpoint protocol, but use the gateway-aware runtime for a consistent request shape.
+  if (
+    hasGatewayEndpointMetadata ||
+    endpointType === 'anthropic' ||
+    endpointType === 'gemini' ||
+    endpointType === 'openai-response'
+  ) {
+    return appProviderIds.newapi
   }
 
   if (provider.apiHost.includes('api.openai.com')) {

@@ -124,6 +124,32 @@ function toModel(id: string, provider: Provider, extra?: Partial<Model>): Model 
   }
 }
 
+function positiveInteger(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? Math.floor(value) : undefined
+}
+
+function capacityMetadata(input: {
+  context_length?: number
+  inputTokenLimit?: number
+  max_output?: number
+  max_output_tokens?: number
+  outputTokenLimit?: number
+}): Partial<Model> {
+  const contextWindowTokens = positiveInteger(input.context_length ?? input.inputTokenLimit)
+  const maxOutputTokens = positiveInteger(input.max_output ?? input.max_output_tokens ?? input.outputTokenLimit)
+
+  if (!contextWindowTokens && !maxOutputTokens) {
+    return {}
+  }
+
+  return {
+    contextWindowTokens,
+    maxOutputTokens,
+    contextCapacitySource: contextWindowTokens ? 'provider' : undefined,
+    contextCapacityConfidence: contextWindowTokens ? 'high' : undefined
+  }
+}
+
 function dedup<T>(items: T[], getId: (item: T) => string | undefined): T[] {
   const seen = new Set<string>()
   return items.filter((item) => {
@@ -177,7 +203,11 @@ const geminiFetcher: ModelFetcher = {
     })
     return dedup(response.models, (m) => m.name).map((m) => {
       const id = m.name.startsWith('models/') ? m.name.slice(7) : m.name
-      return toModel(id, provider, { name: m.displayName || id, description: m.description })
+      return toModel(id, provider, {
+        name: m.displayName || id,
+        description: m.description,
+        ...capacityMetadata(m)
+      })
     })
   }
 }
@@ -206,7 +236,9 @@ const githubFetcher: ModelFetcher = {
         owned_by: m.publisher
       })
     )
-    const v1Models = v1Response.data.map((m) => toModel(m.id, provider, { owned_by: m.owned_by }))
+    const v1Models = v1Response.data.map((m) =>
+      toModel(m.id, provider, { owned_by: m.owned_by, ...capacityMetadata(m) })
+    )
     return dedup([...catalogModels, ...v1Models], (m) => m.id)
   }
 }
@@ -242,7 +274,8 @@ const togetherFetcher: ModelFetcher = {
       toModel(m.id, provider, {
         name: m.display_name || m.id,
         description: m.description,
-        owned_by: m.organization
+        owned_by: m.organization,
+        ...capacityMetadata(m)
       })
     )
   }
@@ -261,7 +294,10 @@ const newApiFetcher: ModelFetcher = {
     return dedup(response.data, (m) => m.id).map((m) =>
       toModel(m.id, provider, {
         owned_by: m.owned_by,
-        supported_endpoint_types: m.supported_endpoint_types as EndpointType[] | undefined
+        ...(m.supported_endpoint_types
+          ? { supported_endpoint_types: m.supported_endpoint_types as EndpointType[] }
+          : {}),
+        ...capacityMetadata(m)
       })
     )
   }
@@ -285,7 +321,12 @@ const openRouterFetcher: ModelFetcher = {
       }).catch(() => ({ data: [] }))
     ])
     const all = [...modelsResponse.data, ...embedModelsResponse.data]
-    return dedup(all, (m) => m.id).map((m) => toModel(m.id, provider, { owned_by: m.owned_by }))
+    return dedup(all, (m) => m.id).map((m) =>
+      toModel(m.id, provider, {
+        owned_by: m.owned_by,
+        ...capacityMetadata(m)
+      })
+    )
   }
 }
 
@@ -314,7 +355,12 @@ const ppioFetcher: ModelFetcher = {
       }).catch(() => ({ data: [] }))
     ])
     const all = [...chat.data, ...embed.data, ...reranker.data]
-    return dedup(all, (m) => m.id).map((m) => toModel(m.id, provider, { owned_by: m.owned_by }))
+    return dedup(all, (m) => m.id).map((m) =>
+      toModel(m.id, provider, {
+        owned_by: m.owned_by,
+        ...capacityMetadata(m)
+      })
+    )
   }
 }
 
@@ -330,7 +376,8 @@ const aiHubMixFetcher: ModelFetcher = {
     return dedup(response.data, (m) => m.model_id).map((m) =>
       toModel(m.model_id, provider, {
         name: m.model_name || m.model_id,
-        description: m.desc
+        description: m.desc,
+        ...capacityMetadata(m)
       })
     )
   }
@@ -347,7 +394,15 @@ const openAICompatibleFetcher: ModelFetcher = {
       responseSchema: OpenAIModelsResponseSchema,
       abortSignal: signal
     })
-    return dedup(response.data, (m) => m.id).map((m) => toModel(m.id, provider, { owned_by: m.owned_by }))
+    return dedup(response.data, (m) => m.id).map((m) =>
+      toModel(m.id, provider, {
+        owned_by: m.owned_by,
+        ...(m.supported_endpoint_types
+          ? { supported_endpoint_types: m.supported_endpoint_types as EndpointType[] }
+          : {}),
+        ...capacityMetadata(m)
+      })
+    )
   }
 }
 

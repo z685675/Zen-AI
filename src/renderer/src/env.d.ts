@@ -19,6 +19,7 @@ import type {
 } from './components/TopView/toast'
 
 interface ImportMetaEnv {
+  VITE_ENABLE_CODEX_RUNTIME?: string
   VITE_RENDERER_ANNOUNCEMENT_FEED_URL?: string
   RENDERER_VITE_ANNOUNCEMENT_FEED_URL?: string
   VITE_RENDERER_INTEGRATED_MODEL: string

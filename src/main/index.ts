@@ -31,6 +31,7 @@ import { localTransferService } from './services/LocalTransferService'
 import { openClawService } from './services/OpenClawService'
 import { nodeTraceService } from './services/NodeTraceService'
 import powerMonitorService from './services/PowerMonitorService'
+import { reduxService } from './services/ReduxService'
 import {
   CHERRY_STUDIO_PROTOCOL,
   handleProtocolUrl,
@@ -207,6 +208,10 @@ if (!app.requestSingleInstanceLock()) {
     initSelectionService()
 
     void runAsyncFunction(async () => {
+      // Built-in model selection reads providers from the persisted renderer store.
+      // Wait for rehydration so a slow startup cannot silently skip model migration.
+      await reduxService.waitUntilReady()
+
       // Initialize built-in skills and agents (sequential to avoid SQLITE_BUSY)
       // TODO: v2 lifecycle
       await bootstrapBuiltinAgents()

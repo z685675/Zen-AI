@@ -268,6 +268,7 @@ export function diagnoseClientError(error?: SerializedError, options: DiagnoseOp
     msg.includes('unexpected token') ||
     msg.includes('invalid response') ||
     msg.includes('parse error')
+  const isAgentResumeStateMissing = msg.includes('thread/resume') && msg.includes('no rollout found for thread id')
 
   const base = {
     httpStatus: hasStatus ? String(status) : '无',
@@ -358,6 +359,21 @@ export function diagnoseClientError(error?: SerializedError, options: DiagnoseOp
       serviceReceived: '是',
       startedGenerating: '否',
       suggestion: '请压缩或拆分文件，减少一次性发送的内容后重试。'
+    }
+  }
+
+  if (isAgentResumeStateMissing) {
+    return {
+      ...base,
+      category: 'response',
+      title: '任务续接失败：本地会话状态已失效',
+      summary: '智能助手未能继续上一轮本地执行状态。本次请求没有完成，但模型服务本身不一定异常。',
+      stage: '会话续接',
+      errorType: '执行会话已失效',
+      serviceConnectivity: serviceConnectivityFromCheck(connectivityCheck, '未确认'),
+      serviceReceived: '否',
+      startedGenerating: '否',
+      suggestion: '请重试一次；智能助手将新建执行会话继续任务。'
     }
   }
 

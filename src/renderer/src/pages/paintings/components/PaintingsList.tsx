@@ -67,54 +67,56 @@ const PaintingsList: FC<PaintingsListProps> = ({
   return (
     <ListShell>
       <Container ref={listRef} onScroll={handleScroll} style={{ paddingBottom: dragging ? 80 : 10 }}>
-      {!dragging && (
-        <>
-          <Tooltip title={t('paintings.drag_reorder_hint')} placement="left">
-            <NewPaintingButton onClick={onNewPainting}>
-              <PlusOutlined />
-            </NewPaintingButton>
-          </Tooltip>
-          {paintings.length > 1 && <DragHint>{t('paintings.drag_reorder_hint')}</DragHint>}
-        </>
-      )}
-      <DraggableList
-        list={paintings}
-        onUpdate={(value) => updatePaintings(namespace, value)}
-        onDragStart={() => setDragging(true)}
-        onDragEnd={() => setDragging(false)}
-        constrainDragAxis="vertical"
-        droppableProps={{ direction: 'vertical' }}
-        listStyle={{ width: 84 }}
-        style={{ width: '100%' }}
-        listProps={{
-          style: {
-            width: '100%',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center'
-          }
-        }}>
-        {(item: Painting) => (
-          <CanvasWrapper key={item.id}>
-            <Canvas
-              className={classNames(selectedPainting?.id === item.id && 'selected')}
-              onClick={() => onSelectPainting(item)}>
-              {item.files[0] && <ThumbnailImage src={FileManager.getFileUrl(item.files[0])} alt="" draggable={false} />}
-              {loadingPaintingIds?.has(item.id) && <GeneratingDot />}
-            </Canvas>
-            <CanvasIndex title={getCanvasLabel(item)}>{getCanvasLabel(item)}</CanvasIndex>
-            <DeleteButton>
-              <Popconfirm
-                title={t('paintings.button.delete.image.confirm')}
-                onConfirm={() => onDeletePainting(item)}
-                okButtonProps={{ danger: true }}
-                placement="left">
-                <DeleteOutlined />
-              </Popconfirm>
-            </DeleteButton>
-          </CanvasWrapper>
+        {!dragging && (
+          <>
+            <Tooltip title={t('paintings.drag_reorder_hint')} placement="left">
+              <NewPaintingButton onClick={onNewPainting}>
+                <PlusOutlined />
+              </NewPaintingButton>
+            </Tooltip>
+            {paintings.length > 1 && <DragHint>{t('paintings.drag_reorder_hint')}</DragHint>}
+          </>
         )}
-      </DraggableList>
+        <DraggableList
+          list={paintings}
+          onUpdate={(value) => updatePaintings(namespace, value)}
+          onDragStart={() => setDragging(true)}
+          onDragEnd={() => setDragging(false)}
+          constrainDragAxis="vertical"
+          droppableProps={{ direction: 'vertical' }}
+          listStyle={{ width: 84 }}
+          style={{ width: '100%' }}
+          listProps={{
+            style: {
+              width: '100%',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center'
+            }
+          }}>
+          {(item: Painting) => (
+            <CanvasWrapper key={item.id}>
+              <Canvas
+                className={classNames(selectedPainting?.id === item.id && 'selected')}
+                onClick={() => onSelectPainting(item)}>
+                {item.files[0] && (
+                  <ThumbnailImage src={FileManager.getFileUrl(item.files[0])} alt="" draggable={false} />
+                )}
+                {loadingPaintingIds?.has(item.id) && <GeneratingDot />}
+              </Canvas>
+              <CanvasIndex title={getCanvasLabel(item)}>{getCanvasLabel(item)}</CanvasIndex>
+              <DeleteButton>
+                <Popconfirm
+                  title={t('paintings.button.delete.image.confirm')}
+                  onConfirm={() => onDeletePainting(item)}
+                  okButtonProps={{ danger: true }}
+                  placement="left">
+                  <DeleteOutlined />
+                </Popconfirm>
+              </DeleteButton>
+            </CanvasWrapper>
+          )}
+        </DraggableList>
       </Container>
       {showScrollTop && !dragging && (
         <Tooltip title={t('common.navigation.top')} placement="left">
