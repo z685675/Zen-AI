@@ -89,7 +89,22 @@ jobs:
             ${{ runner.os }}-pnpm-
 
       - name: Install Dependencies
-        run: pnpm install
+        shell: bash
+        run: |
+          for attempt in 1 2 3; do
+            if pnpm install --frozen-lockfile; then
+              exit 0
+            fi
+
+            if [ "$attempt" -lt 3 ]; then
+              delay=$((attempt * 15))
+              echo "::warning::Dependency installation failed (attempt $attempt/3). Retrying in ${delay}s."
+              sleep "$delay"
+            fi
+          done
+
+          echo "::error::Dependency installation failed after 3 attempts."
+          exit 1
 
       - name: Prepare release notes
         shell: bash
