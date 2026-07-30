@@ -169,6 +169,23 @@ jobs:
           RENDERER_VITE_AIHUBMIX_SECRET: ${{ secrets.RENDERER_VITE_AIHUBMIX_SECRET }}
           RENDERER_VITE_PPIO_APP_SECRET: ${{ secrets.RENDERER_VITE_PPIO_APP_SECRET }}
 
+      - name: Verify Windows runtime dependencies
+        if: matrix.os == 'windows-2022'
+        shell: pwsh
+        run: |
+          $env:ELECTRON_RUN_AS_NODE = "1"
+          $process = Start-Process `
+            -FilePath "./dist/win-unpacked/Zen AI.exe" `
+            -ArgumentList @(
+              "scripts/check-packaged-runtime-dependencies.js",
+              "dist/win-unpacked/resources/app.asar",
+              "dist/win-arm64-unpacked/resources/app.asar"
+            ) `
+            -NoNewWindow `
+            -Wait `
+            -PassThru
+          exit $process.ExitCode
+
       - name: Remove macOS legacy aliases before release action
         if: matrix.os == 'macos-latest'
         shell: bash

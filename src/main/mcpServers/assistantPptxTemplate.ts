@@ -1,23 +1,11 @@
-import { createRequire } from 'node:module'
 import path from 'node:path'
 import { PassThrough } from 'node:stream'
 
 import AdmZip from 'adm-zip'
+import archiver from 'archiver'
 import { XMLBuilder, XMLParser } from 'fast-xml-parser'
 
 import type { LoadedImageAsset } from './assistantAssets'
-
-interface ZipArchive {
-  append(source: Buffer, data: { name: string }): void
-  finalize(): Promise<void>
-  on(event: 'error', listener: (error: Error) => void): void
-  pipe(destination: PassThrough): void
-}
-
-type ZipArchiveFactory = (format: 'zip', options: { zlib: { level: number } }) => ZipArchive
-
-const loadModule = createRequire(import.meta.url)
-const createZipArchive = loadModule('archiver') as ZipArchiveFactory
 
 const SLIDE_RELATIONSHIP_TYPE = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide'
 const SLIDE_CONTENT_TYPE = 'application/vnd.openxmlformats-officedocument.presentationml.slide+xml'
@@ -345,7 +333,7 @@ export async function createPptxFromTemplate(
 }
 
 async function serializeOfficeZip(zip: AdmZip): Promise<Buffer> {
-  const archive = createZipArchive('zip', { zlib: { level: 6 } })
+  const archive = archiver('zip', { zlib: { level: 6 } })
   const output = new PassThrough()
   const chunks: Buffer[] = []
   const completed = new Promise<Buffer>((resolve, reject) => {
