@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   dispatch: vi.fn(),
   fetchMessages: vi.fn(),
   getAgent: vi.fn(),
+  getModels: vi.fn(),
   setActiveSessionIdAction: vi.fn((payload) => ({ type: 'runtime/setActiveSessionId', payload })),
   updateSession: vi.fn()
 }))
@@ -18,7 +19,7 @@ vi.mock('@renderer/hooks/agents/useAgent', () => ({
 }))
 
 vi.mock('@renderer/hooks/agents/useAgentClient', () => ({
-  useAgentClient: () => ({ getAgent: mocks.getAgent })
+  useAgentClient: () => ({ getAgent: mocks.getAgent, getModels: mocks.getModels })
 }))
 
 vi.mock('@renderer/hooks/agents/useSessions', () => ({
@@ -54,6 +55,9 @@ vi.mock('react-i18next', async (importOriginal) => ({
   })
 }))
 
+import { CacheService } from '@renderer/services/CacheService'
+import { getAgentSessionDraftCacheKey } from '@renderer/utils/agentSessionDraft'
+
 import { useCreateDefaultSession } from '../useCreateDefaultSession'
 
 const makeAgent = (overrides: Record<string, unknown> = {}) => ({
@@ -80,10 +84,23 @@ const makeSession = (overrides: Record<string, unknown> = {}) => ({
 describe('useCreateDefaultSession', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    CacheService.clear()
     mocks.agent = makeAgent({ model: 'provider:claude-opus-4-6' })
     mocks.sessions = [makeSession()]
     mocks.fetchMessages.mockResolvedValue({ messages: [], blocks: [] })
     mocks.getAgent.mockResolvedValue(makeAgent())
+    mocks.getModels.mockResolvedValue({
+      data: [
+        {
+          id: 'provider:gpt-5.6-luna',
+          object: 'model',
+          created: 0,
+          name: 'gpt-5.6-luna',
+          owned_by: 'provider',
+          provider_model_id: 'gpt-5.6-luna'
+        }
+      ]
+    })
     mocks.createSession.mockResolvedValue(null)
     mocks.updateSession.mockImplementation(async (form) => ({ ...mocks.sessions[0], ...form }))
   })
@@ -97,7 +114,11 @@ describe('useCreateDefaultSession', () => {
     })
 
     expect(mocks.updateSession).toHaveBeenCalledWith(
-      { id: 'session-1', model: 'provider:gpt-5.6-luna' },
+      {
+        id: 'session-1',
+        model: 'provider:gpt-5.6-luna',
+        configuration: expect.objectContaining({ reasoning_effort: 'medium' })
+      },
       { showSuccessToast: false }
     )
     expect(mocks.createSession).not.toHaveBeenCalled()
@@ -116,7 +137,61 @@ describe('useCreateDefaultSession', () => {
     })
 
     expect(mocks.updateSession).not.toHaveBeenCalled()
-    expect(mocks.createSession).toHaveBeenCalledWith(expect.objectContaining({ model: 'provider:gpt-5.6-luna' }))
+    expect(mocks.createSession).toHaveBeenCalledWith(
+      expect.objectContaining({
+        model: 'provider:gpt-5.6-luna',
+        configuration: expect.objectContaining({ reasoning_effort: 'medium' })
+      })
+    )
     expect(mocks.setActiveSessionIdAction).toHaveBeenCalledWith({ agentId: 'agent-1', sessionId: 'session-2' })
+  })
+
+  it('upgrades a legacy Agent default to gpt-5.6-luna before reusing an empty session', async () => {
+    mocks.getAgent.mockResolvedValue(makeAgent({ model: 'provider:gpt-5.4-mini' }))
+    const { result } = renderHook(() => useCreateDefaultSession('agent-1'))
+
+    await act(async () => {
+      await result.current.createDefaultSession()
+    })
+
+    expect(mocks.getModels).toHaveBeenCalledWith({ limit: 1000 })
+    expect(mocks.updateSession).toHaveBeenCalledWith(
+      {
+        id: 'session-1',
+        model: 'provider:gpt-5.6-luna',
+        configuration: expect.objectContaining({ reasoning_effort: 'medium' })
+      },
+      { showSuccessToast: false }
+    )
+  })
+
+  it('reuses an empty session with an unsent draft instead of creating another unnamed session', async () => {
+    mocks.sessions = [makeSession({ model: 'provider:gpt-5.6-luna', configuration: { reasoning_effort: 'medium' } })]
+    CacheService.set(getAgentSessionDraftCacheKey('agent-1', 'session-1'), 'unfinished request', 60_000)
+    const { result } = renderHook(() => useCreateDefaultSession('agent-1'))
+
+    await act(async () => {
+      await result.current.createDefaultSession()
+    })
+
+    expect(mocks.fetchMessages).toHaveBeenCalled()
+    expect(mocks.updateSession).not.toHaveBeenCalled()
+    expect(mocks.createSession).not.toHaveBeenCalled()
+    expect(mocks.setActiveSessionIdAction).toHaveBeenCalledWith({ agentId: 'agent-1', sessionId: 'session-1' })
+  })
+
+  it('creates only one session when new conversation is triggered concurrently', async () => {
+    mocks.sessions = []
+    mocks.createSession.mockImplementation(async (form) => {
+      await new Promise((resolve) => setTimeout(resolve, 10))
+      return makeSession({ ...form, id: 'session-2' })
+    })
+    const { result } = renderHook(() => useCreateDefaultSession('agent-1'))
+
+    await act(async () => {
+      await Promise.all([result.current.createDefaultSession(), result.current.createDefaultSession()])
+    })
+
+    expect(mocks.createSession).toHaveBeenCalledTimes(1)
   })
 })

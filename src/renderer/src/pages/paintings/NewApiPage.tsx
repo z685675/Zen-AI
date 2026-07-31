@@ -115,6 +115,8 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
   const { autoTranslateWithSpace } = useSettings()
   const textareaRef = useRef<any>(null)
   const spaceClickTimer = useRef<NodeJS.Timeout>(null)
+  const selectedPaintingIdRef = useRef<string | null>(null)
+  const failedPromptToRestoreRef = useRef<string | null>(null)
   const selectableProviders = useMemo(
     () => providers.filter((provider) => Options.includes(provider.id)),
     [Options, providers]
@@ -233,20 +235,29 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
 
   const syncDraftFromPainting = useCallback(
     (painting: PaintingAction) => {
-      setDraft((prev) => ({
-        ...prev,
-        providerId,
-        model: resolveAvailableModel(painting.model, prev.model),
-        prompt: '',
-        size: painting.size || prev.size || DEFAULT_PAINTING.size,
-        quality: painting.quality || prev.quality || DEFAULT_PAINTING.quality,
-        moderation: painting.moderation || prev.moderation || DEFAULT_PAINTING.moderation,
-        background: painting.background || prev.background || DEFAULT_PAINTING.background,
-        n: painting.n || prev.n || DEFAULT_PAINTING.n
-      }))
+      const restoredPrompt = failedPromptToRestoreRef.current
+      failedPromptToRestoreRef.current = null
+
+      setDraft((prev) => {
+        return {
+          ...prev,
+          providerId,
+          model: resolveAvailableModel(painting.model, prev.model),
+          prompt: restoredPrompt ?? '',
+          size: painting.size || prev.size || DEFAULT_PAINTING.size,
+          quality: painting.quality || prev.quality || DEFAULT_PAINTING.quality,
+          moderation: painting.moderation || prev.moderation || DEFAULT_PAINTING.moderation,
+          background: painting.background || prev.background || DEFAULT_PAINTING.background,
+          n: painting.n || prev.n || DEFAULT_PAINTING.n
+        }
+      })
     },
     [providerId, resolveAvailableModel]
   )
+
+  useEffect(() => {
+    selectedPaintingIdRef.current = selectedPaintingId
+  }, [selectedPaintingId])
 
   useEffect(() => {
     if (!providerId) {
@@ -537,6 +548,7 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
       composerMode === 'upload-edit' ? uploadedEditFiles.map((file) => URL.createObjectURL(file)) : []
     registerNewApiPaintingTask(resultPainting.id, controller, inputPreviewUrls)
     addPainting('openai_image_generate', resultPainting)
+    selectedPaintingIdRef.current = resultPainting.id
     setSelectedPaintingId(resultPainting.id)
     setComposerMode('continue')
     setCurrentImageIndex(0)
@@ -659,10 +671,17 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
         setSelectedPaintingId((currentId) => (currentId === resultPainting.id ? completedPainting.id : currentId))
       }
     } catch (error: unknown) {
+      const shouldRestorePrompt = selectedPaintingIdRef.current === resultPainting.id
+      const fallbackPaintingId = selectedPainting?.id ?? null
+
+      if (shouldRestorePrompt) {
+        failedPromptToRestoreRef.current = fallbackPaintingId ? prompt : null
+        updateDraft({ prompt })
+        selectedPaintingIdRef.current = fallbackPaintingId
+        setSelectedPaintingId(fallbackPaintingId)
+      }
+
       void removePainting('openai_image_generate', resultPainting)
-      setSelectedPaintingId((currentId) =>
-        currentId === resultPainting.id ? (selectedPainting?.id ?? null) : currentId
-      )
       handleError(error)
     } finally {
       unregisterNewApiPaintingTask(resultPainting.id)

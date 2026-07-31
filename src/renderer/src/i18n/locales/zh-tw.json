@@ -347,6 +347,8 @@
       "tooltip": "在 Windows 上執行 Agent 需要 Git Bash。如未安裝，請從 git-scm.com 下載安裝。"
     },
     "input": {
+      "deep_research": "深度研究",
+      "deep_research_tooltip": "針對下一則訊息建立一次研究任務：保留目前模型，自動使用高思考強度；先制定計畫，確認後分輪檢索、核驗來源，並產生附引用的報告。",
       "hero_placeholder": "例如：幫我搜尋資料、總結重點，再整理成結果給我",
       "placeholder": "在這裡輸入您的訊息，使用 {{key}} 傳送 - @ 選擇路徑，/ 選擇命令",
       "reasoning_effort": "思考強度",
@@ -382,7 +384,7 @@
         "set_active": "設為目前工作區"
       },
       "add": {
-        "title": "新增工作階段"
+        "title": "新增對話"
       },
       "allowed_tools": {
         "empty": "目前此代理沒有可用的工具。",
@@ -1028,22 +1030,22 @@
       "prompt": "提示詞設定",
       "reasoning_effort": {
         "auto": "自動",
-        "auto_description": "彈性決定推理投入的心力",
+        "auto_description": "根據任務彈性決定思考強度",
         "default": "預設",
-        "default_description": "依賴模型的預設行為，無需任何配置。",
+        "default_description": "沿用模型預設的思考設定",
         "high": "高",
-        "high_description": "高級推理",
-        "label": "推理強度",
+        "high_description": "高強度思考",
+        "label": "思考強度",
         "low": "低",
-        "low_description": "低階推理",
+        "low_description": "低強度思考",
         "medium": "中",
-        "medium_description": "中等程度推理",
-        "minimal": "最少思考",
-        "minimal_description": "最少推理",
+        "medium_description": "中等強度思考",
+        "minimal": "最少",
+        "minimal_description": "最低程度的思考",
         "off": "關閉",
-        "off_description": "禁用推理",
+        "off_description": "關閉思考",
         "xhigh": "超高",
-        "xhigh_description": "超高階推理"
+        "xhigh_description": "超高強度思考"
       },
       "regular_phrases": {
         "add": "新增短語",
@@ -1291,6 +1293,8 @@
       },
       "url_context": "網頁上下文",
       "web_search": {
+        "auto_disabled": "[to be translated]:Off: do not use web search",
+        "auto_enabled": "[to be translated]:On: automatically decide when web search is needed",
         "builtin": {
           "disabled_content": "目前模型不支援網路搜尋功能",
           "enabled_content": "使用模型內建的網路搜尋功能",
@@ -1299,14 +1303,18 @@
         "button": {
           "ok": "前往設定"
         },
+        "disabled": "連網搜尋下一則訊息",
         "enable": "開啟網路搜尋",
         "enable_content": "需要先在設定中開啟網路搜尋",
+        "enabled": "下一則訊息將連網搜尋，傳送後自動關閉",
         "label": "網路搜尋",
         "no_web_search": {
           "description": "關閉網路搜尋",
           "label": "關閉網路搜尋"
         },
-        "settings": "網路搜尋設定"
+        "settings": "網路搜尋設定",
+        "toast_disabled": "已取消本次連網搜尋",
+        "toast_enabled": "已開啟本次連網搜尋，僅下一則訊息生效，傳送後自動關閉"
       }
     },
     "mcp": {

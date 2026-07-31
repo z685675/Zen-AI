@@ -112,6 +112,57 @@ describe('AssistantServer runtime tools', () => {
     }
   })
 
+  it('registers existing final files for quick-open delivery cards', async () => {
+    const root = await fs.mkdtemp(path.join(tmpdir(), 'zen-assistant-present-files-'))
+    tempDirs.push(root)
+    const reportPath = path.join(root, 'report.docx')
+    const sourcesPath = path.join(root, 'sources.csv')
+    await fs.writeFile(reportPath, 'docx fixture')
+    await fs.writeFile(sourcesPath, 'source,url')
+    const { assistant, client } = await createClient(root)
+
+    try {
+      const result = await client.callTool({
+        name: 'present_files',
+        arguments: {
+          file_paths: [reportPath, sourcesPath]
+        }
+      })
+      expect(result.isError).not.toBe(true)
+
+      const payload = JSON.parse((result.content[0] as { type: 'text'; text: string }).text)
+      expect(payload).toEqual({
+        status: 'ready',
+        files: [
+          {
+            path: reportPath,
+            format: 'docx',
+            size: 12,
+            verified: true
+          },
+          {
+            path: sourcesPath,
+            format: 'csv',
+            size: 10,
+            verified: true
+          }
+        ]
+      })
+
+      const missing = await client.callTool({
+        name: 'present_files',
+        arguments: {
+          file_paths: [path.join(root, 'missing.pdf')]
+        }
+      })
+      expect(missing.isError).toBe(true)
+      expect(JSON.stringify(missing.content)).toContain('does not exist')
+    } finally {
+      await client.close()
+      await assistant.mcpServer.close()
+    }
+  })
+
   it('validates Markdown structure before writing the final file', async () => {
     const root = await fs.mkdtemp(path.join(tmpdir(), 'zen-assistant-markdown-'))
     tempDirs.push(root)
@@ -243,7 +294,7 @@ describe('AssistantServer runtime tools', () => {
     try {
       const tools = await client.listTools()
       expect(tools.tools.map((tool) => tool.name)).toEqual(
-        expect.arrayContaining(['create_file', 'inspect_pptx_template', 'python_execute', 'ocr_file'])
+        expect.arrayContaining(['create_file', 'present_files', 'inspect_pptx_template', 'python_execute', 'ocr_file'])
       )
     } finally {
       await client.close()

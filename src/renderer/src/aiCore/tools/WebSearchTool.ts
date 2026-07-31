@@ -2,6 +2,7 @@ import { REFERENCE_PROMPT } from '@renderer/config/prompts'
 import WebSearchService from '@renderer/services/WebSearchService'
 import type { WebSearchProvider, WebSearchProviderResponse } from '@renderer/types'
 import type { ExtractResults } from '@renderer/utils/extract'
+import { sanitizeWebSearchQuery } from '@shared/searchIntent'
 import { type InferToolInput, type InferToolOutput, tool } from 'ai'
 import * as z from 'zod'
 
@@ -18,12 +19,13 @@ export const webSearchToolWithPreExtractedKeywords = (
   requestId: string
 ) => {
   const webSearchProvider = WebSearchService.getWebSearchProvider(webSearchProviderId)
+  const preparedQueries = extractedKeywords.question.map(sanitizeWebSearchQuery)
 
   return tool({
-    description: `Web search tool for finding current information, news, and real-time data from the internet.
+    description: `Required web search for the current conversation. The user explicitly enabled network search, so call this tool once before answering this request.
 
 This tool has been configured with search parameters based on the conversation context:
-- Prepared queries: ${extractedKeywords.question.map((q) => `"${q}"`).join(', ')}${
+- Prepared queries: ${preparedQueries.map((q) => `"${q}"`).join(', ')}${
       extractedKeywords.links?.length
         ? `
 - Relevant URLs: ${extractedKeywords.links.join(', ')}`
@@ -40,11 +42,11 @@ You can use this tool as-is to search with the prepared queries, or provide addi
     }),
 
     execute: async ({ additionalContext }) => {
-      let finalQueries = [...extractedKeywords.question]
+      let finalQueries = [...preparedQueries]
 
       if (additionalContext?.trim()) {
         // 如果大模型提供了额外上下文，使用更具体的描述
-        const cleanContext = additionalContext.trim()
+        const cleanContext = sanitizeWebSearchQuery(additionalContext)
         if (cleanContext) {
           finalQueries = [cleanContext]
         }

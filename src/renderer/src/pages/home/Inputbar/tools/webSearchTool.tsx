@@ -2,13 +2,11 @@ import { isMandatoryWebSearchModel } from '@renderer/config/models'
 import { defineTool, registerTool, TopicType } from '@renderer/pages/home/Inputbar/types'
 
 import WebSearchButton from './components/WebSearchButton'
-import WebSearchQuickPanelManager from './components/WebSearchQuickPanelManager'
 
 /**
  * Web Search Tool
  *
- * Allows users to enable web search for their messages.
- * Supports both model built-in search and external search providers.
+ * Toggles the built-in free-search chain for the current conversation.
  */
 const webSearchTool = defineTool({
   key: 'web_search',
@@ -18,11 +16,14 @@ const webSearchTool = defineTool({
   condition: ({ model }) => !model || !isMandatoryWebSearchModel(model),
 
   render: function WebSearchToolRender(context) {
-    const { assistant, quickPanelController } = context
+    const { topic, onTopicChange } = context
 
-    return <WebSearchButton quickPanelController={quickPanelController} assistantId={assistant.id} />
-  },
-  quickPanelManager: WebSearchQuickPanelManager
+    if (!topic || !onTopicChange) {
+      return null
+    }
+
+    return <WebSearchButton topic={topic} onTopicChange={onTopicChange} />
+  }
 })
 
 registerTool(webSearchTool)

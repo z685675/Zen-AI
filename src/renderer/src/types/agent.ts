@@ -77,6 +77,7 @@ export const AgentConfigurationSchema = z
     // https://docs.claude.com/en/docs/claude-code/sdk/sdk-permissions#mode-specific-behaviors
     permission_mode: PermissionModeSchema.optional().default('default'), // Permission mode, default to 'default'
     agent_runtime: AgentRuntimeSchema.optional(), // Internal runtime override; missing/auto keeps current default routing.
+    reasoning_effort: z.enum(['low', 'medium', 'high', 'xhigh']).optional(),
     max_turns: z.number().optional().default(100), // Maximum number of interaction turns, default to 100
     env_vars: z.record(z.string(), z.string()).optional().default({}), // Custom environment variables for the agent runtime
 
@@ -552,10 +553,23 @@ const AgentThinkingConfigSchema = z.discriminatedUnion('type', [
 export type AgentEffort = z.infer<typeof AgentEffortSchema>
 export type AgentThinkingConfig = z.infer<typeof AgentThinkingConfigSchema>
 
+const DeepResearchTaskRequestSchema = z.object({
+  task_id: z
+    .string()
+    .min(1)
+    .max(128)
+    .regex(/^[A-Za-z0-9._:-]+$/),
+  action: z.enum(['plan', 'start', 'revise'])
+})
+
+export type DeepResearchTaskRequest = z.infer<typeof DeepResearchTaskRequestSchema>
+
 export const CreateSessionMessageRequestSchema = z.object({
   content: z.string().min(1, 'Content must be a valid string'),
   effort: AgentEffortSchema.optional(),
   thinking: AgentThinkingConfigSchema.optional(),
+  deep_research: z.boolean().optional(),
+  deep_research_task: DeepResearchTaskRequestSchema.optional(),
   recovery_context: z.string().max(240_000).optional()
 })
 

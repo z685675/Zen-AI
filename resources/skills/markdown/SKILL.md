@@ -21,6 +21,7 @@ Create Markdown that is readable as source, renders predictably, and remains por
 ## Runtime Contract
 
 - Run bundled scripts with `mcp__assistant__python_execute` using the Skill's installed path and `arguments`.
+- If another approved workflow produces the final Markdown file outside `mcp__assistant__create_file`, call `mcp__assistant__present_files` with the verified final path before replying.
 - Do not use system Python or install Markdown packages. The validator uses the managed standard library.
 
 ## Workflow

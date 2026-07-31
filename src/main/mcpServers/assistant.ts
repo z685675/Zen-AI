@@ -367,6 +367,27 @@ The output path must be inside an allowed user/workspace location. The tool crea
   }
 }
 
+const PRESENT_FILES_TOOL: Tool = {
+  name: 'present_files',
+  description: `Register final user-facing files that were created by a script, shell command, browser download, or advanced Skill workflow so Zen AI can show quick-open file cards.
+Do not call this after create_file because create_file already returns file-card metadata.
+Only include final deliverables requested by the user. Do not include source attachments, temporary files, caches, validation artifacts, or internal working files.
+Every path must point to an existing file inside an allowed workspace/user location.`,
+  inputSchema: {
+    type: 'object',
+    properties: {
+      file_paths: {
+        type: 'array',
+        minItems: 1,
+        maxItems: 20,
+        items: { type: 'string' },
+        description: 'Absolute or workspace-relative paths of final user-facing files, in preferred display order.'
+      }
+    },
+    required: ['file_paths']
+  }
+}
+
 const PYTHON_EXECUTE_TOOL: Tool = {
   name: 'python_execute',
   description: `Execute Python with Zen AI's private managed CPython runtime.
@@ -492,6 +513,17 @@ interface CreateFileArgs {
   slides?: SlideInput[]
   assets?: ImageAssetInput[]
   render_validation?: 'auto' | 'required' | 'skip'
+}
+
+interface PresentFilesArgs {
+  file_paths?: string[]
+}
+
+interface PresentedFileResult {
+  path: string
+  format: string
+  size: number
+  verified: boolean
 }
 
 interface PythonExecuteArgs {
@@ -842,6 +874,7 @@ class AssistantServer {
         DIAGNOSE_TOOL,
         INSPECT_PPTX_TEMPLATE_TOOL,
         CREATE_FILE_TOOL,
+        PRESENT_FILES_TOOL,
         PYTHON_EXECUTE_TOOL,
         OCR_FILE_TOOL
       ]
@@ -861,6 +894,8 @@ class AssistantServer {
             return await this.inspectPptxTemplate(args)
           case 'create_file':
             return await this.createFile(args as CreateFileArgs)
+          case 'present_files':
+            return await this.presentFiles(args as PresentFilesArgs)
           case 'python_execute':
             return await this.executePython(args as PythonExecuteArgs)
           case 'ocr_file':
@@ -1214,6 +1249,61 @@ class AssistantServer {
               pptx_template: templateSummary ? pptxTemplateSummary(templateSummary) : undefined,
               pptx_template_strategy: adaptiveTemplate ? 'adaptive-design' : templateSummary?.mode,
               verification
+            },
+            null,
+            2
+          )
+        }
+      ]
+    }
+  }
+
+  private async presentFiles(args: PresentFilesArgs) {
+    const requestedPaths = Array.isArray(args.file_paths)
+      ? args.file_paths.filter(
+          (filePath): filePath is string => typeof filePath === 'string' && filePath.trim().length > 0
+        )
+      : []
+    const uniquePaths = [...new Set(requestedPaths.map((filePath) => filePath.trim()))]
+
+    if (uniquePaths.length === 0) {
+      throw new McpError(ErrorCode.InvalidParams, "'file_paths' must contain at least one file path")
+    }
+    if (uniquePaths.length > 20) {
+      throw new McpError(ErrorCode.InvalidParams, "'file_paths' supports at most 20 final files")
+    }
+
+    const files: PresentedFileResult[] = []
+    for (const filePath of uniquePaths) {
+      const resolvedPath = this.resolveInputPath(filePath)
+      const stat = await fsp.stat(resolvedPath).catch(() => {
+        throw new McpError(ErrorCode.InvalidParams, `Final output file does not exist: ${resolvedPath}`)
+      })
+      if (!stat.isFile()) {
+        throw new McpError(ErrorCode.InvalidParams, `Final output path is not a file: ${resolvedPath}`)
+      }
+
+      files.push({
+        path: resolvedPath,
+        format: path.extname(resolvedPath).slice(1).toLowerCase() || 'file',
+        size: stat.size,
+        verified: true
+      })
+    }
+
+    logger.info('Assistant present_files registered final outputs', {
+      count: files.length,
+      paths: files.map((file) => file.path)
+    })
+
+    return {
+      content: [
+        {
+          type: 'text' as const,
+          text: JSON.stringify(
+            {
+              status: 'ready',
+              files
             },
             null,
             2

@@ -1,7 +1,7 @@
 import type { Model } from '@renderer/types'
 import { describe, expect, it } from 'vitest'
 
-import { resolveRetryModelSelection } from '../messageRetryModel'
+import { resolveAgentRetryModelSelection, resolveRetryModelSelection } from '../messageRetryModel'
 
 const gptModel = {
   id: 'gpt-5.6-luna',
@@ -56,6 +56,37 @@ describe('resolveRetryModelSelection', () => {
           modelId: grokModel.id
         },
         preserveOriginalModel: true
+      })
+    ).toEqual({
+      model: grokModel,
+      modelId: grokModel.id
+    })
+  })
+})
+
+describe('resolveAgentRetryModelSelection', () => {
+  it('uses the currently selected Agent model for a regenerated response', () => {
+    expect(
+      resolveAgentRetryModelSelection({
+        currentModel: gptModel,
+        originalAssistantMessage: {
+          model: grokModel,
+          modelId: grokModel.id
+        }
+      })
+    ).toEqual({
+      model: gptModel,
+      modelId: gptModel.id
+    })
+  })
+
+  it('preserves the original response model when the current Agent model is unavailable', () => {
+    expect(
+      resolveAgentRetryModelSelection({
+        originalAssistantMessage: {
+          model: grokModel,
+          modelId: grokModel.id
+        }
       })
     ).toEqual({
       model: grokModel,

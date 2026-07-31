@@ -3,13 +3,16 @@ import { useAssistants } from '@renderer/hooks/useAssistant'
 import { useAssistantPresets } from '@renderer/hooks/useAssistantPresets'
 import { useSystemAssistantPresets } from '@renderer/pages/store/assistants/presets'
 import { groupTranslations } from '@renderer/pages/store/assistants/presets/assistantPresetGroupTranslations'
+import AddAssistantPresetPopup from '@renderer/pages/store/assistants/presets/components/AddAssistantPresetPopup'
 import AssistantPresetPreviewContent from '@renderer/pages/store/assistants/presets/components/AssistantPresetPreviewContent'
+import ImportAssistantPresetPopup from '@renderer/pages/store/assistants/presets/components/ImportAssistantPresetPopup'
+import ManageAssistantPresetsPopup from '@renderer/pages/store/assistants/presets/components/ManageAssistantPresetsPopup'
 import { createAssistantFromAgent } from '@renderer/services/AssistantService'
 import { useAppDispatch, useAppSelector } from '@renderer/store'
 import { addQuickAssistantId, removeQuickAssistantId } from '@renderer/store/assistants'
 import type { Assistant, AssistantPreset } from '@renderer/types'
 import { Button, Input, Modal, Tag } from 'antd'
-import { Search } from 'lucide-react'
+import { Import, Plus, Search, Settings2 } from 'lucide-react'
 import type { FC } from 'react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -30,7 +33,7 @@ type PresetGroup = {
 
 const QuickAssistantLibraryModal: FC<Props> = ({ open, onClose }) => {
   const dispatch = useAppDispatch()
-  const { i18n } = useTranslation()
+  const { i18n, t } = useTranslation()
   const { assistants } = useAssistants()
   const { presets: userPresets } = useAssistantPresets()
   const systemPresets = useSystemAssistantPresets()
@@ -179,6 +182,28 @@ const QuickAssistantLibraryModal: FC<Props> = ({ open, onClose }) => {
     dispatch(addQuickAssistantId(assistant.id))
   }
 
+  const handleImportAssistants = async () => {
+    const importedPresets = await ImportAssistantPresetPopup.show()
+
+    if (importedPresets?.length) {
+      setSearch(importedPresets.length === 1 ? importedPresets[0].name : '')
+      setActiveCategory('我的角色')
+    }
+  }
+
+  const handleManageAssistants = () => {
+    ManageAssistantPresetsPopup.show()
+  }
+
+  const handleCreateAssistant = async () => {
+    const createdPreset = await AddAssistantPresetPopup.show()
+
+    if (createdPreset) {
+      setSearch(createdPreset.name)
+      setActiveCategory('我的角色')
+    }
+  }
+
   const getPreviewDescription = (preset: AssistantPreset) => {
     return preset.description || '这个角色暂时没有单独描述。'
   }
@@ -213,6 +238,17 @@ const QuickAssistantLibraryModal: FC<Props> = ({ open, onClose }) => {
               prefix={<Search size={14} color="var(--color-icon)" />}
               placeholder="搜索角色名称、描述或提示词"
             />
+            <ToolbarActions>
+              <Button icon={<Import size={16} />} onClick={() => void handleImportAssistants()}>
+                {t('assistants.presets.import.title')}
+              </Button>
+              <Button icon={<Settings2 size={16} />} onClick={handleManageAssistants}>
+                {t('assistants.presets.manage.title')}
+              </Button>
+              <Button type="primary" icon={<Plus size={16} />} onClick={() => void handleCreateAssistant()}>
+                {t('assistants.presets.add.title')}
+              </Button>
+            </ToolbarActions>
           </Toolbar>
 
           <LibraryBody>
@@ -345,6 +381,26 @@ const HeaderMeta = styled.div`
 const Toolbar = styled.div`
   padding: 16px 24px;
   border-bottom: 1px solid var(--color-border);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+
+  > .ant-input-affix-wrapper {
+    flex: 1 1 280px;
+    min-width: 220px;
+  }
+`
+
+const ToolbarActions = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+
+  .ant-btn {
+    white-space: nowrap;
+  }
 `
 
 const LibraryBody = styled.div`

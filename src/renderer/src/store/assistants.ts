@@ -38,9 +38,11 @@ export interface AssistantsState {
   unifiedListOrder: Array<{ type: 'agent' | 'assistant'; id: string }>
 }
 
+const createInitialDefaultAssistant = (): Assistant => getDefaultAssistant()
+
 const initialState: AssistantsState = {
-  defaultAssistant: getDefaultAssistant(),
-  assistants: [getDefaultAssistant()],
+  defaultAssistant: createInitialDefaultAssistant(),
+  assistants: [createInitialDefaultAssistant()],
   tagsOrder: [],
   collapsedTags: {},
   presets: [],

@@ -1,5 +1,5 @@
 import { loggerService } from '@logger'
-import { AgentModelValidationError, agentService, sessionService } from '@main/services/agents'
+import { AgentModelValidationError, sessionService } from '@main/services/agents'
 import { broadcastSessionChanged } from '@main/services/agents/services/channels/sessionStreamIpc'
 import type { ListAgentSessionsResponse, SearchAgentSessionsResponse, UpdateSessionResponse } from '@types'
 import { type ReplaceSessionRequest } from '@types'
@@ -287,40 +287,6 @@ export const deleteSession = async (req: Request, res: Response): Promise<Respon
     }
 
     logger.info('Session deleted', { agentId, sessionId })
-
-    const agentStillExists = await agentService.agentExists(agentId)
-    if (!agentStillExists) {
-      logger.info('Deleted orphan session without recreating default session because agent no longer exists', {
-        agentId,
-        sessionId
-      })
-      return res.status(204).send()
-    }
-
-    const { total } = await sessionService.listSessions(agentId, { limit: 1 })
-
-    if (total === 0) {
-      logger.info('No remaining sessions, creating default', { agentId })
-      try {
-        const fallbackSession = await sessionService.createSession(agentId, {})
-        logger.info('Default session created after delete', {
-          agentId,
-          sessionId: fallbackSession?.id
-        })
-      } catch (recoveryError: any) {
-        logger.error('Failed to recreate session after deleting last session', {
-          agentId,
-          error: recoveryError
-        })
-        return res.status(500).json({
-          error: {
-            message: `Failed to recreate session after deletion: ${recoveryError.message}`,
-            type: 'internal_error',
-            code: 'session_recovery_failed'
-          }
-        })
-      }
-    }
 
     return res.status(204).send()
   } catch (error: any) {

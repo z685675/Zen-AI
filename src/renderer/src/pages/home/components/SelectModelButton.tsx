@@ -1,7 +1,7 @@
 import ModelAvatar from '@renderer/components/Avatar/ModelAvatar'
 import { SelectChatModelPopup } from '@renderer/components/Popups/SelectModelPopup'
 import { isLocalAi } from '@renderer/config/env'
-import { chatModelFilter, isWebSearchModel } from '@renderer/config/models'
+import { chatModelFilter } from '@renderer/config/models'
 import { useAssistant, useDefaultModel } from '@renderer/hooks/useAssistant'
 import { useProvider } from '@renderer/hooks/useProvider'
 import { getProviderName } from '@renderer/services/ProviderService'
@@ -16,15 +16,15 @@ import styled from 'styled-components'
 interface Props {
   assistant: Assistant
   topic?: Topic
+  onTopicChange?: (topic: Topic) => void
 }
 
-const SelectModelButton: FC<Props> = ({ assistant, topic }) => {
+const SelectModelButton: FC<Props> = ({ assistant, topic, onTopicChange }) => {
   const { model: storedModel, updateAssistant, updateTopic } = useAssistant(assistant.id)
   const { setDefaultModel } = useDefaultModel()
   const model = topic?.model ?? assistant.model ?? storedModel
   const { t } = useTranslation()
   const timerRef = useRef<NodeJS.Timeout>(undefined)
-  const assistantRef = useRef(assistant)
   const provider = useProvider(model?.provider)
 
   const onSelectModel = async (event: React.MouseEvent<HTMLElement>) => {
@@ -34,24 +34,17 @@ const SelectModelButton: FC<Props> = ({ assistant, topic }) => {
       // 避免更新数据造成关闭弹框的卡顿
       clearTimeout(timerRef.current)
       timerRef.current = setTimeout(() => {
-        const enabledWebSearch = isWebSearchModel(selectedModel)
         setDefaultModel(selectedModel)
         if (topic) {
-          updateTopic({ ...topic, model: selectedModel })
-          updateAssistant({ enableWebSearch: enabledWebSearch && assistantRef.current.enableWebSearch })
+          const nextTopic = { ...topic, model: selectedModel }
+          updateTopic(nextTopic)
+          onTopicChange?.(nextTopic)
         } else {
-          updateAssistant({
-            model: selectedModel,
-            enableWebSearch: enabledWebSearch && assistantRef.current.enableWebSearch
-          })
+          updateAssistant({ model: selectedModel })
         }
       }, 200)
     }
   }
-
-  useEffect(() => {
-    assistantRef.current = assistant
-  }, [assistant])
 
   useEffect(() => {
     return () => {

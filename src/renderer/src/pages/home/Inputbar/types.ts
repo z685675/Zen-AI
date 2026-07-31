@@ -4,7 +4,7 @@ import type {
   QuickPanelListItem,
   QuickPanelReservedSymbol
 } from '@renderer/components/QuickPanel'
-import { type Assistant, type Model, type ThinkingOption, TopicType } from '@renderer/types'
+import { type Assistant, type Model, type ThinkingOption, type Topic, TopicType } from '@renderer/types'
 import type { InputBarToolType } from '@renderer/types/chat'
 import type { TFunction } from 'i18next'
 import React from 'react'
@@ -61,6 +61,8 @@ export interface ToolContext {
   scope: InputbarScope
   assistant: Assistant
   model?: Model
+  topic?: Topic
+  onTopicChange?: (topic: Topic) => void
   // Session data for Agent Session scope (only available when scope is TopicType.Session)
   session?: {
     agentId?: string
@@ -70,6 +72,8 @@ export interface ToolContext {
     accessiblePaths?: string[]
     reasoningEffort?: ThinkingOption
     onReasoningEffortChange?: (option: ThinkingOption) => void
+    deepResearchEnabled?: boolean
+    onDeepResearchChange?: (enabled: boolean) => void
   }
 }
 

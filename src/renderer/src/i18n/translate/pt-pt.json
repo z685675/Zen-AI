@@ -132,6 +132,7 @@
           "loginHint": "O primeiro login exige a leitura de um código QR. Verifique os logs da aplicação para obter o URL de login.",
           "qrHint": "Abra o WeChat no seu celular, escaneie o código QR para fazer login.",
           "qrTitle": "Login por QR Code do WeChat",
+          "reconnect": "[to be translated]:Rescan QR code",
           "title": "WeChat",
           "whoamiTip": "Dica: Envie /whoami no WeChat para obter o ID de um usuário."
         }
@@ -282,8 +283,35 @@
       "title": "Agent Editor"
     },
     "empty": {
+      "action": "[to be translated]:Configure Model Service",
       "description": "Crie um agente para lidar com tarefas complexas com ferramentas baseadas em IA",
       "title": "Ainda não há agentes"
+    },
+    "environmentGate": {
+      "action": "[to be translated]:Fix Environment",
+      "checkFailed": "[to be translated]:Environment check failed",
+      "description": "[to be translated]:Finish repairing the runtime environment first so the smart assistant can work reliably.",
+      "refresh": "[to be translated]:Check Again",
+      "repairHint": "[to be translated]:Bun and UV can be repaired automatically. On Windows, missing Git is installed through winget after confirmation on the repair page.",
+      "title": "[to be translated]:Assistant environment is not ready"
+    },
+    "errorFallback": {
+      "assistant_name": "[to be translated]:Smart Assistant",
+      "connection_title": "[to be translated]:The task connection was interrupted",
+      "dependency_description": "[to be translated]:This task needs a local runtime component that is not ready yet. Repair the smart assistant environment first, then retry the task for a more stable run.",
+      "dependency_title": "[to be translated]:Required runtime is missing",
+      "description": "[to be translated]:This task did not finish successfully. Try again first; if it keeps failing, open the details or adjust the model and network settings.",
+      "detail": "[to be translated]:View details",
+      "export_failed": "[to be translated]:Failed to export diagnostic package. Please try again later.",
+      "export_package": "[to be translated]:Export diagnostics",
+      "export_success": "[to be translated]:Diagnostic package exported: {{path}}",
+      "fix_environment": "[to be translated]:Fix environment",
+      "model_title": "[to be translated]:The model could not complete this task",
+      "privacy_notice": "[to be translated]:This diagnostic package is used to troubleshoot smart assistant task failures. It may include the current task conversation, error details, local file paths, and runtime environment information. Before sharing it with others, make sure it does not contain private content you do not want to share.",
+      "retry": "[to be translated]:Retry task",
+      "retry_missing_user": "[to be translated]:The original task could not be found, so it cannot be retried automatically.",
+      "subtitle": "[to be translated]:The smart assistant has stopped this task. Unfinished steps will not continue in the background.",
+      "title": "[to be translated]:Task not completed"
     },
     "get": {
       "error": {
@@ -319,7 +347,11 @@
       "tooltip": "O Git Bash é necessário para executar agentes no Windows. Instale-o a partir de git-scm.com, caso não esteja disponível."
     },
     "input": {
+      "deep_research": "[to be translated]:Deep Research",
+      "deep_research_tooltip": "[to be translated]:Creates one research task for your next message: plan first, then multi-step source verification and a cited report.",
+      "hero_placeholder": "[to be translated]:For example: research a topic, summarize the key points, and organize the result",
       "placeholder": "Digite sua mensagem aqui, envie com {{key}} - @ selecionar caminho, / selecionar comando",
+      "reasoning_effort": "[to be translated]:Thinking effort",
       "soul_placeholder": "Ajude-me a conectar ao Telegram"
     },
     "list": {
@@ -340,6 +372,7 @@
     "session": {
       "accessible_paths": {
         "add": "Adicionar diretório",
+        "current": "[to be translated]:Current workspace",
         "default_hint": "Padrão: {{path}}",
         "duplicate": "Este diretório já está incluído.",
         "empty": "Selecione pelo menos um diretório ao qual o agente possa acessar.",
@@ -347,16 +380,24 @@
           "at_least_one": "Por favor, selecione pelo menos um diretório acessível."
         },
         "label": "Diretórios acessíveis",
-        "select_failed": "Falha ao selecionar o diretório."
+        "select_failed": "Falha ao selecionar o diretório.",
+        "set_active": "[to be translated]:Make current"
       },
       "add": {
-        "title": "Adicionar uma sessão"
+        "title": "Nova conversa"
       },
       "allowed_tools": {
         "empty": "Não há ferramentas disponíveis para este agente.",
         "helper": "Escolha quais ferramentas ficam pré-autorizadas. As não selecionadas exigirão aprovação antes do uso.",
         "label": "Ferramentas pré-aprovadas",
         "placeholder": "Selecionar ferramentas pré-aprovadas"
+      },
+      "archive": {
+        "badge": "[to be translated]:Archived",
+        "empty": "[to be translated]:No archived sessions yet",
+        "move": "[to be translated]:Archive Session",
+        "restore": "[to be translated]:Restore Session",
+        "title": "[to be translated]:Archived"
       },
       "create": {
         "error": {
@@ -374,6 +415,7 @@
       "edit": {
         "title": "Sessão de edição"
       },
+      "fallback_title": "[to be translated]:Assistant Task",
       "get": {
         "error": {
           "failed": "Falha ao obter a sessão",
@@ -386,6 +428,11 @@
         "error": {
           "failed": "Falha ao reordenar as sessões"
         }
+      },
+      "search": {
+        "empty": "[to be translated]:No matching sessions found",
+        "error": "[to be translated]:Failed to search sessions",
+        "placeholder": "[to be translated]:Search Smart Assistant sessions..."
       },
       "update": {
         "error": {
@@ -416,10 +463,38 @@
           },
           "placeholder": "Selecionar modo de permissão"
         },
+        "runtime": {
+          "codexDisabled": "[to be translated]:Codex runtime is not enabled in this build. Auto continues to use the stable Claude Code path.",
+          "description": "[to be translated]:Choose the underlying runtime for this agent. At this stage Auto keeps the existing Claude Code path, while Codex is limited to controlled testing.",
+          "helper": "[to be translated]:Keep Auto unless you are testing Codex with a verified OpenAI-compatible endpoint.",
+          "incompatible": {
+            "claudeCode": {
+              "description": "[to be translated]:The runtime changed, but the current model is not Claude Code compatible. Before starting a task, select a model that exposes the Anthropic Messages protocol.",
+              "title": "[to be translated]:Choose a Claude Code model"
+            },
+            "codex": {
+              "description": "[to be translated]:The runtime changed, but the current model is not Codex compatible. Before starting a task, select a model that exposes an OpenAI or OpenAI Responses endpoint.",
+              "title": "[to be translated]:Choose a Codex model"
+            }
+          },
+          "label": "[to be translated]:Agent runtime",
+          "options": {
+            "auto": "[to be translated]:Auto",
+            "claudeCode": "[to be translated]:Claude Code",
+            "codex": "[to be translated]:Codex"
+          }
+        },
         "title": "Configurações avançadas"
       },
       "essential": "Configurações Essenciais",
+      "model": {
+        "defaultLabel": "[to be translated]:Default for new chats",
+        "defaultTooltip": "[to be translated]:Used only as the default for future chats. Existing chat models are not changed.",
+        "sessionTooltip": "[to be translated]:Changes only this chat. A task already in progress continues with the model it started with."
+      },
       "permissionMode": {
+        "currentModePrefix": "[to be translated]:Current Mode: ",
+        "simpleTitle": "[to be translated]:Mode Selection",
         "tab": "Modo de Permissão",
         "title": "Modo de Permissão"
       },
@@ -526,16 +601,13 @@
             "description": "Alternar modos atualiza as ferramentas aprovadas automaticamente.",
             "title": "Alterar modo de permissão?"
           },
-          "default": {
-            "description": "Verificações normais de permissão aplicam-se.",
-            "title": "Padrão (perguntar antes de continuar)"
-          },
           "helper": "Especifica como o agente lida com a autorização de uso de ferramentas",
           "placeholder": "Selecionar modo de permissões",
           "plan": {
             "description": "Claude só pode usar ferramentas de leitura e apresenta um plano antes da execução.",
             "title": "Modo de planejamento (em breve)"
           },
+          "simpleTitle": "[to be translated]:Mode Selection",
           "title": "Modo de permissões"
         },
         "preapproved": {
@@ -678,7 +750,32 @@
       "enable_server_description": "O servidor de API deve estar habilitado para que os agentes funcionem. Você pode habilitá-lo diretamente ou configurá-lo nas configurações.",
       "server_not_running": "O Servidor API está ativado, mas não está em execução. Verifique a configuração do servidor.",
       "server_not_running_description": "O servidor da API precisa estar em execução para que os agentes funcionem. Você pode iniciá-lo diretamente ou verificar as configurações."
+    },
+    "welcome": {
+      "capabilities": {
+        "files": "[to be translated]:Work with files",
+        "files_desc": "[to be translated]:Complete tasks using files, folders, and workspace content.",
+        "search": "[to be translated]:Research",
+        "search_desc": "[to be translated]:Find information first, then extract the key points and conclusions.",
+        "summary": "[to be translated]:Organize and summarize",
+        "summary_desc": "[to be translated]:Turn scattered content into a clear, reusable result.",
+        "tasks": "[to be translated]:Multi-step tasks",
+        "tasks_desc": "[to be translated]:Handle complex work that needs multiple steps and sustained execution."
+      },
+      "model_label": "[to be translated]:Model for this chat",
+      "title": "[to be translated]:Hand over the task and get started with ease"
     }
+  },
+  "announcements": {
+    "collapse": "[to be translated]:Collapse",
+    "empty": "[to be translated]:No announcements yet",
+    "expand": "[to be translated]:Expand",
+    "learn_more": "[to be translated]:Learn more",
+    "subtitle": "[to be translated]:The latest 3 product announcements are kept here for quick review.",
+    "title": "[to be translated]:Announcements",
+    "updated_at": "[to be translated]:Recently updated {{time}}",
+    "view_changes": "[to be translated]:View changes",
+    "view_content": "[to be translated]:View content"
   },
   "apiServer": {
     "actions": {
@@ -1088,6 +1185,22 @@
       "context_count": {
         "tip": "Número de contexto / Número máximo de contexto"
       },
+      "context_manager": {
+        "cache": "[to be translated]:Parse cache",
+        "cache_value": "[to be translated]:{{hits}} hits / {{total}} parses",
+        "compressions": "[to be translated]:History compactions",
+        "error": "[to be translated]:Resource preparation failed",
+        "managed": "[to be translated]:Resources and history managed",
+        "managed_resources": "[to be translated]:{{count}} resources managed",
+        "note": "[to be translated]:This shows resource, history, and capacity handling. It does not mean the model is still responding.",
+        "processing": "[to be translated]:Preparing resources and context",
+        "ready": "[to be translated]:Resources and context ready",
+        "resources": "[to be translated]:Indexed resources",
+        "retries": "[to be translated]:Capacity retries",
+        "retrieval_value": "[to be translated]:{{count}} calls / {{chunks}} chunks",
+        "retrievals": "[to be translated]:Relevant resource calls",
+        "title": "[to be translated]:Resources and context"
+      },
       "estimated_tokens": {
         "tip": "Número estimado de tokens"
       },
@@ -1098,6 +1211,16 @@
       "generate_image": "Gerar imagem",
       "generate_image_not_supported": "Modelo não suporta geração de imagem",
       "knowledge_base": "Base de conhecimento",
+      "more": {
+        "attachment": "[to be translated]:Upload images, documents, or other files into the current conversation",
+        "create_session": "[to be translated]:Create a new conversation under the current assistant",
+        "quick_phrases": "[to be translated]:Insert a commonly used phrase or preset content",
+        "resource_panel": "[to be translated]:Browse files and skills available to this session",
+        "slash_commands": "[to be translated]:View quick commands provided by this assistant",
+        "thinking": "[to be translated]:Adjust the model thinking mode or reasoning depth",
+        "title": "[to be translated]:More",
+        "toggle_expand": "[to be translated]:Expand or collapse the current input box"
+      },
       "new": {
         "context": "Limpar contexto {{Command}}"
       },
@@ -1129,6 +1252,7 @@
       "settings": "Configurações",
       "slash_commands": {
         "description": "Comandos de barra da sessão do agente",
+        "empty": "[to be translated]:No slash commands available right now",
         "title": "Comandos de Barra"
       },
       "thinking": {
@@ -1169,6 +1293,8 @@
       },
       "url_context": "Contexto da Página da Web",
       "web_search": {
+        "auto_disabled": "[to be translated]:Off: do not use web search",
+        "auto_enabled": "[to be translated]:On: automatically decide when web search is needed",
         "builtin": {
           "disabled_content": "Este modelo não suporta busca na web",
           "enabled_content": "Usar a função integrada de busca na web do modelo",
@@ -1177,14 +1303,18 @@
         "button": {
           "ok": "Ir para configurações"
         },
+        "disabled": "[to be translated]:Search the web for the next message",
         "enable": "Ativar pesquisa na web",
         "enable_content": "É necessário verificar a conectividade da pesquisa na web nas configurações primeiro",
+        "enabled": "[to be translated]:The next message will search the web, then turn off automatically",
         "label": "Ativar pesquisa na web",
         "no_web_search": {
           "description": "Não ativar a função de busca na web",
           "label": "Sem busca na web"
         },
-        "settings": "Configurações de Pesquisa na Web"
+        "settings": "Configurações de Pesquisa na Web",
+        "toast_disabled": "[to be translated]:Web search canceled for the next message",
+        "toast_enabled": "[to be translated]:Web search is on for the next message and will turn off automatically after sending"
       }
     },
     "mcp": {
@@ -1202,7 +1332,8 @@
       "new": {
         "branch": {
           "created": "Nova ramificação criada",
-          "label": "Ramificação"
+          "label": "Ramificação",
+          "tooltip": "[to be translated]:Create a new conversation branch without affecting the original"
         },
         "context": "Limpar contexto"
       },
@@ -1224,6 +1355,7 @@
     "navigation": {
       "bottom": "Voltar ao fundo",
       "close": "Fechar",
+      "earlier": "[to be translated]:View earlier turns",
       "first": "Esta é a primeira mensagem",
       "history": "Histórico de Conversas",
       "last": "Esta é a última mensagem",
@@ -1858,6 +1990,7 @@
     "created": "Criado em",
     "last_updated": "Última Atualização",
     "messages": "Mensagens",
+    "no_history": "[to be translated]:No conversation history",
     "notion": {
       "reasoning_truncated": "A cadeia de pensamento não pode ser dividida em partes, foi interrompida"
     },
@@ -1906,12 +2039,14 @@
   },
   "history": {
     "continue_chat": "Continuar conversando",
+    "conversation_history": "[to be translated]:Conversation History",
     "error": {
       "topic_not_found": "Tópico inexistente"
     },
     "locate": {
       "message": "Localizar mensagem"
     },
+    "no_history": "[to be translated]:No conversation history yet",
     "search": {
       "match": {
         "substring": "Contém",
@@ -2481,6 +2616,12 @@
       "abort_failed": "Falha ao interromper a chamada da ferramenta",
       "aborted": "Chamada da ferramenta foi interrompida",
       "approvalRequired": "Ferramenta \"{{tool}}\" requer aprovação",
+      "assistantCreateFile": {
+        "open_file": "[to be translated]:Open file",
+        "open_folder": "[to be translated]:Reveal in folder",
+        "title": "[to be translated]:File created",
+        "verified": "[to be translated]:Verified"
+      },
       "autoApproveEnabled": "Esta ferramenta tem aprovação automática ativada",
       "cancelled": "Cancelado",
       "completed": "Completo",
@@ -3104,6 +3245,14 @@
         "image": "Nova Imagem"
       }
     },
+    "canvas_guide_primary": "[to be translated]:Describe the image you want below, and I'll generate it for you.",
+    "canvas_guide_secondary": "[to be translated]:You can upload or paste multiple images for image editing.",
+    "canvas_upload_action": "[to be translated]:Upload Image",
+    "composer_continue_hint": "[to be translated]:Continuing from this image; the result will be generated separately without overwriting it.",
+    "composer_upload_hint": "[to be translated]:Editing from the uploaded image; the result will be generated separately.",
+    "copy_prompt": "[to be translated]:Copy prompt",
+    "created_at": "[to be translated]:Created at",
+    "current_mode": "[to be translated]:Current Mode",
     "custom_size": "Dimensão personalizada",
     "dmxapi": {
       "generating_tip": "Gerando com o modelo oficial, o tempo estimado de espera é de 2 a 5 minutos para obter os melhores resultados. Verifique os logs do backend DMXAPI para saber o custo desta operação.",
@@ -3138,10 +3287,12 @@
         "yarn_doll": "Boneca de Fios"
       }
     },
+    "drag_reorder_hint": "[to be translated]:Drag images to reorder",
     "edit": {
       "image_file": "Imagem editada",
       "image_required": "Por favor, carregue primeiro uma imagem para editar"
     },
+    "expand_prompt_editor": "[to be translated]:Expand prompt editor",
     "generate": {
       "height": "Altura",
       "magic_prompt_option_tip": "Otimização inteligente do prompt para melhorar os resultados da geração",
@@ -3212,10 +3363,13 @@
     "learn_more": "Saiba Mais",
     "magic_prompt_option": "Aprimoramento de Prompt",
     "mode": {
+      "continue_with_index": "[to be translated]:Continue from image {{index}}",
+      "create": "[to be translated]:Create New Image",
       "edit": "Editar",
       "generate": "Gerar imagem",
       "merge": "fundir",
       "remix": "Misturar",
+      "upload_edit": "[to be translated]:Upload Image Edit",
       "upscale": "Aumentar"
     },
     "model": "Versão",
@@ -3250,11 +3404,13 @@
       "watermark_tip": "Se adicionar marca d'água às imagens geradas, desativado por padrão"
     },
     "pricing": "Preços",
+    "prompt_editor_title": "[to be translated]:Edit image prompt",
     "prompt_enhancement": "Aumento do Prompt",
     "prompt_enhancement_tip": "Ao ativar, o prompt será reescrito para uma versão detalhada e adequada ao modelo",
     "prompt_placeholder": "Descreva a imagem que deseja criar, por exemplo: um lago tranquilo, com o pôr do sol, montanhas distantes",
     "prompt_placeholder_edit": "Digite sua descrição da imagem, use aspas \"duplas\" para desenho textual",
     "prompt_placeholder_en": "Insira a descrição da imagem em \"inglês\". Atualmente, o Imagen suporta apenas prompts em inglês",
+    "prompt_used": "[to be translated]:Prompt used",
     "proxy_required": "Atualmente é necessário ativar um proxy para visualizar as imagens geradas, no futuro será suportada a conexão direta dentro do país",
     "quality": "Qualidade",
     "quality_options": {
@@ -3294,6 +3450,8 @@
     "seed_random": "Aleatório",
     "seed_tip": "A mesma semente e palavra-chave podem gerar imagens semelhantes",
     "select_model": "Selecionar modelo",
+    "source": "[to be translated]:Source",
+    "source_deleted": "[to be translated]:Source deleted",
     "style_type": "Estilo",
     "style_types": {
       "3d": "3D",
@@ -3934,6 +4092,9 @@
       },
       "checkUpdate": {
         "available": "Atualizar agora",
+        "download": "[to be translated]:Download Now",
+        "downloading": "[to be translated]:Downloading",
+        "downloadingProgress": "[to be translated]:Downloading {{percent}}%",
         "label": "Verificar atualizações"
       },
       "checkingUpdate": "Verificando atualizações...",
@@ -3964,6 +4125,12 @@
       },
       "title": "Sobre nós",
       "updateAvailable": "Nova versão disponível {{version}}",
+      "updateDiagnostics": {
+        "copied": "[to be translated]:Update diagnostics copied",
+        "copy": "[to be translated]:Copy Diagnostics",
+        "copyFailed": "[to be translated]:Failed to copy update diagnostics",
+        "title": "[to be translated]:Update Diagnostics"
+      },
       "updateError": "Erro ao atualizar",
       "updateNotAvailable": "Seu software já está atualizado",
       "website": {
@@ -3987,6 +4154,65 @@
       "label": "Assistente padrão",
       "model_params": "Parâmetros do modelo",
       "title": "Assistente padrão"
+    },
+    "assistantEnvironment": {
+      "binariesDir": "[to be translated]:App tools directory",
+      "checkFailed": "[to be translated]:Environment check failed",
+      "coreDescription": "[to be translated]:These tools affect the assistant's ability to use extensions, skills, and local tasks reliably.",
+      "coreTitle": "[to be translated]:Core Readiness",
+      "dependencies": {
+        "bun": {
+          "description": "[to be translated]:Runs some skills, tool services, and frontend-oriented automation tasks.",
+          "name": "[to be translated]:Bun runtime"
+        },
+        "git": {
+          "description": "[to be translated]:On Windows, the assistant needs Git Bash to run local tasks reliably. It is also used for Git-based skills, repository downloads, and coding tasks.",
+          "name": "[to be translated]:Git"
+        },
+        "pyodide": {
+          "description": "[to be translated]:Powers the in-browser Python sandbox. This version loads it from the network on first use and does not require system Python.",
+          "name": "[to be translated]:Python sandbox network"
+        },
+        "python": {
+          "description": "[to be translated]:Zen AI's private CPython 3.12 environment for data processing, document scripts, and complex local tasks. It does not modify system Python.",
+          "name": "[to be translated]:Zen Python runtime"
+        },
+        "uv": {
+          "description": "[to be translated]:Prepares Python tool environments and dependencies for some local skills.",
+          "name": "[to be translated]:UV"
+        },
+        "uvx": {
+          "description": "[to be translated]:Provided with UV and used to run temporary Python tool packages and MCP services.",
+          "name": "[to be translated]:UVX"
+        }
+      },
+      "description": "[to be translated]:Check local tools and network readiness for the full smart assistant experience.",
+      "downloadGit": "[to be translated]:Download Git",
+      "downloadGitHint": "[to be translated]:Please finish installing Git with the setup wizard, then come back and check again.",
+      "install": "[to be translated]:Install",
+      "installFailed": "[to be translated]:Install failed",
+      "installGitAuto": "[to be translated]:Auto Install Git",
+      "installGitConfirmContent": "[to be translated]:On Windows, the smart assistant needs Git Bash from Git for Windows to run local tasks reliably. The app will try to install it through winget. A system permission prompt may appear. If auto install fails, the official download page will open as a fallback.",
+      "installGitConfirmTitle": "[to be translated]:Install Git for Windows automatically?",
+      "installGitFailedFallback": "[to be translated]:Auto install failed. The official Git download page has been opened",
+      "installSuccess": "[to be translated]:Installed",
+      "intro": "[to be translated]:Zen AI prepares a private Python environment and local tools for every user. These components stay inside Zen AI and do not modify system Python.",
+      "noPath": "[to be translated]:No available path detected yet",
+      "optionalDescription": "[to be translated]:These are not required for basic chat, but they improve some advanced tasks.",
+      "optionalTitle": "[to be translated]:Optional Enhancements",
+      "prepare": "[to be translated]:Repair Assistant Environment",
+      "prepareSuccess": "[to be translated]:Environment prepared",
+      "refresh": "[to be translated]:Check Again",
+      "sources": {
+        "app": "[to be translated]:App tools directory",
+        "network": "[to be translated]:Network available",
+        "system": "[to be translated]:System install"
+      },
+      "status": {
+        "error": "[to be translated]:Check failed",
+        "missing": "[to be translated]:Not ready"
+      },
+      "title": "[to be translated]:Assistant Environment"
     },
     "channels": {
       "description": "Conecte agentes a plataformas de mensagens como Telegram, Feishu, Discord e muitas outras.",
@@ -5118,6 +5344,10 @@
       "add": {
         "add_model": "Adicionar modelo",
         "batch_add_models": "Adicionar Modelos em Lote",
+        "context_window_tokens": {
+          "label": "[to be translated]:Context Capacity",
+          "tooltip": "[to be translated]:The combined input and output token capacity supported by this model"
+        },
         "endpoint_type": {
           "label": "Tipo de Endpoint",
           "placeholder": "Selecione o tipo de endpoint",
@@ -5128,6 +5358,10 @@
           "label": "Nome do grupo",
           "placeholder": "Exemplo: ChatGPT",
           "tooltip": "Exemplo: ChatGPT"
+        },
+        "max_output_tokens": {
+          "label": "[to be translated]:Maximum Output",
+          "tooltip": "[to be translated]:The maximum output token capacity reported by the provider"
         },
         "model_id": {
           "label": "ID do modelo",
@@ -6049,6 +6283,7 @@
   },
   "update": {
     "available": "A new version {{version}} is available. Click Check for Updates any time to download it.",
+    "downloadNow": "[to be translated]:Download Now",
     "downloading": "Downloading version {{version}} in the background. You will be prompted when it is ready.",
     "install": "Instalar",
     "installNow": "Install Now",

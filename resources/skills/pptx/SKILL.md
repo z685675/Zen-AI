@@ -117,6 +117,7 @@ Do not repeat the same title-plus-rectangle skeleton across styles. Cards are a 
 - Do not probe `python3`, `py`, Conda, or the user's system Python.
 - Do not install packages from this Skill. Its bundled scripts use the managed standard library.
 - If managed Python is not ready, still create the PPTX with `mcp__assistant__create_file`, skip only the unavailable script check, and report one environment error without retrying other runtimes.
+- If an advanced edit or approved external workflow produces the final PPTX outside `mcp__assistant__create_file`, call `mcp__assistant__present_files` with the verified final path before replying.
 
 ## Bundled Resources
 

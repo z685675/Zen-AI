@@ -4,6 +4,7 @@ export type InputBarToolType =
   | 'new_topic'
   | 'attachment'
   | 'thinking'
+  | 'deep_research'
   | 'web_search'
   | 'url_context'
   | 'knowledge_base'

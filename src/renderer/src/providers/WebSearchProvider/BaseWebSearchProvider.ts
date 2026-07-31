@@ -35,6 +35,10 @@ export default abstract class BaseWebSearchProvider {
     const keys = this.provider.apiKey?.split(',').map((key) => key.trim()) || []
     const keyName = `web-search-provider:${this.provider.id}:last_used_key`
 
+    if (keys.length === 0) {
+      return ''
+    }
+
     if (keys.length === 1) {
       return keys[0]
     }

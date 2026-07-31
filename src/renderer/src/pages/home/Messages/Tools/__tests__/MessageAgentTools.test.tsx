@@ -4,7 +4,11 @@ import { parse as parsePartialJson } from 'partial-json'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { isValidAgentToolsType, MessageAgentTools } from '../MessageAgentTools'
-import { parseAssistantCreateFileResult } from '../MessageAgentTools/AssistantCreateFileTool'
+import {
+  isAssistantFileOutputToolName,
+  parseAssistantCreateFileResult,
+  parseAssistantFileResults
+} from '../MessageAgentTools/AssistantCreateFileTool'
 
 vi.mock('@renderer/services/AssistantService', () => ({
   getDefaultAssistant: vi.fn(() => ({
@@ -394,6 +398,48 @@ describe('MessageAgentTools', () => {
       })
     })
 
+    it('should parse wrapped multi-file output and recognize both delivery tools', () => {
+      const results = parseAssistantFileResults({
+        structured_content: {
+          status: 'ready',
+          files: [
+            {
+              file_path: 'C:\\Users\\tester\\Desktop\\report.docx',
+              size: 128,
+              verified: true
+            },
+            {
+              path: 'C:\\Users\\tester\\Desktop\\sources.csv',
+              format: 'csv',
+              size: 64,
+              verified: true
+            }
+          ]
+        }
+      })
+
+      expect(results).toEqual([
+        {
+          status: 'ready',
+          path: 'C:\\Users\\tester\\Desktop\\report.docx',
+          format: 'docx',
+          size: 128,
+          verified: true
+        },
+        {
+          status: 'ready',
+          path: 'C:\\Users\\tester\\Desktop\\sources.csv',
+          format: 'csv',
+          size: 64,
+          verified: true
+        }
+      ])
+      expect(isAssistantFileOutputToolName('mcp__assistant__create_file')).toBe(true)
+      expect(isAssistantFileOutputToolName('mcp__assistant__present_files')).toBe(true)
+      expect(isAssistantFileOutputToolName('present_files')).toBe(true)
+      expect(isAssistantFileOutputToolName('mcp__browser__open')).toBe(false)
+    })
+
     it('should render dedicated file card for assistant create_file tool output', () => {
       const toolResponse = createToolResponse({
         tool: {
@@ -425,6 +471,48 @@ describe('MessageAgentTools', () => {
       expect(screen.getByText('report.docx')).toBeInTheDocument()
       expect(screen.getByText('Open file')).toBeInTheDocument()
       expect(screen.getByText('Reveal in folder')).toBeInTheDocument()
+    })
+
+    it('should render one quick-open card for each present_files output', () => {
+      const toolResponse = createToolResponse({
+        tool: {
+          id: 'mcp__assistant__present_files',
+          name: 'mcp__assistant__present_files',
+          description: 'Present files',
+          type: 'provider'
+        },
+        status: 'done',
+        response: {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({
+                status: 'ready',
+                files: [
+                  {
+                    path: 'C:\\Users\\tester\\Desktop\\report.docx',
+                    format: 'docx',
+                    size: 128,
+                    verified: true
+                  },
+                  {
+                    path: 'C:\\Users\\tester\\Desktop\\report.pdf',
+                    format: 'pdf',
+                    size: 256,
+                    verified: true
+                  }
+                ]
+              })
+            }
+          ]
+        }
+      })
+
+      render(<MessageAgentTools toolResponse={toolResponse} />)
+
+      expect(screen.getByText('report.docx')).toBeInTheDocument()
+      expect(screen.getByText('report.pdf')).toBeInTheDocument()
+      expect(screen.getAllByText('Open file')).toHaveLength(2)
     })
   })
 })

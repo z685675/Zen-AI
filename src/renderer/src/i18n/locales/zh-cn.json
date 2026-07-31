@@ -347,6 +347,8 @@
       "tooltip": "在 Windows 上运行智能体需要 Git Bash。如果未安装，请从 git-scm.com 下载安装。"
     },
     "input": {
+      "deep_research": "深度研究",
+      "deep_research_tooltip": "针对下一条消息创建一次研究任务：保持当前模型，自动使用高思考强度；先制定计划，确认后分轮检索、核验来源，并生成带引用的报告。",
       "hero_placeholder": "比如：帮我搜索资料、总结重点，再整理成结果给我",
       "placeholder": "在这里输入消息，按 {{key}} 发送 - @ 选择路径， / 选择命令",
       "reasoning_effort": "思考强度",
@@ -382,7 +384,7 @@
         "set_active": "设为当前"
       },
       "add": {
-        "title": "添加会话"
+        "title": "新建对话"
       },
       "allowed_tools": {
         "empty": "当前智能体暂无可用工具。",
@@ -1028,22 +1030,22 @@
       "prompt": "提示词设置",
       "reasoning_effort": {
         "auto": "自动",
-        "auto_description": "灵活决定推理力度",
+        "auto_description": "根据任务灵活决定思考强度",
         "default": "默认",
-        "default_description": "依赖模型默认行为，不作任何配置",
+        "default_description": "沿用模型默认的思考设置",
         "high": "高",
-        "high_description": "高强度推理",
-        "label": "推理强度",
+        "high_description": "高强度思考",
+        "label": "思考强度",
         "low": "低",
-        "low_description": "低强度推理",
+        "low_description": "低强度思考",
         "medium": "中",
-        "medium_description": "中强度推理",
-        "minimal": "微念",
-        "minimal_description": "最小程度的推理",
+        "medium_description": "中等强度思考",
+        "minimal": "最少",
+        "minimal_description": "最低程度的思考",
         "off": "关闭",
-        "off_description": "禁用推理",
+        "off_description": "关闭思考",
         "xhigh": "超高",
-        "xhigh_description": "超高强度推理"
+        "xhigh_description": "超高强度思考"
       },
       "regular_phrases": {
         "add": "添加短语",
@@ -1291,6 +1293,8 @@
       },
       "url_context": "网页上下文",
       "web_search": {
+        "auto_disabled": "已关闭：不使用网络搜索",
+        "auto_enabled": "已开启：自动判断是否需要联网",
         "builtin": {
           "disabled_content": "当前模型不支持网络搜索功能",
           "enabled_content": "使用模型内置的网络搜索功能",
@@ -1299,14 +1303,18 @@
         "button": {
           "ok": "去设置"
         },
+        "disabled": "联网搜索下一条消息",
         "enable": "开启网络搜索",
         "enable_content": "需要先在设置中检查网络搜索连通性",
+        "enabled": "下一条消息将联网搜索，发送后自动关闭",
         "label": "网络搜索",
         "no_web_search": {
           "description": "不启用网络搜索功能",
           "label": "不使用网络"
         },
-        "settings": "网络搜索设置"
+        "settings": "网络搜索设置",
+        "toast_disabled": "已取消本次联网搜索",
+        "toast_enabled": "已开启本次联网搜索，仅下一条消息生效，发送后自动关闭"
       }
     },
     "mcp": {

@@ -6,7 +6,7 @@ import MultiSelectActionPopup from '@renderer/components/Popups/MultiSelectionPo
 import PromptPopup from '@renderer/components/Popups/PromptPopup'
 import { SelectChatModelPopup } from '@renderer/components/Popups/SelectModelPopup'
 import { QuickPanelProvider } from '@renderer/components/QuickPanel'
-import { chatModelFilter, isWebSearchModel } from '@renderer/config/models'
+import { chatModelFilter } from '@renderer/config/models'
 import { useAssistant, useDefaultModel } from '@renderer/hooks/useAssistant'
 import { useChatContext } from '@renderer/hooks/useChatContext'
 import { useTopicMessages } from '@renderer/hooks/useMessageOperations'
@@ -46,6 +46,7 @@ interface Props {
   activeTopic: Topic
   setActiveTopic: (topic: Topic) => void
   setActiveAssistant: (assistant: Assistant) => void
+  onCreateConversation: () => Promise<void>
 }
 
 const Chat: FC<Props> = ({
@@ -53,9 +54,10 @@ const Chat: FC<Props> = ({
   assistant: activeAssistant,
   activeTopic,
   setActiveTopic,
-  setActiveAssistant
+  setActiveAssistant,
+  onCreateConversation
 }) => {
-  const { assistant: storedAssistant, updateAssistant, updateTopic } = useAssistant(activeAssistant.id)
+  const { assistant: storedAssistant, updateTopic } = useAssistant(activeAssistant.id)
   const { setDefaultModel } = useDefaultModel()
   const { t } = useTranslation()
   const { topicPosition, messageStyle, messageNavigation } = useSettings()
@@ -68,10 +70,7 @@ const Chat: FC<Props> = ({
   const isLoadingTopicMessages = useAppSelector((state) => !!state.messages.loadingByTopic[activeTopic.id])
   const isWelcomeState = hasLoadedTopicMessages && !isLoadingTopicMessages && messages.length === 0
   const assistant = useMemo(
-    () => ({
-      ...storedAssistant,
-      model: getTopicConversationModel(activeTopic, storedAssistant)
-    }),
+    () => ({ ...storedAssistant, model: getTopicConversationModel(activeTopic, storedAssistant) }),
     [activeTopic, storedAssistant]
   )
 
@@ -104,7 +103,6 @@ const Chat: FC<Props> = ({
 
   const mainRef = React.useRef<HTMLDivElement>(null)
   const contentSearchRef = React.useRef<ContentSearchRef>(null)
-  const assistantRef = useRef(assistant)
   const welcomeInputActionsRef = useRef<ProviderActionHandlers>({
     resizeTextArea: () => {},
     addNewTopic: () => {},
@@ -115,10 +113,6 @@ const Chat: FC<Props> = ({
   })
   const [filterIncludeUser, setFilterIncludeUser] = useState(false)
   const { setTimeoutTimer } = useTimer()
-
-  useEffect(() => {
-    assistantRef.current = assistant
-  }, [assistant])
 
   useHotkeys('esc', () => {
     contentSearchRef.current?.disable()
@@ -158,12 +152,10 @@ const Chat: FC<Props> = ({
     })
 
     if (selectedModel) {
-      const enabledWebSearch = isWebSearchModel(selectedModel)
-      updateTopic({ ...activeTopic, model: selectedModel })
+      const nextTopic = { ...activeTopic, model: selectedModel }
+      updateTopic(nextTopic)
+      setActiveTopic(nextTopic)
       setDefaultModel(selectedModel)
-      updateAssistant({
-        enableWebSearch: enabledWebSearch && assistantRef.current.enableWebSearch
-      })
     }
   })
 
@@ -273,15 +265,16 @@ const Chat: FC<Props> = ({
                         assistants={selectableAssistants}
                         onSelectAssistant={setActiveAssistant}
                       />
-                      <SelectModelButton assistant={assistant} topic={activeTopic} />
+                      <SelectModelButton assistant={assistant} topic={activeTopic} onTopicChange={setActiveTopic} />
                     </WelcomeMeta>
                     <WelcomeComposer>
                       <Inputbar
                         assistant={assistant}
-                        setActiveTopic={setActiveTopic}
                         topic={activeTopic}
+                        onTopicChange={setActiveTopic}
                         variant="hero"
                         actionsRef={welcomeInputActionsRef}
+                        onCreateConversation={onCreateConversation}
                       />
                     </WelcomeComposer>
                     <QuickAssistantDeck
@@ -311,7 +304,12 @@ const Chat: FC<Props> = ({
                     onIncludeUserChange={userOutlinedItemClickHandler}
                   />
                   {messageNavigation === 'buttons' && <ChatNavigation containerId="messages" />}
-                  <Inputbar assistant={assistant} setActiveTopic={setActiveTopic} topic={activeTopic} />
+                  <Inputbar
+                    assistant={assistant}
+                    topic={activeTopic}
+                    onTopicChange={setActiveTopic}
+                    onCreateConversation={onCreateConversation}
+                  />
                   {isMultiSelectMode && <MultiSelectActionPopup topic={activeTopic} />}
                 </div>
               )}

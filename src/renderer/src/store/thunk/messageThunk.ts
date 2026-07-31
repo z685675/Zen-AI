@@ -16,11 +16,13 @@
  */
 import { loggerService } from '@logger'
 import { AiSdkToChunkAdapter } from '@renderer/aiCore/chunk/AiSdkToChunkAdapter'
+import { getAnthropicReasoningParams } from '@renderer/aiCore/utils/reasoning'
 import { AgentApiClient, DEFAULT_SESSION_PAGE_SIZE } from '@renderer/api/agent'
 import db from '@renderer/databases'
 import { getModel } from '@renderer/hooks/useModel'
 import { fetchGenerate, fetchMessagesSummary, transformMessagesAndFetch } from '@renderer/services/ApiService'
 import { getAssistantSettings, getProviderByModel } from '@renderer/services/AssistantService'
+import { CacheService } from '@renderer/services/CacheService'
 import {
   clearContextCheckpoint,
   loadContextCheckpoint,
@@ -58,12 +60,14 @@ import { type ApiServerConfig, type Assistant, type FileMetadata, type Model, ty
 import type {
   AgentEffort,
   AgentThinkingConfig,
+  DeepResearchTaskRequest,
   GetAgentSessionResponse,
   ListAgentSessionsResponse
 } from '@renderer/types/agent'
 import { ChunkType } from '@renderer/types/chunk'
 import type {
   AgentSessionSyncMetadata,
+  DeepResearchTaskStatus,
   FileMessageBlock,
   ImageMessageBlock,
   Message,
@@ -79,6 +83,11 @@ import {
 import { uuid } from '@renderer/utils'
 import { addAbortController } from '@renderer/utils/abortController'
 import {
+  DEEP_RESEARCH_REASONING_EFFORT,
+  getDeepResearchTaskAction,
+  isDeepResearchTaskRootMessage
+} from '@renderer/utils/agentDeepResearch'
+import {
   buildAgentSessionTopicId,
   extractAgentSessionIdFromTopicId,
   isAgentSessionTopicId
@@ -89,7 +98,7 @@ import {
   normalizeAgentSessionTitle
 } from '@renderer/utils/agentSessionTitle'
 import { isAbortError } from '@renderer/utils/error'
-import { resolveRetryModelSelection } from '@renderer/utils/messageRetryModel'
+import { resolveAgentRetryModelSelection, resolveRetryModelSelection } from '@renderer/utils/messageRetryModel'
 import {
   createAssistantMessage,
   createTranslationBlock,
@@ -97,6 +106,13 @@ import {
 } from '@renderer/utils/messageUtils/create'
 import { getContentWithTools, getMainTextContent } from '@renderer/utils/messageUtils/find'
 import { getTopicQueue, waitForTopicQueue } from '@renderer/utils/queue'
+import {
+  AGENT_DEFAULT_REASONING_EFFORT,
+  type AgentReasoningEffort,
+  getAgentSessionReasoningEffortCacheKey,
+  normalizeAgentReasoningEffort,
+  toAgentEffort
+} from '@renderer/utils/reasoningEffort'
 import { IpcChannel } from '@shared/IpcChannel'
 import { defaultAppHeaders } from '@shared/utils'
 import type { TextStreamPart } from 'ai'
@@ -141,6 +157,8 @@ type AgentSessionContext = {
   agentSessionId?: string
   effort?: AgentEffort
   thinking?: AgentThinkingConfig
+  deepResearch?: boolean
+  deepResearchTask?: DeepResearchTaskRequest
 }
 
 const AGENT_SESSION_RECOVERY_INSTRUCTION = [
@@ -155,6 +173,7 @@ const AGENT_SESSION_CHANNEL_STALL_TIMEOUT_MS = 1000 * 60 * 3
 const AGENT_SESSION_RENAME_MESSAGE_RETRY_DELAYS_MS = [0, 150, 500]
 const AGENT_SESSION_RENAME_UPDATE_RETRY_DELAYS_MS = [0, 250]
 const AGENT_RECOVERY_CONTEXT_TOKEN_BUDGET = 64_000
+const AGENT_SESSION_REASONING_EFFORT_CACHE_TTL = 24 * 60 * 60 * 1000
 const AGENT_LARGE_RESULT_TOKEN_THRESHOLD = 16_000
 
 const agentSessionRenameLocks = new Set<string>()
@@ -216,6 +235,38 @@ const updateAgentSessionSyncStatus = async (
   await Promise.all(
     updates.map((update) => updateMessage(topicId, update.messageId, { providerMetadata: update.providerMetadata }))
   )
+}
+
+const updateDeepResearchTaskStatus = async (
+  dispatch: AppDispatch,
+  getState: () => RootState,
+  topicId: string,
+  messageId: string,
+  status: DeepResearchTaskStatus
+) => {
+  const message = getState().messages.entities[messageId]
+  const task = message?.providerMetadata?.deepResearch
+  if (!message || task?.version !== 1) {
+    return
+  }
+
+  const providerMetadata: MessageProviderMetadata = {
+    ...message.providerMetadata,
+    deepResearch: {
+      ...task,
+      status,
+      updatedAt: new Date().toISOString()
+    }
+  }
+
+  dispatch(
+    newMessagesActions.updateMessage({
+      topicId,
+      messageId,
+      updates: { providerMetadata }
+    })
+  )
+  await saveUpdatesToDB(messageId, topicId, { providerMetadata }, [])
 }
 
 const finalizeStaleAssistantBlocksAfterStream = async (
@@ -529,12 +580,51 @@ const runAgentSessionResend = async (
   userMessageToResend: Message,
   assistant: Assistant
 ) => {
-  const agentSession = findExistingAgentSessionContext(getState(), topicId, assistant.id)
+  let agentSession = findExistingAgentSessionContext(getState(), topicId, assistant.id)
   if (!agentSession) {
     throw new Error(`Agent session context not found for topic: ${topicId}`)
   }
 
   const state = getState()
+  const deepResearchAction = getDeepResearchTaskAction(userMessageToResend)
+  const deepResearchThinkingParams =
+    deepResearchAction && assistant.model
+      ? getAnthropicReasoningParams(
+          {
+            ...assistant,
+            settings: {
+              ...assistant.settings,
+              reasoning_effort: DEEP_RESEARCH_REASONING_EFFORT
+            }
+          },
+          assistant.model
+        )
+      : undefined
+  agentSession = {
+    ...agentSession,
+    effort: deepResearchAction
+      ? toAgentEffort(DEEP_RESEARCH_REASONING_EFFORT)
+      : await resolveAgentSessionEffortForResend(state.settings.apiServer, agentSession),
+    ...(deepResearchThinkingParams?.thinking ? { thinking: deepResearchThinkingParams.thinking } : {}),
+    deepResearch: isDeepResearchTaskRootMessage(userMessageToResend),
+    ...(deepResearchAction
+      ? {
+          deepResearchTask: {
+            task_id: userMessageToResend.providerMetadata!.deepResearch!.taskId,
+            action: deepResearchAction
+          }
+        }
+      : {})
+  }
+  if (deepResearchAction) {
+    await updateDeepResearchTaskStatus(
+      dispatch,
+      getState,
+      topicId,
+      userMessageToResend.id,
+      deepResearchAction === 'start' ? 'researching' : 'planning'
+    )
+  }
   const allMessagesForTopic = selectMessagesForTopic(state, topicId)
   const assistantMessagesToReset = allMessagesForTopic.filter(
     (m) => m.askId === userMessageToResend.id && m.role === 'assistant'
@@ -548,10 +638,14 @@ const runAgentSessionResend = async (
 
   for (const originalMsg of assistantMessagesToReset) {
     const blockIdsToDelete = [...(originalMsg.blocks || [])]
+    const retryModel = resolveAgentRetryModelSelection({
+      currentModel: assistant.model,
+      originalAssistantMessage: originalMsg
+    })
     const resetMsg = resetAssistantMessage(originalMsg, {
       status: AssistantMessageStatus.PENDING,
       updatedAt: new Date().toISOString(),
-      model: originalMsg.model ?? assistant.model
+      ...retryModel
     })
 
     if (agentSession.agentSessionId && !resetMsg.agentSessionId) {
@@ -623,6 +717,37 @@ const buildAgentBaseURL = (apiServer: ApiServerConfig) => {
   const baseHost = hasProtocol ? apiServer.host : `http://${apiServer.host}`
   const portSegment = apiServer.port ? `:${apiServer.port}` : ''
   return `${baseHost}${portSegment}`
+}
+
+const resolveAgentSessionEffortForResend = async (
+  apiServer: ApiServerConfig,
+  agentSession: AgentSessionContext
+): Promise<AgentEffort> => {
+  const cacheKey = getAgentSessionReasoningEffortCacheKey(agentSession.agentId, agentSession.sessionId)
+  const cachedEffort = CacheService.get<AgentReasoningEffort>(cacheKey)
+  if (cachedEffort) {
+    return toAgentEffort(cachedEffort)
+  }
+
+  if (!apiServer.enabled || !apiServer.apiKey) {
+    return toAgentEffort(AGENT_DEFAULT_REASONING_EFFORT)
+  }
+
+  try {
+    const client = new AgentApiClient({
+      baseURL: buildAgentBaseURL(apiServer),
+      headers: {
+        Authorization: `Bearer ${apiServer.apiKey}`
+      }
+    })
+    const session = await client.getSession(agentSession.agentId, agentSession.sessionId)
+    const reasoningEffort = normalizeAgentReasoningEffort(session.configuration?.reasoning_effort)
+    CacheService.set(cacheKey, reasoningEffort, AGENT_SESSION_REASONING_EFFORT_CACHE_TTL)
+    return toAgentEffort(reasoningEffort)
+  } catch (error) {
+    logger.warn('Failed to resolve Agent reasoning effort for regeneration; using the medium default', error as Error)
+    return toAgentEffort(AGENT_DEFAULT_REASONING_EFFORT)
+  }
 }
 
 export const renameAgentSessionIfNeeded = async (
@@ -1017,6 +1142,8 @@ const createAgentMessageStream = async (
       content: normalizedContent,
       ...(agentSession.effort ? { effort: agentSession.effort } : {}),
       ...(agentSession.thinking ? { thinking: agentSession.thinking } : {}),
+      ...(agentSession.deepResearch ? { deep_research: true } : {}),
+      ...(agentSession.deepResearchTask ? { deep_research_task: agentSession.deepResearchTask } : {}),
       ...(recoveryContext ? { recovery_context: recoveryContext } : {})
     }),
     signal
@@ -1610,10 +1737,28 @@ const fetchAndProcessAgentResponseImpl = async (
     if (shouldShowWechatSync && !agentSessionSyncResolved) {
       await updateAgentSessionSyncStatus(dispatch, getState, topicId, syncMessageIds, 'failed', 'sync_result_missing')
     }
+    if (agentSession.deepResearchTask) {
+      await updateDeepResearchTaskStatus(
+        dispatch,
+        getState,
+        topicId,
+        userMessageId,
+        agentSession.deepResearchTask.action === 'start' ? 'completed' : 'awaiting_confirmation'
+      )
+    }
     completedSuccessfully = true
     setContextProcessingStatus(topicId, 'complete', '上下文已就绪')
   } catch (error: any) {
     logger.error('Error in fetchAndProcessAgentResponseImpl:', error)
+    if (agentSession.deepResearchTask) {
+      await updateDeepResearchTaskStatus(
+        dispatch,
+        getState,
+        topicId,
+        userMessageId,
+        isAbortError(error) ? 'interrupted' : 'failed'
+      )
+    }
     if (isAbortError(error)) {
       setContextProcessingStatus(topicId, 'complete', '任务已停止')
     } else {

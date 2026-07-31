@@ -1,9 +1,15 @@
+import { loggerService } from '@logger'
+import { DEFAULT_SESSION_PAGE_SIZE } from '@renderer/api/agent'
 import EmojiIcon from '@renderer/components/EmojiIcon'
 import { QuickPanelProvider } from '@renderer/components/QuickPanel'
+import { findAgentModelId, isStandardAgentModelIdentifier } from '@renderer/config/agentModelPolicy'
+import { CURRENT_DEFAULT_MODEL_ID } from '@renderer/config/defaultModelPolicy'
 import { useActiveAgent } from '@renderer/hooks/agents/useActiveAgent'
+import { useAgentClient } from '@renderer/hooks/agents/useAgentClient'
 import { useAgents } from '@renderer/hooks/agents/useAgents'
 import { useCreateDefaultSession } from '@renderer/hooks/agents/useCreateDefaultSession'
 import { useSession } from '@renderer/hooks/agents/useSession'
+import { useUpdateSession } from '@renderer/hooks/agents/useUpdateSession'
 import { useTopicMessages } from '@renderer/hooks/useMessageOperations'
 import { useRuntime } from '@renderer/hooks/useRuntime'
 import { useNavbarPosition, useSettings } from '@renderer/hooks/useSettings'
@@ -16,17 +22,27 @@ import {
   REQUIRED_ASSISTANT_DEPENDENCIES,
   subscribeAssistantEnvironment
 } from '@renderer/services/AssistantEnvironmentService'
-import { useAppDispatch, useAppSelector } from '@renderer/store'
+import { CacheService } from '@renderer/services/CacheService'
+import { DbService } from '@renderer/services/db/DbService'
+import store, { useAppDispatch, useAppSelector } from '@renderer/store'
+import { newMessagesActions, selectMessagesForTopic } from '@renderer/store/newMessage'
+import { setActiveSessionIdAction } from '@renderer/store/runtime'
 import { loadTopicMessagesThunk } from '@renderer/store/thunk/messageThunk'
+import type { GetAgentSessionResponse, ListAgentSessionsResponse } from '@renderer/types'
 import { cn } from '@renderer/utils'
 import { buildAgentSessionTopicId, getChannelTypeIcon } from '@renderer/utils/agentSession'
+import { getAgentSessionDraftCacheKey } from '@renderer/utils/agentSessionDraft'
+import { isUnnamedAgentSessionName } from '@renderer/utils/agentSessionTitle'
+import { shouldDiscardEmptyConversation } from '@renderer/utils/conversationDraft'
 import { DEFAULT_FUSION_AGENT_ID, getAgentAvatar } from '@shared/config/agents'
 import { Alert, Button, Spin } from 'antd'
 import { FolderOpen, ListTodo, RefreshCw, ScrollText, Search, Sparkles, Wrench } from 'lucide-react'
 import type { PropsWithChildren, ReactNode } from 'react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import styled from 'styled-components'
+import { mutate } from 'swr'
+import { unstable_serialize } from 'swr/infinite'
 
 import { PinnedTodoPanel } from '../home/Inputbar/components/PinnedTodoPanel'
 import ChatNavigation from '../home/Messages/ChatNavigation'
@@ -52,6 +68,16 @@ type QuickEntryItem = {
   onClick: () => void
 }
 
+type TrackedAgentSession = {
+  agentId: string
+  session: GetAgentSessionResponse
+}
+
+const logger = loggerService.withContext('AgentChat')
+const dbService = DbService.getInstance()
+const EMPTY_SESSION_LOADING_RETRY_DELAY_MS = 100
+const EMPTY_SESSION_LOADING_RETRY_ATTEMPTS = 30
+
 const AgentChat = () => {
   const { t } = useTranslation()
   const { messageNavigation, messageStyle } = useSettings()
@@ -62,12 +88,17 @@ const AgentChat = () => {
   const isSessionInitialized = !activeAgentId || activeAgentId in activeSessionIdMap
   const { agent: activeAgent, isLoading: isAgentLoading } = useActiveAgent()
   const { isLoading: isAgentsLoading, agents } = useAgents()
+  const client = useAgentClient()
   const { createDefaultSession } = useCreateDefaultSession(activeAgentId)
+  const { updateSession } = useUpdateSession(activeAgentId)
   const { session: activeSession } = useSession(activeAgentId, activeSessionId)
   const sessionTopicId = activeSessionId ? buildAgentSessionTopicId(activeSessionId) : ''
   const messages = useTopicMessages(sessionTopicId)
   const hasLoadedSessionMessages = useAppSelector((state) =>
     sessionTopicId ? !!state.messages.loadedByTopic[sessionTopicId] : false
+  )
+  const isActiveSessionLoading = useAppSelector((state) =>
+    sessionTopicId ? Boolean(state.messages.loadingByTopic[sessionTopicId]) : false
   )
   const isWelcomeState = hasLoadedSessionMessages && messages.length === 0
   const isSessionMessagesBootstrapping = !!activeSessionId && !!sessionTopicId && !hasLoadedSessionMessages
@@ -77,6 +108,193 @@ const AgentChat = () => {
     initialEnvironmentCache?.result ?? null
   )
   const [environmentError, setEnvironmentError] = useState<string | null>(initialEnvironmentCache?.error ?? null)
+  const trackedSessionRef = useRef<TrackedAgentSession | undefined>(undefined)
+  const sessionsBeingDiscardedRef = useRef(new Set<string>())
+  const modelRepairAttemptsRef = useRef(new Set<string>())
+
+  const discardAbandonedSession = useCallback(
+    async ({ agentId, session }: TrackedAgentSession) => {
+      if (!isUnnamedAgentSessionName(session.name, t('common.unnamed'))) {
+        return
+      }
+
+      const sessionKey = `${agentId}:${session.id}`
+      if (sessionsBeingDiscardedRef.current.has(sessionKey)) {
+        return
+      }
+
+      const topicId = buildAgentSessionTopicId(session.id)
+      const draftCacheKey = getAgentSessionDraftCacheKey(agentId, session.id)
+      sessionsBeingDiscardedRef.current.add(sessionKey)
+      try {
+        let latestState = store.getState()
+        for (let attempt = 0; attempt < EMPTY_SESSION_LOADING_RETRY_ATTEMPTS; attempt += 1) {
+          const messageCount = selectMessagesForTopic(latestState, topicId).length
+          if (
+            !shouldDiscardEmptyConversation({
+              draft: CacheService.get(draftCacheKey),
+              isLoading: false,
+              messageCount
+            })
+          ) {
+            return
+          }
+
+          if (!latestState.messages.loadingByTopic[topicId]) {
+            break
+          }
+
+          await new Promise((resolve) => setTimeout(resolve, EMPTY_SESSION_LOADING_RETRY_DELAY_MS))
+          latestState = store.getState()
+        }
+
+        if (
+          !shouldDiscardEmptyConversation({
+            draft: CacheService.get(draftCacheKey),
+            isLoading: Boolean(latestState.messages.loadingByTopic[topicId]),
+            messageCount: selectMessagesForTopic(latestState, topicId).length
+          })
+        ) {
+          return
+        }
+
+        const persisted = await dbService.fetchMessages(topicId, true)
+        latestState = store.getState()
+        const messageCount = Math.max(persisted.messages.length, selectMessagesForTopic(latestState, topicId).length)
+
+        if (
+          !shouldDiscardEmptyConversation({
+            draft: CacheService.get(draftCacheKey),
+            isLoading: Boolean(latestState.messages.loadingByTopic[topicId]),
+            messageCount
+          })
+        ) {
+          return
+        }
+
+        await client.deleteSession(agentId, session.id)
+        CacheService.remove(draftCacheKey)
+        dispatch(newMessagesActions.clearTopicMessages(topicId))
+
+        if (store.getState().runtime.chat.activeSessionIdMap[agentId] === session.id) {
+          dispatch(setActiveSessionIdAction({ agentId, sessionId: null }))
+        }
+
+        const paths = client.getSessionPaths(agentId)
+        const sessionListKey = unstable_serialize(() => [paths.base, 0, DEFAULT_SESSION_PAGE_SIZE])
+        const archivedFilters = session.is_archived ? (['include', 'only'] as const) : (['exclude', 'include'] as const)
+        const allSessionListKeys = archivedFilters.map((archived) =>
+          unstable_serialize(() => [client.allSessionsPath, archived, 0, DEFAULT_SESSION_PAGE_SIZE])
+        )
+        const removeSessionFromPages = (pages: ListAgentSessionsResponse[] | undefined) => {
+          if (!pages?.some((page) => page.data.some((item) => item.id === session.id))) {
+            return pages
+          }
+
+          return pages.map((page) => ({
+            ...page,
+            data: page.data.filter((item) => item.id !== session.id),
+            total: Math.max(0, page.total - 1)
+          }))
+        }
+
+        await Promise.all([
+          mutate(paths.withId(session.id), undefined, { revalidate: false }),
+          mutate<ListAgentSessionsResponse[]>(sessionListKey, removeSessionFromPages, { revalidate: true }),
+          ...allSessionListKeys.map((key) =>
+            mutate<ListAgentSessionsResponse[]>(key, removeSessionFromPages, { revalidate: true })
+          )
+        ])
+      } catch (error) {
+        logger.warn('Failed to discard an abandoned empty Agent session', error as Error)
+      } finally {
+        sessionsBeingDiscardedRef.current.delete(sessionKey)
+      }
+    },
+    [client, dispatch, t]
+  )
+
+  const discardAbandonedSessionRef = useRef(discardAbandonedSession)
+  discardAbandonedSessionRef.current = discardAbandonedSession
+
+  useEffect(() => {
+    const previousSession = trackedSessionRef.current
+    let loadedCurrentSession: TrackedAgentSession | undefined
+    if (activeAgentId && activeSessionId && activeSession && activeSession.id === activeSessionId) {
+      loadedCurrentSession = { agentId: activeAgentId, session: activeSession }
+    }
+    const currentSession =
+      loadedCurrentSession ??
+      (previousSession && previousSession.agentId === activeAgentId && previousSession.session.id === activeSessionId
+        ? previousSession
+        : undefined)
+    trackedSessionRef.current = currentSession
+
+    if (
+      previousSession &&
+      (!currentSession ||
+        previousSession.agentId !== currentSession.agentId ||
+        previousSession.session.id !== currentSession.session.id)
+    ) {
+      void discardAbandonedSession(previousSession)
+    }
+  }, [activeAgentId, activeSession, activeSessionId, discardAbandonedSession])
+
+  useEffect(
+    () => () => {
+      const currentSession = trackedSessionRef.current
+      if (currentSession) {
+        void discardAbandonedSessionRef.current(currentSession)
+      }
+    },
+    []
+  )
+
+  useEffect(() => {
+    if (
+      !activeAgentId ||
+      !activeSession ||
+      !hasLoadedSessionMessages ||
+      isActiveSessionLoading ||
+      messages.length > 0 ||
+      !isUnnamedAgentSessionName(activeSession.name, t('common.unnamed')) ||
+      isStandardAgentModelIdentifier(activeSession.model) ||
+      modelRepairAttemptsRef.current.has(activeSession.id)
+    ) {
+      return
+    }
+
+    modelRepairAttemptsRef.current.add(activeSession.id)
+    const repairLegacyModel = async () => {
+      try {
+        const { data } = await client.getModels({ limit: 1000 })
+        const currentDefaultModel = findAgentModelId(data, CURRENT_DEFAULT_MODEL_ID)
+        if (currentDefaultModel) {
+          await updateSession(
+            {
+              id: activeSession.id,
+              model: currentDefaultModel
+            },
+            { showSuccessToast: false }
+          )
+        }
+      } catch (error) {
+        modelRepairAttemptsRef.current.delete(activeSession.id)
+        logger.warn('Failed to align an empty Agent session with the current default model', error as Error)
+      }
+    }
+
+    void repairLegacyModel()
+  }, [
+    activeAgentId,
+    activeSession,
+    client,
+    hasLoadedSessionMessages,
+    isActiveSessionLoading,
+    messages.length,
+    t,
+    updateSession
+  ])
 
   const checkAssistantEnvironment = useCallback(
     async (options?: { blocking?: boolean }) => {

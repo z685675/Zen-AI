@@ -22,6 +22,7 @@ import { newMessagesActions } from '@renderer/store/newMessage'
 import { setGenerating } from '@renderer/store/runtime'
 import type { Assistant, Topic } from '@renderer/types'
 import { classNames, removeSpecialCharactersForFileName } from '@renderer/utils'
+import { markLocallyVerifiedEmptyConversation } from '@renderer/utils/conversationDraft'
 import { getNewConversationModel } from '@renderer/utils/conversationModel'
 import { copyTopicAsMarkdown, copyTopicAsPlainText } from '@renderer/utils/copy'
 import {
@@ -173,6 +174,7 @@ export const Topics: React.FC<Props> = ({ assistant: _assistant, activeTopic, se
       if (assistant.topics.length === 1) {
         const newTopic = getDefaultTopic(assistant.id, getNewConversationModel(assistant, defaultModel))
         await db.topics.add({ id: newTopic.id, messages: [] })
+        markLocallyVerifiedEmptyConversation(newTopic.id)
         addTopic(newTopic)
         setActiveTopic(newTopic)
       } else {

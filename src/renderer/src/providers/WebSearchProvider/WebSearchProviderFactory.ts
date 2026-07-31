@@ -1,5 +1,6 @@
 import type { WebSearchProvider } from '@renderer/types'
 
+import AutoFreeProvider from './AutoFreeProvider'
 import type BaseWebSearchProvider from './BaseWebSearchProvider'
 import BochaProvider from './BochaProvider'
 import DefaultProvider from './DefaultProvider'
@@ -16,6 +17,8 @@ import ZhipuProvider from './ZhipuProvider'
 export default class WebSearchProviderFactory {
   static create(provider: WebSearchProvider): BaseWebSearchProvider {
     switch (provider.id) {
+      case 'auto-free':
+        return new AutoFreeProvider(provider)
       case 'zhipu':
         return new ZhipuProvider(provider)
       case 'tavily':

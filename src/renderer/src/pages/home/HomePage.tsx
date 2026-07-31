@@ -1,25 +1,38 @@
+import { loggerService } from '@logger'
 import { ErrorBoundary } from '@renderer/components/ErrorBoundary'
 import db from '@renderer/databases'
 import { useAssistants, useDefaultModel } from '@renderer/hooks/useAssistant'
 import { useNavbarPosition, useSettings } from '@renderer/hooks/useSettings'
 import { useShortcut } from '@renderer/hooks/useShortcuts'
 import { useShowAssistants, useShowTopics } from '@renderer/hooks/useStore'
-import { useActiveTopic } from '@renderer/hooks/useTopic'
+import { autoRenameTopic, clearCachedActiveTopic, useActiveTopic } from '@renderer/hooks/useTopic'
+import i18n from '@renderer/i18n'
 import { getDefaultTopic } from '@renderer/services/AssistantService'
+import { CacheService } from '@renderer/services/CacheService'
 import { EVENT_NAMES, EventEmitter } from '@renderer/services/EventService'
 import NavigationService from '@renderer/services/NavigationService'
+import store, { useAppSelector } from '@renderer/store'
 import {
   addTopic as addTopicAction,
   removeTopic as removeTopicAction,
   updateTopic as updateTopicAction
 } from '@renderer/store/assistants'
-import { newMessagesActions } from '@renderer/store/newMessage'
+import { newMessagesActions, selectMessagesForTopic } from '@renderer/store/newMessage'
 import type { Assistant, Topic } from '@renderer/types'
+import { isUnnamedAgentSessionName } from '@renderer/utils/agentSessionTitle'
+import {
+  consumeLocallyVerifiedEmptyConversation,
+  getChatTopicDraftCacheKey,
+  hasUnsentConversationDraft,
+  markLocallyVerifiedEmptyConversation,
+  shouldDiscardEmptyConversation,
+  sortConversationTopics
+} from '@renderer/utils/conversationDraft'
 import { getNewConversationModel, isSameModel } from '@renderer/utils/conversationModel'
 import { MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH, SECOND_MIN_WINDOW_WIDTH } from '@shared/config/constant'
 import { AnimatePresence, motion } from 'motion/react'
 import type { FC } from 'react'
-import { startTransition, useCallback, useEffect, useMemo, useState } from 'react'
+import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useDispatch } from 'react-redux'
 import { useLocation, useNavigate } from 'react-router-dom'
 import styled from 'styled-components'
@@ -30,13 +43,7 @@ import Navbar from './Navbar'
 import HomeTabs from './Tabs'
 
 let _activeAssistant: Assistant
-
-const sortTopicsByUpdatedAtDesc = (topics: Topic[]) =>
-  [...topics].sort((a, b) => {
-    const bTime = new Date(b.updatedAt || b.createdAt || 0).getTime()
-    const aTime = new Date(a.updatedAt || a.createdAt || 0).getTime()
-    return bTime - aTime
-  })
+const logger = loggerService.withContext('HomePage')
 
 const HomePage: FC = () => {
   const { assistants } = useAssistants()
@@ -50,6 +57,7 @@ const HomePage: FC = () => {
   const { showAssistants, showTopics, topicPosition } = useSettings()
   const { setShowAssistants, toggleShowAssistants } = useShowAssistants()
   const { toggleShowTopics } = useShowTopics()
+  const topicLoadingQuery = useAppSelector((state) => state.messages.loadingByTopic)
 
   const defaultConversationAssistant = useMemo(
     () => assistants.find((assistant) => assistant.id === 'default') || assistants[0],
@@ -64,38 +72,265 @@ const HomePage: FC = () => {
     () => assistants.find((assistant) => assistant.id === activeAssistant?.id),
     [activeAssistant?.id, assistants]
   )
+  const activeTopicRef = useRef<Topic | undefined>(undefined)
+  const topicsBeingDiscardedRef = useRef(new Set<string>())
+  const titleRepairAttemptsRef = useRef(new Set<string>())
+  const creatingConversationRef = useRef(false)
+  const [entryRestored, setEntryRestored] = useState(false)
 
   _activeAssistant = activeAssistant
+
+  const discardAbandonedTopic = useCallback(
+    async (topic: Topic) => {
+      if (topicsBeingDiscardedRef.current.has(topic.id)) {
+        return
+      }
+
+      const draftCacheKey = getChatTopicDraftCacheKey(topic.id)
+      const stateBeforeRead = store.getState()
+      if (
+        !shouldDiscardEmptyConversation({
+          draft: CacheService.get(draftCacheKey),
+          isLoading: Boolean(stateBeforeRead.messages.loadingByTopic[topic.id]),
+          messageCount: selectMessagesForTopic(stateBeforeRead, topic.id).length
+        })
+      ) {
+        return
+      }
+
+      topicsBeingDiscardedRef.current.add(topic.id)
+      const wasLocallyVerifiedEmpty = consumeLocallyVerifiedEmptyConversation(topic.id)
+      try {
+        if (wasLocallyVerifiedEmpty) {
+          CacheService.remove(draftCacheKey)
+          clearCachedActiveTopic(topic.id)
+          dispatch(newMessagesActions.clearTopicMessages(topic.id))
+          dispatch(removeTopicAction({ assistantId: topic.assistantId, topic }))
+
+          try {
+            await db.topics.delete(topic.id)
+          } catch (error) {
+            dispatch(addTopicAction({ assistantId: topic.assistantId, topic }))
+            throw error
+          }
+          return
+        }
+
+        const persistedTopic = await db.topics.get(topic.id)
+        const latestState = store.getState()
+        const messageCount = Math.max(
+          persistedTopic?.messages?.length ?? 0,
+          selectMessagesForTopic(latestState, topic.id).length
+        )
+
+        if (
+          !shouldDiscardEmptyConversation({
+            draft: CacheService.get(draftCacheKey),
+            isLoading: Boolean(latestState.messages.loadingByTopic[topic.id]),
+            messageCount
+          })
+        ) {
+          return
+        }
+
+        await db.topics.delete(topic.id)
+        CacheService.remove(draftCacheKey)
+        clearCachedActiveTopic(topic.id)
+        dispatch(newMessagesActions.clearTopicMessages(topic.id))
+        dispatch(removeTopicAction({ assistantId: topic.assistantId, topic }))
+      } catch (error) {
+        logger.warn('Failed to discard an abandoned empty chat topic', error as Error)
+      } finally {
+        topicsBeingDiscardedRef.current.delete(topic.id)
+      }
+    },
+    [dispatch]
+  )
+
+  useEffect(() => {
+    const previousTopic = activeTopicRef.current
+    activeTopicRef.current = activeTopic
+
+    if (previousTopic && previousTopic.id !== activeTopic?.id) {
+      void discardAbandonedTopic(previousTopic)
+    }
+  }, [activeTopic, discardAbandonedTopic])
+
+  useEffect(
+    () => () => {
+      const currentTopic = activeTopicRef.current
+      if (currentTopic) {
+        const draft = CacheService.get(getChatTopicDraftCacheKey(currentTopic.id))
+        if (!hasUnsentConversationDraft(draft)) {
+          clearCachedActiveTopic(currentTopic.id)
+        }
+        void discardAbandonedTopic(currentTopic)
+      }
+    },
+    [discardAbandonedTopic]
+  )
+
+  useEffect(() => {
+    let cancelled = false
+
+    const repairMissingTopicTitles = async () => {
+      const localizedPlaceholder = i18n.t('chat.default.topic.name')
+
+      for (const assistant of assistants) {
+        for (const topic of assistant.topics || []) {
+          if (
+            cancelled ||
+            topic.isNameManuallyEdited ||
+            topicLoadingQuery[topic.id] ||
+            titleRepairAttemptsRef.current.has(topic.id) ||
+            !isUnnamedAgentSessionName(topic.name, localizedPlaceholder)
+          ) {
+            continue
+          }
+
+          const persistedTopic = await db.topics.get(topic.id)
+          if (cancelled) {
+            return
+          }
+          if (!persistedTopic?.messages?.length) {
+            continue
+          }
+
+          titleRepairAttemptsRef.current.add(topic.id)
+          const repaired = await autoRenameTopic(assistant, topic.id, { preferGeneratedTitle: false })
+          if (!repaired) {
+            titleRepairAttemptsRef.current.delete(topic.id)
+          }
+        }
+      }
+    }
+
+    void repairMissingTopicTitles()
+    return () => {
+      cancelled = true
+    }
+  }, [assistants, topicLoadingQuery])
 
   const createTopicForAssistant = useCallback(
     async (assistant: Assistant) => {
       const topic = getDefaultTopic(assistant.id, getNewConversationModel(assistant, defaultModel))
       await db.topics.add({ id: topic.id, messages: [] })
+      markLocallyVerifiedEmptyConversation(topic.id)
       dispatch(addTopicAction({ assistantId: assistant.id, topic }))
       return topic
     },
     [defaultModel, dispatch]
   )
 
+  const findMessageFreeTopic = useCallback(async (topics: Topic[]) => {
+    for (const topic of sortConversationTopics(topics)) {
+      const currentState = store.getState()
+      if (currentState.messages.loadingByTopic[topic.id] || selectMessagesForTopic(currentState, topic.id).length > 0) {
+        continue
+      }
+
+      const dbTopic = await db.topics.get(topic.id)
+      const latestState = store.getState()
+      if (
+        !latestState.messages.loadingByTopic[topic.id] &&
+        selectMessagesForTopic(latestState, topic.id).length === 0 &&
+        (dbTopic?.messages?.length || 0) === 0
+      ) {
+        markLocallyVerifiedEmptyConversation(topic.id)
+        return topic
+      }
+    }
+
+    return undefined
+  }, [])
+
+  const findTopRestorableTopic = useCallback(async () => {
+    const currentAssistants = store.getState().assistants.assistants
+    const topics = sortConversationTopics(currentAssistants.flatMap((assistant) => assistant.topics || []))
+
+    for (const topic of topics) {
+      const currentState = store.getState()
+      if (
+        topic.isNameManuallyEdited ||
+        hasUnsentConversationDraft(CacheService.get(getChatTopicDraftCacheKey(topic.id))) ||
+        currentState.messages.loadingByTopic[topic.id] ||
+        selectMessagesForTopic(currentState, topic.id).length > 0
+      ) {
+        return topic
+      }
+
+      const persistedTopic = await db.topics.get(topic.id)
+      if ((persistedTopic?.messages?.length || 0) > 0) {
+        return topic
+      }
+    }
+
+    return undefined
+  }, [])
+
   const getOrCreateEmptyTopicForAssistant = useCallback(
     async (assistant: Assistant) => {
+      const currentAssistant =
+        store.getState().assistants.assistants.find((candidate) => candidate.id === assistant.id) || assistant
       const expectedModel = getNewConversationModel(assistant, defaultModel)
-      for (const topic of sortTopicsByUpdatedAtDesc(assistant.topics || [])) {
-        const dbTopic = await db.topics.get(topic.id)
-        if ((dbTopic?.messages?.length || 0) === 0) {
-          if (!isSameModel(topic.model, expectedModel)) {
-            const alignedTopic = { ...topic, model: expectedModel }
-            dispatch(updateTopicAction({ assistantId: assistant.id, topic: alignedTopic }))
-            return alignedTopic
-          }
-          return topic
+      const topic = await findMessageFreeTopic(currentAssistant.topics || [])
+      if (topic) {
+        if (!isSameModel(topic.model, expectedModel)) {
+          const alignedTopic = { ...topic, model: expectedModel }
+          dispatch(updateTopicAction({ assistantId: assistant.id, topic: alignedTopic }))
+          return alignedTopic
         }
+        return topic
       }
 
       return await createTopicForAssistant(assistant)
     },
-    [createTopicForAssistant, defaultModel, dispatch]
+    [createTopicForAssistant, defaultModel, dispatch, findMessageFreeTopic]
   )
+
+  useEffect(() => {
+    if (entryRestored || !defaultConversationAssistant) {
+      return
+    }
+
+    if (state?.topic) {
+      setEntryRestored(true)
+      return
+    }
+
+    let cancelled = false
+
+    const restoreTopConversation = async () => {
+      const topTopic = await findTopRestorableTopic()
+      if (cancelled) {
+        return
+      }
+
+      const topic = topTopic || (await getOrCreateEmptyTopicForAssistant(defaultConversationAssistant))
+      if (cancelled) {
+        return
+      }
+
+      const topicAssistant =
+        store.getState().assistants.assistants.find((assistant) => assistant.id === topic.assistantId) ||
+        defaultConversationAssistant
+      _setActiveAssistant(topicAssistant)
+      _setActiveTopic(topic)
+      setEntryRestored(true)
+    }
+
+    void restoreTopConversation()
+    return () => {
+      cancelled = true
+    }
+  }, [
+    _setActiveTopic,
+    defaultConversationAssistant,
+    entryRestored,
+    findTopRestorableTopic,
+    getOrCreateEmptyTopicForAssistant,
+    state?.topic
+  ])
 
   const setActiveAssistant = useCallback(
     async (newAssistant: Assistant) => {
@@ -121,10 +356,13 @@ const HomePage: FC = () => {
       if (topicAssistant && topicAssistant.id !== activeAssistant?.id) {
         _setActiveAssistant(topicAssistant)
       }
-      _setActiveTopic((prev) => (newTopic.id === prev?.id ? prev : newTopic))
-      dispatch(newMessagesActions.setTopicFulfilled({ topicId: newTopic.id, fulfilled: false }))
+      const isCurrentTopic = newTopic.id === activeTopic?.id
+      _setActiveTopic(newTopic)
+      if (!isCurrentTopic) {
+        dispatch(newMessagesActions.setTopicFulfilled({ topicId: newTopic.id, fulfilled: false }))
+      }
     },
-    [_setActiveTopic, activeAssistant, assistants, dispatch]
+    [_setActiveTopic, activeAssistant, activeTopic?.id, assistants, dispatch]
   )
 
   const bindAssistantToActiveTopic = useCallback(
@@ -194,17 +432,33 @@ const HomePage: FC = () => {
   )
 
   const createConversation = useCallback(async () => {
-    if (!defaultConversationAssistant) {
+    if (!defaultConversationAssistant || creatingConversationRef.current) {
       return
     }
 
-    // An explicit "new conversation" action must always create a visible topic.
-    // Draft reuse is reserved for automatic initialization and assistant switching.
-    const topic = await createTopicForAssistant(defaultConversationAssistant)
-    _setActiveAssistant(defaultConversationAssistant)
-    _setActiveTopic(topic)
-    dispatch(newMessagesActions.setTopicFulfilled({ topicId: topic.id, fulfilled: false }))
-  }, [_setActiveTopic, createTopicForAssistant, defaultConversationAssistant, dispatch])
+    creatingConversationRef.current = true
+    try {
+      // A role selected for the current topic must not become the next topic's default.
+      const allTopics = assistants.flatMap((assistant) => assistant.topics || [])
+      const reusableTopic = await getOrCreateEmptyTopicForAssistant(defaultConversationAssistant)
+      const latestTopicTimestamp = allTopics.reduce(
+        (latest, current) => Math.max(latest, new Date(current.updatedAt || current.createdAt || 0).getTime()),
+        Date.now()
+      )
+      const topic = {
+        ...reusableTopic,
+        assistantId: defaultConversationAssistant.id,
+        enableWebSearch: false,
+        updatedAt: new Date(latestTopicTimestamp + 1).toISOString()
+      }
+      dispatch(updateTopicAction({ assistantId: defaultConversationAssistant.id, topic }))
+      _setActiveAssistant(defaultConversationAssistant)
+      _setActiveTopic(topic)
+      dispatch(newMessagesActions.setTopicFulfilled({ topicId: topic.id, fulfilled: false }))
+    } finally {
+      creatingConversationRef.current = false
+    }
+  }, [_setActiveTopic, assistants, defaultConversationAssistant, dispatch, getOrCreateEmptyTopicForAssistant])
 
   useShortcut('toggle_show_assistants', () => {
     if (topicPosition === 'right') {
@@ -257,7 +511,7 @@ const HomePage: FC = () => {
   }, [activeAssistant, latestActiveAssistant])
 
   useEffect(() => {
-    if (activeTopic || !activeAssistant) {
+    if (!entryRestored || activeTopic || !activeAssistant) {
       return
     }
 
@@ -277,7 +531,7 @@ const HomePage: FC = () => {
     return () => {
       cancelled = true
     }
-  }, [activeAssistant, activeTopic, _setActiveTopic, getOrCreateEmptyTopicForAssistant])
+  }, [activeAssistant, activeTopic, _setActiveTopic, entryRestored, getOrCreateEmptyTopicForAssistant])
 
   useEffect(() => {
     const exists = assistants.some((assistant) => assistant.id === activeAssistant?.id)
@@ -376,6 +630,7 @@ const HomePage: FC = () => {
               activeTopic={activeTopic}
               setActiveTopic={setActiveTopic}
               setActiveAssistant={bindAssistantToActiveTopic}
+              onCreateConversation={createConversation}
             />
           )}
         </ErrorBoundary>

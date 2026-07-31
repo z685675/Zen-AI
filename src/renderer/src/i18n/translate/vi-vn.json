@@ -132,6 +132,7 @@
           "loginHint": "Lần đăng nhập đầu tiên yêu cầu quét mã QR. Một mã QR sẽ tự động xuất hiện khi kênh kết nối.",
           "qrHint": "Mở WeChat trên điện thoại của bạn, quét mã QR để đăng nhập.",
           "qrTitle": "Đăng nhập bằng mã QR WeChat",
+          "reconnect": "[to be translated]:Rescan QR code",
           "title": "WeChat",
           "whoamiTip": "Mẹo: Gửi /whoami trong WeChat để lấy ID của người dùng."
         }
@@ -282,8 +283,35 @@
       "title": "Chỉnh sửa Tác nhân"
     },
     "empty": {
+      "action": "[to be translated]:Configure Model Service",
       "description": "Tạo một tác nhân để xử lý các nhiệm vụ phức tạp với công cụ được hỗ trợ bởi AI",
       "title": "Chưa có tác nhân nào"
+    },
+    "environmentGate": {
+      "action": "[to be translated]:Fix Environment",
+      "checkFailed": "[to be translated]:Environment check failed",
+      "description": "[to be translated]:Finish repairing the runtime environment first so the smart assistant can work reliably.",
+      "refresh": "[to be translated]:Check Again",
+      "repairHint": "[to be translated]:Bun and UV can be repaired automatically. On Windows, missing Git is installed through winget after confirmation on the repair page.",
+      "title": "[to be translated]:Assistant environment is not ready"
+    },
+    "errorFallback": {
+      "assistant_name": "[to be translated]:Smart Assistant",
+      "connection_title": "[to be translated]:The task connection was interrupted",
+      "dependency_description": "[to be translated]:This task needs a local runtime component that is not ready yet. Repair the smart assistant environment first, then retry the task for a more stable run.",
+      "dependency_title": "[to be translated]:Required runtime is missing",
+      "description": "[to be translated]:This task did not finish successfully. Try again first; if it keeps failing, open the details or adjust the model and network settings.",
+      "detail": "[to be translated]:View details",
+      "export_failed": "[to be translated]:Failed to export diagnostic package. Please try again later.",
+      "export_package": "[to be translated]:Export diagnostics",
+      "export_success": "[to be translated]:Diagnostic package exported: {{path}}",
+      "fix_environment": "[to be translated]:Fix environment",
+      "model_title": "[to be translated]:The model could not complete this task",
+      "privacy_notice": "[to be translated]:This diagnostic package is used to troubleshoot smart assistant task failures. It may include the current task conversation, error details, local file paths, and runtime environment information. Before sharing it with others, make sure it does not contain private content you do not want to share.",
+      "retry": "[to be translated]:Retry task",
+      "retry_missing_user": "[to be translated]:The original task could not be found, so it cannot be retried automatically.",
+      "subtitle": "[to be translated]:The smart assistant has stopped this task. Unfinished steps will not continue in the background.",
+      "title": "[to be translated]:Task not completed"
     },
     "get": {
       "error": {
@@ -319,7 +347,11 @@
       "tooltip": "Git Bash là bắt buộc để chạy các agent trên Windows. Cài đặt từ git-scm.com nếu chưa có."
     },
     "input": {
+      "deep_research": "[to be translated]:Deep Research",
+      "deep_research_tooltip": "[to be translated]:Creates one research task for your next message: plan first, then multi-step source verification and a cited report.",
+      "hero_placeholder": "[to be translated]:For example: research a topic, summarize the key points, and organize the result",
       "placeholder": "Nhập tin nhắn của bạn ở đây, gửi bằng {{key}} - @ chọn đường dẫn, / chọn lệnh",
+      "reasoning_effort": "[to be translated]:Thinking effort",
       "soul_placeholder": "Giúp tôi kết nối với Telegram"
     },
     "list": {
@@ -340,6 +372,7 @@
     "session": {
       "accessible_paths": {
         "add": "Thêm thư mục",
+        "current": "[to be translated]:Current workspace",
         "default_hint": "Một không gian làm việc mặc định sẽ được tạo tự động nếu không được chỉ định.",
         "duplicate": "Thư mục này đã được bao gồm.",
         "empty": "Chọn ít nhất một thư mục mà tác nhân có thể truy cập.",
@@ -347,16 +380,24 @@
           "at_least_one": "Vui lòng chọn ít nhất một thư mục có thể truy cập."
         },
         "label": "Thư mục truy cập được",
-        "select_failed": "Không thể chọn thư mục."
+        "select_failed": "Không thể chọn thư mục.",
+        "set_active": "[to be translated]:Make current"
       },
       "add": {
-        "title": "Thêm một phiên"
+        "title": "Cuộc trò chuyện mới"
       },
       "allowed_tools": {
         "empty": "Không có công cụ nào khả dụng cho tác nhân này.",
         "helper": "Các công cụ được phê duyệt trước chạy mà không cần phê duyệt thủ công. Các công cụ không được chọn yêu cầu phê duyệt trước khi sử dụng.",
         "label": "Công cụ được phê duyệt trước",
         "placeholder": "Chọn công cụ được phê duyệt trước"
+      },
+      "archive": {
+        "badge": "[to be translated]:Archived",
+        "empty": "[to be translated]:No archived sessions yet",
+        "move": "[to be translated]:Archive Session",
+        "restore": "[to be translated]:Restore Session",
+        "title": "[to be translated]:Archived"
       },
       "create": {
         "error": {
@@ -374,6 +415,7 @@
       "edit": {
         "title": "Séance d'édition"
       },
+      "fallback_title": "[to be translated]:Assistant Task",
       "get": {
         "error": {
           "failed": "Không thể lấy phiên",
@@ -386,6 +428,11 @@
         "error": {
           "failed": "Không thể sắp xếp lại các phiên"
         }
+      },
+      "search": {
+        "empty": "[to be translated]:No matching sessions found",
+        "error": "[to be translated]:Failed to search sessions",
+        "placeholder": "[to be translated]:Search Smart Assistant sessions..."
       },
       "update": {
         "error": {
@@ -416,10 +463,38 @@
           },
           "placeholder": "Chọn một hành vi cấp quyền"
         },
+        "runtime": {
+          "codexDisabled": "[to be translated]:Codex runtime is not enabled in this build. Auto continues to use the stable Claude Code path.",
+          "description": "[to be translated]:Choose the underlying runtime for this agent. At this stage Auto keeps the existing Claude Code path, while Codex is limited to controlled testing.",
+          "helper": "[to be translated]:Keep Auto unless you are testing Codex with a verified OpenAI-compatible endpoint.",
+          "incompatible": {
+            "claudeCode": {
+              "description": "[to be translated]:The runtime changed, but the current model is not Claude Code compatible. Before starting a task, select a model that exposes the Anthropic Messages protocol.",
+              "title": "[to be translated]:Choose a Claude Code model"
+            },
+            "codex": {
+              "description": "[to be translated]:The runtime changed, but the current model is not Codex compatible. Before starting a task, select a model that exposes an OpenAI or OpenAI Responses endpoint.",
+              "title": "[to be translated]:Choose a Codex model"
+            }
+          },
+          "label": "[to be translated]:Agent runtime",
+          "options": {
+            "auto": "[to be translated]:Auto",
+            "claudeCode": "[to be translated]:Claude Code",
+            "codex": "[to be translated]:Codex"
+          }
+        },
         "title": "Cài đặt nâng cao"
       },
       "essential": "Cài đặt thiết yếu",
+      "model": {
+        "defaultLabel": "[to be translated]:Default for new chats",
+        "defaultTooltip": "[to be translated]:Used only as the default for future chats. Existing chat models are not changed.",
+        "sessionTooltip": "[to be translated]:Changes only this chat. A task already in progress continues with the model it started with."
+      },
       "permissionMode": {
+        "currentModePrefix": "[to be translated]:Current Mode: ",
+        "simpleTitle": "[to be translated]:Mode Selection",
         "tab": "Chế độ cấp quyền",
         "title": "Chế độ quyền truy cập"
       },
@@ -526,16 +601,13 @@
             "description": "Chuyển đổi chế độ sẽ cập nhật các công cụ được phê duyệt tự động.",
             "title": "Thay đổi chế độ quyền?"
           },
-          "default": {
-            "description": "Có thể đọc tập tin tự do. Hỏi trước khi chỉnh sửa hoặc chạy lệnh.",
-            "title": "Chế độ Thường"
-          },
           "helper": "Chọn cách tác nhân xử lý việc phê duyệt công cụ.",
           "placeholder": "Chọn chế độ quyền",
           "plan": {
             "description": "Chỉ có thể đọc tệp và lập kế hoạch. Không thể chỉnh sửa tệp hoặc chạy lệnh.",
             "title": "Chế độ Kế hoạch"
           },
+          "simpleTitle": "[to be translated]:Mode Selection",
           "title": "Chế độ quyền"
         },
         "preapproved": {
@@ -678,7 +750,32 @@
       "enable_server_description": "Máy chủ API phải được bật để các tác nhân hoạt động. Bạn có thể bật nó trực tiếp hoặc cấu hình trong phần cài đặt.",
       "server_not_running": "Máy chủ API đã được kích hoạt nhưng không đang chạy. Vui lòng kiểm tra cấu hình máy chủ.",
       "server_not_running_description": "Máy chủ API cần được chạy để các tác nhân hoạt động. Bạn có thể khởi động nó trực tiếp hoặc kiểm tra cài đặt."
+    },
+    "welcome": {
+      "capabilities": {
+        "files": "[to be translated]:Work with files",
+        "files_desc": "[to be translated]:Complete tasks using files, folders, and workspace content.",
+        "search": "[to be translated]:Research",
+        "search_desc": "[to be translated]:Find information first, then extract the key points and conclusions.",
+        "summary": "[to be translated]:Organize and summarize",
+        "summary_desc": "[to be translated]:Turn scattered content into a clear, reusable result.",
+        "tasks": "[to be translated]:Multi-step tasks",
+        "tasks_desc": "[to be translated]:Handle complex work that needs multiple steps and sustained execution."
+      },
+      "model_label": "[to be translated]:Model for this chat",
+      "title": "[to be translated]:Hand over the task and get started with ease"
     }
+  },
+  "announcements": {
+    "collapse": "[to be translated]:Collapse",
+    "empty": "[to be translated]:No announcements yet",
+    "expand": "[to be translated]:Expand",
+    "learn_more": "[to be translated]:Learn more",
+    "subtitle": "[to be translated]:The latest 3 product announcements are kept here for quick review.",
+    "title": "[to be translated]:Announcements",
+    "updated_at": "[to be translated]:Recently updated {{time}}",
+    "view_changes": "[to be translated]:View changes",
+    "view_content": "[to be translated]:View content"
   },
   "apiServer": {
     "actions": {
@@ -1088,6 +1185,22 @@
       "context_count": {
         "tip": "Ngữ cảnh / Ngữ cảnh tối đa"
       },
+      "context_manager": {
+        "cache": "[to be translated]:Parse cache",
+        "cache_value": "[to be translated]:{{hits}} hits / {{total}} parses",
+        "compressions": "[to be translated]:History compactions",
+        "error": "[to be translated]:Resource preparation failed",
+        "managed": "[to be translated]:Resources and history managed",
+        "managed_resources": "[to be translated]:{{count}} resources managed",
+        "note": "[to be translated]:This shows resource, history, and capacity handling. It does not mean the model is still responding.",
+        "processing": "[to be translated]:Preparing resources and context",
+        "ready": "[to be translated]:Resources and context ready",
+        "resources": "[to be translated]:Indexed resources",
+        "retries": "[to be translated]:Capacity retries",
+        "retrieval_value": "[to be translated]:{{count}} calls / {{chunks}} chunks",
+        "retrievals": "[to be translated]:Relevant resource calls",
+        "title": "[to be translated]:Resources and context"
+      },
       "estimated_tokens": {
         "tip": "Tokens estimados"
       },
@@ -1098,6 +1211,16 @@
       "generate_image": "Tạo hình ảnh",
       "generate_image_not_supported": "Mô hình không hỗ trợ tạo hình ảnh.",
       "knowledge_base": "Cơ sở tri thức",
+      "more": {
+        "attachment": "[to be translated]:Upload images, documents, or other files into the current conversation",
+        "create_session": "[to be translated]:Create a new conversation under the current assistant",
+        "quick_phrases": "[to be translated]:Insert a commonly used phrase or preset content",
+        "resource_panel": "[to be translated]:Browse files and skills available to this session",
+        "slash_commands": "[to be translated]:View quick commands provided by this assistant",
+        "thinking": "[to be translated]:Adjust the model thinking mode or reasoning depth",
+        "title": "[to be translated]:More",
+        "toggle_expand": "[to be translated]:Expand or collapse the current input box"
+      },
       "new": {
         "context": "Clear Context"
       },
@@ -1129,6 +1252,7 @@
       "settings": "Cài đặt",
       "slash_commands": {
         "description": "Lệnh gạch chéo phiên làm việc của tác nhân",
+        "empty": "[to be translated]:No slash commands available right now",
         "title": "Lệnh gạch chéo"
       },
       "thinking": {
@@ -1169,6 +1293,8 @@
       },
       "url_context": "Bối cảnh URL",
       "web_search": {
+        "auto_disabled": "[to be translated]:Off: do not use web search",
+        "auto_enabled": "[to be translated]:On: automatically decide when web search is needed",
         "builtin": {
           "disabled_content": "Mô hình hiện tại không hỗ trợ tìm kiếm web",
           "enabled_content": "Sử dụng chức năng tìm kiếm web tích hợp sẵn của mô hình",
@@ -1177,14 +1303,18 @@
         "button": {
           "ok": "Đi tới Cài đặt"
         },
+        "disabled": "[to be translated]:Search the web for the next message",
         "enable": "Bật tìm kiếm web",
         "enable_content": "Cần kiểm tra kết nối tìm kiếm web trong cài đặt trước",
+        "enabled": "[to be translated]:The next message will search the web, then turn off automatically",
         "label": "Tìm kiếm trên web",
         "no_web_search": {
           "description": "Không bật tìm kiếm web",
           "label": "Tắt tìm kiếm web"
         },
-        "settings": "Cài đặt Tìm kiếm Web"
+        "settings": "Cài đặt Tìm kiếm Web",
+        "toast_disabled": "[to be translated]:Web search canceled for the next message",
+        "toast_enabled": "[to be translated]:Web search is on for the next message and will turn off automatically after sending"
       }
     },
     "mcp": {
@@ -1202,7 +1332,8 @@
       "new": {
         "branch": {
           "created": "Chi nhánh mới đã được tạo",
-          "label": "Chi nhánh mới"
+          "label": "Chi nhánh mới",
+          "tooltip": "[to be translated]:Create a new conversation branch without affecting the original"
         },
         "context": "Bối cảnh Mới"
       },
@@ -1224,6 +1355,7 @@
     "navigation": {
       "bottom": "Quay lại đầu trang",
       "close": "Đóng",
+      "earlier": "[to be translated]:View earlier turns",
       "first": "Đã ngay từ tin nhắn đầu tiên",
       "history": "Lịch sử trò chuyện",
       "last": "Đã ở tin nhắn cuối cùng",
@@ -1858,6 +1990,7 @@
     "created": "Đã tạo",
     "last_updated": "Cập nhật lần cuối",
     "messages": "Tin nhắn",
+    "no_history": "[to be translated]:No conversation history",
     "notion": {
       "reasoning_truncated": "Chuỗi suy luận không thể chia nhỏ và đã bị cắt ngắn."
     },
@@ -1906,12 +2039,14 @@
   },
   "history": {
     "continue_chat": "Tiếp tục trò chuyện",
+    "conversation_history": "[to be translated]:Conversation History",
     "error": {
       "topic_not_found": "Không tìm thấy chủ đề"
     },
     "locate": {
       "message": "Tìm tin nhắn"
     },
+    "no_history": "[to be translated]:No conversation history yet",
     "search": {
       "match": {
         "substring": "Chứa",
@@ -2481,6 +2616,12 @@
       "abort_failed": "Appel d'outil interrompu",
       "aborted": "Cuộc gọi công cụ đã bị hủy",
       "approvalRequired": "Werkzeug \"{{tool}}\" erfordert eine Genehmigung",
+      "assistantCreateFile": {
+        "open_file": "[to be translated]:Open file",
+        "open_folder": "[to be translated]:Reveal in folder",
+        "title": "[to be translated]:File created",
+        "verified": "[to be translated]:Verified"
+      },
       "autoApproveEnabled": "Tự động phê duyệt đã được bật cho công cụ này",
       "cancelled": "Đã hủy",
       "completed": "Hoàn thành",
@@ -3104,6 +3245,14 @@
         "image": "Hình ảnh mới"
       }
     },
+    "canvas_guide_primary": "[to be translated]:Describe the image you want below, and I'll generate it for you.",
+    "canvas_guide_secondary": "[to be translated]:You can upload or paste multiple images for image editing.",
+    "canvas_upload_action": "[to be translated]:Upload Image",
+    "composer_continue_hint": "[to be translated]:Continuing from this image; the result will be generated separately without overwriting it.",
+    "composer_upload_hint": "[to be translated]:Editing from the uploaded image; the result will be generated separately.",
+    "copy_prompt": "[to be translated]:Copy prompt",
+    "created_at": "[to be translated]:Created at",
+    "current_mode": "[to be translated]:Current Mode",
     "custom_size": "Kích thước tùy chỉnh",
     "dmxapi": {
       "generating_tip": "Đang tạo với mô hình chính thức, thời gian chờ ước tính là 2-5 phút để có kết quả tốt nhất. Vui lòng kiểm tra nhật ký backend DMXAPI để biết chi phí của thao tác này.",
@@ -3138,10 +3287,12 @@
         "yarn_doll": "Búp bê len"
       }
     },
+    "drag_reorder_hint": "[to be translated]:Drag images to reorder",
     "edit": {
       "image_file": "Hình ảnh đầu vào",
       "image_required": "Vui lòng tải lên một hình ảnh để chỉnh sửa trước"
     },
+    "expand_prompt_editor": "[to be translated]:Expand prompt editor",
     "generate": {
       "height": "Chiều cao",
       "magic_prompt_option_tip": "Tăng cường thông minh các lời nhắc để có kết quả tốt hơn",
@@ -3212,10 +3363,13 @@
     "learn_more": "Tìm Hiểu Thêm",
     "magic_prompt_option": "Lời nhắc Ma thuật",
     "mode": {
+      "continue_with_index": "[to be translated]:Continue from image {{index}}",
+      "create": "[to be translated]:Create New Image",
       "edit": "Chỉnh sửa",
       "generate": "Vẽ",
       "merge": "Hợp nhất",
       "remix": "Phối lại",
+      "upload_edit": "[to be translated]:Upload Image Edit",
       "upscale": "Nâng cấp"
     },
     "model": "Mô hình",
@@ -3250,11 +3404,13 @@
       "watermark_tip": "Có thêm hình mờ vào ảnh được tạo hay không, mặc định là tắt"
     },
     "pricing": "Định giá",
+    "prompt_editor_title": "[to be translated]:Edit image prompt",
     "prompt_enhancement": "Mejora de Indicaciones",
     "prompt_enhancement_tip": "Viết lại các lời nhắc thành phiên bản chi tiết, thân thiện với mô hình khi được bật",
     "prompt_placeholder": "Mô tả hình ảnh bạn muốn tạo, ví dụ: Một hồ yên tĩnh lúc hoàng hôn với dãy núi phía xa",
     "prompt_placeholder_edit": "Nhập mô tả hình ảnh của bạn, vẽ văn bản dùng \"dấu ngoặc kép\" để bao quanh",
     "prompt_placeholder_en": "Nhập mô tả hình ảnh của bạn, hiện tại chỉ hỗ trợ lời nhắc bằng tiếng Anh",
+    "prompt_used": "[to be translated]:Prompt used",
     "proxy_required": "Mở proxy và bật \"chế độ TUN\" để xem ảnh đã tạo hoặc sao chép chúng sang trình duyệt để mở. Trong tương lai, sẽ hỗ trợ kết nối trực tiếp trong nước.",
     "quality": "Chất lượng",
     "quality_options": {
@@ -3294,6 +3450,8 @@
     "seed_random": "Ngẫu nhiên",
     "seed_tip": "Cùng một hạt giống và lời nhắc có thể tạo ra những hình ảnh tương tự",
     "select_model": "Chọn Mô hình",
+    "source": "[to be translated]:Source",
+    "source_deleted": "[to be translated]:Source deleted",
     "style_type": "Phong cách",
     "style_types": {
       "3d": "3D",
@@ -3934,6 +4092,9 @@
       },
       "checkUpdate": {
         "available": "Cập nhật",
+        "download": "[to be translated]:Download Now",
+        "downloading": "[to be translated]:Downloading",
+        "downloadingProgress": "[to be translated]:Downloading {{percent}}%",
         "label": "Kiểm tra cập nhật"
       },
       "checkingUpdate": "Đang kiểm tra cập nhật...",
@@ -3964,6 +4125,12 @@
       },
       "title": "Về",
       "updateAvailable": "Đã tìm thấy phiên bản mới {{version}}",
+      "updateDiagnostics": {
+        "copied": "[to be translated]:Update diagnostics copied",
+        "copy": "[to be translated]:Copy Diagnostics",
+        "copyFailed": "[to be translated]:Failed to copy update diagnostics",
+        "title": "[to be translated]:Update Diagnostics"
+      },
       "updateError": "Lỗi cập nhật",
       "updateNotAvailable": "Bạn đang sử dụng phiên bản mới nhất",
       "website": {
@@ -3987,6 +4154,65 @@
       "label": "Trợ lý Mặc định",
       "model_params": "Tham số mô hình",
       "title": "Trợ lý Mặc định"
+    },
+    "assistantEnvironment": {
+      "binariesDir": "[to be translated]:App tools directory",
+      "checkFailed": "[to be translated]:Environment check failed",
+      "coreDescription": "[to be translated]:These tools affect the assistant's ability to use extensions, skills, and local tasks reliably.",
+      "coreTitle": "[to be translated]:Core Readiness",
+      "dependencies": {
+        "bun": {
+          "description": "[to be translated]:Runs some skills, tool services, and frontend-oriented automation tasks.",
+          "name": "[to be translated]:Bun runtime"
+        },
+        "git": {
+          "description": "[to be translated]:On Windows, the assistant needs Git Bash to run local tasks reliably. It is also used for Git-based skills, repository downloads, and coding tasks.",
+          "name": "[to be translated]:Git"
+        },
+        "pyodide": {
+          "description": "[to be translated]:Powers the in-browser Python sandbox. This version loads it from the network on first use and does not require system Python.",
+          "name": "[to be translated]:Python sandbox network"
+        },
+        "python": {
+          "description": "[to be translated]:Zen AI's private CPython 3.12 environment for data processing, document scripts, and complex local tasks. It does not modify system Python.",
+          "name": "[to be translated]:Zen Python runtime"
+        },
+        "uv": {
+          "description": "[to be translated]:Prepares Python tool environments and dependencies for some local skills.",
+          "name": "[to be translated]:UV"
+        },
+        "uvx": {
+          "description": "[to be translated]:Provided with UV and used to run temporary Python tool packages and MCP services.",
+          "name": "[to be translated]:UVX"
+        }
+      },
+      "description": "[to be translated]:Check local tools and network readiness for the full smart assistant experience.",
+      "downloadGit": "[to be translated]:Download Git",
+      "downloadGitHint": "[to be translated]:Please finish installing Git with the setup wizard, then come back and check again.",
+      "install": "[to be translated]:Install",
+      "installFailed": "[to be translated]:Install failed",
+      "installGitAuto": "[to be translated]:Auto Install Git",
+      "installGitConfirmContent": "[to be translated]:On Windows, the smart assistant needs Git Bash from Git for Windows to run local tasks reliably. The app will try to install it through winget. A system permission prompt may appear. If auto install fails, the official download page will open as a fallback.",
+      "installGitConfirmTitle": "[to be translated]:Install Git for Windows automatically?",
+      "installGitFailedFallback": "[to be translated]:Auto install failed. The official Git download page has been opened",
+      "installSuccess": "[to be translated]:Installed",
+      "intro": "[to be translated]:Zen AI prepares a private Python environment and local tools for every user. These components stay inside Zen AI and do not modify system Python.",
+      "noPath": "[to be translated]:No available path detected yet",
+      "optionalDescription": "[to be translated]:These are not required for basic chat, but they improve some advanced tasks.",
+      "optionalTitle": "[to be translated]:Optional Enhancements",
+      "prepare": "[to be translated]:Repair Assistant Environment",
+      "prepareSuccess": "[to be translated]:Environment prepared",
+      "refresh": "[to be translated]:Check Again",
+      "sources": {
+        "app": "[to be translated]:App tools directory",
+        "network": "[to be translated]:Network available",
+        "system": "[to be translated]:System install"
+      },
+      "status": {
+        "error": "[to be translated]:Check failed",
+        "missing": "[to be translated]:Not ready"
+      },
+      "title": "[to be translated]:Assistant Environment"
     },
     "channels": {
       "description": "Kết nối các tác nhân với các nền tảng nhắn tin như Telegram, Feishu, Discord và nhiều hơn nữa.",
@@ -5118,6 +5344,10 @@
       "add": {
         "add_model": "Thêm Mô hình",
         "batch_add_models": "Thêm hàng loạt mô hình",
+        "context_window_tokens": {
+          "label": "[to be translated]:Context Capacity",
+          "tooltip": "[to be translated]:The combined input and output token capacity supported by this model"
+        },
         "endpoint_type": {
           "label": "Loại Điểm Cuối",
           "placeholder": "Chọn loại điểm cuối",
@@ -5128,6 +5358,10 @@
           "label": "Tên Nhóm",
           "placeholder": "Tùy chọn ví dụ: ChatGPT",
           "tooltip": "Tùy chọn ví dụ: ChatGPT"
+        },
+        "max_output_tokens": {
+          "label": "[to be translated]:Maximum Output",
+          "tooltip": "[to be translated]:The maximum output token capacity reported by the provider"
         },
         "model_id": {
           "label": "ID mô hình",
@@ -6049,6 +6283,7 @@
   },
   "update": {
     "available": "A new version {{version}} is available. Click Check for Updates any time to download it.",
+    "downloadNow": "[to be translated]:Download Now",
     "downloading": "Downloading version {{version}} in the background. You will be prompted when it is ready.",
     "install": "Cài đặt",
     "installNow": "Install Now",

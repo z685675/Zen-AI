@@ -75,4 +75,46 @@ describe('MessageTools', () => {
     expect(screen.getByText('report.docx')).toBeInTheDocument()
     expect(screen.queryByTestId('mcp-tool')).not.toBeInTheDocument()
   })
+
+  it('renders assistant present_files output before the generic MCP renderer', () => {
+    render(
+      <MessageTools
+        block={
+          {
+            metadata: {
+              rawMcpToolResponse: {
+                id: 'tool-2',
+                tool: {
+                  id: 'mcp__assistant__present_files',
+                  name: 'mcp__assistant__present_files',
+                  description: 'Present files',
+                  type: 'mcp'
+                },
+                arguments: {},
+                status: 'done',
+                toolCallId: 'tool-2',
+                response: {
+                  structured_content: {
+                    status: 'ready',
+                    files: [
+                      {
+                        path: 'C:\\Users\\tester\\Desktop\\report.pdf',
+                        format: 'pdf',
+                        size: 256,
+                        verified: true
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          } as any
+        }
+      />
+    )
+
+    expect(screen.getByText('File created')).toBeInTheDocument()
+    expect(screen.getByText('report.pdf')).toBeInTheDocument()
+    expect(screen.queryByTestId('mcp-tool')).not.toBeInTheDocument()
+  })
 })

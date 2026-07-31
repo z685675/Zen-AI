@@ -30,6 +30,7 @@ Treat PDFs as source documents or final deliverables, depending on the task.
 ## Runtime Contract
 
 - Use `mcp__assistant__ocr_file` for image or scanned-PDF OCR. Do not install or improvise an OCR package.
+- If an advanced workflow produces the final PDF outside `mcp__assistant__create_file`, call `mcp__assistant__present_files` with every verified final deliverable before replying.
 - Run bundled scripts with `mcp__assistant__python_execute` using the script's actual installed Skill path and `arguments`; do not probe or modify system Python.
 - Use `mcp__assistant__python_execute` only when structured data processing is needed after extraction.
 

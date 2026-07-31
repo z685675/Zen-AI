@@ -105,6 +105,10 @@ class WebSearchService {
       return false
     }
 
+    if (provider.id === 'auto-free') {
+      return true
+    }
+
     if (provider.id.startsWith('local-')) {
       return true
     }
@@ -514,10 +518,11 @@ class WebSearchService {
     const { compressionConfig } = this.getWebSearchState()
 
     // RAG压缩处理
-    if (compressionConfig?.method === 'rag' && requestId) {
+    if (compressionConfig?.method === 'rag' && requestId && compressionConfig.embeddingModel) {
       await this.setWebSearchStatus(requestId, { phase: 'rag' }, 500)
 
       const originalCount = finalResults.length
+      const originalResults = finalResults
 
       try {
         finalResults = await this.compressWithSearchBase(questions, finalResults, compressionConfig, requestId)
@@ -531,15 +536,19 @@ class WebSearchService {
           1000
         )
       } catch (error) {
-        logger.warn('RAG compression failed, will return empty results:', error as Error)
-        window.toast.error({
+        logger.warn('RAG compression failed, using uncompressed search results:', error as Error)
+        window.toast.warning({
           timeout: 10000,
           title: `${i18n.t('settings.tool.websearch.compression.error.rag_failed')}: ${formatErrorMessage(error)}`
         })
 
-        finalResults = []
+        finalResults = originalResults
         await this.setWebSearchStatus(requestId, { phase: 'rag_failed' }, 1000)
       }
+    }
+    // RAG is optional. A missing embedding model must never discard valid web results.
+    else if (compressionConfig?.method === 'rag' && !compressionConfig.embeddingModel) {
+      logger.info('Skipping RAG compression because no embedding model is configured')
     }
     // 截断压缩处理
     else if (compressionConfig?.method === 'cutoff' && compressionConfig.cutoffLimit) {

@@ -24,8 +24,6 @@ const HeaderNavbar: FC<Props> = ({ assistants, activeAssistant, setActiveAssista
     () => ({ ...storedAssistant, model: getTopicConversationModel(activeTopic, storedAssistant) }),
     [activeTopic, storedAssistant]
   )
-  void setActiveAssistant
-  void setActiveTopic
 
   useShortcut('search_message', () => {
     void SearchPopup.show()
@@ -39,6 +37,7 @@ const HeaderNavbar: FC<Props> = ({ assistants, activeAssistant, setActiveAssista
           assistants={assistants}
           activeTopic={activeTopic}
           setActiveAssistant={setActiveAssistant}
+          setActiveTopic={setActiveTopic}
         />
       </div>
     </NavbarHeader>

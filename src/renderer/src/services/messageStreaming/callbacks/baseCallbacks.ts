@@ -144,6 +144,7 @@ export const createBaseCallbacks = (deps: BaseCallbacksDependencies) => {
 
       logger.debug('onError', error)
       if (NoOutputGeneratedError.isInstance(error)) {
+        void autoRenameTopic(assistant, topicId)
         return
       }
       const isErrorTypeAbort = isAbortError(error)
@@ -286,6 +287,10 @@ export const createBaseCallbacks = (deps: BaseCallbacksDependencies) => {
         .map((id) => getState().messageBlocks.entities[id])
         .filter(Boolean) as MessageBlock[]
       await saveUpdatesToDB(assistantMsgId, topicId, messageErrorUpdate, blocksToSave)
+
+      // A failed or cancelled response should still leave the conversation with
+      // a useful title derived from the user's first message.
+      void autoRenameTopic(assistant, topicId)
 
       void EventEmitter.emit(EVENT_NAMES.MESSAGE_COMPLETE, {
         id: assistantMsgId,

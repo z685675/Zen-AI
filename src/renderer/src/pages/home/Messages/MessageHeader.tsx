@@ -4,14 +4,11 @@ import UserPopup from '@renderer/components/Popups/UserPopup'
 import { APP_NAME, AppLogo, isLocalAi } from '@renderer/config/env'
 import { getModelLogoById } from '@renderer/config/models'
 import { useTheme } from '@renderer/context/ThemeProvider'
-import { useAgent } from '@renderer/hooks/agents/useAgent'
 import useAvatar from '@renderer/hooks/useAvatar'
 import { useChatContext } from '@renderer/hooks/useChatContext'
 import { useMinappPopup } from '@renderer/hooks/useMinappPopup'
-import { useRuntime } from '@renderer/hooks/useRuntime'
 import { useMessageStyle, useSettings } from '@renderer/hooks/useSettings'
 import { getMessageModelId } from '@renderer/services/MessagesService'
-import { getModelName } from '@renderer/services/ModelService'
 import type { Assistant, Model, Topic } from '@renderer/types'
 import type { AgentSessionSyncMetadata } from '@renderer/types/newMessage'
 import type { Message } from '@renderer/types/newMessage'
@@ -40,6 +37,9 @@ const getAvatarSource = (isLocalAi: boolean, modelId: string | undefined) => {
   return modelId ? getModelLogoById(modelId) : undefined
 }
 
+export const getMessageHeaderModelName = (model: Model | undefined, fallbackModelId?: string): string =>
+  model?.name || model?.id || fallbackModelId || ''
+
 const getSyncStatusLabel = (sync?: AgentSessionSyncMetadata) => {
   if (!sync || sync.target !== 'wechat') return null
 
@@ -52,9 +52,6 @@ const MessageHeader: FC<Props> = memo(({ assistant, model, message, topic, isGro
   const avatar = useAvatar()
   const { theme } = useTheme()
   const { userName, sidebarIcons } = useSettings()
-  const { chat } = useRuntime()
-  const { activeAgentId } = chat
-  const { agent } = useAgent(activeAgentId)
   const isAgentView = window.location.hash.startsWith('#/agents')
   const { t } = useTranslation()
   const { isBubbleStyle } = useMessageStyle()
@@ -72,15 +69,17 @@ const MessageHeader: FC<Props> = memo(({ assistant, model, message, topic, isGro
     }
 
     if (isAgentView && message.role === 'assistant') {
-      return agent?.name ?? t('common.unknown')
+      const agentName = assistant.name || t('common.unknown')
+      const modelName = getMessageHeaderModelName(model, getMessageModelId(message))
+      return modelName ? `${agentName} - ${modelName}` : agentName
     }
 
     if (message.role === 'assistant') {
-      return getModelName(model) || getMessageModelId(message) || ''
+      return getMessageHeaderModelName(model, getMessageModelId(message))
     }
 
     return userName || t('common.you')
-  }, [agent?.name, isAgentView, message, model, t, userName])
+  }, [assistant.name, isAgentView, message, model, t, userName])
 
   const isAssistantMessage = message.role === 'assistant'
   const isUserMessage = message.role === 'user'

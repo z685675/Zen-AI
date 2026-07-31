@@ -26,6 +26,7 @@ import { selectCurrentUserId, selectGlobalMemoryEnabled, selectMemoryConfig } fr
 import type { Assistant } from '@renderer/types'
 import type { ExtractResults } from '@renderer/utils/extract'
 import { extractInfoFromXML } from '@renderer/utils/extract'
+import { classifyRealtimeSearchIntent } from '@shared/searchIntent'
 import type { LanguageModel, ModelMessage } from 'ai'
 import { generateText } from 'ai'
 import { isEmpty } from 'lodash'
@@ -116,6 +117,13 @@ async function analyzeSearchIntent(
   // 构建消息上下文 - 简化逻辑
   const chatHistory = lastAnswer ? `assistant: ${getMessageContent(lastAnswer)}` : ''
   const question = getMessageContent(lastUserMessage) || ''
+  const realtimeSearchIntent = needWebExtract ? classifyRealtimeSearchIntent(question) : 'not_needed'
+
+  if (needWebExtract && !needKnowledgeExtract && realtimeSearchIntent === 'not_needed') {
+    return {
+      websearch: { question: ['not_needed'] }
+    }
+  }
 
   // 使用模板替换变量
   const formattedPrompt = prompt.replace('{chat_history}', chatHistory).replace('{question}', question)
@@ -151,8 +159,18 @@ async function analyzeSearchIntent(
     logger.debug('Intent analysis result', { parsedResult })
 
     // 根据需求过滤结果
+    const parsedQuestions = parsedResult?.websearch?.question
+    const parsedWebSearch =
+      realtimeSearchIntent === 'not_needed'
+        ? { question: ['not_needed'] }
+        : realtimeSearchIntent === 'required' && (!parsedQuestions?.length || parsedQuestions[0] === 'not_needed')
+          ? { question: [question] }
+          : realtimeSearchIntent === 'uncertain' && !parsedQuestions?.length
+            ? { question: [question] }
+            : parsedResult?.websearch
+
     return {
-      websearch: needWebExtract ? parsedResult?.websearch : undefined,
+      websearch: needWebExtract ? parsedWebSearch : undefined,
       knowledge: needKnowledgeExtract ? parsedResult?.knowledge : undefined
     }
   } catch (e: any) {
@@ -162,8 +180,13 @@ async function analyzeSearchIntent(
 
   function getFallbackResult(): ExtractResults {
     const fallbackContent = getMessageContent(lastUserMessage)
+    const fallbackSearchIntent = classifyRealtimeSearchIntent(fallbackContent)
     return {
-      websearch: shouldWebSearch ? { question: [fallbackContent || 'search'] } : undefined,
+      websearch: shouldWebSearch
+        ? {
+            question: fallbackSearchIntent === 'not_needed' ? ['not_needed'] : [fallbackContent || 'search']
+          }
+        : undefined,
       knowledge: shouldKnowledgeSearch
         ? {
             question: [fallbackContent || 'search'],
@@ -283,14 +306,25 @@ export const searchOrchestrationPlugin = (
 
         // 执行意图分析
         if (shouldWebSearch || shouldKnowledgeSearch) {
-          const analysisResult = await analyzeSearchIntent(lastUserMessage, assistant, {
-            shouldWebSearch,
-            shouldKnowledgeSearch,
-            shouldMemorySearch,
-            lastAnswer: lastAssistantMessage,
-            context,
-            topicId
-          })
+          const analysisResult: ExtractResults = {}
+
+          if (shouldKnowledgeSearch) {
+            const knowledgeAnalysis = await analyzeSearchIntent(lastUserMessage, assistant, {
+              shouldWebSearch: false,
+              shouldKnowledgeSearch: true,
+              shouldMemorySearch,
+              lastAnswer: lastAssistantMessage,
+              context,
+              topicId
+            })
+            analysisResult.knowledge = knowledgeAnalysis?.knowledge
+          }
+
+          if (shouldWebSearch) {
+            analysisResult.websearch = {
+              question: [getMessageContent(lastUserMessage).trim() || 'search']
+            }
+          }
 
           if (analysisResult) {
             intentAnalysisResults[context.requestId] = analysisResult
@@ -333,6 +367,9 @@ export const searchOrchestrationPlugin = (
               analysisResult.websearch,
               context.requestId
             )
+            params.system = `${params.system ?? ''}
+
+The user explicitly enabled web search for this conversation. Call builtin_web_search exactly once before answering this request. Base current claims on its results, cite the returned sources, and state clearly when the search returns no usable evidence.`.trim()
           }
         }
 

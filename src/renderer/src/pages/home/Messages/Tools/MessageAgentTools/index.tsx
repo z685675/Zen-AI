@@ -13,7 +13,11 @@ export * from './types'
 import { AskUserQuestionCard } from '../AskUserQuestionCard'
 import { getToolDisplayInfo, getToolStatusLabel } from '../toolDisplay'
 import ToolPermissionRequestCard from '../ToolPermissionRequestCard'
-import { AssistantCreateFileTool, parseAssistantCreateFileResult } from './AssistantCreateFileTool'
+import {
+  AssistantCreateFileTool,
+  isAssistantFileOutputToolName,
+  parseAssistantFileResults
+} from './AssistantCreateFileTool'
 import { BashOutputTool } from './BashOutputTool'
 import { BashTool } from './BashTool'
 import { EditTool } from './EditTool'
@@ -187,7 +191,8 @@ export function MessageAgentTools({ toolResponse }: { toolResponse: NormalToolRe
   }
 
   const isLoading = effectiveStatus === 'streaming' || effectiveStatus === 'invoking'
-  if (!isLoading && tool?.name === 'mcp__assistant__create_file' && parseAssistantCreateFileResult(response)) {
+  const isAssistantFileOutput = isAssistantFileOutputToolName(tool?.name) || isAssistantFileOutputToolName(tool?.id)
+  if (!isLoading && isAssistantFileOutput && parseAssistantFileResults(response).length > 0) {
     return <AssistantCreateFileTool response={response} />
   }
 

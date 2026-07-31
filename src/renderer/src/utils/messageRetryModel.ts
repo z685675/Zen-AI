@@ -9,6 +9,11 @@ type ResolveRetryModelSelectionOptions = {
   preserveOriginalModel: boolean
 }
 
+type ResolveAgentRetryModelSelectionOptions = {
+  currentModel?: Model
+  originalAssistantMessage: Pick<Message, 'model' | 'modelId'>
+}
+
 export const resolveRetryModelSelection = ({
   conversationModel,
   originalAssistantMessage,
@@ -24,5 +29,17 @@ export const resolveRetryModelSelection = ({
   return {
     model: conversationModel ?? originalAssistantMessage.model,
     modelId: undefined
+  }
+}
+
+export const resolveAgentRetryModelSelection = ({
+  currentModel,
+  originalAssistantMessage
+}: ResolveAgentRetryModelSelectionOptions): RetryModelSelection => {
+  const model = currentModel ?? originalAssistantMessage.model
+
+  return {
+    model,
+    modelId: model?.id ?? originalAssistantMessage.modelId
   }
 }

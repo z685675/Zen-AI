@@ -24,7 +24,7 @@ export type CodexProviderConfig = {
 
 export type CodexMcpServerConfig = {
   url: string
-  bearer_token_env_var: string
+  bearer_token_env_var?: string
 }
 
 export type CodexInput =

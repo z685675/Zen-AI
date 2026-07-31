@@ -7,6 +7,7 @@ import { useCallback, useEffect, useRef } from 'react'
 import { useAgentClient } from './useAgentClient'
 
 const logger = loggerService.withContext('useAgentSessionInitializer')
+const sessionInitializationRequests = new Map<string, Promise<string | null>>()
 
 /**
  * Hook to automatically initialize and load the latest session for an agent
@@ -32,26 +33,29 @@ export const useAgentSessionInitializer = () => {
       if (!agentId) return
 
       try {
-        // Check if this agent has already been initialized (key exists in map)
-        if (agentId in activeSessionIdMapRef.current) {
-          // Already initialized, nothing to do
+        if (activeSessionIdMapRef.current[agentId]) {
           return
         }
 
-        // Load sessions for this agent
-        const response = await client.listSessions(agentId)
-        const sessions = response.data
-
-        if (sessions && sessions.length > 0) {
-          // Get the latest session (first in the list, assuming they're sorted by updatedAt)
-          const latestSession = sessions[0]
-
-          // Set the latest session as active
-          dispatch(setActiveSessionIdAction({ agentId, sessionId: latestSession.id }))
-        } else {
-          // Mark as initialized with no session (null vs undefined distinction)
-          dispatch(setActiveSessionIdAction({ agentId, sessionId: null }))
+        let request = sessionInitializationRequests.get(agentId)
+        if (!request) {
+          request = client
+            .listSessions(agentId)
+            .then((response) => response.data[0]?.id ?? null)
+            .finally(() => {
+              sessionInitializationRequests.delete(agentId)
+            })
+          sessionInitializationRequests.set(agentId, request)
         }
+
+        const latestSessionId = await request
+
+        // Do not replace a session selected by the user while initialization was in flight.
+        if (activeSessionIdMapRef.current[agentId]) {
+          return
+        }
+
+        dispatch(setActiveSessionIdAction({ agentId, sessionId: latestSessionId }))
       } catch (error) {
         logger.error('Failed to initialize agent session:', error as Error)
       }
@@ -63,11 +67,8 @@ export const useAgentSessionInitializer = () => {
    * Auto-initialize when activeAgentId changes
    */
   useEffect(() => {
-    if (activeAgentId) {
-      // Check if we need to initialize this agent's session (key not yet in map)
-      if (!(activeAgentId in activeSessionIdMapRef.current)) {
-        void initializeAgentSession(activeAgentId)
-      }
+    if (activeAgentId && !activeSessionIdMapRef.current[activeAgentId]) {
+      void initializeAgentSession(activeAgentId)
     }
   }, [activeAgentId, initializeAgentSession])
 

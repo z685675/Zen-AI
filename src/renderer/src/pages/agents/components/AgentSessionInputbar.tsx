@@ -35,11 +35,24 @@ import type { FileMetadata } from '@renderer/types'
 import type { MessageBlock } from '@renderer/types/newMessage'
 import { MessageBlockStatus } from '@renderer/types/newMessage'
 import { abortCompletion } from '@renderer/utils/abortController'
+import {
+  classifyDeepResearchFollowUp,
+  DEEP_RESEARCH_REASONING_EFFORT,
+  findResumableDeepResearchTask,
+  getAgentSessionDeepResearchCacheKey,
+  shouldStartDeepResearchImmediately
+} from '@renderer/utils/agentDeepResearch'
 import { buildAgentSessionTopicId } from '@renderer/utils/agentSession'
 import { getAgentSessionDraftCacheKey } from '@renderer/utils/agentSessionDraft'
 import { getSendMessageShortcutLabel } from '@renderer/utils/input'
 import { createMainTextBlock, createMessage } from '@renderer/utils/messageUtils/create'
-import { toAgentEffort } from '@renderer/utils/reasoningEffort'
+import {
+  AGENT_DEFAULT_REASONING_EFFORT,
+  type AgentReasoningEffort,
+  getAgentSessionReasoningEffortCacheKey,
+  normalizeAgentReasoningEffort,
+  toAgentEffort
+} from '@renderer/utils/reasoningEffort'
 import { documentExts, imageExts, textExts } from '@shared/config/constant'
 import type { FC } from 'react'
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -58,7 +71,7 @@ type Props = {
 }
 
 const AgentSessionInputbar = ({ agentId, sessionId, variant = 'default' }: Props) => {
-  const { session } = useSession(agentId, sessionId)
+  const { session, updateSession } = useSession(agentId, sessionId)
   // FIXME: 不应该使用ref将action传到context提供给tool，权宜之计
   const actionsRef = useRef({
     resizeTextArea: () => {},
@@ -110,8 +123,32 @@ const AgentSessionInputbar = ({ agentId, sessionId, variant = 'default' }: Props
     []
   )
 
-  if (!assistantStub) {
+  if (!session || !assistantStub) {
     return null // Wait for session to load
+  }
+
+  const reasoningEffortCacheKey = getAgentSessionReasoningEffortCacheKey(agentId, sessionId)
+  const initialReasoningEffort = normalizeAgentReasoningEffort(
+    CacheService.get<ThinkingOption>(reasoningEffortCacheKey) ?? session.configuration?.reasoning_effort
+  )
+  const initialDeepResearchEnabled =
+    CacheService.get<boolean>(getAgentSessionDeepResearchCacheKey(agentId, sessionId)) === true
+  const handleReasoningEffortChange = (option: ThinkingOption) => {
+    const reasoningEffort = normalizeAgentReasoningEffort(option)
+    CacheService.set(reasoningEffortCacheKey, reasoningEffort, DRAFT_CACHE_TTL)
+    void updateSession(
+      {
+        id: sessionId,
+        configuration: {
+          ...session.configuration,
+          permission_mode: session.configuration?.permission_mode ?? 'default',
+          max_turns: session.configuration?.max_turns ?? 100,
+          env_vars: session.configuration?.env_vars ?? {},
+          reasoning_effort: reasoningEffort
+        }
+      },
+      { showSuccessToast: false }
+    )
   }
 
   return (
@@ -132,6 +169,9 @@ const AgentSessionInputbar = ({ agentId, sessionId, variant = 'default' }: Props
         agentId={agentId}
         sessionId={sessionId}
         sessionData={sessionData}
+        initialReasoningEffort={initialReasoningEffort}
+        initialDeepResearchEnabled={initialDeepResearchEnabled}
+        onReasoningEffortChange={handleReasoningEffortChange}
         actionsRef={actionsRef}
         variant={variant}
       />
@@ -144,6 +184,9 @@ interface InnerProps {
   agentId: string
   sessionId: string
   sessionData?: ToolContext['session']
+  initialReasoningEffort: AgentReasoningEffort
+  initialDeepResearchEnabled: boolean
+  onReasoningEffortChange: (option: ThinkingOption) => void
   variant: 'default' | 'hero'
   actionsRef: React.MutableRefObject<{
     resizeTextArea: () => void
@@ -157,6 +200,9 @@ const AgentSessionInputbarInner: FC<InnerProps> = ({
   agentId,
   sessionId,
   sessionData,
+  initialReasoningEffort,
+  initialDeepResearchEnabled,
+  onReasoningEffortChange,
   variant,
   actionsRef
 }) => {
@@ -188,7 +234,30 @@ const AgentSessionInputbarInner: FC<InnerProps> = ({
   const { t } = useTranslation()
   const quickPanel = useQuickPanel()
 
-  const [reasoningEffort, setReasoningEffort] = useState<ThinkingOption>('low')
+  const [reasoningEffort, setReasoningEffort] = useState<AgentReasoningEffort>(
+    initialReasoningEffort ?? AGENT_DEFAULT_REASONING_EFFORT
+  )
+  const [deepResearchEnabled, setDeepResearchEnabled] = useState(initialDeepResearchEnabled)
+  const deepResearchCacheKey = getAgentSessionDeepResearchCacheKey(agentId, sessionId)
+  const handleReasoningEffortChange = useCallback(
+    (option: ThinkingOption) => {
+      const normalizedOption = normalizeAgentReasoningEffort(option)
+      setReasoningEffort(normalizedOption)
+      onReasoningEffortChange(normalizedOption)
+    },
+    [onReasoningEffortChange]
+  )
+  const handleDeepResearchChange = useCallback(
+    (enabled: boolean) => {
+      setDeepResearchEnabled(enabled)
+      if (enabled) {
+        CacheService.set(deepResearchCacheKey, true, DRAFT_CACHE_TTL)
+      } else {
+        CacheService.remove(deepResearchCacheKey)
+      }
+    },
+    [deepResearchCacheKey]
+  )
 
   const { files } = useInputbarToolsState()
   const { toolsRegistry, setIsExpanded, setFiles } = useInputbarToolsDispatch()
@@ -419,22 +488,50 @@ const AgentSessionInputbarInner: FC<InnerProps> = ({
 
       // Calculate token usage for the user message
       const usage = await estimateUserPromptUsage({ content: text })
+      const now = new Date().toISOString()
+      const resumableDeepResearchTask = findResumableDeepResearchTask(topicMessages)
+      const deepResearchAction = deepResearchEnabled
+        ? shouldStartDeepResearchImmediately(text)
+          ? 'start'
+          : 'plan'
+        : resumableDeepResearchTask
+          ? classifyDeepResearchFollowUp(text)
+          : undefined
+      const deepResearchTask = deepResearchAction
+        ? {
+            taskId: deepResearchEnabled ? userMessageId : resumableDeepResearchTask!.taskId,
+            version: 1 as const,
+            requestedAt: deepResearchEnabled ? now : resumableDeepResearchTask!.requestedAt,
+            action: deepResearchAction,
+            status: deepResearchAction === 'start' ? ('researching' as const) : ('planning' as const),
+            reasoningEffort: DEEP_RESEARCH_REASONING_EFFORT,
+            updatedAt: now
+          }
+        : undefined
 
       const userMessage: Message = createMessage('user', sessionTopicId, agentId, {
         id: userMessageId,
         blocks: userMessageBlocks.map((block) => block?.id),
         model: assistant.model,
         modelId: assistant.model?.id,
+        ...(deepResearchTask
+          ? {
+              providerMetadata: {
+                deepResearch: deepResearchTask
+              }
+            }
+          : {}),
         usage
       })
 
+      const requestReasoningEffort = deepResearchTask ? DEEP_RESEARCH_REASONING_EFFORT : reasoningEffort
       const thinkingParams = assistant.model
         ? {
             ...getAnthropicReasoningParams(
-              { ...assistant, settings: { ...assistant.settings, reasoning_effort: reasoningEffort } },
+              { ...assistant, settings: { ...assistant.settings, reasoning_effort: requestReasoningEffort } },
               assistant.model
             ),
-            effort: toAgentEffort(reasoningEffort)
+            effort: toAgentEffort(requestReasoningEffort)
           }
         : {}
 
@@ -442,6 +539,15 @@ const AgentSessionInputbarInner: FC<InnerProps> = ({
         dispatchSendMessage(userMessage, userMessageBlocks, assistant, sessionTopicId, {
           agentId,
           sessionId,
+          deepResearch: deepResearchEnabled,
+          ...(deepResearchTask
+            ? {
+                deepResearchTask: {
+                  task_id: deepResearchTask.taskId,
+                  action: deepResearchTask.action
+                }
+              }
+            : {}),
           ...thinkingParams
         })
       )
@@ -452,6 +558,8 @@ const AgentSessionInputbarInner: FC<InnerProps> = ({
       // Clear text and files after successful send (draft is cleared automatically via onChange)
       setText('')
       setFiles([])
+      setDeepResearchEnabled(false)
+      CacheService.remove(deepResearchCacheKey)
       setTimeoutTimer('agentSession_sendMessage', () => setText(''), 500)
       // Restore focus to textarea after sending to maintain IME state (fcitx5 issue)
       focusTextarea()
@@ -471,7 +579,10 @@ const AgentSessionInputbarInner: FC<InnerProps> = ({
     text,
     files,
     focusTextarea,
-    reasoningEffort
+    reasoningEffort,
+    deepResearchEnabled,
+    deepResearchCacheKey,
+    topicMessages
   ])
 
   useEffect(() => {
@@ -498,11 +609,17 @@ const AgentSessionInputbarInner: FC<InnerProps> = ({
 
   const toolsSession = useMemo(() => {
     if (!sessionData) return undefined
-    return { ...sessionData, reasoningEffort, onReasoningEffortChange: setReasoningEffort }
-  }, [sessionData, reasoningEffort])
+    return {
+      ...sessionData,
+      reasoningEffort,
+      onReasoningEffortChange: handleReasoningEffortChange,
+      deepResearchEnabled,
+      onDeepResearchChange: handleDeepResearchChange
+    }
+  }, [deepResearchEnabled, handleDeepResearchChange, handleReasoningEffortChange, sessionData, reasoningEffort])
   const sessionToolOrderOverride = useMemo<ToolOrderConfig>(
     () => ({
-      visible: ['permission_mode', 'thinking', 'session_more'],
+      visible: ['permission_mode', 'thinking', 'deep_research', 'session_more'],
       hidden: ['create_session', 'slash_commands', 'attachment', 'resource_panel', 'quick_phrases', 'toggle_expand']
     }),
     []

@@ -12,6 +12,7 @@ import { modelGenerating } from '@renderer/hooks/useRuntime'
 import { useSettings } from '@renderer/hooks/useSettings'
 import { finishTopicRenaming, startTopicRenaming, TopicManager } from '@renderer/hooks/useTopic'
 import { fetchMessagesSummary } from '@renderer/services/ApiService'
+import { CacheService } from '@renderer/services/CacheService'
 import { EVENT_NAMES, EventEmitter } from '@renderer/services/EventService'
 import RecycleBinService, {
   type RecycleBinConversationFolderItem,
@@ -34,6 +35,11 @@ import { newMessagesActions } from '@renderer/store/newMessage'
 import { setGenerating } from '@renderer/store/runtime'
 import type { Assistant, ConversationFolder, Topic } from '@renderer/types'
 import { classNames, removeSpecialCharactersForFileName, uuid } from '@renderer/utils'
+import {
+  getChatTopicDraftCacheKey,
+  hasUnsentConversationDraft,
+  sortConversationTopics
+} from '@renderer/utils/conversationDraft'
 import { copyTopicAsMarkdown, copyTopicAsPlainText } from '@renderer/utils/copy'
 import {
   exportMarkdownToJoplin,
@@ -122,20 +128,16 @@ const ConversationHistoryList: FC<Props> = ({ activeTopic, setActiveTopic, onCre
   const visibleTopics = useMemo(
     () =>
       topics.filter(
-        (topic) => nonEmptyTopicIds.includes(topic.id) || topic.id === activeTopic?.id || topic.isNameManuallyEdited
+        (topic) =>
+          nonEmptyTopicIds.includes(topic.id) ||
+          topic.id === activeTopic?.id ||
+          hasUnsentConversationDraft(CacheService.get(getChatTopicDraftCacheKey(topic.id))) ||
+          topic.isNameManuallyEdited
       ),
     [activeTopic?.id, nonEmptyTopicIds, topics]
   )
 
-  const sortedTopics = useMemo(
-    () =>
-      [...visibleTopics].sort((a, b) => {
-        if (a.pinned && !b.pinned) return -1
-        if (!a.pinned && b.pinned) return 1
-        return new Date(b.updatedAt || b.createdAt).getTime() - new Date(a.updatedAt || a.createdAt).getTime()
-      }),
-    [visibleTopics]
-  )
+  const sortedTopics = useMemo(() => sortConversationTopics(visibleTopics), [visibleTopics])
 
   const topicFolderMap = useMemo(() => {
     const map = new Map<string, ConversationFolder>()

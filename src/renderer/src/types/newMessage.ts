@@ -232,8 +232,29 @@ export type AgentSessionSyncMetadata = {
   reason?: string
 }
 
+export type DeepResearchTaskAction = 'plan' | 'start' | 'revise'
+
+export type DeepResearchTaskStatus =
+  | 'planning'
+  | 'awaiting_confirmation'
+  | 'researching'
+  | 'completed'
+  | 'interrupted'
+  | 'failed'
+
+export type DeepResearchTaskMetadata = {
+  taskId: string
+  version: 1
+  requestedAt: string
+  action?: DeepResearchTaskAction
+  status?: DeepResearchTaskStatus
+  reasoningEffort?: 'high'
+  updatedAt?: string
+}
+
 export type MessageProviderMetadata = ProviderMetadata & {
   agentSessionSync?: AgentSessionSyncMetadata
+  deepResearch?: DeepResearchTaskMetadata
 }
 
 export interface Response {

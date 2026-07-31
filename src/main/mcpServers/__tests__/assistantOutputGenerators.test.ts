@@ -141,6 +141,23 @@ describe('assistant output generators', () => {
     expect(verification.checks).toContain('ooxml-relationships')
   })
 
+  it('renders Markdown links as visible native Word hyperlinks', async () => {
+    const buffer = await createDocxBuffer(
+      'Research Report',
+      '## Sources\n\n1. [OpenAI ChatGPT Plans](https://openai.com/chatgpt/pricing/)',
+      []
+    )
+    const zip = new AdmZip(buffer)
+    const documentXml = zip.readAsText('word/document.xml')
+    const relationshipsXml = zip.readAsText('word/_rels/document.xml.rels')
+
+    expect(documentXml).toContain('<w:hyperlink ')
+    expect(documentXml).toContain('r:id="')
+    expect(documentXml).toContain('<w:rStyle w:val="Hyperlink"/>')
+    expect(relationshipsXml).toContain('Target="https://openai.com/chatgpt/pricing/"')
+    expect(relationshipsXml).toContain('TargetMode="External"')
+  })
+
   it('creates a standards-complete PPTX package without repair-prone notes parts', async () => {
     const buffer = await createPptxBuffer([
       {

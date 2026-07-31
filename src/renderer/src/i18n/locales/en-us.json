@@ -347,6 +347,8 @@
       "tooltip": "Git Bash is required to run agents on Windows. Install from git-scm.com if not available."
     },
     "input": {
+      "deep_research": "Deep Research",
+      "deep_research_tooltip": "Creates one research task for your next message with high reasoning effort while keeping the current model: plan first, then multi-step source verification and a cited report.",
       "hero_placeholder": "For example: research a topic, summarize the key points, and organize the result",
       "placeholder": "Enter your message here, send with {{key}} - @ select path, / select command",
       "reasoning_effort": "Thinking effort",
@@ -382,7 +384,7 @@
         "set_active": "Make current"
       },
       "add": {
-        "title": "Add a session"
+        "title": "New chat"
       },
       "allowed_tools": {
         "empty": "No tools available for this agent.",
@@ -1291,6 +1293,8 @@
       },
       "url_context": "URL Context",
       "web_search": {
+        "auto_disabled": "Off: do not use web search",
+        "auto_enabled": "On: automatically decide when web search is needed",
         "builtin": {
           "disabled_content": "The current model does not support web search",
           "enabled_content": "Use the built-in web search function of the model",
@@ -1299,14 +1303,18 @@
         "button": {
           "ok": "Go to Settings"
         },
+        "disabled": "Search the web for the next message",
         "enable": "Enable web search",
         "enable_content": "Need to check web search connectivity in settings first",
+        "enabled": "The next message will search the web, then turn off automatically",
         "label": "Web Search",
         "no_web_search": {
           "description": "Do not enable web search",
           "label": "Disable Web Search"
         },
-        "settings": "Web Search Settings"
+        "settings": "Web Search Settings",
+        "toast_disabled": "Web search canceled for the next message",
+        "toast_enabled": "Web search is on for the next message and will turn off automatically after sending"
       }
     },
     "mcp": {

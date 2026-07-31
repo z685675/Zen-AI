@@ -29,7 +29,8 @@ global.DOMParser = vi.fn().mockImplementation(() => ({
 global.window = {
   api: {
     searchService: {
-      openUrlInSearchWindow: vi.fn()
+      openUrlInSearchWindow: vi.fn(),
+      closeSearchWindow: vi.fn()
     }
   }
 } as any
@@ -79,6 +80,7 @@ describe('fetch', () => {
 
       expect(result.content).toBe('# Test content')
       expect(window.api.searchService.openUrlInSearchWindow).toHaveBeenCalled()
+      expect(window.api.searchService.closeSearchWindow).toHaveBeenCalledWith('search-window-test-id')
     })
 
     it('should handle errors gracefully', async () => {

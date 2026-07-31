@@ -4,7 +4,7 @@ export const STANDARD_AGENT_MODEL_IDS = ['gpt-5.6-luna', 'grok-4.5', 'gemini-3-f
 
 const standardAgentModelIds = new Set<string>(STANDARD_AGENT_MODEL_IDS)
 
-const normalizeModelIdentifier = (identifier: string): string => {
+export const normalizeAgentModelIdentifier = (identifier: string): string => {
   const normalized = identifier.trim().toLowerCase()
   const withoutProvider = normalized.includes(':') ? normalized.slice(normalized.indexOf(':') + 1) : normalized
   const pathParts = withoutProvider.split('/').filter(Boolean)
@@ -17,5 +17,17 @@ export const isStandardAgentModel = (model: ApiModel): boolean => {
     Boolean(identifier)
   )
 
-  return identifiers.some((identifier) => standardAgentModelIds.has(normalizeModelIdentifier(identifier)))
+  return identifiers.some(isStandardAgentModelIdentifier)
+}
+
+export const isStandardAgentModelIdentifier = (modelId: string | undefined): boolean =>
+  Boolean(modelId && standardAgentModelIds.has(normalizeAgentModelIdentifier(modelId)))
+
+export const findAgentModelId = (models: ApiModel[], targetModelId: string): string | undefined => {
+  const normalizedTarget = normalizeAgentModelIdentifier(targetModelId)
+  return models.find((model) =>
+    [model.provider_model_id, model.id, model.name]
+      .filter((identifier): identifier is string => Boolean(identifier))
+      .some((identifier) => normalizeAgentModelIdentifier(identifier) === normalizedTarget)
+  )?.id
 }

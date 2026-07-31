@@ -5,9 +5,13 @@ import { useAgentClient } from '@renderer/hooks/agents/useAgentClient'
 import { useAllSessions } from '@renderer/hooks/agents/useAllSessions'
 import { useCreateDefaultSession } from '@renderer/hooks/agents/useCreateDefaultSession'
 import { useRuntime } from '@renderer/hooks/useRuntime'
-import { useAppDispatch } from '@renderer/store'
+import { DbService } from '@renderer/services/db/DbService'
+import store, { useAppDispatch } from '@renderer/store'
+import { selectMessagesForTopic } from '@renderer/store/newMessage'
 import { setActiveSessionIdAction } from '@renderer/store/runtime'
 import type { AgentEntity } from '@renderer/types'
+import { buildAgentSessionTopicId } from '@renderer/utils/agentSession'
+import { isUnnamedAgentSessionName } from '@renderer/utils/agentSessionTitle'
 import { Spin } from 'antd'
 import { throttle } from 'lodash'
 import { Archive, ArrowLeft } from 'lucide-react'
@@ -26,6 +30,7 @@ interface GlobalSessionsProps {
 const LOAD_MORE_THRESHOLD = 100
 const SCROLL_THROTTLE_DELAY = 150
 type SessionViewMode = 'active' | 'archived'
+const dbService = DbService.getInstance()
 
 const GlobalSessions = ({ agentsById, onSelectItem }: GlobalSessionsProps) => {
   const { t } = useTranslation()
@@ -41,8 +46,10 @@ const GlobalSessions = ({ agentsById, onSelectItem }: GlobalSessionsProps) => {
   const { setActiveAgentId } = useActiveAgent()
   const dispatch = useAppDispatch()
   const listRef = useRef<DraggableVirtualListRef>(null)
+  const creatingGlobalSessionRef = useRef(false)
   const client = useAgentClient()
   const { createDefaultSession, creatingSession, canCreateSession } = useCreateDefaultSession(activeAgentId)
+  const [creatingGlobalSession, setCreatingGlobalSession] = useState(false)
 
   const [channelMap, setChannelMap] = useState<Record<string, { type: string; isActive: boolean }>>({})
   useEffect(() => {
@@ -159,12 +166,53 @@ const GlobalSessions = ({ agentsById, onSelectItem }: GlobalSessionsProps) => {
     [activeSessionIdMap, dispatch, sessions, setActiveAgentId, updateSession]
   )
 
-  const handleCreateSession = useCallback(() => {
+  const handleCreateSession = useCallback(async () => {
+    if (creatingGlobalSessionRef.current) {
+      return
+    }
+
+    creatingGlobalSessionRef.current = true
+    setCreatingGlobalSession(true)
     if (viewMode !== 'active') {
       setViewMode('active')
     }
-    void createDefaultSession()
-  }, [createDefaultSession, viewMode])
+
+    try {
+      const unnamedSessionName = t('common.unnamed')
+      for (const session of sessions) {
+        if (!isUnnamedAgentSessionName(session.name, unnamedSessionName)) {
+          continue
+        }
+
+        const topicId = buildAgentSessionTopicId(session.id)
+        const currentState = store.getState()
+        if (currentState.messages.loadingByTopic[topicId] || selectMessagesForTopic(currentState, topicId).length > 0) {
+          continue
+        }
+
+        const { messages } = await dbService.fetchMessages(topicId, true)
+        const latestState = store.getState()
+        if (
+          latestState.messages.loadingByTopic[topicId] ||
+          selectMessagesForTopic(latestState, topicId).length > 0 ||
+          messages.length > 0
+        ) {
+          continue
+        }
+
+        await updateSession(session.agent_id, { id: session.id })
+        await setActiveAgentId(session.agent_id)
+        dispatch(setActiveSessionIdAction({ agentId: session.agent_id, sessionId: session.id }))
+        onSelectItem?.()
+        return
+      }
+
+      await createDefaultSession()
+    } finally {
+      creatingGlobalSessionRef.current = false
+      setCreatingGlobalSession(false)
+    }
+  }, [createDefaultSession, dispatch, onSelectItem, sessions, setActiveAgentId, t, updateSession, viewMode])
 
   if (isLoading) {
     return (
@@ -194,7 +242,9 @@ const GlobalSessions = ({ agentsById, onSelectItem }: GlobalSessionsProps) => {
           ) : (
             <>
               {activeAgentId && canCreateSession && (
-                <InlineAddButton onClick={handleCreateSession} disabled={creatingSession}>
+                <InlineAddButton
+                  onClick={() => void handleCreateSession()}
+                  disabled={creatingSession || creatingGlobalSession}>
                   {t('agent.session.add.title')}
                 </InlineAddButton>
               )}
@@ -226,7 +276,9 @@ const GlobalSessions = ({ agentsById, onSelectItem }: GlobalSessionsProps) => {
         ) : (
           <>
             {activeAgentId && canCreateSession && (
-              <InlineAddButton onClick={handleCreateSession} disabled={creatingSession}>
+              <InlineAddButton
+                onClick={() => void handleCreateSession()}
+                disabled={creatingSession || creatingGlobalSession}>
                 {t('agent.session.add.title')}
               </InlineAddButton>
             )}

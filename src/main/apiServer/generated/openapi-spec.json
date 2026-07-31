@@ -532,6 +532,31 @@
             "type": "string",
             "minLength": 1,
             "description": "Message content"
+          },
+          "deep_research": {
+            "type": "boolean",
+            "description": "Marks the message as the root of a new Deep Research task"
+          },
+          "deep_research_task": {
+            "type": "object",
+            "description": "Stable Deep Research task identity and action for plan confirmation or recovery",
+            "properties": {
+              "task_id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "action": {
+                "type": "string",
+                "enum": ["plan", "start", "revise"]
+              }
+            },
+            "required": ["task_id", "action"]
+          },
+          "recovery_context": {
+            "type": "string",
+            "maxLength": 240000,
+            "description": "Local conversation context used when an Agent runtime session must be recovered"
           }
         },
         "required": ["content"]

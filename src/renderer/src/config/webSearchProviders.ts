@@ -8,6 +8,11 @@ type WebSearchProviderConfig = {
 }
 
 export const WEB_SEARCH_PROVIDER_CONFIG: Record<WebSearchProviderId, WebSearchProviderConfig> = {
+  'auto-free': {
+    websites: {
+      official: 'https://exa.ai'
+    }
+  },
   zhipu: {
     websites: {
       official: 'https://docs.bigmodel.cn/cn/guide/tools/web-search',
@@ -66,6 +71,10 @@ export const WEB_SEARCH_PROVIDER_CONFIG: Record<WebSearchProviderId, WebSearchPr
 }
 
 export const WEB_SEARCH_PROVIDERS: WebSearchProvider[] = [
+  {
+    id: 'auto-free',
+    name: '自动搜索（免费）'
+  },
   {
     id: 'zhipu',
     name: 'Zhipu',

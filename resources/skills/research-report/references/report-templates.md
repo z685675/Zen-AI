@@ -46,3 +46,27 @@ Use current sources and clearly mark estimates.
 - Cite major conclusions with source IDs like `[S1]`.
 - Mark stale, weak, conflicting, or geography-mismatched sources.
 - Keep "facts", "interpretation", and "recommendation" separate.
+
+## Deep Research Plan
+
+- Objective and decision to support
+- Scope, timeframe, and geography
+- 3-5 bounded research questions
+- Source strategy and freshness requirements
+- Expected deliverable
+- Known uncertainties
+- Confirmation request
+
+## Deep Research Report
+
+1. Executive summary
+2. Scope and method
+3. Findings by research question
+4. Evidence matrix
+5. Conflicting signals and uncertainties
+6. Analysis and implications
+7. Recommendations
+8. Sources with direct URLs
+9. Limitations and remaining gaps
+
+For current external claims, place a clickable URL beside the relevant paragraph as well as in the final source list.

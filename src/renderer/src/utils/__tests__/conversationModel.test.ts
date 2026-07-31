@@ -1,7 +1,12 @@
 import type { Assistant, Model, Topic } from '@renderer/types'
 import { describe, expect, it } from 'vitest'
 
-import { getNewConversationModel, getTopicConversationModel, isSameModel } from '../conversationModel'
+import {
+  getNewConversationModel,
+  getTopicConversationAssistant,
+  getTopicConversationModel,
+  isSameModel
+} from '../conversationModel'
 
 const oldModel = { id: 'gpt-5.4', provider: 'zen', name: 'GPT 5.4', group: 'OpenAI' } satisfies Model
 const lunaModel = {
@@ -57,5 +62,22 @@ describe('conversation model policy', () => {
   it('compares both provider and model id', () => {
     expect(isSameModel(lunaModel, { ...lunaModel })).toBe(true)
     expect(isSameModel(lunaModel, { ...lunaModel, provider: 'other' })).toBe(false)
+  })
+
+  it('keeps external search disabled when the topic has not opted in', () => {
+    const assistant = getTopicConversationAssistant(createTopic(lunaModel), createAssistant())
+
+    expect(assistant.webSearchProviderId).toBeUndefined()
+    expect(assistant.enableWebSearch).toBe(false)
+  })
+
+  it('maps an opted-in topic to the free search provider', () => {
+    const assistant = getTopicConversationAssistant(
+      { ...createTopic(lunaModel), enableWebSearch: true },
+      createAssistant()
+    )
+
+    expect(assistant.webSearchProviderId).toBe('auto-free')
+    expect(assistant.enableWebSearch).toBe(false)
   })
 })

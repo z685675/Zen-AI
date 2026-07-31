@@ -27,6 +27,7 @@ Work with spreadsheets as real structured data, not prose.
 - Run bundled scripts with `mcp__assistant__python_execute` using the script's actual installed Skill path and `arguments`; do not probe or modify system Python.
 - Do not run `pip`, `uv`, or Conda from this Skill. Use only the managed package set.
 - Keep final workbook creation in `mcp__assistant__create_file` unless a requested feature is unsupported there.
+- If an unsupported advanced feature requires another approved generator, call `mcp__assistant__present_files` with every verified final workbook before replying.
 - The built-in Node generator supports native column, bar, and line charts. Do not switch to a custom Python/OOXML generator merely to create a trend line.
 
 ## Bundled Resources

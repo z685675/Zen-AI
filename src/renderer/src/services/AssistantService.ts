@@ -8,6 +8,7 @@ import {
 } from '@renderer/config/constant'
 import { getModelSupportedReasoningEffortOptions } from '@renderer/config/models'
 import { isQwenMTModel } from '@renderer/config/models/qwen'
+import { DEFAULT_AI_CHAT_SYSTEM_PROMPT } from '@renderer/config/prompts'
 import { UNKNOWN } from '@renderer/config/translate'
 import { getStoreProviders } from '@renderer/hooks/useStore'
 import i18n from '@renderer/i18n'
@@ -79,7 +80,7 @@ export function getDefaultAssistant(): Assistant {
     id: 'default',
     name: i18n.t('chat.default.name'),
     emoji: '😀',
-    prompt: '',
+    prompt: DEFAULT_AI_CHAT_SYSTEM_PROMPT,
     topics: [getDefaultTopic('default')],
     messages: [],
     type: 'assistant',
@@ -139,6 +140,7 @@ export function getDefaultTranslateAssistant(
     model,
     settings,
     prompt: '',
+    webSearchProviderId: undefined,
     targetLanguage,
     content
   } satisfies TranslateAssistant
@@ -165,6 +167,7 @@ export function getDefaultTopic(assistantId: string, model?: Model): Topic {
     id: uuid(),
     assistantId,
     model,
+    enableWebSearch: false,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     name: i18n.t('chat.default.topic.name'),

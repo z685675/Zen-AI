@@ -32,7 +32,7 @@ import {
   SYSTEM_MODELS
 } from '@renderer/config/models'
 import { BUILTIN_OCR_PROVIDERS, BUILTIN_OCR_PROVIDERS_MAP, DEFAULT_OCR_PROVIDER } from '@renderer/config/ocr'
-import { TRANSLATE_PROMPT } from '@renderer/config/prompts'
+import { DEFAULT_AI_CHAT_SYSTEM_PROMPT, TRANSLATE_PROMPT } from '@renderer/config/prompts'
 import { SYSTEM_PROVIDERS } from '@renderer/config/providers'
 import { ALL_SIDEBAR_ICONS, DEFAULT_DISABLED_SIDEBAR_ICONS, DEFAULT_SIDEBAR_ICONS } from '@renderer/config/sidebar'
 import db from '@renderer/databases'
@@ -3699,6 +3699,105 @@ const migrateConfig = {
       return state
     } catch (error) {
       logger.error('migrate 218 error', error as Error)
+      return state
+    }
+  },
+  '219': (state: RootState) => {
+    try {
+      addWebSearchProvider(state, 'auto-free')
+      if (!state.assistants.defaultAssistant.webSearchProviderId) {
+        state.assistants.defaultAssistant.webSearchProviderId = 'auto-free'
+      }
+      state.assistants.assistants = state.assistants.assistants.map((assistant) =>
+        assistant.id === 'default' && !assistant.webSearchProviderId
+          ? { ...assistant, webSearchProviderId: 'auto-free' }
+          : assistant
+      )
+
+      logger.info('migrate 219 success')
+      return state
+    } catch (error) {
+      logger.error('migrate 219 error', error as Error)
+      return state
+    }
+  },
+  '220': (state: RootState) => {
+    try {
+      if (!state.assistants.defaultAssistant.prompt?.trim()) {
+        state.assistants.defaultAssistant.prompt = DEFAULT_AI_CHAT_SYSTEM_PROMPT
+      }
+
+      state.assistants.assistants = state.assistants.assistants.map((assistant) =>
+        assistant.id === 'default' && !assistant.prompt?.trim()
+          ? { ...assistant, prompt: DEFAULT_AI_CHAT_SYSTEM_PROMPT }
+          : assistant
+      )
+
+      logger.info('migrate 220 success')
+      return state
+    } catch (error) {
+      logger.error('migrate 220 error', error as Error)
+      return state
+    }
+  },
+  '221': (state: RootState) => {
+    try {
+      const shouldRefreshDefaultPrompt = (prompt?: string) =>
+        !prompt?.trim() ||
+        prompt.includes(
+          'Use web search only when search is enabled and the user explicitly requests online verification'
+        )
+
+      state.assistants.defaultAssistant.webSearchProviderId = undefined
+      state.assistants.defaultAssistant.enableWebSearch = false
+      if (shouldRefreshDefaultPrompt(state.assistants.defaultAssistant.prompt)) {
+        state.assistants.defaultAssistant.prompt = DEFAULT_AI_CHAT_SYSTEM_PROMPT
+      }
+      state.assistants.assistants = state.assistants.assistants.map((assistant) => ({
+        ...assistant,
+        ...(assistant.id === 'default'
+          ? {
+              webSearchProviderId: undefined,
+              enableWebSearch: false,
+              prompt: shouldRefreshDefaultPrompt(assistant.prompt) ? DEFAULT_AI_CHAT_SYSTEM_PROMPT : assistant.prompt
+            }
+          : {}),
+        topics: (assistant.topics ?? []).map((topic) => ({
+          ...topic,
+          enableWebSearch: false
+        }))
+      }))
+
+      logger.info('migrate 221 success')
+      return state
+    } catch (error) {
+      logger.error('migrate 221 error', error as Error)
+      return state
+    }
+  },
+  '222': (state: RootState) => {
+    try {
+      const shouldRefreshDefaultPrompt = (prompt?: string) =>
+        !prompt?.trim() || prompt.includes("Web search is controlled by the current conversation's explicit switch")
+
+      if (shouldRefreshDefaultPrompt(state.assistants.defaultAssistant.prompt)) {
+        state.assistants.defaultAssistant.prompt = DEFAULT_AI_CHAT_SYSTEM_PROMPT
+      }
+      state.assistants.assistants = state.assistants.assistants.map((assistant) => ({
+        ...assistant,
+        ...(assistant.id === 'default' && shouldRefreshDefaultPrompt(assistant.prompt)
+          ? { prompt: DEFAULT_AI_CHAT_SYSTEM_PROMPT }
+          : {}),
+        topics: (assistant.topics ?? []).map((topic) => ({
+          ...topic,
+          enableWebSearch: false
+        }))
+      }))
+
+      logger.info('migrate 222 success')
+      return state
+    } catch (error) {
+      logger.error('migrate 222 error', error as Error)
       return state
     }
   }

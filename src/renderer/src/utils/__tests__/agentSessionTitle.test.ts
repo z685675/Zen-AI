@@ -34,6 +34,7 @@ describe('agent session title helpers', () => {
     expect(isUnnamedAgentSessionName('\u672a\u547d\u540d')).toBe(true)
     expect(isUnnamedAgentSessionName('  ', 'Custom placeholder')).toBe(true)
     expect(isUnnamedAgentSessionName('Custom placeholder', 'Custom placeholder')).toBe(true)
+    expect(isUnnamedAgentSessionName('\u9ed8\u8ba4\u8bdd\u9898', '\u9ed8\u8ba4\u8bdd\u9898')).toBe(true)
     expect(isUnnamedAgentSessionName('\u65d7\u8230\u7248 PPT \u89c4\u5212')).toBe(false)
   })
 

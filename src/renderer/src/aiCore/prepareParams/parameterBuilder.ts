@@ -22,6 +22,7 @@ import {
   isSupportedThinkingTokenModel,
   isWebSearchModel
 } from '@renderer/config/models'
+import { DEFAULT_AI_CHAT_SYSTEM_PROMPT } from '@renderer/config/prompts'
 import { getHubModeSystemPrompt } from '@renderer/config/prompts-code-mode'
 import { DEFAULT_ASSISTANT_SETTINGS, getDefaultModel } from '@renderer/services/AssistantService'
 import store from '@renderer/store'
@@ -221,7 +222,11 @@ export async function buildStreamTextParams(
     params.tools = tools
   }
 
-  let systemPrompt = assistant.prompt ? await replacePromptVariables(assistant.prompt, model.name) : ''
+  let systemPrompt = assistant.prompt?.trim()
+    ? await replacePromptVariables(assistant.prompt, model.name)
+    : assistant.id === 'default'
+      ? DEFAULT_AI_CHAT_SYSTEM_PROMPT
+      : ''
 
   if (getEffectiveMcpMode(assistant) === 'auto') {
     const autoModePrompt = getHubModeSystemPrompt()

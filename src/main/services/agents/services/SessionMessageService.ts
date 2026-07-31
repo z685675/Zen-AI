@@ -18,6 +18,7 @@ import type { AgentStream, AgentStreamEvent } from '../interfaces/AgentStreamInt
 import { channelManager } from './channels/ChannelManager'
 import { channelService } from './ChannelService'
 import { isRecoverableAgentContextError, withAgentRecoveryContext } from './runtime/contextRecovery'
+import { withDeepResearchProtocol } from './runtime/deepResearch'
 import { AgentRuntimeNoOutputTimeoutError, isRuntimeBootstrapChunk, shouldFallbackRuntime } from './runtime/fallback'
 import { getAgentRuntimeServiceById, resolveAgentRuntime } from './runtime/registry'
 import { findCompatibleAgentSessionId } from './runtime/resume'
@@ -233,7 +234,9 @@ export class SessionMessageService extends BaseService {
       abortController.signal.addEventListener('abort', forwardParentAbort)
     }
 
-    const initialPrompt = agentSessionId ? req.content : withAgentRecoveryContext(req.content, req.recovery_context)
+    const runtimePrompt = withDeepResearchProtocol(req.content, req.deep_research, req.deep_research_task)
+    const requestEffort = req.deep_research || req.deep_research_task ? 'high' : req.effort
+    const initialPrompt = agentSessionId ? runtimePrompt : withAgentRecoveryContext(runtimePrompt, req.recovery_context)
     let agentStream: AgentStream
     try {
       agentStream = await getAgentRuntimeServiceById(activeRuntimeId).invoke(
@@ -242,7 +245,7 @@ export class SessionMessageService extends BaseService {
         activeRuntimeAbortController,
         agentSessionId,
         {
-          effort: req.effort,
+          effort: requestEffort,
           thinking: req.thinking,
           recoveryContext: req.recovery_context
         },
@@ -374,12 +377,12 @@ export class SessionMessageService extends BaseService {
           })
 
           agentStream = await getAgentRuntimeServiceById(activeRuntimeId).invoke(
-            withAgentRecoveryContext(req.content, req.recovery_context),
+            withAgentRecoveryContext(runtimePrompt, req.recovery_context),
             session,
             activeRuntimeAbortController,
             undefined,
             {
-              effort: req.effort,
+              effort: requestEffort,
               thinking: req.thinking,
               recoveryContext: req.recovery_context
             },
@@ -427,12 +430,12 @@ export class SessionMessageService extends BaseService {
             }
           } as TextStreamPart<Record<string, any>>)
           agentStream = await getAgentRuntimeServiceById(activeRuntimeId).invoke(
-            withAgentRecoveryContext(req.content, req.recovery_context),
+            withAgentRecoveryContext(runtimePrompt, req.recovery_context),
             session,
             activeRuntimeAbortController,
             undefined,
             {
-              effort: req.effort,
+              effort: requestEffort,
               thinking: req.thinking,
               recoveryContext: req.recovery_context
             },

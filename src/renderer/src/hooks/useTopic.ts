@@ -11,10 +11,14 @@ import { updateTopic } from '@renderer/store/assistants'
 import { setNewlyRenamedTopics, setRenamingTopics } from '@renderer/store/runtime'
 import { loadTopicMessagesThunk } from '@renderer/store/thunk/messageThunk'
 import type { Assistant, FileMetadata, Topic } from '@renderer/types'
-import type { FileMessageBlock, ImageMessageBlock } from '@renderer/types/newMessage'
+import type { FileMessageBlock, ImageMessageBlock, MessageBlock } from '@renderer/types/newMessage'
 import { MessageBlockType } from '@renderer/types/newMessage'
-import { findMainTextBlocks } from '@renderer/utils/messageUtils/find'
-import { truncateText } from '@renderer/utils/naming'
+import {
+  deriveAgentSessionFallbackTitle,
+  isUnnamedAgentSessionName,
+  normalizeAgentSessionTitle
+} from '@renderer/utils/agentSessionTitle'
+import { sortConversationTopics } from '@renderer/utils/conversationDraft'
 import { isEmpty } from 'lodash'
 import { type Dispatch, type SetStateAction, useEffect, useState } from 'react'
 
@@ -26,9 +30,17 @@ let _setActiveTopic: Dispatch<SetStateAction<Topic | undefined>> | undefined
 
 const logger = loggerService.withContext('useTopic')
 
+export const clearCachedActiveTopic = (topicId: string) => {
+  if (_activeTopic?.id === topicId) {
+    _activeTopic = undefined
+  }
+}
+
 export function useActiveTopic(assistantId: string, topic?: Topic) {
   const { assistant } = useAssistant(assistantId)
-  const [activeTopic, setActiveTopic] = useState<Topic | undefined>(topic || _activeTopic || assistant?.topics[0])
+  const [activeTopic, setActiveTopic] = useState<Topic | undefined>(
+    topic || _activeTopic || sortConversationTopics(assistant?.topics || [])[0]
+  )
 
   _activeTopic = activeTopic
   _setActiveTopic = setActiveTopic
@@ -48,11 +60,7 @@ export function useActiveTopic(assistantId: string, topic?: Topic) {
     }
 
     if (assistant?.topics?.length && (!activeTopic || !assistant.topics.find((item) => item.id === activeTopic.id))) {
-      const newestTopic = [...assistant.topics].sort((a, b) => {
-        const bTime = new Date(b.updatedAt || b.createdAt || 0).getTime()
-        const aTime = new Date(a.updatedAt || a.createdAt || 0).getTime()
-        return bTime - aTime
-      })[0]
+      const newestTopic = sortConversationTopics(assistant.topics)[0]
 
       setActiveTopic(newestTopic || assistant.topics[0])
     }
@@ -106,10 +114,14 @@ export const startTopicRenaming = (topicId: string) => {
   }
 }
 
-export const finishTopicRenaming = (topicId: string) => {
+export const finishTopicRenaming = (topicId: string, renamed = true) => {
   const state = store.getState()
   const currentRenaming = state.runtime.chat.renamingTopics
   store.dispatch(setRenamingTopics(currentRenaming.filter((id) => id !== topicId)))
+
+  if (!renamed) {
+    return
+  }
 
   const currentNewlyRenamed = state.runtime.chat.newlyRenamedTopics
   store.dispatch(setNewlyRenamedTopics([...currentNewlyRenamed, topicId]))
@@ -122,9 +134,17 @@ export const finishTopicRenaming = (topicId: string) => {
 
 const topicRenamingLocks = new Set<string>()
 
-export const autoRenameTopic = async (assistant: Assistant, topicId: string) => {
+type AutoRenameTopicOptions = {
+  preferGeneratedTitle?: boolean
+}
+
+export const autoRenameTopic = async (
+  assistant: Assistant,
+  topicId: string,
+  options: AutoRenameTopicOptions = {}
+): Promise<boolean> => {
   if (topicRenamingLocks.has(topicId)) {
-    return
+    return false
   }
 
   try {
@@ -132,71 +152,117 @@ export const autoRenameTopic = async (assistant: Assistant, topicId: string) => 
 
     const topic = await getTopicById(topicId)
     if (!topic) {
-      return
+      return false
     }
 
     const enableTopicNaming = getStoreSetting('enableTopicNaming')
 
     if (isEmpty(topic.messages)) {
-      return
+      return false
     }
 
     if (topic.isNameManuallyEdited) {
-      return
+      return false
     }
 
-    const applyTopicName = (name: string) => {
-      const data = { ...topic, name } as Topic
+    const localizedPlaceholder = i18n.t('chat.default.topic.name')
+    const canImproveFallbackTitle = options.preferGeneratedTitle !== false && topic.nameSource === 'fallback'
+    if (!isUnnamedAgentSessionName(topic.name, localizedPlaceholder) && !canImproveFallbackTitle) {
+      return false
+    }
+
+    const applyTopicName = (
+      rawName: string,
+      source: NonNullable<Topic['nameSource']>,
+      replaceableNames: string[] = []
+    ) => {
+      const name = normalizeAgentSessionTitle(rawName)
+      if (!name || isUnnamedAgentSessionName(name, localizedPlaceholder)) {
+        return false
+      }
+
+      const latestAssistant = store
+        .getState()
+        .assistants.assistants.find((candidate) => candidate.id === topic.assistantId)
+      const latestTopic = latestAssistant?.topics.find((candidate) => candidate.id === topic.id)
+      if (!latestTopic || latestTopic.isNameManuallyEdited) {
+        return false
+      }
+
+      const canReplaceCurrentName =
+        isUnnamedAgentSessionName(latestTopic.name, localizedPlaceholder) ||
+        replaceableNames.includes(latestTopic.name) ||
+        (source === 'generated' && latestTopic.nameSource === 'fallback')
+      if (!canReplaceCurrentName) {
+        return false
+      }
+
+      const data = { ...latestTopic, name, isNameManuallyEdited: false, nameSource: source } as Topic
       const currentActiveTopic = store.getState().runtime.chat.activeTopic
       if (currentActiveTopic?.id === topic.id && _setActiveTopic) {
         _setActiveTopic(data)
       }
-      store.dispatch(updateTopic({ assistantId: assistant.id, topic: data }))
+      store.dispatch(updateTopic({ assistantId: latestTopic.assistantId || assistant.id, topic: data }))
+      return true
     }
 
-    const getFirstMessageName = () => {
-      const message = topic.messages[0]
-      const blocks = findMainTextBlocks(message)
-      const text = blocks
-        .map((block) => block.content)
-        .join('\n\n')
-        .trim()
+    const state = store.getState()
+    const blocks = topic.messages.flatMap((message) =>
+      message.blocks
+        .map((blockId) => state.messageBlocks.entities[blockId])
+        .filter((block): block is MessageBlock => !!block)
+    )
+    const fallbackName = deriveAgentSessionFallbackTitle({
+      messages: topic.messages,
+      blocks
+    })
+    const shouldGenerateTitle =
+      options.preferGeneratedTitle !== false && enableTopicNaming && topic.messages.length >= 2
 
-      return truncateText(text)
+    if (!fallbackName && !shouldGenerateTitle) {
+      return false
     }
 
-    if (!enableTopicNaming) {
-      const topicName = getFirstMessageName()
-      if (topicName) {
+    startTopicRenaming(topicId)
+    let renamed = false
+    try {
+      if (fallbackName && topic.nameSource !== 'fallback') {
+        renamed = applyTopicName(fallbackName, 'fallback') || renamed
+      }
+
+      if (shouldGenerateTitle) {
         try {
-          startTopicRenaming(topicId)
-          applyTopicName(topicName)
-        } finally {
-          finishTopicRenaming(topicId)
+          const { text: summaryText, error } = await fetchMessagesSummary({ messages: topic.messages })
+          if (summaryText) {
+            renamed =
+              applyTopicName(
+                summaryText,
+                'generated',
+                fallbackName ? [normalizeAgentSessionTitle(fallbackName)] : []
+              ) || renamed
+          } else if (error) {
+            logger.debug('Keeping local topic title after generated naming failed', {
+              topicId,
+              error
+            })
+          }
+        } catch (error) {
+          logger.debug('Keeping local topic title after generated naming threw', {
+            topicId,
+            error
+          })
         }
       }
-      return
+    } finally {
+      finishTopicRenaming(topicId, renamed)
     }
-
-    if (topic && topic.name === i18n.t('chat.default.topic.name') && topic.messages.length >= 2) {
-      startTopicRenaming(topicId)
-      try {
-        const { text: summaryText, error } = await fetchMessagesSummary({ messages: topic.messages })
-        if (summaryText) {
-          applyTopicName(summaryText)
-        } else {
-          if (error) {
-            window.toast?.error(`${i18n.t('message.error.fetchTopicName')}: ${error}`)
-          }
-          const fallbackName = getFirstMessageName()
-          if (fallbackName) {
-            applyTopicName(fallbackName)
-          }
-        }
-      } finally {
-        finishTopicRenaming(topicId)
-      }
-    }
+    return renamed
+  } catch (error) {
+    logger.warn('Failed to auto-rename chat topic', {
+      topicId,
+      error
+    })
+    return false
   } finally {
     topicRenamingLocks.delete(topicId)
   }

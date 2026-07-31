@@ -278,6 +278,8 @@ export type Topic = {
   assistantId: string
   /** Model snapshot for this conversation. Legacy topics fall back to their assistant model. */
   model?: Model
+  /** External web search is an explicit, conversation-scoped opt-in. */
+  enableWebSearch?: boolean
   name: string
   createdAt: string
   updatedAt: string
@@ -285,6 +287,8 @@ export type Topic = {
   pinned?: boolean
   prompt?: string
   isNameManuallyEdited?: boolean
+  /** Tracks automatic fallback titles so a later successful model title can replace them. */
+  nameSource?: 'fallback' | 'generated'
   branchSource?: {
     topicId: string
     topicName: string
@@ -738,6 +742,7 @@ export type ExternalToolResult = {
 }
 
 export const WebSearchProviderIds = {
+  'auto-free': 'auto-free',
   zhipu: 'zhipu',
   tavily: 'tavily',
   searxng: 'searxng',

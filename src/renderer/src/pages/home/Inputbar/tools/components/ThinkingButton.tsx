@@ -14,6 +14,7 @@ import { useAssistant } from '@renderer/hooks/useAssistant'
 import type { ToolQuickPanelApi } from '@renderer/pages/home/Inputbar/types'
 import type { Model, ThinkingOption } from '@renderer/types'
 import {
+  AGENT_DEFAULT_REASONING_EFFORT,
   AGENT_REASONING_EFFORT_OPTIONS,
   CHAT_REASONING_EFFORT_OPTIONS,
   normalizeChatReasoningEffort
@@ -48,7 +49,7 @@ const ThinkingButton: FC<Props> = ({
   const storedReasoningEffort = assistant.settings?.reasoning_effort
 
   const currentReasoningEffort = useMemo(() => {
-    if (variant === 'agent') return controlledEffort ?? 'low'
+    if (variant === 'agent') return controlledEffort ?? AGENT_DEFAULT_REASONING_EFFORT
     return normalizeChatReasoningEffort(storedReasoningEffort)
   }, [controlledEffort, storedReasoningEffort, variant])
 

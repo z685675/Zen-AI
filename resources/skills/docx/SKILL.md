@@ -13,6 +13,7 @@ Create professional documents with clear structure, readable formatting, and a r
 - Use headings, short paragraphs, tables, and lists intentionally.
 - Use `mcp__assistant__create_file` with `format: "docx"` for the first verified file output.
 - Treat Markdown as an internal authoring format only. Convert headings, emphasis, links, lists, quotes, code blocks, and pipe tables into native Word structures; never expose `#`, `**`, table separators, or fenced-code markers in the finished document unless the user explicitly asks to quote Markdown source.
+- Preserve every cited URL in the `content` passed to `create_file` using Markdown link syntax such as `[Source title](https://example.com/page)`. Source lists must become visible native Word hyperlinks; never pass only a source title when its URL is known.
 - Pass `rows` only for a separate structured table the user requested. Do not copy the full document content into `rows`; this duplicates the document as a one-column source table.
 - Do not write plain text with a `.docx` extension.
 - Never ship a DOCX with open-time field updating enabled. In `docx`, do not use `features: { updateFields: true }`.
@@ -32,6 +33,7 @@ Create professional documents with clear structure, readable formatting, and a r
 
 - Run bundled scripts with `mcp__assistant__python_execute` using the script's actual installed Skill path and `arguments`; do not probe `python3`, `py`, Conda, or system Python.
 - Do not install packages from this Skill. Use `mcp__assistant__create_file` for normal DOCX creation and managed Python only for bundled checks or genuinely advanced processing.
+- If an advanced workflow produces the final DOCX outside `mcp__assistant__create_file`, call `mcp__assistant__present_files` with the verified final path before replying so Zen AI can show a quick-open card.
 
 ## Bundled Resources
 
@@ -64,6 +66,7 @@ When using a template asset, replace placeholders and empty table rows with user
 - Never remove `w:updateFields` from a document whose TOC has no cached result; this leaves a blank contents page. The repair script refuses this case.
 - Treat `LINK`, `INCLUDETEXT`, `INCLUDEPICTURE`, `DDE`, `DDEAUTO`, `DATABASE`, and `RD` fields as blocking unless explicitly required and reviewed.
 - Ordinary `http`, `https`, and `mailto` hyperlinks are allowed but are reported by the validator.
+- User-facing web links must use native external hyperlink relationships and the visible Word `Hyperlink` character style. Plain black source titles without their URL are not acceptable delivery.
 
 Validate the finished package:
 

@@ -7,8 +7,8 @@ import styled from 'styled-components'
 
 import { ClickableFilePath } from './ClickableFilePath'
 
-type AssistantCreateFileResult = {
-  status: 'created'
+export type AssistantFileResult = {
+  status: 'created' | 'ready'
   path: string
   format?: string
   size?: number
@@ -19,51 +19,137 @@ const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-const parseResultObject = (value: unknown): AssistantCreateFileResult | undefined => {
-  if (!isRecord(value)) return undefined
-  if (value.status !== 'created' || typeof value.path !== 'string' || !value.path.trim()) return undefined
+const normalizeStatus = (value: unknown, fallback: AssistantFileResult['status'] = 'ready') => {
+  return value === 'created' || value === 'ready' ? value : fallback
+}
+
+const inferFormat = (filePath: string) => {
+  const fileName = filePath.replace(/\\/g, '/').split('/').filter(Boolean).pop() ?? ''
+  const extension = fileName.includes('.') ? fileName.split('.').pop()?.toLowerCase() : undefined
+  return extension || undefined
+}
+
+const collectJsonCandidates = (value: string) => {
+  const candidates = new Set<string>()
+  const trimmed = value.trim()
+  if (trimmed) candidates.add(trimmed)
+
+  for (const match of trimmed.matchAll(/```(?:json)?\s*([\s\S]*?)```/gi)) {
+    if (match[1]?.trim()) candidates.add(match[1].trim())
+  }
+
+  for (const [open, close] of [
+    ['{', '}'],
+    ['[', ']']
+  ] as const) {
+    const start = trimmed.indexOf(open)
+    const end = trimmed.lastIndexOf(close)
+    if (start >= 0 && end > start) candidates.add(trimmed.slice(start, end + 1))
+  }
+
+  return [...candidates]
+}
+
+const parseDirectFile = (
+  value: Record<string, unknown>,
+  fallbackStatus: AssistantFileResult['status']
+): AssistantFileResult | undefined => {
+  const rawPath = value.path ?? value.file_path ?? value.filePath
+  if (typeof rawPath !== 'string' || !rawPath.trim()) return undefined
 
   return {
-    status: 'created',
-    path: value.path,
-    format: typeof value.format === 'string' ? value.format : undefined,
+    status: normalizeStatus(value.status, fallbackStatus),
+    path: rawPath.trim(),
+    format: typeof value.format === 'string' && value.format.trim() ? value.format.trim() : inferFormat(rawPath),
     size: typeof value.size === 'number' && Number.isFinite(value.size) ? value.size : undefined,
     verified: typeof value.verified === 'boolean' ? value.verified : undefined
   }
 }
 
-const parseResultJson = (value: string): AssistantCreateFileResult | undefined => {
-  try {
-    return parseResultObject(JSON.parse(value))
-  } catch {
-    return undefined
+const collectAssistantFileResults = (
+  value: unknown,
+  results: AssistantFileResult[],
+  fallbackStatus: AssistantFileResult['status'],
+  depth: number,
+  seen: Set<object>
+) => {
+  if (depth > 6 || value === null || value === undefined) return
+
+  if (typeof value === 'string') {
+    for (const candidate of collectJsonCandidates(value)) {
+      try {
+        collectAssistantFileResults(JSON.parse(candidate), results, fallbackStatus, depth + 1, seen)
+      } catch {
+        // Runtime wrappers may include status text around a JSON payload.
+      }
+    }
+    return
+  }
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      collectAssistantFileResults(item, results, fallbackStatus, depth + 1, seen)
+    }
+    return
+  }
+
+  if (!isRecord(value) || seen.has(value)) return
+  seen.add(value)
+
+  const status = normalizeStatus(value.status, fallbackStatus)
+  const directFile = parseDirectFile(value, status)
+  if (directFile) results.push(directFile)
+
+  for (const key of [
+    'files',
+    'outputs',
+    'structuredContent',
+    'structured_content',
+    'result',
+    'output',
+    'data',
+    'value'
+  ]) {
+    collectAssistantFileResults(value[key], results, status, depth + 1, seen)
+  }
+
+  if (Array.isArray(value.content)) {
+    for (const item of value.content) {
+      if (isRecord(item) && item.type === 'text' && typeof item.text === 'string') {
+        collectAssistantFileResults(item.text, results, status, depth + 1, seen)
+      }
+    }
   }
 }
 
-export const parseAssistantCreateFileResult = (response: unknown): AssistantCreateFileResult | undefined => {
-  const directResult = parseResultObject(response)
-  if (directResult) return directResult
+export const parseAssistantFileResults = (response: unknown): AssistantFileResult[] => {
+  const results: AssistantFileResult[] = []
+  collectAssistantFileResults(response, results, 'ready', 0, new Set())
 
-  if (typeof response === 'string') {
-    return parseResultJson(response)
-  }
+  const seenPaths = new Set<string>()
+  return results.filter((result) => {
+    const normalizedPath = result.path.replace(/\//g, '\\').toLowerCase()
+    if (seenPaths.has(normalizedPath)) return false
+    seenPaths.add(normalizedPath)
+    return true
+  })
+}
 
-  if (!isRecord(response)) return undefined
+export const parseAssistantCreateFileResult = (response: unknown): AssistantFileResult | undefined => {
+  return parseAssistantFileResults(response)[0]
+}
 
-  const structuredResult = parseResultObject(response.structuredContent)
-  if (structuredResult) return structuredResult
-
-  const content = response.content
-  if (!Array.isArray(content)) return undefined
-
-  for (const item of content) {
-    if (!isRecord(item) || item.type !== 'text' || typeof item.text !== 'string') continue
-
-    const parsedResult = parseResultJson(item.text)
-    if (parsedResult) return parsedResult
-  }
-
-  return undefined
+export const isAssistantFileOutputToolName = (toolName: string | undefined) => {
+  if (!toolName) return false
+  const normalized = toolName.trim().toLowerCase()
+  return (
+    normalized === 'create_file' ||
+    normalized === 'present_files' ||
+    normalized === 'assistant.create_file' ||
+    normalized === 'assistant.present_files' ||
+    normalized.endsWith('__assistant__create_file') ||
+    normalized.endsWith('__assistant__present_files')
+  )
 }
 
 const getFileName = (filePath: string) => {
@@ -72,15 +158,25 @@ const getFileName = (filePath: string) => {
 }
 
 export function AssistantCreateFileTool({ response }: { response: unknown }) {
+  const results = useMemo(() => parseAssistantFileResults(response), [response])
+
+  if (results.length === 0) return null
+
+  return (
+    <FileCards>
+      {results.map((result) => (
+        <AssistantFileCard key={result.path} result={result} />
+      ))}
+    </FileCards>
+  )
+}
+
+function AssistantFileCard({ result }: { result: AssistantFileResult }) {
   const { t } = useTranslation()
-  const result = useMemo(() => parseAssistantCreateFileResult(response), [response])
-
-  if (!result) return null
-
   const fileName = getFileName(result.path)
   const fileMeta = [result.format?.toUpperCase(), result.size !== undefined ? formatFileSize(result.size) : undefined]
     .filter(Boolean)
-    .join(' · ')
+    .join(' | ')
 
   const handleOpenFile = () => {
     window.api.file.openPath(result.path).catch(() => {
@@ -128,14 +224,19 @@ export function AssistantCreateFileTool({ response }: { response: unknown }) {
   )
 }
 
+const FileCards = styled.div`
+  display: grid;
+  gap: 8px;
+  width: min(680px, 100%);
+`
+
 const Card = styled.div`
   display: flex;
   gap: 12px;
-  min-width: min(520px, 100%);
-  max-width: 680px;
+  width: 100%;
   padding: 12px;
   border: 1px solid var(--color-border);
-  border-radius: 12px;
+  border-radius: 8px;
   background: linear-gradient(135deg, var(--color-background), var(--color-background-soft));
 `
 
@@ -145,7 +246,7 @@ const IconWrap = styled.div`
   flex: 0 0 auto;
   display: grid;
   place-items: center;
-  border-radius: 12px;
+  border-radius: 8px;
   color: var(--color-primary);
   background: color-mix(in srgb, var(--color-primary) 12%, transparent);
 `

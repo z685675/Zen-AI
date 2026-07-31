@@ -6,6 +6,8 @@ import { useCallback } from 'react'
 
 import KnowledgeBaseButton from './components/KnowledgeBaseButton'
 
+const KNOWLEDGE_BASE_TOOL_VISIBLE = false
+
 /**
  * Knowledge Base Tool
  *
@@ -19,7 +21,9 @@ const knowledgeBaseTool = defineTool({
   // icon: FileSearch,
 
   visibleInScopes: [TopicType.Chat],
-  condition: ({ assistant }) => isSupportedToolUse(assistant) || isPromptToolUse(assistant),
+  // Keep the implementation available while the unfinished user-facing workflow is hidden.
+  condition: ({ assistant }) =>
+    KNOWLEDGE_BASE_TOOL_VISIBLE && (isSupportedToolUse(assistant) || isPromptToolUse(assistant)),
 
   dependencies: {
     state: ['selectedKnowledgeBases', 'files'] as const,

@@ -299,8 +299,9 @@ function renderInline(
       bold: forceBold || style.bold > 0,
       italics: style.italics > 0,
       strike: style.strike > 0,
+      style: link ? 'Hyperlink' : undefined,
       font: options.code ? 'Consolas' : undefined,
-      color: options.code ? documentStyle.deep : undefined,
+      color: options.code && !link ? documentStyle.deep : undefined,
       shading: options.code ? { type: ShadingType.CLEAR, fill: documentStyle.soft, color: 'auto' } : undefined
     })
     if (link) link.runs.push(run)

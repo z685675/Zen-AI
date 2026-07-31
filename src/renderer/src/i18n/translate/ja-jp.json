@@ -132,6 +132,7 @@
           "loginHint": "初回ログインにはQRコードのスキャンが必要です。ログインURLはアプリのログを確認してください。",
           "qrHint": "スマートフォンでWeChatを開き、QRコードをスキャンしてログインしてください。",
           "qrTitle": "WeChat QRコードログイン",
+          "reconnect": "[to be translated]:Rescan QR code",
           "title": "WeChat",
           "whoamiTip": "ヒント：WeChatで/whoamiを送信すると、ユーザーのIDが取得できます。"
         }
@@ -282,8 +283,35 @@
       "title": "編集エージェント"
     },
     "empty": {
+      "action": "[to be translated]:Configure Model Service",
       "description": "AI搭載ツールで複雑なタスクを処理するエージェントを作成する",
       "title": "エージェントがまだありません"
+    },
+    "environmentGate": {
+      "action": "[to be translated]:Fix Environment",
+      "checkFailed": "[to be translated]:Environment check failed",
+      "description": "[to be translated]:Finish repairing the runtime environment first so the smart assistant can work reliably.",
+      "refresh": "[to be translated]:Check Again",
+      "repairHint": "[to be translated]:Bun and UV can be repaired automatically. On Windows, missing Git is installed through winget after confirmation on the repair page.",
+      "title": "[to be translated]:Assistant environment is not ready"
+    },
+    "errorFallback": {
+      "assistant_name": "[to be translated]:Smart Assistant",
+      "connection_title": "[to be translated]:The task connection was interrupted",
+      "dependency_description": "[to be translated]:This task needs a local runtime component that is not ready yet. Repair the smart assistant environment first, then retry the task for a more stable run.",
+      "dependency_title": "[to be translated]:Required runtime is missing",
+      "description": "[to be translated]:This task did not finish successfully. Try again first; if it keeps failing, open the details or adjust the model and network settings.",
+      "detail": "[to be translated]:View details",
+      "export_failed": "[to be translated]:Failed to export diagnostic package. Please try again later.",
+      "export_package": "[to be translated]:Export diagnostics",
+      "export_success": "[to be translated]:Diagnostic package exported: {{path}}",
+      "fix_environment": "[to be translated]:Fix environment",
+      "model_title": "[to be translated]:The model could not complete this task",
+      "privacy_notice": "[to be translated]:This diagnostic package is used to troubleshoot smart assistant task failures. It may include the current task conversation, error details, local file paths, and runtime environment information. Before sharing it with others, make sure it does not contain private content you do not want to share.",
+      "retry": "[to be translated]:Retry task",
+      "retry_missing_user": "[to be translated]:The original task could not be found, so it cannot be retried automatically.",
+      "subtitle": "[to be translated]:The smart assistant has stopped this task. Unfinished steps will not continue in the background.",
+      "title": "[to be translated]:Task not completed"
     },
     "get": {
       "error": {
@@ -319,7 +347,11 @@
       "tooltip": "Windowsでエージェントを実行するにはGit Bashが必要です。まだインストールされていない場合は、git-scm.comからインストールしてください。"
     },
     "input": {
+      "deep_research": "[to be translated]:Deep Research",
+      "deep_research_tooltip": "[to be translated]:Creates one research task for your next message: plan first, then multi-step source verification and a cited report.",
+      "hero_placeholder": "[to be translated]:For example: research a topic, summarize the key points, and organize the result",
       "placeholder": "メッセージをここに入力し、{{key}}で送信 - @でパスを選択、/でコマンドを選択",
+      "reasoning_effort": "[to be translated]:Thinking effort",
       "soul_placeholder": "Telegramに接続するのを手伝ってください"
     },
     "list": {
@@ -340,6 +372,7 @@
     "session": {
       "accessible_paths": {
         "add": "ディレクトリを追加",
+        "current": "[to be translated]:Current workspace",
         "default_hint": "デフォルト: {{path}}",
         "duplicate": "このディレクトリは既に含まれています。",
         "empty": "エージェントがアクセスできるディレクトリを少なくとも1つ選択してください。",
@@ -347,16 +380,24 @@
           "at_least_one": "アクセス可能なディレクトリを少なくとも1つ選択してください。"
         },
         "label": "アクセス可能なディレクトリ",
-        "select_failed": "ディレクトリの選択に失敗しました。"
+        "select_failed": "ディレクトリの選択に失敗しました。",
+        "set_active": "[to be translated]:Make current"
       },
       "add": {
-        "title": "セッションを追加"
+        "title": "新しいチャット"
       },
       "allowed_tools": {
         "empty": "このエージェントが利用できるツールはありません。",
         "helper": "事前承認済みのツールを選択します。未選択のツールは使用時に承認が必要になります。",
         "label": "事前承認済みツール",
         "placeholder": "事前承認するツールを選択"
+      },
+      "archive": {
+        "badge": "[to be translated]:Archived",
+        "empty": "[to be translated]:No archived sessions yet",
+        "move": "[to be translated]:Archive Session",
+        "restore": "[to be translated]:Restore Session",
+        "title": "[to be translated]:Archived"
       },
       "create": {
         "error": {
@@ -374,6 +415,7 @@
       "edit": {
         "title": "編集セッション"
       },
+      "fallback_title": "[to be translated]:Assistant Task",
       "get": {
         "error": {
           "failed": "セッションの取得に失敗しました",
@@ -386,6 +428,11 @@
         "error": {
           "failed": "セッションの並び替えに失敗しました"
         }
+      },
+      "search": {
+        "empty": "[to be translated]:No matching sessions found",
+        "error": "[to be translated]:Failed to search sessions",
+        "placeholder": "[to be translated]:Search Smart Assistant sessions..."
       },
       "update": {
         "error": {
@@ -416,10 +463,38 @@
           },
           "placeholder": "権限モードを選択"
         },
+        "runtime": {
+          "codexDisabled": "[to be translated]:Codex runtime is not enabled in this build. Auto continues to use the stable Claude Code path.",
+          "description": "[to be translated]:Choose the underlying runtime for this agent. At this stage Auto keeps the existing Claude Code path, while Codex is limited to controlled testing.",
+          "helper": "[to be translated]:Keep Auto unless you are testing Codex with a verified OpenAI-compatible endpoint.",
+          "incompatible": {
+            "claudeCode": {
+              "description": "[to be translated]:The runtime changed, but the current model is not Claude Code compatible. Before starting a task, select a model that exposes the Anthropic Messages protocol.",
+              "title": "[to be translated]:Choose a Claude Code model"
+            },
+            "codex": {
+              "description": "[to be translated]:The runtime changed, but the current model is not Codex compatible. Before starting a task, select a model that exposes an OpenAI or OpenAI Responses endpoint.",
+              "title": "[to be translated]:Choose a Codex model"
+            }
+          },
+          "label": "[to be translated]:Agent runtime",
+          "options": {
+            "auto": "[to be translated]:Auto",
+            "claudeCode": "[to be translated]:Claude Code",
+            "codex": "[to be translated]:Codex"
+          }
+        },
         "title": "高級設定"
       },
       "essential": "必須設定",
+      "model": {
+        "defaultLabel": "[to be translated]:Default for new chats",
+        "defaultTooltip": "[to be translated]:Used only as the default for future chats. Existing chat models are not changed.",
+        "sessionTooltip": "[to be translated]:Changes only this chat. A task already in progress continues with the model it started with."
+      },
       "permissionMode": {
+        "currentModePrefix": "[to be translated]:Current Mode: ",
+        "simpleTitle": "[to be translated]:Mode Selection",
         "tab": "パーミッションモード",
         "title": "パーミッションモード"
       },
@@ -526,16 +601,13 @@
             "description": "モードを切り替えると、自動承認されたツールが更新されます。",
             "title": "パーミッションモードを変更しますか？"
           },
-          "default": {
-            "description": "通常の権限チェックが適用されます。",
-            "title": "デフォルト（続行する前に確認）"
-          },
           "helper": "エージェントがツール使用の承認を処理する方法を指定",
           "placeholder": "権限モードを選択",
           "plan": {
             "description": "Claudeは読み取り専用ツールのみを使用し、実行前に計画を提示します。",
             "title": "計画モード（近日公開）"
           },
+          "simpleTitle": "[to be translated]:Mode Selection",
           "title": "権限モード"
         },
         "preapproved": {
@@ -678,7 +750,32 @@
       "enable_server_description": "エージェントを動作させるには、API サーバーを有効にする必要があります。直接有効にするか、設定から構成することができます。",
       "server_not_running": "APIサーバーは有効になっていますが、実行されていません。サーバー設定を確認してください。",
       "server_not_running_description": "エージェントを動作させるには、APIサーバーが稼働している必要があります。直接起動するか、設定を確認してください。"
+    },
+    "welcome": {
+      "capabilities": {
+        "files": "[to be translated]:Work with files",
+        "files_desc": "[to be translated]:Complete tasks using files, folders, and workspace content.",
+        "search": "[to be translated]:Research",
+        "search_desc": "[to be translated]:Find information first, then extract the key points and conclusions.",
+        "summary": "[to be translated]:Organize and summarize",
+        "summary_desc": "[to be translated]:Turn scattered content into a clear, reusable result.",
+        "tasks": "[to be translated]:Multi-step tasks",
+        "tasks_desc": "[to be translated]:Handle complex work that needs multiple steps and sustained execution."
+      },
+      "model_label": "[to be translated]:Model for this chat",
+      "title": "[to be translated]:Hand over the task and get started with ease"
     }
+  },
+  "announcements": {
+    "collapse": "[to be translated]:Collapse",
+    "empty": "[to be translated]:No announcements yet",
+    "expand": "[to be translated]:Expand",
+    "learn_more": "[to be translated]:Learn more",
+    "subtitle": "[to be translated]:The latest 3 product announcements are kept here for quick review.",
+    "title": "[to be translated]:Announcements",
+    "updated_at": "[to be translated]:Recently updated {{time}}",
+    "view_changes": "[to be translated]:View changes",
+    "view_content": "[to be translated]:View content"
   },
   "apiServer": {
     "actions": {
@@ -1088,6 +1185,22 @@
       "context_count": {
         "tip": "コンテキスト数 / 最大コンテキスト数"
       },
+      "context_manager": {
+        "cache": "[to be translated]:Parse cache",
+        "cache_value": "[to be translated]:{{hits}} hits / {{total}} parses",
+        "compressions": "[to be translated]:History compactions",
+        "error": "[to be translated]:Resource preparation failed",
+        "managed": "[to be translated]:Resources and history managed",
+        "managed_resources": "[to be translated]:{{count}} resources managed",
+        "note": "[to be translated]:This shows resource, history, and capacity handling. It does not mean the model is still responding.",
+        "processing": "[to be translated]:Preparing resources and context",
+        "ready": "[to be translated]:Resources and context ready",
+        "resources": "[to be translated]:Indexed resources",
+        "retries": "[to be translated]:Capacity retries",
+        "retrieval_value": "[to be translated]:{{count}} calls / {{chunks}} chunks",
+        "retrievals": "[to be translated]:Relevant resource calls",
+        "title": "[to be translated]:Resources and context"
+      },
       "estimated_tokens": {
         "tip": "推定トークン数"
       },
@@ -1098,6 +1211,16 @@
       "generate_image": "画像を生成する",
       "generate_image_not_supported": "モデルは画像の生成をサポートしていません。",
       "knowledge_base": "ナレッジベース",
+      "more": {
+        "attachment": "[to be translated]:Upload images, documents, or other files into the current conversation",
+        "create_session": "[to be translated]:Create a new conversation under the current assistant",
+        "quick_phrases": "[to be translated]:Insert a commonly used phrase or preset content",
+        "resource_panel": "[to be translated]:Browse files and skills available to this session",
+        "slash_commands": "[to be translated]:View quick commands provided by this assistant",
+        "thinking": "[to be translated]:Adjust the model thinking mode or reasoning depth",
+        "title": "[to be translated]:More",
+        "toggle_expand": "[to be translated]:Expand or collapse the current input box"
+      },
       "new": {
         "context": "コンテキストをクリア {{Command}}"
       },
@@ -1129,6 +1252,7 @@
       "settings": "設定",
       "slash_commands": {
         "description": "エージェントセッションスラッシュコマンド",
+        "empty": "[to be translated]:No slash commands available right now",
         "title": "スラッシュコマンド"
       },
       "thinking": {
@@ -1169,6 +1293,8 @@
       },
       "url_context": "URLコンテキスト",
       "web_search": {
+        "auto_disabled": "[to be translated]:Off: do not use web search",
+        "auto_enabled": "[to be translated]:On: automatically decide when web search is needed",
         "builtin": {
           "disabled_content": "現在のモデルはウェブ検索をサポートしていません",
           "enabled_content": "モデル内蔵のウェブ検索機能を使用",
@@ -1177,14 +1303,18 @@
         "button": {
           "ok": "設定に移動"
         },
+        "disabled": "[to be translated]:Search the web for the next message",
         "enable": "ウェブ検索を有効にする",
         "enable_content": "ウェブ検索の接続性を先に設定で確認する必要があります",
+        "enabled": "[to be translated]:The next message will search the web, then turn off automatically",
         "label": "ウェブ検索",
         "no_web_search": {
           "description": "ウェブ検索を無効にする",
           "label": "ウェブ検索を無効にする"
         },
-        "settings": "ウェブ検索設定"
+        "settings": "ウェブ検索設定",
+        "toast_disabled": "[to be translated]:Web search canceled for the next message",
+        "toast_enabled": "[to be translated]:Web search is on for the next message and will turn off automatically after sending"
       }
     },
     "mcp": {
@@ -1202,7 +1332,8 @@
       "new": {
         "branch": {
           "created": "新しいブランチが作成されました",
-          "label": "新しいブランチ"
+          "label": "新しいブランチ",
+          "tooltip": "[to be translated]:Create a new conversation branch without affecting the original"
         },
         "context": "新しいコンテキスト"
       },
@@ -1224,6 +1355,7 @@
     "navigation": {
       "bottom": "下部に戻る",
       "close": "閉じる",
+      "earlier": "[to be translated]:View earlier turns",
       "first": "最初のメッセージです",
       "history": "チャット履歴",
       "last": "最後のメッセージです",
@@ -1858,6 +1990,7 @@
     "created": "作成日",
     "last_updated": "最終更新日",
     "messages": "メッセージ",
+    "no_history": "[to be translated]:No conversation history",
     "notion": {
       "reasoning_truncated": "思考過程がブロック分割できません。切り捨てられています。"
     },
@@ -1906,12 +2039,14 @@
   },
   "history": {
     "continue_chat": "チャットを続ける",
+    "conversation_history": "[to be translated]:Conversation History",
     "error": {
       "topic_not_found": "トピックが見つかりません"
     },
     "locate": {
       "message": "メッセージを探す"
     },
+    "no_history": "[to be translated]:No conversation history yet",
     "search": {
       "match": {
         "substring": "含む",
@@ -2481,6 +2616,12 @@
       "abort_failed": "ツール呼び出し中断失敗",
       "aborted": "ツール呼び出し中断",
       "approvalRequired": "ツール「{{tool}}」は承認が必要です",
+      "assistantCreateFile": {
+        "open_file": "[to be translated]:Open file",
+        "open_folder": "[to be translated]:Reveal in folder",
+        "title": "[to be translated]:File created",
+        "verified": "[to be translated]:Verified"
+      },
       "autoApproveEnabled": "このツールは自動承認が有効になっています",
       "cancelled": "キャンセル",
       "completed": "完了",
@@ -3104,6 +3245,14 @@
         "image": "新しい画像"
       }
     },
+    "canvas_guide_primary": "[to be translated]:Describe the image you want below, and I'll generate it for you.",
+    "canvas_guide_secondary": "[to be translated]:You can upload or paste multiple images for image editing.",
+    "canvas_upload_action": "[to be translated]:Upload Image",
+    "composer_continue_hint": "[to be translated]:Continuing from this image; the result will be generated separately without overwriting it.",
+    "composer_upload_hint": "[to be translated]:Editing from the uploaded image; the result will be generated separately.",
+    "copy_prompt": "[to be translated]:Copy prompt",
+    "created_at": "[to be translated]:Created at",
+    "current_mode": "[to be translated]:Current Mode",
     "custom_size": "カスタムサイズ",
     "dmxapi": {
       "generating_tip": "公式モデルで生成中です。最良の結果のため、推定待機時間は2〜5分です。この操作のコストについては、DMXAPIバックエンドログをご確認ください。",
@@ -3138,10 +3287,12 @@
         "yarn_doll": "糸人形"
       }
     },
+    "drag_reorder_hint": "[to be translated]:Drag images to reorder",
     "edit": {
       "image_file": "編集画像",
       "image_required": "編集する画像を先にアップロードしてください"
     },
+    "expand_prompt_editor": "[to be translated]:Expand prompt editor",
     "generate": {
       "height": "高さ",
       "magic_prompt_option_tip": "生成効果を向上させるための提示詞を最適化します",
@@ -3212,10 +3363,13 @@
     "learn_more": "詳しくはこちら",
     "magic_prompt_option": "プロンプト強化",
     "mode": {
+      "continue_with_index": "[to be translated]:Continue from image {{index}}",
+      "create": "[to be translated]:Create New Image",
       "edit": "部分編集",
       "generate": "画像生成",
       "merge": "マージ",
       "remix": "混合",
+      "upload_edit": "[to be translated]:Upload Image Edit",
       "upscale": "拡大"
     },
     "model": "モデル",
@@ -3250,11 +3404,13 @@
       "watermark_tip": "生成画像に透かしを追加するかどうか、デフォルトは無効"
     },
     "pricing": "料金",
+    "prompt_editor_title": "[to be translated]:Edit image prompt",
     "prompt_enhancement": "プロンプト強化",
     "prompt_enhancement_tip": "オンにすると、プロンプトを詳細でモデルに適したバージョンに書き直します",
     "prompt_placeholder": "作成したい画像を説明します。例：夕日の湖畔、遠くに山々",
     "prompt_placeholder_edit": "画像の説明を入力します。テキスト描画には '二重引用符' を使用します",
     "prompt_placeholder_en": "「英語」の説明を入力します。は現在、英語のプロンプト語のみをサポートしています",
+    "prompt_used": "[to be translated]:Prompt used",
     "proxy_required": "打開代理並開啟TUN模式查看生成圖片或複製到瀏覽器開啟，後續會支持國內直連",
     "quality": "品質",
     "quality_options": {
@@ -3294,6 +3450,8 @@
     "seed_random": "ランダム",
     "seed_tip": "同じシードとプロンプトで似た画像を生成できます",
     "select_model": "モデルを選択",
+    "source": "[to be translated]:Source",
+    "source_deleted": "[to be translated]:Source deleted",
     "style_type": "スタイル",
     "style_types": {
       "3d": "3D",
@@ -3934,6 +4092,9 @@
       },
       "checkUpdate": {
         "available": "今すぐ更新",
+        "download": "[to be translated]:Download Now",
+        "downloading": "[to be translated]:Downloading",
+        "downloadingProgress": "[to be translated]:Downloading {{percent}}%",
         "label": "更新を確認"
       },
       "checkingUpdate": "更新を確認中...",
@@ -3964,6 +4125,12 @@
       },
       "title": "について",
       "updateAvailable": "新しいバージョン {{version}} が見つかりました",
+      "updateDiagnostics": {
+        "copied": "[to be translated]:Update diagnostics copied",
+        "copy": "[to be translated]:Copy Diagnostics",
+        "copyFailed": "[to be translated]:Failed to copy update diagnostics",
+        "title": "[to be translated]:Update Diagnostics"
+      },
       "updateError": "更新エラー",
       "updateNotAvailable": "最新バージョンを使用しています",
       "website": {
@@ -3987,6 +4154,65 @@
       "label": "デフォルトアシスタント",
       "model_params": "モデルパラメータ",
       "title": "デフォルトアシスタント"
+    },
+    "assistantEnvironment": {
+      "binariesDir": "[to be translated]:App tools directory",
+      "checkFailed": "[to be translated]:Environment check failed",
+      "coreDescription": "[to be translated]:These tools affect the assistant's ability to use extensions, skills, and local tasks reliably.",
+      "coreTitle": "[to be translated]:Core Readiness",
+      "dependencies": {
+        "bun": {
+          "description": "[to be translated]:Runs some skills, tool services, and frontend-oriented automation tasks.",
+          "name": "[to be translated]:Bun runtime"
+        },
+        "git": {
+          "description": "[to be translated]:On Windows, the assistant needs Git Bash to run local tasks reliably. It is also used for Git-based skills, repository downloads, and coding tasks.",
+          "name": "[to be translated]:Git"
+        },
+        "pyodide": {
+          "description": "[to be translated]:Powers the in-browser Python sandbox. This version loads it from the network on first use and does not require system Python.",
+          "name": "[to be translated]:Python sandbox network"
+        },
+        "python": {
+          "description": "[to be translated]:Zen AI's private CPython 3.12 environment for data processing, document scripts, and complex local tasks. It does not modify system Python.",
+          "name": "[to be translated]:Zen Python runtime"
+        },
+        "uv": {
+          "description": "[to be translated]:Prepares Python tool environments and dependencies for some local skills.",
+          "name": "[to be translated]:UV"
+        },
+        "uvx": {
+          "description": "[to be translated]:Provided with UV and used to run temporary Python tool packages and MCP services.",
+          "name": "[to be translated]:UVX"
+        }
+      },
+      "description": "[to be translated]:Check local tools and network readiness for the full smart assistant experience.",
+      "downloadGit": "[to be translated]:Download Git",
+      "downloadGitHint": "[to be translated]:Please finish installing Git with the setup wizard, then come back and check again.",
+      "install": "[to be translated]:Install",
+      "installFailed": "[to be translated]:Install failed",
+      "installGitAuto": "[to be translated]:Auto Install Git",
+      "installGitConfirmContent": "[to be translated]:On Windows, the smart assistant needs Git Bash from Git for Windows to run local tasks reliably. The app will try to install it through winget. A system permission prompt may appear. If auto install fails, the official download page will open as a fallback.",
+      "installGitConfirmTitle": "[to be translated]:Install Git for Windows automatically?",
+      "installGitFailedFallback": "[to be translated]:Auto install failed. The official Git download page has been opened",
+      "installSuccess": "[to be translated]:Installed",
+      "intro": "[to be translated]:Zen AI prepares a private Python environment and local tools for every user. These components stay inside Zen AI and do not modify system Python.",
+      "noPath": "[to be translated]:No available path detected yet",
+      "optionalDescription": "[to be translated]:These are not required for basic chat, but they improve some advanced tasks.",
+      "optionalTitle": "[to be translated]:Optional Enhancements",
+      "prepare": "[to be translated]:Repair Assistant Environment",
+      "prepareSuccess": "[to be translated]:Environment prepared",
+      "refresh": "[to be translated]:Check Again",
+      "sources": {
+        "app": "[to be translated]:App tools directory",
+        "network": "[to be translated]:Network available",
+        "system": "[to be translated]:System install"
+      },
+      "status": {
+        "error": "[to be translated]:Check failed",
+        "missing": "[to be translated]:Not ready"
+      },
+      "title": "[to be translated]:Assistant Environment"
     },
     "channels": {
       "description": "エージェントをTelegram、Feishu、Discordなどのメッセージングプラットフォームに接続します。",
@@ -5118,6 +5344,10 @@
       "add": {
         "add_model": "モデルを追加",
         "batch_add_models": "モデルを一括追加",
+        "context_window_tokens": {
+          "label": "[to be translated]:Context Capacity",
+          "tooltip": "[to be translated]:The combined input and output token capacity supported by this model"
+        },
         "endpoint_type": {
           "label": "エンドポイントタイプ",
           "placeholder": "エンドポイントタイプを選択",
@@ -5128,6 +5358,10 @@
           "label": "グループ名",
           "placeholder": "例：ChatGPT",
           "tooltip": "例：ChatGPT"
+        },
+        "max_output_tokens": {
+          "label": "[to be translated]:Maximum Output",
+          "tooltip": "[to be translated]:The maximum output token capacity reported by the provider"
         },
         "model_id": {
           "label": "モデルID",
@@ -6049,6 +6283,7 @@
   },
   "update": {
     "available": "A new version {{version}} is available. Click Check for Updates any time to download it.",
+    "downloadNow": "[to be translated]:Download Now",
     "downloading": "Downloading version {{version}} in the background. You will be prompted when it is ready.",
     "install": "今すぐインストール",
     "installNow": "Install Now",

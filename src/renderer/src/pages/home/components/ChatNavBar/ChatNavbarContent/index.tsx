@@ -8,9 +8,10 @@ interface Props {
   assistants: Assistant[]
   activeTopic: Topic
   setActiveAssistant: (assistant: Assistant) => void
+  setActiveTopic: (topic: Topic) => void
 }
 
-const ChatNavbarContent: FC<Props> = ({ assistant, assistants, activeTopic, setActiveAssistant }) => {
+const ChatNavbarContent: FC<Props> = ({ assistant, assistants, activeTopic, setActiveAssistant, setActiveTopic }) => {
   return (
     <div className="flex min-w-0 flex-1 items-center justify-between">
       <TopicContent
@@ -18,6 +19,7 @@ const ChatNavbarContent: FC<Props> = ({ assistant, assistants, activeTopic, setA
         assistants={assistants}
         activeTopic={activeTopic}
         setActiveAssistant={setActiveAssistant}
+        setActiveTopic={setActiveTopic}
       />
     </div>
   )

@@ -1,12 +1,5 @@
 import { loggerService } from '@logger'
-import {
-  chatModelFilter,
-  isMandatoryWebSearchModel,
-  isVisionModel,
-  isVisionModels,
-  isWebSearchModel
-} from '@renderer/config/models'
-import db from '@renderer/databases'
+import { chatModelFilter, isMandatoryWebSearchModel, isVisionModel, isVisionModels } from '@renderer/config/models'
 import { useAssistant, useDefaultModel } from '@renderer/hooks/useAssistant'
 import { useInputText } from '@renderer/hooks/useInputText'
 import { useMessageOperations, useTopicLoading } from '@renderer/hooks/useMessageOperations'
@@ -20,14 +13,12 @@ import {
   useInputbarToolsInternalDispatch,
   useInputbarToolsState
 } from '@renderer/pages/home/Inputbar/context/InputbarToolsProvider'
-import { getDefaultTopic } from '@renderer/services/AssistantService'
 import { CacheService } from '@renderer/services/CacheService'
 import { EVENT_NAMES, EventEmitter } from '@renderer/services/EventService'
 import FileManager from '@renderer/services/FileManager'
 import { checkRateLimit, getUserMessage } from '@renderer/services/MessagesService'
 import { spanManagerService } from '@renderer/services/SpanManagerService'
 import { estimateTextTokens as estimateTxtTokens, estimateUserPromptUsage } from '@renderer/services/TokenService'
-import WebSearchService from '@renderer/services/WebSearchService'
 import { useAppDispatch, useAppSelector } from '@renderer/store'
 import { selectMessagesForTopic } from '@renderer/store/newMessage'
 import { sendMessage as _sendMessage } from '@renderer/store/thunk/messageThunk'
@@ -41,7 +32,8 @@ import {
 } from '@renderer/types'
 import type { MessageInputBaseParams } from '@renderer/types/newMessage'
 import { delay } from '@renderer/utils'
-import { getNewConversationModel, getTopicConversationModel } from '@renderer/utils/conversationModel'
+import { getChatTopicDraftCacheKey } from '@renderer/utils/conversationDraft'
+import { getTopicConversationAssistant } from '@renderer/utils/conversationModel'
 import { getSendMessageShortcutLabel } from '@renderer/utils/input'
 import { aggregateUsageCacheStats } from '@renderer/utils/usage'
 import { documentExts, imageExts, textExts } from '@shared/config/constant'
@@ -61,7 +53,6 @@ import TokenCount from './TokenCount'
 
 const logger = loggerService.withContext('Inputbar')
 
-const INPUTBAR_DRAFT_CACHE_KEY = 'inputbar-draft'
 const DRAFT_CACHE_TTL = 24 * 60 * 60 * 1000 // 24 hours
 const HERO_PLACEHOLDER = 'Zen AI可以帮你写作、总结、翻译内容，也可以处理附件与文件。'
 
@@ -75,8 +66,9 @@ const getValidatedCachedModels = (conversationId: string): Model[] => {
 
 interface Props {
   assistant: Assistant
-  setActiveTopic: (topic: Topic) => void
   topic: Topic
+  onTopicChange: (topic: Topic) => void
+  onCreateConversation: () => Promise<void>
 }
 
 export type ProviderActionHandlers = {
@@ -100,8 +92,9 @@ interface InputbarProps extends Props {
 
 const Inputbar: FC<InputbarProps> = ({
   assistant: initialAssistant,
-  setActiveTopic,
   topic,
+  onTopicChange,
+  onCreateConversation,
   variant = 'default',
   actionsRef: externalActionsRef
 }) => {
@@ -131,6 +124,7 @@ const Inputbar: FC<InputbarProps> = ({
 
   return (
     <InputbarToolsProvider
+      key={topic.id}
       initialState={initialState}
       actions={{
         resizeTextArea: () => actionsRef.current.resizeTextArea(),
@@ -142,8 +136,9 @@ const Inputbar: FC<InputbarProps> = ({
       }}>
       <InputbarInner
         assistant={initialAssistant}
-        setActiveTopic={setActiveTopic}
         topic={topic}
+        onTopicChange={onTopicChange}
+        onCreateConversation={onCreateConversation}
         actionsRef={actionsRef}
         variant={variant}
       />
@@ -153,8 +148,9 @@ const Inputbar: FC<InputbarProps> = ({
 
 const InputbarInner: FC<InputbarInnerProps> = ({
   assistant: initialAssistant,
-  setActiveTopic,
   topic,
+  onTopicChange,
+  onCreateConversation,
   actionsRef,
   variant
 }) => {
@@ -167,8 +163,8 @@ const InputbarInner: FC<InputbarInnerProps> = ({
   const { setCouldAddImageFile } = useInputbarToolsInternalDispatch()
 
   const { text, setText } = useInputText({
-    initialValue: CacheService.get<string>(INPUTBAR_DRAFT_CACHE_KEY) ?? '',
-    onChange: (value) => CacheService.set(INPUTBAR_DRAFT_CACHE_KEY, value, DRAFT_CACHE_TTL)
+    initialValue: CacheService.get<string>(getChatTopicDraftCacheKey(topic.id)) ?? '',
+    onChange: (value) => CacheService.set(getChatTopicDraftCacheKey(topic.id), value, DRAFT_CACHE_TTL)
   })
   const {
     textareaRef,
@@ -183,16 +179,20 @@ const InputbarInner: FC<InputbarInnerProps> = ({
     minHeight: 30
   })
 
-  const { assistant: storedAssistant, addTopic, updateAssistant } = useAssistant(initialAssistant.id)
+  const { assistant: storedAssistant, updateAssistant, updateTopic } = useAssistant(initialAssistant.id)
   const { defaultModel } = useDefaultModel()
   const assistant = useMemo(
-    () => ({
-      ...storedAssistant,
-      model: getTopicConversationModel(topic, storedAssistant, defaultModel)
-    }),
+    () => getTopicConversationAssistant(topic, storedAssistant, defaultModel),
     [defaultModel, storedAssistant, topic]
   )
-  const model = assistant.model
+  const updateConversationTopic = useCallback(
+    (nextTopic: Topic) => {
+      updateTopic(nextTopic)
+      onTopicChange(nextTopic)
+    },
+    [onTopicChange, updateTopic]
+  )
+  const model = assistant.model as Model
   const { sendMessageShortcut, showInputEstimatedTokens, enableQuickPanelTriggers } = useSettings()
   const [estimateTokenCount, setEstimateTokenCount] = useState(0)
   const [contextCount, setContextCount] = useState({ current: 0, max: 0 })
@@ -277,12 +277,12 @@ const InputbarInner: FC<InputbarInnerProps> = ({
       return
     }
 
-    if (!assistant.model && mentionedModels.length === 0) {
+    if (!model && mentionedModels.length === 0) {
       window.toast.warning(t('agent.empty.description'))
       return
     }
 
-    const requestModels = mentionedModels.length > 0 ? mentionedModels : [assistant.model]
+    const requestModels = mentionedModels.length > 0 ? mentionedModels : [model]
     if (!requestModels.every(chatModelFilter)) {
       window.toast.warning('图片模型只能在“图片生成”入口中使用，请切换为对话模型后再发送。')
       return
@@ -313,6 +313,9 @@ const InputbarInner: FC<InputbarInnerProps> = ({
       message.traceId = parent?.spanContext().traceId
 
       void dispatch(_sendMessage(message, blocks, assistant, topic.id))
+      if (topic.enableWebSearch) {
+        updateConversationTopic({ ...topic, enableWebSearch: false })
+      }
 
       setText('')
       setFiles([])
@@ -339,7 +342,9 @@ const InputbarInner: FC<InputbarInnerProps> = ({
     setTimeoutTimer,
     resizeTextArea,
     focusTextarea,
-    t
+    t,
+    model,
+    updateConversationTopic
   ])
 
   const tokenCountProps = useMemo(() => {
@@ -379,13 +384,8 @@ const InputbarInner: FC<InputbarInnerProps> = ({
   }, [loading, onPause])
 
   const addNewTopic = useCallback(async () => {
-    const newTopic = getDefaultTopic(assistant.id, getNewConversationModel(assistant, defaultModel))
-
-    await db.topics.add({ id: newTopic.id, messages: [] })
-
-    addTopic(newTopic)
-    setActiveTopic(newTopic)
-  }, [addTopic, assistant, defaultModel, setActiveTopic])
+    await onCreateConversation()
+  }, [onCreateConversation])
 
   const handleRemoveModel = useCallback(
     (modelToRemove: Model) => {
@@ -472,15 +472,7 @@ const InputbarInner: FC<InputbarInnerProps> = ({
     if (!document.querySelector('.topview-fullscreen-container')) {
       focusTextarea()
     }
-  }, [
-    topic.id,
-    assistant.mcpServers,
-    assistant.knowledge_bases,
-    assistant.enableWebSearch,
-    assistant.webSearchProviderId,
-    mentionedModels,
-    focusTextarea
-  ])
+  }, [topic.id, topic.enableWebSearch, assistant.mcpServers, assistant.knowledge_bases, mentionedModels, focusTextarea])
 
   // TODO: Just use assistant.knowledge_bases as selectedKnowledgeBases. context state is overdesigned.
   useEffect(() => {
@@ -488,24 +480,15 @@ const InputbarInner: FC<InputbarInnerProps> = ({
   }, [assistant.knowledge_bases, setSelectedKnowledgeBases])
 
   useEffect(() => {
-    // Disable web search if model doesn't support it
-    if (!isWebSearchModel(model) && assistant.enableWebSearch) {
-      updateAssistant({ enableWebSearch: false })
-    }
-
-    // Clear web search provider if disabled or model has mandatory search
-    if (
-      assistant.webSearchProviderId &&
-      (!WebSearchService.isWebSearchEnabled(assistant.webSearchProviderId) || isMandatoryWebSearchModel(model))
-    ) {
-      updateAssistant({ webSearchProviderId: undefined })
+    if (topic.enableWebSearch && isMandatoryWebSearchModel(model)) {
+      updateConversationTopic({ ...topic, enableWebSearch: false })
     }
 
     // Image generation is handled only from the dedicated image-generation page.
     if (assistant.enableGenerateImage) {
       updateAssistant({ enableGenerateImage: false })
     }
-  }, [assistant, model, updateAssistant])
+  }, [assistant.enableGenerateImage, model, topic, updateAssistant, updateConversationTopic])
 
   if (isMultiSelectMode) {
     return null
@@ -533,6 +516,8 @@ const InputbarInner: FC<InputbarInnerProps> = ({
       scope={scope}
       assistant={assistant}
       model={model}
+      topic={topic}
+      onTopicChange={updateConversationTopic}
       toolOrderOverride={
         isHero
           ? {

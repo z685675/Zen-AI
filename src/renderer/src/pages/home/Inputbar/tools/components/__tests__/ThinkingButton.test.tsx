@@ -163,4 +163,19 @@ describe('ThinkingButton', () => {
     await act(async () => xhighItem.action())
     expect(onChange).toHaveBeenCalledWith('xhigh')
   })
+
+  it('uses medium as the agent default when no manual selection exists', () => {
+    render(
+      <ThinkingButton
+        quickPanel={quickPanel}
+        model={model}
+        assistantId="assistant-1"
+        onReasoningEffortChange={vi.fn()}
+        variant="agent"
+      />
+    )
+
+    expect(screen.getByRole('button', { name: 'Thinking Effort: Medium' })).toBeInTheDocument()
+    expect(screen.getByTestId('effort-medium')).toBeInTheDocument()
+  })
 })

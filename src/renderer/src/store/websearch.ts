@@ -61,7 +61,7 @@ export interface WebSearchState {
 export type CherryWebSearchConfig = Pick<WebSearchState, 'searchWithTime' | 'maxResults' | 'excludeDomains'>
 
 export const initialState: WebSearchState = {
-  defaultProvider: 'local-bing',
+  defaultProvider: 'auto-free',
   providers: WEB_SEARCH_PROVIDERS,
   searchWithTime: true,
   maxResults: 5,

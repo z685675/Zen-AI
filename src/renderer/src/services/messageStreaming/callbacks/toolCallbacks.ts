@@ -2,11 +2,12 @@ import { loggerService } from '@logger'
 import type { AppDispatch } from '@renderer/store'
 import store from '@renderer/store'
 import { toolPermissionsActions } from '@renderer/store/toolPermissions'
-import type { MCPToolResponse, NormalToolResponse } from '@renderer/types'
+import type { MCPToolResponse, NormalToolResponse, WebSearchProviderResult } from '@renderer/types'
 import { WEB_SEARCH_SOURCE } from '@renderer/types'
 import type { ToolMessageBlock } from '@renderer/types/newMessage'
 import { MessageBlockStatus, MessageBlockType } from '@renderer/types/newMessage'
 import { createCitationBlock, createToolBlock } from '@renderer/utils/messageUtils/create'
+import { extractWebCitationResults } from '@renderer/utils/webCitation'
 import { isPlainObject } from 'lodash'
 
 import type { BlockManager } from '../BlockManager'
@@ -28,6 +29,54 @@ export const createToolCallbacks = (deps: ToolCallbacksDependencies) => {
   const toolCallIdToBlockIdMap = new Map<string, string>()
   let toolBlockId: string | null = null
   let citationBlockId: string | null = null
+  let webCitationBlockId: string | null = null
+  let webCitationResults: WebSearchProviderResult[] = []
+
+  const mergeWebCitationResults = (incoming: WebSearchProviderResult[]) => {
+    const merged = new Map(webCitationResults.map((result) => [result.url, result]))
+    for (const result of incoming) {
+      const existing = merged.get(result.url)
+      if (!existing || (!existing.content && result.content)) {
+        merged.set(result.url, result)
+      }
+    }
+    webCitationResults = Array.from(merged.values()).slice(0, 12)
+  }
+
+  const upsertWebCitationBlock = (toolResponse: ToolResponse) => {
+    const extractedResults = extractWebCitationResults(toolResponse)
+    if (!extractedResults.length) return
+
+    mergeWebCitationResults(extractedResults)
+    const response = {
+      results: {
+        results: webCitationResults
+      },
+      source: WEB_SEARCH_SOURCE.WEBSEARCH
+    }
+
+    if (webCitationBlockId) {
+      blockManager.smartBlockUpdate(
+        webCitationBlockId,
+        { response, status: MessageBlockStatus.SUCCESS },
+        MessageBlockType.CITATION,
+        true
+      )
+      citationBlockId = webCitationBlockId
+      return
+    }
+
+    const citationBlock = createCitationBlock(
+      assistantMsgId,
+      { response },
+      {
+        status: MessageBlockStatus.SUCCESS
+      }
+    )
+    webCitationBlockId = citationBlock.id
+    citationBlockId = citationBlock.id
+    void blockManager.handleBlockTransition(citationBlock, MessageBlockType.CITATION)
+  }
 
   return {
     onToolCallPending: (toolResponse: ToolResponse) => {
@@ -155,19 +204,8 @@ export const createToolCallbacks = (deps: ToolCallbacksDependencies) => {
           }
         }
         blockManager.smartBlockUpdate(existingBlockId, changes, MessageBlockType.TOOL, true)
-        // Handle citation block creation for web search results
-        if (toolResponse.tool.name === 'builtin_web_search' && toolResponse.response) {
-          const citationBlock = createCitationBlock(
-            assistantMsgId,
-            {
-              response: { results: toolResponse.response, source: WEB_SEARCH_SOURCE.WEBSEARCH }
-            },
-            {
-              status: MessageBlockStatus.SUCCESS
-            }
-          )
-          citationBlockId = citationBlock.id
-          void blockManager.handleBlockTransition(citationBlock, MessageBlockType.CITATION)
+        if (toolResponse.status === 'done') {
+          upsertWebCitationBlock(toolResponse)
         }
         if (toolResponse.tool.name === 'builtin_knowledge_search' && toolResponse.response) {
           const citationBlock = createCitationBlock(

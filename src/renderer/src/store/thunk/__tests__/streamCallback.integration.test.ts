@@ -1,4 +1,5 @@
 import { combineReducers, configureStore } from '@reduxjs/toolkit'
+import { autoRenameTopic } from '@renderer/hooks/useTopic'
 import { BlockManager } from '@renderer/services/messageStreaming/BlockManager'
 import { createCallbacks } from '@renderer/services/messageStreaming/callbacks'
 import { createStreamProcessor } from '@renderer/services/StreamProcessingService'
@@ -320,6 +321,7 @@ describe('streamCallback integration', () => {
     expect(textBlock?.status).toBe(MessageBlockStatus.SUCCESS)
     expect(message?.status).toBe(AssistantMessageStatus.SUCCESS)
     expect(message?.usage?.total_tokens).toBe(150)
+    expect(autoRenameTopic).toHaveBeenCalledWith(assistant, topicId)
   })
 
   it('creates only one error block and ignores late terminal chunks', async () => {
@@ -347,6 +349,7 @@ describe('streamCallback integration', () => {
 
     expect(errorBlocks).toHaveLength(1)
     expect(message?.status).toBe(AssistantMessageStatus.ERROR)
+    expect(autoRenameTopic).toHaveBeenCalledWith(assistant, topicId)
   })
 
   it('handles a thinking flow', async () => {
