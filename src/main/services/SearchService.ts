@@ -1,8 +1,62 @@
 import { is } from '@electron-toolkit/utils'
 import { loggerService } from '@logger'
-import { BrowserWindow } from 'electron'
+import { BrowserWindow, net } from 'electron'
 
 const logger = loggerService.withContext('SearchService')
+
+export const SEARCH_PAGE_LOAD_TIMEOUT_MS = 7000
+export const SEARCH_PAGE_EXTRACT_TIMEOUT_MS = 3000
+export const SEARCH_RESOURCE_TIMEOUT_MS = 18000
+export const SEARCH_RESOURCE_MAX_LENGTH = 1_500_000
+const SEARCH_PAGE_SETTLE_DELAY_MS = 350
+
+const SEARCH_RESOURCE_HOSTS = new Set([
+  '60s.viki.moe',
+  'api.frankfurter.dev',
+  'api.open-meteo.com',
+  'feed.mix.sina.com.cn',
+  'geocoding-api.open-meteo.com',
+  'nodejs.org',
+  'www.bing.com'
+])
+
+export type SearchResourceResponse = {
+  body: string
+  contentType: string
+  finalUrl: string
+  ok: boolean
+  status: number
+}
+
+export function isAllowedSearchResourceUrl(value: string): boolean {
+  try {
+    const url = new URL(value)
+    return url.protocol === 'https:' && SEARCH_RESOURCE_HOSTS.has(url.hostname.toLowerCase())
+  } catch {
+    return false
+  }
+}
+
+async function withTimeout<T>(
+  operation: Promise<T>,
+  timeoutMs: number,
+  label: string,
+  onTimeout?: () => void
+): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined
+  const timeout = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => {
+      onTimeout?.()
+      reject(new Error(`${label} timed out after ${timeoutMs}ms`))
+    }, timeoutMs)
+  })
+
+  try {
+    return await Promise.race([operation, timeout])
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId)
+  }
+}
 
 export class SearchService {
   private static instance: SearchService | null = null
@@ -48,35 +102,84 @@ export class SearchService {
 
   public async closeSearchWindow(uid: string): Promise<void> {
     const window = this.searchWindows[uid]
-    if (window) {
+    if (window && !window.isDestroyed()) {
       window.close()
-      delete this.searchWindows[uid]
     }
+    delete this.searchWindows[uid]
   }
 
   public async openUrlInSearchWindow(uid: string, url: string): Promise<any> {
     let window = this.searchWindows[uid]
     logger.debug(`Searching with URL: ${url}`)
     if (window) {
-      await window.loadURL(url)
+      if (window.isDestroyed()) {
+        window = await this.createNewSearchWindow(uid)
+      }
     } else {
       window = await this.createNewSearchWindow(uid)
-      await window.loadURL(url)
     }
 
-    // Get the page content after loading the URL
-    // Wait for the page to fully load before getting the content
-    await new Promise<void>((resolve) => {
-      const loadTimeout = setTimeout(() => resolve(), 10000) // 10 second timeout
-      window.webContents.once('did-finish-load', () => {
-        clearTimeout(loadTimeout)
-        // Small delay to ensure JavaScript has executed
-        setTimeout(resolve, 500)
-      })
+    await withTimeout(window.loadURL(url), SEARCH_PAGE_LOAD_TIMEOUT_MS, 'Search page load', () => {
+      if (!window.isDestroyed()) window.webContents.stop()
     })
 
-    // Get the page content after ensuring it's fully loaded
-    return await window.webContents.executeJavaScript('document.documentElement.outerHTML')
+    // loadURL resolves after did-finish-load. A short settle delay is enough for
+    // client-rendered search snippets without adding a second full load wait.
+    await new Promise((resolve) => setTimeout(resolve, SEARCH_PAGE_SETTLE_DELAY_MS))
+
+    if (window.isDestroyed()) {
+      throw new Error('Search window was closed before content extraction')
+    }
+
+    return await withTimeout(
+      window.webContents.executeJavaScript('document.documentElement.outerHTML'),
+      SEARCH_PAGE_EXTRACT_TIMEOUT_MS,
+      'Search page extraction'
+    )
+  }
+
+  public async fetchSearchResource(url: string): Promise<SearchResourceResponse> {
+    if (!isAllowedSearchResourceUrl(url)) {
+      throw new Error('Search resource URL is not allowed')
+    }
+
+    const controller = new AbortController()
+    return await withTimeout(
+      (async () => {
+        const response = await net.fetch(url, {
+          headers: {
+            Accept: 'application/json, application/xml, text/xml, text/plain;q=0.9, */*;q=0.8'
+          },
+          redirect: 'follow',
+          signal: controller.signal
+        })
+        const finalUrl = response.url || url
+        if (!isAllowedSearchResourceUrl(finalUrl)) {
+          throw new Error('Search resource redirected to a non-allowlisted URL')
+        }
+
+        const contentLength = Number(response.headers.get('content-length') || 0)
+        if (contentLength > SEARCH_RESOURCE_MAX_LENGTH) {
+          throw new Error('Search resource response is too large')
+        }
+
+        const body = await response.text()
+        if (body.length > SEARCH_RESOURCE_MAX_LENGTH) {
+          throw new Error('Search resource response is too large')
+        }
+
+        return {
+          body,
+          contentType: response.headers.get('content-type') || '',
+          finalUrl,
+          ok: response.ok,
+          status: response.status
+        }
+      })(),
+      SEARCH_RESOURCE_TIMEOUT_MS,
+      'Search resource request',
+      () => controller.abort()
+    )
   }
 }
 

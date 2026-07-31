@@ -14,14 +14,15 @@ export default class LocalBingProvider extends LocalSearchProvider {
       const parser = new DOMParser()
       const doc = parser.parseFromString(htmlContent, 'text/html')
 
-      const items = doc.querySelectorAll('#b_results h2')
+      const items = doc.querySelectorAll('#b_results .b_algo')
       items.forEach((item) => {
-        const node = item.querySelector('a')
+        const node = item.querySelector<HTMLAnchorElement>('h2 a')
         if (node) {
           const decodedUrl = this.decodeBingUrl(node.href)
           results.push({
             title: node.textContent || '',
-            url: decodedUrl
+            url: decodedUrl,
+            snippet: item.querySelector('.b_caption p, .b_snippet')?.textContent?.trim()
           })
         }
       })
@@ -46,8 +47,9 @@ export default class LocalBingProvider extends LocalSearchProvider {
       }
 
       // Remove the 'a1' prefix and decode Base64
-      const base64Part = encodedUrl.substring(2)
-      const decodedUrl = atob(base64Part)
+      const base64Part = encodedUrl.replace(/^a1/, '').replace(/-/g, '+').replace(/_/g, '/')
+      const paddedBase64 = base64Part.padEnd(Math.ceil(base64Part.length / 4) * 4, '=')
+      const decodedUrl = atob(paddedBase64)
 
       // Validate the decoded URL
       if (decodedUrl.startsWith('http')) {

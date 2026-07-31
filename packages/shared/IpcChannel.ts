@@ -320,6 +320,7 @@ export enum IpcChannel {
   SearchWindow_Open = 'search-window:open',
   SearchWindow_Close = 'search-window:close',
   SearchWindow_OpenUrl = 'search-window:open-url',
+  SearchWindow_FetchResource = 'search-window:fetch-resource',
 
   //Store Sync
   StoreSync_Subscribe = 'store-sync:subscribe',

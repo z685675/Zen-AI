@@ -43,7 +43,7 @@ interface ExaSearchResults {
 
 const DEFAULT_API_HOST = 'https://mcp.exa.ai/mcp'
 const DEFAULT_NUM_RESULTS = 8
-const REQUEST_TIMEOUT_MS = 25000
+const REQUEST_TIMEOUT_MS = 8000
 
 export default class ExaMcpProvider extends BaseWebSearchProvider {
   constructor(provider: WebSearchProvider) {

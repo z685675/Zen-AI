@@ -21,6 +21,7 @@ import { formatErrorMessage } from '@renderer/utils/error'
 import type { ExtractResults } from '@renderer/utils/extract'
 import { fetchWebContents } from '@renderer/utils/fetch'
 import { consolidateReferencesByUrl, selectReferences } from '@renderer/utils/websearch'
+import { getEffectiveWebSearchCompression } from '@renderer/utils/webSearchCompression'
 import dayjs from 'dayjs'
 import { sliceByTokens } from 'tokenx'
 
@@ -487,10 +488,13 @@ class WebSearchService {
           finalResults.push(...result.value.results)
         }
       }
-      if (result.status === 'rejected') {
-        throw result.reason
-      }
     })
+
+    const rejectedSearch = searchResults.find((result) => result.status === 'rejected')
+    if (rejectedSearch?.status === 'rejected') {
+      await this.setWebSearchStatus(requestId, { phase: 'default' })
+      throw rejectedSearch.reason
+    }
 
     logger.verbose(`FulFilled search result count: ${finalResults.length}`)
     logger.verbose(
@@ -515,7 +519,7 @@ class WebSearchService {
       }
     }
 
-    const { compressionConfig } = this.getWebSearchState()
+    const compressionConfig = getEffectiveWebSearchCompression(this.getWebSearchState().compressionConfig)
 
     // RAG压缩处理
     if (compressionConfig?.method === 'rag' && requestId && compressionConfig.embeddingModel) {

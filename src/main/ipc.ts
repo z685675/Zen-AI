@@ -934,6 +934,9 @@ export async function registerIpc(mainWindow: BrowserWindow, app: Electron.App) 
   ipcMain.handle(IpcChannel.SearchWindow_OpenUrl, async (_, uid: string, url: string) => {
     return await searchService.openUrlInSearchWindow(uid, url)
   })
+  ipcMain.handle(IpcChannel.SearchWindow_FetchResource, async (_, url: string) => {
+    return await searchService.fetchSearchResource(url)
+  })
 
   // webview
   ipcMain.handle(IpcChannel.Webview_SetOpenLinkExternal, (_, webviewId: number, isExternal: boolean) =>

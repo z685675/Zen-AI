@@ -62,6 +62,11 @@ export const WEB_SEARCH_PROVIDER_CONFIG: Record<WebSearchProviderId, WebSearchPr
       official: 'https://www.baidu.com'
     }
   },
+  'local-duckduckgo': {
+    websites: {
+      official: 'https://duckduckgo.com'
+    }
+  },
   querit: {
     websites: {
       official: 'https://querit.ai',
@@ -119,12 +124,17 @@ export const WEB_SEARCH_PROVIDERS: WebSearchProvider[] = [
   {
     id: 'local-bing',
     name: 'Bing',
-    url: 'https://cn.bing.com/search?q=%s&ensearch=1'
+    url: 'https://cn.bing.com/search?q=%s&setlang=zh-cn&cc=cn'
   },
   {
     id: 'local-baidu',
     name: 'Baidu',
     url: 'https://www.baidu.com/s?wd=%s'
+  },
+  {
+    id: 'local-duckduckgo',
+    name: 'DuckDuckGo',
+    url: 'https://html.duckduckgo.com/html/?q=%s'
   },
   {
     id: 'querit',

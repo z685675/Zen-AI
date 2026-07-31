@@ -8,6 +8,7 @@ import ExaMcpProvider from './ExaMcpProvider'
 import ExaProvider from './ExaProvider'
 import LocalBaiduProvider from './LocalBaiduProvider'
 import LocalBingProvider from './LocalBingProvider'
+import LocalDuckDuckGoProvider from './LocalDuckDuckGoProvider'
 import LocalGoogleProvider from './LocalGoogleProvider'
 import QueritProvider from './QueritProvider'
 import SearxngProvider from './SearxngProvider'
@@ -39,6 +40,8 @@ export default class WebSearchProviderFactory {
         return new LocalBaiduProvider(provider)
       case 'local-bing':
         return new LocalBingProvider(provider)
+      case 'local-duckduckgo':
+        return new LocalDuckDuckGoProvider(provider)
       default:
         return new DefaultProvider(provider)
     }

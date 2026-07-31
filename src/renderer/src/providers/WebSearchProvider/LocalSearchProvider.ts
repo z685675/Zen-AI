@@ -1,6 +1,5 @@
 import { loggerService } from '@logger'
 import { nanoid } from '@reduxjs/toolkit'
-import store from '@renderer/store'
 import type { WebSearchState } from '@renderer/store/websearch'
 import type { WebSearchProvider, WebSearchProviderResponse, WebSearchProviderResult } from '@renderer/types'
 import { createAbortPromise } from '@renderer/utils/abortController'
@@ -14,6 +13,34 @@ const logger = loggerService.withContext('LocalSearchProvider')
 export interface SearchItem {
   title: string
   url: string
+  snippet?: string
+}
+
+const SOURCE_ENRICHMENT_LIMIT = 3
+
+export function mergeSearchItemsWithEnrichedContent(
+  items: SearchItem[],
+  enrichedResults: WebSearchProviderResult[]
+): WebSearchProviderResult[] {
+  return items.map((item, index) => {
+    const enriched = enrichedResults[index]
+    if (enriched && enriched.content !== noContent) {
+      return {
+        ...enriched,
+        title: enriched.title || item.title,
+        url: enriched.url || item.url
+      }
+    }
+
+    const snippet = item.snippet?.trim()
+    return {
+      title: item.title || item.url,
+      url: item.url,
+      content: snippet
+        ? `Search result snippet: ${snippet}`
+        : `Search result title: ${item.title || item.url}. The source page could not be fully extracted.`
+    }
+  })
 }
 
 export default class LocalSearchProvider extends BaseWebSearchProvider {
@@ -30,7 +57,6 @@ export default class LocalSearchProvider extends BaseWebSearchProvider {
     httpOptions?: RequestInit
   ): Promise<WebSearchProviderResponse> {
     const uid = nanoid()
-    const language = store.getState().settings.language
     try {
       if (!query.trim()) {
         throw new Error('Search query cannot be empty')
@@ -39,9 +65,8 @@ export default class LocalSearchProvider extends BaseWebSearchProvider {
         throw new Error('Provider URL is required')
       }
 
-      const cleanedQuery = query.split('\r\n')[1] ?? query
-      const queryWithLanguage = language ? this.applyLanguageFilter(cleanedQuery, language) : cleanedQuery
-      const url = this.provider.url.replace('%s', encodeURIComponent(queryWithLanguage))
+      const cleanedQuery = (query.split('\r\n')[1] ?? query).trim()
+      const url = this.provider.url.replace('%s', encodeURIComponent(cleanedQuery))
       let content: string = ''
       const promisesToRace: [Promise<string>] = [window.api.searchService.openUrlInSearchWindow(uid, url)]
       if (httpOptions?.signal) {
@@ -55,21 +80,20 @@ export default class LocalSearchProvider extends BaseWebSearchProvider {
 
       const validItems = searchItems
         .filter((item) => item.url.startsWith('http') || item.url.startsWith('https'))
+        .filter((item, index, items) => items.findIndex((candidate) => candidate.url === item.url) === index)
         .slice(0, websearch.maxResults)
-      // Logger.log('Valid search items:', validItems)
 
-      // Fetch content for each URL concurrently
-      const fetchPromises = validItems.map(async (item) => {
-        // Logger.log(`Fetching content for ${item.url}...`)
+      // Search snippets are the minimum viable result. Source-page extraction
+      // enriches the first few hits but must never erase usable search results.
+      const fetchPromises = validItems.slice(0, SOURCE_ENRICHMENT_LIMIT).map(async (item) => {
         return await fetchWebContent(item.url, 'markdown', this.provider.usingBrowser, httpOptions)
       })
-
-      // Wait for all fetches to complete
-      const results: WebSearchProviderResult[] = await Promise.all(fetchPromises)
+      const enrichedResults = await Promise.all(fetchPromises)
+      const results = mergeSearchItemsWithEnrichedContent(validItems, enrichedResults)
 
       return {
         query: query,
-        results: results.filter((result) => result.content != noContent)
+        results
       }
     } catch (error) {
       if (isAbortError(error)) {
@@ -80,19 +104,6 @@ export default class LocalSearchProvider extends BaseWebSearchProvider {
     } finally {
       await window.api.searchService.closeSearchWindow(uid)
     }
-  }
-
-  /**
-   * 根据提供的语言为查询添加语言过滤器
-   * @param query 原始查询
-   * @param language 语言代码 (例如: 'zh-CN', 'en-US')
-   * @returns 带有语言过滤的查询
-   */
-  protected applyLanguageFilter(query: string, language: string): string {
-    if (this.provider.id.includes('local-google') || this.provider.id.includes('local-bing')) {
-      return `${query} lang:${language.split('-')[0]}`
-    }
-    return query
   }
 
   // oxlint-disable-next-line @typescript-eslint/no-unused-vars

@@ -369,7 +369,7 @@ export const searchOrchestrationPlugin = (
             )
             params.system = `${params.system ?? ''}
 
-The user explicitly enabled web search for this conversation. Call builtin_web_search exactly once before answering this request. Base current claims on its results, cite the returned sources, and state clearly when the search returns no usable evidence.`.trim()
+The user explicitly enabled web search for this conversation. Call builtin_web_search exactly once before answering this request. Base current claims on its results and cite the returned sources. If only part of the requested count or freshness window is supported, answer with that verified subset and explain the coverage gap instead of refusing the whole request. State clearly when the search returns no usable evidence.`.trim()
           }
         }
 

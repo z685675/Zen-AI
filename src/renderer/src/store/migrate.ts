@@ -3800,6 +3800,20 @@ const migrateConfig = {
       logger.error('migrate 222 error', error as Error)
       return state
     }
+  },
+  '223': (state: RootState) => {
+    try {
+      state.websearch.compressionConfig = {
+        method: 'none',
+        cutoffUnit: 'char'
+      }
+
+      logger.info('migrate 223 success')
+      return state
+    } catch (error) {
+      logger.error('migrate 223 error', error as Error)
+      return state
+    }
   }
 }
 

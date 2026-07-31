@@ -21,7 +21,8 @@ export default class LocalGoogleProvider extends LocalSearchProvider {
         if (title && link) {
           results.push({
             title: title.textContent || '',
-            url: link.href
+            url: link.href,
+            snippet: item.querySelector('.VwiC3b, [data-sncf]')?.textContent?.trim()
           })
         }
       })

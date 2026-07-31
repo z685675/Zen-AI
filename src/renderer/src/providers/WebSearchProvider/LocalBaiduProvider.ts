@@ -14,13 +14,16 @@ export default class LocalBaiduProvider extends LocalSearchProvider {
       const parser = new DOMParser()
       const doc = parser.parseFromString(htmlContent, 'text/html')
 
-      const items = doc.querySelectorAll('#content_left .result h3')
+      const items = doc.querySelectorAll('#content_left .result, #content_left .c-container')
       items.forEach((item) => {
-        const node = item.querySelector('a')
+        const node = item.querySelector<HTMLAnchorElement>('h3 a')
         if (node) {
           results.push({
             title: node.textContent || '',
-            url: node.href
+            url: node.href,
+            snippet: item
+              .querySelector('.c-abstract, [class*="abstract"], [class*="content-right"]')
+              ?.textContent?.trim()
           })
         }
       })

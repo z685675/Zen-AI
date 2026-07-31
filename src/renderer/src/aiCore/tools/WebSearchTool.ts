@@ -32,25 +32,12 @@ This tool has been configured with search parameters based on the conversation c
         : ''
     }
 
-You can use this tool as-is to search with the prepared queries, or provide additionalContext to refine or replace the search terms.`,
+Call this tool without changing the prepared queries. They preserve the user's primary request and must not be replaced by a narrower helper query.`,
 
-    inputSchema: z.object({
-      additionalContext: z
-        .string()
-        .optional()
-        .describe('Optional additional context, keywords, or specific focus to enhance the search')
-    }),
+    inputSchema: z.object({}),
 
-    execute: async ({ additionalContext }) => {
-      let finalQueries = [...preparedQueries]
-
-      if (additionalContext?.trim()) {
-        // 如果大模型提供了额外上下文，使用更具体的描述
-        const cleanContext = sanitizeWebSearchQuery(additionalContext)
-        if (cleanContext) {
-          finalQueries = [cleanContext]
-        }
-      }
+    execute: async () => {
+      const finalQueries = [...preparedQueries]
 
       let searchResults: WebSearchProviderResponse = {
         query: '',

@@ -507,7 +507,11 @@ const api = {
   searchService: {
     openSearchWindow: (uid: string, show?: boolean) => ipcRenderer.invoke(IpcChannel.SearchWindow_Open, uid, show),
     closeSearchWindow: (uid: string) => ipcRenderer.invoke(IpcChannel.SearchWindow_Close, uid),
-    openUrlInSearchWindow: (uid: string, url: string) => ipcRenderer.invoke(IpcChannel.SearchWindow_OpenUrl, uid, url)
+    openUrlInSearchWindow: (uid: string, url: string) => ipcRenderer.invoke(IpcChannel.SearchWindow_OpenUrl, uid, url),
+    fetchResource: (
+      url: string
+    ): Promise<{ body: string; contentType: string; finalUrl: string; ok: boolean; status: number }> =>
+      ipcRenderer.invoke(IpcChannel.SearchWindow_FetchResource, url)
   },
   webview: {
     setOpenLinkExternal: (webviewId: number, isExternal: boolean) =>

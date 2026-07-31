@@ -752,7 +752,8 @@ export const WebSearchProviderIds = {
   querit: 'querit',
   'local-google': 'local-google',
   'local-bing': 'local-bing',
-  'local-baidu': 'local-baidu'
+  'local-baidu': 'local-baidu',
+  'local-duckduckgo': 'local-duckduckgo'
 } as const
 
 export type WebSearchProviderId = keyof typeof WebSearchProviderIds
