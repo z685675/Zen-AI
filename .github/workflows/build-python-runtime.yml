@@ -1,6 +1,9 @@
 name: Build Managed Python Runtime
 
 on:
+  push:
+    tags:
+      - python-runtime-v*.*.*
   workflow_call:
     inputs:
       tag:
@@ -48,6 +51,7 @@ jobs:
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
         with:
           version: "0.11.32"
+          enable-cache: false
 
       - name: Install build dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
@@ -59,8 +63,16 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RELEASE_TAG: ${{ inputs.tag }}
+          REQUESTED_TAG: ${{ inputs.tag }}
         run: |
+          RELEASE_TAG="$REQUESTED_TAG"
+          if [ -z "$RELEASE_TAG" ]; then
+            RELEASE_TAG="${GITHUB_REF_NAME#python-runtime-}"
+          fi
+          if [[ "$RELEASE_TAG" != v*.*.* ]]; then
+            echo "::error::Invalid target release tag: $RELEASE_TAG"
+            exit 1
+          fi
           gh release upload "$RELEASE_TAG" dist/python-runtime/* \
             --repo "${{ github.repository }}" \
             --clobber
