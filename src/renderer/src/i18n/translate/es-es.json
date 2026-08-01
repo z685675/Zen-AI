@@ -3168,6 +3168,9 @@
   },
   "ovms": {
     "action": {
+      "importRuntime": "Importar paquete sin conexión",
+      "importRuntimeFailed": "No se pudo importar el entorno de Python",
+      "importRuntimeSuccess": "Entorno de Python importado",
       "install": "Instalar",
       "installing": "Instalando",
       "reinstall": "Reinstalar",

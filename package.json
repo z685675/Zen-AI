@@ -27,6 +27,7 @@
     "build:mac": "dotenv npm run validate:release && electron-builder --mac --arm64 --x64",
     "build:mac:arm64": "dotenv npm run validate:release && electron-builder --mac --arm64",
     "build:mac:x64": "dotenv npm run validate:release && electron-builder --mac --x64",
+    "build:python-runtime": "tsx scripts/build-managed-python-runtime.ts",
     "typecheck:node:release": "tsgo --noEmit -p tsconfig.node.release.json --composite false",
     "typecheck:web:release": "tsgo --noEmit -p tsconfig.web.release.json --composite false",
     "validate:release": "pnpm openapi:check && pnpm typecheck:node:release && pnpm typecheck:web:release && pnpm exec electron-vite build",

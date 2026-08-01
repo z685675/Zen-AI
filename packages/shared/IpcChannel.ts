@@ -39,6 +39,7 @@ export enum IpcChannel {
   App_CheckAssistantEnvironment = 'app:check-assistant-environment',
   App_InstallUvBinary = 'app:install-uv-binary',
   App_InstallManagedPython = 'app:install-managed-python',
+  App_ImportManagedPython = 'app:import-managed-python',
   App_InstallBunBinary = 'app:install-bun-binary',
   App_InstallGitForWindows = 'app:install-git-for-windows',
   App_InstallOvmsBinary = 'app:install-ovms-binary',

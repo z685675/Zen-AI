@@ -3168,6 +3168,9 @@
   },
   "ovms": {
     "action": {
+      "importRuntime": "Импортировать офлайн-пакет",
+      "importRuntimeFailed": "Не удалось импортировать среду Python",
+      "importRuntimeSuccess": "Среда Python импортирована",
       "install": "Установить",
       "installing": "Установка",
       "reinstall": "Переустановить",

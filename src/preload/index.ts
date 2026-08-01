@@ -481,6 +481,7 @@ const api = {
   checkAssistantEnvironment: () => ipcRenderer.invoke(IpcChannel.App_CheckAssistantEnvironment),
   installUVBinary: () => ipcRenderer.invoke(IpcChannel.App_InstallUvBinary),
   installManagedPython: () => ipcRenderer.invoke(IpcChannel.App_InstallManagedPython),
+  importManagedPython: (): Promise<boolean> => ipcRenderer.invoke(IpcChannel.App_ImportManagedPython),
   installBunBinary: () => ipcRenderer.invoke(IpcChannel.App_InstallBunBinary),
   installGitForWindows: () => ipcRenderer.invoke(IpcChannel.App_InstallGitForWindows),
   installOvmsBinary: () => ipcRenderer.invoke(IpcChannel.App_InstallOvmsBinary),

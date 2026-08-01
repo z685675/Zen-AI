@@ -7,8 +7,6 @@ import {
 } from '@renderer/components/DraggableList'
 import { DeleteIcon, EditIcon } from '@renderer/components/Icons'
 import { ProviderAvatar } from '@renderer/components/ProviderAvatar'
-import { getCurrentDefaultModels } from '@renderer/config/defaultModelPolicy'
-import { useDefaultModel } from '@renderer/hooks/useAssistant'
 import { useAllProviders, useProviders, useSystemProviders, useUserProviders } from '@renderer/hooks/useProvider'
 import { useTimer } from '@renderer/hooks/useTimer'
 import { fetchModels } from '@renderer/services/ApiService'
@@ -90,7 +88,6 @@ const ProviderList: FC<ProviderListProps> = ({ isOnboarding = false }) => {
   const allProviders = useAllProviders()
   const systemProviders = useSystemProviders()
   const { updateProviders, addProvider, removeProvider, updateProvider } = useProviders()
-  const { setDefaultModel, setQuickModel, setTranslateModel } = useDefaultModel()
   const { setTimeoutTimer } = useTimer()
   const [selectedProvider, _setSelectedProvider] = useState<Provider | undefined>(providers[0])
   const { t } = useTranslation()
@@ -217,13 +214,6 @@ const ProviderList: FC<ProviderListProps> = ({ isOnboarding = false }) => {
 
       updateProviders(nextProviders)
 
-      const importedDefaults = getCurrentDefaultModels(finalProvider.models)
-      if (importedDefaults.defaultModel) {
-        setDefaultModel(importedDefaults.defaultModel)
-        setQuickModel(importedDefaults.quickModel)
-        setTranslateModel(importedDefaults.translateModel)
-      }
-
       setSelectedProvider({
         ...finalProvider,
         enabled: true
@@ -254,7 +244,7 @@ const ProviderList: FC<ProviderListProps> = ({ isOnboarding = false }) => {
         )
       }
     },
-    [allProviders, setDefaultModel, setQuickModel, setSelectedProvider, setTranslateModel, t, updateProviders]
+    [allProviders, setSelectedProvider, t, updateProviders]
   )
 
   useEffect(() => {

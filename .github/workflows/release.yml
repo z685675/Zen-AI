@@ -244,3 +244,10 @@ jobs:
               fi
             done
           done
+
+  python-runtime:
+    needs: release
+    uses: ./.github/workflows/build-python-runtime.yml
+    with:
+      tag: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref_name }}
+    secrets: inherit

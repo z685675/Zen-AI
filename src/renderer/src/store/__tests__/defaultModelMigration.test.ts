@@ -1,4 +1,8 @@
-import { getCurrentDefaultModels } from '@renderer/config/defaultModelPolicy'
+import {
+  CURRENT_DEFAULT_MODEL_POLICY_VERSION,
+  getCurrentDefaultModels,
+  getPendingCurrentDefaultModels
+} from '@renderer/config/defaultModelPolicy'
 import { getEffectiveModelEndpointType } from '@renderer/config/models'
 import { createMigrate } from 'redux-persist'
 import { describe, expect, it } from 'vitest'
@@ -246,6 +250,61 @@ describe('default model migration', () => {
 
       expect(migrated.llm.providers[0].models[0].endpoint_type).toBe('openai')
       expect(migrated.llm.providers[0].models[1].endpoint_type).toBe('gemini')
+    })
+  })
+
+  describe('migration 224: durable gpt-5.6-luna upgrade', () => {
+    const migrate224 = (state: any) => {
+      const currentDefaults = getPendingCurrentDefaultModels(state.llm.providers, state.llm.defaultModelPolicyVersion)
+
+      if (currentDefaults?.defaultModel) {
+        state.llm.defaultModel = currentDefaults.defaultModel
+        state.llm.quickModel = currentDefaults.defaultModel
+        state.llm.translateModel = currentDefaults.defaultModel
+        state.llm.defaultModelPolicyVersion = CURRENT_DEFAULT_MODEL_POLICY_VERSION
+      }
+
+      return state
+    }
+
+    const migrate = createMigrate({ '224': migrate224 as any })
+
+    it('updates all defaults and records completion when luna is already available', async () => {
+      const luna = { id: 'gpt-5.6-luna', provider: 'new-api', name: 'GPT 5.6 Luna', group: 'OpenAI' }
+      const state = {
+        llm: {
+          defaultModel: { id: 'gpt-5.4', provider: 'new-api' },
+          quickModel: { id: 'gpt-5.4-mini', provider: 'new-api' },
+          translateModel: { id: 'gpt-5.4-mini', provider: 'new-api' },
+          providers: [{ id: 'new-api', enabled: true, models: [luna] }]
+        },
+        _persist: { version: 223, rehydrated: false }
+      }
+
+      const migrated: any = await migrate(state, 224)
+
+      expect(migrated.llm.defaultModel).toEqual(luna)
+      expect(migrated.llm.quickModel).toEqual(luna)
+      expect(migrated.llm.translateModel).toEqual(luna)
+      expect(migrated.llm.defaultModelPolicyVersion).toBe(CURRENT_DEFAULT_MODEL_POLICY_VERSION)
+    })
+
+    it('preserves legacy defaults without marking completion when luna has not synced yet', async () => {
+      const existingDefault = { id: 'gpt-5.4', provider: 'new-api' }
+      const state = {
+        llm: {
+          defaultModel: existingDefault,
+          quickModel: { id: 'gpt-5.4-mini', provider: 'new-api' },
+          translateModel: { id: 'gpt-5.4-mini', provider: 'new-api' },
+          providers: [{ id: 'new-api', enabled: true, models: [existingDefault] }]
+        },
+        _persist: { version: 223, rehydrated: false }
+      }
+
+      const migrated: any = await migrate(state, 224)
+
+      expect(migrated.llm.defaultModel).toEqual(existingDefault)
+      expect(migrated.llm.defaultModelPolicyVersion).toBeUndefined()
     })
   })
 })

@@ -1,0 +1,66 @@
+name: Build Managed Python Runtime
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: "Release tag that receives the runtime assets"
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing release tag that receives the runtime assets (e.g. v1.1.61)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build-runtime:
+    name: ${{ matrix.asset }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2022
+            asset: windows-x64
+          - os: macos-15-intel
+            asset: macos-x64
+          - os: macos-15
+            asset: macos-arm64
+
+    steps:
+      - name: Check out Git repository
+        uses: actions/checkout@v6
+
+      - name: Install Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: '.node-version'
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v5
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          version: "0.11.32"
+
+      - name: Install build dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Build and verify runtime package
+        run: pnpm exec tsx scripts/build-managed-python-runtime.ts
+
+      - name: Upload runtime to GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          gh release upload "$RELEASE_TAG" dist/python-runtime/* \
+            --repo "${{ github.repository }}" \
+            --clobber

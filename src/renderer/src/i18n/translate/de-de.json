@@ -3168,6 +3168,9 @@
   },
   "ovms": {
     "action": {
+      "importRuntime": "Offline-Paket importieren",
+      "importRuntimeFailed": "Python-Laufzeit konnte nicht importiert werden",
+      "importRuntimeSuccess": "Python-Laufzeit wurde importiert",
       "install": "Installieren",
       "installing": "Wird installiert",
       "reinstall": "Neu installieren",

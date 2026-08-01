@@ -3168,6 +3168,9 @@
   },
   "ovms": {
     "action": {
+      "importRuntime": "Importer le paquet hors ligne",
+      "importRuntimeFailed": "Échec de l’importation de l’environnement Python",
+      "importRuntimeSuccess": "Environnement Python importé",
       "install": "Installer",
       "installing": "Installation en cours",
       "reinstall": "Réinstaller",

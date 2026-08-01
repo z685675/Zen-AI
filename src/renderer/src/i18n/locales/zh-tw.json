@@ -3168,6 +3168,9 @@
   },
   "ovms": {
     "action": {
+      "importRuntime": "匯入離線套件",
+      "importRuntimeFailed": "Python 執行環境匯入失敗",
+      "importRuntimeSuccess": "Python 執行環境匯入完成",
       "install": "安裝",
       "installing": "正在安裝",
       "reinstall": "重新安裝",

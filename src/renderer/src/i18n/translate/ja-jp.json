@@ -3168,6 +3168,9 @@
   },
   "ovms": {
     "action": {
+      "importRuntime": "オフラインパッケージを読み込む",
+      "importRuntimeFailed": "Python ランタイムを読み込めませんでした",
+      "importRuntimeSuccess": "Python ランタイムを読み込みました",
       "install": "インストール",
       "installing": "インストール中",
       "reinstall": "再インストール",

@@ -56,6 +56,7 @@ type LlmSettings = {
 export interface LlmState {
   providers: Provider[]
   defaultModel?: Model
+  defaultModelPolicyVersion?: number
   /** @deprecated */
   topicNamingModel: Model
   quickModel?: Model
@@ -200,6 +201,12 @@ const llmSlice = createSlice({
     setTranslateModel: (state, action: PayloadAction<{ model?: Model }>) => {
       state.translateModel = action.payload.model
     },
+    applyDefaultModelPolicy: (state, action: PayloadAction<{ model: Model; version: number }>) => {
+      state.defaultModel = action.payload.model
+      state.quickModel = action.payload.model
+      state.translateModel = action.payload.model
+      state.defaultModelPolicyVersion = action.payload.version
+    },
 
     setQuickAssistantId: (state, action: PayloadAction<string>) => {
       state.quickAssistantId = action.payload
@@ -286,6 +293,7 @@ export const {
   setDefaultModel,
   setQuickModel,
   setTranslateModel,
+  applyDefaultModelPolicy,
   setQuickAssistantId,
   setOllamaKeepAliveTime,
   setLMStudioKeepAliveTime,

@@ -47,6 +47,7 @@ import appService from './services/AppService'
 import { AppUpdateService } from './services/AppUpdateService'
 import {
   checkAssistantEnvironment,
+  importManagedPython,
   installGitForWindows,
   installManagedPython
 } from './services/AssistantEnvironmentService'
@@ -888,6 +889,7 @@ export async function registerIpc(mainWindow: BrowserWindow, app: Electron.App) 
   ipcMain.handle(IpcChannel.App_CheckAssistantEnvironment, () => checkAssistantEnvironment())
   ipcMain.handle(IpcChannel.App_InstallUvBinary, () => runInstallScript('install-uv.js'))
   ipcMain.handle(IpcChannel.App_InstallManagedPython, () => installManagedPython())
+  ipcMain.handle(IpcChannel.App_ImportManagedPython, () => importManagedPython())
   ipcMain.handle(IpcChannel.App_InstallBunBinary, () => runInstallScript('install-bun.js'))
   ipcMain.handle(IpcChannel.App_InstallGitForWindows, () => installGitForWindows())
   ipcMain.handle(IpcChannel.App_InstallOvmsBinary, () => runInstallScript('install-ovms.js'))

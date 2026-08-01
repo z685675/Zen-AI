@@ -2,6 +2,7 @@ import { loggerService } from '@logger'
 import { isWin } from '@main/constant'
 import { autoDiscoverGitBash, findExecutableInEnv, getBinaryPath, isBinaryExists } from '@main/utils/process'
 import { spawn } from 'child_process'
+import { dialog } from 'electron'
 
 import { managedPythonService } from './python/ManagedPythonService'
 
@@ -197,6 +198,21 @@ async function checkManagedPython(): Promise<AssistantEnvironmentDependencyStatu
 
 export async function installManagedPython(): Promise<void> {
   await managedPythonService.ensureReady()
+}
+
+export async function importManagedPython(): Promise<boolean> {
+  const selection = await dialog.showOpenDialog({
+    title: 'Import Zen AI Python Runtime',
+    properties: ['openFile'],
+    filters: [
+      { name: 'Zen AI Python Runtime', extensions: ['zip', 'zenpy'] },
+      { name: 'All Files', extensions: ['*'] }
+    ]
+  })
+  if (selection.canceled || selection.filePaths.length === 0) return false
+
+  await managedPythonService.importOfflinePackage(selection.filePaths[0])
+  return true
 }
 
 export async function checkAssistantEnvironment(): Promise<AssistantEnvironmentCheckResult> {

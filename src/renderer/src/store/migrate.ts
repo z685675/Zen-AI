@@ -22,7 +22,11 @@ import {
   DEFAULT_TEMPERATURE,
   isMac
 } from '@renderer/config/constant'
-import { getCurrentDefaultModels } from '@renderer/config/defaultModelPolicy'
+import {
+  CURRENT_DEFAULT_MODEL_POLICY_VERSION,
+  getCurrentDefaultModels,
+  getPendingCurrentDefaultModels
+} from '@renderer/config/defaultModelPolicy'
 import { allMinApps } from '@renderer/config/minapps'
 import {
   getEffectiveModelEndpointType,
@@ -3812,6 +3816,24 @@ const migrateConfig = {
       return state
     } catch (error) {
       logger.error('migrate 223 error', error as Error)
+      return state
+    }
+  },
+  '224': (state: RootState) => {
+    try {
+      const currentDefaults = getPendingCurrentDefaultModels(state.llm.providers, state.llm.defaultModelPolicyVersion)
+
+      if (currentDefaults?.defaultModel) {
+        state.llm.defaultModel = currentDefaults.defaultModel
+        state.llm.quickModel = currentDefaults.defaultModel
+        state.llm.translateModel = currentDefaults.defaultModel
+        state.llm.defaultModelPolicyVersion = CURRENT_DEFAULT_MODEL_POLICY_VERSION
+      }
+
+      logger.info('migrate 224 success')
+      return state
+    } catch (error) {
+      logger.error('migrate 224 error', error as Error)
       return state
     }
   }

@@ -1,4 +1,4 @@
-import { CheckCircleOutlined, ReloadOutlined, WarningOutlined } from '@ant-design/icons'
+import { CheckCircleOutlined, ImportOutlined, ReloadOutlined, WarningOutlined } from '@ant-design/icons'
 import { isWin } from '@renderer/config/constant'
 import { useTheme } from '@renderer/context/ThemeProvider'
 import {
@@ -89,6 +89,20 @@ const AssistantEnvironmentSettings: FC = () => {
     }
   }
 
+  const importPython = async () => {
+    try {
+      setInstalling(true)
+      const imported = await window.api.importManagedPython()
+      if (!imported) return
+      window.toast.success(t('settings.assistantEnvironment.importRuntimeSuccess'))
+      await checkEnvironment()
+    } catch (error: any) {
+      window.toast.error(`${t('settings.assistantEnvironment.importRuntimeFailed')}: ${error.message}`)
+    } finally {
+      setInstalling(false)
+    }
+  }
+
   const confirmGitInstall = () =>
     new Promise<boolean>((resolve) => {
       window.modal.confirm({
@@ -159,8 +173,7 @@ const AssistantEnvironmentSettings: FC = () => {
   }
 
   const renderDependency = (dependency: DependencyStatus) => {
-    const needsInstall =
-      !dependency.installed && (dependency.id === 'bun' || dependency.id === 'uv' || dependency.id === 'python')
+    const needsInstall = !dependency.installed && (dependency.id === 'bun' || dependency.id === 'uv')
     const needsGitInstall = isWin && !dependency.installed && dependency.id === 'git'
 
     return (
@@ -186,13 +199,25 @@ const AssistantEnvironmentSettings: FC = () => {
             {dependency.path || dependency.message || t('settings.assistantEnvironment.noPath')}
           </DependencyPath>
         </DependencyMain>
+        {dependency.id === 'python' && (
+          <DependencyActions>
+            {!dependency.installed && (
+              <Button size="small" type="primary" loading={installing} disabled={installing} onClick={installPython}>
+                {t('settings.assistantEnvironment.install')}
+              </Button>
+            )}
+            <Button size="small" icon={<ImportOutlined />} disabled={installing} onClick={importPython}>
+              {t('settings.assistantEnvironment.importRuntime')}
+            </Button>
+          </DependencyActions>
+        )}
         {needsInstall && (
           <Button
             size="small"
             type="primary"
             loading={installing}
             disabled={installing}
-            onClick={dependency.id === 'bun' ? installBun : dependency.id === 'python' ? installPython : installUv}>
+            onClick={dependency.id === 'bun' ? installBun : installUv}>
             {t('settings.assistantEnvironment.install')}
           </Button>
         )}
@@ -289,6 +314,12 @@ const DependencyCard = styled.div`
 
 const DependencyMain = styled.div`
   min-width: 0;
+`
+
+const DependencyActions = styled.div`
+  display: flex;
+  flex: none;
+  gap: 8px;
 `
 
 const DependencyHeader = styled.div`
