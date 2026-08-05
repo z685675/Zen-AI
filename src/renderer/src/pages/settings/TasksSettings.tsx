@@ -210,6 +210,21 @@ const toTimeValue = (time: string): Dayjs => {
   return dayjs().hour(hour).minute(minute).second(0).millisecond(0)
 }
 
+const getDisabledScheduleTime = (current: Dayjs | null) => {
+  if (!current || !current.isSame(dayjs(), 'day')) return {}
+
+  const now = dayjs()
+  return {
+    disabledHours: () => Array.from({ length: now.hour() }, (_, index) => index),
+    disabledMinutes: (hour: number) =>
+      hour === now.hour() ? Array.from({ length: now.minute() }, (_, index) => index) : [],
+    disabledSeconds: (hour: number, minute: number) =>
+      hour === now.hour() && minute === now.minute()
+        ? Array.from({ length: now.second() + 1 }, (_, index) => index)
+        : []
+  }
+}
+
 const describeFixedCron = (
   value: string,
   labels: Record<FixedScheduleFrequency, string>,
@@ -260,10 +275,10 @@ const FixedScheduleEditor: FC<{
 
   return (
     <div className="flex flex-col gap-2">
-      <div className="flex gap-2">
+      <div className="flex min-w-0 gap-2">
         <Select
           size="small"
-          className="min-w-32 flex-1"
+          className="min-w-0 flex-1"
           value={config.frequency}
           options={frequencyOptions}
           disabled={disabled}
@@ -271,7 +286,7 @@ const FixedScheduleEditor: FC<{
         />
         <TimePicker
           size="small"
-          className="w-28"
+          className="w-24 shrink-0"
           format="HH:mm"
           minuteStep={5}
           value={toTimeValue(config.time)}
@@ -330,7 +345,7 @@ const TaskModelSelector: FC<{
   return (
     <Select
       size="small"
-      className="w-full"
+      className="w-full min-w-0"
       value={selectedModelId || undefined}
       disabled={disabled}
       allowClear={enableDeveloperMode}
@@ -451,7 +466,6 @@ const TaskDetail: FC<{
   const [modelId, setModelId] = useState(task.model_id ?? '')
   const [scheduleType, setScheduleType] = useState(task.schedule_type)
   const [scheduleValue, setScheduleValue] = useState(task.schedule_value)
-  const [timeoutMinutes, setTimeoutMinutes] = useState<string>(task.timeout_minutes?.toString() ?? '')
   const [channelIds, setChannelIds] = useState<string[]>(task.channel_ids ?? [])
   const [repeatModalOpen, setRepeatModalOpen] = useState(false)
   const [repeatScheduleValue, setRepeatScheduleValue] = useState(buildFixedCron(DEFAULT_FIXED_SCHEDULE))
@@ -463,7 +477,6 @@ const TaskDetail: FC<{
     setModelId(task.model_id ?? '')
     setScheduleType(task.schedule_type)
     setScheduleValue(task.schedule_value)
-    setTimeoutMinutes(task.timeout_minutes?.toString() ?? '')
     setChannelIds(task.channel_ids ?? [])
   }, [task])
 
@@ -613,31 +626,16 @@ const TaskDetail: FC<{
       <SettingGroup theme={theme} style={compactGroupStyle}>
         <SettingTitle>{t('settings.general.title')}</SettingTitle>
         <SettingDivider />
-        <div className="grid grid-cols-2 gap-3">
-          <SettingRow style={{ flexDirection: 'column', alignItems: 'stretch' }}>
-            <SettingRowTitle>{t('agent.cherryClaw.tasks.name.label')}</SettingRowTitle>
-            <Input
-              size="small"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              onBlur={() => name.trim() && name !== task.name && saveField({ name: name.trim() })}
-              disabled={isCompleted}
-            />
-          </SettingRow>
-          <SettingRow style={{ flexDirection: 'column', alignItems: 'stretch' }}>
-            <SettingRowTitle>{t('agent.cherryClaw.tasks.model.label', '执行模型')}</SettingRowTitle>
-            <TaskModelSelector
-              models={models}
-              value={modelId || null}
-              fallbackModel={agents.find((a) => a.id === agentId)?.model}
-              onChange={(value) => {
-                setModelId(value ?? '')
-                saveField({ model_id: value })
-              }}
-              disabled={isCompleted}
-            />
-          </SettingRow>
-        </div>
+        <SettingRow style={{ flexDirection: 'column', alignItems: 'stretch' }}>
+          <SettingRowTitle>{t('agent.cherryClaw.tasks.name.label')}</SettingRowTitle>
+          <Input
+            size="small"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            onBlur={() => name.trim() && name !== task.name && saveField({ name: name.trim() })}
+            disabled={isCompleted}
+          />
+        </SettingRow>
         <SettingDivider />
         {agents.length > 1 && (
           <>
@@ -682,14 +680,22 @@ const TaskDetail: FC<{
           />
         </SettingRow>
         <SettingDivider />
-        <div className="grid grid-cols-3 gap-3">
-          <div>
-            <SettingRowTitle>
-              <span className="inline-flex items-center gap-1">
-                {t('agent.cherryClaw.tasks.scheduleType.label')}
-                <ScheduleTypeHelp type={scheduleType} />
-              </span>
-            </SettingRowTitle>
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:gap-4">
+          <div className="min-w-0 lg:w-2/3 lg:max-w-[270px]">
+            <SettingRowTitle>{t('agent.cherryClaw.tasks.model.label', '执行模型')}</SettingRowTitle>
+            <TaskModelSelector
+              models={models}
+              value={modelId || null}
+              fallbackModel={agents.find((a) => a.id === agentId)?.model}
+              onChange={(value) => {
+                setModelId(value ?? '')
+                saveField({ model_id: value })
+              }}
+              disabled={isCompleted}
+            />
+          </div>
+          <div className="min-w-0 lg:w-[150px] lg:shrink-0">
+            <SettingRowTitle>{t('agent.cherryClaw.tasks.scheduleType.label')}</SettingRowTitle>
             <Select
               size="small"
               className="w-full"
@@ -728,7 +734,7 @@ const TaskDetail: FC<{
               ]}
             />
           </div>
-          <div>
+          <div className="min-w-0 lg:w-[240px] lg:shrink-0">
             <SettingRowTitle>{t('agent.cherryClaw.tasks.scheduleValue')}</SettingRowTitle>
             {scheduleType === 'cron' && (
               <FixedScheduleEditor
@@ -763,6 +769,8 @@ const TaskDetail: FC<{
                 showTime
                 className="w-full"
                 value={scheduleValue ? dayjs(scheduleValue) : null}
+                disabledDate={(current) => current.isBefore(dayjs(), 'day')}
+                disabledTime={getDisabledScheduleTime}
                 onChange={(val) => {
                   if (val) {
                     const iso = val.toISOString()
@@ -773,24 +781,6 @@ const TaskDetail: FC<{
                 disabled={isCompleted}
               />
             )}
-          </div>
-          <div>
-            <SettingRowTitle>{t('agent.cherryClaw.tasks.timeout.label')}</SettingRowTitle>
-            <Input
-              size="small"
-              type="number"
-              min={1}
-              value={timeoutMinutes}
-              onChange={(e) => setTimeoutMinutes(e.target.value)}
-              onBlur={() => {
-                const val = timeoutMinutes.trim() ? parseInt(timeoutMinutes, 10) : null
-                const prev = task.timeout_minutes ?? null
-                if (val !== prev) saveField({ timeout_minutes: val })
-              }}
-              placeholder={t('agent.cherryClaw.tasks.timeout.placeholder')}
-              suffix={t('agent.cherryClaw.tasks.intervalUnit')}
-              disabled={isCompleted}
-            />
           </div>
         </div>
         <TaskChannelSelector
@@ -808,7 +798,12 @@ const TaskDetail: FC<{
       <SettingGroup theme={theme} style={compactGroupStyle}>
         <SettingTitle>{t('agent.cherryClaw.tasks.logs.label')}</SettingTitle>
         <SettingDivider />
-        <TaskLogsInline taskId={task.id} agentId={task.agent_id} onNavigateToSession={onNavigateToSession} />
+        <TaskLogsInline
+          taskId={task.id}
+          agentId={task.agent_id}
+          models={models}
+          onNavigateToSession={onNavigateToSession}
+        />
       </SettingGroup>
 
       <Modal
@@ -871,8 +866,9 @@ const TaskDetail: FC<{
 const TaskLogsInline: FC<{
   taskId: string
   agentId: string
+  models: ApiModel[]
   onNavigateToSession?: () => void
-}> = ({ taskId, agentId, onNavigateToSession }) => {
+}> = ({ taskId, agentId, models, onNavigateToSession }) => {
   // Keep the history area predictable: one compact row is roughly 36px, so
   // the table shows about 20 runs before scrolling internally.
   const LOG_TABLE_BODY_HEIGHT = 20 * 36
@@ -911,7 +907,7 @@ const TaskLogsInline: FC<{
       title: t('agent.cherryClaw.tasks.logs.runAt'),
       dataIndex: 'run_at',
       key: 'run_at',
-      width: 160,
+      width: 110,
       render: (val: string) =>
         new Date(val).toLocaleString(undefined, {
           month: 'numeric',
@@ -952,6 +948,7 @@ const TaskLogsInline: FC<{
           running: t('agent.cherryClaw.tasks.logs.running'),
           waiting_user: t('agent.cherryClaw.tasks.logs.waitingUser', 'Waiting for user'),
           paused: t('agent.cherryClaw.tasks.logs.paused', '已暂停'),
+          stalled: t('agent.cherryClaw.tasks.logs.stalled', '疑似卡住'),
           error: t('agent.cherryClaw.tasks.logs.error')
         }
         return <Tag color={color}>{logStatusLabels[val] ?? val}</Tag>
@@ -970,7 +967,11 @@ const TaskLogsInline: FC<{
       key: 'model_id',
       width: 150,
       ellipsis: true,
-      render: (val: string | null) => val || t('agent.cherryClaw.tasks.model.followAgent', '跟随助手默认模型')
+      render: (val: string | null) => {
+        if (!val) return t('agent.cherryClaw.tasks.model.followAgent', '跟随助手默认模型')
+        const model = models.find((item) => item.id === val)
+        return model?.name || model?.provider_model_id || val
+      }
     },
     {
       title: t('agent.cherryClaw.tasks.logs.result'),
@@ -983,7 +984,7 @@ const TaskLogsInline: FC<{
             ? t('agent.cherryClaw.tasks.logs.waitingUserDesc', 'Waiting for browser handoff')
             : record.status === 'running'
               ? t('agent.cherryClaw.tasks.logs.running', 'Running...')
-              : record.status === 'error'
+              : record.status === 'error' || record.status === 'stalled'
                 ? record.error
                 : (val ?? '-')
         const hasSession = !!record.session_id
@@ -992,7 +993,7 @@ const TaskLogsInline: FC<{
           <div className="flex items-center gap-1">
             <button
               type="button"
-              className={`block min-w-0 flex-1 cursor-pointer truncate text-left ${record.status === 'error' ? 'text-red-500' : ''}`}
+              className={`block min-w-0 flex-1 cursor-pointer truncate text-left ${record.status === 'error' || record.status === 'stalled' ? 'text-red-500' : ''}`}
               onClick={() => setSelectedLog(record)}
               title={text ?? undefined}>
               {text}
@@ -1059,7 +1060,14 @@ const TaskLogsInline: FC<{
                     ? '手动'
                     : '重试'}
               </Tag>
-              {selectedLog.model_id && <Tag>{selectedLog.model_id}</Tag>}
+              {selectedLog.model_id && (
+                <Tag>
+                  {(() => {
+                    const model = models.find((item) => item.id === selectedLog.model_id)
+                    return model?.name || model?.provider_model_id || selectedLog.model_id
+                  })()}
+                </Tag>
+              )}
               {selectedLog.scheduled_for && (
                 <Tag>
                   {t('agent.cherryClaw.tasks.logs.scheduledFor', '计划时间：{{time}}', {
@@ -1114,7 +1122,6 @@ const CreateForm: FC<{
   const [promptModalOpen, setPromptModalOpen] = useState(false)
   const [scheduleType, setScheduleType] = useState<'cron' | 'interval' | 'once'>('cron')
   const [scheduleValue, setScheduleValue] = useState(() => buildFixedCron(DEFAULT_FIXED_SCHEDULE))
-  const [timeoutMinutes, setTimeoutMinutes] = useState('60')
   const [channelIds, setChannelIds] = useState<string[]>([])
   const [saving, setSaving] = useState(false)
 
@@ -1132,20 +1139,18 @@ const CreateForm: FC<{
     if (!agentId || !name.trim() || !prompt.trim() || !scheduleValue.trim()) return
     setSaving(true)
     try {
-      const timeout = timeoutMinutes.trim() ? parseInt(timeoutMinutes, 10) : null
       await onCreate(agentId, {
         name: name.trim(),
         prompt: prompt.trim(),
         model_id: modelId.trim() || null,
         schedule_type: scheduleType,
         schedule_value: scheduleValue.trim(),
-        timeout_minutes: timeout && timeout > 0 ? timeout : undefined,
         channel_ids: channelIds.length > 0 ? channelIds : undefined
       })
     } finally {
       setSaving(false)
     }
-  }, [agentId, modelId, name, prompt, scheduleType, scheduleValue, timeoutMinutes, channelIds, onCreate])
+  }, [agentId, modelId, name, prompt, scheduleType, scheduleValue, channelIds, onCreate])
 
   return (
     <SettingContainer
@@ -1244,26 +1249,19 @@ const CreateForm: FC<{
           />
         </Modal>
 
-        <SettingRow style={{ flexDirection: 'column', alignItems: 'stretch' }}>
-          <SettingRowTitle>{t('agent.cherryClaw.tasks.model.label', '执行模型')}</SettingRowTitle>
-          <TaskModelSelector
-            models={models}
-            value={modelId || null}
-            fallbackModel={agentId ? agents.find((agent) => agent.id === agentId)?.model : undefined}
-            onChange={(value) => setModelId(value ?? '')}
-            disabled={!agentId}
-          />
-        </SettingRow>
-        <SettingDivider />
-
-        <div className="grid grid-cols-3 gap-3">
-          <div>
-            <SettingRowTitle>
-              <span className="inline-flex items-center gap-1">
-                {t('agent.cherryClaw.tasks.scheduleType.label')}
-                <ScheduleTypeHelp type={scheduleType} />
-              </span>
-            </SettingRowTitle>
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:gap-4">
+          <div className="min-w-0 lg:w-2/3 lg:max-w-[270px]">
+            <SettingRowTitle>{t('agent.cherryClaw.tasks.model.label', '执行模型')}</SettingRowTitle>
+            <TaskModelSelector
+              models={models}
+              value={modelId || null}
+              fallbackModel={agentId ? agents.find((agent) => agent.id === agentId)?.model : undefined}
+              onChange={(value) => setModelId(value ?? '')}
+              disabled={!agentId}
+            />
+          </div>
+          <div className="min-w-0 lg:w-[150px] lg:shrink-0">
+            <SettingRowTitle>{t('agent.cherryClaw.tasks.scheduleType.label')}</SettingRowTitle>
             <Select
               size="small"
               className="w-full"
@@ -1301,7 +1299,7 @@ const CreateForm: FC<{
               ]}
             />
           </div>
-          <div>
+          <div className="min-w-0 lg:w-[240px] lg:shrink-0">
             <SettingRowTitle>{t('agent.cherryClaw.tasks.scheduleValue')}</SettingRowTitle>
             {scheduleType === 'cron' && <FixedScheduleEditor value={scheduleValue} onChange={setScheduleValue} />}
             {scheduleType === 'interval' && (
@@ -1321,6 +1319,8 @@ const CreateForm: FC<{
                 showTime
                 className="w-full"
                 value={scheduleValue ? dayjs(scheduleValue) : null}
+                disabledDate={(current) => current.isBefore(dayjs(), 'day')}
+                disabledTime={getDisabledScheduleTime}
                 onChange={(val) => {
                   if (val) {
                     setScheduleValue(val.toISOString())
@@ -1328,18 +1328,6 @@ const CreateForm: FC<{
                 }}
               />
             )}
-          </div>
-          <div>
-            <SettingRowTitle>{t('agent.cherryClaw.tasks.timeout.label')}</SettingRowTitle>
-            <Input
-              size="small"
-              type="number"
-              min={1}
-              value={timeoutMinutes}
-              onChange={(e) => setTimeoutMinutes(e.target.value)}
-              placeholder={t('agent.cherryClaw.tasks.timeout.placeholder')}
-              suffix="min"
-            />
           </div>
         </div>
         <TaskChannelSelector channels={channels} channelIds={channelIds} onChange={setChannelIds} />

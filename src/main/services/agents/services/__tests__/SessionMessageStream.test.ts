@@ -2,6 +2,14 @@ import { EventEmitter } from 'node:events'
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+const { broadcastAgentActionRequiredMock } = vi.hoisted(() => ({
+  broadcastAgentActionRequiredMock: vi.fn()
+}))
+
+vi.mock('../agentIpc', () => ({
+  broadcastAgentActionRequired: broadcastAgentActionRequiredMock
+}))
+
 import type { AgentStream } from '../../interfaces/AgentStreamInterface'
 
 const { invokeMock, resolveAgentRuntimeMock } = vi.hoisted(() => ({
@@ -35,6 +43,7 @@ function createAgentStream(): AgentStream {
 function session() {
   return {
     id: 'session-runtime-test',
+    agent_id: 'agent-runtime-test',
     agent_type: 'claude-code',
     model: 'provider:grok-4.5',
     configuration: { agent_runtime: 'auto' }
@@ -54,6 +63,7 @@ describe('SessionMessageService runtime stream lifecycle', () => {
     vi.useFakeTimers()
     invokeMock.mockReset()
     resolveAgentRuntimeMock.mockReset()
+    broadcastAgentActionRequiredMock.mockReset()
   })
 
   afterEach(() => {
@@ -179,8 +189,14 @@ describe('SessionMessageService runtime stream lifecycle', () => {
         type: 'tool-call',
         toolCallId: 'handoff-1',
         toolName: 'mcp__browser__wait_for_user',
-        input: { reason: 'login_required' }
+        input: { message: '请完成登录后点击继续。', reason: 'login_required' }
       }
+    })
+    expect(broadcastAgentActionRequiredMock).toHaveBeenCalledWith({
+      agentId: 'agent-runtime-test',
+      sessionId: 'session-runtime-test',
+      reason: 'browser_handoff',
+      message: '请完成登录后点击继续。'
     })
     await vi.advanceTimersByTimeAsync(2 * 60 * 1000)
     expect(attemptControllers[0].signal.aborted).toBe(false)

@@ -43,7 +43,6 @@ export class TaskService extends BaseService {
       prompt: req.prompt,
       schedule_type: req.schedule_type,
       schedule_value: req.schedule_value,
-      timeout_minutes: req.timeout_minutes ?? 60,
       next_run: nextRun,
       status: 'active',
       created_at: now,
@@ -141,7 +140,6 @@ export class TaskService extends BaseService {
     if (updates.prompt !== undefined) updateData.prompt = updates.prompt
     if (updates.agent_id !== undefined) updateData.agent_id = updates.agent_id
     if (updates.model_id !== undefined) updateData.model_id = updates.model_id ?? null
-    if (updates.timeout_minutes !== undefined) updateData.timeout_minutes = updates.timeout_minutes ?? 60
     if (updates.status !== undefined) updateData.status = updates.status
 
     if (updates.schedule_type !== undefined || updates.schedule_value !== undefined) {
@@ -215,7 +213,6 @@ export class TaskService extends BaseService {
     if (updates.name !== undefined) updateData.name = updates.name
     if (updates.prompt !== undefined) updateData.prompt = updates.prompt
     if (updates.model_id !== undefined) updateData.model_id = updates.model_id ?? null
-    if (updates.timeout_minutes !== undefined) updateData.timeout_minutes = updates.timeout_minutes ?? 60
     if (updates.status !== undefined) updateData.status = updates.status
 
     // If schedule type or value changed, recompute next_run

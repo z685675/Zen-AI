@@ -16,6 +16,9 @@ const logger = loggerService.withContext('SchedulerService')
 const POLL_INTERVAL_MS = 60_000
 const MAX_CONSECUTIVE_ERRORS = 3
 const TASK_PAUSED_ABORT_REASON = 'Task paused by user'
+const TASK_STALL_DETECTION_MS = 15 * 60_000
+const TASK_STALL_DETECTION_MINUTES = TASK_STALL_DETECTION_MS / 60_000
+const TASK_STALL_ERROR_MESSAGE = `任务疑似卡住：连续 ${TASK_STALL_DETECTION_MINUTES} 分钟没有检测到模型输出、工具调用或状态变化，已停止本次运行。`
 
 const isBrowserWaitForUserTool = (toolName?: string): boolean => {
   if (!toolName) return false
@@ -255,19 +258,12 @@ class SchedulerService {
     }
     this.activeTasks.set(task.id, runningTask)
 
-    // Set up timeout if configured
-    let timeoutTimer: ReturnType<typeof setTimeout> | null = null
-    if (task.timeout_minutes && task.timeout_minutes > 0) {
-      const timeoutMs = task.timeout_minutes * 60_000
-      timeoutTimer = setTimeout(() => {
-        logger.warn('Task timed out, aborting', { taskId: task.id, timeoutMinutes: task.timeout_minutes })
-        abortController.abort(new Error(`Task timed out after ${task.timeout_minutes} minutes`))
-      }, timeoutMs)
-    }
-
     let result: string | null = null
     let error: string | null = null
     let pausedByUser = false
+    let stalled = false
+    let waitingForUser = false
+    let stallTimer: ReturnType<typeof setTimeout> | null = null
     let sessionId: string | undefined
     let resolvedModelId: string | null = task.model_id?.trim() || null
     let subscribedChannels: { id: string; sessionId?: string | null }[] = []
@@ -277,6 +273,32 @@ class SchedulerService {
       readyAcknowledged = true
       onReady?.(readySessionId)
     }
+
+    const clearStallTimer = () => {
+      if (stallTimer) {
+        clearTimeout(stallTimer)
+        stallTimer = null
+      }
+    }
+
+    const armStallTimer = () => {
+      clearStallTimer()
+      if (waitingForUser || abortController.signal.aborted) return
+      stallTimer = setTimeout(() => {
+        stalled = true
+        logger.warn('Task stalled, aborting', {
+          taskId: task.id,
+          inactiveMinutes: TASK_STALL_DETECTION_MINUTES
+        })
+        abortController.abort(new Error(TASK_STALL_ERROR_MESSAGE))
+      }, TASK_STALL_DETECTION_MS)
+    }
+
+    const markActivity = () => {
+      if (!stalled) armStallTimer()
+    }
+
+    markActivity()
 
     // Create log entry immediately so UI shows the running task
     let logId: number
@@ -296,7 +318,7 @@ class SchedulerService {
     } catch (error) {
       this.activeTasks.delete(task.id)
       resolveCompletion()
-      if (timeoutTimer) clearTimeout(timeoutTimer)
+      clearStallTimer()
       throw error
     }
 
@@ -323,7 +345,7 @@ class SchedulerService {
             duration_ms: Date.now() - startTime
           })
           await taskService.updateTaskAfterRun(task.id, nextRun, 'Skipped (disabled)', 'skipped')
-          if (timeoutTimer) clearTimeout(timeoutTimer)
+          clearStallTimer()
           this.activeTasks.delete(task.id)
           resolveCompletion()
           acknowledgeReady()
@@ -339,7 +361,7 @@ class SchedulerService {
             duration_ms: Date.now() - startTime
           })
           await taskService.updateTaskAfterRun(task.id, nextRun, 'Skipped (no file)', 'skipped')
-          if (timeoutTimer) clearTimeout(timeoutTimer)
+          clearStallTimer()
           this.activeTasks.delete(task.id)
           resolveCompletion()
           acknowledgeReady()
@@ -444,7 +466,6 @@ class SchedulerService {
       acknowledgeReady(sessionId)
 
       // Collect the response text and stream to subscribed channels only
-      let waitingForUser = false
       const targetAdapters = subscribedChannels
         .map((ch) => {
           const adapter = channelManager.getAdapter(ch.id)
@@ -457,9 +478,11 @@ class SchedulerService {
         })
         .filter((a) => a !== undefined)
       const responseText = await this.collectAndStreamResponse(stream, targetAdapters, {
+        onActivity: markActivity,
         onWaitingForUser: async () => {
-          if (waitingForUser) return
+          if (waitingForUser || !sessionId) return
           waitingForUser = true
+          clearStallTimer()
           await taskService.updateTaskRunLog(logId, {
             status: 'waiting_user',
             result: 'Waiting for user browser handoff'
@@ -468,6 +491,7 @@ class SchedulerService {
         onResumedFromUser: async () => {
           if (!waitingForUser) return
           waitingForUser = false
+          markActivity()
           await taskService.updateTaskRunLog(logId, {
             status: 'running',
             result: 'Resumed after user browser handoff'
@@ -476,7 +500,7 @@ class SchedulerService {
       })
       await completion
 
-      // Check if the task was aborted (e.g. by timeout)
+      // Check if the task was aborted (for example, by the inactivity watchdog)
       if (abortController.signal.aborted) {
         const reason = abortController.signal.reason
         throw reason instanceof Error ? reason : new Error(String(reason ?? 'Task aborted'))
@@ -511,7 +535,7 @@ class SchedulerService {
         onReady(undefined, err)
       }
     } finally {
-      if (timeoutTimer) clearTimeout(timeoutTimer)
+      clearStallTimer()
     }
 
     try {
@@ -523,7 +547,7 @@ class SchedulerService {
         session_id: sessionId ?? null,
         model_id: resolvedModelId,
         duration_ms: durationMs,
-        status: pausedByUser ? 'paused' : error ? 'error' : 'success',
+        status: pausedByUser ? 'paused' : stalled ? 'stalled' : error ? 'error' : 'success',
         result,
         error
       })
@@ -563,6 +587,7 @@ class SchedulerService {
     stream: ReadableStream,
     adapters: ChannelAdapter[],
     callbacks?: {
+      onActivity?: () => void
       onWaitingForUser?: () => Promise<void>
       onResumedFromUser?: () => Promise<void>
     }
@@ -578,6 +603,8 @@ class SchedulerService {
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
+
+        callbacks?.onActivity?.()
 
         // Skip user message echoes
         const rawType = value.providerMetadata?.raw?.type

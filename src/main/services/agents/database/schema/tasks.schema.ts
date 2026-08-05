@@ -14,6 +14,8 @@ export const scheduledTasksTable = sqliteTable('scheduled_tasks', {
   prompt: text('prompt').notNull(),
   schedule_type: text('schedule_type').notNull(), // 'cron' | 'interval' | 'once'
   schedule_value: text('schedule_value').notNull(), // cron expression, milliseconds as string, or ISO timestamp
+  // Legacy column kept for database compatibility. Scheduled task runs no
+  // longer use a user-configurable total duration timeout.
   timeout_minutes: integer('timeout_minutes').notNull().default(60),
   next_run: text('next_run'),
   last_run: text('last_run'),
@@ -32,7 +34,7 @@ export const taskRunLogsTable = sqliteTable('task_run_logs', {
   scheduled_for: text('scheduled_for'),
   run_at: text('run_at').notNull(),
   duration_ms: integer('duration_ms').notNull(),
-  status: text('status').notNull(), // 'running' | 'waiting_user' | 'paused' | 'success' | 'error'
+  status: text('status').notNull(), // 'running' | 'waiting_user' | 'paused' | 'stalled' | 'success' | 'error'
   result: text('result'),
   error: text('error')
 })

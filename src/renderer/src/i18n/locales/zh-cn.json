@@ -1,5 +1,10 @@
 {
   "agent": {
+    "actionRequired": {
+      "later": "稍后处理",
+      "open": "进入任务对话",
+      "title": "任务需要你的操作"
+    },
     "add": {
       "description": "调用各种工具处理复杂任务",
       "error": {
@@ -225,6 +230,7 @@
           "runAt": "运行时间",
           "running": "运行中...",
           "search": "搜索运行记录...",
+          "stalled": "疑似卡住",
           "status": "状态",
           "success": "成功",
           "viewSession": "查看会话"
@@ -239,7 +245,7 @@
         "prompt": {
           "expand": "展开编辑器",
           "label": "提示词",
-          "placeholder": "此任务运行时 Agent 应该做什么？"
+          "placeholder": "例如：查询今日天气并整理出行建议\n例如：检查XX期刊或会议是否发布新的论文，整理与我的XX研究方向相关的内容。"
         },
         "resume": "恢复",
         "run": "运行",

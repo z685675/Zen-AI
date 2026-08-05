@@ -15,6 +15,7 @@ import { BaseService } from '../BaseService'
 import { sessionMessagesTable } from '../database/schema'
 import { agentMessageRepository } from '../database/sessionMessageRepository'
 import type { AgentStream, AgentStreamEvent } from '../interfaces/AgentStreamInterface'
+import { broadcastAgentActionRequired } from './agentIpc'
 import { channelManager } from './channels/ChannelManager'
 import { channelService } from './ChannelService'
 import { isRecoverableAgentContextError, withAgentRecoveryContext } from './runtime/contextRecovery'
@@ -569,6 +570,25 @@ export class SessionMessageService extends BaseService {
 
                 const toolName = (chunk as { toolName?: unknown }).toolName
                 if (chunk.type === 'tool-call' && isBrowserWaitForUserTool(toolName)) {
+                  const toolInput = (chunk as { input?: unknown }).input
+                  const inputMessage =
+                    toolInput &&
+                    typeof toolInput === 'object' &&
+                    'message' in toolInput &&
+                    typeof toolInput.message === 'string'
+                      ? toolInput.message.trim()
+                      : ''
+                  const scheduledTask = (session.configuration as Record<string, any> | undefined)?.scheduled_task
+                  broadcastAgentActionRequired({
+                    agentId: session.agent_id,
+                    sessionId: session.id,
+                    taskId: typeof scheduledTask?.task_id === 'string' ? scheduledTask.task_id : undefined,
+                    taskName: typeof scheduledTask?.task_name === 'string' ? scheduledTask.task_name : undefined,
+                    reason: 'browser_handoff',
+                    message:
+                      inputMessage ||
+                      '该任务需要你在浏览器中完成登录、验证码或确认操作。进入对应对话后完成操作，任务会继续执行。'
+                  })
                   deepResearchTimerControls?.pause()
                 } else if (
                   (chunk.type === 'tool-result' || chunk.type === 'tool-error') &&

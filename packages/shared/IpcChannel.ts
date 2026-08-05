@@ -122,6 +122,7 @@ export enum IpcChannel {
   AgentSessionStream_Abort = 'agent-session-stream:abort',
   AgentSessionStream_Chunk = 'agent-session-stream:chunk',
   AgentSession_Changed = 'agent-session:changed',
+  Agent_ActionRequired = 'agent:action-required',
 
   // WeChat channel
   WeChat_QrLogin = 'wechat:qr-login',

@@ -43,7 +43,12 @@ const TaskLogsModal: FC<TaskLogsModalProps> = ({ open, taskId, taskName, onClose
       render: (val: string) => {
         const color =
           val === 'success' ? 'green' : val === 'running' ? 'processing' : val === 'waiting_user' ? 'warning' : 'red'
-        const label = val === 'waiting_user' ? t('agent.cherryClaw.tasks.logs.waitingUser', 'Waiting for user') : val
+        const label =
+          val === 'waiting_user'
+            ? t('agent.cherryClaw.tasks.logs.waitingUser', 'Waiting for user')
+            : val === 'stalled'
+              ? t('agent.cherryClaw.tasks.logs.stalled', '疑似卡住')
+              : val
         return <Tag color={color}>{label}</Tag>
       }
     },
@@ -55,7 +60,7 @@ const TaskLogsModal: FC<TaskLogsModalProps> = ({ open, taskId, taskName, onClose
       render: (val: string | null, record: any) =>
         record.status === 'waiting_user' ? (
           t('agent.cherryClaw.tasks.logs.waitingUserDesc', 'Waiting for browser handoff')
-        ) : record.status === 'error' ? (
+        ) : record.status === 'error' || record.status === 'stalled' ? (
           <span className="text-red-500">{record.error}</span>
         ) : (
           (val ?? '-')

@@ -1,6 +1,7 @@
 import SkillsSettings from '@renderer/pages/settings/SkillsSettings'
 import TasksSettings from '@renderer/pages/settings/TasksSettings'
 import { Modal } from 'antd'
+import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 
 export type AgentQuickEntry = 'skills' | 'tasks'
@@ -12,6 +13,12 @@ type AgentQuickEntryModalProps = {
 
 const AgentQuickEntryModal = ({ entry, onClose }: AgentQuickEntryModalProps) => {
   const { t } = useTranslation()
+
+  useEffect(() => {
+    const closeForTaskAction = () => onClose()
+    window.addEventListener('zen-ai:close-agent-quick-entry', closeForTaskAction)
+    return () => window.removeEventListener('zen-ai:close-agent-quick-entry', closeForTaskAction)
+  }, [onClose])
 
   return (
     <Modal

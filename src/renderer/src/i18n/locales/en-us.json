@@ -1,5 +1,10 @@
 {
   "agent": {
+    "actionRequired": {
+      "later": "Later",
+      "open": "Open task conversation",
+      "title": "Task needs your action"
+    },
     "add": {
       "description": "Handle complex tasks with various tools",
       "error": {
@@ -225,6 +230,7 @@
           "runAt": "Run At",
           "running": "Running...",
           "search": "Search logs...",
+          "stalled": "Stalled",
           "status": "Status",
           "success": "Success",
           "viewSession": "View session"
@@ -239,7 +245,7 @@
         "prompt": {
           "expand": "Expand editor",
           "label": "Prompt",
-          "placeholder": "What should the agent do when this task runs?"
+          "placeholder": "For example: Check today's weather and organize travel advice.\nFor example: Check whether XX journals or conferences have published new papers and summarize items related to my XX research direction."
         },
         "resume": "Resume",
         "run": "Run",

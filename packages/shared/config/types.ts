@@ -63,6 +63,15 @@ export type ChannelStatusEvent = {
   error?: string
 }
 
+export type AgentActionRequiredPayload = {
+  agentId: string
+  sessionId: string
+  taskId?: string
+  taskName?: string
+  reason: 'browser_handoff' | 'user_confirmation'
+  message: string
+}
+
 export type WebviewKeyEvent = {
   webviewId: number
   key: string
