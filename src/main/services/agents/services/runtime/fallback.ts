@@ -4,8 +4,13 @@ export class AgentRuntimeNoOutputTimeoutError extends Error {
   override name = 'AgentRuntimeNoOutputTimeoutError'
 }
 
+export class AgentDeepResearchTimeoutError extends Error {
+  override name = 'AgentDeepResearchTimeoutError'
+}
+
 export function shouldFallbackRuntime(error: Error, abortController: AbortController): boolean {
   if (abortController.signal.aborted || error.name === 'AbortError') return false
+  if (error.name === 'AgentDeepResearchTimeoutError') return false
   if (error.name === 'AgentRuntimeNoOutputTimeoutError') return true
 
   const message = error.message.toLowerCase()

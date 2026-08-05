@@ -1,30 +1,36 @@
+import { loggerService } from '@logger'
 import { DeleteIcon, EditIcon } from '@renderer/components/Icons'
 import MarqueeText from '@renderer/components/MarqueeText'
 import { isMac } from '@renderer/config/constant'
 import { useUpdateSession } from '@renderer/hooks/agents/useUpdateSession'
 import { useInPlaceEdit } from '@renderer/hooks/useInPlaceEdit'
+import { useNotesSettings } from '@renderer/hooks/useNotesSettings'
 import { useRuntime } from '@renderer/hooks/useRuntime'
 import { useSettings } from '@renderer/hooks/useSettings'
 import { useTimer } from '@renderer/hooks/useTimer'
 import { finishTopicRenaming, startTopicRenaming } from '@renderer/hooks/useTopic'
 import { SessionSettingsPopup } from '@renderer/pages/settings/AgentSettings'
 import { SessionLabel } from '@renderer/pages/settings/AgentSettings/shared'
+import { dbService } from '@renderer/services/db'
 import store, { type RootState, useAppDispatch, useAppSelector } from '@renderer/store'
+import { upsertManyBlocks } from '@renderer/store/messageBlock'
 import { newMessagesActions } from '@renderer/store/newMessage'
 import { loadTopicMessagesThunk, renameAgentSessionIfNeeded } from '@renderer/store/thunk/messageThunk'
 import type { AgentEntity, AgentSessionEntity } from '@renderer/types'
 import { classNames } from '@renderer/utils'
 import { getChannelTypeIcon } from '@renderer/utils/agentSession'
 import { buildAgentSessionTopicId } from '@renderer/utils/agentSession'
+import { exportMessagesAsMarkdown, exportMessageToNotes, messagesToMarkdown } from '@renderer/utils/export'
+import { removeSpecialCharactersForFileName } from '@renderer/utils/file'
 import type { MenuProps } from 'antd'
 import { Dropdown, Tooltip } from 'antd'
 import dayjs from 'dayjs'
-import { Archive, ArchiveRestore, MenuIcon, Pin, PinOff, Sparkles, XIcon } from 'lucide-react'
-import React, { memo, startTransition, useDeferredValue, useEffect, useMemo, useState } from 'react'
+import { Archive, ArchiveRestore, MenuIcon, NotebookPen, Pin, PinOff, Sparkles, Upload, XIcon } from 'lucide-react'
+import React, { memo, startTransition, useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import styled from 'styled-components'
 
-// const logger = loggerService.withContext('AgentItem')
+const logger = loggerService.withContext('SessionItem')
 
 interface SessionItemProps {
   session: AgentSessionEntity
@@ -61,6 +67,8 @@ const SessionItem = ({
   const [_targetSession, setTargetSession] = useState<AgentSessionEntity>(session)
   const targetSession = useDeferredValue(_targetSession)
   const dispatch = useAppDispatch()
+  const { notesPath } = useNotesSettings()
+  const exportMenuOptions = useAppSelector((state) => state.settings.exportMenuOptions)
 
   const { isEditing, isSaving, startEdit, inputProps } = useInPlaceEdit({
     onSave: async (value) => {
@@ -139,6 +147,80 @@ const SessionItem = ({
   const { topicPosition, setTopicPosition } = useSettings()
   const singlealone = topicPosition === 'right'
 
+  const loadSessionMessages = useCallback(async () => {
+    const { messages, blocks } = await dbService.fetchMessages(sessionTopicId, true)
+
+    if (blocks.length > 0) {
+      dispatch(upsertManyBlocks(blocks))
+    }
+
+    return messages
+  }, [dispatch, sessionTopicId])
+
+  const handleExport = useCallback(
+    async (key: string) => {
+      try {
+        const messages = await loadSessionMessages()
+        if (messages.length === 0) {
+          window.toast.warning(t('notes.no_content_to_export'))
+          return
+        }
+
+        const title = session.name?.trim() || t('common.untitled_conversation')
+        if (key === 'markdown' || key === 'markdown_reason') {
+          await exportMessagesAsMarkdown(title, messages, key === 'markdown_reason')
+          return
+        }
+
+        await window.api.export.toWord(
+          `# ${title}\n\n${messagesToMarkdown(messages)}`,
+          removeSpecialCharactersForFileName(title)
+        )
+      } catch (error) {
+        window.toast.error(t('notes.export_to_word_failed'))
+        logger.error('Failed to export agent session', error as Error)
+      }
+    },
+    [loadSessionMessages, session.name, t]
+  )
+
+  const handleSaveAsNote = useCallback(async () => {
+    try {
+      const messages = await loadSessionMessages()
+      if (messages.length === 0) {
+        window.toast.warning(t('notes.no_content_to_export'))
+        return
+      }
+
+      const title = session.name?.trim() || t('common.untitled_conversation')
+      await exportMessageToNotes(title, `# ${title}\n\n${messagesToMarkdown(messages)}`, notesPath)
+    } catch (error) {
+      logger.error('Failed to save agent session as note', error as Error)
+    }
+  }, [loadSessionMessages, notesPath, session.name, t])
+
+  const exportItems = useMemo<NonNullable<MenuProps['items']>>(
+    () =>
+      [
+        exportMenuOptions.markdown && {
+          label: t('chat.topics.export.md.label'),
+          key: 'markdown',
+          onClick: () => void handleExport('markdown')
+        },
+        exportMenuOptions.markdown_reason && {
+          label: t('chat.topics.export.md.reason'),
+          key: 'markdown_reason',
+          onClick: () => void handleExport('markdown_reason')
+        },
+        exportMenuOptions.docx && {
+          label: t('chat.topics.export.word'),
+          key: 'word',
+          onClick: () => void handleExport('word')
+        }
+      ].filter(Boolean) as NonNullable<MenuProps['items']>,
+    [exportMenuOptions.docx, exportMenuOptions.markdown, exportMenuOptions.markdown_reason, handleExport, t]
+  )
+
   const menuItems: MenuProps['items'] = useMemo(
     () => [
       {
@@ -170,6 +252,22 @@ const SessionItem = ({
           }
         }
       },
+      {
+        label: t('notes.save'),
+        key: 'notes',
+        icon: <NotebookPen size={14} />,
+        onClick: () => void handleSaveAsNote()
+      },
+      ...(exportItems.length > 0
+        ? [
+            {
+              label: t('chat.topics.export.title'),
+              key: 'export',
+              icon: <Upload size={14} />,
+              children: exportItems
+            }
+          ]
+        : []),
       {
         label: session.is_pinned ? t('chat.topics.unpin') : t('chat.topics.pin'),
         key: 'pin',
@@ -216,6 +314,8 @@ const SessionItem = ({
     [
       agentId,
       dispatch,
+      exportItems,
+      handleSaveAsNote,
       onDelete,
       onToggleArchived,
       onTogglePinned,

@@ -27,7 +27,7 @@ const Container = styled.div<{ $contentMaxWidth?: string; $reserveNavigationSpac
   max-width: 100%;
   width: 100%;
   margin: 0 auto;
-  padding-right: ${({ $reserveNavigationSpace }) => ($reserveNavigationSpace ? '68px' : '0')};
+  padding-right: ${({ $reserveNavigationSpace }) => ($reserveNavigationSpace ? '20px' : '0')};
   position: relative;
   transition:
     max-width 0.3s ease-in-out,

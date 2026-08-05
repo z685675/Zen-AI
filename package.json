@@ -54,7 +54,7 @@
     "smoke:codex": "tsx scripts/codex-runtime-smoke.ts",
     "update:languages": "tsx scripts/update-languages.ts",
     "test": "vitest run --silent --maxWorkers=1",
-    "test:main": "vitest run --project main",
+    "test:main": "vitest run --project main --pool=forks --maxWorkers=1 --no-file-parallelism",
     "test:renderer": "vitest run --project renderer",
     "test:aicore": "vitest run --project aiCore",
     "test:shared": "vitest run --project shared",
@@ -82,7 +82,7 @@
     "packages:build": "pnpm --filter @cherrystudio/ai-sdk-provider build && pnpm --filter @cherrystudio/ai-core build && pnpm --filter @cherrystudio/extension-table-plus build",
     "packages:release": "pnpm packages:build && changeset publish",
     "ci:basic-check": "pnpm test:lint && pnpm format:check && pnpm typecheck && pnpm i18n:check && pnpm i18n:hardcoded:strict && pnpm openapi:check && pnpm skills:check",
-    "ci:test-check": "pnpm test:main && pnpm test:renderer && pnpm test:aicore && pnpm test:shared && pnpm test:scripts",
+    "ci:test-check": "pnpm exec vitest run --project main --pool=forks --maxWorkers=1 --no-file-parallelism && pnpm exec vitest run --project renderer && pnpm exec vitest run --project aiCore && pnpm exec vitest run --project shared && pnpm exec vitest scripts",
     "ci": "pnpm ci:basic-check && pnpm ci:test-check"
   },
   "dependencies": {

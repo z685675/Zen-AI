@@ -16,6 +16,7 @@ import {
   Modal,
   Popconfirm,
   Spin,
+  Switch,
   Tag,
   Tooltip,
   Typography,
@@ -211,13 +212,18 @@ SearchResultRow.displayName = 'SearchResultRow'
 
 // ─── Main Component ──────────────────────────────────────────
 
-const SkillsSettings: FC = () => {
+type SkillsSettingsProps = {
+  embedded?: boolean
+}
+
+const SkillsSettings: FC<SkillsSettingsProps> = ({ embedded = false }) => {
   const { t } = useTranslation()
-  const { skills, loading, uninstall, refresh } = useInstalledSkills()
+  const { skills, loading, uninstall, refresh, toggle } = useInstalledSkills()
   const { results, searching, search, clear } = useSkillSearch()
   const { isInstalling, install, installFromZip, installFromDirectory } = useSkillInstall()
 
   const [selectedSkill, setSelectedSkill] = useState<InstalledSkill | null>(null)
+  const [togglingSkillId, setTogglingSkillId] = useState<string | null>(null)
 
   // File tree state
   const [fileTree, setFileTree] = useState<SkillFileNode[]>([])
@@ -269,6 +275,12 @@ const SkillsSettings: FC = () => {
         setFileTree([])
       })
   }, [selectedSkill])
+
+  useEffect(() => {
+    if (!selectedSkill) return
+    const latest = skills.find((skill) => skill.id === selectedSkill.id)
+    if (latest && latest !== selectedSkill) setSelectedSkill(latest)
+  }, [skills, selectedSkill])
 
   // Load file content when selectedFile changes
   useEffect(() => {
@@ -342,18 +354,29 @@ const SkillsSettings: FC = () => {
     [search, clear]
   )
 
+  const showInstallSuccess = useCallback(
+    (skill: InstalledSkill) => {
+      const suffix =
+        skill.source !== 'builtin' && !skill.isEnabled
+          ? [' · ', t('settings.skills.enableAfterImport', '已导入，默认停用，请审核后开启')].join('')
+          : ''
+      message.success([t('settings.skills.installSuccess', { name: skill.name }), suffix].join(''))
+    },
+    [t]
+  )
+
   const handleInstall = useCallback(
     async (result: SkillSearchResult) => {
       const { skill, error } = await install(result.installSource)
       if (skill) {
-        message.success(t('settings.skills.installSuccess', { name: result.name }))
+        showInstallSuccess(skill)
         await refresh()
         setPreviewResult(null)
       } else {
         message.error(t('settings.skills.installFailed', { name: result.name }) + (error ? `: ${error}` : ''))
       }
     },
-    [install, refresh, t]
+    [install, refresh, showInstallSuccess, t]
   )
 
   const handleUninstall = useCallback(
@@ -365,6 +388,22 @@ const SkillsSettings: FC = () => {
       }
     },
     [uninstall, t]
+  )
+
+  const handleToggle = useCallback(
+    async (checked: boolean) => {
+      if (!selectedSkill || selectedSkill.source === 'builtin') return
+      setTogglingSkillId(selectedSkill.id)
+      try {
+        const success = await toggle(selectedSkill.id, checked)
+        if (!success) {
+          message.error(t('settings.skills.toggleFailed', 'Unable to update Skill status'))
+        }
+      } finally {
+        setTogglingSkillId(null)
+      }
+    },
+    [selectedSkill, toggle, t]
   )
 
   const handleBatchUninstall = useCallback(async () => {
@@ -415,13 +454,13 @@ const SkillsSettings: FC = () => {
       if (isDirectory) {
         const installed = await installFromDirectory(filePath)
         if (installed) {
-          message.success(t('settings.skills.installSuccess', { name: installed.name }))
+          showInstallSuccess(installed)
           await refresh()
         }
       } else if (file.name.toLowerCase().endsWith('.zip')) {
         const installed = await installFromZip(filePath)
         if (installed) {
-          message.success(t('settings.skills.installSuccess', { name: installed.name }))
+          showInstallSuccess(installed)
           await refresh()
         }
       } else {
@@ -430,7 +469,7 @@ const SkillsSettings: FC = () => {
 
       return false
     },
-    [isInstalling, installFromZip, installFromDirectory, refresh, t]
+    [isInstalling, installFromZip, installFromDirectory, refresh, showInstallSuccess, t]
   )
 
   const toggleDir = useCallback((dirPath: string) => {
@@ -471,12 +510,12 @@ const SkillsSettings: FC = () => {
       if (selected && selected.length > 0) {
         const installed = await installFromZip(selected[0].path)
         if (installed) {
-          message.success(t('settings.skills.installSuccess', { name: installed.name }))
+          showInstallSuccess(installed)
           await refresh()
         }
       }
     },
-    [installFromZip, refresh, t]
+    [installFromZip, refresh, showInstallSuccess]
   )
 
   const handleDirInstall = useCallback(
@@ -488,19 +527,19 @@ const SkillsSettings: FC = () => {
       if (selected && selected.length > 0) {
         const installed = await installFromDirectory(selected[0].path)
         if (installed) {
-          message.success(t('settings.skills.installSuccess', { name: installed.name }))
+          showInstallSuccess(installed)
           await refresh()
         }
       }
     },
-    [installFromDirectory, refresh, t]
+    [installFromDirectory, refresh, showInstallSuccess]
   )
 
   return (
     <Container>
-      <MainContainer>
+      <MainContainer $embedded={embedded}>
         {/* Left Panel */}
-        <MenuList>
+        <MenuList $embedded={embedded}>
           {selectedSkill ? (
             <>
               <ListHeader>
@@ -650,6 +689,16 @@ const SkillsSettings: FC = () => {
                 <DetailMeta>
                   {selectedSkill.author ? <Tag color="blue">{selectedSkill.author}</Tag> : null}
                   <Tag>{selectedSkill.source === 'builtin' ? t('settings.skills.builtin') : selectedSkill.source}</Tag>
+                  {selectedSkill.source !== 'builtin' ? (
+                    <Tooltip title={t('settings.skills.enable', 'Enable this Skill for agent runtimes')}>
+                      <Switch
+                        size="small"
+                        checked={selectedSkill.isEnabled}
+                        loading={togglingSkillId === selectedSkill.id}
+                        onChange={handleToggle}
+                      />
+                    </Tooltip>
+                  ) : null}
                   {selectedSkill.source !== 'builtin' ? (
                     <Popconfirm
                       title={t('settings.skills.confirmUninstall')}
@@ -835,23 +884,23 @@ const Container = styled.div`
   flex: 1;
 `
 
-const MainContainer = styled.div`
+const MainContainer = styled.div<{ $embedded?: boolean }>`
   display: flex;
   flex: 1;
   flex-direction: row;
   width: 100%;
-  height: calc(100vh - var(--navbar-height) - 6px);
+  height: ${(props) => (props.$embedded ? '100%' : 'calc(100vh - var(--navbar-height) - 6px)')};
   overflow: hidden;
 `
 
-const MenuList = styled(Scrollbar)`
+const MenuList = styled(Scrollbar)<{ $embedded?: boolean }>`
   display: flex;
   flex-direction: column;
   gap: 5px;
   width: var(--settings-width);
   padding: 12px;
   border-right: 0.5px solid var(--color-border);
-  height: calc(100vh - var(--navbar-height));
+  height: ${(props) => (props.$embedded ? '100%' : 'calc(100vh - var(--navbar-height))')};
 `
 
 const ListHeader = styled.div`

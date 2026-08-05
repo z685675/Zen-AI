@@ -1,7 +1,12 @@
 import type { TextStreamPart } from 'ai'
 import { describe, expect, it } from 'vitest'
 
-import { AgentRuntimeNoOutputTimeoutError, isRuntimeBootstrapChunk, shouldFallbackRuntime } from '../fallback'
+import {
+  AgentDeepResearchTimeoutError,
+  AgentRuntimeNoOutputTimeoutError,
+  isRuntimeBootstrapChunk,
+  shouldFallbackRuntime
+} from '../fallback'
 
 describe('runtime fallback guards', () => {
   it('allows a pre-output protocol failure to try one Auto fallback', () => {
@@ -32,6 +37,12 @@ describe('runtime fallback guards', () => {
     for (const error of errors) {
       expect(shouldFallbackRuntime(error, new AbortController())).toBe(false)
     }
+  })
+
+  it('does not fallback after a deep research task reaches its time budget', () => {
+    expect(
+      shouldFallbackRuntime(new AgentDeepResearchTimeoutError('Deep research timed out'), new AbortController())
+    ).toBe(false)
   })
 
   it('treats runtime init markers as buffered bootstrap chunks', () => {

@@ -15,7 +15,7 @@ export const ScreenshotSchema = z.object({
 export const screenshotToolDefinition = {
   name: 'screenshot',
   description:
-    'Take a screenshot of the current page. Returns an image the model can see directly — much more efficient than fetching full page content for search results, dashboards, or verification. Prefer this over format=markdown for visually dense pages. PARALLEL: Can be called simultaneously with other tools.',
+    'Take a screenshot of the current page. Returns an image the model can see directly — much more efficient than fetching full page content for search results, dashboards, or verification. Prefer this over format=markdown for visually dense pages. At most two browser operations should run concurrently.',
   inputSchema: {
     type: 'object',
     properties: {

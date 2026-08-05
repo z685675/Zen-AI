@@ -12,4 +12,8 @@ describe('isCodexRuntimeEnabled', () => {
     expect(isCodexRuntimeEnabled({ ZEN_ENABLE_CODEX_RUNTIME: 'false' })).toBe(false)
     expect(isCodexRuntimeEnabled({ ZEN_ENABLE_CODEX_RUNTIME: '0' })).toBe(false)
   })
+
+  it('enables Codex by default in packaged builds', () => {
+    expect(isCodexRuntimeEnabled({})).toBe(true)
+  })
 })

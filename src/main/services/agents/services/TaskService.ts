@@ -1,6 +1,6 @@
 import { loggerService } from '@logger'
 import type { CreateTaskRequest, ListOptions, ScheduledTaskEntity, TaskRunLogEntity, UpdateTaskRequest } from '@types'
-import { and, asc, count, desc, eq, inArray, lte, ne } from 'drizzle-orm'
+import { and, asc, count, desc, eq, inArray, isNotNull, lte, ne } from 'drizzle-orm'
 
 import { BaseService } from '../BaseService'
 import {
@@ -12,6 +12,7 @@ import {
   type TaskRow,
   taskRunLogsTable
 } from '../database/schema'
+import { computeInitialTaskRun, computeNextCronRun, validateTaskSchedule } from './taskSchedule'
 
 const logger = loggerService.withContext('TaskService')
 
@@ -27,20 +28,22 @@ export class TaskService extends BaseService {
 
   async createTask(agentId: string, req: CreateTaskRequest): Promise<ScheduledTaskEntity> {
     await this.assertAutonomous(agentId)
+    validateTaskSchedule(req.schedule_type, req.schedule_value)
 
     const id = `task_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`
     const now = new Date().toISOString()
 
-    const nextRun = this.computeInitialNextRun(req.schedule_type, req.schedule_value)
+    const nextRun = computeInitialTaskRun(req.schedule_type, req.schedule_value)
 
     const insertData: InsertTaskRow = {
       id,
       agent_id: agentId,
+      model_id: req.model_id ?? null,
       name: req.name,
       prompt: req.prompt,
       schedule_type: req.schedule_type,
       schedule_value: req.schedule_value,
-      ...(req.timeout_minutes != null ? { timeout_minutes: req.timeout_minutes } : {}),
+      timeout_minutes: req.timeout_minutes ?? 60,
       next_run: nextRun,
       status: 'active',
       created_at: now,
@@ -130,10 +133,15 @@ export class TaskService extends BaseService {
     const now = new Date().toISOString()
     const updateData: Partial<TaskRow> = { updated_at: now }
 
+    if (updates.agent_id !== undefined) {
+      await this.assertAutonomous(updates.agent_id)
+    }
+
     if (updates.name !== undefined) updateData.name = updates.name
     if (updates.prompt !== undefined) updateData.prompt = updates.prompt
     if (updates.agent_id !== undefined) updateData.agent_id = updates.agent_id
-    if (updates.timeout_minutes !== undefined) updateData.timeout_minutes = updates.timeout_minutes ?? 2
+    if (updates.model_id !== undefined) updateData.model_id = updates.model_id ?? null
+    if (updates.timeout_minutes !== undefined) updateData.timeout_minutes = updates.timeout_minutes ?? 60
     if (updates.status !== undefined) updateData.status = updates.status
 
     if (updates.schedule_type !== undefined || updates.schedule_value !== undefined) {
@@ -141,13 +149,15 @@ export class TaskService extends BaseService {
       const schedValue = updates.schedule_value ?? existing.schedule_value
       updateData.schedule_type = schedType
       updateData.schedule_value = schedValue
-      updateData.next_run = this.computeInitialNextRun(schedType, schedValue)
+      validateTaskSchedule(schedType, schedValue)
+      updateData.next_run = computeInitialTaskRun(schedType, schedValue)
     }
 
     if (updates.status === 'active' && existing.status === 'paused') {
       const schedType = updates.schedule_type ?? existing.schedule_type
       const schedValue = updates.schedule_value ?? existing.schedule_value
-      updateData.next_run = this.computeInitialNextRun(schedType, schedValue)
+      validateTaskSchedule(schedType, schedValue)
+      updateData.next_run = computeInitialTaskRun(schedType, schedValue)
     }
 
     const database = await this.getDatabase()
@@ -204,7 +214,8 @@ export class TaskService extends BaseService {
 
     if (updates.name !== undefined) updateData.name = updates.name
     if (updates.prompt !== undefined) updateData.prompt = updates.prompt
-    if (updates.timeout_minutes !== undefined) updateData.timeout_minutes = updates.timeout_minutes ?? 2
+    if (updates.model_id !== undefined) updateData.model_id = updates.model_id ?? null
+    if (updates.timeout_minutes !== undefined) updateData.timeout_minutes = updates.timeout_minutes ?? 60
     if (updates.status !== undefined) updateData.status = updates.status
 
     // If schedule type or value changed, recompute next_run
@@ -213,14 +224,16 @@ export class TaskService extends BaseService {
       const schedValue = updates.schedule_value ?? existing.schedule_value
       updateData.schedule_type = schedType
       updateData.schedule_value = schedValue
-      updateData.next_run = this.computeInitialNextRun(schedType, schedValue)
+      validateTaskSchedule(schedType, schedValue)
+      updateData.next_run = computeInitialTaskRun(schedType, schedValue)
     }
 
     // If resuming from paused, recompute next_run
     if (updates.status === 'active' && existing.status === 'paused') {
       const schedType = updates.schedule_type ?? existing.schedule_type
       const schedValue = updates.schedule_value ?? existing.schedule_value
-      updateData.next_run = this.computeInitialNextRun(schedType, schedValue)
+      validateTaskSchedule(schedType, schedValue)
+      updateData.next_run = computeInitialTaskRun(schedType, schedValue)
     }
 
     const database = await this.getDatabase()
@@ -316,7 +329,12 @@ export class TaskService extends BaseService {
     return result as ScheduledTaskEntity[]
   }
 
-  async updateTaskAfterRun(taskId: string, nextRun: string | null, lastResult: string): Promise<void> {
+  async updateTaskAfterRun(
+    taskId: string,
+    nextRun: string | null,
+    lastResult: string,
+    outcome: 'success' | 'error' | 'skipped' = 'success'
+  ): Promise<void> {
     const now = new Date().toISOString()
     const updateData: Partial<TaskRow> = {
       last_run: now,
@@ -325,9 +343,13 @@ export class TaskService extends BaseService {
       updated_at: now
     }
 
-    // Mark one-time tasks as completed
-    if (nextRun === null) {
+    // One-time tasks need an explicit retry state after failure. Recurring
+    // tasks stay active so transient failures can be retried; SchedulerService
+    // pauses them after the consecutive-error threshold is reached.
+    if (nextRun === null && outcome === 'success') {
       updateData.status = 'completed'
+    } else if (nextRun === null && outcome === 'error') {
+      updateData.status = 'paused'
     }
 
     const database = await this.getDatabase()
@@ -344,7 +366,12 @@ export class TaskService extends BaseService {
 
   async updateTaskRunLog(
     logId: number,
-    updates: Partial<Pick<InsertTaskRunLogRow, 'status' | 'result' | 'error' | 'duration_ms' | 'session_id'>>
+    updates: Partial<
+      Pick<
+        InsertTaskRunLogRow,
+        'status' | 'result' | 'error' | 'duration_ms' | 'session_id' | 'model_id' | 'trigger_type' | 'scheduled_for'
+      >
+    >
   ): Promise<void> {
     const database = await this.getDatabase()
     await database.update(taskRunLogsTable).set(updates).where(eq(taskRunLogsTable.id, logId))
@@ -377,8 +404,35 @@ export class TaskService extends BaseService {
     }
   }
 
+  /** Mark executions left in an in-flight state by a previous app process as interrupted. */
+  async recoverInterruptedTaskRuns(): Promise<number> {
+    const database = await this.getDatabase()
+    const interrupted = await database
+      .select({ id: taskRunLogsTable.id, run_at: taskRunLogsTable.run_at })
+      .from(taskRunLogsTable)
+      .where(inArray(taskRunLogsTable.status, ['running', 'waiting_user']))
+
+    await Promise.all(
+      interrupted.map((log) =>
+        database
+          .update(taskRunLogsTable)
+          .set({
+            status: 'error',
+            error: '应用在任务执行过程中关闭，任务未完成',
+            duration_ms: Math.max(0, Date.now() - new Date(log.run_at).getTime())
+          })
+          .where(eq(taskRunLogsTable.id, log.id))
+      )
+    )
+
+    if (interrupted.length > 0) {
+      logger.warn('Recovered interrupted task runs', { count: interrupted.length })
+    }
+    return interrupted.length
+  }
+
   /**
-   * Get the session_id from the most recent successful run of a task.
+   * Get the session_id from the most recent run that created a session.
    * Used by SchedulerService to reuse an existing session for context continuity.
    */
   async getLastRunSessionId(taskId: string): Promise<string | null> {
@@ -386,7 +440,7 @@ export class TaskService extends BaseService {
     const result = await database
       .select({ session_id: taskRunLogsTable.session_id })
       .from(taskRunLogsTable)
-      .where(and(eq(taskRunLogsTable.task_id, taskId), eq(taskRunLogsTable.status, 'success')))
+      .where(and(eq(taskRunLogsTable.task_id, taskId), isNotNull(taskRunLogsTable.session_id)))
       .orderBy(desc(taskRunLogsTable.run_at))
       .limit(1)
 
@@ -402,9 +456,7 @@ export class TaskService extends BaseService {
 
     if (task.schedule_type === 'cron') {
       try {
-        const { CronExpressionParser } = require('cron-parser')
-        const interval = CronExpressionParser.parse(task.schedule_value)
-        return interval.next().toISOString()
+        return computeNextCronRun(task.schedule_value)
       } catch {
         logger.warn('Invalid cron expression', { taskId: task.id, cron: task.schedule_value })
         return null
@@ -412,7 +464,7 @@ export class TaskService extends BaseService {
     }
 
     if (task.schedule_type === 'interval') {
-      const minutes = parseInt(task.schedule_value, 10)
+      const minutes = Number(task.schedule_value)
       const ms = minutes * 60_000
       if (!ms || ms <= 0) {
         logger.warn('Invalid interval value', { taskId: task.id, value: task.schedule_value })
@@ -420,7 +472,8 @@ export class TaskService extends BaseService {
       }
 
       // Anchor to scheduled time to prevent drift
-      let next = new Date(task.next_run!).getTime() + ms
+      const scheduledAt = task.next_run ? new Date(task.next_run).getTime() : now
+      let next = scheduledAt + ms
       while (next <= now) {
         next += ms
       }
@@ -461,33 +514,6 @@ export class TaskService extends BaseService {
     }
 
     throw new Error('Scheduled tasks require Soul Mode or Bypass Permissions mode. Update the agent settings first.')
-  }
-
-  private computeInitialNextRun(scheduleType: string, scheduleValue: string): string | null {
-    const now = Date.now()
-
-    switch (scheduleType) {
-      case 'cron': {
-        try {
-          const { CronExpressionParser } = require('cron-parser')
-          const interval = CronExpressionParser.parse(scheduleValue)
-          return interval.next().toISOString()
-        } catch {
-          return null
-        }
-      }
-      case 'interval': {
-        const minutes = parseInt(scheduleValue, 10)
-        if (!minutes || minutes <= 0) return null
-        return new Date(now + minutes * 60_000).toISOString()
-      }
-      case 'once': {
-        // schedule_value is an ISO timestamp for once
-        return scheduleValue
-      }
-      default:
-        return null
-    }
   }
 }
 

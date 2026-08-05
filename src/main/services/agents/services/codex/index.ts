@@ -3,6 +3,7 @@ import { EventEmitter } from 'node:events'
 import { loggerService } from '@logger'
 import { config as apiConfigService } from '@main/apiServer/config'
 import { cleanupAssistantMcpContext, registerAssistantMcpContext } from '@main/apiServer/routes/assistant-mcp'
+import { cleanupBrowserMcpContext, registerBrowserMcpContext } from '@main/apiServer/routes/browser-mcp'
 import { validateModelId } from '@main/apiServer/utils'
 import { getProxyEnvironment } from '@main/services/proxy/nodeProxy'
 import { managedPythonService } from '@main/services/python/ManagedPythonService'
@@ -16,6 +17,7 @@ import type {
   AgentStreamEvent,
   AgentThinkingOptions
 } from '../../interfaces/AgentStreamInterface'
+import { syncSkillsToWorkspace } from '../../skills/skillWorkspaceSync'
 import {
   ensureBuiltinAgentRuntimeSkillRoots,
   isProvisioned,
@@ -23,6 +25,7 @@ import {
 } from '../builtin/BuiltinAgentProvisioner'
 import { getCodexRuntimeDisabledError, isCodexRuntimeEnabled } from '../runtime/features'
 import { failAgentStreamBeforeStart } from '../runtime/preflight'
+import { buildResearchWorkflowGuidance } from '../runtime/researchWorkflows'
 import { buildCodexInvocationConfig, buildCodexMcpServers, prepareCodexInput } from './config'
 import { type CodexExecutableResolution, resolveCodexExecutable } from './executable'
 import { CodexStreamState, type CodexThreadEvent, transformCodexEventToStreamParts } from './transform'
@@ -121,9 +124,18 @@ class CodexService implements AgentServiceInterface {
       }
       logger.info('Provisioned builtin agent workspace for Codex runtime', { builtinRole, cwd })
     }
+    if (builtinRole && !isProvisioned(cwd, builtinRole)) {
+      const error = new Error(
+        'Built-in agent Skill files are incomplete after automatic repair. Update or reinstall Zen AI, then retry.'
+      )
+      logger.error('Builtin agent workspace is incomplete after provisioning', { builtinRole, cwd })
+      return failAgentStreamBeforeStart(aiStream, error)
+    }
+    await syncSkillsToWorkspace(cwd)
 
     let invocationConfig
     let assistantMcpContextId: string | undefined
+    let browserMcpContextId: string | undefined
     try {
       const shouldInjectAssistantMcp = Boolean(builtinRole)
       const apiConfig = session.mcps?.length || shouldInjectAssistantMcp ? await apiConfigService.get() : undefined
@@ -132,10 +144,16 @@ class CodexService implements AgentServiceInterface {
       if (shouldInjectAssistantMcp && apiConfig) {
         registerAssistantMcpContext(session.id, session.accessible_paths)
         assistantMcpContextId = session.id
+        registerBrowserMcpContext(session.id)
+        browserMcpContextId = session.id
         mcpServers = {
           ...mcpServers,
           exa: {
             url: 'https://mcp.exa.ai/mcp'
+          },
+          browser: {
+            url: `http://${apiConfig.host}:${apiConfig.port}/v1/browser/${encodeURIComponent(session.id)}/mcp`,
+            bearer_token_env_var: 'ZEN_AGENT_MCP_API_KEY'
           },
           assistant: {
             url: `http://${apiConfig.host}:${apiConfig.port}/v1/assistant/${encodeURIComponent(session.id)}/mcp`,
@@ -163,6 +181,7 @@ class CodexService implements AgentServiceInterface {
       })
     } catch (error) {
       if (assistantMcpContextId) cleanupAssistantMcpContext(assistantMcpContextId)
+      if (browserMcpContextId) cleanupBrowserMcpContext(browserMcpContextId)
       return failAgentStreamBeforeStart(aiStream, error instanceof Error ? error : new Error(String(error)))
     }
 
@@ -176,7 +195,8 @@ class CodexService implements AgentServiceInterface {
         stream: aiStream,
         abortController,
         lastAgentSessionId,
-        assistantMcpContextId
+        assistantMcpContextId,
+        browserMcpContextId
       }).catch((error) => {
         logger.error('Unhandled Codex stream error', {
           error: error instanceof Error ? { name: error.name, message: error.message } : String(error)
@@ -195,6 +215,7 @@ class CodexService implements AgentServiceInterface {
     const builtinRole = (session.configuration as Record<string, unknown> | undefined)?.builtin_role as
       | string
       | undefined
+    const researchWorkflowGuidance = builtinRole ? buildResearchWorkflowGuidance(prompt) : undefined
     const blocks = [
       session.instructions
         ? [
@@ -211,9 +232,12 @@ class CodexService implements AgentServiceInterface {
             '- Use mcp__assistant__python_execute for data analysis, complex transformations, and bundled Python Skill scripts.',
             '- Use mcp__assistant__ocr_file for local image or scanned-PDF OCR.',
             '- The python command resolves to Zen AI managed CPython. Do not probe or install into system Python.',
-            '- Keep file access inside the session allowed paths and follow confirmation/backup rules for destructive changes.'
+            '- Keep file access inside the session allowed paths and follow confirmation/backup rules for destructive changes.',
+            '- Use mcp__browser__open, mcp__browser__snapshot, and mcp__browser__screenshot for specific websites. Use mcp__browser__wait_for_user after opening a page visibly when login, CAPTCHA, 2FA, authorization, or another manual step is required.',
+            "- The browser is Zen AI internal browser, not the user's Edge or Chrome. Use normal mode for reusable login sessions and never bypass CAPTCHA or security prompts."
           ].join('\n')
         : undefined,
+      researchWorkflowGuidance,
       builtinRole ? buildCurrentLocalTimeContext() : undefined,
       builtinRole
         ? [
@@ -252,6 +276,7 @@ class CodexService implements AgentServiceInterface {
     abortController: AbortController
     lastAgentSessionId?: string
     assistantMcpContextId?: string
+    browserMcpContextId?: string
   }): Promise<void> {
     const state = new CodexStreamState()
     const startTime = Date.now()
@@ -350,6 +375,7 @@ class CodexService implements AgentServiceInterface {
     } finally {
       await preparedInput?.cleanup()
       if (params.assistantMcpContextId) cleanupAssistantMcpContext(params.assistantMcpContextId)
+      if (params.browserMcpContextId) cleanupBrowserMcpContext(params.browserMcpContextId)
     }
   }
 }

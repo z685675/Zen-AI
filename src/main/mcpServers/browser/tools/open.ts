@@ -2,7 +2,7 @@ import * as z from 'zod'
 
 import type { CdpBrowserController } from '../controller'
 import { logger } from '../types'
-import { errorResponse, successResponse } from './utils'
+import { errorResponse, successResponse, withBrowserToolTimeout } from './utils'
 
 export const OpenSchema = z.object({
   url: z.url().describe('URL to navigate to'),
@@ -24,7 +24,7 @@ export const OpenSchema = z.object({
     ),
   timeout: z.number().optional().describe('Navigation timeout in ms (default: 10000)'),
   privateMode: z.boolean().optional().describe('Use incognito mode, no data persisted (default: false)'),
-  newTab: z.boolean().optional().describe('Open in new tab, required for parallel requests (default: false)'),
+  newTab: z.boolean().optional().describe('Open in new tab for a bounded parallel request (default: false)'),
   showWindow: z
     .boolean()
     .optional()
@@ -37,7 +37,7 @@ export const OpenSchema = z.object({
 export const openToolDefinition = {
   name: 'open',
   description:
-    'Navigate to a URL and optionally fetch page content using the Zen AI internal browser. By default the browser runs in the background (no window shown). If format is specified, returns { tabId, content } with page content in that format. Otherwise, returns { currentUrl, title, tabId } for subsequent operations. Use selector to extract only part of a page (e.g. "#search" for Google results). Set showWindow=true when the user explicitly asks to open/show a page, or when login, CAPTCHA, 2FA, authorization, account access, final publish/submit/delete confirmation, upload/download choice, file picker, site check-in, dashboard/admin workflow, or manual browsing is required. For simulated or high-impact workflows, use the visible browser to prepare drafts/previews and stop before final irreversible actions until the user confirms. Keep showWindow=false for ordinary background search, extraction, and summarization. PARALLEL: Set newTab=true and call this tool multiple times simultaneously when visiting multiple URLs.',
+    'Navigate to a URL and optionally fetch page content using the Zen AI internal browser. By default the browser runs in the background (no window shown). If format is specified, returns { tabId, content } with page content in that format. Otherwise, returns { currentUrl, title, tabId } for subsequent operations. Use selector to extract only part of a page (e.g. "#search" for Google results). Set showWindow=true when the user explicitly asks to open/show a page, or when login, CAPTCHA, 2FA, authorization, account access, final publish/submit/delete confirmation, upload/download choice, file picker, site check-in, dashboard/admin workflow, or manual browsing is required. For simulated or high-impact workflows, use the visible browser to prepare drafts/previews and stop before final irreversible actions until the user confirms. Keep showWindow=false for ordinary background search, extraction, and summarization. At most two browser opens may run concurrently; batch larger sets and skip a URL after a timeout.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -69,7 +69,7 @@ export const openToolDefinition = {
       },
       newTab: {
         type: 'boolean',
-        description: 'Open in new tab, required for parallel requests (default: false)'
+        description: 'Open in new tab for a bounded parallel request (default: false)'
       },
       showWindow: {
         type: 'boolean',
@@ -86,24 +86,30 @@ export async function handleOpen(controller: CdpBrowserController, args: unknown
     const { url, format, selector, maxChars, timeout, privateMode, newTab, showWindow } = OpenSchema.parse(args)
 
     if (format) {
-      const { tabId, content } = await controller.fetch(
-        url,
-        format,
-        timeout ?? 10000,
-        privateMode ?? false,
-        newTab ?? false,
-        showWindow,
-        selector
+      const { tabId, content } = await withBrowserToolTimeout(
+        controller.fetch(url, format, timeout ?? 10000, privateMode ?? false, newTab ?? false, showWindow, selector)
       )
 
-      let finalContent = content
-      if (maxChars && typeof finalContent === 'string' && finalContent.length > maxChars) {
-        finalContent = finalContent.slice(0, maxChars) + '\n... [truncated at ' + maxChars + ' chars]'
+      const contentLimit = Math.min(Math.max(maxChars ?? 12000, 1000), 16000)
+      let finalContent: string | object = content
+      if (typeof finalContent === 'string' && finalContent.length > contentLimit) {
+        finalContent = finalContent.slice(0, contentLimit) + '\n... [truncated at ' + contentLimit + ' chars]'
+      } else if (typeof finalContent === 'object') {
+        const serialized = JSON.stringify(finalContent) ?? ''
+        if (serialized.length > contentLimit) {
+          finalContent = {
+            truncated: true,
+            preview: serialized.slice(0, contentLimit),
+            notice: `JSON content truncated at ${contentLimit} characters`
+          }
+        }
       }
 
       return successResponse(JSON.stringify({ tabId, content: finalContent }))
     } else {
-      const res = await controller.open(url, timeout ?? 10000, privateMode ?? false, newTab ?? false, showWindow)
+      const res = await withBrowserToolTimeout(
+        controller.open(url, timeout ?? 10000, privateMode ?? false, newTab ?? false, showWindow)
+      )
       return successResponse(JSON.stringify(res))
     }
   } catch (error) {

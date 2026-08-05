@@ -1,0 +1,7 @@
+interface:
+  display_name: "Paper Writing"
+  short_description: "Write clear academic papers without losing evidence traceability"
+  brand_color: "#7C3AED"
+  default_prompt: "Turn this verified research into a structured academic paper and flag unsupported claims."
+policy:
+  allow_implicit_invocation: true

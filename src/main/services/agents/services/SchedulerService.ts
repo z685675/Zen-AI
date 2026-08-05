@@ -15,6 +15,7 @@ const logger = loggerService.withContext('SchedulerService')
 
 const POLL_INTERVAL_MS = 60_000
 const MAX_CONSECUTIVE_ERRORS = 3
+const TASK_PAUSED_ABORT_REASON = 'Task paused by user'
 
 const isBrowserWaitForUserTool = (toolName?: string): boolean => {
   if (!toolName) return false
@@ -25,7 +26,10 @@ type RunningTask = {
   taskId: string
   agentId: string
   abortController: AbortController
+  completion: Promise<void>
 }
+
+type TaskRunTrigger = 'scheduled' | 'manual' | 'retry'
 
 // TODO: refactor lifecycle in V2
 class SchedulerService {
@@ -81,6 +85,7 @@ class SchedulerService {
   }
 
   async restoreSchedulers(): Promise<void> {
+    await taskService.recoverInterruptedTaskRuns()
     const hasActive = await taskService.hasActiveTasks()
     if (hasActive) {
       this.startLoop()
@@ -116,19 +121,59 @@ class SchedulerService {
     }
   }
 
-  /** Manually trigger a task run (from UI). Returns immediately; task runs in background. */
+  /**
+   * Manually trigger a task run (from UI).
+   *
+   * The task itself still runs in the background, but this method waits until
+   * the task conversation has been created and the renderer has been notified.
+   * That gives the caller a reliable acknowledgement that the execution is
+   * visible to the user instead of merely accepting a fire-and-forget promise.
+   */
   async runTaskNow(agentId: string, taskId: string): Promise<void> {
     const task = await taskService.getTask(agentId, taskId)
     if (!task) throw new Error(`Task not found: ${taskId}`)
-    if (this.activeTasks.has(task.id)) throw new Error('Task is already running')
 
-    // Fire and forget
-    this.runTask(task).catch((error) => {
+    const activeTask = this.activeTasks.get(task.id)
+    if (activeTask) {
+      if (task.status !== 'paused') throw new Error('Task is already running')
+
+      // Pausing a task cancels the current run. Wait for its cleanup before
+      // accepting a manual run so a paused task never gets stuck in limbo.
+      activeTask.abortController.abort(TASK_PAUSED_ABORT_REASON)
+      await activeTask.completion
+    }
+
+    // A paused task resumes as active, while a completed one-time task can be
+    // run again without converting it into a recurring task. The final run
+    // outcome will move it to completed or paused/error as appropriate.
+    if (task.status === 'paused' || (task.schedule_type === 'once' && task.status === 'completed')) {
+      await taskService.updateTask(agentId, taskId, { status: 'active' })
+    }
+
+    let resolveReady!: () => void
+    let rejectReady!: (error: unknown) => void
+    const ready = new Promise<void>((resolve, reject) => {
+      resolveReady = resolve
+      rejectReady = reject
+    })
+
+    // Fire and forget after the run has been registered. Any failure before
+    // the conversation is ready is propagated to the API caller.
+    void this.runTask(task, 'manual', (_sessionId, error) => {
+      if (error) {
+        rejectReady(error)
+      } else {
+        resolveReady()
+      }
+    }).catch((error) => {
+      rejectReady(error)
       logger.error('Unhandled error in manual runTask', {
         taskId: task.id,
         error: error instanceof Error ? error.message : String(error)
       })
     })
+
+    await ready
   }
 
   private poll(): void {
@@ -147,6 +192,27 @@ class SchedulerService {
       })
   }
 
+  /** Update a task status and keep the in-memory scheduler state in sync. */
+  async updateTaskStatus(agentId: string, taskId: string, status: 'active' | 'paused' | 'completed') {
+    const task = await taskService.getTask(agentId, taskId)
+    if (!task) throw new Error(`Task not found: ${taskId}`)
+
+    const updatedTask = await taskService.updateTask(agentId, taskId, { status })
+    if (!updatedTask) throw new Error(`Task not found: ${taskId}`)
+
+    if (status === 'paused') {
+      const activeTask = this.activeTasks.get(taskId)
+      if (activeTask) {
+        activeTask.abortController.abort(TASK_PAUSED_ABORT_REASON)
+        await activeTask.completion
+      }
+    } else if (status === 'active') {
+      this.startLoop()
+    }
+
+    return updatedTask
+  }
+
   private async tick(): Promise<void> {
     const dueTasks = await taskService.getDueTasks()
     if (dueTasks.length > 0) {
@@ -161,7 +227,7 @@ class SchedulerService {
       }
 
       // Fire and forget — don't block the poll loop
-      this.runTask(task).catch((error) => {
+      this.runTask(task, 'scheduled').catch((error) => {
         logger.error('Unhandled error in runTask', {
           taskId: task.id,
           error: error instanceof Error ? error.message : String(error)
@@ -170,13 +236,22 @@ class SchedulerService {
     }
   }
 
-  private async runTask(task: ScheduledTaskEntity): Promise<void> {
+  private async runTask(
+    task: ScheduledTaskEntity,
+    triggerType: TaskRunTrigger = 'scheduled',
+    onReady?: (sessionId?: string, error?: unknown) => void
+  ): Promise<void> {
     const startTime = Date.now()
     const abortController = new AbortController()
+    let resolveCompletion!: () => void
+    const completion = new Promise<void>((resolve) => {
+      resolveCompletion = resolve
+    })
     const runningTask: RunningTask = {
       taskId: task.id,
       agentId: task.agent_id,
-      abortController
+      abortController,
+      completion
     }
     this.activeTasks.set(task.id, runningTask)
 
@@ -192,19 +267,38 @@ class SchedulerService {
 
     let result: string | null = null
     let error: string | null = null
+    let pausedByUser = false
     let sessionId: string | undefined
+    let resolvedModelId: string | null = task.model_id?.trim() || null
     let subscribedChannels: { id: string; sessionId?: string | null }[] = []
+    let readyAcknowledged = false
+    const acknowledgeReady = (readySessionId?: string) => {
+      if (readyAcknowledged) return
+      readyAcknowledged = true
+      onReady?.(readySessionId)
+    }
 
     // Create log entry immediately so UI shows the running task
-    const logId = await taskService.logTaskRun({
-      task_id: task.id,
-      session_id: null,
-      run_at: new Date().toISOString(),
-      duration_ms: 0,
-      status: 'running',
-      result: null,
-      error: null
-    })
+    let logId: number
+    try {
+      logId = await taskService.logTaskRun({
+        task_id: task.id,
+        session_id: null,
+        model_id: task.model_id?.trim() || null,
+        trigger_type: triggerType,
+        scheduled_for: task.next_run,
+        run_at: new Date().toISOString(),
+        duration_ms: 0,
+        status: 'running',
+        result: null,
+        error: null
+      })
+    } catch (error) {
+      this.activeTasks.delete(task.id)
+      resolveCompletion()
+      if (timeoutTimer) clearTimeout(timeoutTimer)
+      throw error
+    }
 
     try {
       logger.info('Running scheduled task', { taskId: task.id, agentId: task.agent_id })
@@ -223,16 +317,32 @@ class SchedulerService {
           logger.debug('Heartbeat task skipped (disabled or no workspace)', { taskId: task.id })
           // Still update next_run so it doesn't fire again immediately
           const nextRun = taskService.computeNextRun(task)
-          await taskService.updateTaskAfterRun(task.id, nextRun, 'Skipped (disabled)')
+          await taskService.updateTaskRunLog(logId, {
+            status: 'success',
+            result: 'Skipped (disabled)',
+            duration_ms: Date.now() - startTime
+          })
+          await taskService.updateTaskAfterRun(task.id, nextRun, 'Skipped (disabled)', 'skipped')
+          if (timeoutTimer) clearTimeout(timeoutTimer)
           this.activeTasks.delete(task.id)
+          resolveCompletion()
+          acknowledgeReady()
           return
         }
         const heartbeatContent = await readHeartbeat(workspacePath)
         if (!heartbeatContent) {
           logger.debug('Heartbeat task skipped (no heartbeat.md)', { taskId: task.id })
           const nextRun = taskService.computeNextRun(task)
-          await taskService.updateTaskAfterRun(task.id, nextRun, 'Skipped (no file)')
+          await taskService.updateTaskRunLog(logId, {
+            status: 'success',
+            result: 'Skipped (no file)',
+            duration_ms: Date.now() - startTime
+          })
+          await taskService.updateTaskAfterRun(task.id, nextRun, 'Skipped (no file)', 'skipped')
+          if (timeoutTimer) clearTimeout(timeoutTimer)
           this.activeTasks.delete(task.id)
+          resolveCompletion()
+          acknowledgeReady()
           return
         }
         fullPrompt = [
@@ -261,20 +371,63 @@ class SchedulerService {
         fullPrompt
       ].join('\n')
 
-      // Try to reuse the session from the last successful run for context continuity
-      const lastSessionId = await taskService.getLastRunSessionId(task.id)
+      // Recurring tasks keep one stable conversation for continuity. A
+      // one-time rerun is a new execution and gets its own conversation so
+      // every run can be opened independently from the history.
+      const lastSessionId = task.schedule_type === 'once' ? null : await taskService.getLastRunSessionId(task.id)
       let session = lastSessionId ? await sessionService.getSession(task.agent_id, lastSessionId) : null
+      const requestedModel = task.model_id?.trim() || undefined
+
+      // A task-level model change must start a fresh session. Reusing the old
+      // session here would silently continue sending requests to its model.
+      if (session && requestedModel && session.model !== requestedModel) {
+        logger.info('Task model changed; creating a fresh session', {
+          taskId: task.id,
+          previousModel: session.model,
+          requestedModel
+        })
+        session = null
+      }
+
+      const scheduledTaskMetadata = {
+        task_id: task.id,
+        task_name: task.name,
+        run_log_id: logId,
+        trigger_type: triggerType,
+        scheduled_for: task.next_run
+      }
 
       if (session) {
         sessionId = session.id
+        resolvedModelId = session.model
+        await sessionService.updateSession(task.agent_id, session.id, {
+          configuration: {
+            ...config,
+            ...session.configuration,
+            scheduled_task: scheduledTaskMetadata
+          } as CherryClawConfiguration
+        })
         logger.debug('Reusing session from last run', { taskId: task.id, sessionId })
       } else {
-        const newSession = await sessionService.createSession(task.agent_id, { name: task.name })
-        sessionId = newSession!.id
-        session = await sessionService.getSession(task.agent_id, sessionId)
-        if (!session) {
-          throw new Error(`Session not found: ${sessionId}`)
+        const newSession = await sessionService.createSession(task.agent_id, {
+          name: task.name,
+          ...(requestedModel ? { model: requestedModel } : {}),
+          configuration: {
+            ...config,
+            scheduled_task: scheduledTaskMetadata
+          }
+        })
+        const createdSessionId = newSession?.id
+        if (!createdSessionId) {
+          throw new Error('Task session was not created')
         }
+        session = await sessionService.getSession(task.agent_id, createdSessionId)
+        if (!session) {
+          throw new Error(`Session not found: ${createdSessionId}`)
+        }
+        sessionId = session.id
+        resolvedModelId = session.model
+        broadcastSessionChanged(task.agent_id, sessionId, true, 'created')
         logger.debug('Created new session for task', { taskId: task.id, sessionId })
       }
 
@@ -285,6 +438,10 @@ class SchedulerService {
         abortController,
         { persist: true }
       )
+      // The manual trigger is acknowledged only after the session exists and
+      // the task message has been accepted for persistence. A visible session
+      // without a submitted task would be a misleading success signal.
+      acknowledgeReady(sessionId)
 
       // Collect the response text and stream to subscribed channels only
       let waitingForUser = false
@@ -319,9 +476,6 @@ class SchedulerService {
       })
       await completion
 
-      // Notify renderer so the session list refreshes and messages can be loaded
-      broadcastSessionChanged(task.agent_id, sessionId, true)
-
       // Check if the task was aborted (e.g. by timeout)
       if (abortController.signal.aborted) {
         const reason = abortController.signal.reason
@@ -332,44 +486,72 @@ class SchedulerService {
       this.consecutiveErrors.delete(task.id)
       logger.info('Task completed', { taskId: task.id, durationMs: Date.now() - startTime })
     } catch (err) {
-      error = err instanceof Error ? err.message : String(err)
-      logger.error('Task failed', { taskId: task.id, error })
+      pausedByUser = abortController.signal.reason === TASK_PAUSED_ABORT_REASON
+      if (pausedByUser) {
+        result = 'Task paused by user'
+        logger.info('Task paused by user', { taskId: task.id })
+      } else {
+        error = err instanceof Error ? err.message : String(err)
+        logger.error('Task failed', { taskId: task.id, error })
 
-      // Track consecutive errors across invocations
-      const errCount = (this.consecutiveErrors.get(task.id) ?? 0) + 1
-      this.consecutiveErrors.set(task.id, errCount)
-      if (errCount >= MAX_CONSECUTIVE_ERRORS) {
-        logger.warn('Pausing task after consecutive errors', {
-          taskId: task.id,
-          errors: errCount
-        })
-        await taskService.updateTask(task.agent_id, task.id, { status: 'paused' })
-        this.consecutiveErrors.delete(task.id)
+        // Track consecutive errors across invocations
+        const errCount = (this.consecutiveErrors.get(task.id) ?? 0) + 1
+        this.consecutiveErrors.set(task.id, errCount)
+        if (errCount >= MAX_CONSECUTIVE_ERRORS) {
+          logger.warn('Pausing task after consecutive errors', {
+            taskId: task.id,
+            errors: errCount
+          })
+          await taskService.updateTask(task.agent_id, task.id, { status: 'paused' })
+          this.consecutiveErrors.delete(task.id)
+        }
+      }
+      if (onReady && !readyAcknowledged) {
+        readyAcknowledged = true
+        onReady(undefined, err)
       }
     } finally {
       if (timeoutTimer) clearTimeout(timeoutTimer)
-      this.activeTasks.delete(task.id)
     }
 
-    const durationMs = Date.now() - startTime
+    try {
+      const durationMs = Date.now() - startTime
 
-    // Update the log entry with final results
-    await taskService.updateTaskRunLog(logId, {
-      session_id: sessionId ?? null,
-      duration_ms: durationMs,
-      status: error ? 'error' : 'success',
-      result,
-      error
-    })
+      // Persist the final log state before telling the scheduler that this run
+      // is over. This keeps pause/resume/manual rerun state transitions ordered.
+      await taskService.updateTaskRunLog(logId, {
+        session_id: sessionId ?? null,
+        model_id: resolvedModelId,
+        duration_ms: durationMs,
+        status: pausedByUser ? 'paused' : error ? 'error' : 'success',
+        result,
+        error
+      })
 
-    // Compute next run and update task
-    const nextRun = taskService.computeNextRun(task)
-    const resultSummary = error ? `Error: ${error}` : result ? result.slice(0, 200) : 'Completed'
-    await taskService.updateTaskAfterRun(task.id, nextRun, resultSummary)
+      // Compute next run and update task
+      const nextRun = taskService.computeNextRun(task)
+      const resultSummary = error ? `Error: ${error}` : result ? result.slice(0, 200) : 'Completed'
+      await taskService.updateTaskAfterRun(
+        task.id,
+        nextRun,
+        resultSummary,
+        pausedByUser ? 'skipped' : error ? 'error' : 'success'
+      )
 
-    // Send error notification or final response to channels
-    if (error) {
-      await this.notifyTaskError(task, durationMs, error, subscribedChannels)
+      // Refresh the visible session list after the final run state is saved.
+      // The created event above handles immediate visibility; this event
+      // refreshes the conversation contents and fulfilled state.
+      if (sessionId) {
+        broadcastSessionChanged(task.agent_id, sessionId, true)
+      }
+
+      // Send error notification or final response to channels
+      if (error) {
+        await this.notifyTaskError(task, durationMs, error, subscribedChannels)
+      }
+    } finally {
+      this.activeTasks.delete(task.id)
+      resolveCompletion()
     }
   }
 

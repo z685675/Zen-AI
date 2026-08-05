@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest'
 import {
   buildBridgeReasoningProviderOptions,
   convertAnthropicMessagesToModelMessages,
+  convertToolChoice,
   extractBridgeReasoningEffort,
   translateAiSdkStreamToAnthropicEvents
 } from '../anthropicProtocolBridge'
@@ -20,6 +21,32 @@ async function* streamParts(parts: TextStreamPart<ToolSet>[]): AsyncGenerator<Te
 }
 
 describe('Anthropic protocol bridge', () => {
+  it('requires a tool call for Zen AI execution-marked requests', () => {
+    const bridgedRequest = request([{ role: 'user', content: '请执行\n<zen-ai-tool-required>' }])
+    bridgedRequest.tools = [
+      {
+        name: 'mcp__assistant__create_file',
+        description: 'Create a file',
+        input_schema: { type: 'object', properties: {} }
+      }
+    ]
+
+    expect(convertToolChoice(bridgedRequest)).toBe('required')
+  })
+
+  it('does not force tools for ordinary turns', () => {
+    const bridgedRequest = request([{ role: 'user', content: '请解释一下这个文件的内容' }])
+    bridgedRequest.tools = [
+      {
+        name: 'mcp__assistant__create_file',
+        description: 'Create a file',
+        input_schema: { type: 'object', properties: {} }
+      }
+    ]
+
+    expect(convertToolChoice(bridgedRequest)).toBeUndefined()
+  })
+
   it.each([
     ['low', 'low'],
     ['medium', 'medium'],

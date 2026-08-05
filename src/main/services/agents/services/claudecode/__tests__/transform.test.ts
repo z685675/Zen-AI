@@ -29,6 +29,43 @@ describe('stripLocalCommandTags', () => {
 })
 
 describe('Claude 鈫?AiSDK transform', () => {
+  it('preserves Claude Code result errors for diagnostics', () => {
+    const state = new ClaudeStreamState({ agentSessionId: 'session-error-test' })
+    const parts = transformSDKMessageToStreamParts(
+      {
+        type: 'result',
+        subtype: 'error_during_execution',
+        duration_ms: 12,
+        duration_api_ms: 0,
+        is_error: true,
+        num_turns: 0,
+        stop_reason: null,
+        total_cost_usd: 0,
+        usage: {
+          input_tokens: 0,
+          output_tokens: 0,
+          cache_creation_input_tokens: 0,
+          cache_read_input_tokens: 0
+        },
+        modelUsage: {},
+        permission_denials: [],
+        errors: ['Claude Code exited before the first turn'],
+        uuid: 'result-error-test',
+        session_id: 'session-error-test'
+      } as any,
+      state
+    )
+
+    expect(parts).toEqual([
+      {
+        type: 'error',
+        error: {
+          message: 'error_during_execution: Process failed after 0 turns: Claude Code exited before the first turn'
+        }
+      }
+    ])
+  })
+
   it('handles tool call streaming lifecycle', () => {
     const state = new ClaudeStreamState({ agentSessionId: baseStreamMetadata.session_id })
     const parts: ReturnType<typeof transformSDKMessageToStreamParts>[number][] = []

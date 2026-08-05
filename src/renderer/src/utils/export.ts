@@ -438,6 +438,55 @@ export const exportTopicAsMarkdown = async (
   }
 }
 
+/**
+ * Export an already-loaded message list. Agent sessions are persisted outside
+ * the regular topics table, so they cannot use exportTopicAsMarkdown directly.
+ */
+export const exportMessagesAsMarkdown = async (
+  title: string,
+  messages: Message[],
+  exportReasoning?: boolean,
+  excludeCitations?: boolean
+): Promise<void> => {
+  if (messages.length === 0) {
+    window.toast.warning(i18n.t('notes.no_content_to_export'))
+    return
+  }
+
+  if (getExportState()) {
+    window.toast.warning(i18n.t('message.warn.export.exporting'))
+    return
+  }
+
+  setExportingState(true)
+
+  const markdown = `# ${title}\n\n${messagesToMarkdown(messages, exportReasoning, excludeCitations)}`
+  const { markdownExportPath } = store.getState().settings
+
+  try {
+    if (!markdownExportPath) {
+      const fileName = removeSpecialCharactersForFileName(title) + '.md'
+      const result = await window.api.file.save(fileName, markdown)
+      if (result) {
+        window.toast.success(i18n.t('message.success.markdown.export.specified'))
+      }
+    } else {
+      const timestamp = dayjs().format('YYYY-MM-DD-HH-mm-ss')
+      const fileName = removeSpecialCharactersForFileName(title) + ` ${timestamp}.md`
+      await window.api.file.write(markdownExportPath + '/' + fileName, markdown)
+      window.toast.success(i18n.t('message.success.markdown.export.preconf'))
+    }
+  } catch (error: any) {
+    const errorKey = markdownExportPath
+      ? 'message.error.markdown.export.preconf'
+      : 'message.error.markdown.export.specified'
+    window.toast.error(i18n.t(errorKey))
+    logger.error('Failed to export agent session as markdown:', error)
+  } finally {
+    setExportingState(false)
+  }
+}
+
 export const exportMessageAsMarkdown = async (
   message: Message,
   exportReasoning?: boolean,

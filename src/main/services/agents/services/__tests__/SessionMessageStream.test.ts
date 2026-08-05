@@ -136,6 +136,75 @@ describe('SessionMessageService runtime stream lifecycle', () => {
     await expect(result.completion).resolves.toEqual({})
   })
 
+  it('pauses the deep research budget while waiting for browser handoff', async () => {
+    const agentStream = createAgentStream()
+    const attemptControllers: AbortController[] = []
+
+    resolveAgentRuntimeMock.mockResolvedValue({
+      runtimeId: 'claude-code',
+      candidates: ['claude-code'],
+      configuredRuntime: 'auto',
+      source: 'auto',
+      reason: 'test'
+    })
+    invokeMock.mockImplementation(async (_prompt: string, _session: unknown, attemptController: AbortController) => {
+      attemptControllers.push(attemptController)
+      return agentStream
+    })
+
+    const service = new SessionMessageService()
+    vi.spyOn(service as any, 'getLastAgentSessionId').mockResolvedValue('')
+    const result = await service.createSessionMessage(
+      session(),
+      { content: 'research with login', deep_research: true } as any,
+      new AbortController()
+    )
+    const consumed = consume(result.stream)
+    const consumedOutcome = consumed.then(
+      () => undefined,
+      (error) => error
+    )
+    const completionOutcome = result.completion.then(
+      () => undefined,
+      (error) => error
+    )
+
+    agentStream.emit('data', { type: 'chunk', chunk: { type: 'raw', rawValue: { type: 'init' } } })
+    agentStream.emit('data', { type: 'chunk', chunk: { type: 'text-delta', id: 'text-1', text: 'plan' } })
+    await vi.advanceTimersByTimeAsync(7 * 60 * 1000)
+
+    agentStream.emit('data', {
+      type: 'chunk',
+      chunk: {
+        type: 'tool-call',
+        toolCallId: 'handoff-1',
+        toolName: 'mcp__browser__wait_for_user',
+        input: { reason: 'login_required' }
+      }
+    })
+    await vi.advanceTimersByTimeAsync(2 * 60 * 1000)
+    expect(attemptControllers[0].signal.aborted).toBe(false)
+
+    agentStream.emit('data', {
+      type: 'chunk',
+      chunk: {
+        type: 'tool-result',
+        toolCallId: 'handoff-1',
+        toolName: 'mcp__browser__wait_for_user',
+        output: { status: 'continued' }
+      }
+    })
+    await vi.advanceTimersByTimeAsync(60_001)
+
+    expect(attemptControllers[0].signal.aborted).toBe(true)
+    await expect(consumedOutcome).resolves.toMatchObject({
+      message: '深度研究已达到 8 分钟安全时限。已保留已完成的证据，请缩小研究范围后重试。'
+    })
+    await expect(completionOutcome).resolves.toMatchObject({
+      message: '深度研究已达到 8 分钟安全时限。已保留已完成的证据，请缩小研究范围后重试。'
+    })
+  })
+
   it('rebuilds a stale runtime session once from the local recovery context', async () => {
     const staleStream = createAgentStream()
     const recoveredStream = createAgentStream()

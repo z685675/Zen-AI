@@ -101,6 +101,24 @@ describe('ProviderModelSyncUtils', () => {
       expect(nextProvider.modelSync?.remoteModelIds).toEqual(['remote-a'])
     })
 
+    it('can reconcile a manual refresh without auto-adding every fetched model', () => {
+      const provider = createProvider({
+        models: [createModel('remote-a'), createModel('remote-b'), createModel('manual-model')],
+        modelSync: {
+          remoteModelIds: ['remote-a', 'remote-b'],
+          syncedAt: 100
+        }
+      })
+
+      const nextProvider = mergeSyncedProviderModels(provider, [createModel('remote-a'), createModel('remote-c')], {
+        addFetchedModels: false,
+        syncedAt: 200
+      })
+
+      expect(nextProvider.models.map((model) => model.id)).toEqual(['remote-a', 'manual-model'])
+      expect(nextProvider.modelSync?.remoteModelIds).toEqual(['remote-a'])
+    })
+
     it('preserves manually configured endpoint type when synced model has no endpoint metadata', () => {
       const provider = createProvider({
         models: [

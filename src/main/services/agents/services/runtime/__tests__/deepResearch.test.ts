@@ -20,6 +20,9 @@ describe('deep research runtime protocol', () => {
     expect(result).toContain('evidence matrix')
     expect(result).toContain('clickable source URLs')
     expect(result).toContain('no more than two focused follow-up passes')
+    expect(result).toContain('does not imply a file export')
+    expect(result).toContain('如果需要，我可以把以上结果整理为 Word、PPT 或 PDF')
+    expect(result).toContain('Do not rerun the research')
   })
 
   it('does not append the protocol twice', () => {

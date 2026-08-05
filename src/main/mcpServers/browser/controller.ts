@@ -5,6 +5,7 @@ import { app, BrowserView, BrowserWindow, nativeTheme } from 'electron'
 import TurndownService from 'turndown'
 
 import { SESSION_KEY_DEFAULT, SESSION_KEY_PRIVATE, TAB_BAR_HEIGHT } from './constants'
+import { BrowserOperationLimiter } from './operationLimiter'
 import { TAB_BAR_HTML } from './tabbar-html'
 import { type BrowserHandoffInfo, logger, type TabInfo, userAgent, type WindowInfo } from './types'
 
@@ -16,14 +17,25 @@ import { type BrowserHandoffInfo, logger, type TabInfo, userAgent, type WindowIn
  */
 export class CdpBrowserController {
   private windows: Map<string, WindowInfo> = new Map()
+  private windowCreation: Map<string, Promise<WindowInfo>> = new Map()
   private readonly maxWindows: number
   private readonly idleTimeoutMs: number
   private readonly turndownService: TurndownService
+  private readonly operationLimiter: BrowserOperationLimiter
 
-  constructor(options?: { maxWindows?: number; idleTimeoutMs?: number }) {
+  constructor(options?: {
+    maxWindows?: number
+    idleTimeoutMs?: number
+    maxConcurrentOperations?: number
+    operationQueueTimeoutMs?: number
+  }) {
     this.maxWindows = options?.maxWindows ?? 5
     this.idleTimeoutMs = options?.idleTimeoutMs ?? 5 * 60 * 1000
     this.turndownService = new TurndownService()
+    this.operationLimiter = new BrowserOperationLimiter(
+      options?.maxConcurrentOperations ?? 2,
+      options?.operationQueueTimeoutMs ?? 5000
+    )
 
     // Listen for theme changes and update all tab bars
     nativeTheme.on('updated', () => {
@@ -415,11 +427,25 @@ export class CdpBrowserController {
 
     const windowKey = this.getWindowKey(privateMode)
 
-    let windowInfo = this.windows.get(windowKey)
-    if (!windowInfo) {
+    const existingWindow = this.windows.get(windowKey)
+    if (existingWindow) {
+      if (showWindow && !existingWindow.window.isDestroyed()) existingWindow.window.show()
+      this.touchWindow(windowKey)
+      return existingWindow
+    }
+
+    const pendingCreation = this.windowCreation.get(windowKey)
+    if (pendingCreation) {
+      const createdWindow = await pendingCreation
+      if (showWindow && !createdWindow.window.isDestroyed()) createdWindow.window.show()
+      this.touchWindow(windowKey)
+      return createdWindow
+    }
+
+    const creation = (async () => {
       this.evictIfNeeded(windowKey)
       const window = await this.createBrowserWindow(windowKey, privateMode, showWindow)
-      windowInfo = {
+      const windowInfo: WindowInfo = {
         windowKey,
         privateMode,
         window,
@@ -432,20 +458,24 @@ export class CdpBrowserController {
       const tabBarView = this.createTabBarView(windowInfo)
       windowInfo.tabBarView = tabBarView
 
-      // Register resize listener once per window (not per tab)
-      // Capture windowKey to look up fresh windowInfo on each resize
+      // Register resize listener once per window (not per tab).
       windowInfo.window.on('resize', () => {
         const info = this.windows.get(windowKey)
         if (info) this.updateViewBounds(info)
       })
 
       logger.info('Created new window', { windowKey, privateMode })
-    } else if (showWindow && !windowInfo.window.isDestroyed()) {
-      windowInfo.window.show()
-    }
+      return windowInfo
+    })()
 
-    this.touchWindow(windowKey)
-    return windowInfo
+    this.windowCreation.set(windowKey, creation)
+    try {
+      const createdWindow = await creation
+      this.touchWindow(windowKey)
+      return createdWindow
+    } finally {
+      if (this.windowCreation.get(windowKey) === creation) this.windowCreation.delete(windowKey)
+    }
   }
 
   private updateViewBounds(windowInfo: WindowInfo) {
@@ -636,6 +666,13 @@ export class CdpBrowserController {
    * @returns Object containing the current URL, page title, and tab ID after navigation
    */
   public async open(url: string, timeout = 10000, privateMode = false, newTab = false, showWindow = false) {
+    return this.operationLimiter.run(
+      () => this.openInternal(url, timeout, privateMode, newTab, showWindow),
+      'browser navigation'
+    )
+  }
+
+  private async openInternal(url: string, timeout = 10000, privateMode = false, newTab = false, showWindow = false) {
     const { tabId: actualTabId, tab } = await this.getTab(privateMode, undefined, newTab, showWindow)
     const view = tab.view
     const windowKey = this.getWindowKey(privateMode)
@@ -687,6 +724,13 @@ export class CdpBrowserController {
 
     try {
       await Promise.race([view.webContents.loadURL(url), loadPromise, timeoutPromise])
+    } catch (error) {
+      if (newTab) {
+        await this.closeTab(privateMode, actualTabId).catch((closeError) => {
+          logger.debug('Failed to clean up timed out browser tab', { closeError, tabId: actualTabId })
+        })
+      }
+      throw error
     } finally {
       cleanup()
     }
@@ -710,6 +754,10 @@ export class CdpBrowserController {
    * @returns The result value from the evaluated code, or null if no value returned
    */
   public async execute(code: string, timeout = 5000, privateMode = false, tabId?: string) {
+    return this.operationLimiter.run(() => this.executeInternal(code, timeout, privateMode, tabId), 'browser script')
+  }
+
+  private async executeInternal(code: string, timeout = 5000, privateMode = false, tabId?: string) {
     const { tabId: actualTabId, tab } = await this.getTab(privateMode, tabId)
     const windowKey = this.getWindowKey(privateMode)
     this.touchTab(windowKey, actualTabId)
@@ -829,6 +877,7 @@ export class CdpBrowserController {
 
     if (privateMode !== undefined) {
       const windowKey = this.getWindowKey(privateMode)
+      this.windowCreation.delete(windowKey)
       const windowInfo = this.windows.get(windowKey)
       if (windowInfo) {
         const tabIds = Array.from(windowInfo.tabs.keys())
@@ -844,6 +893,7 @@ export class CdpBrowserController {
       return
     }
 
+    this.windowCreation.clear()
     const allWindowInfos = Array.from(this.windows.values())
     for (const windowInfo of allWindowInfos) {
       const tabIds = Array.from(windowInfo.tabs.keys())
@@ -877,29 +927,48 @@ export class CdpBrowserController {
     showWindow = false,
     selector?: string
   ): Promise<{ tabId: string; content: string | object }> {
-    const { tabId } = await this.open(url, timeout, privateMode, newTab, showWindow)
+    return this.operationLimiter.run(
+      () => this.fetchInternal(url, format, timeout, privateMode, newTab, showWindow, selector),
+      'browser content fetch'
+    )
+  }
 
-    const { tab } = await this.getTab(privateMode, tabId, false, showWindow)
-    const dbg = tab.view.webContents.debugger
-    const windowKey = this.getWindowKey(privateMode)
-
-    await this.ensureDebuggerAttached(dbg, windowKey)
-
-    let expression: string
-    const root = selector
-      ? `(document.querySelector(${JSON.stringify(selector)}) || document.body)`
-      : format === 'json' || format === 'txt'
-        ? 'document.body'
-        : 'document.documentElement'
-
-    if (format === 'json' || format === 'txt') {
-      expression = `${root}.innerText`
-    } else {
-      expression = `${root}.outerHTML`
-    }
+  private async fetchInternal(
+    url: string,
+    format: 'html' | 'txt' | 'markdown' | 'json' = 'markdown',
+    timeout = 10000,
+    privateMode = false,
+    newTab = false,
+    showWindow = false,
+    selector?: string
+  ): Promise<{ tabId: string; content: string | object }> {
+    let tabId: string | undefined
 
     let timeoutHandle: ReturnType<typeof setTimeout> | undefined
+
     try {
+      const opened = await this.openInternal(url, timeout, privateMode, newTab, showWindow)
+      tabId = opened.tabId
+
+      const { tab } = await this.getTab(privateMode, tabId, false, showWindow)
+      const dbg = tab.view.webContents.debugger
+      const windowKey = this.getWindowKey(privateMode)
+
+      await this.ensureDebuggerAttached(dbg, windowKey)
+
+      let expression: string
+      const root = selector
+        ? `(document.querySelector(${JSON.stringify(selector)}) || document.body)`
+        : format === 'json' || format === 'txt'
+          ? 'document.body'
+          : 'document.documentElement'
+
+      if (format === 'json' || format === 'txt') {
+        expression = `${root}.innerText`
+      } else {
+        expression = `${root}.outerHTML`
+      }
+
       const result = (await Promise.race([
         dbg.sendCommand('Runtime.evaluate', {
           expression,
@@ -931,6 +1000,13 @@ export class CdpBrowserController {
       }
 
       return { tabId, content }
+    } catch (error) {
+      if (newTab && tabId) {
+        await this.closeTab(privateMode, tabId).catch((closeError) => {
+          logger.debug('Failed to clean up failed browser fetch tab', { closeError, tabId })
+        })
+      }
+      throw error
     } finally {
       if (timeoutHandle) clearTimeout(timeoutHandle)
     }
@@ -944,6 +1020,14 @@ export class CdpBrowserController {
    * @returns Base64-encoded image data
    */
   public async screenshot(
+    options: { fullPage?: boolean; format?: 'png' | 'jpeg'; quality?: number } = {},
+    privateMode = false,
+    tabId?: string
+  ): Promise<string> {
+    return this.operationLimiter.run(() => this.screenshotInternal(options, privateMode, tabId), 'browser screenshot')
+  }
+
+  private async screenshotInternal(
     options: { fullPage?: boolean; format?: 'png' | 'jpeg'; quality?: number } = {},
     privateMode = false,
     tabId?: string

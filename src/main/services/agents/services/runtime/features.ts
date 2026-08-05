@@ -1,5 +1,3 @@
-import { isDev } from '@main/constant'
-
 const ENABLED_VALUES = new Set(['1', 'true', 'yes', 'on'])
 const DISABLED_VALUES = new Set(['0', 'false', 'no', 'off'])
 
@@ -9,11 +7,14 @@ export function isCodexRuntimeEnabled(env: NodeJS.ProcessEnv = process.env): boo
   if (configuredValue && ENABLED_VALUES.has(configuredValue)) return true
   if (configuredValue && DISABLED_VALUES.has(configuredValue)) return false
 
-  return isDev
+  // Auto must be usable in packaged builds as well. GPT/OpenAI-compatible
+  // models rely on Codex as their preferred runtime; keep the environment
+  // variable as an explicit opt-out for diagnostics or emergency rollback.
+  return true
 }
 
 export function getCodexRuntimeDisabledError(): Error {
   return new Error(
-    'The Codex runtime candidate is disabled in this build. Auto will use another available runtime. Developers can enable Codex with ZEN_ENABLE_CODEX_RUNTIME=true.'
+    'The Codex runtime candidate is disabled by configuration. Auto will use another available runtime. Remove ZEN_ENABLE_CODEX_RUNTIME=false to re-enable Codex.'
   )
 }

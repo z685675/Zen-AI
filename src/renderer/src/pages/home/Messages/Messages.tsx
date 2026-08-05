@@ -2,6 +2,7 @@ import { loggerService } from '@logger'
 import ContextMenu from '@renderer/components/ContextMenu'
 import { LoadingIcon } from '@renderer/components/Icons'
 import { LOAD_MORE_COUNT } from '@renderer/config/constant'
+import db from '@renderer/databases'
 import { useAssistant } from '@renderer/hooks/useAssistant'
 import { useChatContext } from '@renderer/hooks/useChatContext'
 import { useMessageOperations, useTopicMessages } from '@renderer/hooks/useMessageOperations'
@@ -61,7 +62,7 @@ const Messages: React.FC<MessagesProps> = ({ assistant, topic, setActiveTopic, o
   const [isLoadingMore, setIsLoadingMore] = useState(false)
   const [isProcessingContext, setIsProcessingContext] = useState(false)
 
-  const { addTopic } = useAssistant(assistant.id)
+  const { addTopic, removeTopic } = useAssistant(assistant.id)
   const { showPrompt, messageNavigation } = useSettings()
   const { t } = useTranslation()
   const dispatch = useAppDispatch()
@@ -168,16 +169,18 @@ const Messages: React.FC<MessagesProps> = ({ assistant, topic, setActiveTopic, o
         }
       }),
       EventEmitter.on(EVENT_NAMES.NEW_BRANCH, async (index: number) => {
+        const currentMessages = messagesRef.current
+
+        if (!Number.isInteger(index) || index < 0 || index >= currentMessages.length) {
+          logger.error(`[NEW_BRANCH] Invalid branch index: ${index}`)
+          window.toast.error(t('message.branch.error'))
+          return
+        }
+
         const newTopic = getDefaultTopic(assistant.id, topic.model ?? assistant.model)
         newTopic.name = `${topic.name} - 新分支`
         newTopic.isNameManuallyEdited = true
-        const currentMessages = messagesRef.current
         const inheritedMessageCount = currentMessages.length - index
-
-        if (index < 0 || index > currentMessages.length) {
-          logger.error(`[NEW_BRANCH] Invalid branch index: ${index}`)
-          return
-        }
 
         newTopic.branchSource = {
           topicId: topic.id,
@@ -185,21 +188,28 @@ const Messages: React.FC<MessagesProps> = ({ assistant, topic, setActiveTopic, o
           inheritedMessageCount
         }
 
-        // 1. Add the new topic to Redux store FIRST
-        addTopic(newTopic)
-        setActiveTopic(newTopic)
+        try {
+          // Persist the placeholder before switching. The new page immediately
+          // loads its topic, so switching first creates a race with IndexedDB.
+          await db.topics.put({ ...newTopic, messages: [] })
+          addTopic(newTopic)
 
-        // 2. Call the thunk to clone messages and update DB
-        const success = await createTopicBranch(topic.id, inheritedMessageCount, newTopic)
+          const success = await createTopicBranch(topic.id, inheritedMessageCount, newTopic)
+          if (success) {
+            setActiveTopic(newTopic)
+            window.toast.success(t('chat.message.new.branch.created'))
+            return
+          }
 
-        if (success) {
-          // Keep the explicit branch label so users can see it immediately.
-        } else {
-          // Optional: Handle cloning failure (e.g., show an error message)
-          // You might want to remove the added topic if cloning fails
-          // removeTopic(newTopic.id); // Assuming you have a removeTopic function
           logger.error(`[NEW_BRANCH] Failed to create topic branch for topic ${newTopic.id}`)
-          window.toast.error(t('message.branch.error')) // Example error message
+          setActiveTopic(topic)
+          removeTopic(newTopic)
+          window.toast.error(t('message.branch.error'))
+        } catch (error) {
+          logger.error(`[NEW_BRANCH] Failed to create topic branch for topic ${newTopic.id}`, error as Error)
+          setActiveTopic(topic)
+          removeTopic(newTopic)
+          window.toast.error(t('message.branch.error'))
         }
       }),
       EventEmitter.on(
@@ -245,13 +255,24 @@ const Messages: React.FC<MessagesProps> = ({ assistant, topic, setActiveTopic, o
   }, [assistant, dispatch, scrollToBottom, topic, isProcessingContext])
 
   useEffect(() => {
-    void runAsyncFunction(async () => {
-      const tokensCount = await estimateHistoryTokens(assistant, messages)
-      void EventEmitter.emit(EVENT_NAMES.ESTIMATED_TOKEN_COUNT, {
-        tokensCount,
-        contextCount: getContextCount(assistant, messages, tokensCount)
+    let cancelled = false
+    const timer = window.setTimeout(() => {
+      void runAsyncFunction(async () => {
+        const tokensCount = await estimateHistoryTokens(assistant, messages)
+        if (cancelled) return
+
+        void EventEmitter.emit(EVENT_NAMES.ESTIMATED_TOKEN_COUNT, {
+          tokensCount,
+          contextCount: getContextCount(assistant, messages, tokensCount)
+        })
+        onFirstUpdate?.()
       })
-    }).then(() => onFirstUpdate?.())
+    }, 180)
+
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+    }
   }, [assistant, messages, onFirstUpdate])
 
   const loadMoreMessages = useCallback(() => {

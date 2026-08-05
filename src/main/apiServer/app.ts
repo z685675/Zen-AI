@@ -9,6 +9,7 @@ import { errorHandler } from './middleware/error'
 import { setupOpenAPIDocumentation } from './middleware/openapi'
 import { agentsRoutes } from './routes/agents'
 import { assistantMcpRoutes } from './routes/assistant-mcp'
+import { browserMcpRoutes } from './routes/browser-mcp'
 import { channelsRouter } from './routes/channels'
 import { chatRoutes } from './routes/chat'
 import { clawMcpRoutes } from './routes/claw-mcp'
@@ -135,6 +136,7 @@ app.get('/', (_req, res) => {
       mcps: 'GET /v1/mcps',
       mcp_server: 'GET /v1/mcps/:server_id',
       mcp_proxy: 'ALL /v1/mcps/:server_id/mcp',
+      browser_mcp: 'ALL /v1/browser/:context_id/mcp',
       agents: 'GET /v1/agents',
       channels: 'GET /v1/channels',
       agent_sessions: 'GET /v1/agents/:agentId/sessions',
@@ -164,6 +166,7 @@ apiRouter.use('/channels', channelsRouter)
 apiRouter.use('/tasks', tasksRouter)
 apiRouter.use('/claw', clawMcpRoutes)
 apiRouter.use('/assistant', assistantMcpRoutes)
+apiRouter.use('/browser', browserMcpRoutes)
 apiRouter.use('/knowledge-bases', knowledgeRoutes)
 app.use('/v1', apiRouter)
 

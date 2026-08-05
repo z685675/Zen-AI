@@ -1,5 +1,8 @@
 {
   "findings": {
+    "[\"main\",\"apiServer/routes/taskError.ts\",\"chinese\",\"TemplateLiteral\",\"`${labels[operation]}失败，定时任务配置无效`\"]": 1,
+    "[\"main\",\"apiServer/routes/taskError.ts\",\"chinese\",\"TemplateLiteral\",\"`${labels[operation]}失败，未找到对应的任务`\"]": 1,
+    "[\"main\",\"apiServer/routes/taskError.ts\",\"chinese\",\"TemplateLiteral\",\"`${labels[operation]}失败，请稍后重试`\"]": 1,
     "[\"main\",\"mcpServers/assistant.ts\",\"chinese\",\"PropertyAssignment\",\"'优化方向'\"]": 3,
     "[\"main\",\"mcpServers/assistant.ts\",\"chinese\",\"PropertyAssignment\",\"'当前状态'\"]": 3,
     "[\"main\",\"mcpServers/assistant.ts\",\"chinese\",\"TemplateLiteral\",\"`([${CJK_CHARACTER_CLASS}])[ \\\\\\\\t]+([，。！？；：、）》】])`\"]": 1,
@@ -39,6 +42,7 @@
     "[\"main\",\"services/agents/services/claudecode/index.ts\",\"chinese\",\"TemplateLiteral\",\"`- Desktop / 桌面: ${app.getPath('desktop')}`\"]": 1,
     "[\"main\",\"services/agents/services/claudecode/index.ts\",\"chinese\",\"TemplateLiteral\",\"`- Documents / 文档: ${app.getPath('documents')}`\"]": 1,
     "[\"main\",\"services/agents/services/claudecode/index.ts\",\"chinese\",\"TemplateLiteral\",\"`- Downloads / 下载: ${app.getPath('downloads')}`\"]": 1,
+    "[\"main\",\"services/agents/services/runtime/deepResearch.ts\",\"chinese\",\"TemplateLiteral\",\"`<zen-deep-research version=\\\"${DEEP_RESEARCH_PROTOCOL_VERSION}\\\" task-id=\\\"${task.task_id}\\\" action=\\\"${\"]": 1,
     "[\"renderer\",\"components/ErrorDetailModal/index.tsx\",\"chinese\",\"JsxText\",\"建议操作：\"]": 1,
     "[\"renderer\",\"pages/agents/AgentChat.tsx\",\"chinese\",\"JsxText\",\"快捷入口\"]": 1,
     "[\"renderer\",\"pages/agents/AgentChat.tsx\",\"chinese\",\"JsxText\",\"智能助手\"]": 1,

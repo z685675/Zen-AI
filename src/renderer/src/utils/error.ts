@@ -477,8 +477,20 @@ export function formatAiSdkError(error: SerializedAiSdkError): string {
 
   return text.trim()
 }
-export const formatAgentServerError = (error: AgentServerError) =>
-  `${t('common.error')}: ${error.error.code} ${error.error.message}`
+const agentErrorCodeLabels: Record<string, string> = {
+  task_creation_failed: '定时任务创建失败',
+  task_list_failed: '定时任务加载失败',
+  task_get_failed: '定时任务读取失败',
+  task_update_failed: '定时任务更新失败',
+  task_delete_failed: '定时任务删除失败',
+  task_run_failed: '定时任务执行失败',
+  task_logs_failed: '定时任务运行历史加载失败'
+}
+
+export const formatAgentServerError = (error: AgentServerError) => {
+  const label = agentErrorCodeLabels[error.error.code]
+  return label ? `${label}: ${error.error.message}` : `${t('common.error')}: ${error.error.code} ${error.error.message}`
+}
 export const formatAxiosError = (error: AxiosError) => {
   if (!error.response) {
     return `${t('common.error')}: ${t('error.no_response')}`

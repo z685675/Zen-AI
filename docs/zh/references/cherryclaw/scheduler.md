@@ -116,4 +116,12 @@ Error: 错误信息
 | `src/main/services/agents/services/SchedulerService.ts` | 轮询调度器主逻辑 |
 | `src/main/services/agents/services/TaskService.ts` | 任务 CRUD、getDueTasks、computeNextRun |
 | `src/main/services/agents/database/schema/tasks.schema.ts` | scheduled_tasks + task_run_logs 表定义 |
+
+## 个人定时助手补强
+
+- 一次性任务完成后仍可在任务详情中“再次执行”；也可以选择固定时间，将它转换为重复任务，原有执行日志会保留。
+- 每次执行日志记录触发方式（定时、手动、重试）、实际使用的模型和计划执行时间；点击结果可以查看完整内容。
+- 日志按最新执行在前展示，运行中或等待用户接管浏览器时会自动刷新。
+- 定时任务创建或复用的会话会带有定时任务标识，便于在会话列表中与普通对话区分。
+- 应用重启时，上一进程遗留的运行中日志会被收口为“应用关闭导致任务未完成”，不会伪装成成功，也不会永久停留在处理中。
 | `resources/database/drizzle/0003_wise_meltdown.sql` | 数据库迁移脚本 |

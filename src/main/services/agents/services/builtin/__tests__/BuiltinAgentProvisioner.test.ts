@@ -48,7 +48,7 @@ function makeFusionResources(): void {
       configuration: {
         builtin_role: 'fusion'
       },
-      skills: ['pptx', 'docx']
+      skills: ['pptx', 'docx', 'research-report']
     })
   )
   writeFile(path.join(resourcesDir, 'builtin-agents', 'cherry-assistant', '.claude', 'plugins.json'), '[]')
@@ -59,6 +59,7 @@ function makeFusionResources(): void {
   writeFile(path.join(resourcesDir, 'skills', 'pptx', 'SKILL.md'), '# PPTX')
   writeFile(path.join(resourcesDir, 'skills', 'pptx', 'scripts', 'validate.py'), 'print("ok")')
   writeFile(path.join(resourcesDir, 'skills', 'docx', 'SKILL.md'), '# DOCX')
+  writeFile(path.join(resourcesDir, 'skills', 'research-report', 'SKILL.md'), '# Research report')
 }
 
 describe('BuiltinAgentProvisioner', () => {
@@ -86,6 +87,8 @@ describe('BuiltinAgentProvisioner', () => {
     expect(fs.existsSync(path.join(workspace, '.agents', 'skills', 'pptx', 'SKILL.md'))).toBe(true)
     expect(fs.existsSync(path.join(workspace, '.agents', 'skills', 'pptx', 'scripts', 'validate.py'))).toBe(true)
     expect(fs.existsSync(path.join(workspace, '.agents', 'skills', 'docx', 'SKILL.md'))).toBe(true)
+    expect(fs.existsSync(path.join(workspace, '.claude', 'skills', 'research-report', 'SKILL.md'))).toBe(true)
+    expect(fs.existsSync(path.join(workspace, '.agents', 'skills', 'research-report', 'SKILL.md'))).toBe(true)
     expect(fs.existsSync(path.join(workspace, '.agents', 'skills', 'old', 'SKILL.md'))).toBe(false)
     expect(isProvisioned(workspace, 'fusion')).toBe(true)
     expect(fs.existsSync(path.join(workspace, '.claude', '.zen-ai-provision.json'))).toBe(true)
@@ -111,6 +114,20 @@ describe('BuiltinAgentProvisioner', () => {
     expect(isProvisioned(workspace, 'fusion')).toBe(true)
     expect(fs.readFileSync(path.join(workspace, '.claude', 'skills', 'pptx', 'SKILL.md'), 'utf-8')).toBe('# PPTX v2')
     expect(fs.readFileSync(path.join(workspace, '.agents', 'skills', 'pptx', 'SKILL.md'), 'utf-8')).toBe('# PPTX v2')
+  })
+
+  it('detects and repairs a workspace that lost one declared Skill', async () => {
+    const { isProvisioned, provisionBuiltinAgent } = await loadProvisioner()
+    await provisionBuiltinAgent(workspace, 'fusion')
+
+    fs.rmSync(path.join(workspace, '.claude', 'skills', 'research-report'), { recursive: true, force: true })
+    expect(isProvisioned(workspace, 'fusion')).toBe(false)
+
+    await provisionBuiltinAgent(workspace, 'fusion')
+
+    expect(isProvisioned(workspace, 'fusion')).toBe(true)
+    expect(fs.existsSync(path.join(workspace, '.claude', 'skills', 'research-report', 'SKILL.md'))).toBe(true)
+    expect(fs.existsSync(path.join(workspace, '.agents', 'skills', 'research-report', 'SKILL.md'))).toBe(true)
   })
 
   it('mirrors existing Claude skills into Codex skill root without removing Claude files', async () => {

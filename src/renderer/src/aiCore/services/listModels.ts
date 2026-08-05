@@ -65,6 +65,17 @@ async function getFromApi<T>({
   const { value } = await aiSdkGetFromApi({
     url,
     headers,
+    fetch: (input, init) => {
+      const requestHeaders = new Headers(init?.headers)
+      requestHeaders.set('Cache-Control', 'no-cache, no-store')
+      requestHeaders.set('Pragma', 'no-cache')
+
+      return fetch(input, {
+        ...init,
+        cache: 'no-store',
+        headers: requestHeaders
+      })
+    },
     successfulResponseHandler: createJsonResponseHandler(zodSchema(responseSchema)),
     failedResponseHandler: createJsonErrorResponseHandler({
       errorSchema: zodSchema(ApiErrorSchema),

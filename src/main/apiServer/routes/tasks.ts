@@ -4,7 +4,18 @@ import { taskService } from '@main/services/agents/services/TaskService'
 import type { ListTaskLogsResponse, ListTasksResponse } from '@types'
 import express, { type Request, type Response, type Router } from 'express'
 
+import { formatScheduledTaskError } from './taskError'
+
 const logger = loggerService.withContext('ApiServerTasksRoute')
+
+function getTaskInputErrorStatus(error: unknown): 400 | 500 {
+  const message = error instanceof Error ? error.message : String(error)
+  return /^(Agent not found|Invalid |Interval |Schedule value|Unsupported schedule|Scheduled tasks require)/.test(
+    message
+  )
+    ? 400
+    : 500
+}
 
 const tasksRouter: Router = express.Router()
 
@@ -27,7 +38,7 @@ tasksRouter.get('/', async (req: Request, res: Response) => {
     logger.error('Error listing all tasks', { error })
     return res.status(500).json({
       error: {
-        message: 'Failed to list tasks',
+        message: formatScheduledTaskError('list', error),
         type: 'internal_error',
         code: 'task_list_failed'
       }
@@ -56,10 +67,11 @@ tasksRouter.post('/', async (req: Request, res: Response) => {
     return res.status(201).json(task)
   } catch (error: any) {
     logger.error('Error creating task', { error })
-    return res.status(500).json({
+    const status = getTaskInputErrorStatus(error)
+    return res.status(status).json({
       error: {
-        message: `Failed to create task: ${error.message}`,
-        type: 'internal_error',
+        message: formatScheduledTaskError('create', error),
+        type: status === 400 ? 'invalid_request' : 'internal_error',
         code: 'task_creation_failed'
       }
     })
@@ -83,7 +95,7 @@ tasksRouter.get('/:taskId', async (req: Request, res: Response) => {
   } catch (error: any) {
     logger.error('Error getting task', { error, taskId })
     return res.status(500).json({
-      error: { message: 'Failed to get task', type: 'internal_error', code: 'task_get_failed' }
+      error: { message: formatScheduledTaskError('get', error), type: 'internal_error', code: 'task_get_failed' }
     })
   }
 })
@@ -93,7 +105,16 @@ tasksRouter.patch('/:taskId', async (req: Request, res: Response) => {
   const { taskId } = req.params
   try {
     logger.debug('Updating task', { taskId })
-    const task = await taskService.updateTaskById(taskId, req.body)
+    const existingTask = req.body.status ? await taskService.getTaskById(taskId) : null
+    if (req.body.status && !existingTask) {
+      return res.status(404).json({
+        error: { message: 'Task not found', type: 'not_found', code: 'task_not_found' }
+      })
+    }
+
+    const task = req.body.status
+      ? await schedulerService.updateTaskStatus(existingTask!.agent_id, taskId, req.body.status)
+      : await taskService.updateTaskById(taskId, req.body)
 
     if (!task) {
       return res.status(404).json({
@@ -106,10 +127,11 @@ tasksRouter.patch('/:taskId', async (req: Request, res: Response) => {
     return res.json(task)
   } catch (error: any) {
     logger.error('Error updating task', { error, taskId })
-    return res.status(500).json({
+    const status = getTaskInputErrorStatus(error)
+    return res.status(status).json({
       error: {
-        message: `Failed to update task: ${error.message}`,
-        type: 'internal_error',
+        message: formatScheduledTaskError('update', error),
+        type: status === 400 ? 'invalid_request' : 'internal_error',
         code: 'task_update_failed'
       }
     })
@@ -135,7 +157,7 @@ tasksRouter.delete('/:taskId', async (req: Request, res: Response) => {
   } catch (error: any) {
     logger.error('Error deleting task', { error, taskId })
     return res.status(500).json({
-      error: { message: 'Failed to delete task', type: 'internal_error', code: 'task_delete_failed' }
+      error: { message: formatScheduledTaskError('delete', error), type: 'internal_error', code: 'task_delete_failed' }
     })
   }
 })
@@ -160,7 +182,7 @@ tasksRouter.post('/:taskId/run', async (req: Request, res: Response) => {
     logger.error('Error running task', { error, taskId })
     return res.status(status).json({
       error: {
-        message: `Failed to run task: ${error.message}`,
+        message: formatScheduledTaskError('run', error),
         type: status === 409 ? 'conflict' : status === 404 ? 'not_found' : 'internal_error',
         code: 'task_run_failed'
       }
@@ -194,7 +216,7 @@ tasksRouter.get('/:taskId/logs', async (req: Request, res: Response) => {
   } catch (error: any) {
     logger.error('Error getting task logs', { error, taskId })
     return res.status(500).json({
-      error: { message: 'Failed to get task logs', type: 'internal_error', code: 'task_logs_failed' }
+      error: { message: formatScheduledTaskError('logs', error), type: 'internal_error', code: 'task_logs_failed' }
     })
   }
 })

@@ -102,7 +102,10 @@ const TaskFormModal: FC<TaskFormModalProps> = ({
           <Input
             type="datetime-local"
             value={form.schedule_value}
-            onChange={(e) => setForm((f) => ({ ...f, schedule_value: new Date(e.target.value).toISOString() }))}
+            onChange={(e) => {
+              const value = e.target.value
+              setForm((f) => ({ ...f, schedule_value: value ? new Date(value).toISOString() : '' }))
+            }}
           />
         )
       default:
@@ -120,7 +123,14 @@ const TaskFormModal: FC<TaskFormModalProps> = ({
       cancelText={t('agent.cherryClaw.tasks.cancel')}
       transitionName="animation-move-down"
       confirmLoading={loading}
-      okButtonProps={{ disabled: !isValid }}>
+      okButtonProps={{ disabled: !isValid }}
+      styles={{
+        body: {
+          maxHeight: 'min(70vh, 560px)',
+          overflowY: 'auto',
+          paddingRight: 8
+        }
+      }}>
       <div className="flex flex-col gap-4 py-2">
         {agentSelector}
         <div>

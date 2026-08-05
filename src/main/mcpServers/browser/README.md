@@ -29,7 +29,7 @@ Private Mode (BrowserWindow)
 ```
 
 - **One Window Per Mode**: Normal and private modes each have their own window
-- **Multi-Tab Support**: Use `newTab: true` for parallel URL requests
+- **Bounded Multi-Tab Support**: Use `newTab: true` for at most two concurrent URL requests; batch larger sets
 - **Storage Isolation**: Normal and private modes have completely separate storage
 
 ## Available Tools
@@ -47,7 +47,7 @@ Open a URL in a browser window. Optionally return page content.
 }
 ```
 - `format`: If set (`html`, `txt`, `markdown`, `json`), returns page content in that format along with tabId. If not set, just opens the page and returns navigation info.
-- `newTab`: Set to `true` to open in a new tab (required for parallel requests)
+- `newTab`: Set to `true` to open in a new tab for a bounded parallel request (maximum two browser operations at once)
 - `showWindow`: Set to `true` to display the browser window (useful for debugging)
 - Returns (without format): `{ currentUrl, title, tabId }`
 - Returns (with format): `{ tabId, content }` where content is in the specified format
@@ -95,7 +95,7 @@ await open({ url: 'https://example.com', format: 'html' })
 
 ### Multi-Tab / Parallel Requests
 ```typescript
-// Open multiple URLs in parallel using newTab
+// Open at most two URLs in parallel using newTab; process larger sets in batches
 const [page1, page2] = await Promise.all([
   controller.open('https://site1.com', 10000, false, true),  // newTab: true
   controller.open('https://site2.com', 10000, false, true)   // newTab: true

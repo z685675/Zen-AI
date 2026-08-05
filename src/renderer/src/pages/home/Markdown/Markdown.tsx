@@ -55,6 +55,7 @@ const Markdown: FC<Props> = ({ block, postProcess }) => {
   const isTrulyDone = 'status' in block && block.status === 'success'
   const [displayedContent, setDisplayedContent] = useState(postProcess ? postProcess(block.content) : block.content)
   const [isStreamDone, setIsStreamDone] = useState(isTrulyDone)
+  const streamMinDelay = block.content.length > 12000 ? 45 : block.content.length > 4000 ? 28 : 10
 
   const prevContentRef = useRef(block.content)
   const prevBlockIdRef = useRef(block.id)
@@ -66,6 +67,7 @@ const Markdown: FC<Props> = ({ block, postProcess }) => {
       setDisplayedContent(finalText)
     },
     streamDone: isStreamDone,
+    minDelay: streamMinDelay,
     initialText: block.content
   })
 

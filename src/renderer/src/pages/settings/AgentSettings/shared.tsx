@@ -17,6 +17,7 @@ import { cn } from '@renderer/utils'
 import { getAgentAvatar } from '@shared/config/agents'
 import type { ModalProps } from 'antd'
 import { Menu, Modal } from 'antd'
+import { Clock3 } from 'lucide-react'
 import type { ReactNode } from 'react'
 import React from 'react'
 import styled from 'styled-components'
@@ -106,7 +107,20 @@ export type SessionLabelProps = {
 
 export const SessionLabel = ({ session, className }: SessionLabelProps) => {
   const displayName = session?.name ?? session?.id
-  return <span className={cn('truncate font-normal text-(--color-text) text-[13px]', className)}>{displayName}</span>
+  const scheduledTask = (session?.configuration as Record<string, unknown> | undefined)?.scheduled_task
+  const scheduledTaskName =
+    scheduledTask && typeof scheduledTask === 'object' && 'task_name' in scheduledTask
+      ? String((scheduledTask as { task_name?: unknown }).task_name ?? '')
+      : ''
+
+  return (
+    <span
+      className={cn('flex min-w-0 items-center gap-1 truncate font-normal text-(--color-text) text-[13px]', className)}
+      title={scheduledTaskName ? `定时任务：${scheduledTaskName}` : undefined}>
+      {scheduledTaskName && <Clock3 size={11} className="shrink-0 text-(--color-primary)" />}
+      <span className="truncate">{displayName}</span>
+    </span>
+  )
 }
 
 export interface SettingsItemProps extends React.ComponentPropsWithRef<'div'> {

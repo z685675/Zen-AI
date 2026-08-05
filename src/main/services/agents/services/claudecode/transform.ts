@@ -757,10 +757,16 @@ function handleResultMessage(message: Extract<SDKMessage, { type: 'result' }>): 
       }
     } as AgentStreamPart)
   } else {
+    const details =
+      'errors' in message && Array.isArray(message.errors)
+        ? message.errors.filter((error): error is string => typeof error === 'string' && error.trim().length > 0)
+        : []
+    const detailSuffix = details.length > 0 ? `: ${details.join('; ')}` : ''
+
     chunks.push({
       type: 'error',
       error: {
-        message: `${message.subtype}: Process failed after ${message.num_turns} turns`
+        message: `${message.subtype}: Process failed after ${message.num_turns} turns${detailSuffix}`
       }
     } as AgentStreamPart)
   }

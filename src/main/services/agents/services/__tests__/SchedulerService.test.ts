@@ -17,6 +17,7 @@ vi.mock('../SessionService', () => ({
   sessionService: {
     listSessions: vi.fn().mockResolvedValue({ sessions: [], total: 0 }),
     getSession: vi.fn(),
+    updateSession: vi.fn().mockResolvedValue({}),
     createSession: vi.fn().mockResolvedValue({ id: 'session-1' })
   }
 }))
@@ -34,8 +35,10 @@ vi.mock('../TaskService', () => ({
     updateTaskAfterRun: vi.fn(),
     logTaskRun: vi.fn().mockResolvedValue(1),
     updateTaskRunLog: vi.fn(),
+    recoverInterruptedTaskRuns: vi.fn().mockResolvedValue(0),
     computeNextRun: vi.fn().mockReturnValue(null),
     updateTask: vi.fn(),
+    getTask: vi.fn(),
     getLastRunSessionId: vi.fn().mockResolvedValue(null)
   }
 }))
@@ -184,6 +187,117 @@ describe('SchedulerService', () => {
     await vi.advanceTimersByTimeAsync(1000)
 
     expect(taskService.logTaskRun).toHaveBeenCalled()
-    expect(taskService.updateTaskAfterRun).toHaveBeenCalledWith('task-1', null, 'Completed')
+    expect(taskService.updateTaskAfterRun).toHaveBeenCalledWith('task-1', null, 'Completed', 'success')
+  })
+
+  it('acknowledges a manual run after the task session is ready', async () => {
+    const { taskService } = await import('../TaskService')
+    const { agentService } = await import('../AgentService')
+    const { sessionService } = await import('../SessionService')
+    const { sessionMessageService } = await import('../SessionMessageService')
+    const { broadcastSessionChanged } = await import('../channels/sessionStreamIpc')
+    vi.clearAllMocks()
+
+    const task = {
+      id: 'task-once',
+      agent_id: 'agent-1',
+      name: 'One-time task',
+      prompt: 'Run again',
+      schedule_type: 'once' as const,
+      schedule_value: new Date().toISOString(),
+      timeout_minutes: 2,
+      next_run: null,
+      last_run: new Date().toISOString(),
+      last_result: 'Completed',
+      status: 'completed' as const,
+      model_id: 'model-a',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    }
+
+    vi.mocked(taskService.getTask).mockResolvedValueOnce(task as any)
+    vi.mocked(taskService.logTaskRun).mockResolvedValueOnce(42)
+    vi.mocked(agentService.getAgent).mockResolvedValueOnce({
+      id: 'agent-1',
+      type: 'claude-code',
+      name: 'Test',
+      model: 'model-a',
+      accessible_paths: ['/tmp/test'],
+      configuration: {},
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    } as any)
+    vi.mocked(sessionService.getSession).mockResolvedValueOnce({
+      id: 'session-1',
+      agent_id: 'agent-1',
+      model: 'model-a',
+      configuration: {}
+    } as any)
+    vi.mocked(sessionMessageService.createSessionMessage).mockResolvedValueOnce({
+      stream: new ReadableStream({ start: (controller) => controller.close() }),
+      completion: Promise.resolve({})
+    } as any)
+
+    const service = SchedulerServiceModule.schedulerService
+    await service.runTaskNow('agent-1', 'task-once')
+
+    expect(taskService.updateTask).toHaveBeenCalledWith('agent-1', 'task-once', { status: 'active' })
+    expect(sessionService.createSession).toHaveBeenCalledWith(
+      'agent-1',
+      expect.objectContaining({ name: 'One-time task', model: 'model-a' })
+    )
+    expect(taskService.getLastRunSessionId).not.toHaveBeenCalled()
+    expect(broadcastSessionChanged).toHaveBeenCalledWith('agent-1', 'session-1', true, 'created')
+    expect(taskService.logTaskRun).toHaveBeenCalledWith(
+      expect.objectContaining({ task_id: 'task-once', trigger_type: 'manual', status: 'running' })
+    )
+  })
+
+  it('rejects a manual run when the task session cannot be created', async () => {
+    const { taskService } = await import('../TaskService')
+    const { agentService } = await import('../AgentService')
+    const { sessionService } = await import('../SessionService')
+    vi.clearAllMocks()
+
+    vi.mocked(taskService.getTask).mockResolvedValueOnce({
+      id: 'task-failed',
+      agent_id: 'agent-1',
+      name: 'Failed task',
+      prompt: 'Run and fail',
+      schedule_type: 'once',
+      schedule_value: new Date().toISOString(),
+      timeout_minutes: 2,
+      next_run: null,
+      last_run: null,
+      last_result: null,
+      status: 'active',
+      model_id: 'model-a',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    } as any)
+    vi.mocked(agentService.getAgent).mockResolvedValueOnce({
+      id: 'agent-1',
+      type: 'claude-code',
+      name: 'Test',
+      model: 'model-a',
+      accessible_paths: ['/tmp/test'],
+      configuration: {},
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    } as any)
+    vi.mocked(sessionService.getSession).mockResolvedValueOnce(null)
+
+    const service = SchedulerServiceModule.schedulerService
+    await expect(service.runTaskNow('agent-1', 'task-failed')).rejects.toThrow('Session not found')
+    expect(taskService.updateTaskRunLog).toHaveBeenCalledWith(
+      expect.any(Number),
+      expect.objectContaining({ status: 'error', session_id: null })
+    )
+    expect(taskService.updateTaskAfterRun).toHaveBeenCalledWith(
+      'task-failed',
+      null,
+      'Error: Session not found: session-1',
+      'error'
+    )
   })
 })

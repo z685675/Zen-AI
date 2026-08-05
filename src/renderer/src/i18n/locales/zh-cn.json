@@ -246,7 +246,7 @@
         "runTriggered": "任务已触发",
         "save": "保存",
         "scheduleType": {
-          "cron": "Cron",
+          "cron": "固定时间",
           "interval": "间隔",
           "label": "调度类型",
           "once": "一次性"
@@ -5813,7 +5813,7 @@
       "titlePlaceholder": "请输入短语标题"
     },
     "scheduledTasks": {
-      "description": "管理所有 Agent 的定时任务。任务将按照配置的时间计划自动运行。",
+      "description": "管理个人 Agent 的定时任务。应用运行时会按照配置的时间计划自动执行，并保留结果和运行记录。",
       "noAgents": "定时任务需要开启灵魂模式或无权限模式的 Agent 才能运行。请先在 Agent 设置中启用。",
       "noAgentsTip": "提示：你也可以直接在对话中让 Agent 创建定时任务。",
       "noTasks": "暂无定时任务。点击「+ 添加」为某个 Agent 创建任务。",

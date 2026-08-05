@@ -7,7 +7,7 @@ import { MessageBlockStatus, MessageBlockType } from '@renderer/types/newMessage
 import { isMainTextBlock, isMessageProcessing, isToolBlock, isVideoBlock } from '@renderer/utils/messageUtils/is'
 import { AnimatePresence, motion, type Variants } from 'motion/react'
 import React, { useMemo } from 'react'
-import { useSelector } from 'react-redux'
+import { shallowEqual, useSelector } from 'react-redux'
 import styled from 'styled-components'
 
 import BlockErrorFallback from './BlockErrorFallback'
@@ -115,9 +115,14 @@ const groupSimilarBlocks = (blocks: MessageBlock[]): (MessageBlock[] | MessageBl
 
 const MessageBlockRenderer: React.FC<Props> = ({ blocks, message, isStreaming }) => {
   // 始终调用useSelector，避免条件调用Hook
-  const blockEntities = useSelector((state: RootState) => messageBlocksSelectors.selectEntities(state))
+  const renderedBlocks = useSelector(
+    (state: RootState) =>
+      blocks
+        .map((blockId) => messageBlocksSelectors.selectById(state, blockId))
+        .filter((block): block is MessageBlock => Boolean(block)),
+    shallowEqual
+  )
   // 根据blocks类型处理渲染数据
-  const renderedBlocks = blocks.map((blockId) => blockEntities[blockId]).filter(Boolean)
   const groupedBlocks = useMemo(() => groupSimilarBlocks(renderedBlocks), [renderedBlocks])
 
   // Check if message is still processing

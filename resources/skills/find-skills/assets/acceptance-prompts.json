@@ -42,6 +42,30 @@
     "expected_behavior": "Use source-backed findings, source matrix, uncertainty notes, and actionable recommendations."
   },
   {
+    "id": "academic-research",
+    "prompt": "帮我梳理近五年个人 AI 助手方向的研究进展，按研究问题、方法、数据、主要结论和不足整理，并标出可以继续研究的空白。",
+    "expected_skills": ["academic-research", "research-report"],
+    "expected_behavior": "Define scope and inclusion rules, deduplicate papers, build evidence cards, synthesize by research question, and preserve direct source links without inventing citations."
+  },
+  {
+    "id": "research-design",
+    "prompt": "我想研究长对话中的上下文压缩是否会影响回答准确性，请帮我设计一套可以实际执行的研究方案。",
+    "expected_skills": ["research-design", "research-report"],
+    "expected_behavior": "Produce testable hypotheses, variables, controls, a small pilot, metrics, failure handling, ethics considerations, and a reproducibility checklist."
+  },
+  {
+    "id": "paper-writing",
+    "prompt": "根据我提供的研究结果，帮我整理成一篇结构完整的学术论文草稿，引用不要编造，缺少的实验结果要明确标出来。",
+    "expected_skills": ["paper-writing", "academic-research", "research-report"],
+    "expected_behavior": "Build an argument map and paper outline, preserve the evidence boundary, plan figures and tables, and mark unsupported content or missing results."
+  },
+  {
+    "id": "supervisor-review",
+    "prompt": "请像导师一样审阅我这份研究计划，告诉我最可能被质疑的地方，并给出按优先级排列的修改建议。",
+    "expected_skills": ["supervisor-review"],
+    "expected_behavior": "Return strengths, blocking/major/minor issues, evidence anchors, actionable revisions, and clearly mark assumptions or unverified claims."
+  },
+  {
     "id": "wechat-copy",
     "prompt": "帮我写一篇公众号文章，主题是为什么 AI 助手需要内置高质量 Skill，语气专业但不要空泛。",
     "expected_skills": ["content-writer-cn"],

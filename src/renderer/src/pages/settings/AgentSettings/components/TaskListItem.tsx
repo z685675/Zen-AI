@@ -1,6 +1,6 @@
 import type { ScheduledTaskEntity } from '@renderer/types'
 import { Popconfirm, Tag, Tooltip } from 'antd'
-import { Clock, Edit2, History, Pause, Play, Trash2 } from 'lucide-react'
+import { CalendarClock, Clock, Edit2, History, Pause, Play, RotateCcw, Trash2 } from 'lucide-react'
 import type { FC } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -67,6 +67,7 @@ const TaskListItem: FC<TaskListItemProps> = ({ task, onEdit, onToggleStatus, onD
   }
 
   const isCompleted = task.status === 'completed'
+  const canRun = !isCompleted || task.schedule_type === 'once'
   const typeConfig = scheduleTypeConfig[task.schedule_type] ?? { label: task.schedule_type, color: 'default' }
 
   return (
@@ -96,8 +97,12 @@ const TaskListItem: FC<TaskListItemProps> = ({ task, onEdit, onToggleStatus, onD
         )}
       </div>
       <div className="ml-3 flex shrink-0 items-center gap-0.5">
-        {!isCompleted && (
-          <IconButton icon={<Play size={14} />} tooltip={t('agent.cherryClaw.tasks.run')} onClick={() => onRun(task)} />
+        {canRun && (
+          <IconButton
+            icon={isCompleted ? <RotateCcw size={14} /> : <Play size={14} />}
+            tooltip={isCompleted ? t('agent.cherryClaw.tasks.runAgain', '再次执行') : t('agent.cherryClaw.tasks.run')}
+            onClick={() => onRun(task)}
+          />
         )}
         <IconButton
           icon={<History size={14} />}
@@ -113,8 +118,12 @@ const TaskListItem: FC<TaskListItemProps> = ({ task, onEdit, onToggleStatus, onD
         )}
         {!isCompleted && (
           <IconButton
-            icon={<Pause size={14} />}
-            tooltip={task.status === 'active' ? t('agent.cherryClaw.tasks.pause') : t('agent.cherryClaw.tasks.resume')}
+            icon={task.status === 'active' ? <Pause size={14} /> : <CalendarClock size={14} />}
+            tooltip={
+              task.status === 'active'
+                ? t('agent.cherryClaw.tasks.pause', '暂停定时任务')
+                : t('agent.cherryClaw.tasks.resume', '恢复定时任务')
+            }
             onClick={() => onToggleStatus(task)}
           />
         )}

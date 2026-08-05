@@ -15,11 +15,12 @@ const VERSION_FILE = '.version'
 
 /**
  * Copy built-in skills from app resources to the global-skills storage
- * directory, then create symlinks in .claude/skills/ so they are
- * discoverable by Claude Code.
+ * directory, then create symlinks in both runtime roots so they are
+ * discoverable by Claude Code and Codex.
  *
  * Storage:  {userData}/Data/Skills/{folderName}/
- * Symlink:  {userData}/.claude/skills/{folderName}/ → storage
+ * Symlink:  {userData}/.claude/skills/{folderName}/ and
+ *           {userData}/.agents/skills/{folderName}/ → storage
  *
  * Each installed skill gets a `.version` file recording the app version that
  * installed it. On subsequent launches the bundled version is compared with
@@ -33,7 +34,9 @@ const VERSION_FILE = '.version'
 export async function installBuiltinSkills(): Promise<void> {
   const resourceSkillsPath = toAsarUnpackedPath(path.join(app.getAppPath(), 'resources', 'skills'))
   const globalSkillsPath = getDataPath('Skills')
-  const linkBasePath = path.join(app.getPath('userData'), '.claude', 'skills')
+  const linkBasePaths = ['.claude', '.agents'].map((runtimeRoot) =>
+    path.join(app.getPath('userData'), runtimeRoot, 'skills')
+  )
   const appVersion = app.getVersion()
 
   try {
@@ -62,8 +65,10 @@ export async function installBuiltinSkills(): Promise<void> {
         installed++
       }
 
-      // Ensure symlink exists: .claude/skills/{name} → global-skills/{name}
-      await ensureSymlink(destPath, path.join(linkBasePath, entry.name))
+      // Ensure both runtime symlinks point to global-skills/{name}
+      await Promise.all(
+        linkBasePaths.map((linkBasePath) => ensureSymlink(destPath, path.join(linkBasePath, entry.name)))
+      )
 
       // Ensure the skill is registered in the DB
       await syncBuiltinSkillToDb(entry.name, destPath, filesUpdated)

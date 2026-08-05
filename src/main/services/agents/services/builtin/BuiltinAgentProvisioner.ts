@@ -21,8 +21,11 @@ const RUNTIME_SKILL_DIRS = [
   ['.claude', 'skills'],
   ['.agents', 'skills']
 ] as const
-const PROVISION_MANIFEST_VERSION = 1
+// Bump this whenever the shape of a provisioned workspace changes. Existing
+// workspaces will be checked and repaired on the next runtime invocation.
+const PROVISION_MANIFEST_VERSION = 2
 const PROVISION_MANIFEST_NAME = '.zen-ai-provision.json'
+const SKILL_DEFINITION_FILES = ['SKILL.md', 'skill.md'] as const
 
 interface ProvisionManifest {
   version: number
@@ -219,6 +222,33 @@ function getBuiltinSkillNames(skillNames: unknown): string[] {
   return validNames
 }
 
+function hasSkillDefinition(skillDir: string): boolean {
+  return SKILL_DEFINITION_FILES.some((fileName) => fs.existsSync(path.join(skillDir, fileName)))
+}
+
+function getRequiredBuiltinSkillNames(builtinRole: string): string[] {
+  return getBuiltinSkillNames(readBuiltinAgentJson(builtinRole)?.skills)
+}
+
+function hasCompleteRuntimeSkills(workspacePath: string, builtinRole: string): boolean {
+  const requiredSkillNames = getRequiredBuiltinSkillNames(builtinRole)
+  if (requiredSkillNames.length === 0) return true
+
+  return RUNTIME_SKILL_DIRS.every(([root, skills]) => {
+    const skillsDir = path.join(workspacePath, root, skills)
+    return requiredSkillNames.every((skillName) => hasSkillDefinition(path.join(skillsDir, skillName)))
+  })
+}
+
+function hasCompleteBundledSkills(builtinRole: string): boolean {
+  if (builtinRole !== 'fusion') return true
+
+  const resourceSkillsDir = toAsarUnpackedPath(path.join(getResourcePath(), 'skills'))
+  return getRequiredBuiltinSkillNames(builtinRole).every((skillName) =>
+    hasSkillDefinition(path.join(resourceSkillsDir, skillName))
+  )
+}
+
 function copySelectedResourceSkills(skillNames: unknown, destSkillsDirs: string[]): void {
   const validNames = getBuiltinSkillNames(skillNames)
   if (validNames.length === 0) return
@@ -235,7 +265,7 @@ function copySelectedResourceSkills(skillNames: unknown, destSkillsDirs: string[
 
   for (const skillName of validNames) {
     const sourceSkillDir = path.join(resourceSkillsDir, skillName)
-    if (!fs.existsSync(sourceSkillDir)) {
+    if (!fs.existsSync(sourceSkillDir) || !hasSkillDefinition(sourceSkillDir)) {
       logger.warn('Builtin skill declared by agent.json was not found in resources/skills', { skillName })
       continue
     }
@@ -404,6 +434,7 @@ export function isProvisioned(workspacePath: string, builtinRole: string): boole
     fs.existsSync(path.join(workspacePath, root, skills))
   )
   if (!hasRuntimeRoots) return false
+  if (!hasCompleteBundledSkills(builtinRole) || !hasCompleteRuntimeSkills(workspacePath, builtinRole)) return false
 
   const sourceFingerprint = calculateSourceFingerprint(builtinRole)
   const manifest = readProvisionManifest(workspacePath)

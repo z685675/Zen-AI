@@ -4,7 +4,18 @@ import { taskService } from '@main/services/agents/services/TaskService'
 import type { ListTaskLogsResponse, ListTasksResponse } from '@types'
 import type { Request, Response } from 'express'
 
+import { formatScheduledTaskError } from '../../taskError'
+
 const logger = loggerService.withContext('ApiServerTasksHandlers')
+
+function getTaskInputErrorStatus(error: unknown): 400 | 500 {
+  const message = error instanceof Error ? error.message : String(error)
+  return /^(Agent not found|Invalid |Interval |Schedule value|Unsupported schedule|Scheduled tasks require)/.test(
+    message
+  )
+    ? 400
+    : 500
+}
 
 export const createTask = async (req: Request, res: Response): Promise<Response> => {
   const { agentId } = req.params
@@ -16,10 +27,11 @@ export const createTask = async (req: Request, res: Response): Promise<Response>
     return res.status(201).json(task)
   } catch (error: any) {
     logger.error('Error creating task', { error, agentId })
-    return res.status(500).json({
+    const status = getTaskInputErrorStatus(error)
+    return res.status(status).json({
       error: {
-        message: `Failed to create task: ${error.message}`,
-        type: 'internal_error',
+        message: formatScheduledTaskError('create', error),
+        type: status === 400 ? 'invalid_request' : 'internal_error',
         code: 'task_creation_failed'
       }
     })
@@ -45,7 +57,7 @@ export const listTasks = async (req: Request, res: Response): Promise<Response> 
     logger.error('Error listing tasks', { error, agentId })
     return res.status(500).json({
       error: {
-        message: 'Failed to list tasks',
+        message: formatScheduledTaskError('list', error),
         type: 'internal_error',
         code: 'task_list_failed'
       }
@@ -74,7 +86,7 @@ export const getTask = async (req: Request, res: Response): Promise<Response> =>
     logger.error('Error getting task', { error, agentId, taskId })
     return res.status(500).json({
       error: {
-        message: 'Failed to get task',
+        message: formatScheduledTaskError('get', error),
         type: 'internal_error',
         code: 'task_get_failed'
       }
@@ -86,7 +98,9 @@ export const updateTask = async (req: Request, res: Response): Promise<Response>
   const { agentId, taskId } = req.params
   try {
     logger.debug('Updating task', { agentId, taskId })
-    const task = await taskService.updateTask(agentId, taskId, req.body)
+    const task = req.body.status
+      ? await schedulerService.updateTaskStatus(agentId, taskId, req.body.status)
+      : await taskService.updateTask(agentId, taskId, req.body)
 
     if (!task) {
       return res.status(404).json({
@@ -102,10 +116,11 @@ export const updateTask = async (req: Request, res: Response): Promise<Response>
     return res.json(task)
   } catch (error: any) {
     logger.error('Error updating task', { error, agentId, taskId })
-    return res.status(500).json({
+    const status = getTaskInputErrorStatus(error)
+    return res.status(status).json({
       error: {
-        message: `Failed to update task: ${error.message}`,
-        type: 'internal_error',
+        message: formatScheduledTaskError('update', error),
+        type: status === 400 ? 'invalid_request' : 'internal_error',
         code: 'task_update_failed'
       }
     })
@@ -134,7 +149,7 @@ export const deleteTask = async (req: Request, res: Response): Promise<Response>
     logger.error('Error deleting task', { error, agentId, taskId })
     return res.status(500).json({
       error: {
-        message: 'Failed to delete task',
+        message: formatScheduledTaskError('delete', error),
         type: 'internal_error',
         code: 'task_delete_failed'
       }
@@ -154,7 +169,7 @@ export const runTask = async (req: Request, res: Response): Promise<Response> =>
     logger.error('Error running task', { error, agentId, taskId })
     return res.status(status).json({
       error: {
-        message: `Failed to run task: ${error.message}`,
+        message: formatScheduledTaskError('run', error),
         type: status === 409 ? 'conflict' : status === 404 ? 'not_found' : 'internal_error',
         code: 'task_run_failed'
       }
@@ -193,7 +208,7 @@ export const getTaskLogs = async (req: Request, res: Response): Promise<Response
     logger.error('Error getting task logs', { error, taskId })
     return res.status(500).json({
       error: {
-        message: 'Failed to get task logs',
+        message: formatScheduledTaskError('logs', error),
         type: 'internal_error',
         code: 'task_logs_failed'
       }

@@ -68,6 +68,7 @@ export const mergeSyncedProviderModels = (
   fetchedModels: Model[],
   options?: {
     preserveModelIds?: string[]
+    addFetchedModels?: boolean
     syncedAt?: number
     sourceFingerprint?: string
     attemptedAt?: number
@@ -86,6 +87,10 @@ export const mergeSyncedProviderModels = (
 
   const previousRemoteIds = new Set(provider.modelSync?.remoteModelIds ?? [])
   const nextRemoteIds = new Set(remoteModels.map((model) => model.id))
+  const trackedRemoteIds =
+    options?.addFetchedModels === false
+      ? new Set(Array.from(previousRemoteIds).filter((id) => nextRemoteIds.has(id)))
+      : nextRemoteIds
   const preserveModelIds = new Set(options?.preserveModelIds ?? [])
   const remoteModelById = new Map(remoteModels.map((model) => [model.id, model]))
   const remoteEndpointDeclarations = new Map(
@@ -114,13 +119,16 @@ export const mergeSyncedProviderModels = (
         : model
     })
 
-  const mergedModels = uniqBy([...keptExistingModels, ...remoteModels], 'id')
+  const mergedModels = uniqBy(
+    [...keptExistingModels, ...(options?.addFetchedModels === false ? [] : remoteModels)],
+    'id'
+  )
 
   return {
     ...provider,
     models: mergedModels,
     modelSync: {
-      remoteModelIds: Array.from(nextRemoteIds),
+      remoteModelIds: Array.from(trackedRemoteIds),
       syncedAt: options?.syncedAt ?? Date.now(),
       sourceFingerprint: options?.sourceFingerprint ?? getProviderModelSyncFingerprint(provider),
       lastAttemptAt: options?.attemptedAt ?? options?.syncedAt ?? Date.now(),

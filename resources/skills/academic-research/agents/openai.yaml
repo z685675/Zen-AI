@@ -1,0 +1,7 @@
+interface:
+  display_name: "Academic Research"
+  short_description: "Map literature into traceable evidence and research gaps"
+  brand_color: "#1D4ED8"
+  default_prompt: "Use academic research workflow to review the literature, compare evidence, and identify research gaps."
+policy:
+  allow_implicit_invocation: true

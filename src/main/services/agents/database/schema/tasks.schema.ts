@@ -9,11 +9,12 @@ import { agentsTable } from './agents.schema'
 export const scheduledTasksTable = sqliteTable('scheduled_tasks', {
   id: text('id').primaryKey(),
   agent_id: text('agent_id').notNull(),
+  model_id: text('model_id'),
   name: text('name').notNull(),
   prompt: text('prompt').notNull(),
   schedule_type: text('schedule_type').notNull(), // 'cron' | 'interval' | 'once'
   schedule_value: text('schedule_value').notNull(), // cron expression, milliseconds as string, or ISO timestamp
-  timeout_minutes: integer('timeout_minutes').notNull().default(2),
+  timeout_minutes: integer('timeout_minutes').notNull().default(60),
   next_run: text('next_run'),
   last_run: text('last_run'),
   last_result: text('last_result'),
@@ -26,9 +27,12 @@ export const taskRunLogsTable = sqliteTable('task_run_logs', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   task_id: text('task_id').notNull(),
   session_id: text('session_id'),
+  model_id: text('model_id'),
+  trigger_type: text('trigger_type').notNull().default('scheduled'), // 'scheduled' | 'manual' | 'retry'
+  scheduled_for: text('scheduled_for'),
   run_at: text('run_at').notNull(),
   duration_ms: integer('duration_ms').notNull(),
-  status: text('status').notNull(), // 'success' | 'error'
+  status: text('status').notNull(), // 'running' | 'waiting_user' | 'paused' | 'success' | 'error'
   result: text('result'),
   error: text('error')
 })

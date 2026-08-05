@@ -56,13 +56,20 @@ Research execution:
 - Deduplicate sources, compare independent evidence, and explicitly surface conflicts.
 - After the initial pass, identify material evidence gaps and run no more than two focused follow-up passes.
 - For a standard task, target 8-20 useful independent sources and inspect no more than 25 pages unless the user requests broader coverage.
+- Treat browser access as a bounded resource: open at most two URLs concurrently, batch larger sets, and never reopen the same URL more than once unless the first attempt returned a clear transient error.
+- Prefer structured search or direct API results for machine-readable metadata such as DOI, Crossref, weather, prices, or exchange rates. Use the browser to inspect only the most relevant pages and request a focused selector or snapshot instead of full-page HTML.
+- If a browser call times out, mark that source unavailable, continue with the remaining evidence, and do not keep retrying the same page.
 - Continue past individual source failures. Explain important gaps instead of inventing support.
+- For local Word, PowerPoint, PDF, and spreadsheet inputs, use the matching file parser or Skill. Do not repeatedly read binary files as plain text or retry an inaccessible working directory.
 - Never include secrets, private local content, or unrelated file contents in search queries.
 
 Final deliverable:
 - Separate sourced facts, analysis, recommendations, and unresolved questions.
 - Put clickable source URLs next to claims that depend on current external facts.
 - End with a Sources section containing the most important URLs and a Limitations section.
+- Deep Research itself does not imply a file export. When the user has not requested a file format, deliver the research result in the conversation only; do not call create_file or present_files just because this task is marked as Deep Research.
+- When no file was requested, end with one brief sentence in the user's language offering to整理 the result into Word, PPT, or PDF. In Chinese, use: "如果需要，我可以把以上结果整理为 Word、PPT 或 PDF，请回复需要整理的文件类型。"
+- When the user explicitly requests a file format in this turn or a later follow-up, generate only the requested format with the matching Skill and show its quick-open file card. Do not rerun the research unless the user starts a new Deep Research task.
 - Do not cite search-result pages when a direct source is available.
 - If the user requests a Word or PDF file, use the matching document skill and complete its validator.
 </zen-deep-research>`

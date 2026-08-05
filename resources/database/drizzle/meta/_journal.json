@@ -49,7 +49,21 @@
       "tag": "0006_agent_session_flags",
       "version": "6",
       "when": 1779782400000
+    },
+    {
+      "breakpoints": true,
+      "idx": 7,
+      "tag": "0007_task_execution_model",
+      "version": "7",
+      "when": 1780000000000
+    },
+    {
+      "breakpoints": true,
+      "idx": 8,
+      "tag": "0008_task_run_metadata",
+      "version": "7",
+      "when": 1780000100000
     }
   ],
-  "version": "7"
+  "version": "8"
 }

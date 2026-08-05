@@ -16,6 +16,9 @@ import { useProvider } from '@renderer/hooks/useProvider'
 import NewApiAddModelPopup from '@renderer/pages/settings/ProviderSettings/ModelList/NewApiAddModelPopup'
 import NewApiBatchAddModelPopup from '@renderer/pages/settings/ProviderSettings/ModelList/NewApiBatchAddModelPopup'
 import { fetchModels } from '@renderer/services/ApiService'
+import { reconcileProviderModelReferences } from '@renderer/services/ProviderModelSyncService'
+import { mergeSyncedProviderModels } from '@renderer/services/ProviderModelSyncUtils'
+import store from '@renderer/store'
 import type { Model, Provider } from '@renderer/types'
 import { filterModelsByKeywords, getFancyProviderName } from '@renderer/utils'
 import { getDuplicateModelNames, isFreeModel } from '@renderer/utils/model'
@@ -44,8 +47,9 @@ interface Props extends ShowParams {
 
 const PopupContainer: React.FC<Props> = ({ providerId, resolve }) => {
   const [open, setOpen] = useState(true)
-  const { provider, models, addModel, removeModel } = useProvider(providerId)
+  const { provider, models, addModel, removeModel, updateProvider } = useProvider(providerId)
   const [listModels, setListModels] = useState<Model[]>([])
+  const [hasSuccessfulFetch, setHasSuccessfulFetch] = useState(false)
   const [loadingModels, setLoadingModels] = useState(false)
   const [searchText, setSearchText] = useState('')
   const [filterSearchText, setFilterSearchText] = useState('')
@@ -74,8 +78,14 @@ const PopupContainer: React.FC<Props> = ({ providerId, resolve }) => {
   const searchInputRef = useRef<any>(null)
 
   const allModels = useMemo(
-    () => uniqBy([...(SYSTEM_MODELS[provider.id] || []), ...listModels, ...models], 'id'),
-    [provider.id, listModels, models]
+    () =>
+      uniqBy(
+        hasSuccessfulFetch
+          ? [...listModels, ...models]
+          : [...(SYSTEM_MODELS[provider.id] || []), ...listModels, ...models],
+        'id'
+      ),
+    [hasSuccessfulFetch, provider.id, listModels, models]
   )
   const duplicateModelNames = useMemo(() => getDuplicateModelNames(allModels), [allModels])
 
@@ -176,18 +186,46 @@ const PopupContainer: React.FC<Props> = ({ providerId, resolve }) => {
     })
   }, [list, onAddModel, provider, t])
 
-  const loadModels = useCallback(async (provider: Provider) => {
-    setLoadingModels(true)
-    try {
-      const models = await fetchModels(provider)
-      const filteredModels = models.filter((model) => !isEmpty(model.name))
-      setListModels(filteredModels)
-    } catch (error) {
-      logger.error(`Failed to load models for provider ${getFancyProviderName(provider)}`, error as Error)
-    } finally {
-      setLoadingModels(false)
-    }
-  }, [])
+  const loadModels = useCallback(
+    async (provider: Provider) => {
+      setLoadingModels(true)
+      try {
+        const fetchedModels = await fetchModels(provider)
+        const filteredModels = fetchedModels.filter((model) => !isEmpty(model.name))
+        setListModels(filteredModels)
+
+        // Only reconcile local models after a non-empty, successful response.
+        // Empty responses can mean an unavailable endpoint and must not delete
+        // the user's existing model configuration.
+        if (filteredModels.length > 0) {
+          const latestProvider = store.getState().llm.providers.find((item) => item.id === provider.id)
+
+          if (latestProvider) {
+            // A successful manual refresh follows the same add/remove rules as
+            // the background synchronizer. Empty or failed responses are still
+            // non-destructive and are handled above.
+            const reconciledProvider = mergeSyncedProviderModels(latestProvider, filteredModels)
+
+            updateProvider({
+              models: reconciledProvider.models,
+              modelSync: reconciledProvider.modelSync
+            })
+            reconcileProviderModelReferences()
+          }
+
+          setHasSuccessfulFetch(true)
+        } else {
+          setHasSuccessfulFetch(false)
+        }
+      } catch (error) {
+        logger.error(`Failed to load models for provider ${getFancyProviderName(provider)}`, error as Error)
+        setHasSuccessfulFetch(false)
+      } finally {
+        setLoadingModels(false)
+      }
+    },
+    [updateProvider]
+  )
 
   useEffect(() => {
     void loadModels(provider)

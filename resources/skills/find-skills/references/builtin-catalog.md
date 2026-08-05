@@ -11,6 +11,10 @@ Use this catalog before searching external marketplaces.
 | `pdf` | Read, summarize, extract, check, and create PDF deliverables. | CJK-safe paginated generator, table layout, extraction checker, PDF safety validator |
 | `markdown` | Create README files, specifications, knowledge pages, and portable Markdown deliverables. | UTF-8, heading, fence, table, and link validator |
 | `research-report` | Source-backed research, competitor analysis, industry briefs, and decision memos. | Source matrix script, evidence schema, report templates |
+| `academic-research` | Literature reviews, research landscapes, evidence cards, and research gaps. | Bilingual query expansion, paper deduplication, evidence-card workflow |
+| `research-design` | Testable research questions, hypotheses, experiments, metrics, and reproducibility plans. | Feasibility, risk, ethics, and pilot-design checklist |
+| `paper-writing` | Academic paper structure, drafting, evidence-aware revision, and submission checks. | Argument map, figure/table plan, citation and placeholder checks |
+| `supervisor-review` | Advisor-style review of papers, theses, research plans, and rebuttals. | Severity-ranked review matrix and revision checklist |
 | `content-writer-cn` | Chinese copywriting for WeChat, Xiaohongshu, short video, product, and campaigns. | Platform templates, copy quality checker |
 | `meeting-notes` | Convert transcripts or rough notes into decisions, actions, risks, and follow-ups. | Minutes template, action extraction script |
 | `skill-creator` | Create or update new Skills with scripts, references, and assets. | Skill validation and evaluation tooling |

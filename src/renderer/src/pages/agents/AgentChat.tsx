@@ -36,7 +36,17 @@ import { isUnnamedAgentSessionName } from '@renderer/utils/agentSessionTitle'
 import { shouldDiscardEmptyConversation } from '@renderer/utils/conversationDraft'
 import { DEFAULT_FUSION_AGENT_ID, getAgentAvatar } from '@shared/config/agents'
 import { Alert, Button, Spin } from 'antd'
-import { FolderOpen, ListTodo, RefreshCw, ScrollText, Search, Sparkles, Wrench } from 'lucide-react'
+import {
+  CalendarClock,
+  FolderOpen,
+  ListTodo,
+  Puzzle,
+  RefreshCw,
+  ScrollText,
+  Search,
+  Sparkles,
+  Wrench
+} from 'lucide-react'
 import type { PropsWithChildren, ReactNode } from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -48,6 +58,7 @@ import { PinnedTodoPanel } from '../home/Inputbar/components/PinnedTodoPanel'
 import ChatNavigation from '../home/Messages/ChatNavigation'
 import NarrowLayout from '../home/Messages/NarrowLayout'
 import AgentChatNavbar from './components/AgentChatNavbar'
+import AgentQuickEntryModal, { type AgentQuickEntry } from './components/AgentQuickEntryModal'
 import AgentSessionInputbar from './components/AgentSessionInputbar'
 import AgentSessionMessages from './components/AgentSessionMessages'
 import AgentTaskStatusBar from './components/AgentTaskStatusBar'
@@ -108,6 +119,7 @@ const AgentChat = () => {
     initialEnvironmentCache?.result ?? null
   )
   const [environmentError, setEnvironmentError] = useState<string | null>(initialEnvironmentCache?.error ?? null)
+  const [quickEntry, setQuickEntry] = useState<AgentQuickEntry | null>(null)
   const trackedSessionRef = useRef<TrackedAgentSession | undefined>(undefined)
   const sessionsBeingDiscardedRef = useRef(new Set<string>())
   const modelRepairAttemptsRef = useRef(new Set<string>())
@@ -389,9 +401,23 @@ const AgentChat = () => {
           <Sparkles size={16} />
         ),
         onClick: () => window.navigate(`/settings/channels?type=wechat&open=1&agentId=${DEFAULT_FUSION_AGENT_ID}`)
+      },
+      {
+        key: 'tasks',
+        title: t('settings.scheduledTasks.title'),
+        description: t('agent.welcome.quick_entries.tasks_desc', '让智能助手按计划自动执行任务'),
+        icon: <CalendarClock size={19} />,
+        onClick: () => setQuickEntry('tasks')
+      },
+      {
+        key: 'skills',
+        title: t('settings.skills.title'),
+        description: t('agent.welcome.quick_entries.skills_desc', '导入、搜索和管理智能助手技能'),
+        icon: <Puzzle size={19} />,
+        onClick: () => setQuickEntry('skills')
       }
     ],
-    []
+    [t]
   )
 
   const renderQuickEntrySection = () => (
@@ -574,6 +600,7 @@ const AgentChat = () => {
           {!isWelcomeState && <AgentSessionInputbar agentId={activeAgentId} sessionId={activeSessionId} />}
         </div>
       </QuickPanelProvider>
+      <AgentQuickEntryModal entry={quickEntry} onClose={() => setQuickEntry(null)} />
     </Container>
   )
 }
@@ -814,8 +841,12 @@ const QuickEntryLabel = styled.div`
 
 const QuickEntryGrid = styled.div`
   display: grid;
-  grid-template-columns: minmax(260px, 360px);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 14px;
+
+  @media (max-width: 1040px) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 
   @media (max-width: 820px) {
     grid-template-columns: 1fr;

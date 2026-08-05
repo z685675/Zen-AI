@@ -48,7 +48,7 @@ export const useCreateTask = () => {
         return result
       } catch (error) {
         window.toast.error(
-          formatErrorMessageWithPrefix(error, t('agent.cherryClaw.tasks.error.createFailed', 'Failed to create task'))
+          formatErrorMessageWithPrefix(error, t('agent.cherryClaw.tasks.error.createFailed', '创建定时任务失败'))
         )
         return undefined
       }
@@ -72,7 +72,7 @@ export const useUpdateTask = () => {
         return result
       } catch (error) {
         window.toast.error(
-          formatErrorMessageWithPrefix(error, t('agent.cherryClaw.tasks.error.updateFailed', 'Failed to update task'))
+          formatErrorMessageWithPrefix(error, t('agent.cherryClaw.tasks.error.updateFailed', '更新定时任务失败'))
         )
         return undefined
       }
@@ -92,11 +92,11 @@ export const useRunTask = () => {
       try {
         await client.runTask(taskId)
         void mutate(TASKS_LIST_KEY)
-        window.toast.success({ key: 'run-task', title: t('agent.cherryClaw.tasks.runTriggered') })
+        window.toast.success({ key: 'run-task', title: t('agent.cherryClaw.tasks.runStarted', '任务已开始执行') })
         return true
       } catch (error) {
         window.toast.error(
-          formatErrorMessageWithPrefix(error, t('agent.cherryClaw.tasks.error.runFailed', 'Failed to run task'))
+          formatErrorMessageWithPrefix(error, t('agent.cherryClaw.tasks.error.runFailed', '定时任务执行失败'))
         )
         return false
       }
@@ -120,7 +120,7 @@ export const useDeleteTask = () => {
         return true
       } catch (error) {
         window.toast.error(
-          formatErrorMessageWithPrefix(error, t('agent.cherryClaw.tasks.error.deleteFailed', 'Failed to delete task'))
+          formatErrorMessageWithPrefix(error, t('agent.cherryClaw.tasks.error.deleteFailed', '删除定时任务失败'))
         )
         return false
       }
@@ -142,7 +142,11 @@ export const useTaskLogs = (taskId: string | null) => {
     return client.getTaskLogs(taskId, { limit: 50 })
   }, [client, taskId])
 
-  const { data, error, isLoading } = useSWR<ListTaskLogsResponse>(key, fetcher)
+  const { data, error, isLoading } = useSWR<ListTaskLogsResponse>(key, fetcher, {
+    refreshInterval: (latestData) =>
+      latestData?.data.some((log) => log.status === 'running' || log.status === 'waiting_user') ? 2000 : 0,
+    revalidateOnFocus: true
+  })
 
   return {
     logs: data?.data ?? [],

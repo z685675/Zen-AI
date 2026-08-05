@@ -83,6 +83,7 @@ import { TopicManager } from '@renderer/hooks/useTopic'
 
 import { copyMessageAsPlainText } from '../copy'
 import {
+  exportMessagesAsMarkdown,
   getTitleFromString,
   messagesToMarkdown,
   messageToMarkdown,
@@ -123,6 +124,8 @@ describe('export utils', () => {
       value: {
         file: {
           read: vi.fn().mockResolvedValue('[]'),
+          save: vi.fn().mockResolvedValue(true),
+          write: vi.fn(),
           writeWithId: vi.fn()
         }
       },
@@ -189,6 +192,20 @@ describe('export utils', () => {
     expect(result).toContain('First message')
     expect(result).toContain('Second message')
     expect(result).toContain('\n---\n')
+  })
+
+  it('exports an agent session message list as markdown', async () => {
+    const message = createMessage('assistant', [
+      createBlock('assistant-1', MessageBlockType.MAIN_TEXT, 'Exported session content')
+    ])
+
+    await exportMessagesAsMarkdown('Agent Session', [message])
+
+    expect(window.api.file.save).toHaveBeenCalledWith('Agent Session.md', expect.stringContaining('# Agent Session'))
+    expect(window.api.file.save).toHaveBeenCalledWith(
+      'Agent Session.md',
+      expect.stringContaining('Exported session content')
+    )
   })
 
   it('converts a single message to plain text and copies it', async () => {

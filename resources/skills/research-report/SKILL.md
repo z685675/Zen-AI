@@ -31,6 +31,8 @@ When the runtime marks the request as a Zen Deep Research task:
 9. Stop when the main questions are supported, new sources no longer change the conclusion, or the research budget is reached.
 10. Put clickable source links next to current factual claims and finish with Sources and Limitations sections. Preserve each source as `[descriptive title](https://direct-source-url)` through DOCX generation so Word receives native clickable hyperlinks rather than plain source names.
 11. Before delivering a Deep Research report, run the strict source/report quality gate. A nonzero exit is blocking: fix the matrix or report and rerun it instead of claiming validation passed.
+12. Deep Research does not automatically mean file export. If the user did not request a file format, deliver the research result in chat only and do not call `create_file` or `present_files` for the report. End with one brief offer to整理 the result into Word, PPT, or PDF; in Chinese use: `如果需要，我可以把以上结果整理为 Word、PPT 或 PDF，请回复需要整理的文件类型。`
+13. If the user explicitly requests a file format in the current task or a later follow-up, create only that format with the matching Skill, run its validator, and present the verified file. A later format request reuses the completed research context and does not start a new research task.
 
 Deep Research applies only to the marked task. Treat its final output as normal conversation context for later follow-ups; do not start another research run unless the user marks a new task.
 

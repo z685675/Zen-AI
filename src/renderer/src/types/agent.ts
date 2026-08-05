@@ -114,6 +114,7 @@ export type TaskStatus = z.infer<typeof TaskStatusSchema>
 export const ScheduledTaskEntitySchema = z.object({
   id: z.string(),
   agent_id: z.string(),
+  model_id: z.string().nullable().optional(),
   name: z.string(),
   prompt: z.string(),
   schedule_type: TaskScheduleTypeSchema,
@@ -134,9 +135,12 @@ export const TaskRunLogEntitySchema = z.object({
   id: z.number(),
   task_id: z.string(),
   session_id: z.string().nullable().optional(),
+  model_id: z.string().nullable().optional(),
+  trigger_type: z.enum(['scheduled', 'manual', 'retry']).default('scheduled'),
+  scheduled_for: z.string().nullable().optional(),
   run_at: z.string(),
   duration_ms: z.number(),
-  status: z.enum(['running', 'waiting_user', 'success', 'error']),
+  status: z.enum(['running', 'waiting_user', 'paused', 'success', 'error']),
   result: z.string().nullable().optional(),
   error: z.string().nullable().optional()
 })
@@ -434,6 +438,7 @@ export type AgentServerError = z.infer<typeof AgentServerErrorSchema>
 
 // ------------------ Task API types ------------------
 export const CreateTaskRequestSchema = z.object({
+  model_id: z.string().min(1).nullable().optional(),
   name: z.string().min(1, 'Name is required'),
   prompt: z.string().min(1, 'Prompt is required'),
   schedule_type: TaskScheduleTypeSchema,
@@ -445,6 +450,7 @@ export const CreateTaskRequestSchema = z.object({
 export type CreateTaskRequest = z.infer<typeof CreateTaskRequestSchema>
 
 export const UpdateTaskRequestSchema = z.object({
+  model_id: z.string().min(1).nullable().optional(),
   name: z.string().min(1).optional(),
   prompt: z.string().min(1).optional(),
   agent_id: z.string().min(1).optional(),

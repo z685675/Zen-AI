@@ -4,7 +4,7 @@ import Link from 'antd/es/typography/Link'
 import type { CSSProp } from 'styled-components'
 import styled from 'styled-components'
 
-export const SettingContainer = styled.div<{ theme?: ThemeMode }>`
+export const SettingContainer = styled.div<{ theme?: ThemeMode; showScrollbar?: boolean }>`
   display: flex;
   flex-direction: column;
   flex: 1;
@@ -13,7 +13,17 @@ export const SettingContainer = styled.div<{ theme?: ThemeMode }>`
   background: ${(props) => (props.theme === 'dark' ? 'transparent' : 'var(--color-background-soft)')};
 
   &::-webkit-scrollbar {
-    display: none;
+    display: ${(props) => (props.showScrollbar ? 'block' : 'none')};
+    width: ${(props) => (props.showScrollbar ? '8px' : '0')};
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background: ${(props) => (props.showScrollbar ? 'var(--color-scrollbar-thumb)' : 'transparent')};
+    border-radius: 4px;
+  }
+
+  &::-webkit-scrollbar-thumb:hover {
+    background: ${(props) => (props.showScrollbar ? 'var(--color-scrollbar-thumb-hover)' : 'transparent')};
   }
 `
 

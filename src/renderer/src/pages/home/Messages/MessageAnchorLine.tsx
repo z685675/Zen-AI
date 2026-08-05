@@ -26,6 +26,8 @@ interface ConversationTurn {
 
 const RAIL_CONTEXT_PADDING = 28
 const HOVER_NEIGHBOR_RANGE = 3
+const USER_PREVIEW_LENGTH = 180
+const ASSISTANT_PREVIEW_LENGTH = 360
 
 const MessageAnchorLine: FC<MessageLineProps> = ({ messages, renderedMessages, onRequestMessageRender }) => {
   const { t } = useTranslation()
@@ -285,9 +287,11 @@ const MessageAnchorLine: FC<MessageLineProps> = ({ messages, renderedMessages, o
           {conversationTurns.map((turn, turnIndex) => {
             const assistantMessage = turn.assistants.find((item) => item.foldSelected) ?? turn.assistants[0]
             const targetMessage = turn.user ?? assistantMessage
-            const userPreview = turn.user ? formatMessageAnchorPreview(getMainTextContent(turn.user)) : ''
+            const userPreview = turn.user
+              ? formatMessageAnchorPreview(getMainTextContent(turn.user), USER_PREVIEW_LENGTH)
+              : ''
             const assistantPreview = assistantMessage
-              ? formatMessageAnchorPreview(getMainTextContent(assistantMessage))
+              ? formatMessageAnchorPreview(getMainTextContent(assistantMessage), ASSISTANT_PREVIEW_LENGTH)
               : ''
             const tooltipLabel = [userPreview, assistantPreview].filter(Boolean).join(' ')
             const isActive = activeTurnId === turn.id
@@ -473,20 +477,19 @@ const TurnPreview = styled.div`
 `
 
 const TurnQuestion = styled.div`
-  display: -webkit-box;
+  display: block;
   overflow: hidden;
   color: var(--color-text);
   font-size: 13px;
   font-weight: 600;
   line-height: 1.55;
-  overflow-wrap: anywhere;
-  white-space: normal;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 `
 
 const TurnAnswer = styled.div`
   display: -webkit-box;
+  max-height: calc(1.55em * 3);
   overflow: hidden;
   color: var(--color-text-2);
   font-size: 13px;
@@ -496,6 +499,7 @@ const TurnAnswer = styled.div`
   white-space: normal;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 3;
+  text-overflow: ellipsis;
 `
 
 export default MessageAnchorLine

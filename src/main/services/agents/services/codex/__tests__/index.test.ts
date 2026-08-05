@@ -11,6 +11,11 @@ const assistantMcpMocks = vi.hoisted(() => ({
   cleanup: vi.fn()
 }))
 
+const browserMcpMocks = vi.hoisted(() => ({
+  register: vi.fn(),
+  cleanup: vi.fn()
+}))
+
 const runtimeMocks = vi.hoisted(() => ({
   getApiConfig: vi.fn(),
   getPythonEnvironment: vi.fn()
@@ -32,6 +37,11 @@ vi.mock('@main/apiServer/config', () => ({
 vi.mock('@main/apiServer/routes/assistant-mcp', () => ({
   registerAssistantMcpContext: assistantMcpMocks.register,
   cleanupAssistantMcpContext: assistantMcpMocks.cleanup
+}))
+
+vi.mock('@main/apiServer/routes/browser-mcp', () => ({
+  registerBrowserMcpContext: browserMcpMocks.register,
+  cleanupBrowserMcpContext: browserMcpMocks.cleanup
 }))
 
 vi.mock('@main/apiServer/utils', () => ({
@@ -219,7 +229,9 @@ describe('CodexService startup errors', () => {
     })
 
     expect(assistantMcpMocks.register).toHaveBeenCalledWith('session-1', ['C:\\workspace'])
+    expect(browserMcpMocks.register).toHaveBeenCalledWith('session-1')
     await vi.waitFor(() => expect(assistantMcpMocks.cleanup).toHaveBeenCalledTimes(1))
     expect(assistantMcpMocks.cleanup).toHaveBeenCalledWith('session-1')
+    expect(browserMcpMocks.cleanup).toHaveBeenCalledWith('session-1')
   })
 })

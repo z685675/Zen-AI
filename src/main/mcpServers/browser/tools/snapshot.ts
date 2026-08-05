@@ -84,7 +84,7 @@ const SNAPSHOT_SCRIPT = `(() => {
 export const snapshotToolDefinition = {
   name: 'snapshot',
   description:
-    'Get an AI-friendly text snapshot of the current page with numbered refs for interactive elements. Much more compact than raw HTML/markdown. Use selector to scope to a specific part (e.g. "#search" for Google results, "#main" for article body). PARALLEL: Can be called simultaneously on different tabs.',
+    'Get an AI-friendly text snapshot of the current page with numbered refs for interactive elements. Much more compact than raw HTML/markdown. Use selector to scope to a specific part (e.g. "#search" for Google results, "#main" for article body). Keep browser snapshots within the shared two-operation concurrency limit.',
   inputSchema: {
     type: 'object',
     properties: {

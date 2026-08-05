@@ -11,6 +11,10 @@ vi.mock('@logger', async () => {
 
 // Mock electron modules that are commonly used in main process
 vi.mock('electron', () => {
+  const mockBrowserWindow = Object.assign(vi.fn(), {
+    getAllWindows: vi.fn(() => [])
+  })
+
   const mock = {
     app: {
       getPath: vi.fn((key: string) => {
@@ -34,7 +38,7 @@ vi.mock('electron', () => {
       removeHandler: vi.fn(),
       removeAllListeners: vi.fn()
     },
-    BrowserWindow: vi.fn(),
+    BrowserWindow: mockBrowserWindow,
     dialog: {
       showErrorBox: vi.fn(),
       showMessageBox: vi.fn(),

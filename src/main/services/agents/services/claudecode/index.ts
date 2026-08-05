@@ -53,6 +53,7 @@ import type {
   AgentStreamEvent,
   AgentThinkingOptions
 } from '../../interfaces/AgentStreamInterface'
+import { syncSkillsToWorkspace } from '../../skills/skillWorkspaceSync'
 import { agentService } from '../AgentService'
 import {
   ensureBuiltinAgentRuntimeSkillRoots,
@@ -63,6 +64,7 @@ import { channelService } from '../ChannelService'
 import { PromptBuilder } from '../cherryclaw/prompt'
 import { isModelCompatibleWithAgentRuntime } from '../runtime/compatibility'
 import { getAgentProtocolBridgeTarget, shouldUseAgentProtocolBridge } from '../runtime/protocol'
+import { RESEARCH_BUILTIN_SKILL_WORKFLOWS } from '../runtime/researchWorkflows'
 import { sessionService } from '../SessionService'
 import { buildNamespacedToolCallId } from './claude-stream-state'
 import { resolveClaudeExecutablePath } from './executable'
@@ -129,7 +131,7 @@ You are expected to reliably complete these baseline product capabilities:
 - Search only when the user explicitly asks for online lookup, refers to a public page whose content was not supplied, or when current external facts materially affect the answer, such as weather, news, prices, schedules, laws, software releases, availability, or current office holders.
 - Do not search for greetings, creative writing, translation, rewriting, stable facts, established concepts, or tasks answerable from the conversation and supplied files.
 - Do not send private file contents, personal information, account details, credentials, or secrets to a search provider. Search sensitive material only when the user explicitly asks, and use the minimum redacted query needed.
-- Prefer mcp__exa__web_search_exa for structured search, and use mcp__browser__open / mcp__browser__snapshot / mcp__browser__screenshot when a specific page must be inspected.
+- Prefer mcp__exa__web_search_exa for structured search, and use mcp__browser__open / mcp__browser__snapshot / mcp__browser__screenshot when a specific page must be inspected. Browser access is bounded: open at most two URLs concurrently, batch larger sets, deduplicate URLs, and skip a source after a timeout instead of retrying it repeatedly.
 - Use the browser in the background for ordinary search, page reading, research briefs, and scheduled reports. If the user explicitly asks to open or show a page, or if login, CAPTCHA, authorization, confirmation, upload/download choice, site check-in, or other manual interaction is required, call mcp__browser__open with showWindow: true. If the user must complete a step, call mcp__browser__wait_for_user and continue after they click Continue.
 - The visible browser is Zen AI's internal browser, not the user's system Edge/Chrome. Use normal persistent mode for websites where future tasks should reuse login cookies/localStorage; do not use private mode for those tasks.
 - Do not bypass CAPTCHA, payment confirmation, security prompts, or website anti-abuse protections. Ask the user to complete those steps in the visible browser.
@@ -144,7 +146,7 @@ You are expected to reliably complete these baseline product capabilities:
 2. Output and file generation
 - When the user asks for MD, TXT, Word/DOCX, Excel/XLSX/CSV, PPT/PPTX, PDF, or other common file output, create the file in the requested location or a sensible default location.
 - Before drafting complex artifacts, check whether a built-in Skill fits the task. Use built-in Skills as high-reliability workflows, not as optional decorations.
-- For presentation, spreadsheet, document, PDF, research, Chinese content, and meeting-summary tasks, prefer the matching built-in Skill workflow: $presentation-planner, $pptx, $xlsx, $docx, $pdf, $research-report, $content-writer-cn, or $meeting-notes.
+- For presentation, spreadsheet, document, PDF, research, Chinese content, and meeting-summary tasks, prefer the matching built-in Skill workflow: $presentation-planner, $pptx, $xlsx, $docx, $pdf, $research-report, $academic-research, $research-design, $paper-writing, $supervisor-review, $content-writer-cn, or $meeting-notes.
 - For PPT/PPTX tasks, plan or adapt a deck spec, use the PPTX Skill's templates or validation script when appropriate, then create a real PPTX file with mcp__assistant__create_file and verify the result.
 - For XLSX/DOCX/PDF tasks, use the matching Skill's bundled templates or quality scripts when the input is messy, long, high-stakes, or file output is requested.
 - For common output files, prefer mcp__assistant__create_file first. It creates valid basic MD/TXT/CSV/DOCX/XLSX/PPTX/PDF files with Zen AI's built-in generator and does not require pandas, python-docx, openpyxl, python-pptx, or system Python.
@@ -352,6 +354,7 @@ const FUSION_BUILTIN_SKILL_WORKFLOWS = [
     guidance:
       'For research reports, build source-backed findings, use current sources when facts may change, maintain a source matrix, and separate evidence from recommendations.'
   },
+  ...RESEARCH_BUILTIN_SKILL_WORKFLOWS,
   {
     skill: '$content-writer-cn',
     companionSkills: [],
@@ -379,6 +382,10 @@ const FUSION_MEMORY_INTENT_KEYWORDS = [
   'memory',
   'note this'
 ]
+
+const FUSION_TOOL_REQUIRED_MARKER = '<zen-ai-tool-required>'
+const FUSION_EXECUTION_CONTINUATION_RE =
+  /(?:\u6267\u884c|\u5f00\u59cb\u6267\u884c|\u7ee7\u7eed\u6267\u884c|\u7ee7\u7eed\u5904\u7406|\u5e94\u7528\u4fee\u6539|\u843d\u5b9e|\u505a\u5427|\u5f00\u59cb\u5427)|\b(?:execute|proceed|continue|apply the changes|do it)\b/i
 
 const includesAnyKeyword = (text: string, keywords: string[]) => keywords.some((keyword) => text.includes(keyword))
 
@@ -416,15 +423,28 @@ const detectFusionMemoryIntent = (prompt: string): boolean => {
   return includesAnyKeyword(normalizedPrompt, FUSION_MEMORY_INTENT_KEYWORDS)
 }
 
-const buildFusionIntentGuidance = (prompt: string): string | undefined => {
+const detectFusionExecutionContinuation = (prompt: string, hasResumableSession: boolean): boolean => {
+  return hasResumableSession && FUSION_EXECUTION_CONTINUATION_RE.test(prompt)
+}
+
+const buildFusionIntentGuidance = (prompt: string, hasResumableSession = false): string | undefined => {
   const needsSearch = detectFusionSearchIntent(prompt)
   const needsFileOutput = detectFusionFileOutputIntent(prompt)
   const needsSchedule = detectFusionScheduleIntent(prompt)
   const needsSkill = detectFusionSkillIntent(prompt)
   const needsMemory = detectFusionMemoryIntent(prompt)
+  const needsExecutionContinuation = detectFusionExecutionContinuation(prompt, hasResumableSession)
   const builtinSkillWorkflows = detectFusionBuiltinSkillWorkflows(prompt)
   const needsBuiltinSkillWorkflow = builtinSkillWorkflows.length > 0
-  if (!needsSearch && !needsFileOutput && !needsSchedule && !needsSkill && !needsMemory && !needsBuiltinSkillWorkflow) {
+  if (
+    !needsSearch &&
+    !needsFileOutput &&
+    !needsSchedule &&
+    !needsSkill &&
+    !needsMemory &&
+    !needsExecutionContinuation &&
+    !needsBuiltinSkillWorkflow
+  ) {
     return undefined
   }
 
@@ -447,7 +467,9 @@ const buildFusionIntentGuidance = (prompt: string): string | undefined => {
 
   if (needsFileOutput) {
     guidance.push(
+      FUSION_TOOL_REQUIRED_MARKER,
       'The user request appears to require creating, downloading, exporting, or saving file output.',
+      'This is an execution request, not a planning request. You MUST issue a real tool call in this turn. Do not only say that you will read, create, modify, or save a file; invoke the appropriate tool before giving a user-facing progress update.',
       'For common MD/TXT/CSV/DOCX/XLSX/PPTX/PDF output, prefer mcp__assistant__create_file before Python or shell scripts. Do not write plain text with an Office/PDF extension.',
       'If any final deliverable is produced outside mcp__assistant__create_file, call mcp__assistant__present_files once with all final user-facing file paths so the reply contains quick-open cards. Exclude inputs, temporary files, caches, and validation artifacts.',
       'For data analysis or bundled Python Skill scripts, use mcp__assistant__python_execute or the Zen-managed python command. Do not probe or modify system Python.',
@@ -455,6 +477,14 @@ const buildFusionIntentGuidance = (prompt: string): string | undefined => {
       'Create the requested file(s) in the requested location, or choose a sensible default location when none is specified.',
       'Before saying the task is complete, verify the file path, existence, and relevant count/size/content signals.',
       'If a required local dependency is missing, decide whether it is truly required, try an alternative path first, and if still required ask the user to approve installation or provide exact official installation steps before continuing.'
+    )
+  }
+
+  if (needsExecutionContinuation) {
+    guidance.push(
+      FUSION_TOOL_REQUIRED_MARKER,
+      'This is a continuation of a pending execution request. Perform the pending action now using the available tools and do not reply with a plan, promise, or progress narration without a tool call in the same turn.',
+      'If the previous turn identified a file, website, or output path, use that context and inspect the current state before changing anything. If a required path or permission is genuinely missing, ask one concise clarification instead of claiming completion.'
     )
   }
 
@@ -505,8 +535,8 @@ const buildFusionIntentGuidance = (prompt: string): string | undefined => {
   return guidance.join('\n')
 }
 
-const withFusionIntentGuidance = (prompt: string): string => {
-  const guidance = buildFusionIntentGuidance(prompt)
+const withFusionIntentGuidance = (prompt: string, hasResumableSession = false): string => {
+  const guidance = buildFusionIntentGuidance(prompt, hasResumableSession)
   return guidance ? `${prompt}\n\n${guidance}` : prompt
 }
 
@@ -895,6 +925,14 @@ class ClaudeCodeService implements AgentServiceInterface {
       }
       logger.info('Provisioned builtin agent workspace', { builtinRole, cwd })
     }
+    if (builtinRole && cwd && !isProvisioned(cwd, builtinRole)) {
+      const error = new Error(
+        'Built-in agent Skill files are incomplete after automatic repair. Update or reinstall Zen AI, then retry.'
+      )
+      logger.error('Builtin agent workspace is incomplete after provisioning', { builtinRole, cwd })
+      return failAgentStreamBeforeStart(aiStream, error)
+    }
+    await syncSkillsToWorkspace(cwd)
 
     // Build lightweight environment snapshot for Cherry Assistant
     let assistantSystemPrompt: string | undefined
@@ -975,6 +1013,7 @@ class ClaudeCodeService implements AgentServiceInterface {
                 preset: 'claude_code',
                 append: `${channelSecurityBlock}\n\n${getLanguageInstruction()}`
               },
+      tools: { type: 'preset', preset: 'claude_code' },
       // Built-in agents skip CLAUDE.md loading to save tokens
       settingSources: builtinRole ? [] : ['project', 'local'],
       includePartialMessages: true,
@@ -1098,12 +1137,14 @@ class ClaudeCodeService implements AgentServiceInterface {
       // options.forkSession = true
     }
 
-    const enhancedPrompt = isFusion ? withFusionIntentGuidance(prompt) : prompt
+    const enhancedPrompt = isFusion ? withFusionIntentGuidance(prompt, Boolean(lastAgentSessionId)) : prompt
     const hasFusionIntentGuidance = enhancedPrompt !== prompt
+    const requiresToolCall = enhancedPrompt.includes(FUSION_TOOL_REQUIRED_MARKER)
 
     logger.info('Starting Claude Code SDK query', {
       prompt,
       hasFusionIntentGuidance,
+      requiresToolCall,
       cwd: options.cwd,
       model: options.model,
       permissionMode: options.permissionMode,

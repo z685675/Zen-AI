@@ -45,8 +45,13 @@ export class BrowserServer {
     })
 
     app.on('before-quit', () => {
-      void this.controller.reset()
+      void this.close()
     })
+  }
+
+  async close(): Promise<void> {
+    await this.controller.reset()
+    await this.mcpServer.close?.()
   }
 }
 

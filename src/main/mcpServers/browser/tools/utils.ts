@@ -1,5 +1,28 @@
 export type ToolContent = { type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string }
 
+export const BROWSER_TOOL_TIMEOUT_MS = 45_000
+
+export async function withBrowserToolTimeout<T>(
+  operation: Promise<T>,
+  timeoutMs = BROWSER_TOOL_TIMEOUT_MS
+): Promise<T> {
+  let timeoutHandle: ReturnType<typeof setTimeout> | undefined
+
+  try {
+    return await Promise.race([
+      operation,
+      new Promise<T>((_, reject) => {
+        timeoutHandle = setTimeout(
+          () => reject(new Error(`Browser tool timed out after ${Math.round(timeoutMs / 1000)} seconds`)),
+          timeoutMs
+        )
+      })
+    ])
+  } finally {
+    if (timeoutHandle) clearTimeout(timeoutHandle)
+  }
+}
+
 export function successResponse(text: string) {
   return {
     content: [{ type: 'text' as const, text }],

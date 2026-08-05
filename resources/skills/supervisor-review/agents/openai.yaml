@@ -1,0 +1,7 @@
+interface:
+  display_name: "Supervisor Review"
+  short_description: "Review research with advisor-level rigor and action items"
+  brand_color: "#B45309"
+  default_prompt: "Review this paper or research plan like a rigorous supervisor and return prioritized, actionable revisions."
+policy:
+  allow_implicit_invocation: true

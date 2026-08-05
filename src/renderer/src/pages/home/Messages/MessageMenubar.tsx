@@ -217,9 +217,8 @@ const MessageMenubar: FC<Props> = (props) => {
     async (e?: React.MouseEvent) => {
       e?.stopPropagation?.()
       void EventEmitter.emit(EVENT_NAMES.NEW_BRANCH, index)
-      window.toast.success(t('chat.message.new.branch.created'))
     },
-    [index, t]
+    [index]
   )
 
   const handleResendUserMessage = useCallback(

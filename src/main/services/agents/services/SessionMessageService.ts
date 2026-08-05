@@ -19,13 +19,23 @@ import { channelManager } from './channels/ChannelManager'
 import { channelService } from './ChannelService'
 import { isRecoverableAgentContextError, withAgentRecoveryContext } from './runtime/contextRecovery'
 import { withDeepResearchProtocol } from './runtime/deepResearch'
-import { AgentRuntimeNoOutputTimeoutError, isRuntimeBootstrapChunk, shouldFallbackRuntime } from './runtime/fallback'
+import {
+  AgentDeepResearchTimeoutError,
+  AgentRuntimeNoOutputTimeoutError,
+  isRuntimeBootstrapChunk,
+  shouldFallbackRuntime
+} from './runtime/fallback'
 import { getAgentRuntimeServiceById, resolveAgentRuntime } from './runtime/registry'
 import { findCompatibleAgentSessionId } from './runtime/resume'
 
 const logger = loggerService.withContext('SessionMessageService')
 const RUNTIME_START_TIMEOUT_MS = 45_000
 const RUNTIME_VISIBLE_OUTPUT_TIMEOUT_MS = 180_000
+const DEEP_RESEARCH_TASK_TIMEOUT_MS = 8 * 60 * 1000
+
+const isBrowserWaitForUserTool = (toolName?: unknown): boolean => {
+  return typeof toolName === 'string' && toolName.includes('browser') && toolName.includes('wait_for_user')
+}
 
 type SessionStreamResult = {
   stream: ReadableStream<TextStreamPart<Record<string, any>>>
@@ -288,6 +298,16 @@ export class SessionMessageService extends BaseService {
     let runtimeStarted = false
     let pendingRuntimeChunks: TextStreamPart<Record<string, any>>[] = []
     let firstRuntimeEventTimer: ReturnType<typeof setTimeout> | undefined
+    let deepResearchTaskTimer: ReturnType<typeof setTimeout> | undefined
+    let deepResearchTimerStartedAt: number | undefined
+    let deepResearchTimerRemainingMs = DEEP_RESEARCH_TASK_TIMEOUT_MS
+    let deepResearchTimerPaused = false
+    let deepResearchTimerControls:
+      | {
+          pause: () => void
+          resume: () => void
+        }
+      | undefined
 
     const clearFirstRuntimeEventTimer = () => {
       if (!firstRuntimeEventTimer) return
@@ -295,10 +315,19 @@ export class SessionMessageService extends BaseService {
       firstRuntimeEventTimer = undefined
     }
 
+    const clearDeepResearchTaskTimer = () => {
+      if (deepResearchTaskTimer) clearTimeout(deepResearchTaskTimer)
+      deepResearchTaskTimer = undefined
+      deepResearchTimerStartedAt = undefined
+    }
+
     const cleanup = () => {
       if (finished) return
       finished = true
       clearFirstRuntimeEventTimer()
+      clearDeepResearchTaskTimer()
+      deepResearchTimerPaused = false
+      deepResearchTimerControls = undefined
       abortController.signal.removeEventListener('abort', forwardParentAbort)
       agentStream.removeAllListeners()
     }
@@ -340,6 +369,74 @@ export class SessionMessageService extends BaseService {
             controller.error(timeoutError)
             rejectCompletion(serializeError(timeoutError))
           }, timeoutMs)
+        }
+
+        const startDeepResearchTaskTimer = () => {
+          if (!req.deep_research && !req.deep_research_task) return
+
+          deepResearchTimerRemainingMs = DEEP_RESEARCH_TASK_TIMEOUT_MS
+          deepResearchTimerPaused = false
+
+          const timeoutDeepResearchTask = () => {
+            if (finished) return
+
+            const timeoutError = new AgentDeepResearchTimeoutError(
+              '深度研究已达到 8 分钟安全时限。已保留已完成的证据，请缩小研究范围后重试。'
+            )
+            logger.warn('Deep research task timed out', {
+              sessionId: session.id,
+              runtimeId: activeRuntimeId,
+              model: session.model,
+              timeoutMs: DEEP_RESEARCH_TASK_TIMEOUT_MS
+            })
+            cleanup()
+            activeRuntimeAbortController.abort('deep research task timeout')
+            abortController.abort('deep research task timeout')
+            controller.error(timeoutError)
+            rejectCompletion(serializeError(timeoutError))
+          }
+
+          const scheduleDeepResearchTaskTimer = () => {
+            clearDeepResearchTaskTimer()
+            if (deepResearchTimerRemainingMs <= 0) {
+              timeoutDeepResearchTask()
+              return
+            }
+
+            deepResearchTimerStartedAt = Date.now()
+            deepResearchTaskTimer = setTimeout(timeoutDeepResearchTask, deepResearchTimerRemainingMs)
+          }
+
+          const pauseDeepResearchTaskTimer = () => {
+            if (deepResearchTimerPaused || deepResearchTimerStartedAt === undefined) return
+
+            const elapsedMs = Math.max(0, Date.now() - deepResearchTimerStartedAt)
+            deepResearchTimerRemainingMs = Math.max(0, deepResearchTimerRemainingMs - elapsedMs)
+            clearDeepResearchTaskTimer()
+            deepResearchTimerPaused = true
+            logger.info('Paused deep research timer for browser handoff', {
+              sessionId: session.id,
+              remainingMs: deepResearchTimerRemainingMs
+            })
+          }
+
+          const resumeDeepResearchTaskTimer = () => {
+            if (!deepResearchTimerPaused || finished) return
+
+            deepResearchTimerPaused = false
+            scheduleDeepResearchTaskTimer()
+            logger.info('Resumed deep research timer after browser handoff', {
+              sessionId: session.id,
+              remainingMs: deepResearchTimerRemainingMs
+            })
+          }
+
+          scheduleDeepResearchTaskTimer()
+
+          deepResearchTimerControls = {
+            pause: pauseDeepResearchTaskTimer,
+            resume: resumeDeepResearchTaskTimer
+          }
         }
 
         const tryFallback = async (error: Error): Promise<boolean> => {
@@ -468,6 +565,16 @@ export class SessionMessageService extends BaseService {
                   controller.error(streamError)
                   rejectCompletion(serializeError(streamError))
                   break
+                }
+
+                const toolName = (chunk as { toolName?: unknown }).toolName
+                if (chunk.type === 'tool-call' && isBrowserWaitForUserTool(toolName)) {
+                  deepResearchTimerControls?.pause()
+                } else if (
+                  (chunk.type === 'tool-result' || chunk.type === 'tool-error') &&
+                  isBrowserWaitForUserTool(toolName)
+                ) {
+                  deepResearchTimerControls?.resume()
                 }
 
                 if (!runtimeCommitted && isRuntimeBootstrapChunk(chunk)) {
@@ -666,6 +773,7 @@ export class SessionMessageService extends BaseService {
           agentStream.on('data', handleRuntimeEvent)
         }
 
+        startDeepResearchTaskTimer()
         startFirstRuntimeEventTimer()
         attachRuntimeStream()
       },

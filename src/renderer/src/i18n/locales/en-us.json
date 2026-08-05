@@ -246,7 +246,7 @@
         "runTriggered": "Task triggered",
         "save": "Save",
         "scheduleType": {
-          "cron": "Cron",
+          "cron": "Fixed time",
           "interval": "Interval",
           "label": "Schedule Type",
           "once": "Once"
@@ -5813,7 +5813,7 @@
       "titlePlaceholder": "Please enter phrase title"
     },
     "scheduledTasks": {
-      "description": "Manage scheduled tasks across all agents. Tasks run automatically on the configured schedule.",
+      "description": "Manage personal Agent tasks. They run on schedule while the app is running, with results and run history retained.",
       "noAgents": "Scheduled tasks require agents with Soul Mode or Bypass Permissions enabled. Update an agent's settings to get started.",
       "noAgentsTip": "Tip: You can also ask your agent to create scheduled tasks via chat.",
       "noTasks": "No scheduled tasks. Click \"+ Add\" to create one for an agent.",

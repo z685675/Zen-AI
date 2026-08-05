@@ -61,6 +61,8 @@ type BridgeStreamOptions = {
   modelId: string
 }
 
+const ZEN_TOOL_REQUIRED_MARKER = '<zen-ai-tool-required>'
+
 function selectedProviderModel(provider: Provider, modelId: string): Model | undefined {
   return provider.models?.find((model) => model.id === modelId)
 }
@@ -348,7 +350,25 @@ function convertTools(request: MessageCreateParams): ToolSet | undefined {
   return Object.keys(tools).length > 0 ? tools : undefined
 }
 
-function convertToolChoice(request: MessageCreateParams): BridgeRequest['toolChoice'] {
+function latestUserText(request: MessageCreateParams): string {
+  const lastMessage = request.messages[request.messages.length - 1]
+  if (!lastMessage || lastMessage.role !== 'user') return ''
+  if (typeof lastMessage.content === 'string') return lastMessage.content
+
+  return lastMessage.content
+    .filter((block): block is Extract<(typeof lastMessage.content)[number], { type: 'text' }> => block.type === 'text')
+    .map((block) => block.text)
+    .join('\n')
+}
+
+export function convertToolChoice(request: MessageCreateParams): BridgeRequest['toolChoice'] {
+  // Fusion file/browser tasks must produce a real tool call. Without this
+  // guard, some OpenAI-compatible Claude endpoints answer with a promise such
+  // as "I will read the file" and end the turn without doing anything.
+  if (request.tools?.length && latestUserText(request).includes(ZEN_TOOL_REQUIRED_MARKER)) {
+    return 'required'
+  }
+
   const choice = request.tool_choice
   if (!choice) return undefined
   switch (choice.type) {
@@ -624,10 +644,16 @@ export class AnthropicProtocolBridge {
       target,
       stream: !!request.stream,
       messageCount: request.messages.length,
-      toolCount: request.tools?.length ?? 0
+      toolCount: request.tools?.length ?? 0,
+      toolChoice: request.tool_choice?.type ?? 'auto'
     })
 
     const bridgeRequest = buildBridgeRequest(provider, request, modelId, abortSignal)
+    logger.debug('Prepared protocol bridge request', {
+      modelId,
+      toolCount: Object.keys(bridgeRequest.tools ?? {}).length,
+      toolChoice: bridgeRequest.toolChoice ?? 'auto'
+    })
     if (!request.stream) {
       const result = await generateText(bridgeRequest)
       response.json(buildNonStreamingMessage(modelId, result))

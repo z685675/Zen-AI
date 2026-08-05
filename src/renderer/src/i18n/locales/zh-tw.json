@@ -246,7 +246,7 @@
         "runTriggered": "任務已觸發",
         "save": "儲存",
         "scheduleType": {
-          "cron": "Cron",
+          "cron": "固定時間",
           "interval": "間隔",
           "label": "排程類型",
           "once": "一次性"

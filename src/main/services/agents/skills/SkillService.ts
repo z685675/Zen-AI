@@ -20,8 +20,10 @@ import type {
 import { app, net } from 'electron'
 import StreamZip from 'node-stream-zip'
 
+import { assertSafeSkillArchiveEntry } from './skillArchive'
 import { SkillInstaller } from './SkillInstaller'
 import { SkillRepository } from './SkillRepository'
+import { syncSkillsToWorkspace } from './skillWorkspaceSync'
 
 const logger = loggerService.withContext('SkillService')
 
@@ -38,8 +40,10 @@ const APP_USER_AGENT = APP_NAME.replace(/\s+/g, '')
  * Global skill management service.
  *
  * Skills are stored in {userData}/global-skills/{folderName}/ (inert storage).
- * When enabled, a symlink is created at {userData}/.claude/skills/{folderName}/
- * pointing to the global storage, making the skill discoverable by Claude Code.
+ * When enabled, symlinks are created at both {userData}/.claude/skills and
+ * {userData}/.agents/skills, pointing to global storage. Runtime workspaces
+ * receive the same links on demand so both Claude Code and Codex can discover
+ * the user's imported Skills.
  *
  * Metadata is tracked in the `skills` DB table.
  */
@@ -74,17 +78,15 @@ export class SkillService {
     const skill = await this.repository.getById(options.skillId)
     if (!skill) return null
 
-    // Update DB
-    const updated = await this.repository.toggleEnabled(options.skillId, options.isEnabled)
-
-    // Create or remove symlink
+    // Synchronize the runtime first. Do not claim that a Skill is enabled in
+    // the database if the filesystem could not make it discoverable.
     if (options.isEnabled) {
       await this.linkSkill(skill.folderName)
     } else {
       await this.unlinkSkill(skill.folderName)
     }
 
-    return updated
+    return this.repository.toggleEnabled(options.skillId, options.isEnabled)
   }
 
   async readFile(skillId: string, filename: string): Promise<string | null> {
@@ -188,27 +190,29 @@ export class SkillService {
     return this.installSkillDir(directoryPath, 'local', null)
   }
 
-  /**
-   * List local skills from an agent workdir's .claude/skills/ directory.
-   */
+  /** List local skills from both runtime conventions in an agent workdir. */
   async listLocal(workdir: string): Promise<Array<{ name: string; description?: string; filename: string }>> {
     const results: Array<{ name: string; description?: string; filename: string }> = []
-    const skillsDir = path.join(workdir, '.claude', 'skills')
+    const seen = new Set<string>()
 
-    try {
-      const entries = await fs.promises.readdir(skillsDir, { withFileTypes: true })
-      for (const entry of entries) {
-        if (!entry.isDirectory()) continue
-        try {
-          const skillPath = path.join(skillsDir, entry.name)
-          const metadata = await parseSkillMetadata(skillPath, entry.name, 'skills')
-          results.push({ name: metadata.name, description: metadata.description, filename: entry.name })
-        } catch {
-          // No SKILL.md or parse error, skip
+    for (const runtimeRoot of ['.claude', '.agents']) {
+      const skillsDir = path.join(workdir, runtimeRoot, 'skills')
+      try {
+        const entries = await fs.promises.readdir(skillsDir, { withFileTypes: true })
+        for (const entry of entries) {
+          if ((!entry.isDirectory() && !entry.isSymbolicLink()) || seen.has(entry.name)) continue
+          try {
+            const skillPath = path.join(skillsDir, entry.name)
+            const metadata = await parseSkillMetadata(skillPath, entry.name, 'skills')
+            results.push({ name: metadata.name, description: metadata.description, filename: entry.name })
+            seen.add(entry.name)
+          } catch {
+            // No SKILL.md or parse error, skip
+          }
         }
+      } catch {
+        // This runtime's .skills directory does not exist.
       }
-    } catch {
-      // .claude/skills/ doesn't exist
     }
 
     return results
@@ -219,51 +223,60 @@ export class SkillService {
   // ===========================================================================
 
   /**
-   * Create a symlink from .claude/skills/{folderName} → global-skills/{folderName}
+   * Create runtime links for a global Skill in both supported runtime roots.
    */
   async linkSkill(folderName: string): Promise<void> {
     const target = this.getSkillStoragePath(folderName)
-    const linkPath = this.getSkillLinkPath(folderName)
+    const linkPaths = this.getSkillLinkPaths(folderName)
+    const createdPaths: string[] = []
 
     try {
-      // Ensure .claude/skills/ directory exists
-      await fs.promises.mkdir(path.dirname(linkPath), { recursive: true })
-
-      // Remove existing link/directory if present
-      try {
-        const stat = await fs.promises.lstat(linkPath)
-        if (stat.isSymbolicLink() || stat.isDirectory()) {
-          await fs.promises.rm(linkPath, { recursive: true })
-        }
-      } catch {
-        // Does not exist, fine
+      for (const linkPath of linkPaths) {
+        await fs.promises.mkdir(path.dirname(linkPath), { recursive: true })
+        await this.prepareLinkPath(linkPath)
+        await fs.promises.symlink(target, linkPath, 'junction')
+        createdPaths.push(linkPath)
       }
-
-      await fs.promises.symlink(target, linkPath, 'junction')
-      logger.info('Skill linked', { folderName, target, linkPath })
+      logger.info('Skill linked for all runtimes', { folderName, target, linkPaths })
     } catch (error) {
+      await Promise.all(createdPaths.map((linkPath) => fs.promises.rm(linkPath, { recursive: true, force: true })))
       logger.error('Failed to link skill', {
         folderName,
+        linkPaths,
         error: error instanceof Error ? error.message : String(error)
       })
+      throw error
     }
   }
 
   /**
-   * Remove the symlink at .claude/skills/{folderName}
+   * Remove runtime links without deleting a real workspace Skill directory.
    */
   async unlinkSkill(folderName: string): Promise<void> {
-    const linkPath = this.getSkillLinkPath(folderName)
-
-    try {
-      const stat = await fs.promises.lstat(linkPath)
-      if (stat.isSymbolicLink()) {
-        await fs.promises.unlink(linkPath)
-        logger.info('Skill unlinked', { folderName })
+    for (const linkPath of this.getSkillLinkPaths(folderName)) {
+      try {
+        const stat = await fs.promises.lstat(linkPath)
+        if (stat.isSymbolicLink()) {
+          await fs.promises.rm(linkPath, { recursive: true, force: true })
+          logger.info('Skill unlinked', { folderName, linkPath })
+        } else if (stat.isDirectory()) {
+          logger.warn('Skipped removing a real Skill directory', { folderName, linkPath })
+        }
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+          throw error
+        }
       }
-    } catch {
-      // Link doesn't exist, nothing to do
     }
+  }
+
+  /**
+   * Make enabled global Skills available in a concrete agent workspace. The
+   * built-in provisioner owns real directories; imported Skills are mounted
+   * as links and never overwrite those directories.
+   */
+  async syncToWorkspace(workspacePath: string): Promise<void> {
+    await syncSkillsToWorkspace(workspacePath)
   }
 
   // ===========================================================================
@@ -381,12 +394,18 @@ export class SkillService {
     await fs.promises.mkdir(path.dirname(destPath), { recursive: true })
     await this.installer.install(skillDir, destPath)
 
+    const isBuiltin = source === 'builtin'
+    const shouldEnable = isBuiltin || existing?.isEnabled === true
+
+    // Keep an already-enabled Skill enabled when the user imports an updated
+    // copy. New third-party Skills remain disabled until explicitly reviewed.
+    if (shouldEnable) await this.linkSkill(folderName)
+    else await this.unlinkSkill(folderName)
+
     if (existing) {
-      // Update existing skill
       await this.repository.delete(existing.id)
     }
 
-    const isBuiltin = source === 'builtin'
     const id = randomUUID()
     const now = Date.now()
     const tags = metadata.tags ? JSON.stringify(metadata.tags) : null
@@ -402,15 +421,10 @@ export class SkillService {
       author: metadata.author ?? null,
       tags,
       content_hash: contentHash,
-      is_enabled: isBuiltin,
+      is_enabled: shouldEnable,
       created_at: now,
       updated_at: now
     })
-
-    // Built-in skills are always linked
-    if (isBuiltin) {
-      await this.linkSkill(folderName)
-    }
 
     logger.info('Skill installed', { id, name: metadata.name, folderName, source })
     return skill
@@ -469,6 +483,7 @@ export class SkillService {
       let fileCount = 0
 
       for (const entry of Object.values(entries)) {
+        assertSafeSkillArchiveEntry(entry.name)
         totalSize += entry.size
         fileCount++
 
@@ -560,9 +575,25 @@ export class SkillService {
     return path.join(getDataPath('Skills'), folderName)
   }
 
-  /** Symlink location: {userData}/.claude/skills/{folderName} */
-  private getSkillLinkPath(folderName: string): string {
-    return path.join(app.getPath('userData'), '.claude', 'skills', folderName)
+  private getSkillLinkPaths(folderName: string): string[] {
+    return ['.claude', '.agents'].map((runtimeRoot) =>
+      path.join(app.getPath('userData'), runtimeRoot, 'skills', folderName)
+    )
+  }
+
+  private async prepareLinkPath(linkPath: string): Promise<void> {
+    try {
+      const stat = await fs.promises.lstat(linkPath)
+      if (stat.isSymbolicLink()) {
+        await fs.promises.rm(linkPath, { recursive: true, force: true })
+        return
+      }
+
+      throw new Error(`Skill link path is occupied by a real directory: ${linkPath}`)
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return
+      throw error
+    }
   }
 
   private sanitizeFolderName(folderName: string): string {
