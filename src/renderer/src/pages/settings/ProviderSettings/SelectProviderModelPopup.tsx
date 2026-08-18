@@ -5,6 +5,7 @@ import { useTimer } from '@renderer/hooks/useTimer'
 import i18n from '@renderer/i18n'
 import { getModelUniqId } from '@renderer/services/ModelService'
 import type { Model, Provider } from '@renderer/types'
+import { sortModelsByFamily } from '@renderer/utils/modelSorting'
 import { Modal } from 'antd'
 import { first } from 'lodash'
 import { useCallback, useMemo, useState } from 'react'
@@ -25,8 +26,10 @@ const PopupContainer: React.FC<Props> = ({ provider, predicate, resolve, reject 
 
   const modelPredicate = useCallback((m: Model) => !isRerankModel(m) && (!predicate || predicate(m)), [predicate])
 
-  // Keep the natural order of models
-  const models = useMemo(() => provider.models.filter(modelPredicate), [provider.models, modelPredicate])
+  const models = useMemo(
+    () => sortModelsByFamily(provider.models.filter(modelPredicate)),
+    [provider.models, modelPredicate]
+  )
 
   const [model, setModel] = useState(first(models))
 

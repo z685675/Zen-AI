@@ -6,6 +6,10 @@ export function isSameModel(left: Model | undefined, right: Model | undefined): 
   return left?.id === right?.id && left?.provider === right?.provider
 }
 
+export function shouldPersistConversationModelAsDefault(hasLoadedMessages: boolean, messageCount: number): boolean {
+  return hasLoadedMessages && messageCount === 0
+}
+
 export function getNewConversationModel(assistant: Assistant, defaultModel?: Model): Model | undefined {
   if (assistant.id === 'default') {
     return defaultModel ?? assistant.defaultModel ?? assistant.model

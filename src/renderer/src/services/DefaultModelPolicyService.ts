@@ -18,6 +18,13 @@ function stopWatching(): void {
 
 function tryApplyCurrentDefaultModelPolicy(): boolean {
   const state = store.getState()
+  // A remote policy owns the defaults once it has been loaded. Do not let the
+  // one-time built-in migration overwrite a remotely managed configuration
+  // when providers finish restoring asynchronously.
+  if (state.llm.modelPolicy || state.llm.remoteModelPolicyVersion) {
+    return true
+  }
+
   const defaults = getPendingCurrentDefaultModels(state.llm.providers, state.llm.defaultModelPolicyVersion)
   const model = defaults?.defaultModel
 

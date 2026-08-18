@@ -4,6 +4,7 @@ import { loggerService } from '@logger'
 import { runStartupAssistantEnvironmentPreflight } from '@renderer/services/AssistantEnvironmentService'
 import { startDefaultModelPolicyReconciler } from '@renderer/services/DefaultModelPolicyService'
 import { startProviderModelSyncScheduler } from '@renderer/services/ProviderModelSyncService'
+import { startRemoteModelPolicySync } from '@renderer/services/RemoteModelPolicyService'
 import store, { persistor } from '@renderer/store'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useEffect } from 'react'
@@ -39,6 +40,7 @@ function App(): React.ReactElement {
     void runStartupAssistantEnvironmentPreflight()
     startDefaultModelPolicyReconciler()
     startProviderModelSyncScheduler()
+    startRemoteModelPolicySync()
   }, [])
 
   return (

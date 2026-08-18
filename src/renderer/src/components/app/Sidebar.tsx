@@ -274,15 +274,15 @@ const Menus = styled.div`
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 7px;
+  gap: 6px;
   width: 100%;
-  padding: 0 10px;
+  padding: 0 6px;
 `
 
 const MenuLabel = styled.span`
   flex: 1;
   min-width: 0;
-  font-size: 13px;
+  font-size: 12px;
   color: #5b6472;
   white-space: nowrap;
   overflow: hidden;
@@ -290,9 +290,9 @@ const MenuLabel = styled.span`
 `
 
 const MenuIconWrapper = styled.div`
-  width: 28px;
-  height: 28px;
-  min-width: 28px;
+  width: 26px;
+  height: 26px;
+  min-width: 26px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -307,8 +307,8 @@ const MenuButton = styled.div<{ theme: string }>`
   min-height: 40px;
   display: flex;
   align-items: center;
-  gap: 13px;
-  padding: 0 12px 0 16px;
+  gap: 8px;
+  padding: 0 5px;
   border-radius: 12px;
   box-sizing: border-box;
   -webkit-app-region: none;
@@ -322,7 +322,7 @@ const MenuButton = styled.div<{ theme: string }>`
   &::before {
     content: '';
     position: absolute;
-    left: 6px;
+    left: 2px;
     top: 8px;
     bottom: 8px;
     width: 3px;

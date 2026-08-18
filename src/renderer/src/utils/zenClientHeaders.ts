@@ -1,4 +1,5 @@
 import { uuid } from '@renderer/utils'
+import { isZenManagedApiHost } from '@shared/config/zenProvider'
 
 const CLIENT_ID_KEY = 'zen_client_id'
 const APP_VERSION_KEY = 'zen_app_version'
@@ -64,18 +65,7 @@ export function cacheZenClientInfo(info: ZenClientInfo | undefined) {
   }
 }
 
-export function isZenManagedApiHost(input?: string): boolean {
-  if (!input) {
-    return false
-  }
-
-  try {
-    const { hostname } = new URL(input)
-    return hostname === '925636.xyz' || hostname.endsWith('.925636.xyz')
-  } catch {
-    return false
-  }
-}
+export { isZenManagedApiHost }
 
 export function getZenClientHeaders(apiHost?: string): Record<string, string> {
   if (!isZenManagedApiHost(apiHost)) {

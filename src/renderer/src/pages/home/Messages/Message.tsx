@@ -13,14 +13,16 @@ import { getMessageModelId } from '@renderer/services/MessagesService'
 import { getModelUniqId } from '@renderer/services/ModelService'
 import { estimateMessageUsage } from '@renderer/services/TokenService'
 import type { RootState } from '@renderer/store'
+import { messageBlocksSelectors } from '@renderer/store/messageBlock'
 import type { Assistant, Topic } from '@renderer/types'
-import type { Message, MessageBlock } from '@renderer/types/newMessage'
+import { type Message, type MessageBlock, MessageBlockType } from '@renderer/types/newMessage'
 import { classNames, cn } from '@renderer/utils'
 import { scrollIntoView } from '@renderer/utils/dom'
 import { isMessageProcessing } from '@renderer/utils/messageUtils/is'
 import { Divider } from 'antd'
+import { ChevronDown, ChevronUp } from 'lucide-react'
 import type { Dispatch, FC, SetStateAction } from 'react'
-import React, { memo, useCallback, useEffect, useRef } from 'react'
+import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useSelector } from 'react-redux'
 import styled from 'styled-components'
@@ -81,6 +83,13 @@ const MessageItem: FC<Props> = ({
   const { setTimeoutTimer } = useTimer()
   const isEditing = editingMessageId === message.id
   const topicLoading = useSelector((state: RootState) => selectNewTopicLoading(state, topic.id))
+  const mainTextLength = useSelector((state: RootState) =>
+    message.blocks.reduce((length, blockId) => {
+      const block = messageBlocksSelectors.selectById(state, blockId)
+      return block?.type === MessageBlockType.MAIN_TEXT ? length + block.content.length : length
+    }, 0)
+  )
+  const [isCollapsed, setIsCollapsed] = useState(false)
 
   useEffect(() => {
     if (isEditing && messageContainerRef.current) {
@@ -126,6 +135,36 @@ const MessageItem: FC<Props> = ({
   const isAssistantMessage = message.role === 'assistant'
   const isProcessing = isMessageProcessing(message) && topicLoading
   const showMenubar = !hideMenuBar && !isEditing && !isProcessing
+  const canCollapse = useMemo(() => {
+    if (isEditing || isProcessing) return false
+
+    return mainTextLength >= 600 || message.blocks.length >= 6
+  }, [isEditing, isProcessing, mainTextLength, message])
+
+  const handleCollapseToggle = useCallback(() => {
+    const shouldScrollToTop = isCollapsed
+    setIsCollapsed((collapsed) => !collapsed)
+
+    if (shouldScrollToTop) {
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          if (messageContainerRef.current) {
+            scrollIntoView(messageContainerRef.current, {
+              behavior: 'smooth',
+              block: 'start',
+              container: 'nearest'
+            })
+          }
+        })
+      })
+    }
+  }, [isCollapsed])
+
+  useEffect(() => {
+    if (!canCollapse) {
+      setIsCollapsed(false)
+    }
+  }, [canCollapse])
 
   const messageHighlightHandler = useCallback(
     (highlight: boolean = true) => {
@@ -207,6 +246,23 @@ const MessageItem: FC<Props> = ({
           topic={topic}
           isGroupContextMessage={isGroupContextMessage}
         />
+        {canCollapse && (
+          <MessageCollapseBar>
+            <CollapseButton
+              type="button"
+              aria-label={isCollapsed ? '展开此消息' : '收起此消息'}
+              aria-expanded={!isCollapsed}
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={(event) => {
+                event.preventDefault()
+                event.stopPropagation()
+                handleCollapseToggle()
+              }}>
+              {isCollapsed ? <ChevronDown size={15} /> : <ChevronUp size={15} />}
+              <span>{isCollapsed ? '展开此消息' : '收起此消息'}</span>
+            </CollapseButton>
+          </MessageCollapseBar>
+        )}
         {isEditing && (
           <MessageEditor
             message={message}
@@ -222,7 +278,7 @@ const MessageItem: FC<Props> = ({
               <MessageOutline message={message} />
             )}
             <MessageContentContainer
-              className="message-content-container"
+              className={classNames('message-content-container', { collapsed: canCollapse && isCollapsed })}
               style={{
                 fontFamily: messageFont === 'serif' ? 'var(--font-family-serif)' : 'var(--font-family)',
                 fontSize,
@@ -296,6 +352,56 @@ const MessageContentContainer = styled(Scrollbar)`
   padding-left: 46px;
   margin-top: 0;
   overflow-y: auto;
+
+  &.collapsed {
+    position: relative;
+    max-height: 260px;
+    overflow: hidden !important;
+
+    &::after {
+      content: '';
+      position: absolute;
+      right: 0;
+      bottom: 0;
+      left: 0;
+      height: 42px;
+      pointer-events: none;
+      background: linear-gradient(to bottom, transparent, var(--color-background));
+    }
+  }
+`
+
+const CollapseButton = styled.button`
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-width: 84px;
+  height: 28px;
+  flex: 0 0 auto;
+  padding: 0 8px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--color-icon);
+  cursor: pointer;
+  font-size: 12px;
+  white-space: nowrap;
+
+  &:hover {
+    background: var(--color-background-mute);
+    color: var(--color-text-1);
+  }
+`
+
+const MessageCollapseBar = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  margin-left: 46px;
+  margin-top: -2px;
+  margin-bottom: 2px;
 `
 
 const MessageFooter = styled.div`

@@ -194,7 +194,7 @@ const AgentPage = () => {
                 exit={{ width: 0, opacity: 0 }}
                 transition={{ duration: 0.3, ease: 'easeInOut' }}
                 style={{ overflow: 'hidden' }}>
-                <AgentSidePanel />
+                <AgentSidePanel onCollapse={() => toggleShowAssistants()} />
               </motion.div>
             </ErrorBoundary>
           )}

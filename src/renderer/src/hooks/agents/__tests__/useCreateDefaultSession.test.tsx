@@ -10,7 +10,9 @@ const mocks = vi.hoisted(() => ({
   fetchMessages: vi.fn(),
   getAgent: vi.fn(),
   getModels: vi.fn(),
+  modelPolicy: null as any,
   setActiveSessionIdAction: vi.fn((payload) => ({ type: 'runtime/setActiveSessionId', payload })),
+  updateAgent: vi.fn(),
   updateSession: vi.fn()
 }))
 
@@ -30,6 +32,10 @@ vi.mock('@renderer/hooks/agents/useUpdateSession', () => ({
   useUpdateSession: () => ({ updateSession: mocks.updateSession })
 }))
 
+vi.mock('@renderer/hooks/agents/useUpdateAgent', () => ({
+  useUpdateAgent: () => ({ updateAgent: mocks.updateAgent })
+}))
+
 vi.mock('@renderer/services/db/DbService', () => ({
   DbService: {
     getInstance: () => ({ fetchMessages: mocks.fetchMessages })
@@ -37,7 +43,8 @@ vi.mock('@renderer/services/db/DbService', () => ({
 }))
 
 vi.mock('@renderer/store', () => ({
-  useAppDispatch: () => mocks.dispatch
+  useAppDispatch: () => mocks.dispatch,
+  useAppSelector: (selector: (state: any) => unknown) => selector({ llm: { modelPolicy: mocks.modelPolicy } })
 }))
 
 vi.mock('@renderer/store/runtime', () => ({
@@ -86,6 +93,7 @@ describe('useCreateDefaultSession', () => {
     vi.clearAllMocks()
     CacheService.clear()
     mocks.agent = makeAgent({ model: 'provider:claude-opus-4-6' })
+    mocks.modelPolicy = null
     mocks.sessions = [makeSession()]
     mocks.fetchMessages.mockResolvedValue({ messages: [], blocks: [] })
     mocks.getAgent.mockResolvedValue(makeAgent())
@@ -102,6 +110,7 @@ describe('useCreateDefaultSession', () => {
       ]
     })
     mocks.createSession.mockResolvedValue(null)
+    mocks.updateAgent.mockImplementation(async (form) => ({ ...makeAgent(), ...form }))
     mocks.updateSession.mockImplementation(async (form) => ({ ...mocks.sessions[0], ...form }))
   })
 
@@ -161,6 +170,115 @@ describe('useCreateDefaultSession', () => {
         model: 'provider:gpt-5.6-luna',
         configuration: expect.objectContaining({ reasoning_effort: 'medium' })
       },
+      { showSuccessToast: false }
+    )
+  })
+
+  it('applies a changed remote default once when the panel enables default overwriting', async () => {
+    mocks.modelPolicy = {
+      version: 2,
+      fetchedAt: '2026-08-18T00:00:00.000Z',
+      appliedAt: '2026-08-18T00:00:00.000Z',
+      source: 'remote',
+      policy: {
+        schemaVersion: 1,
+        version: 2,
+        defaults: {
+          chat: 'gpt-5.6-luna',
+          quick: 'gpt-5.6-luna',
+          translate: 'gpt-5.6-luna',
+          assistant: 'gpt-5.6-luna',
+          assistantNewSession: 'gpt-5.6-luna'
+        },
+        assistant: {
+          nonDeveloperAllowlist: ['gpt-5.6-luna', 'grok-4.5'],
+          developerAllowlist: [],
+          blockedModels: [],
+          fallbackModels: []
+        },
+        rules: {
+          applyToNewSessions: true,
+          overwriteUserChoice: true,
+          preserveExistingSessions: true,
+          developerModeBypassAllowlist: true
+        }
+      }
+    }
+    mocks.getAgent.mockResolvedValue(makeAgent({ model: 'provider:grok-4.5' }))
+
+    const { result } = renderHook(() => useCreateDefaultSession('agent-1'))
+    await act(async () => {
+      await result.current.createDefaultSession()
+    })
+
+    expect(mocks.updateSession).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'session-1', model: 'provider:gpt-5.6-luna' }),
+      { showSuccessToast: false }
+    )
+    expect(mocks.updateAgent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'agent-1',
+        model: 'provider:gpt-5.6-luna',
+        configuration: expect.objectContaining({
+          remote_default_model_policy_version: 2,
+          remote_default_model_policy_target: 'gpt-5.6-luna'
+        })
+      }),
+      { showSuccessToast: false }
+    )
+  })
+
+  it('keeps a user-selected Agent default after the same remote policy version was already applied', async () => {
+    mocks.modelPolicy = {
+      version: 2,
+      fetchedAt: '2026-08-18T00:00:00.000Z',
+      appliedAt: '2026-08-18T00:00:00.000Z',
+      source: 'remote',
+      policy: {
+        schemaVersion: 1,
+        version: 2,
+        defaults: {
+          chat: 'gpt-5.6-luna',
+          quick: 'gpt-5.6-luna',
+          translate: 'gpt-5.6-luna',
+          assistant: 'gpt-5.6-luna',
+          assistantNewSession: 'gpt-5.6-luna'
+        },
+        assistant: {
+          nonDeveloperAllowlist: ['gpt-5.6-luna', 'grok-4.5'],
+          developerAllowlist: [],
+          blockedModels: [],
+          fallbackModels: []
+        },
+        rules: {
+          applyToNewSessions: true,
+          overwriteUserChoice: true,
+          preserveExistingSessions: true,
+          developerModeBypassAllowlist: true
+        }
+      }
+    }
+    mocks.getAgent.mockResolvedValue(
+      makeAgent({
+        model: 'provider:grok-4.5',
+        configuration: {
+          permission_mode: 'default',
+          max_turns: 100,
+          env_vars: {},
+          remote_default_model_policy_version: 2,
+          remote_default_model_policy_target: 'gpt-5.6-luna'
+        }
+      })
+    )
+
+    const { result } = renderHook(() => useCreateDefaultSession('agent-1'))
+    await act(async () => {
+      await result.current.createDefaultSession()
+    })
+
+    expect(mocks.updateAgent).not.toHaveBeenCalled()
+    expect(mocks.updateSession).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'session-1', model: 'provider:grok-4.5' }),
       { showSuccessToast: false }
     )
   })

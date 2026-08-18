@@ -1,4 +1,5 @@
 import { HelpTooltip } from '@renderer/components/TooltipIcons'
+import { markAgentDefaultPolicyApplied } from '@renderer/config/agentModelPolicy'
 import { selectNewTopicLoading } from '@renderer/hooks/useMessageOperations'
 import SelectAgentBaseModelButton from '@renderer/pages/agents/components/SelectAgentBaseModelButton'
 import { useAppSelector } from '@renderer/store'
@@ -19,10 +20,15 @@ export const ModelSetting = ({ base, update, isDisabled }: ModelSettingProps) =>
   const { t } = useTranslation()
   const sessionTopicId = base && isAgentSessionEntity(base) ? buildAgentSessionTopicId(base.id) : null
   const taskRunning = useAppSelector((state) => (sessionTopicId ? selectNewTopicLoading(state, sessionTopicId) : false))
+  const modelPolicy = useAppSelector((state) => state.llm.modelPolicy)
 
   const updateModel = async (model: ApiModel) => {
     if (!base) return
-    return update({ id: base.id, model: model.id })
+    return update({
+      id: base.id,
+      model: model.id,
+      ...(isAgentEntity(base) ? { configuration: markAgentDefaultPolicyApplied(base.configuration, modelPolicy) } : {})
+    })
   }
 
   if (!base) return null

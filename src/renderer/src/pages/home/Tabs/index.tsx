@@ -6,6 +6,8 @@ import { EVENT_NAMES, EventEmitter } from '@renderer/services/EventService'
 import type { Assistant, Topic } from '@renderer/types'
 import type { Tab } from '@renderer/types/chat'
 import { classNames, uuid } from '@renderer/utils'
+import { Tooltip } from 'antd'
+import { PanelLeftClose } from 'lucide-react'
 import type { FC } from 'react'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -26,6 +28,7 @@ interface Props {
   mode?: 'default' | 'conversations-only' | 'topics-only'
   onOpenTopics?: () => void
   onCreateConversation?: () => void
+  onCollapseConversationHistory?: () => void
   style?: React.CSSProperties
 }
 
@@ -41,6 +44,7 @@ const HomeTabs: FC<Props> = ({
   forceToSeeAllTab,
   mode = 'default',
   onCreateConversation,
+  onCollapseConversationHistory,
   style
 }) => {
   const { addAssistant } = useAssistants()
@@ -115,6 +119,14 @@ const HomeTabs: FC<Props> = ({
       {mode === 'conversations-only' && (
         <PanelHeader>
           <PanelTitle>对话记录</PanelTitle>
+          <Tooltip title={t('navbar.hide_sidebar')} mouseEnterDelay={0.5}>
+            <PanelActionButton
+              type="button"
+              aria-label={t('navbar.hide_sidebar')}
+              onClick={onCollapseConversationHistory}>
+              <PanelLeftClose size={16} />
+            </PanelActionButton>
+          </Tooltip>
         </PanelHeader>
       )}
 
@@ -169,7 +181,8 @@ const HomeTabs: FC<Props> = ({
 const Container = styled.div<{ $isConversationOnly: boolean }>`
   display: flex;
   flex-direction: column;
-  width: var(--assistants-width);
+  width: ${({ $isConversationOnly }) =>
+    $isConversationOnly ? 'var(--conversation-history-width)' : 'var(--assistants-width)'};
   transition: width 0.3s;
   height: calc(100vh - var(--navbar-height));
   position: relative;
@@ -223,9 +236,28 @@ const PanelHeader = styled.div`
 `
 
 const PanelTitle = styled.div`
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
   color: #1f2329;
+`
+
+const PanelActionButton = styled.button`
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--color-text-2);
+  cursor: pointer;
+
+  &:hover {
+    background: var(--color-background-mute);
+    color: var(--color-text);
+  }
 `
 
 const TabItem = styled.button<{ active: boolean }>`
@@ -234,7 +266,7 @@ const TabItem = styled.button<{ active: boolean }>`
   border: none;
   background: transparent;
   color: ${(props) => (props.active ? 'var(--color-text)' : 'var(--color-text-secondary)')};
-  font-size: 13px;
+  font-size: 12px;
   font-weight: ${(props) => (props.active ? '600' : '400')};
   cursor: pointer;
   border-radius: 8px;

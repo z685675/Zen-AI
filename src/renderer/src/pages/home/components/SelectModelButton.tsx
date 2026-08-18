@@ -17,9 +17,10 @@ interface Props {
   assistant: Assistant
   topic?: Topic
   onTopicChange?: (topic: Topic) => void
+  persistAsDefault?: boolean
 }
 
-const SelectModelButton: FC<Props> = ({ assistant, topic, onTopicChange }) => {
+const SelectModelButton: FC<Props> = ({ assistant, topic, onTopicChange, persistAsDefault = false }) => {
   const { model: storedModel, updateAssistant, updateTopic } = useAssistant(assistant.id)
   const { setDefaultModel } = useDefaultModel()
   const model = topic?.model ?? assistant.model ?? storedModel
@@ -34,7 +35,9 @@ const SelectModelButton: FC<Props> = ({ assistant, topic, onTopicChange }) => {
       // 避免更新数据造成关闭弹框的卡顿
       clearTimeout(timerRef.current)
       timerRef.current = setTimeout(() => {
-        setDefaultModel(selectedModel)
+        if (persistAsDefault) {
+          setDefaultModel(selectedModel)
+        }
         if (topic) {
           const nextTopic = { ...topic, model: selectedModel }
           updateTopic(nextTopic)

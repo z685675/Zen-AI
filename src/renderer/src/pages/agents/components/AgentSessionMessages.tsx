@@ -177,20 +177,23 @@ const AgentSessionMessages = ({ agentId, sessionId }: Props) => {
     }
   }, [sessionId, sessionTopicId, agentId, dispatch])
 
-  const { containerRef: scrollContainerRef, handleScroll: handleScrollPosition } = useScrollPosition(
-    `agent-session-${sessionId}`,
-    undefined,
-    false
-  )
+  const {
+    containerRef: scrollContainerRef,
+    handleScroll: handleScrollPosition,
+    getStoredPosition,
+    restorePosition
+  } = useScrollPosition(`agent-session-${sessionId}`, undefined, false)
 
   const [displayMessages, setDisplayMessages] = useState<Message[]>([])
   const [hasMore, setHasMore] = useState(false)
   const [isLoadingMore, setIsLoadingMore] = useState(false)
+  const pendingRestorePositionRef = useRef<number | null | undefined>(undefined)
 
   // Guard: suppress InfiniteScroll triggers during scroll position restoration
   const isRestoringScrollRef = useRef(true)
 
   useEffect(() => {
+    pendingRestorePositionRef.current = undefined
     isRestoringScrollRef.current = true
     const timer = setTimeout(() => {
       isRestoringScrollRef.current = false
@@ -214,17 +217,20 @@ const AgentSessionMessages = ({ agentId, sessionId }: Props) => {
     return Object.entries(newGrouped)
   }, [displayMessages])
 
-  const loadMoreMessages = useCallback(() => {
-    if (!hasMore || isLoadingMore || isRestoringScrollRef.current) return
+  const loadMoreMessages = useCallback(
+    (fromRestore = false) => {
+      if (!hasMore || isLoadingMore || (!fromRestore && isRestoringScrollRef.current)) return
 
-    setIsLoadingMore(true)
-    const currentLength = displayMessages.length
-    const newMessages = computeDisplayMessages(messages, currentLength, AGENT_PAGE_SIZE)
+      setIsLoadingMore(true)
+      const currentLength = displayMessages.length
+      const newMessages = computeDisplayMessages(messages, currentLength, AGENT_PAGE_SIZE)
 
-    setDisplayMessages((prev) => [...prev, ...newMessages])
-    setHasMore(currentLength + newMessages.length < messages.length)
-    setIsLoadingMore(false)
-  }, [displayMessages.length, hasMore, isLoadingMore, messages])
+      setDisplayMessages((prev) => [...prev, ...newMessages])
+      setHasMore(currentLength + newMessages.length < messages.length)
+      setIsLoadingMore(false)
+    },
+    [displayMessages.length, hasMore, isLoadingMore, messages]
+  )
 
   const revealMessageForNavigation = useCallback(
     (message: Message) => {
@@ -271,15 +277,47 @@ const AgentSessionMessages = ({ agentId, sessionId }: Props) => {
     }
   }, [scrollContainerRef])
 
-  const positionedSessionRef = useRef<string | null>(null)
   useEffect(() => {
-    if (displayMessages.length === 0 || positionedSessionRef.current === sessionId) {
+    if (displayMessages.length === 0) {
       return
     }
 
-    positionedSessionRef.current = sessionId
-    scrollToBottom()
-  }, [displayMessages.length, scrollToBottom, sessionId])
+    if (pendingRestorePositionRef.current === undefined) {
+      pendingRestorePositionRef.current = getStoredPosition()
+    }
+
+    const targetPosition = pendingRestorePositionRef.current
+    if (targetPosition === null) {
+      scrollToBottom()
+      pendingRestorePositionRef.current = null
+      return
+    }
+
+    const frame = requestAnimationFrame(() => {
+      restorePosition(targetPosition)
+      requestAnimationFrame(() => {
+        const currentPosition = scrollContainerRef.current?.scrollTop ?? 0
+        const positionReached = Math.abs(currentPosition - targetPosition) <= 2
+
+        if (positionReached || !hasMore) {
+          pendingRestorePositionRef.current = null
+          return
+        }
+
+        loadMoreMessages(true)
+      })
+    })
+
+    return () => cancelAnimationFrame(frame)
+  }, [
+    displayMessages.length,
+    getStoredPosition,
+    hasMore,
+    loadMoreMessages,
+    restorePosition,
+    scrollContainerRef,
+    scrollToBottom
+  ])
 
   // Listen for send message events to auto-scroll to bottom
   useEffect(() => {

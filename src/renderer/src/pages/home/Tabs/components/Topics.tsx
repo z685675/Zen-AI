@@ -716,7 +716,7 @@ export const Topics: React.FC<Props> = ({ assistant: _assistant, activeTopic, se
 const TopicListItem = styled.div`
   padding: 7px 12px;
   border-radius: var(--list-item-border-radius);
-  font-size: 13px;
+  font-size: 12px;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
@@ -781,7 +781,7 @@ const TopicName = styled.div`
   -webkit-line-clamp: 1;
   -webkit-box-orient: vertical;
   overflow: hidden;
-  font-size: 13px;
+  font-size: 12px;
   position: relative;
   flex: 1;
   text-align: left;
@@ -796,7 +796,7 @@ const TopicEditInput = styled.input`
   background: var(--color-background);
   border: none;
   color: var(--color-text-1);
-  font-size: 13px;
+  font-size: 12px;
   font-family: inherit;
   padding: 2px 6px;
   width: 100%;
@@ -832,7 +832,7 @@ const FulfilledIndicator = styled.div.attrs({
 
 const TopicPromptText = styled.div`
   color: var(--color-text-2);
-  font-size: 12px;
+  font-size: 11px;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
@@ -844,7 +844,7 @@ const TopicPromptText = styled.div`
 
 const TopicTime = styled.div`
   color: var(--color-text-3);
-  font-size: 11px;
+  font-size: 10px;
 `
 
 const MenuButton = styled.div`

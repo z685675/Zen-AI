@@ -1,4 +1,5 @@
 import { loggerService } from '@logger'
+import { isAssistantModelIdentifierBlocked } from '@renderer/config/agentModelPolicy'
 import { chatModelFilter, isMandatoryWebSearchModel, isVisionModel, isVisionModels } from '@renderer/config/models'
 import { useAssistant, useDefaultModel } from '@renderer/hooks/useAssistant'
 import { useInputText } from '@renderer/hooks/useInputText'
@@ -35,8 +36,10 @@ import { delay } from '@renderer/utils'
 import { getChatTopicDraftCacheKey } from '@renderer/utils/conversationDraft'
 import { getTopicConversationAssistant } from '@renderer/utils/conversationModel'
 import { getSendMessageShortcutLabel } from '@renderer/utils/input'
+import { getLowerBaseModelName } from '@renderer/utils/naming'
 import { aggregateUsageCacheStats } from '@renderer/utils/usage'
 import { documentExts, imageExts, textExts } from '@shared/config/constant'
+import type { ModelPolicy } from '@shared/config/modelPolicy'
 import { debounce } from 'lodash'
 import type { FC } from 'react'
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -57,6 +60,26 @@ const DRAFT_CACHE_TTL = 24 * 60 * 60 * 1000 // 24 hours
 const HERO_PLACEHOLDER = 'Zen AI可以帮你写作、总结、翻译内容，也可以处理附件与文件。'
 
 const getMentionedModelsCacheKey = (conversationId: string) => `inputbar-mentioned-models-${conversationId}`
+
+const resolvePolicyFallbackModel = (models: Model[], policy: ModelPolicy): Model | undefined => {
+  const candidates = [
+    ...policy.assistant.fallbackModels,
+    policy.defaults.chat,
+    policy.defaults.assistant,
+    policy.defaults.assistantNewSession
+  ]
+
+  return candidates
+    .map((candidate) => {
+      const normalizedCandidate = getLowerBaseModelName(candidate.trim())
+      return models.find(
+        (availableModel) =>
+          getLowerBaseModelName(availableModel.id.trim()) === normalizedCandidate &&
+          !isAssistantModelIdentifierBlocked(availableModel.id, policy)
+      )
+    })
+    .find((candidate): candidate is Model => Boolean(candidate))
+}
 
 const getValidatedCachedModels = (conversationId: string): Model[] => {
   const cached = CacheService.get<Model[]>(getMentionedModelsCacheKey(conversationId))
@@ -201,6 +224,10 @@ const InputbarInner: FC<InputbarInnerProps> = ({
   const { pauseMessages } = useMessageOperations(topic)
   const loading = useTopicLoading(topic)
   const topicMessages = useAppSelector((state) => selectMessagesForTopic(state, topic.id))
+  const modelPolicy = useAppSelector((state) => state.llm.modelPolicy?.policy)
+  const availableModels = useAppSelector((state) =>
+    state.llm.providers.filter((provider) => provider.enabled).flatMap((provider) => provider.models ?? [])
+  )
   const dispatch = useAppDispatch()
   const isVisionAssistant = useMemo(() => isVisionModel(model), [model])
   const { setTimeoutTimer } = useTimer()
@@ -282,7 +309,31 @@ const InputbarInner: FC<InputbarInnerProps> = ({
       return
     }
 
-    const requestModels = mentionedModels.length > 0 ? mentionedModels : [model]
+    const blockedMentionedModel =
+      modelPolicy && mentionedModels.find((item) => isAssistantModelIdentifierBlocked(item.id, modelPolicy))
+    if (blockedMentionedModel) {
+      window.toast.warning(`Model ${blockedMentionedModel.name || blockedMentionedModel.id} is no longer available`)
+      return
+    }
+
+    let effectiveAssistant = assistant
+    let effectiveTopic = topic
+    let effectiveModel = model
+    if (modelPolicy && model && isAssistantModelIdentifierBlocked(model.id, modelPolicy)) {
+      const fallbackModel = resolvePolicyFallbackModel(availableModels, modelPolicy)
+      if (!fallbackModel) {
+        window.toast.error('The current model is no longer available and no fallback model is configured')
+        return
+      }
+
+      effectiveModel = fallbackModel
+      effectiveAssistant = { ...assistant, model: fallbackModel }
+      effectiveTopic = { ...topic, model: fallbackModel }
+      updateConversationTopic(effectiveTopic)
+      window.toast.info(`The unavailable model was replaced with ${fallbackModel.name || fallbackModel.id}`)
+    }
+
+    const requestModels = mentionedModels.length > 0 ? mentionedModels : [effectiveModel]
     if (!requestModels.every(chatModelFilter)) {
       window.toast.warning('图片模型只能在“图片生成”入口中使用，请切换为对话模型后再发送。')
       return
@@ -299,7 +350,11 @@ const InputbarInner: FC<InputbarInnerProps> = ({
     try {
       const uploadedFiles = await FileManager.uploadFiles(files)
 
-      const baseUserMessage: MessageInputBaseParams = { assistant, topic, content: text }
+      const baseUserMessage: MessageInputBaseParams = {
+        assistant: effectiveAssistant,
+        topic: effectiveTopic,
+        content: text
+      }
       if (uploadedFiles) {
         baseUserMessage.files = uploadedFiles
       }
@@ -312,9 +367,9 @@ const InputbarInner: FC<InputbarInnerProps> = ({
       const { message, blocks } = getUserMessage(baseUserMessage)
       message.traceId = parent?.spanContext().traceId
 
-      void dispatch(_sendMessage(message, blocks, assistant, topic.id))
-      if (topic.enableWebSearch) {
-        updateConversationTopic({ ...topic, enableWebSearch: false })
+      void dispatch(_sendMessage(message, blocks, effectiveAssistant, topic.id))
+      if (effectiveTopic.enableWebSearch) {
+        updateConversationTopic({ ...effectiveTopic, enableWebSearch: false })
       }
 
       setText('')
@@ -344,6 +399,8 @@ const InputbarInner: FC<InputbarInnerProps> = ({
     focusTextarea,
     t,
     model,
+    modelPolicy,
+    availableModels,
     updateConversationTopic
   ])
 

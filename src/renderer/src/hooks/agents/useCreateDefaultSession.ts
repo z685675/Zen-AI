@@ -1,15 +1,25 @@
 import { loggerService } from '@logger'
-import { findAgentModelId, isStandardAgentModelIdentifier } from '@renderer/config/agentModelPolicy'
+import {
+  findAgentModelId,
+  getAgentModelProviderId,
+  getAppliedAgentDefaultPolicyTarget,
+  getAppliedAgentDefaultPolicyVersion,
+  isAssistantModelAllowed,
+  isAssistantModelIdentifierAllowed,
+  markAgentDefaultPolicyApplied,
+  normalizeAgentModelIdentifier
+} from '@renderer/config/agentModelPolicy'
 import { CURRENT_DEFAULT_MODEL_ID } from '@renderer/config/defaultModelPolicy'
 import { useAgent } from '@renderer/hooks/agents/useAgent'
 import { useAgentClient } from '@renderer/hooks/agents/useAgentClient'
 import { useSessions } from '@renderer/hooks/agents/useSessions'
+import { useUpdateAgent } from '@renderer/hooks/agents/useUpdateAgent'
 import { useUpdateSession } from '@renderer/hooks/agents/useUpdateSession'
 import { CacheService } from '@renderer/services/CacheService'
 import { DbService } from '@renderer/services/db/DbService'
-import { useAppDispatch } from '@renderer/store'
+import { useAppDispatch, useAppSelector } from '@renderer/store'
 import { setActiveSessionIdAction } from '@renderer/store/runtime'
-import type { AgentConfiguration, CreateSessionForm } from '@renderer/types'
+import type { AgentConfiguration, AgentEntity, CreateSessionForm } from '@renderer/types'
 import { buildAgentSessionTopicId } from '@renderer/utils/agentSession'
 import { isUnnamedAgentSessionName } from '@renderer/utils/agentSessionTitle'
 import { AGENT_DEFAULT_REASONING_EFFORT, getAgentSessionReasoningEffortCacheKey } from '@renderer/utils/reasoningEffort'
@@ -21,6 +31,18 @@ const logger = loggerService.withContext('useCreateDefaultSession')
 const dbService = DbService.getInstance()
 const SESSION_PREFERENCE_CACHE_TTL = 24 * 60 * 60 * 1000
 const sessionCreationLocks = new Set<string>()
+
+const canReplaceAgentDefault = (
+  currentModel: string,
+  previousTarget: string | undefined,
+  overwriteUserChoice: boolean
+): boolean => {
+  if (overwriteUserChoice) return true
+
+  const current = normalizeAgentModelIdentifier(currentModel)
+  if (current === normalizeAgentModelIdentifier(CURRENT_DEFAULT_MODEL_ID)) return true
+  return Boolean(previousTarget && current === normalizeAgentModelIdentifier(previousTarget))
+}
 
 const withDefaultReasoningEffort = (configuration?: AgentConfiguration): AgentConfiguration => ({
   ...configuration,
@@ -37,27 +59,87 @@ export const useCreateDefaultSession = (agentId: string | null) => {
   const { agent } = useAgent(agentId)
   const client = useAgentClient()
   const { sessions, createSession } = useSessions(agentId)
+  const { updateAgent } = useUpdateAgent()
   const { updateSession } = useUpdateSession(agentId)
   const dispatch = useAppDispatch()
+  const modelPolicy = useAppSelector((state) => state.llm.modelPolicy)
   const { t } = useTranslation()
   const [creatingSession, setCreatingSession] = useState(false)
   const canCreateSession = canCreateAgentSession(agentId)
 
-  const resolveCurrentDefaultModel = useCallback(
-    async (fallbackModel: string) => {
-      if (isStandardAgentModelIdentifier(fallbackModel)) {
-        return fallbackModel
+  const resolveCurrentAgentDefaults = useCallback(
+    async (defaults: AgentEntity): Promise<AgentEntity> => {
+      const policy = modelPolicy?.policy
+      const appliedPolicyVersion = getAppliedAgentDefaultPolicyVersion(defaults.configuration)
+      const hasNewRemotePolicy =
+        Boolean(modelPolicy && modelPolicy.source !== 'builtin') && (modelPolicy?.version ?? 0) > appliedPolicyVersion
+      const currentModelAllowed = isAssistantModelIdentifierAllowed(defaults.model, false, policy)
+
+      if (!hasNewRemotePolicy && currentModelAllowed) {
+        return defaults
       }
 
       try {
         const { data } = await client.getModels({ limit: 1000 })
-        return findAgentModelId(data, CURRENT_DEFAULT_MODEL_ID) ?? fallbackModel
+        const preferredProviderId = getAgentModelProviderId(defaults.model)
+        let nextModel = defaults.model
+        let nextConfiguration = defaults.configuration
+        let shouldPersistDefaults = false
+
+        if (hasNewRemotePolicy && modelPolicy) {
+          const previousTarget = getAppliedAgentDefaultPolicyTarget(defaults.configuration)
+          nextConfiguration = markAgentDefaultPolicyApplied(defaults.configuration, modelPolicy)
+          shouldPersistDefaults = true
+
+          const shouldApplyRemoteDefault = policy?.rules.applyToNewSessions !== false
+          const configuredDefault = policy?.defaults.assistantNewSession ?? CURRENT_DEFAULT_MODEL_ID
+          const resolvedDefault = findAgentModelId(data, configuredDefault, preferredProviderId)
+          if (
+            shouldApplyRemoteDefault &&
+            resolvedDefault &&
+            isAssistantModelIdentifierAllowed(resolvedDefault, false, policy) &&
+            canReplaceAgentDefault(defaults.model, previousTarget, policy?.rules.overwriteUserChoice ?? false)
+          ) {
+            nextModel = resolvedDefault
+          }
+        }
+
+        if (!isAssistantModelIdentifierAllowed(nextModel, false, policy)) {
+          const fallbackCandidates = [
+            ...(policy?.assistant.fallbackModels ?? []),
+            ...(policy?.rules.applyToNewSessions === false ? [] : [policy?.defaults.assistantNewSession]),
+            CURRENT_DEFAULT_MODEL_ID
+          ].filter((candidate): candidate is string => Boolean(candidate))
+          const policyFallback = fallbackCandidates
+            .map((candidate) => findAgentModelId(data, candidate, preferredProviderId))
+            .find(
+              (candidate): candidate is string =>
+                Boolean(candidate) && isAssistantModelIdentifierAllowed(candidate, false, policy)
+            )
+
+          nextModel =
+            policyFallback ?? data.find((model) => isAssistantModelAllowed(model, false, policy))?.id ?? nextModel
+        }
+
+        shouldPersistDefaults ||= nextModel !== defaults.model
+        if (!shouldPersistDefaults) return defaults
+
+        const updated = await updateAgent(
+          {
+            id: defaults.id,
+            model: nextModel,
+            configuration: nextConfiguration
+          },
+          { showSuccessToast: false }
+        )
+
+        return updated ?? { ...defaults, model: nextModel, configuration: nextConfiguration }
       } catch (error) {
         logger.warn('Failed to resolve the current default Agent model; using the existing default', error as Error)
-        return fallbackModel
+        return defaults
       }
     },
-    [client]
+    [client, modelPolicy, updateAgent]
   )
 
   const resolveExistingEmptySession = useCallback(
@@ -126,10 +208,7 @@ export const useCreateDefaultSession = (agentId: string | null) => {
         logger.warn('Failed to refresh agent defaults before creating a session; using cached defaults', error as Error)
       }
 
-      sessionDefaults = {
-        ...sessionDefaults,
-        model: await resolveCurrentDefaultModel(sessionDefaults.model)
-      }
+      sessionDefaults = await resolveCurrentAgentDefaults(sessionDefaults)
 
       const existingEmptySession = await resolveExistingEmptySession(sessionDefaults.model)
       if (existingEmptySession) {
@@ -165,7 +244,7 @@ export const useCreateDefaultSession = (agentId: string | null) => {
     createSession,
     creatingSession,
     dispatch,
-    resolveCurrentDefaultModel,
+    resolveCurrentAgentDefaults,
     resolveExistingEmptySession,
     t
   ])

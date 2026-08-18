@@ -5,7 +5,8 @@ import {
   getNewConversationModel,
   getTopicConversationAssistant,
   getTopicConversationModel,
-  isSameModel
+  isSameModel,
+  shouldPersistConversationModelAsDefault
 } from '../conversationModel'
 
 const oldModel = { id: 'gpt-5.4', provider: 'zen', name: 'GPT 5.4', group: 'OpenAI' } satisfies Model
@@ -62,6 +63,15 @@ describe('conversation model policy', () => {
   it('compares both provider and model id', () => {
     expect(isSameModel(lunaModel, { ...lunaModel })).toBe(true)
     expect(isSameModel(lunaModel, { ...lunaModel, provider: 'other' })).toBe(false)
+  })
+
+  it('persists a model selected on a loaded blank conversation as the new default', () => {
+    expect(shouldPersistConversationModelAsDefault(true, 0)).toBe(true)
+  })
+
+  it('keeps model changes inside an existing or still-loading conversation', () => {
+    expect(shouldPersistConversationModelAsDefault(true, 1)).toBe(false)
+    expect(shouldPersistConversationModelAsDefault(false, 0)).toBe(false)
   })
 
   it('keeps external search disabled when the topic has not opted in', () => {

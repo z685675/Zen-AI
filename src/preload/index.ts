@@ -5,6 +5,7 @@ import type { SpanEntity, TokenUsage } from '@mcp-trace/trace-core'
 import type { SpanContext } from '@opentelemetry/api'
 import type { GitBashPathInfo, TerminalConfig } from '@shared/config/constant'
 import type { LogLevel, LogSourceWithContext } from '@shared/config/logger'
+import type { ModelPolicySnapshot } from '@shared/config/modelPolicy'
 import type {
   CodeToolsRunResult,
   FileChangeEvent,
@@ -386,6 +387,10 @@ const api = {
     set: (key: string, value: any, isNotify: boolean = false) =>
       ipcRenderer.invoke(IpcChannel.Config_Set, key, value, isNotify),
     get: (key: string) => ipcRenderer.invoke(IpcChannel.Config_Get, key)
+  },
+  modelPolicy: {
+    get: (): Promise<ModelPolicySnapshot> => ipcRenderer.invoke(IpcChannel.ModelPolicy_Get),
+    refresh: (): Promise<ModelPolicySnapshot> => ipcRenderer.invoke(IpcChannel.ModelPolicy_Refresh)
   },
   miniWindow: {
     show: () => ipcRenderer.invoke(IpcChannel.MiniWindow_Show),

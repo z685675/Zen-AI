@@ -1,8 +1,9 @@
 # Zen AI 托管 Python 与 OCR 能力方案
 
-> 状态：在线镜像与离线运行时链路完成，进入三平台产物验收
-> 更新日期：2026-08-01
+> 状态：在线镜像与离线运行时链路已实现，持续进行三平台发布包回归
+> 更新日期：2026-08-11
 > 适用范围：全部 Zen AI 用户、官方智能助手、Claude Code/Codex runtime、内置 Skill
+> 文档导航：[Zen AI 开发文档索引](./README.md)
 
 ## 1. 决策摘要
 
@@ -169,5 +170,4 @@ Skill 不再自行判断系统是否有 Python。执行顺序由产品能力决�
 - PPTX、DOCX、XLSX、PDF 及研究/写作类 Skill 已改用统一运行时约定，不再探测或修改系统 Python。
 - Office 文件仍由内置 Node 生成器优先创建，Python 只承担数据处理和质量检查，不应拖慢普通生成路径。
 
-用户验收步骤、完整提示词和预期结果统一维护在
-[`agent-runtime-test-template.md`](./agent-runtime-test-template.md) 的“托管 Python 与 OCR”一节，不再另建第二份测试手册。
+托管 Python 与 OCR 在 Windows x64、macOS x64 和 macOS ARM64 发布包中分别回归。验收至少覆盖在线安装、官方镜像失败后的离线包导入、环境诊断、Python 数据处理、中文 OCR 和扫描 PDF OCR；不再引用网页访问专项手册。

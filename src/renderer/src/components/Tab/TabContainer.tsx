@@ -4,6 +4,7 @@ import { Sortable, useDndReorder } from '@renderer/components/dnd'
 import HorizontalScrollContainer from '@renderer/components/HorizontalScrollContainer'
 import { isLinux, isMac } from '@renderer/config/constant'
 import { allMinApps } from '@renderer/config/minapps'
+import { useAnnouncements } from '@renderer/context/AnnouncementProvider'
 import { useFullscreen } from '@renderer/hooks/useFullscreen'
 import { useMinappPopup } from '@renderer/hooks/useMinappPopup'
 import { useMinapps } from '@renderer/hooks/useMinapps'
@@ -15,6 +16,7 @@ import type { Tab } from '@renderer/store/tabs'
 import { addTab, removeTab, setActiveTab, setTabs } from '@renderer/store/tabs'
 import type { MinAppType } from '@renderer/types'
 import { classNames } from '@renderer/utils'
+import { Tooltip } from 'antd'
 import type { LRUCache } from 'lru-cache'
 import {
   FileSearch,
@@ -32,6 +34,7 @@ import {
   X
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useLocation, useNavigate } from 'react-router-dom'
 import styled from 'styled-components'
 
@@ -126,6 +129,8 @@ const TabsContainer: React.FC<TabsContainerProps> = ({ children }) => {
   const { hideMinappPopup, minAppsCache } = useMinappPopup()
   const { minapps } = useMinapps()
   const { useSystemTitleBar } = useSettings()
+  const { unreadCount } = useAnnouncements()
+  const { t } = useTranslation()
 
   const getTabId = (path: string): string => {
     if (path === '/') return 'home'
@@ -211,6 +216,11 @@ const TabsContainer: React.FC<TabsContainerProps> = ({ children }) => {
     navigate(lastSettingsPath)
   }
 
+  const handleAnnouncementsClick = () => {
+    hideMinappPopup()
+    navigate('/announcements')
+  }
+
   const handleTabClick = (tab: Tab) => {
     hideMinappPopup()
     navigate(tab.path)
@@ -275,6 +285,15 @@ const TabsContainer: React.FC<TabsContainerProps> = ({ children }) => {
           </AddTabButton>
         </HorizontalScrollContainer>
         <RightButtonsContainer style={{ paddingRight: isLinux && useSystemTitleBar ? '12px' : undefined }}>
+          <Tooltip title={t('announcements.title')} placement="bottom" mouseEnterDelay={0.8}>
+            <AnnouncementButton
+              onClick={handleAnnouncementsClick}
+              $active={activeTabId === 'announcements'}
+              aria-label={t('announcements.title')}>
+              <Megaphone size={16} />
+              {unreadCount > 0 && <AnnouncementBadge>{Math.min(unreadCount, 9)}</AnnouncementBadge>}
+            </AnnouncementButton>
+          </Tooltip>
           <SettingsButton onClick={handleSettingsClick} $active={activeTabId === 'settings'}>
             <Settings size={16} />
           </SettingsButton>
@@ -424,6 +443,29 @@ const SettingsButton = styled.div<{ $active: boolean }>`
   &:hover {
     background: var(--color-list-item);
   }
+`
+
+const AnnouncementButton = styled(SettingsButton)`
+  position: relative;
+  -webkit-app-region: no-drag;
+`
+
+const AnnouncementBadge = styled.span`
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  min-width: 13px;
+  height: 13px;
+  padding: 0 3px;
+  border: 1px solid var(--color-background);
+  border-radius: 7px;
+  background: var(--color-error);
+  color: #fff;
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 11px;
+  text-align: center;
+  pointer-events: none;
 `
 
 const TabContent = styled.div`

@@ -14,9 +14,10 @@ import NewApiAddModelPopup from '@renderer/pages/settings/ProviderSettings/Model
 import type { Model } from '@renderer/types'
 import { filterModelsByKeywords } from '@renderer/utils'
 import { getDuplicateModelNames } from '@renderer/utils/model'
+import { sortModelGroupsByFamily } from '@renderer/utils/modelSorting'
 import { isNewApiProvider } from '@renderer/utils/provider'
 import { Button, Flex, Space, Spin, Tooltip } from 'antd'
-import { groupBy, isEmpty, sortBy, toPairs } from 'lodash'
+import { groupBy, isEmpty } from 'lodash'
 import { Plus, RefreshCw } from 'lucide-react'
 import React, { memo, startTransition, useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -36,11 +37,7 @@ const MODEL_COUNT_THRESHOLD = 10
  */
 const calculateModelGroups = (models: Model[], searchText: string): ModelGroups => {
   const filteredModels = searchText ? filterModelsByKeywords(searchText, models) : models
-  const grouped = groupBy(filteredModels, 'group')
-  return sortBy(toPairs(grouped), [0]).reduce((acc, [key, value]) => {
-    acc[key] = value
-    return acc
-  }, {})
+  return sortModelGroupsByFamily(groupBy(filteredModels, 'group'))
 }
 
 /**

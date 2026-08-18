@@ -2,10 +2,10 @@ import ModelAvatar from '@renderer/components/Avatar/ModelAvatar'
 import { getModelUniqId } from '@renderer/services/ModelService'
 import type { Model, Provider } from '@renderer/types'
 import { matchKeywordsInString } from '@renderer/utils'
+import { sortModelsByFamily } from '@renderer/utils/modelSorting'
 import { getFancyProviderName } from '@renderer/utils/naming'
 import type { SelectProps } from 'antd'
 import { Avatar, Select } from 'antd'
-import { sortBy } from 'lodash'
 import type { BaseSelectRef } from 'rc-select'
 import { memo, useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -58,7 +58,7 @@ const ModelSelector = ({
   const getModelOptions = useCallback(
     (p: Provider, fancyName: string) => {
       const suffix = showSuffix ? <span style={{ opacity: 0.45 }}>{` | ${fancyName}`}</span> : null
-      return sortBy(p.models, 'name')
+      return sortModelsByFamily(p.models)
         .filter((model) => predicate?.(model) ?? true)
         .map((m) => ({
           label: (

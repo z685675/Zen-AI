@@ -1,10 +1,11 @@
 import ModelAvatar from '@renderer/components/Avatar/ModelAvatar'
 import { SelectAgentModelPopup } from '@renderer/components/Popups/SelectModelPopup'
-import { isStandardAgentModel } from '@renderer/config/agentModelPolicy'
+import { isAssistantModelAllowed } from '@renderer/config/agentModelPolicy'
 import { agentModelFilter } from '@renderer/config/models'
 import { useApiModel } from '@renderer/hooks/agents/useModel'
 import { useEnableDeveloperMode } from '@renderer/hooks/useSettings'
 import { getProviderNameById } from '@renderer/services/ProviderService'
+import { useAppSelector } from '@renderer/store'
 import type { AgentBaseWithId, ApiModel } from '@renderer/types'
 import { isAgentSessionEntity } from '@renderer/types'
 import { isAgentEntity } from '@renderer/types'
@@ -51,6 +52,7 @@ const SelectAgentBaseModelButton = ({
 }: Props) => {
   const { t } = useTranslation()
   const { enableDeveloperMode } = useEnableDeveloperMode()
+  const modelPolicy = useAppSelector((state) => state.llm.modelPolicy)
   const [isUpdating, setIsUpdating] = useState(false)
   const model = useApiModel({ id: agent?.model })
 
@@ -65,7 +67,7 @@ const SelectAgentBaseModelButton = ({
     const selectedModel = await SelectAgentModelPopup.show({
       model,
       apiFilter: apiFilter,
-      apiModelFilter: enableDeveloperMode ? undefined : isStandardAgentModel,
+      apiModelFilter: (candidate) => isAssistantModelAllowed(candidate, enableDeveloperMode, modelPolicy?.policy),
       modelFilter: agentModelFilter
     })
     if (selectedModel && selectedModel.id !== agent.model) {

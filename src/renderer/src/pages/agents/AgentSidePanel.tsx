@@ -1,17 +1,22 @@
 import { useAgents } from '@renderer/hooks/agents/useAgents'
 import { cn } from '@renderer/utils'
+import { Tooltip } from 'antd'
+import { PanelLeftClose } from 'lucide-react'
 import type { PropsWithChildren } from 'react'
 import { useMemo } from 'react'
+import { useTranslation } from 'react-i18next'
 
 import Agents from './components/Agents'
 import GlobalSessions from './components/GlobalSessions'
 
 interface AgentSidePanelProps {
   onSelectItem?: () => void
+  onCollapse?: () => void
 }
 
-const AgentSidePanel = ({ onSelectItem }: AgentSidePanelProps) => {
+const AgentSidePanel = ({ onSelectItem, onCollapse }: AgentSidePanelProps) => {
   const { agents } = useAgents()
+  const { t } = useTranslation()
 
   const agentsById = useMemo(() => {
     return Object.fromEntries((agents ?? []).map((agent) => [agent.id, agent]))
@@ -25,6 +30,17 @@ const AgentSidePanel = ({ onSelectItem }: AgentSidePanelProps) => {
         height: 'calc(100vh - var(--navbar-height))',
         background: 'transparent'
       }}>
+      <div className="flex shrink-0 items-center justify-end px-1 pb-1">
+        <Tooltip title={t('navbar.hide_sidebar')} mouseEnterDelay={0.5}>
+          <button
+            type="button"
+            aria-label={t('navbar.hide_sidebar')}
+            onClick={onCollapse}
+            className="flex h-7 w-7 items-center justify-center rounded-md border-0 bg-transparent p-0 text-[var(--color-text-2)] transition-colors hover:bg-[var(--color-background-mute)] hover:text-[var(--color-text)]">
+            <PanelLeftClose size={16} />
+          </button>
+        </Tooltip>
+      </div>
       <SectionShell className="max-h-[34%] min-h-[180px]" tone="agents">
         <Agents onSelectItem={onSelectItem} />
       </SectionShell>

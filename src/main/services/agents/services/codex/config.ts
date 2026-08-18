@@ -89,9 +89,12 @@ export type CodexInvocationConfig = {
 }
 
 const ZEN_CODEX_PROVIDER_ID = 'zen-ai-selected-provider'
+const CODEX_ORIGINATOR_ENV_KEY = 'CODEX_INTERNAL_ORIGINATOR_OVERRIDE'
+const CODEX_ORIGINATOR = 'codex_cli_rs'
 const CODEX_ROUTING_ENV_KEYS = new Set(['CODEX_API_KEY', 'OPENAI_API_KEY', 'OPENAI_API_BASE', 'OPENAI_BASE_URL'])
 const CODEX_BLOCKED_ENV_KEYS = new Set([
   ...CODEX_ROUTING_ENV_KEYS,
+  CODEX_ORIGINATOR_ENV_KEY,
   'ELECTRON_RUN_AS_NODE',
   'ELECTRON_NO_ATTACH_CONSOLE',
   'ZEN_AGENT_MCP_API_KEY',
@@ -159,6 +162,9 @@ export function buildCodexEnv(
       }
     }
   }
+
+  // Keep upstream usage logs identifiable as Codex client traffic.
+  env[CODEX_ORIGINATOR_ENV_KEY] = CODEX_ORIGINATOR
 
   return env
 }

@@ -52,7 +52,7 @@ body {
   display: flex;
   min-height: 100vh;
   color: var(--color-text);
-  font-size: 14px;
+  font-size: 13px;
   line-height: 1.6;
   overflow: hidden;
   font-family: var(--font-family);

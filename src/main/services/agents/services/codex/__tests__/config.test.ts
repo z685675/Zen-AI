@@ -47,7 +47,8 @@ describe('buildCodexEnv', () => {
         FOO: 'bar',
         CODEX_API_KEY: 'blocked',
         NODE_OPTIONS: '--inspect',
-        ZEN_AGENT_MCP_API_KEY: 'blocked'
+        ZEN_AGENT_MCP_API_KEY: 'blocked',
+        CODEX_INTERNAL_ORIGINATOR_OVERRIDE: 'unknown-client'
       }
     )
 
@@ -59,6 +60,7 @@ describe('buildCodexEnv', () => {
     expect(env.OPENAI_BASE_URL).toBeUndefined()
     expect(env.NODE_OPTIONS).toBeUndefined()
     expect(env.ZEN_AGENT_MCP_API_KEY).toBeUndefined()
+    expect(env.CODEX_INTERNAL_ORIGINATOR_OVERRIDE).toBe('codex_cli_rs')
     expect(env.ELECTRON_RUN_AS_NODE).toBe('1')
   })
 })

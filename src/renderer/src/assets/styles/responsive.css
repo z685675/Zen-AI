@@ -6,13 +6,14 @@
   --input-bar-height: 100px;
 
   --assistants-width: 248px;
+  --conversation-history-width: 186px;
   --topic-list-width: 275px;
   --settings-width: 250px;
 }
 
 [navbar-position='left'] {
   --navbar-height: 42px;
-  --sidebar-width: 148px;
+  --sidebar-width: 112px;
   --list-item-border-radius: 20px;
 }
 

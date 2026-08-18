@@ -77,6 +77,7 @@ import powerMonitorService from './services/PowerMonitorService'
 import { proxyManager } from './services/ProxyManager'
 import { pythonService } from './services/PythonService'
 import { FileServiceManager } from './services/remotefile/FileServiceManager'
+import { remoteModelPolicyService } from './services/RemoteModelPolicyService'
 import { searchService } from './services/SearchService'
 import { isSafeExternalUrl } from './services/security'
 import { SelectionService } from './services/SelectionService'
@@ -338,6 +339,9 @@ export async function registerIpc(mainWindow: BrowserWindow, app: Electron.App) 
   ipcMain.handle(IpcChannel.Config_Get, (_, key: string) => {
     return configManager.get(key)
   })
+
+  ipcMain.handle(IpcChannel.ModelPolicy_Get, () => remoteModelPolicyService.getSnapshot())
+  ipcMain.handle(IpcChannel.ModelPolicy_Refresh, () => remoteModelPolicyService.refresh(true))
 
   // theme
   ipcMain.handle(IpcChannel.App_SetTheme, (_, theme: ThemeMode) => {

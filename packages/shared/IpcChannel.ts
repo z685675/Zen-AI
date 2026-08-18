@@ -76,6 +76,8 @@ export enum IpcChannel {
 
   Config_Set = 'config:set',
   Config_Get = 'config:get',
+  ModelPolicy_Get = 'model-policy:get',
+  ModelPolicy_Refresh = 'model-policy:refresh',
 
   MiniWindow_Show = 'miniwindow:show',
   MiniWindow_Hide = 'miniwindow:hide',

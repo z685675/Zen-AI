@@ -2,6 +2,7 @@ import type { Model, ModelTag } from '@renderer/types'
 import { describe, expect, it, vi } from 'vitest'
 
 import { getDuplicateModelNames, getModelTags, isFreeModel } from '../model'
+import { getModelFamilyPriority, sortModelGroupsByFamily, sortModelsByFamily } from '../modelSorting'
 
 // Mock the model checking functions from @renderer/config/models
 vi.mock('@renderer/config/models', () => ({
@@ -14,6 +15,70 @@ vi.mock('@renderer/config/models', () => ({
 }))
 
 describe('model', () => {
+  describe('model display sorting', () => {
+    const createModel = (id: string, group = ''): Model => ({
+      id,
+      name: id,
+      provider: 'provider',
+      group
+    })
+
+    it('orders GPT, Gemini, Claude, Grok, then all remaining families', () => {
+      const models = [
+        createModel('deepseek-v3'),
+        createModel('grok-4'),
+        createModel('claude-opus-4-6'),
+        createModel('gemini-3.1-pro'),
+        createModel('gpt-5.4')
+      ]
+
+      expect(sortModelsByFamily(models).map((model) => model.id)).toEqual([
+        'gpt-5.4',
+        'gemini-3.1-pro',
+        'claude-opus-4-6',
+        'grok-4',
+        'deepseek-v3'
+      ])
+      expect(models[0].id).toBe('deepseek-v3')
+    })
+
+    it('recognizes provider-family aliases from model groups', () => {
+      expect(getModelFamilyPriority(createModel('custom-openai-model', 'OpenAI'))).toBe(0)
+      expect(getModelFamilyPriority(createModel('custom-google-model', 'Google'))).toBe(1)
+      expect(getModelFamilyPriority(createModel('custom-anthropic-model', 'Anthropic'))).toBe(2)
+      expect(getModelFamilyPriority(createModel('custom-xai-model', 'xAI'))).toBe(3)
+    })
+
+    it('prefers an explicit model family over a generic provider group', () => {
+      expect(getModelFamilyPriority(createModel('claude-opus-4-6', 'OpenAI'))).toBe(2)
+      expect(getModelFamilyPriority(createModel('gemini-3.1-pro', 'OpenAI'))).toBe(1)
+    })
+
+    it('keeps models with the same prefix adjacent using natural numeric ordering', () => {
+      const sorted = sortModelsByFamily([
+        createModel('gpt-5.2-pro'),
+        createModel('gpt-4o'),
+        createModel('gpt-5.2'),
+        createModel('gpt-5.2-mini')
+      ])
+
+      expect(sorted.map((model) => model.id)).toEqual(['gpt-4o', 'gpt-5.2', 'gpt-5.2-mini', 'gpt-5.2-pro'])
+    })
+
+    it('orders existing provider groups by family and sorts models inside each group', () => {
+      const groups = sortModelGroupsByFamily({
+        Other: [createModel('qwen-3')],
+        Anthropic: [createModel('claude-sonnet-4-6'), createModel('claude-opus-4-6')],
+        Google: [createModel('gemini-3.1-flash')],
+        OpenAI: [createModel('gpt-5.4-pro'), createModel('gpt-5.4')],
+        xAI: [createModel('grok-4')]
+      })
+
+      expect(Object.keys(groups)).toEqual(['OpenAI', 'Google', 'Anthropic', 'xAI', 'Other'])
+      expect(groups.OpenAI.map((model) => model.id)).toEqual(['gpt-5.4', 'gpt-5.4-pro'])
+    })
+  })
+
   describe('isFreeModel', () => {
     const base = { provider: '', group: '' }
     it('should return true if id or name contains "free" (case-insensitive)', () => {

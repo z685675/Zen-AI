@@ -22,6 +22,7 @@ import store from '@renderer/store'
 import type { Model, Provider } from '@renderer/types'
 import { filterModelsByKeywords, getFancyProviderName } from '@renderer/utils'
 import { getDuplicateModelNames, isFreeModel } from '@renderer/utils/model'
+import { sortModelGroupsByFamily, sortModelsByFamily } from '@renderer/utils/modelSorting'
 import { isNewApiProvider } from '@renderer/utils/provider'
 import { Button, Empty, Flex, Modal, Spin, Tabs, Tooltip } from 'antd'
 import Input from 'antd/es/input/Input'
@@ -96,40 +97,44 @@ const PopupContainer: React.FC<Props> = ({ providerId, resolve }) => {
 
   const list = useMemo(
     () =>
-      filterModelsByKeywords(filterSearchText, allModels).filter((model) => {
-        switch (actualFilterType) {
-          case 'reasoning':
-            return isReasoningModel(model)
-          case 'vision':
-            return isVisionModel(model)
-          case 'websearch':
-            return isWebSearchModel(model)
-          case 'free':
-            return isFreeModel(model)
-          case 'embedding':
-            return isEmbeddingModel(model)
-          case 'function_calling':
-            return isFunctionCallingModel(model)
-          case 'rerank':
-            return isRerankModel(model)
-          default:
-            return true
-        }
-      }),
+      sortModelsByFamily(
+        filterModelsByKeywords(filterSearchText, allModels).filter((model) => {
+          switch (actualFilterType) {
+            case 'reasoning':
+              return isReasoningModel(model)
+            case 'vision':
+              return isVisionModel(model)
+            case 'websearch':
+              return isWebSearchModel(model)
+            case 'free':
+              return isFreeModel(model)
+            case 'embedding':
+              return isEmbeddingModel(model)
+            case 'function_calling':
+              return isFunctionCallingModel(model)
+            case 'rerank':
+              return isRerankModel(model)
+            default:
+              return true
+          }
+        })
+      ),
     [filterSearchText, actualFilterType, allModels]
   )
 
   const modelGroups = useMemo(
     () =>
-      provider.id === 'dashscope'
-        ? {
-            ...groupBy(
-              list.filter((model) => !model.id.startsWith('qwen')),
-              'group'
-            ),
-            ...groupQwenModels(list.filter((model) => model.id.startsWith('qwen')))
-          }
-        : groupBy(list, 'group'),
+      sortModelGroupsByFamily(
+        provider.id === 'dashscope'
+          ? {
+              ...groupBy(
+                list.filter((model) => !model.id.startsWith('qwen')),
+                'group'
+              ),
+              ...groupQwenModels(list.filter((model) => model.id.startsWith('qwen')))
+            }
+          : groupBy(list, 'group')
+      ),
     [list, provider.id]
   )
 

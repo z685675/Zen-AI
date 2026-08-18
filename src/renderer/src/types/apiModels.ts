@@ -30,6 +30,7 @@ export const ApiModelSchema = z.object({
   provider_name: z.string().optional(),
   provider_type: ProviderTypeSchema.optional(),
   provider_model_id: z.string().optional(),
+  is_official_provider: z.boolean().optional(),
   endpoint_type: ApiEndpointTypeSchema.optional(),
   supported_endpoint_types: z.array(ApiEndpointTypeSchema).optional(),
   agent_runtime_compatibility: z.array(z.enum(['claude-code', 'codex'])).optional()

@@ -3836,6 +3836,19 @@ const migrateConfig = {
       logger.error('migrate 224 error', error as Error)
       return state
     }
+  },
+  '225': (state: RootState) => {
+    try {
+      if (state.settings.fontSize === 14) {
+        state.settings.fontSize = 12
+      }
+
+      logger.info('migrate 225 success')
+      return state
+    } catch (error) {
+      logger.error('migrate 225 error', error as Error)
+      return state
+    }
   }
 }
 

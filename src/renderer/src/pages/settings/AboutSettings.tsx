@@ -2,11 +2,12 @@ import { HStack } from '@renderer/components/Layout'
 import { APP_NAME, AppLogo } from '@renderer/config/env'
 import { useTheme } from '@renderer/context/ThemeProvider'
 import { useAppUpdateState } from '@renderer/hooks/useAppUpdateState'
+import { refreshRemoteModelPolicy } from '@renderer/services/RemoteModelPolicyService'
 import { runAsyncFunction } from '@renderer/utils'
 import { showAppUpdateAvailableModal, showAppUpdateDownloadedModal } from '@renderer/utils/appUpdate'
 import { APP_DOWNLOADS_URL, APP_RELEASES_URL, APP_SUPPORT_EMAIL, APP_WEBSITE_URL } from '@shared/config/constant'
 import { Avatar, Button, Row, Tag } from 'antd'
-import { ClipboardList, Download, Mail } from 'lucide-react'
+import { ClipboardList, Download, Mail, RefreshCw } from 'lucide-react'
 import type { FC } from 'react'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -18,6 +19,7 @@ const AboutSettings: FC = () => {
   const [version, setVersion] = useState('')
   const [isPortable, setIsPortable] = useState(false)
   const [checkingUpdate, setCheckingUpdate] = useState(false)
+  const [refreshingModelPolicy, setRefreshingModelPolicy] = useState(false)
   const { t } = useTranslation()
   const { theme } = useTheme()
   const { updateState } = useAppUpdateState()
@@ -101,6 +103,18 @@ const AboutSettings: FC = () => {
     return t('settings.about.checkUpdate.label')
   }
 
+  const onRefreshModelPolicy = async () => {
+    setRefreshingModelPolicy(true)
+    try {
+      const snapshot = await refreshRemoteModelPolicy()
+      window.toast.success(`Model policy v${snapshot.version} refreshed`)
+    } catch (error) {
+      window.toast.error(error instanceof Error ? error.message : 'Failed to refresh model policy')
+    } finally {
+      setRefreshingModelPolicy(false)
+    }
+  }
+
   const onCopyUpdateDiagnostics = async () => {
     const progress = updateState.progress
       ? `${Math.round(updateState.progress.percent || 0)}% (${updateState.progress.transferred}/${updateState.progress.total} bytes, ${updateState.progress.bytesPerSecond} B/s)`
@@ -169,6 +183,16 @@ const AboutSettings: FC = () => {
           </SettingRowTitle>
           <Button loading={checkingUpdate} onClick={() => void onCheckForUpdate()}>
             {getUpdateButtonLabel()}
+          </Button>
+        </SettingRow>
+        <SettingDivider />
+        <SettingRow>
+          <SettingRowTitle>
+            <RefreshCw size={18} />
+            Remote model policy
+          </SettingRowTitle>
+          <Button loading={refreshingModelPolicy} onClick={() => void onRefreshModelPolicy()}>
+            Refresh policy
           </Button>
         </SettingRow>
         <SettingDivider />

@@ -9,9 +9,10 @@ import { getModelUniqId } from '@renderer/services/ModelService'
 import type { FileMetadata, Model } from '@renderer/types'
 import { FILE_TYPE } from '@renderer/types'
 import { getFancyProviderName } from '@renderer/utils'
+import { compareModelsByFamily, sortModelsByFamily } from '@renderer/utils/modelSorting'
 import { Avatar } from 'antd'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { first, sortBy } from 'lodash'
+import { first } from 'lodash'
 import { AtSign, CircleX, Plus } from 'lucide-react'
 import type React from 'react'
 import { useCallback, useEffect, useMemo, useRef } from 'react'
@@ -130,42 +131,44 @@ export const useMentionModelsPanel = (params: Params, role: 'button' | 'manager'
     const items: QuickPanelListItem[] = []
 
     if (pinnedModels.length > 0) {
-      const pinnedItems = providers.flatMap((provider) =>
-        provider.models
-          .filter(chatModelFilter)
-          .filter((model) => pinnedModels.includes(getModelUniqId(model)))
-          .filter((model) => couldMentionNotVisionModel || (!couldMentionNotVisionModel && isVisionModel(model)))
-          .map((model) => ({
-            label: (
-              <>
-                <ProviderName>{getFancyProviderName(provider)}</ProviderName>
-                <span style={{ opacity: 0.8 }}> | {model.name}</span>
-              </>
-            ),
-            description: <ModelTagsWithLabel model={model} showLabel={false} size={10} style={{ opacity: 0.8 }} />,
-            icon: (
-              <Avatar src={getModelLogo(model)} size={20}>
-                {first(model.name)}
-              </Avatar>
-            ),
-            filterText: getFancyProviderName(provider) + model.name,
-            action: () => onMentionModel(model),
-            isSelected: mentionedModels.some((selected) => getModelUniqId(selected) === getModelUniqId(model))
-          }))
-      )
+      const pinnedItems = providers
+        .flatMap((provider) =>
+          provider.models
+            .filter(chatModelFilter)
+            .filter((model) => pinnedModels.includes(getModelUniqId(model)))
+            .filter((model) => couldMentionNotVisionModel || (!couldMentionNotVisionModel && isVisionModel(model)))
+            .map((model) => ({ model, provider }))
+        )
+        .sort((left, right) => compareModelsByFamily(left.model, right.model))
+        .map(({ model, provider }) => ({
+          label: (
+            <>
+              <ProviderName>{getFancyProviderName(provider)}</ProviderName>
+              <span style={{ opacity: 0.8 }}> | {model.name}</span>
+            </>
+          ),
+          description: <ModelTagsWithLabel model={model} showLabel={false} size={10} style={{ opacity: 0.8 }} />,
+          icon: (
+            <Avatar src={getModelLogo(model)} size={20}>
+              {first(model.name)}
+            </Avatar>
+          ),
+          filterText: getFancyProviderName(provider) + model.name,
+          action: () => onMentionModel(model),
+          isSelected: mentionedModels.some((selected) => getModelUniqId(selected) === getModelUniqId(model))
+        }))
 
       if (pinnedItems.length > 0) {
-        items.push(...sortBy(pinnedItems, ['label']))
+        items.push(...pinnedItems)
       }
     }
 
     providers.forEach((provider) => {
-      const providerModels = sortBy(
+      const providerModels = sortModelsByFamily(
         provider.models
           .filter(chatModelFilter)
           .filter((model) => !pinnedModels.includes(getModelUniqId(model)))
-          .filter((model) => couldMentionNotVisionModel || (!couldMentionNotVisionModel && isVisionModel(model))),
-        ['group', 'name']
+          .filter((model) => couldMentionNotVisionModel || (!couldMentionNotVisionModel && isVisionModel(model)))
       )
 
       const providerItems = providerModels.map((model) => ({

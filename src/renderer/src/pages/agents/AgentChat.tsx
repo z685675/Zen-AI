@@ -2,7 +2,12 @@ import { loggerService } from '@logger'
 import { DEFAULT_SESSION_PAGE_SIZE } from '@renderer/api/agent'
 import EmojiIcon from '@renderer/components/EmojiIcon'
 import { QuickPanelProvider } from '@renderer/components/QuickPanel'
-import { findAgentModelId, isStandardAgentModelIdentifier } from '@renderer/config/agentModelPolicy'
+import {
+  findAgentModelId,
+  getAgentModelProviderId,
+  isAssistantModelIdentifierAllowed,
+  isAssistantModelIdentifierBlocked
+} from '@renderer/config/agentModelPolicy'
 import { CURRENT_DEFAULT_MODEL_ID } from '@renderer/config/defaultModelPolicy'
 import { useActiveAgent } from '@renderer/hooks/agents/useActiveAgent'
 import { useAgentClient } from '@renderer/hooks/agents/useAgentClient'
@@ -14,6 +19,7 @@ import { useTopicMessages } from '@renderer/hooks/useMessageOperations'
 import { useRuntime } from '@renderer/hooks/useRuntime'
 import { useNavbarPosition, useSettings } from '@renderer/hooks/useSettings'
 import { useShortcut } from '@renderer/hooks/useShortcuts'
+import { useShowAssistants } from '@renderer/hooks/useStore'
 import {
   ASSISTANT_DEPENDENCY_I18N_KEYS,
   type AssistantEnvironmentCheckResult,
@@ -35,11 +41,12 @@ import { getAgentSessionDraftCacheKey } from '@renderer/utils/agentSessionDraft'
 import { isUnnamedAgentSessionName } from '@renderer/utils/agentSessionTitle'
 import { shouldDiscardEmptyConversation } from '@renderer/utils/conversationDraft'
 import { DEFAULT_FUSION_AGENT_ID, getAgentAvatar } from '@shared/config/agents'
-import { Alert, Button, Spin } from 'antd'
+import { Alert, Button, Spin, Tooltip } from 'antd'
 import {
   CalendarClock,
   FolderOpen,
   ListTodo,
+  PanelLeftOpen,
   Puzzle,
   RefreshCw,
   ScrollText,
@@ -92,6 +99,7 @@ const EMPTY_SESSION_LOADING_RETRY_ATTEMPTS = 30
 const AgentChat = () => {
   const { t } = useTranslation()
   const { messageNavigation, messageStyle } = useSettings()
+  const { showAssistants, setShowAssistants } = useShowAssistants()
   const dispatch = useAppDispatch()
   const { chat } = useRuntime()
   const { activeAgentId, activeSessionIdMap, isMultiSelectMode } = chat
@@ -111,6 +119,7 @@ const AgentChat = () => {
   const isActiveSessionLoading = useAppSelector((state) =>
     sessionTopicId ? Boolean(state.messages.loadingByTopic[sessionTopicId]) : false
   )
+  const modelPolicy = useAppSelector((state) => state.llm.modelPolicy)
   const isWelcomeState = hasLoadedSessionMessages && messages.length === 0
   const isSessionMessagesBootstrapping = !!activeSessionId && !!sessionTopicId && !hasLoadedSessionMessages
   const [initialEnvironmentCache] = useState(() => getFreshAssistantEnvironmentCache())
@@ -270,7 +279,7 @@ const AgentChat = () => {
       isActiveSessionLoading ||
       messages.length > 0 ||
       !isUnnamedAgentSessionName(activeSession.name, t('common.unnamed')) ||
-      isStandardAgentModelIdentifier(activeSession.model) ||
+      isAssistantModelIdentifierAllowed(activeSession.model, false, modelPolicy?.policy) ||
       modelRepairAttemptsRef.current.has(activeSession.id)
     ) {
       return
@@ -280,7 +289,13 @@ const AgentChat = () => {
     const repairLegacyModel = async () => {
       try {
         const { data } = await client.getModels({ limit: 1000 })
-        const currentDefaultModel = findAgentModelId(data, CURRENT_DEFAULT_MODEL_ID)
+        const currentDefaultModel = findAgentModelId(
+          data,
+          modelPolicy?.policy.rules.applyToNewSessions === false
+            ? CURRENT_DEFAULT_MODEL_ID
+            : (modelPolicy?.policy.defaults.assistantNewSession ?? CURRENT_DEFAULT_MODEL_ID),
+          getAgentModelProviderId(activeSession.model)
+        )
         if (currentDefaultModel) {
           await updateSession(
             {
@@ -304,6 +319,78 @@ const AgentChat = () => {
     hasLoadedSessionMessages,
     isActiveSessionLoading,
     messages.length,
+    modelPolicy?.policy,
+    t,
+    updateSession
+  ])
+
+  useEffect(() => {
+    if (
+      !activeAgentId ||
+      !activeSession ||
+      !hasLoadedSessionMessages ||
+      isActiveSessionLoading ||
+      !modelPolicy?.policy ||
+      !isAssistantModelIdentifierBlocked(activeSession.model, modelPolicy.policy) ||
+      modelRepairAttemptsRef.current.has(activeSession.id)
+    ) {
+      return
+    }
+
+    modelRepairAttemptsRef.current.add(activeSession.id)
+    const repairBlockedModel = async () => {
+      try {
+        const { data } = await client.getModels({ limit: 1000 })
+        const fallbackCandidates = [
+          ...modelPolicy.policy.assistant.fallbackModels,
+          ...(modelPolicy.policy.rules.applyToNewSessions === false
+            ? []
+            : [modelPolicy.policy.defaults.assistantNewSession]),
+          CURRENT_DEFAULT_MODEL_ID
+        ]
+        const fallbackModel = fallbackCandidates
+          .map((candidate) => findAgentModelId(data, candidate, getAgentModelProviderId(activeSession.model)))
+          .find(
+            (candidate): candidate is string =>
+              Boolean(candidate) && isAssistantModelIdentifierAllowed(candidate, false, modelPolicy.policy)
+          )
+
+        if (!fallbackModel) {
+          window.toast.error(
+            t('agent.modelPolicy.noFallback', '当前模型已停用，且没有可用的备用模型，请在模型设置中选择其他模型。')
+          )
+          return
+        }
+
+        const currentState = store.getState()
+        if (currentState.runtime.chat.activeSessionIdMap[activeAgentId] !== activeSession.id) return
+
+        const updated = await updateSession(
+          {
+            id: activeSession.id,
+            model: fallbackModel
+          },
+          { showSuccessToast: false }
+        )
+        if (updated) {
+          window.toast.info(
+            t('agent.modelPolicy.switched', '当前模型已停用，本次会话已切换至备用模型，原有上下文已保留。')
+          )
+        }
+      } catch (error) {
+        modelRepairAttemptsRef.current.delete(activeSession.id)
+        logger.warn('Failed to switch an existing Agent session away from a blocked model', error as Error)
+      }
+    }
+
+    void repairBlockedModel()
+  }, [
+    activeAgentId,
+    activeSession,
+    client,
+    hasLoadedSessionMessages,
+    isActiveSessionLoading,
+    modelPolicy?.policy,
     t,
     updateSession
   ])
@@ -542,6 +629,16 @@ const AgentChat = () => {
           <div className="translate-z-0 relative flex w-full flex-1 flex-col justify-between overflow-y-auto overflow-x-hidden">
             {isWelcomeState ? (
               <WelcomeState>
+                {!showAssistants && (
+                  <Tooltip title={t('navbar.show_sidebar')} mouseEnterDelay={0.5}>
+                    <WelcomeSidebarToggle
+                      type="button"
+                      aria-label={t('navbar.show_sidebar')}
+                      onClick={() => setShowAssistants(true)}>
+                      <PanelLeftOpen size={17} />
+                    </WelcomeSidebarToggle>
+                  </Tooltip>
+                )}
                 <WelcomeInner>
                   <BrandHeader>
                     <BrandMark>
@@ -568,6 +665,7 @@ const AgentChat = () => {
                         <SessionModelSelectButton
                           agentId={activeAgentId}
                           session={activeSession}
+                          persistAsDefault
                           className="min-w-0 max-w-full"
                           buttonStyle={{
                             minHeight: 32,
@@ -641,6 +739,28 @@ const WelcomeState = styled.div`
     border-radius: 50%;
     background: radial-gradient(circle, rgba(255, 240, 204, 0.58) 0%, rgba(255, 240, 204, 0) 72%);
     pointer-events: none;
+  }
+`
+
+const WelcomeSidebarToggle = styled.button`
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--color-text-2);
+  cursor: pointer;
+
+  &:hover {
+    background: var(--color-background-mute);
+    color: var(--color-text);
   }
 `
 

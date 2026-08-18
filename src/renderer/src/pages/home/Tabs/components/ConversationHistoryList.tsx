@@ -1267,7 +1267,7 @@ const FolderTitleWrap = styled.div`
 
 const FolderTitle = styled.div`
   min-width: 0;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
   color: #3f4a59;
   white-space: nowrap;
@@ -1277,7 +1277,7 @@ const FolderTitle = styled.div`
 
 const FolderCount = styled.div`
   flex-shrink: 0;
-  font-size: 11px;
+  font-size: 10px;
   color: var(--color-text-3);
 `
 
@@ -1324,7 +1324,7 @@ const ConversationHeader = styled.div`
 const ConversationTitle = styled.div`
   flex: 1;
   min-width: 0;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
   color: #3f4a59;
   overflow: hidden;
@@ -1338,7 +1338,7 @@ const ConversationMeta = styled.div`
   justify-content: space-between;
   gap: 8px;
   margin-top: 6px;
-  font-size: 11px;
+  font-size: 10px;
   color: var(--color-text-3);
 
   span:first-child {
@@ -1377,7 +1377,7 @@ const PinnedMark = styled.div`
 const EmptyState = styled.div`
   padding: 24px 12px;
   text-align: center;
-  font-size: 12px;
+  font-size: 11px;
   color: var(--color-text-3);
 `
 

@@ -279,7 +279,7 @@ export const initialState: SettingsState = {
     userCodeFontFamily: ''
   },
   windowStyle: isMac ? 'transparent' : 'opaque',
-  fontSize: 14,
+  fontSize: 12,
   topicPosition: 'left',
   showTopicTime: false,
   pinTopicsToTop: false,

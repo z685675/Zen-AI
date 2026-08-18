@@ -215,7 +215,7 @@ const ModalText = styled.div`
 
 const scrollUrgent = keyframes`
   from {
-    transform: translateX(24%);
+    transform: translateX(5.5%);
   }
   to {
     transform: translateX(-100%);
@@ -261,7 +261,8 @@ const UrgentScroller = styled.div`
   align-items: center;
   gap: 36px;
   white-space: nowrap;
-  animation: ${scrollUrgent} 22s linear infinite;
+  /* Keep the text moving at roughly the original speed while reducing the loop gap to about one second. */
+  animation: ${scrollUrgent} 18.7s linear infinite;
   padding-left: 100%;
 
   ${UrgentBannerInner}:hover & {

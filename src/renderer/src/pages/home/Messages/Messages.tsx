@@ -54,9 +54,12 @@ interface MessagesProps {
 const logger = loggerService.withContext('Messages')
 
 const Messages: React.FC<MessagesProps> = ({ assistant, topic, setActiveTopic, onComponentUpdate, onFirstUpdate }) => {
-  const { containerRef: scrollContainerRef, handleScroll: handleScrollPosition } = useScrollPosition(
-    `topic-${topic.id}`
-  )
+  const {
+    containerRef: scrollContainerRef,
+    handleScroll: handleScrollPosition,
+    getStoredPosition,
+    restorePosition
+  } = useScrollPosition(`topic-${topic.id}`)
   const [displayMessages, setDisplayMessages] = useState<Message[]>([])
   const [hasMore, setHasMore] = useState(false)
   const [isLoadingMore, setIsLoadingMore] = useState(false)
@@ -73,6 +76,7 @@ const Messages: React.FC<MessagesProps> = ({ assistant, topic, setActiveTopic, o
 
   const messageElements = useRef<Map<string, HTMLElement>>(new Map())
   const messagesRef = useRef<Message[]>(messages)
+  const pendingRestorePositionRef = useRef<number | null | undefined>(undefined)
 
   useEffect(() => {
     messagesRef.current = messages
@@ -91,6 +95,35 @@ const Messages: React.FC<MessagesProps> = ({ assistant, topic, setActiveTopic, o
     setDisplayMessages(newDisplayMessages)
     setHasMore(messages.length > displayCount)
   }, [messages, displayCount])
+
+  useEffect(() => {
+    if (displayMessages.length === 0) {
+      return
+    }
+
+    if (pendingRestorePositionRef.current === undefined) {
+      pendingRestorePositionRef.current = getStoredPosition()
+    }
+
+    const targetPosition = pendingRestorePositionRef.current
+    if (targetPosition === null) {
+      return
+    }
+
+    const frame = requestAnimationFrame(() => {
+      restorePosition(targetPosition)
+      requestAnimationFrame(() => {
+        const currentPosition = scrollContainerRef.current?.scrollTop ?? 0
+        const positionReached = Math.abs(currentPosition - targetPosition) <= 2
+
+        if (positionReached || !hasMore) {
+          pendingRestorePositionRef.current = null
+        }
+      })
+    })
+
+    return () => cancelAnimationFrame(frame)
+  }, [displayMessages.length, getStoredPosition, hasMore, restorePosition, scrollContainerRef])
 
   // NOTE: 如果设置为平滑滚动会导致滚动条无法跟随生成的新消息保持在底部位置
   const scrollToBottom = useCallback(() => {

@@ -50,6 +50,7 @@ export enum ConfigKeys {
   Proxy = 'proxy',
   EnableDeveloperMode = 'enableDeveloperMode',
   ClientId = 'clientId',
+  RemoteModelPolicyCache = 'remoteModelPolicyCache',
   GitBashPath = 'gitBashPath',
   GitBashPathSource = 'gitBashPathSource' // 'manual' | 'auto' | null
 }

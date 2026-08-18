@@ -3,6 +3,7 @@ import { getAgentRuntimeCompatibility } from '@main/services/agents/services/run
 import { loggerService } from '@main/services/LoggerService'
 import { reduxService } from '@main/services/ReduxService'
 import { isSiliconAnthropicCompatibleModel } from '@shared/config/providers'
+import { isZenManagedApiHost } from '@shared/config/zenProvider'
 import type { ApiModel, Model, Provider, ProviderType } from '@types'
 
 const logger = loggerService.withContext('ApiServerUtils')
@@ -216,6 +217,7 @@ export function transformModelToOpenAI(model: Model, provider?: Provider): ApiMo
     provider_name: providerDisplayName,
     provider_type: provider?.type,
     provider_model_id: model.id,
+    is_official_provider: isZenManagedApiHost(provider?.apiHost),
     endpoint_type: model.endpoint_type,
     supported_endpoint_types: model.supported_endpoint_types,
     agent_runtime_compatibility: getAgentRuntimeCompatibility(provider, model)

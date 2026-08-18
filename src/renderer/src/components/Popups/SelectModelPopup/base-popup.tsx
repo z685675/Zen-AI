@@ -11,8 +11,9 @@ import type { Model, Provider } from '@renderer/types'
 import { objectEntries } from '@renderer/types'
 import { classNames, filterModelsByKeywords, getFancyProviderName } from '@renderer/utils'
 import { getDuplicateModelNames, getModelTags } from '@renderer/utils/model'
+import { compareModelsByFamily, sortModelsByFamily } from '@renderer/utils/modelSorting'
 import { Avatar, Divider, Empty, Modal, Tooltip } from 'antd'
-import { first, sortBy } from 'lodash'
+import { first } from 'lodash'
 import { Settings2 } from 'lucide-react'
 import React, {
   startTransition,
@@ -118,7 +119,7 @@ const SelectModelPopupView: React.FC<Props> = ({
         models = filterModelsByKeywords(searchText, models, provider)
       }
 
-      return sortBy(models, ['group', 'name'])
+      return sortModelsByFamily(models)
     },
     [searchText]
   )
@@ -182,14 +183,17 @@ const SelectModelPopupView: React.FC<Props> = ({
 
     // 添加置顶模型分组（仅在无搜索文本时）
     if (searchText.length === 0 && showPinnedModels && pinnedModelIds.size > 0) {
-      const pinnedItems = sortedProviders.flatMap((provider) =>
-        provider.models
-          .filter((item) => pinnedModelIds.has(getModelUniqId(item)))
-          .filter(finalModelFilter)
-          .map((item) =>
-            createModelItem(item, provider, true, duplicateNamesByProvider.get(provider.id)?.has(item.name) ?? false)
-          )
-      )
+      const pinnedItems = sortedProviders
+        .flatMap((provider) =>
+          provider.models
+            .filter((item) => pinnedModelIds.has(getModelUniqId(item)))
+            .filter(finalModelFilter)
+            .map((item) => ({ item, provider }))
+        )
+        .sort((left, right) => compareModelsByFamily(left.item, right.item))
+        .map(({ item, provider }) =>
+          createModelItem(item, provider, true, duplicateNamesByProvider.get(provider.id)?.has(item.name) ?? false)
+        )
 
       if (pinnedItems.length > 0) {
         // 添加置顶分组标题

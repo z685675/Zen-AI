@@ -248,8 +248,7 @@ const AssistantSettingsTab = (props: Props) => {
                 max={22}
                 step={1}
                 marks={{
-                  12: <span style={{ fontSize: '12px' }}>A</span>,
-                  14: <span style={{ fontSize: '14px' }}>{t('common.default')}</span>,
+                  12: <span style={{ fontSize: '12px' }}>{t('common.default')}</span>,
                   22: <span style={{ fontSize: '18px' }}>A</span>
                 }}
               />

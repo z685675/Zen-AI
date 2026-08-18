@@ -18,9 +18,10 @@ import { EVENT_NAMES, EventEmitter } from '@renderer/services/EventService'
 import { useAppSelector } from '@renderer/store'
 import type { Assistant, Topic } from '@renderer/types'
 import { classNames } from '@renderer/utils'
-import { getTopicConversationModel } from '@renderer/utils/conversationModel'
-import { Flex } from 'antd'
+import { getTopicConversationModel, shouldPersistConversationModelAsDefault } from '@renderer/utils/conversationModel'
+import { Flex, Tooltip } from 'antd'
 import { debounce } from 'lodash'
+import { PanelLeftOpen } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
 import type { FC } from 'react'
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -47,6 +48,8 @@ interface Props {
   setActiveTopic: (topic: Topic) => void
   setActiveAssistant: (assistant: Assistant) => void
   onCreateConversation: () => Promise<void>
+  isConversationHistoryVisible: boolean
+  onShowConversationHistory: () => void
 }
 
 const Chat: FC<Props> = ({
@@ -55,7 +58,9 @@ const Chat: FC<Props> = ({
   activeTopic,
   setActiveTopic,
   setActiveAssistant,
-  onCreateConversation
+  onCreateConversation,
+  isConversationHistoryVisible,
+  onShowConversationHistory
 }) => {
   const { assistant: storedAssistant, updateTopic } = useAssistant(activeAssistant.id)
   const { setDefaultModel } = useDefaultModel()
@@ -68,7 +73,11 @@ const Chat: FC<Props> = ({
   const messages = useTopicMessages(activeTopic.id)
   const hasLoadedTopicMessages = useAppSelector((state) => !!state.messages.loadedByTopic[activeTopic.id])
   const isLoadingTopicMessages = useAppSelector((state) => !!state.messages.loadingByTopic[activeTopic.id])
-  const isWelcomeState = hasLoadedTopicMessages && !isLoadingTopicMessages && messages.length === 0
+  const isBlankConversation = shouldPersistConversationModelAsDefault(hasLoadedTopicMessages, messages.length)
+  // Keep an empty topic on the welcome layout while its messages are being
+  // loaded. This avoids a one-frame switch to the blank chat layout when a
+  // quick assistant role is selected from the home page.
+  const isWelcomeState = messages.length === 0 && (!hasLoadedTopicMessages || !isLoadingTopicMessages)
   const assistant = useMemo(
     () => ({ ...storedAssistant, model: getTopicConversationModel(activeTopic, storedAssistant) }),
     [activeTopic, storedAssistant]
@@ -155,7 +164,9 @@ const Chat: FC<Props> = ({
       const nextTopic = { ...activeTopic, model: selectedModel }
       updateTopic(nextTopic)
       setActiveTopic(nextTopic)
-      setDefaultModel(selectedModel)
+      if (isBlankConversation) {
+        setDefaultModel(selectedModel)
+      }
     }
   })
 
@@ -250,10 +261,22 @@ const Chat: FC<Props> = ({
                   setActiveTopic={setActiveTopic}
                   setActiveAssistant={setActiveAssistant}
                   position="left"
+                  showConversationHistoryToggle={!isConversationHistoryVisible}
+                  onShowConversationHistory={onShowConversationHistory}
                 />
               )}
               {isWelcomeState ? (
                 <WelcomeState>
+                  {!isConversationHistoryVisible && (
+                    <Tooltip title={t('navbar.show_sidebar')} mouseEnterDelay={0.5}>
+                      <WelcomeSidebarToggle
+                        type="button"
+                        aria-label={t('navbar.show_sidebar')}
+                        onClick={onShowConversationHistory}>
+                        <PanelLeftOpen size={17} />
+                      </WelcomeSidebarToggle>
+                    </Tooltip>
+                  )}
                   <WelcomeInner>
                     <WelcomeTitle>从一次更轻松的对话开始</WelcomeTitle>
                     <WelcomeDescription>
@@ -265,7 +288,12 @@ const Chat: FC<Props> = ({
                         assistants={selectableAssistants}
                         onSelectAssistant={setActiveAssistant}
                       />
-                      <SelectModelButton assistant={assistant} topic={activeTopic} onTopicChange={setActiveTopic} />
+                      <SelectModelButton
+                        assistant={assistant}
+                        topic={activeTopic}
+                        onTopicChange={setActiveTopic}
+                        persistAsDefault={isBlankConversation}
+                      />
                     </WelcomeMeta>
                     <WelcomeComposer>
                       <Inputbar
@@ -372,6 +400,29 @@ const WelcomeState = styled.div`
   align-items: center;
   justify-content: center;
   padding: 40px 26px 30px;
+  position: relative;
+`
+
+const WelcomeSidebarToggle = styled.button`
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--color-text-2);
+  cursor: pointer;
+
+  &:hover {
+    background: var(--color-background-mute);
+    color: var(--color-text);
+  }
 `
 
 const WelcomeInner = styled.div`

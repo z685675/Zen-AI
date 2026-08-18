@@ -20,6 +20,7 @@ import { isLocalAi } from '@renderer/config/env'
 import { SYSTEM_MODELS } from '@renderer/config/models'
 import { SYSTEM_PROVIDERS } from '@renderer/config/providers'
 import type { AwsBedrockAuthType, Model, Provider } from '@renderer/types'
+import type { ModelPolicySnapshot } from '@shared/config/modelPolicy'
 import { uniqBy } from 'lodash'
 
 type LlmSettings = {
@@ -57,6 +58,8 @@ export interface LlmState {
   providers: Provider[]
   defaultModel?: Model
   defaultModelPolicyVersion?: number
+  modelPolicy?: ModelPolicySnapshot
+  remoteModelPolicyVersion?: number
   /** @deprecated */
   topicNamingModel: Model
   quickModel?: Model
@@ -70,6 +73,7 @@ export const initialState: LlmState = {
   topicNamingModel: SYSTEM_MODELS.defaultModel[1],
   quickModel: undefined,
   translateModel: undefined,
+  modelPolicy: undefined,
   quickAssistantId: '',
   providers: SYSTEM_PROVIDERS,
   settings: {
@@ -207,6 +211,23 @@ const llmSlice = createSlice({
       state.translateModel = action.payload.model
       state.defaultModelPolicyVersion = action.payload.version
     },
+    setModelPolicy: (state, action: PayloadAction<ModelPolicySnapshot>) => {
+      state.modelPolicy = action.payload
+    },
+    applyRemoteModelPolicy: (
+      state,
+      action: PayloadAction<{
+        defaultModel?: Model
+        quickModel?: Model
+        translateModel?: Model
+        version: number
+      }>
+    ) => {
+      if (action.payload.defaultModel) state.defaultModel = action.payload.defaultModel
+      if (action.payload.quickModel) state.quickModel = action.payload.quickModel
+      if (action.payload.translateModel) state.translateModel = action.payload.translateModel
+      state.remoteModelPolicyVersion = action.payload.version
+    },
 
     setQuickAssistantId: (state, action: PayloadAction<string>) => {
       state.quickAssistantId = action.payload
@@ -294,6 +315,8 @@ export const {
   setQuickModel,
   setTranslateModel,
   applyDefaultModelPolicy,
+  setModelPolicy,
+  applyRemoteModelPolicy,
   setQuickAssistantId,
   setOllamaKeepAliveTime,
   setLMStudioKeepAliveTime,

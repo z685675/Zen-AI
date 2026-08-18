@@ -3,8 +3,9 @@ import ListItem from '@renderer/components/ListItem'
 import Scrollbar from '@renderer/components/Scrollbar'
 import {
   findAgentModelId,
-  isStandardAgentModel,
-  isStandardAgentModelIdentifier
+  getAgentModelProviderId,
+  isAssistantModelAllowed,
+  isAssistantModelIdentifierAllowed
 } from '@renderer/config/agentModelPolicy'
 import { useTheme } from '@renderer/context/ThemeProvider'
 import { useAgentClient } from '@renderer/hooks/agents/useAgentClient'
@@ -12,7 +13,7 @@ import { useChannels } from '@renderer/hooks/agents/useChannels'
 import { useApiModels } from '@renderer/hooks/agents/useModels'
 import { useTaskLogs } from '@renderer/hooks/agents/useTasks'
 import { useEnableDeveloperMode } from '@renderer/hooks/useSettings'
-import { useAppDispatch } from '@renderer/store'
+import { useAppDispatch, useAppSelector } from '@renderer/store'
 import { setActiveAgentId, setActiveSessionIdAction } from '@renderer/store/runtime'
 import type {
   ApiModel,
@@ -22,6 +23,7 @@ import type {
   UpdateTaskRequest
 } from '@renderer/types'
 import { formatErrorMessageWithPrefix } from '@renderer/utils/error'
+import type { ModelPolicy } from '@shared/config/modelPolicy'
 import {
   Alert,
   Button,
@@ -81,11 +83,12 @@ type TaskModelOption = { value: string; label: string; disabled?: boolean }
 const getTaskModelOptions = (
   models: ApiModel[],
   selectedModelId: string | undefined | null,
-  enableDeveloperMode: boolean
+  enableDeveloperMode: boolean,
+  policy?: ModelPolicy
 ): TaskModelOption[] => {
   const availableModels = models
     .filter(isTaskModel)
-    .filter((model) => enableDeveloperMode || isStandardAgentModel(model))
+    .filter((model) => isAssistantModelAllowed(model, enableDeveloperMode, policy))
   const options: TaskModelOption[] = availableModels.map((model) => ({
     value: model.id,
     label: getTaskModelLabel(model)
@@ -98,17 +101,37 @@ const getTaskModelOptions = (
       label: selectedModel ? getTaskModelLabel(selectedModel) : selectedModelId,
       // Keep an existing non-standard task visible without making it selectable
       // while developer mode is disabled.
-      disabled: !enableDeveloperMode
+      disabled: selectedModel ? !isAssistantModelAllowed(selectedModel, enableDeveloperMode, policy) : true
     })
   }
 
   return options
 }
 
-const getDefaultTaskModelId = (models: ApiModel[], fallbackModel: string | undefined, enableDeveloperMode: boolean) => {
-  if (enableDeveloperMode) return fallbackModel ?? ''
-  if (fallbackModel && isStandardAgentModelIdentifier(fallbackModel)) return fallbackModel
-  return findAgentModelId(models, 'gpt-5.6-luna') ?? models.find(isStandardAgentModel)?.id ?? ''
+const getDefaultTaskModelId = (
+  models: ApiModel[],
+  fallbackModel: string | undefined,
+  enableDeveloperMode: boolean,
+  policy?: ModelPolicy
+) => {
+  const preferredProviderId = getAgentModelProviderId(fallbackModel)
+  if (policy?.rules.applyToNewSessions !== false) {
+    const configuredDefault = policy?.defaults.assistantNewSession ?? 'gpt-5.6-luna'
+    const remoteDefault = findAgentModelId(models, configuredDefault, preferredProviderId)
+    if (remoteDefault && isAssistantModelIdentifierAllowed(remoteDefault, enableDeveloperMode, policy)) {
+      return remoteDefault
+    }
+  }
+  if (fallbackModel && isAssistantModelIdentifierAllowed(fallbackModel, enableDeveloperMode, policy)) {
+    return fallbackModel
+  }
+  return (
+    policy?.assistant.fallbackModels
+      .map((candidate) => findAgentModelId(models, candidate, preferredProviderId))
+      .find((candidate) => isAssistantModelIdentifierAllowed(candidate, enableDeveloperMode, policy)) ??
+    models.find((model) => isAssistantModelAllowed(model, enableDeveloperMode, policy))?.id ??
+    ''
+  )
 }
 
 const ScheduleTypeHelp: FC<{ type: 'cron' | 'interval' | 'once' }> = ({ type }) => {
@@ -339,8 +362,9 @@ const TaskModelSelector: FC<{
 }> = ({ models, value, fallbackModel, onChange, disabled }) => {
   const { t } = useTranslation()
   const { enableDeveloperMode } = useEnableDeveloperMode()
+  const modelPolicy = useAppSelector((state) => state.llm.modelPolicy)
   const selectedModelId = value ?? fallbackModel
-  const options = getTaskModelOptions(models, selectedModelId, enableDeveloperMode)
+  const options = getTaskModelOptions(models, selectedModelId, enableDeveloperMode, modelPolicy?.policy)
 
   return (
     <Select
@@ -1112,10 +1136,16 @@ const CreateForm: FC<{
   const { t } = useTranslation()
   const { theme } = useTheme()
   const { enableDeveloperMode } = useEnableDeveloperMode()
+  const modelPolicy = useAppSelector((state) => state.llm.modelPolicy)
 
   const [agentId, setAgentId] = useState<string | null>(agents.length === 1 ? agents[0].id : null)
   const [modelId, setModelId] = useState<string>(() =>
-    getDefaultTaskModelId(models, agents.length === 1 ? agents[0].model : undefined, enableDeveloperMode)
+    getDefaultTaskModelId(
+      models,
+      agents.length === 1 ? agents[0].model : undefined,
+      enableDeveloperMode,
+      modelPolicy?.policy
+    )
   )
   const [name, setName] = useState('')
   const [prompt, setPrompt] = useState('')
@@ -1129,11 +1159,14 @@ const CreateForm: FC<{
 
   useEffect(() => {
     const fallbackModel = agentId ? agents.find((agent) => agent.id === agentId)?.model : undefined
-    const nextModelId = getDefaultTaskModelId(models, fallbackModel, enableDeveloperMode)
-    if (nextModelId && (!modelId.trim() || (!enableDeveloperMode && !isStandardAgentModelIdentifier(modelId)))) {
+    const nextModelId = getDefaultTaskModelId(models, fallbackModel, enableDeveloperMode, modelPolicy?.policy)
+    if (
+      nextModelId &&
+      (!modelId.trim() || !isAssistantModelIdentifierAllowed(modelId, enableDeveloperMode, modelPolicy?.policy))
+    ) {
       setModelId(nextModelId)
     }
-  }, [agentId, agents, enableDeveloperMode, modelId, models])
+  }, [agentId, agents, enableDeveloperMode, modelId, modelPolicy?.policy, models])
 
   const handleCreate = useCallback(async () => {
     if (!agentId || !name.trim() || !prompt.trim() || !scheduleValue.trim()) return
@@ -1182,7 +1215,8 @@ const CreateForm: FC<{
                     getDefaultTaskModelId(
                       models,
                       agents.find((agent) => agent.id === value)?.model,
-                      enableDeveloperMode
+                      enableDeveloperMode,
+                      modelPolicy?.policy
                     )
                   )
                 }}

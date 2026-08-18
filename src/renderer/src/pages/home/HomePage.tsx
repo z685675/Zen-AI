@@ -77,6 +77,13 @@ const HomePage: FC = () => {
   const titleRepairAttemptsRef = useRef(new Set<string>())
   const creatingConversationRef = useRef(false)
   const [entryRestored, setEntryRestored] = useState(false)
+  const [isConversationHistoryCollapsed, setIsConversationHistoryCollapsed] = useState(false)
+
+  const isConversationHistoryVisible = showAssistants && !isConversationHistoryCollapsed
+  const showConversationHistory = useCallback(() => {
+    setShowAssistants(true)
+    setIsConversationHistoryCollapsed(false)
+  }, [setShowAssistants])
 
   _activeAssistant = activeAssistant
 
@@ -572,13 +579,14 @@ const HomePage: FC = () => {
   }, [state])
 
   useEffect(() => {
-    const canMinimize = topicPosition == 'left' ? !showAssistants : !showAssistants && !showTopics
+    const canMinimize =
+      topicPosition == 'left' ? !isConversationHistoryVisible : !isConversationHistoryVisible && !showTopics
     void window.api.window.setMinimumSize(canMinimize ? SECOND_MIN_WINDOW_WIDTH : MIN_WINDOW_WIDTH, MIN_WINDOW_HEIGHT)
 
     return () => {
       void window.api.window.resetMinimumSize()
     }
-  }, [showAssistants, showTopics, topicPosition])
+  }, [isConversationHistoryVisible, showTopics, topicPosition])
 
   return (
     <Container id="home-page">
@@ -593,11 +601,11 @@ const HomePage: FC = () => {
       )}
       <ContentContainer id={isLeftNavbar ? 'content-container' : undefined}>
         <AnimatePresence initial={false}>
-          {showAssistants && activeAssistant && activeTopic && (
+          {isConversationHistoryVisible && activeAssistant && activeTopic && (
             <ErrorBoundary>
               <motion.div
                 initial={{ width: 0, opacity: 0 }}
-                animate={{ width: 'var(--assistants-width)', opacity: 1 }}
+                animate={{ width: 'var(--conversation-history-width)', opacity: 1 }}
                 exit={{ width: 0, opacity: 0 }}
                 transition={{ duration: 0.3, ease: 'easeInOut' }}
                 style={{ overflow: 'hidden' }}>
@@ -607,6 +615,7 @@ const HomePage: FC = () => {
                   setActiveAssistant={setActiveAssistant}
                   setActiveTopic={setActiveTopic}
                   onCreateConversation={() => void createConversation()}
+                  onCollapseConversationHistory={() => setIsConversationHistoryCollapsed(true)}
                   position="left"
                   mode="conversations-only"
                   onOpenTopics={() =>
@@ -631,6 +640,8 @@ const HomePage: FC = () => {
               setActiveTopic={setActiveTopic}
               setActiveAssistant={bindAssistantToActiveTopic}
               onCreateConversation={createConversation}
+              isConversationHistoryVisible={isConversationHistoryVisible}
+              onShowConversationHistory={showConversationHistory}
             />
           )}
         </ErrorBoundary>

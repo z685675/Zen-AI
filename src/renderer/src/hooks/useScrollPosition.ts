@@ -1,5 +1,5 @@
 import { throttle } from 'lodash'
-import { useEffect, useMemo, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef } from 'react'
 
 import { useTimer } from './useTimer'
 
@@ -9,8 +9,9 @@ import { useTimer } from './useTimer'
  * @returns An object containing:
  *  - containerRef: React ref for the scrollable container
  *  - handleScroll: Throttled scroll event handler that saves scroll position
+ *  - restorePosition: Restores a saved position after content has been rendered
  */
-export default function useScrollPosition(key: string, throttleWait?: number, restorePosition = true) {
+export default function useScrollPosition(key: string, throttleWait?: number, shouldRestorePosition = true) {
   const containerRef = useRef<HTMLDivElement>(null)
   const scrollKey = useMemo(() => `scroll:${key}`, [key])
   const scrollKeyRef = useRef(scrollKey)
@@ -20,24 +21,44 @@ export default function useScrollPosition(key: string, throttleWait?: number, re
     scrollKeyRef.current = scrollKey
   }, [scrollKey])
 
-  const handleScroll = throttle(() => {
-    const position = containerRef.current?.scrollTop ?? 0
-    window.requestAnimationFrame(() => {
-      window.keyv.set(scrollKeyRef.current, position)
-    })
-  }, throttleWait ?? 100)
+  const handleScroll = useMemo(
+    () =>
+      throttle(() => {
+        const position = containerRef.current?.scrollTop ?? 0
+        window.requestAnimationFrame(() => {
+          window.keyv.set(scrollKeyRef.current, position)
+        })
+      }, throttleWait ?? 100),
+    [throttleWait]
+  )
+
+  const getStoredPosition = useCallback(() => {
+    const rawPosition = window.keyv.get(scrollKeyRef.current)
+    const position = typeof rawPosition === 'number' ? rawPosition : Number(rawPosition)
+
+    return Number.isFinite(position) ? position : null
+  }, [])
+
+  const restorePosition = useCallback(
+    (positionOverride?: number) => {
+      const position = positionOverride ?? getStoredPosition()
+      if (position === null || position === undefined) return
+
+      containerRef.current?.scrollTo({ top: position })
+    },
+    [getStoredPosition]
+  )
 
   useEffect(() => {
-    if (!restorePosition) return
+    if (!shouldRestorePosition) return
 
-    const scroll = () => containerRef.current?.scrollTo({ top: window.keyv.get(scrollKey) || 0 })
-    scroll()
-    setTimeoutTimer('scrollEffect', scroll, 50)
-  }, [restorePosition, scrollKey, setTimeoutTimer])
+    restorePosition()
+    setTimeoutTimer('scrollEffect', () => restorePosition(), 50)
+  }, [restorePosition, scrollKey, setTimeoutTimer, shouldRestorePosition])
 
   useEffect(() => {
     return () => handleScroll.cancel()
   }, [handleScroll])
 
-  return { containerRef, handleScroll }
+  return { containerRef, handleScroll, getStoredPosition, restorePosition }
 }
