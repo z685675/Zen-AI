@@ -8,7 +8,6 @@ import {
   isAssistantModelIdentifierAllowed,
   isAssistantModelIdentifierBlocked
 } from '@renderer/config/agentModelPolicy'
-import { CURRENT_DEFAULT_MODEL_ID } from '@renderer/config/defaultModelPolicy'
 import { useActiveAgent } from '@renderer/hooks/agents/useActiveAgent'
 import { useAgentClient } from '@renderer/hooks/agents/useAgentClient'
 import { useAgents } from '@renderer/hooks/agents/useAgents'
@@ -289,11 +288,14 @@ const AgentChat = () => {
     const repairLegacyModel = async () => {
       try {
         const { data } = await client.getModels({ limit: 1000 })
+        const configuredDefault =
+          modelPolicy?.policy.rules.applyToNewSessions === false
+            ? undefined
+            : modelPolicy?.policy.defaults.assistantNewSession
+        if (!configuredDefault) return
         const currentDefaultModel = findAgentModelId(
           data,
-          modelPolicy?.policy.rules.applyToNewSessions === false
-            ? CURRENT_DEFAULT_MODEL_ID
-            : (modelPolicy?.policy.defaults.assistantNewSession ?? CURRENT_DEFAULT_MODEL_ID),
+          configuredDefault,
           getAgentModelProviderId(activeSession.model)
         )
         if (currentDefaultModel) {
@@ -345,8 +347,7 @@ const AgentChat = () => {
           ...modelPolicy.policy.assistant.fallbackModels,
           ...(modelPolicy.policy.rules.applyToNewSessions === false
             ? []
-            : [modelPolicy.policy.defaults.assistantNewSession]),
-          CURRENT_DEFAULT_MODEL_ID
+            : [modelPolicy.policy.defaults.assistantNewSession])
         ]
         const fallbackModel = fallbackCandidates
           .map((candidate) => findAgentModelId(data, candidate, getAgentModelProviderId(activeSession.model)))

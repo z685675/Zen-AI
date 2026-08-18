@@ -1,6 +1,7 @@
 import { DEFAULT_SESSION_PAGE_SIZE } from '@renderer/api/agent'
 import { Navbar, NavbarCenter } from '@renderer/components/app/Navbar'
 import { ErrorBoundary } from '@renderer/components/ErrorBoundary'
+import ModelSetupGuide from '@renderer/components/ModelSetupGuide'
 import { useActiveAgent } from '@renderer/hooks/agents/useActiveAgent'
 import { useAgentClient } from '@renderer/hooks/agents/useAgentClient'
 import { useAgents } from '@renderer/hooks/agents/useAgents'
@@ -11,7 +12,7 @@ import { useShortcut } from '@renderer/hooks/useShortcuts'
 import { useShowAssistants } from '@renderer/hooks/useStore'
 import { CacheService } from '@renderer/services/CacheService'
 import { DbService } from '@renderer/services/db/DbService'
-import store, { useAppDispatch } from '@renderer/store'
+import store, { useAppDispatch, useAppSelector } from '@renderer/store'
 import { selectMessagesForTopic } from '@renderer/store/newMessage'
 import { setActiveAgentId as setActiveAgentIdAction, setActiveSessionIdAction } from '@renderer/store/runtime'
 import { cn } from '@renderer/utils'
@@ -19,6 +20,7 @@ import { buildAgentSessionTopicId } from '@renderer/utils/agentSession'
 import { getAgentSessionDraftCacheKey } from '@renderer/utils/agentSessionDraft'
 import { isUnnamedAgentSessionName } from '@renderer/utils/agentSessionTitle'
 import { hasUnsentConversationDraft } from '@renderer/utils/conversationDraft'
+import { getAvailableChatModels } from '@renderer/utils/modelAvailability'
 import { getPreferredAgentId } from '@shared/config/agents'
 import { MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH, SECOND_MIN_WINDOW_WIDTH } from '@shared/config/constant'
 import { AnimatePresence, motion } from 'motion/react'
@@ -45,6 +47,8 @@ const AgentPage = () => {
   const { apiServerConfig, apiServerRunning, apiServerLoading } = useApiServer()
   const { t } = useTranslation()
   const [entrySessionRestored, setEntrySessionRestored] = useState(false)
+  const providers = useAppSelector((state) => state.llm.providers)
+  const hasAvailableModels = getAvailableChatModels(providers).length > 0
 
   useShortcut('toggle_show_assistants', () => {
     toggleShowAssistants()
@@ -164,6 +168,17 @@ const AgentPage = () => {
           <NavbarCenter style={{ borderRight: 'none' }}>{t('common.agent_one')}</NavbarCenter>
         </Navbar>
         <AgentServerStopped />
+      </Container>
+    )
+  }
+
+  if (!hasAvailableModels) {
+    return (
+      <Container>
+        <Navbar>
+          <NavbarCenter style={{ borderRight: 'none' }}>{t('common.agent_one')}</NavbarCenter>
+        </Navbar>
+        <ModelSetupGuide />
       </Container>
     )
   }

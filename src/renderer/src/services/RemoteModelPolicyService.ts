@@ -1,5 +1,4 @@
 import { loggerService } from '@logger'
-import { CURRENT_DEFAULT_MODEL_ID } from '@renderer/config/defaultModelPolicy'
 import { resolveRemoteDefaultModel } from '@renderer/config/remoteModelPolicy'
 import store, { type RootState } from '@renderer/store'
 import { applyRemoteModelPolicy, setModelPolicy } from '@renderer/store/llm'
@@ -15,6 +14,8 @@ let started = false
 let lastRefreshAt = 0
 let pendingSnapshot: ModelPolicySnapshot | null = null
 let isApplying = false
+let pendingProviderReconcile = false
+let observedProviders = store.getState().llm.providers
 
 const hasActiveWork = (state: RootState): boolean =>
   state.runtime.generating ||
@@ -46,20 +47,11 @@ const canReplaceDefault = (
   if (overwriteUserChoice) return true
   if (!current) return true
   const currentId = getLowerBaseModelName(current.id.trim())
-  if (currentId === CURRENT_DEFAULT_MODEL_ID) return true
   return Boolean(previousTarget && currentId === getLowerBaseModelName(previousTarget.trim()))
 }
 
-const applyRemoteDefaults = (state: RootState, snapshot: ModelPolicySnapshot): boolean => {
-  if (
-    state.llm.remoteModelPolicyVersion &&
-    state.llm.remoteModelPolicyVersion >= snapshot.version &&
-    state.llm.modelPolicy?.version &&
-    state.llm.modelPolicy.version >= snapshot.version
-  ) {
-    return true
-  }
-
+const applyRemoteDefaults = (state: RootState, snapshot: ModelPolicySnapshot): void => {
+  if (snapshot.source === 'builtin') return
   const previous = state.llm.modelPolicy?.policy
   const policy = snapshot.policy
   const defaultModel = resolveRemoteDefaultModel(state.llm.providers, policy.defaults.chat, state.llm.defaultModel)
@@ -70,49 +62,70 @@ const applyRemoteDefaults = (state: RootState, snapshot: ModelPolicySnapshot): b
     state.llm.translateModel
   )
 
-  store.dispatch(
-    applyRemoteModelPolicy({
-      defaultModel:
-        defaultModel &&
-        canReplaceDefault(state.llm.defaultModel, previous?.defaults.chat, policy.rules.overwriteUserChoice)
-          ? defaultModel
-          : undefined,
-      quickModel:
-        quickModel &&
-        canReplaceDefault(state.llm.quickModel, previous?.defaults.quick, policy.rules.overwriteUserChoice)
-          ? quickModel
-          : undefined,
-      translateModel:
-        translateModel &&
-        canReplaceDefault(state.llm.translateModel, previous?.defaults.translate, policy.rules.overwriteUserChoice)
-          ? translateModel
-          : undefined,
-      version: snapshot.version
-    })
-  )
-  return true
+  const nextDefaultModel =
+    defaultModel && canReplaceDefault(state.llm.defaultModel, previous?.defaults.chat, policy.rules.overwriteUserChoice)
+      ? defaultModel
+      : undefined
+  const nextQuickModel =
+    quickModel && canReplaceDefault(state.llm.quickModel, previous?.defaults.quick, policy.rules.overwriteUserChoice)
+      ? quickModel
+      : undefined
+  const nextTranslateModel =
+    translateModel &&
+    canReplaceDefault(state.llm.translateModel, previous?.defaults.translate, policy.rules.overwriteUserChoice)
+      ? translateModel
+      : undefined
+
+  const isDifferentModel = (current: Model | undefined, next: Model | undefined) =>
+    Boolean(next && (current?.id !== next.id || current.provider !== next.provider))
+
+  if (
+    state.llm.remoteModelPolicyVersion !== snapshot.version ||
+    isDifferentModel(state.llm.defaultModel, nextDefaultModel) ||
+    isDifferentModel(state.llm.quickModel, nextQuickModel) ||
+    isDifferentModel(state.llm.translateModel, nextTranslateModel)
+  ) {
+    store.dispatch(
+      applyRemoteModelPolicy({
+        defaultModel: nextDefaultModel,
+        quickModel: nextQuickModel,
+        translateModel: nextTranslateModel,
+        version: snapshot.version
+      })
+    )
+  }
 }
 
 const tryApplyPendingPolicy = (): void => {
   if (!pendingSnapshot || isApplying || hasActiveWork(store.getState())) return
 
   const snapshot = pendingSnapshot
-  const state = store.getState()
-  if (
-    state.llm.remoteModelPolicyVersion &&
-    state.llm.remoteModelPolicyVersion >= snapshot.version &&
-    state.llm.modelPolicy?.version &&
-    state.llm.modelPolicy.version >= snapshot.version
-  ) {
+  isApplying = true
+  try {
+    applyRemoteDefaults(store.getState(), snapshot)
+    store.dispatch(setModelPolicy(snapshot))
     pendingSnapshot = null
+  } finally {
+    isApplying = false
+  }
+}
+
+export const reconcileRemoteModelPolicyDefaults = (): void => {
+  if (isApplying || hasActiveWork(store.getState())) {
+    pendingProviderReconcile = true
+    return
+  }
+
+  const snapshot = store.getState().llm.modelPolicy
+  if (!snapshot || snapshot.source === 'builtin') {
+    pendingProviderReconcile = false
     return
   }
 
   isApplying = true
   try {
-    if (!applyRemoteDefaults(state, snapshot)) return
-    store.dispatch(setModelPolicy(snapshot))
-    pendingSnapshot = null
+    applyRemoteDefaults(store.getState(), snapshot)
+    pendingProviderReconcile = false
   } finally {
     isApplying = false
   }
@@ -122,7 +135,20 @@ export const startRemoteModelPolicySync = (): void => {
   if (started) return
   started = true
 
-  const unsubscribeStore = store.subscribe(tryApplyPendingPolicy)
+  observedProviders = store.getState().llm.providers
+  const unsubscribeStore = store.subscribe(() => {
+    tryApplyPendingPolicy()
+
+    const providers = store.getState().llm.providers
+    if (providers !== observedProviders) {
+      observedProviders = providers
+      pendingProviderReconcile = true
+    }
+
+    if (pendingProviderReconcile && !hasActiveWork(store.getState())) {
+      reconcileRemoteModelPolicyDefaults()
+    }
+  })
   void refresh()
 
   const interval = window.setInterval(() => void refresh(), POLL_INTERVAL)
@@ -138,6 +164,7 @@ export const startRemoteModelPolicySync = (): void => {
     document.removeEventListener('visibilitychange', onVisibilityChange)
     unsubscribeStore()
     pendingSnapshot = null
+    pendingProviderReconcile = false
     started = false
   })
 }

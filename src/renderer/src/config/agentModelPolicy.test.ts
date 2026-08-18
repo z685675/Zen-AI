@@ -67,7 +67,7 @@ describe('agent model selection policy', () => {
     ).toBe(true)
   })
 
-  it('recognizes provider-prefixed and namespaced model identifiers', () => {
+  it('does not embed a standard model allowlist in the desktop client', () => {
     expect(
       isStandardAgentModel(
         createApiModel({
@@ -76,7 +76,7 @@ describe('agent model selection policy', () => {
           provider_model_id: 'google/gemini-3-flash-preview'
         })
       )
-    ).toBe(true)
+    ).toBe(false)
   })
 
   it('rejects models outside the standard selection list', () => {
@@ -134,12 +134,12 @@ describe('agent model selection policy', () => {
     expect(findAgentModelId([local, official], 'local:gpt-5.6-luna')).toBe('local:gpt-5.6-luna')
   })
 
-  it('recognizes current and stale provider-prefixed model identifiers', () => {
+  it('normalizes provider-prefixed identifiers without implicitly allowing them', () => {
     expect(normalizeAgentModelIdentifier('provider-id:openai/gpt-5.4-mini')).toBe('gpt-5.4-mini')
     expect(isStandardAgentModelIdentifier('provider-id:openai/gpt-5.4-mini')).toBe(false)
     expect(isStandardAgentModelIdentifier('provider-id:claude-opus-4-6')).toBe(false)
-    expect(isStandardAgentModelIdentifier('provider-id:gpt-5.6-luna')).toBe(true)
-    expect(isStandardAgentModelIdentifier('provider-id:grok-4.5')).toBe(true)
+    expect(isStandardAgentModelIdentifier('provider-id:gpt-5.6-luna')).toBe(false)
+    expect(isStandardAgentModelIdentifier('provider-id:grok-4.5')).toBe(false)
   })
 
   it('uses the remote allowlists and gives blocked models priority', () => {
@@ -162,7 +162,7 @@ describe('agent model selection policy', () => {
     expect(isAssistantModelIdentifierAllowed('provider-id:gpt-5.4-mini', true, policy)).toBe(false)
   })
 
-  it('does not treat an empty developer allowlist as an implicit bypass when disabled', () => {
+  it('treats an empty developer allowlist as unrestricted except for blocked models', () => {
     const policy = createPolicy({ developerAllowlist: [] }, { developerModeBypassAllowlist: false })
     const unrestrictedModel = createApiModel({
       id: 'provider-id:claude-opus-4-6',
@@ -170,6 +170,6 @@ describe('agent model selection policy', () => {
       provider_model_id: 'claude-opus-4-6'
     })
 
-    expect(isAssistantModelAllowed(unrestrictedModel, true, policy)).toBe(false)
+    expect(isAssistantModelAllowed(unrestrictedModel, true, policy)).toBe(true)
   })
 })

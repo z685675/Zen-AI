@@ -228,6 +228,21 @@ const InputbarInner: FC<InputbarInnerProps> = ({
   const availableModels = useAppSelector((state) =>
     state.llm.providers.filter((provider) => provider.enabled).flatMap((provider) => provider.models ?? [])
   )
+  const currentModelAvailable = Boolean(
+    model &&
+      availableModels.some(
+        (candidate) => candidate.id === model.id && candidate.provider === model.provider && chatModelFilter(candidate)
+      )
+  )
+  const mentionedModelsAvailable =
+    mentionedModels.length > 0 &&
+    mentionedModels.every((mentioned) =>
+      availableModels.some(
+        (candidate) =>
+          candidate.id === mentioned.id && candidate.provider === mentioned.provider && chatModelFilter(candidate)
+      )
+    )
+  const modelSelectionUnavailable = mentionedModels.length > 0 ? !mentionedModelsAvailable : !currentModelAvailable
   const dispatch = useAppDispatch()
   const isVisionAssistant = useMemo(() => isVisionModel(model), [model])
   const { setTimeoutTimer } = useTimer()
@@ -304,8 +319,8 @@ const InputbarInner: FC<InputbarInnerProps> = ({
       return
     }
 
-    if (!model && mentionedModels.length === 0) {
-      window.toast.warning(t('agent.empty.description'))
+    if (modelSelectionUnavailable) {
+      window.toast.warning(t('model_setup.no_matching_model'))
       return
     }
 
@@ -401,11 +416,17 @@ const InputbarInner: FC<InputbarInnerProps> = ({
     model,
     modelPolicy,
     availableModels,
+    modelSelectionUnavailable,
     updateConversationTopic
   ])
 
   const tokenCountProps = useMemo(() => {
-    if (!config.showTokenCount || estimateTokenCount === undefined || !showInputEstimatedTokens) {
+    if (
+      !currentModelAvailable ||
+      !config.showTokenCount ||
+      estimateTokenCount === undefined ||
+      !showInputEstimatedTokens
+    ) {
       return undefined
     }
 
@@ -416,7 +437,15 @@ const InputbarInner: FC<InputbarInnerProps> = ({
       cacheStats,
       model
     }
-  }, [cacheStats, config.showTokenCount, contextCount, estimateTokenCount, model, showInputEstimatedTokens])
+  }, [
+    cacheStats,
+    config.showTokenCount,
+    contextCount,
+    currentModelAvailable,
+    estimateTokenCount,
+    model,
+    showInputEstimatedTokens
+  ])
 
   const onPause = useCallback(async () => {
     await pauseMessages()
@@ -568,34 +597,35 @@ const InputbarInner: FC<InputbarInnerProps> = ({
   )
 
   // leftToolbar: 左侧工具栏
-  const leftToolbar = config.showTools ? (
-    <InputbarTools
-      scope={scope}
-      assistant={assistant}
-      model={model}
-      topic={topic}
-      onTopicChange={updateConversationTopic}
-      toolOrderOverride={
-        isHero
-          ? {
-              visible: [
-                'attachment',
-                'thinking',
-                'web_search',
-                'url_context',
-                'knowledge_base',
-                'mcp_tools',
-                'generate_image'
-              ],
-              hidden: ['new_topic', 'quick_phrases', 'clear_topic', 'toggle_expand', 'new_context']
-            }
-          : {
-              visible: [],
-              hidden: ['new_topic']
-            }
-      }
-    />
-  ) : null
+  const leftToolbar =
+    config.showTools && currentModelAvailable ? (
+      <InputbarTools
+        scope={scope}
+        assistant={assistant}
+        model={model}
+        topic={topic}
+        onTopicChange={updateConversationTopic}
+        toolOrderOverride={
+          isHero
+            ? {
+                visible: [
+                  'attachment',
+                  'thinking',
+                  'web_search',
+                  'url_context',
+                  'knowledge_base',
+                  'mcp_tools',
+                  'generate_image'
+                ],
+                hidden: ['new_topic', 'quick_phrases', 'clear_topic', 'toggle_expand', 'new_context']
+              }
+            : {
+                visible: [],
+                hidden: ['new_topic']
+              }
+        }
+      />
+    ) : null
 
   // rightToolbar: 右侧工具栏
   const rightToolbar = isHero ? null : (
@@ -641,6 +671,7 @@ const InputbarInner: FC<InputbarInnerProps> = ({
       }
       forceEnableQuickPanelTriggers={!isHero}
       minimal={isHero}
+      sendDisabled={modelSelectionUnavailable}
     />
   )
 }

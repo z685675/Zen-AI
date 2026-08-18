@@ -2817,6 +2817,13 @@
       "pin": "視窗置頂"
     }
   },
+  "model_setup": {
+    "description": "Zen AI 尚未發現可用模型。請先匯入 Provider 設定，或前往模型設定完成配置。",
+    "import": "匯入 Provider 設定",
+    "no_matching_model": "目前 Provider 中沒有遠端設定指定的可用模型，請匯入設定或手動選擇模型。",
+    "open_settings": "前往模型設定",
+    "title": "尚未設定可用模型"
+  },
   "models": {
     "add_parameter": "新增參數",
     "all": "全部",

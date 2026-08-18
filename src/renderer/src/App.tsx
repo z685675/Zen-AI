@@ -2,7 +2,6 @@ import '@renderer/databases'
 
 import { loggerService } from '@logger'
 import { runStartupAssistantEnvironmentPreflight } from '@renderer/services/AssistantEnvironmentService'
-import { startDefaultModelPolicyReconciler } from '@renderer/services/DefaultModelPolicyService'
 import { startProviderModelSyncScheduler } from '@renderer/services/ProviderModelSyncService'
 import { startRemoteModelPolicySync } from '@renderer/services/RemoteModelPolicyService'
 import store, { persistor } from '@renderer/store'
@@ -38,7 +37,6 @@ function App(): React.ReactElement {
 
   useEffect(() => {
     void runStartupAssistantEnvironmentPreflight()
-    startDefaultModelPolicyReconciler()
     startProviderModelSyncScheduler()
     startRemoteModelPolicySync()
   }, [])

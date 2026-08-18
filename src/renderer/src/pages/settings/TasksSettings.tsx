@@ -116,8 +116,10 @@ const getDefaultTaskModelId = (
 ) => {
   const preferredProviderId = getAgentModelProviderId(fallbackModel)
   if (policy?.rules.applyToNewSessions !== false) {
-    const configuredDefault = policy?.defaults.assistantNewSession ?? 'gpt-5.6-luna'
-    const remoteDefault = findAgentModelId(models, configuredDefault, preferredProviderId)
+    const configuredDefault = policy?.defaults.assistantNewSession
+    const remoteDefault = configuredDefault
+      ? findAgentModelId(models, configuredDefault, preferredProviderId)
+      : undefined
     if (remoteDefault && isAssistantModelIdentifierAllowed(remoteDefault, enableDeveloperMode, policy)) {
       return remoteDefault
     }
@@ -128,9 +130,7 @@ const getDefaultTaskModelId = (
   return (
     policy?.assistant.fallbackModels
       .map((candidate) => findAgentModelId(models, candidate, preferredProviderId))
-      .find((candidate) => isAssistantModelIdentifierAllowed(candidate, enableDeveloperMode, policy)) ??
-    models.find((model) => isAssistantModelAllowed(model, enableDeveloperMode, policy))?.id ??
-    ''
+      .find((candidate) => isAssistantModelIdentifierAllowed(candidate, enableDeveloperMode, policy)) ?? ''
   )
 }
 
@@ -1549,10 +1549,19 @@ const TasksSettings: FC<TasksSettingsProps> = ({ embedded = false, onNavigateToS
               type="text"
               size="small"
               icon={<PlusOutlined />}
-              disabled={agents.length === 0}
+              disabled={agents.length === 0 || models.length === 0}
               onClick={handleStartCreate}
             />
           </div>
+          {models.length === 0 && (
+            <Alert
+              type="warning"
+              showIcon
+              message={t('model_setup.title')}
+              description={t('model_setup.description')}
+              className="mb-2"
+            />
+          )}
           <div className="flex flex-col gap-1">
             {tasks.length === 0 && !creating ? (
               <Empty

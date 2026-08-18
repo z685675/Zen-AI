@@ -1,9 +1,17 @@
 import type { ApiModel } from '@types'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+const remotePolicyRefreshMock = vi.hoisted(() => vi.fn())
+
 vi.mock('@main/apiServer/services/models', () => ({
   modelsService: {
     getModels: vi.fn()
+  }
+}))
+
+vi.mock('@main/services/RemoteModelPolicyService', () => ({
+  remoteModelPolicyService: {
+    refresh: remotePolicyRefreshMock
   }
 }))
 
@@ -27,6 +35,38 @@ import { AgentService } from '../AgentService'
 
 const getModelsMock = vi.mocked(modelsService.getModels)
 
+const setRemoteTarget = (target?: string) => {
+  remotePolicyRefreshMock.mockResolvedValue({
+    version: target ? 2 : 0,
+    fetchedAt: '2026-08-19T00:00:00.000Z',
+    appliedAt: '2026-08-19T00:00:00.000Z',
+    source: target ? 'remote' : 'builtin',
+    policy: {
+      schemaVersion: 1,
+      version: target ? 2 : 0,
+      defaults: {
+        chat: target ?? '',
+        quick: target ?? '',
+        translate: target ?? '',
+        assistant: target ?? '',
+        assistantNewSession: target ?? ''
+      },
+      assistant: {
+        nonDeveloperAllowlist: [],
+        developerAllowlist: [],
+        blockedModels: [],
+        fallbackModels: []
+      },
+      rules: {
+        applyToNewSessions: true,
+        overwriteUserChoice: false,
+        preserveExistingSessions: true,
+        developerModeBypassAllowlist: true
+      }
+    }
+  })
+}
+
 function makeModel(overrides: Partial<ApiModel> & Pick<ApiModel, 'id'>): ApiModel {
   return {
     object: 'model',
@@ -40,9 +80,28 @@ function makeModel(overrides: Partial<ApiModel> & Pick<ApiModel, 'id'>): ApiMode
 describe('AgentService built-in model resolution', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    setRemoteTarget()
   })
 
-  it('selects an available text model without binding it to a persisted runtime', async () => {
+  it('returns null when no remote assistant default is configured', async () => {
+    getModelsMock.mockResolvedValueOnce({
+      object: 'list',
+      data: [
+        makeModel({
+          id: 'gateway:claude-opus-4-6',
+          provider: 'gateway',
+          provider_model_id: 'claude-opus-4-6'
+        })
+      ]
+    })
+
+    const service = new AgentService()
+
+    await expect(service.getPreferredBuiltinRuntimeModel()).resolves.toBeNull()
+  })
+
+  it('selects the remotely configured text model without binding a runtime', async () => {
+    setRemoteTarget('claude-sonnet-4')
     getModelsMock.mockResolvedValueOnce({
       object: 'list',
       data: [
@@ -65,6 +124,7 @@ describe('AgentService built-in model resolution', () => {
   })
 
   it('keeps OpenAI-type Claude models available to the built-in Auto agent', async () => {
+    setRemoteTarget('claude-opus-4-6')
     getModelsMock.mockResolvedValueOnce({
       object: 'list',
       data: [
@@ -87,6 +147,7 @@ describe('AgentService built-in model resolution', () => {
   })
 
   it('prefers a configured GPT model while excluding non-text models', async () => {
+    setRemoteTarget('gpt-5-mini')
     getModelsMock.mockResolvedValueOnce({
       object: 'list',
       data: [
@@ -116,7 +177,8 @@ describe('AgentService built-in model resolution', () => {
     expect(getModelsMock).toHaveBeenCalledTimes(1)
   })
 
-  it('prefers gpt-5.6-luna over the previous gpt-5.4-mini default', async () => {
+  it('uses the remote target instead of a bundled model preference', async () => {
+    setRemoteTarget('gpt-5.6-luna')
     getModelsMock.mockResolvedValueOnce({
       object: 'list',
       data: [
@@ -143,6 +205,7 @@ describe('AgentService built-in model resolution', () => {
   })
 
   it('returns null when there are no available text models', async () => {
+    setRemoteTarget('gpt-5.6-luna')
     getModelsMock.mockResolvedValueOnce({
       object: 'list',
       data: []
@@ -156,6 +219,7 @@ describe('AgentService built-in model resolution', () => {
   })
 
   it('uses model preference rather than provider runtime metadata for mixed gateways', async () => {
+    setRemoteTarget('gpt-5-mini')
     getModelsMock.mockResolvedValueOnce({
       object: 'list',
       data: [
@@ -246,7 +310,7 @@ describe('AgentService built-in model resolution', () => {
     expect(JSON.parse(insertedAgent.configuration)).not.toHaveProperty('agent_runtime')
   })
 
-  it('does not rewrite an existing built-in agent when the new default model is unavailable', async () => {
+  it('does not rewrite an existing built-in agent during startup', async () => {
     const service = new AgentService() as AgentService & {
       getDatabase: ReturnType<typeof vi.fn>
       getPreferredBuiltinRuntimeModel: ReturnType<typeof vi.fn>
@@ -295,11 +359,11 @@ describe('AgentService built-in model resolution', () => {
     })
 
     expect(result).toBe('builtin-fusion')
-    expect(service.getPreferredBuiltinRuntimeModel).toHaveBeenCalledTimes(1)
+    expect(service.getPreferredBuiltinRuntimeModel).not.toHaveBeenCalled()
     expect(database.update).not.toHaveBeenCalled()
   })
 
-  it('migrates the legacy model selection into the new-session default only once', async () => {
+  it('does not migrate an existing built-in model to a bundled default', async () => {
     const service = new AgentService() as AgentService & {
       getDatabase: ReturnType<typeof vi.fn>
       getPreferredBuiltinRuntimeModel: ReturnType<typeof vi.fn>
@@ -354,13 +418,13 @@ describe('AgentService built-in model resolution', () => {
     })
 
     expect(result).toBe('builtin-fusion')
-    expect(updatedAgent.model).toBe('zen:gpt-5.6-luna')
+    expect(updatedAgent).not.toHaveProperty('model')
     expect(JSON.parse(updatedAgent.configuration)).toMatchObject({
       builtin_default_model_policy: 'gpt-5.6-luna',
-      builtin_new_session_model_policy: 'gpt-5.6-luna',
       builtin_role: 'fusion',
       permission_mode: 'bypassPermissions'
     })
+    expect(JSON.parse(updatedAgent.configuration)).not.toHaveProperty('builtin_new_session_model_policy')
     expect(JSON.parse(updatedAgent.configuration)).not.toHaveProperty('agent_runtime')
   })
 

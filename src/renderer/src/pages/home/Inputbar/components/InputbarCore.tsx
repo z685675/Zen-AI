@@ -74,6 +74,7 @@ export interface InputbarCoreProps {
   forceEnableQuickPanelTriggers?: boolean
   minimal?: boolean
   layoutMaxWidth?: string
+  sendDisabled?: boolean
 }
 
 /**
@@ -120,7 +121,8 @@ export const InputbarCore: FC<InputbarCoreProps> = ({
   pinnedContent,
   forceEnableQuickPanelTriggers,
   minimal = false,
-  layoutMaxWidth
+  layoutMaxWidth,
+  sendDisabled = false
 }) => {
   const config = useMemo(() => getInputbarConfig(scope), [scope])
   const { files, isExpanded } = useInputbarToolsState()
@@ -188,7 +190,7 @@ export const InputbarCore: FC<InputbarCoreProps> = ({
   // 判断是否有内容：文本不为空或有文件
   const noContent = isEmpty && files.length === 0
   // 发送入口统一禁用条件：空内容、正在生成、全局搜索态
-  const isSendDisabled = noContent || isLoading || searching
+  const isSendDisabled = noContent || isLoading || searching || sendDisabled
 
   useEffect(() => {
     setExtensions(supportedExts)

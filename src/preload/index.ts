@@ -392,6 +392,9 @@ const api = {
     get: (): Promise<ModelPolicySnapshot> => ipcRenderer.invoke(IpcChannel.ModelPolicy_Get),
     refresh: (): Promise<ModelPolicySnapshot> => ipcRenderer.invoke(IpcChannel.ModelPolicy_Refresh)
   },
+  agentLifecycle: {
+    bootstrapBuiltins: (): Promise<void> => ipcRenderer.invoke(IpcChannel.Agent_BootstrapBuiltins)
+  },
   miniWindow: {
     show: () => ipcRenderer.invoke(IpcChannel.MiniWindow_Show),
     hide: () => ipcRenderer.invoke(IpcChannel.MiniWindow_Hide),

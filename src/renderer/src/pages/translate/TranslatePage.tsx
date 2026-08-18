@@ -4,6 +4,7 @@ import { Navbar, NavbarCenter } from '@renderer/components/app/Navbar'
 import { CopyIcon } from '@renderer/components/Icons'
 import LanguageSelect from '@renderer/components/LanguageSelect'
 import ModelSelectButton from '@renderer/components/ModelSelectButton'
+import ModelSetupGuide from '@renderer/components/ModelSetupGuide'
 import { isEmbeddingModel, isRerankModel, isTextToImageModel } from '@renderer/config/models'
 import { LanguagesEnum, UNKNOWN } from '@renderer/config/translate'
 import { useCodeStyle } from '@renderer/context/CodeStyleProvider'
@@ -222,26 +223,16 @@ const TranslatePage: FC = () => {
   )
 
   const activeTranslateModel = useMemo(() => {
-    if (!translateModel) {
-      return availableTranslateModels[0]
-    }
+    if (!translateModel) return undefined
 
-    return (
-      availableTranslateModels.find(
-        (model) => model.id === translateModel.id && model.provider === translateModel.provider
-      ) || availableTranslateModels[0]
+    return availableTranslateModels.find(
+      (model) => model.id === translateModel.id && model.provider === translateModel.provider
     )
   }, [availableTranslateModels, translateModel])
 
   useEffect(() => {
-    if (
-      activeTranslateModel &&
-      (!translateModel ||
-        translateModel.id !== activeTranslateModel.id ||
-        translateModel.provider !== activeTranslateModel.provider)
-    ) {
-      setTranslateModel(activeTranslateModel)
-      void db.settings.put({ id: 'translate:model', value: activeTranslateModel.id })
+    if (translateModel && !activeTranslateModel) {
+      setTranslateModel(undefined)
     }
   }, [activeTranslateModel, setTranslateModel, translateModel])
 
@@ -253,9 +244,18 @@ const TranslatePage: FC = () => {
       targetLanguage.langCode === UNKNOWN.langCode ||
       (isBidirectional &&
         (bidirectionalPair[0].langCode === UNKNOWN.langCode || bidirectionalPair[1].langCode === UNKNOWN.langCode)) ||
-      isProcessing
+      isProcessing ||
+      !activeTranslateModel
     )
-  }, [bidirectionalPair, isBidirectional, isProcessing, sourceLanguage, targetLanguage.langCode, text])
+  }, [
+    activeTranslateModel,
+    bidirectionalPair,
+    isBidirectional,
+    isProcessing,
+    sourceLanguage,
+    targetLanguage.langCode,
+    text
+  ])
 
   // 控制翻译按钮，翻译前进行校验
   const onTranslate = useCallback(async () => {
@@ -735,6 +735,19 @@ const TranslatePage: FC = () => {
     },
     [getSingleFile, isProcessing, processFile, t]
   )
+  if (availableTranslateModels.length === 0) {
+    return (
+      <Container id="translate-page">
+        <Navbar>
+          <NavbarCenter style={{ borderRight: 'none', gap: 10 }}>{t('translate.title')}</NavbarCenter>
+        </Navbar>
+        <div id="content-container" className="h-[calc(100vh-var(--navbar-height))]">
+          <ModelSetupGuide />
+        </div>
+      </Container>
+    )
+  }
+
   return (
     <Container
       id="translate-page"

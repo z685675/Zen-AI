@@ -40,6 +40,7 @@ import { BrowserWindow, dialog, ipcMain, session, shell, systemPreferences, webC
 import fontList from 'font-list'
 
 import { agentMessageRepository } from './services/agents/database'
+import { bootstrapBuiltinAgents } from './services/agents/services/builtin/BuiltinAgentBootstrap'
 import { skillService } from './services/agents/skills/SkillService'
 import { analyticsService } from './services/AnalyticsService'
 import { apiServerService } from './services/ApiServerService'
@@ -342,6 +343,7 @@ export async function registerIpc(mainWindow: BrowserWindow, app: Electron.App) 
 
   ipcMain.handle(IpcChannel.ModelPolicy_Get, () => remoteModelPolicyService.getSnapshot())
   ipcMain.handle(IpcChannel.ModelPolicy_Refresh, () => remoteModelPolicyService.refresh(true))
+  ipcMain.handle(IpcChannel.Agent_BootstrapBuiltins, () => bootstrapBuiltinAgents())
 
   // theme
   ipcMain.handle(IpcChannel.App_SetTheme, (_, theme: ThemeMode) => {

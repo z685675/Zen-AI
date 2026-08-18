@@ -12,6 +12,7 @@ import { useTimer } from '@renderer/hooks/useTimer'
 import { fetchModels } from '@renderer/services/ApiService'
 import ImageStorage from '@renderer/services/ImageStorage'
 import { mergeSyncedProviderModels } from '@renderer/services/ProviderModelSyncUtils'
+import { reconcileRemoteModelPolicyDefaults } from '@renderer/services/RemoteModelPolicyService'
 import type { Provider, ProviderType } from '@renderer/types'
 import { getFancyProviderName, matchKeywordsInModel, matchKeywordsInProvider, uuid } from '@renderer/utils'
 import { isAnthropicSupportedProvider, isNewApiProvider } from '@renderer/utils/provider'
@@ -213,6 +214,12 @@ const ProviderList: FC<ProviderListProps> = ({ isOnboarding = false }) => {
       }
 
       updateProviders(nextProviders)
+      reconcileRemoteModelPolicyDefaults()
+      try {
+        await window.api.agentLifecycle.bootstrapBuiltins()
+      } catch (error) {
+        logger.warn('Failed to initialize the built-in assistant after Provider import', error as Error)
+      }
 
       setSelectedProvider({
         ...finalProvider,
@@ -346,6 +353,15 @@ const ProviderList: FC<ProviderListProps> = ({ isOnboarding = false }) => {
       )
     }
   }, [syncImportedProvider, t])
+
+  useEffect(() => {
+    if (searchParams.get('action') !== 'import') return
+
+    const nextSearchParams = new URLSearchParams(searchParams)
+    nextSearchParams.delete('action')
+    setSearchParams(nextSearchParams, { replace: true })
+    void onImportProvider()
+  }, [onImportProvider, searchParams, setSearchParams])
 
   const getDropdownMenus = (provider: Provider): MenuProps['items'] => {
     const noteMenu = {

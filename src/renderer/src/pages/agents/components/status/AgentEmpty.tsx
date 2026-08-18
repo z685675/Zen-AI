@@ -1,5 +1,5 @@
 import { Button } from 'antd'
-import { Bot, Settings2 } from 'lucide-react'
+import { Bot, FileUp, Settings2 } from 'lucide-react'
 import { useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -12,16 +12,25 @@ const AgentEmpty = () => {
     window.navigate('/settings/provider')
   }, [])
 
+  const handleImportProvider = useCallback(() => {
+    window.navigate('/settings/provider?action=import')
+  }, [])
+
   return (
     <AgentStatusScreen
       icon={Bot}
       iconClassName="text-(--color-text-secondary)"
-      title={t('agent.empty.title')}
-      description={t('agent.empty.description')}
+      title={t('model_setup.title')}
+      description={t('model_setup.description')}
       actions={
-        <Button type="default" icon={<Settings2 size={16} />} onClick={handleOpenProviderSettings}>
-          {t('agent.empty.action')}
-        </Button>
+        <>
+          <Button type="primary" icon={<FileUp size={16} />} onClick={handleImportProvider}>
+            {t('model_setup.import')}
+          </Button>
+          <Button type="default" icon={<Settings2 size={16} />} onClick={handleOpenProviderSettings}>
+            {t('model_setup.open_settings')}
+          </Button>
+        </>
       }
     />
   )

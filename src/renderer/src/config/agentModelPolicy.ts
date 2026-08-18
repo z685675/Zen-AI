@@ -1,7 +1,7 @@
 import type { AgentConfiguration, ApiModel } from '@renderer/types'
 import type { ModelPolicy, ModelPolicySnapshot } from '@shared/config/modelPolicy'
 
-export const STANDARD_AGENT_MODEL_IDS = ['gpt-5.6-luna', 'grok-4.5', 'gemini-3-flash-preview'] as const
+export const STANDARD_AGENT_MODEL_IDS = [] as const
 
 const standardAgentModelIds = new Set<string>(STANDARD_AGENT_MODEL_IDS)
 
@@ -76,7 +76,7 @@ export const isAssistantModelIdentifierBlocked = (modelId: string | undefined, p
 export const isAssistantModelAllowed = (model: ApiModel, developerMode: boolean, policy?: ModelPolicy): boolean => {
   if (isAssistantModelBlocked(model, policy)) return false
 
-  if (!policy) return developerMode || isStandardAgentModel(model)
+  if (!policy) return true
   if (developerMode && policy.rules.developerModeBypassAllowlist) return true
 
   const allowlist = developerMode ? policy.assistant.developerAllowlist : policy.assistant.nonDeveloperAllowlist
@@ -84,7 +84,7 @@ export const isAssistantModelAllowed = (model: ApiModel, developerMode: boolean,
     return getModelIdentifiers(model).some((identifier) => matchesPolicyModel(identifier, allowlist))
   }
 
-  return isStandardAgentModel(model)
+  return true
 }
 
 export const isAssistantModelIdentifierAllowed = (
@@ -95,13 +95,13 @@ export const isAssistantModelIdentifierAllowed = (
   if (!modelId) return false
   const normalizedModelId = normalizeAgentModelIdentifier(modelId)
   if (isAssistantModelIdentifierBlocked(modelId, policy)) return false
-  if (!policy) return developerMode || isStandardAgentModelIdentifier(modelId)
+  if (!policy) return true
   if (developerMode && policy.rules.developerModeBypassAllowlist) return true
 
   const allowlist = developerMode ? policy.assistant.developerAllowlist : policy.assistant.nonDeveloperAllowlist
   return allowlist.length > 0
     ? allowlist.some((allowed) => normalizeAgentModelIdentifier(allowed) === normalizedModelId)
-    : isStandardAgentModelIdentifier(modelId)
+    : true
 }
 
 export const getAgentModelProviderId = (modelId: string | undefined): string | undefined => {

@@ -18,6 +18,7 @@ import type {
 import { AgentBaseSchema } from '@types'
 import { asc, count, desc, eq, min } from 'drizzle-orm'
 
+import { remoteModelPolicyService } from '../../RemoteModelPolicyService'
 import { BaseService } from '../BaseService'
 import { type AgentRow, agentsTable, type InsertAgentRow } from '../database/schema'
 import type { AgentModelField } from '../errors'
@@ -31,16 +32,6 @@ type PreferredBuiltinRuntimeModel = {
 
 export class AgentService extends BaseService {
   static readonly DEFAULT_AGENT_ID = DEFAULT_CHERRY_CLAW_AGENT_ID
-  static readonly DEFAULT_BUILTIN_MODEL_ID = 'gpt-5.6-luna'
-  static readonly PREFERRED_BUILTIN_MODEL_IDS = [
-    AgentService.DEFAULT_BUILTIN_MODEL_ID,
-    'gpt-5.4-mini',
-    'gpt-5-mini',
-    'gpt-5.4',
-    'gpt-5'
-  ] as const
-  private static readonly BUILTIN_MODEL_POLICY_KEY = 'builtin_default_model_policy'
-  private static readonly BUILTIN_NEW_SESSION_MODEL_POLICY_KEY = 'builtin_new_session_model_policy'
   private static readonly NON_TEXT_MODEL_ID_PATTERN =
     /\b(embedding|rerank|image-generation|image|dall-e|tts|whisper|audio|speech|moderation)\b/i
 
@@ -219,38 +210,37 @@ export class AgentService extends BaseService {
     return `${DEPRECATED_AGENT_NAME_PREFIX}${trimmedName}`
   }
 
-  private findPreferredBuiltinModelId(models: Array<{ id: string; provider_model_id?: string }>): string | null {
-    if (models.length === 0) {
+  private findConfiguredBuiltinModelId(
+    models: Array<{ id: string; provider_model_id?: string; is_official_provider?: boolean }>,
+    configuredModelId: string | undefined
+  ): string | null {
+    if (models.length === 0 || !configuredModelId?.trim()) {
       return null
     }
 
-    const normalizedModels = models.map((model) => ({
-      id: model.id,
-      providerModelId: this.normalizeProviderModelId(model.provider_model_id ?? model.id)
-    }))
-
-    for (const preferredModelId of AgentService.PREFERRED_BUILTIN_MODEL_IDS) {
-      const match = normalizedModels.find((model) => model.providerModelId === preferredModelId)
-      if (match) {
-        return match.id
-      }
-    }
-
-    const gptMatch = normalizedModels.find((model) => model.providerModelId.includes('gpt'))
-    return gptMatch?.id ?? models[0]?.id ?? null
+    const normalizedTarget = this.normalizeProviderModelId(configuredModelId)
+    const candidates = models.filter(
+      (model) => this.normalizeProviderModelId(model.provider_model_id ?? model.id) === normalizedTarget
+    )
+    return candidates.find((model) => model.is_official_provider)?.id ?? candidates[0]?.id ?? null
   }
 
   async getPreferredBuiltinModelId(): Promise<string | null> {
+    const policySnapshot = await remoteModelPolicyService.refresh()
+    const configuredModelId =
+      policySnapshot.source === 'builtin'
+        ? undefined
+        : policySnapshot.policy.defaults.assistantNewSession || policySnapshot.policy.defaults.assistant
     const modelsRes = await modelsService.getModels({})
     const availableTextModels = (modelsRes.data ?? []).filter(
       (model) => !AgentService.NON_TEXT_MODEL_ID_PATTERN.test(model.provider_model_id ?? model.id)
     )
-    const modelId = this.findPreferredBuiltinModelId(availableTextModels)
+    const modelId = this.findConfiguredBuiltinModelId(availableTextModels, configuredModelId)
 
     if (modelId) {
       logger.info('Resolved preferred built-in agent model', { modelId })
     } else {
-      logger.info('No available text model found for built-in agent')
+      logger.info('No remotely configured built-in agent model is available')
     }
 
     return modelId
@@ -386,40 +376,13 @@ export class AgentService extends BaseService {
         const workspace = resolvedPaths[0]
         const agentConfig = workspace ? await provisionWorkspace(workspace, builtinRole) : undefined
         const existingAgent = await this.getAgent(id)
-        let currentConfiguration = (existingAgent?.configuration ?? {}) as Record<string, unknown>
+        const currentConfiguration = (existingAgent?.configuration ?? {}) as Record<string, unknown>
 
         if (workspace && agentConfig?.configuration?.soul_enabled === true) {
           await seedWorkspaceTemplates(workspace)
         }
 
         const updateData: Partial<InsertAgentRow> = {}
-        let defaultModelPolicyUpdated = false
-
-        if (
-          builtinRole === 'fusion' &&
-          currentConfiguration[AgentService.BUILTIN_NEW_SESSION_MODEL_POLICY_KEY] !==
-            AgentService.DEFAULT_BUILTIN_MODEL_ID
-        ) {
-          const preferredModel = await this.getPreferredBuiltinRuntimeModel()
-          if (
-            preferredModel &&
-            this.normalizeProviderModelId(preferredModel.modelId) === AgentService.DEFAULT_BUILTIN_MODEL_ID
-          ) {
-            updateData.model = preferredModel.modelId
-            currentConfiguration = {
-              ...currentConfiguration,
-              [AgentService.BUILTIN_MODEL_POLICY_KEY]: AgentService.DEFAULT_BUILTIN_MODEL_ID,
-              [AgentService.BUILTIN_NEW_SESSION_MODEL_POLICY_KEY]: AgentService.DEFAULT_BUILTIN_MODEL_ID
-            }
-            defaultModelPolicyUpdated = true
-            logger.info('Migrating built-in assistant to the current new-session model policy', {
-              agentId: id,
-              modelId: preferredModel.modelId,
-              policy: AgentService.DEFAULT_BUILTIN_MODEL_ID
-            })
-          }
-        }
-
         if (
           agentConfig &&
           (agentConfig.name || agentConfig.description || agentConfig.instructions || agentConfig.configuration)
@@ -446,8 +409,6 @@ export class AgentService extends BaseService {
           if (agentConfig.configuration) {
             updateData.configuration = this.serializeJsonFields({ configuration: mergedConfiguration }).configuration
           }
-        } else if (defaultModelPolicyUpdated) {
-          updateData.configuration = this.serializeJsonFields({ configuration: currentConfiguration }).configuration
         }
 
         if (Object.keys(updateData).length > 0) {
@@ -477,13 +438,7 @@ export class AgentService extends BaseService {
         permission_mode: 'default',
         max_turns: 100,
         env_vars: {},
-        ...agentConfig?.configuration,
-        ...(this.normalizeProviderModelId(preferredModel.modelId) === AgentService.DEFAULT_BUILTIN_MODEL_ID
-          ? {
-              [AgentService.BUILTIN_MODEL_POLICY_KEY]: AgentService.DEFAULT_BUILTIN_MODEL_ID,
-              [AgentService.BUILTIN_NEW_SESSION_MODEL_POLICY_KEY]: AgentService.DEFAULT_BUILTIN_MODEL_ID
-            }
-          : {})
+        ...agentConfig?.configuration
       }
 
       const req: CreateAgentRequest = {

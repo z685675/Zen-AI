@@ -2,6 +2,7 @@ import { loggerService } from '@logger'
 import type { ContentSearchRef } from '@renderer/components/ContentSearch'
 import { ContentSearch } from '@renderer/components/ContentSearch'
 import { HStack } from '@renderer/components/Layout'
+import ModelSetupGuide from '@renderer/components/ModelSetupGuide'
 import MultiSelectActionPopup from '@renderer/components/Popups/MultiSelectionPopup'
 import PromptPopup from '@renderer/components/Popups/PromptPopup'
 import { SelectChatModelPopup } from '@renderer/components/Popups/SelectModelPopup'
@@ -19,6 +20,7 @@ import { useAppSelector } from '@renderer/store'
 import type { Assistant, Topic } from '@renderer/types'
 import { classNames } from '@renderer/utils'
 import { getTopicConversationModel, shouldPersistConversationModelAsDefault } from '@renderer/utils/conversationModel'
+import { getAvailableChatModels } from '@renderer/utils/modelAvailability'
 import { Flex, Tooltip } from 'antd'
 import { debounce } from 'lodash'
 import { PanelLeftOpen } from 'lucide-react'
@@ -73,6 +75,8 @@ const Chat: FC<Props> = ({
   const messages = useTopicMessages(activeTopic.id)
   const hasLoadedTopicMessages = useAppSelector((state) => !!state.messages.loadedByTopic[activeTopic.id])
   const isLoadingTopicMessages = useAppSelector((state) => !!state.messages.loadingByTopic[activeTopic.id])
+  const providers = useAppSelector((state) => state.llm.providers)
+  const hasAvailableChatModels = useMemo(() => getAvailableChatModels(providers).length > 0, [providers])
   const isBlankConversation = shouldPersistConversationModelAsDefault(hasLoadedTopicMessages, messages.length)
   // Keep an empty topic on the welcome layout while its messages are being
   // loaded. This avoids a one-frame switch to the blank chat layout when a
@@ -277,40 +281,44 @@ const Chat: FC<Props> = ({
                       </WelcomeSidebarToggle>
                     </Tooltip>
                   )}
-                  <WelcomeInner>
-                    <WelcomeTitle>从一次更轻松的对话开始</WelcomeTitle>
-                    <WelcomeDescription>
-                      直接输入问题会使用默认助手。也可以先在下面选一个角色，让这一轮对话从一开始就带着明确风格。
-                    </WelcomeDescription>
-                    <WelcomeMeta>
-                      <AssistantSwitchButton
-                        assistant={assistant}
-                        assistants={selectableAssistants}
+                  {hasAvailableChatModels ? (
+                    <WelcomeInner>
+                      <WelcomeTitle>从一次更轻松的对话开始</WelcomeTitle>
+                      <WelcomeDescription>
+                        直接输入问题会使用默认助手。也可以先在下面选一个角色，让这一轮对话从一开始就带着明确风格。
+                      </WelcomeDescription>
+                      <WelcomeMeta>
+                        <AssistantSwitchButton
+                          assistant={assistant}
+                          assistants={selectableAssistants}
+                          onSelectAssistant={setActiveAssistant}
+                        />
+                        <SelectModelButton
+                          assistant={assistant}
+                          topic={activeTopic}
+                          onTopicChange={setActiveTopic}
+                          persistAsDefault={isBlankConversation}
+                        />
+                      </WelcomeMeta>
+                      <WelcomeComposer>
+                        <Inputbar
+                          assistant={assistant}
+                          topic={activeTopic}
+                          onTopicChange={setActiveTopic}
+                          variant="hero"
+                          actionsRef={welcomeInputActionsRef}
+                          onCreateConversation={onCreateConversation}
+                        />
+                      </WelcomeComposer>
+                      <QuickAssistantDeck
+                        assistants={assistants}
+                        activeAssistant={assistant}
                         onSelectAssistant={setActiveAssistant}
                       />
-                      <SelectModelButton
-                        assistant={assistant}
-                        topic={activeTopic}
-                        onTopicChange={setActiveTopic}
-                        persistAsDefault={isBlankConversation}
-                      />
-                    </WelcomeMeta>
-                    <WelcomeComposer>
-                      <Inputbar
-                        assistant={assistant}
-                        topic={activeTopic}
-                        onTopicChange={setActiveTopic}
-                        variant="hero"
-                        actionsRef={welcomeInputActionsRef}
-                        onCreateConversation={onCreateConversation}
-                      />
-                    </WelcomeComposer>
-                    <QuickAssistantDeck
-                      assistants={assistants}
-                      activeAssistant={assistant}
-                      onSelectAssistant={setActiveAssistant}
-                    />
-                  </WelcomeInner>
+                    </WelcomeInner>
+                  ) : (
+                    <ModelSetupGuide />
+                  )}
                 </WelcomeState>
               ) : (
                 <div
@@ -332,6 +340,7 @@ const Chat: FC<Props> = ({
                     onIncludeUserChange={userOutlinedItemClickHandler}
                   />
                   {messageNavigation === 'buttons' && <ChatNavigation containerId="messages" />}
+                  {!hasAvailableChatModels && <ModelSetupGuide compact />}
                   <Inputbar
                     assistant={assistant}
                     topic={activeTopic}

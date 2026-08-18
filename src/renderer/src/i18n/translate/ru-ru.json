@@ -1,5 +1,10 @@
 {
   "agent": {
+    "actionRequired": {
+      "later": "[to be translated]:Later",
+      "open": "[to be translated]:Open task conversation",
+      "title": "[to be translated]:Task needs your action"
+    },
     "add": {
       "description": "Справляйтесь со сложными задачами с помощью различных инструментов",
       "error": {
@@ -225,6 +230,7 @@
           "runAt": "Запущено в",
           "running": "Бежит...",
           "search": "Искать журналы...",
+          "stalled": "[to be translated]:Stalled",
           "status": "Статус",
           "success": "Успех",
           "viewSession": "Просмотр сеанса"
@@ -2810,6 +2816,13 @@
     "tooltip": {
       "pin": "Верхнее окно"
     }
+  },
+  "model_setup": {
+    "description": "[to be translated]:Zen AI could not find an available model. Import a Provider configuration or finish setup in Model Settings.",
+    "import": "[to be translated]:Import Provider",
+    "no_matching_model": "[to be translated]:No available model matches the remote configuration. Import a Provider or choose a model manually.",
+    "open_settings": "[to be translated]:Open Model Settings",
+    "title": "[to be translated]:No model configured"
   },
   "models": {
     "add_parameter": "Добавить параметр",

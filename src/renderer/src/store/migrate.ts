@@ -22,11 +22,6 @@ import {
   DEFAULT_TEMPERATURE,
   isMac
 } from '@renderer/config/constant'
-import {
-  CURRENT_DEFAULT_MODEL_POLICY_VERSION,
-  getCurrentDefaultModels,
-  getPendingCurrentDefaultModels
-} from '@renderer/config/defaultModelPolicy'
 import { allMinApps } from '@renderer/config/minapps'
 import {
   getEffectiveModelEndpointType,
@@ -128,28 +123,11 @@ const LEGACY_PAINTING_PROVIDER_BY_NAMESPACE: Partial<Record<keyof PaintingsState
   ppio_edit: 'ppio'
 }
 
-const DEFAULT_ASSISTANT_MODEL_ID = 'gpt-5.4'
-const DEFAULT_UTILITY_MODEL_ID = 'gpt-5.4-mini'
 const INTERNAL_NOTES_PATH_PATTERN =
   /(?:^|[\\/])(?:zen-ai|ZenAIDev|zen-aiDev|CherryStudio|Cherry Studio)[\\/]Data[\\/]Notes(?:[\\/]|$)/i
 
 function isInternalNotesPath(value: unknown): value is string {
   return typeof value === 'string' && INTERNAL_NOTES_PATH_PATTERN.test(value)
-}
-
-const normalizeDefaultModelId = (value: string | undefined) =>
-  (value ?? '')
-    .trim()
-    .toLowerCase()
-    .replace(/^openai\//, '')
-
-function findEnabledDefaultModel(state: RootState, targetModelId: string): Model | undefined {
-  const normalizedTarget = normalizeDefaultModelId(targetModelId)
-
-  return state.llm.providers
-    .filter((provider) => provider.enabled)
-    .flatMap((provider) => provider.models)
-    .find((model) => normalizeDefaultModelId(model.id) === normalizedTarget)
 }
 
 function mergeLegacyPaintingsIntoImageWorkspace(state: RootState) {
@@ -3638,13 +3616,8 @@ const migrateConfig = {
   },
   '215': (state: RootState) => {
     try {
-      const assistantModel = findEnabledDefaultModel(state, DEFAULT_ASSISTANT_MODEL_ID)
-      const utilityModel = findEnabledDefaultModel(state, DEFAULT_UTILITY_MODEL_ID)
-
-      state.llm.defaultModel = assistantModel
-      state.llm.quickModel = utilityModel
-      state.llm.translateModel = utilityModel
-
+      // Intentionally preserved as a no-op. Defaults are remotely configured
+      // and must not be overwritten when a user upgrades from an older build.
       logger.info('migrate 215 success')
       return state
     } catch (error) {
@@ -3671,17 +3644,7 @@ const migrateConfig = {
   },
   '217': (state: RootState) => {
     try {
-      const enabledModels = state.llm.providers
-        .filter((provider) => provider.enabled)
-        .flatMap((provider) => provider.models)
-      const currentDefaults = getCurrentDefaultModels(enabledModels)
-
-      if (currentDefaults.defaultModel) {
-        state.llm.defaultModel = currentDefaults.defaultModel
-        state.llm.quickModel = currentDefaults.quickModel
-        state.llm.translateModel = currentDefaults.translateModel
-      }
-
+      // Intentionally preserved as a no-op. See migration 215.
       logger.info('migrate 217 success')
       return state
     } catch (error) {
@@ -3821,15 +3784,8 @@ const migrateConfig = {
   },
   '224': (state: RootState) => {
     try {
-      const currentDefaults = getPendingCurrentDefaultModels(state.llm.providers, state.llm.defaultModelPolicyVersion)
-
-      if (currentDefaults?.defaultModel) {
-        state.llm.defaultModel = currentDefaults.defaultModel
-        state.llm.quickModel = currentDefaults.defaultModel
-        state.llm.translateModel = currentDefaults.defaultModel
-        state.llm.defaultModelPolicyVersion = CURRENT_DEFAULT_MODEL_POLICY_VERSION
-      }
-
+      // Intentionally preserved as a no-op. A fetched policy may set defaults,
+      // but the desktop bundle no longer contains a forced model migration.
       logger.info('migrate 224 success')
       return state
     } catch (error) {

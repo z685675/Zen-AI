@@ -2817,6 +2817,13 @@
       "pin": "Keep Window on Top"
     }
   },
+  "model_setup": {
+    "description": "Zen AI could not find an available model. Import a Provider configuration or finish setup in Model Settings.",
+    "import": "Import Provider",
+    "no_matching_model": "No available model matches the remote configuration. Import a Provider or choose a model manually.",
+    "open_settings": "Open Model Settings",
+    "title": "No model configured"
+  },
   "models": {
     "add_parameter": "Add Parameter",
     "all": "All",

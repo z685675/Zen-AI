@@ -91,6 +91,7 @@ const makeSession = (overrides: Record<string, unknown> = {}) => ({
 describe('useCreateDefaultSession', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    window.toast = { warning: vi.fn() } as any
     CacheService.clear()
     mocks.agent = makeAgent({ model: 'provider:claude-opus-4-6' })
     mocks.modelPolicy = null
@@ -155,23 +156,20 @@ describe('useCreateDefaultSession', () => {
     expect(mocks.setActiveSessionIdAction).toHaveBeenCalledWith({ agentId: 'agent-1', sessionId: 'session-2' })
   })
 
-  it('upgrades a legacy Agent default to gpt-5.6-luna before reusing an empty session', async () => {
+  it('does not invent a replacement when no remote policy target is available', async () => {
     mocks.getAgent.mockResolvedValue(makeAgent({ model: 'provider:gpt-5.4-mini' }))
     const { result } = renderHook(() => useCreateDefaultSession('agent-1'))
 
+    let session: any
     await act(async () => {
-      await result.current.createDefaultSession()
+      session = await result.current.createDefaultSession()
     })
 
     expect(mocks.getModels).toHaveBeenCalledWith({ limit: 1000 })
-    expect(mocks.updateSession).toHaveBeenCalledWith(
-      {
-        id: 'session-1',
-        model: 'provider:gpt-5.6-luna',
-        configuration: expect.objectContaining({ reasoning_effort: 'medium' })
-      },
-      { showSuccessToast: false }
-    )
+    expect(mocks.updateSession).not.toHaveBeenCalled()
+    expect(mocks.createSession).not.toHaveBeenCalled()
+    expect(window.toast.warning).toHaveBeenCalledWith('model_setup.no_matching_model')
+    expect(session).toBeNull()
   })
 
   it('applies a changed remote default once when the panel enables default overwriting', async () => {
@@ -270,6 +268,26 @@ describe('useCreateDefaultSession', () => {
         }
       })
     )
+    mocks.getModels.mockResolvedValue({
+      data: [
+        {
+          id: 'provider:gpt-5.6-luna',
+          object: 'model',
+          created: 0,
+          name: 'gpt-5.6-luna',
+          owned_by: 'provider',
+          provider_model_id: 'gpt-5.6-luna'
+        },
+        {
+          id: 'provider:grok-4.5',
+          object: 'model',
+          created: 0,
+          name: 'grok-4.5',
+          owned_by: 'provider',
+          provider_model_id: 'grok-4.5'
+        }
+      ]
+    })
 
     const { result } = renderHook(() => useCreateDefaultSession('agent-1'))
     await act(async () => {

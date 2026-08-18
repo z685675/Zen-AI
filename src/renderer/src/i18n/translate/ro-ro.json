@@ -1,5 +1,10 @@
 {
   "agent": {
+    "actionRequired": {
+      "later": "[to be translated]:Later",
+      "open": "[to be translated]:Open task conversation",
+      "title": "[to be translated]:Task needs your action"
+    },
     "add": {
       "description": "Gestionează sarcini complexe cu diverse instrumente",
       "error": {
@@ -225,6 +230,7 @@
           "runAt": "Rulat la",
           "running": "Alergând...",
           "search": "Caută jurnalele...",
+          "stalled": "[to be translated]:Stalled",
           "status": "Stare",
           "success": "Succes",
           "viewSession": "Vizualizare sesiune"
@@ -2811,6 +2817,13 @@
       "pin": "Menține fereastra deasupra"
     }
   },
+  "model_setup": {
+    "description": "[to be translated]:Zen AI could not find an available model. Import a Provider configuration or finish setup in Model Settings.",
+    "import": "[to be translated]:Import Provider",
+    "no_matching_model": "[to be translated]:No available model matches the remote configuration. Import a Provider or choose a model manually.",
+    "open_settings": "[to be translated]:Open Model Settings",
+    "title": "[to be translated]:No model configured"
+  },
   "models": {
     "add_parameter": "Adaugă parametru",
     "all": "Toate",
@@ -3168,6 +3181,9 @@
   },
   "ovms": {
     "action": {
+      "importRuntime": "Importă pachetul offline",
+      "importRuntimeFailed": "Importarea mediului Python a eșuat",
+      "importRuntimeSuccess": "Mediul Python a fost importat",
       "install": "Instalează",
       "installing": "Se instalează",
       "reinstall": "Reinstalează",
@@ -5861,9 +5877,6 @@
       "emptyTip": "Sfat: Poți, de asemenea, să ceri unui agent să instaleze abilități pentru tine.",
       "emptyTitle": "Nicio competență selectată",
       "filterPlaceholder": "Filtrează abilitățile...",
-      "importRuntime": "Importă pachetul offline",
-      "importRuntimeFailed": "Importarea mediului Python a eșuat",
-      "importRuntimeSuccess": "Mediul Python a fost importat",
       "install": "Instalare",
       "installFailed": "Nu s-a putut instala abilitatea: {{name}}",
       "installFromDirectory": "Instalează din director",

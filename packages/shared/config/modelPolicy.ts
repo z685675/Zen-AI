@@ -44,19 +44,19 @@ export interface ModelPolicySnapshot {
 
 export const DEFAULT_MODEL_POLICY: ModelPolicy = {
   schemaVersion: 1,
-  version: 1,
+  version: 0,
   defaults: {
-    chat: 'gpt-5.6-luna',
-    quick: 'gpt-5.6-luna',
-    translate: 'gpt-5.6-luna',
-    assistant: 'gpt-5.6-luna',
-    assistantNewSession: 'gpt-5.6-luna'
+    chat: '',
+    quick: '',
+    translate: '',
+    assistant: '',
+    assistantNewSession: ''
   },
   assistant: {
-    nonDeveloperAllowlist: ['gpt-5.6-luna', 'grok-4.5', 'gemini-3-flash-preview'],
+    nonDeveloperAllowlist: [],
     developerAllowlist: [],
     blockedModels: [],
-    fallbackModels: ['gpt-5.4-mini', 'gpt-5-mini']
+    fallbackModels: []
   },
   rules: {
     applyToNewSessions: true,

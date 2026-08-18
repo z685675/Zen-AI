@@ -10,6 +10,7 @@ import {
   markProviderModelSyncFailed,
   mergeSyncedProviderModels
 } from './ProviderModelSyncUtils'
+import { reconcileRemoteModelPolicyDefaults } from './RemoteModelPolicyService'
 
 const logger = loggerService.withContext('ProviderModelSyncService')
 
@@ -147,16 +148,6 @@ const getAvailableModel = (model: Model | undefined, availableModels: Model[]): 
   return availableModels.find((candidate) => getModelKey(candidate) === getModelKey(model))
 }
 
-const getFallbackChatModel = (currentDefault: Model | undefined, availableModels: Model[]): Model | undefined => {
-  return (
-    getAvailableModel(currentDefault, availableModels) ??
-    availableModels.find(
-      (model) => !['embedding', 'jina-rerank', 'image-generation'].includes(model.endpoint_type ?? '')
-    ) ??
-    availableModels[0]
-  )
-}
-
 const repairAssistantModelReferences = (
   assistant: Assistant,
   fallbackModel: Model,
@@ -188,31 +179,32 @@ const repairAssistantModelReferences = (
 
 /**
  * Keep persisted conversation references valid after a provider model disappears.
- * If no usable model exists, leave references untouched so an empty or broken
- * provider response can never make the startup page unusable.
+ * Missing global defaults are cleared instead of being replaced by the first
+ * Provider model; the UI then presents the safe model-setup state.
  */
 export const reconcileProviderModelReferences = (): void => {
+  // A cached remote policy gets the first opportunity to resolve newly
+  // imported models. Never choose the first Provider model implicitly.
+  reconcileRemoteModelPolicyDefaults()
+
   const state = store.getState()
   const availableModels = getAvailableModels(state.llm.providers)
-  const fallbackModel = getFallbackChatModel(state.llm.defaultModel, availableModels)
+  const nextDefaultModel = getAvailableModel(state.llm.defaultModel, availableModels)
+  const nextQuickModel = getAvailableModel(state.llm.quickModel, availableModels)
+  const nextTranslateModel = getAvailableModel(state.llm.translateModel, availableModels)
 
-  if (!fallbackModel) {
-    return
+  if (state.llm.defaultModel && !nextDefaultModel) {
+    store.dispatch(setDefaultModel({ model: undefined }))
+  }
+  if (state.llm.quickModel && !nextQuickModel) {
+    store.dispatch(setQuickModel({ model: undefined }))
+  }
+  if (state.llm.translateModel && !nextTranslateModel) {
+    store.dispatch(setTranslateModel({ model: undefined }))
   }
 
-  const nextDefaultModel = getAvailableModel(state.llm.defaultModel, availableModels) ?? fallbackModel
-  const nextQuickModel = getAvailableModel(state.llm.quickModel, availableModels) ?? fallbackModel
-  const nextTranslateModel = getAvailableModel(state.llm.translateModel, availableModels) ?? fallbackModel
-
-  if (getModelKey(state.llm.defaultModel ?? fallbackModel) !== getModelKey(nextDefaultModel)) {
-    store.dispatch(setDefaultModel({ model: nextDefaultModel }))
-  }
-  if (getModelKey(state.llm.quickModel ?? fallbackModel) !== getModelKey(nextQuickModel)) {
-    store.dispatch(setQuickModel({ model: nextQuickModel }))
-  }
-  if (getModelKey(state.llm.translateModel ?? fallbackModel) !== getModelKey(nextTranslateModel)) {
-    store.dispatch(setTranslateModel({ model: nextTranslateModel }))
-  }
+  const fallbackModel = nextDefaultModel
+  if (!fallbackModel) return
 
   const nextAssistants = state.assistants.assistants.map((assistant) =>
     repairAssistantModelReferences(assistant, fallbackModel, availableModels)
@@ -374,6 +366,11 @@ export const syncProviderModelsOnce = async (options?: SyncProviderModelsOptions
     )
 
     reconcileProviderModelReferences()
+    try {
+      await window.api.agentLifecycle.bootstrapBuiltins()
+    } catch (error) {
+      logger.warn('Failed to initialize the built-in assistant after Provider model sync', error as Error)
+    }
   } finally {
     syncRunning = false
   }
