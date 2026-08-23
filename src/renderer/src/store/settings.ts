@@ -82,6 +82,7 @@ export interface SettingsState {
   userTheme: UserTheme
   windowStyle: 'transparent' | 'opaque'
   fontSize: number
+  conversationFontSize: number
   topicPosition: 'left' | 'right'
   showTopicTime: boolean
   pinTopicsToTop: boolean
@@ -280,6 +281,7 @@ export const initialState: SettingsState = {
   },
   windowStyle: isMac ? 'transparent' : 'opaque',
   fontSize: 12,
+  conversationFontSize: 12,
   topicPosition: 'left',
   showTopicTime: false,
   pinTopicsToTop: false,
@@ -527,6 +529,9 @@ const settingsSlice = createSlice({
     },
     setFontSize: (state, action: PayloadAction<number>) => {
       state.fontSize = action.payload
+    },
+    setConversationFontSize: (state, action: PayloadAction<number>) => {
+      state.conversationFontSize = action.payload
     },
     setWindowStyle: (state, action: PayloadAction<'transparent' | 'opaque'>) => {
       state.windowStyle = action.payload
@@ -929,6 +934,7 @@ export const {
   setTheme,
   setUserTheme,
   setFontSize,
+  setConversationFontSize,
   setWindowStyle,
   setTopicPosition,
   setShowTopicTime,

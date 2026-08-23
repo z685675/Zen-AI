@@ -678,7 +678,7 @@ export const InputbarCore: FC<InputbarCoreProps> = ({
             styles={{
               textarea: {
                 paddingLeft: 0,
-                padding: minimal ? '16px 22px 4px' : '6px 15px 0px'
+                padding: minimal ? '8px 22px 4px' : '6px 15px 0px'
               }
             }}
             style={{
@@ -755,7 +755,7 @@ const InputBarContainer = styled.div`
 
   &.minimal {
     border-radius: 26px;
-    padding-top: 22px;
+    padding-top: 10px;
     background: #ffffff;
     box-shadow:
       0 6px 20px rgba(0, 0, 0, 0.055),
@@ -794,7 +794,7 @@ const Textarea = styled(TextArea)`
   }
 
   .inputbar-container.minimal &.ant-input {
-    padding-top: 8px;
+    padding-top: 4px;
     line-height: 1.72;
     font-weight: 400;
   }

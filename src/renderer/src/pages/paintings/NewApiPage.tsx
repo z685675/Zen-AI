@@ -49,6 +49,9 @@ const logger = loggerService.withContext('NewApiPage')
 
 type ComposerMode = 'create' | 'continue' | 'upload-edit'
 
+// Keep the total number of input samples manageable for image-editing quality and request size.
+const MAX_IMAGE_INPUTS = 6
+
 interface NewApiPaintingTask {
   controller: AbortController
   inputPreviewUrls: string[]
@@ -104,6 +107,7 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
   const [selectedPaintingId, setSelectedPaintingId] = useState<string | null>(null)
   const [composerMode, setComposerMode] = useState<ComposerMode>('create')
   const [uploadedEditFiles, setUploadedEditFiles] = useState<File[]>([])
+  const [isImageDragActive, setIsImageDragActive] = useState(false)
   const [isPromptEditorOpen, setIsPromptEditorOpen] = useState(false)
   const [draft, setDraft] = useState<PaintingAction>({ ...DEFAULT_PAINTING })
 
@@ -116,6 +120,7 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
   const textareaRef = useRef<any>(null)
   const spaceClickTimer = useRef<NodeJS.Timeout>(null)
   const selectedPaintingIdRef = useRef<string | null>(null)
+  const uploadedEditFilesRef = useRef<File[]>([])
   const failedPromptToRestoreRef = useRef<string | null>(null)
   const selectableProviders = useMemo(
     () => providers.filter((provider) => Options.includes(provider.id)),
@@ -134,7 +139,30 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
     [paintings, selectedPaintingId]
   )
 
-  const artboardPainting = selectedPainting ?? { ...draft, files: [], urls: [] }
+  const uploadedPreviewUrls = useMemo(
+    () => uploadedEditFiles.map((file) => URL.createObjectURL(file)),
+    [uploadedEditFiles]
+  )
+  useEffect(() => {
+    uploadedEditFilesRef.current = uploadedEditFiles
+  }, [uploadedEditFiles])
+  const [combinedSourceImageIndex, setCombinedSourceImageIndex] = useState<number | null>(null)
+  const isCombinedEdit = Boolean(selectedPainting?.files?.length && uploadedEditFiles.length > 0)
+  const generatedSourceImageCount =
+    selectedPainting?.files?.length && ['continue', 'upload-edit'].includes(composerMode) ? 1 : 0
+  const remainingImageSlots = Math.max(0, MAX_IMAGE_INPUTS - generatedSourceImageCount - uploadedEditFiles.length)
+  const combinedEditPreviewUrls = useMemo(() => {
+    if (!isCombinedEdit || !selectedPainting) {
+      return uploadedPreviewUrls
+    }
+
+    const sourceFile = selectedPainting.files[combinedSourceImageIndex ?? 0]
+    return sourceFile ? [FileManager.getFileUrl(sourceFile), ...uploadedPreviewUrls] : uploadedPreviewUrls
+  }, [combinedSourceImageIndex, isCombinedEdit, selectedPainting, uploadedPreviewUrls])
+  const artboardPainting =
+    isCombinedEdit && selectedPainting
+      ? { ...selectedPainting, files: [], urls: [] }
+      : (selectedPainting ?? { ...draft, files: [], urls: [] })
   const isArtboardLoading = loadingPaintingIds.has(artboardPainting.id)
   const taskPreviewUrls = isArtboardLoading ? getNewApiPaintingTaskPreviewUrls(artboardPainting.id) : []
   const composerHint = useMemo(() => {
@@ -355,29 +383,60 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
     })
   }
 
-  const handleImageUpload = (file: File) => {
-    setUploadedEditFiles((prev) => [...prev, file])
-    setComposerMode('upload-edit')
-    setSelectedPaintingId(null)
-    setCurrentImageIndex(0)
-    return false
-  }
+  const handlePastedFiles = useCallback(
+    (files: File[]) => {
+      if (files.length === 0) {
+        return
+      }
 
-  const handlePastedFiles = useCallback((files: File[]) => {
-    if (files.length === 0) {
-      return
-    }
-    setUploadedEditFiles((prev) => [...prev, ...files])
-    setComposerMode('upload-edit')
-    setSelectedPaintingId(null)
-    setCurrentImageIndex(0)
-  }, [])
+      const remainingSlots = Math.max(
+        0,
+        MAX_IMAGE_INPUTS - generatedSourceImageCount - uploadedEditFilesRef.current.length
+      )
+      const acceptedFiles = files.slice(0, remainingSlots)
+      if (acceptedFiles.length < files.length) {
+        window.toast.warning(
+          t('paintings.image_upload_limit', {
+            max: MAX_IMAGE_INPUTS,
+            remaining: remainingSlots
+          })
+        )
+      }
+      if (acceptedFiles.length === 0) {
+        return
+      }
+
+      uploadedEditFilesRef.current = [...uploadedEditFilesRef.current, ...acceptedFiles]
+      setUploadedEditFiles((prev) => [...prev, ...acceptedFiles])
+      setComposerMode('upload-edit')
+      if (selectedPainting?.files?.length) {
+        if (!isCombinedEdit) {
+          setCombinedSourceImageIndex(currentImageIndex)
+        }
+      } else {
+        setSelectedPaintingId(null)
+        setCombinedSourceImageIndex(null)
+      }
+      setCurrentImageIndex(0)
+    },
+    [currentImageIndex, generatedSourceImageCount, isCombinedEdit, selectedPainting, t]
+  )
+
+  const handleImageUpload = useCallback(
+    (file: File) => {
+      handlePastedFiles([file])
+      return false
+    },
+    [handlePastedFiles]
+  )
 
   const handleDeleteUploadedImage = useCallback((index: number) => {
+    uploadedEditFilesRef.current = uploadedEditFilesRef.current.filter((_, fileIndex) => fileIndex !== index)
     setUploadedEditFiles((prev) => {
       const nextFiles = prev.filter((_, fileIndex) => fileIndex !== index)
       if (nextFiles.length === 0) {
         setComposerMode('create')
+        setCombinedSourceImageIndex(null)
       }
       setCurrentImageIndex((currentIndex) => {
         if (nextFiles.length === 0) {
@@ -389,20 +448,37 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
     })
   }, [])
 
-  const getClipboardImageFiles = (clipboardData: DataTransfer) => {
-    const files = Array.from(clipboardData.files).filter((file) => file.type.startsWith('image/'))
+  const handleDeletePreview = useCallback(
+    (previewIndex: number) => {
+      if (isCombinedEdit) {
+        if (previewIndex === 0) {
+          return
+        }
+        handleDeleteUploadedImage(previewIndex - 1)
+        return
+      }
+
+      handleDeleteUploadedImage(previewIndex)
+    },
+    [handleDeleteUploadedImage, isCombinedEdit]
+  )
+
+  const canDeletePreview = useCallback((previewIndex: number) => !isCombinedEdit || previewIndex > 0, [isCombinedEdit])
+
+  const getImageFiles = (dataTransfer: DataTransfer) => {
+    const files = Array.from(dataTransfer.files).filter((file) => file.type.startsWith('image/'))
 
     if (files.length > 0) {
       return files
     }
 
     const seen = new Set<string>()
-    return Array.from(clipboardData.items)
+    return Array.from(dataTransfer.items)
       .filter((item) => item.kind === 'file' && item.type.startsWith('image/'))
       .map((item) => item.getAsFile())
       .filter((file): file is File => Boolean(file))
       .filter((file) => {
-        const key = `${file.type}-${file.size}`
+        const key = `${file.name}-${file.type}-${file.size}-${file.lastModified}`
         if (seen.has(key)) {
           return false
         }
@@ -411,6 +487,52 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
       })
   }
 
+  const isImageDataTransfer = (dataTransfer: DataTransfer) => {
+    return (
+      Array.from(dataTransfer.files).some((file) => file.type.startsWith('image/')) ||
+      Array.from(dataTransfer.items).some((item) => item.kind === 'file' && item.type.startsWith('image/'))
+    )
+  }
+
+  const handleImageDragEnter = useCallback((event: React.DragEvent<HTMLDivElement>) => {
+    if (!isImageDataTransfer(event.dataTransfer)) {
+      return
+    }
+    event.preventDefault()
+    setIsImageDragActive(true)
+  }, [])
+
+  const handleImageDragOver = useCallback((event: React.DragEvent<HTMLDivElement>) => {
+    if (!isImageDataTransfer(event.dataTransfer)) {
+      return
+    }
+    event.preventDefault()
+    event.dataTransfer.dropEffect = 'copy'
+    setIsImageDragActive(true)
+  }, [])
+
+  const handleImageDragLeave = useCallback((event: React.DragEvent<HTMLDivElement>) => {
+    const relatedTarget = event.relatedTarget
+    if (relatedTarget instanceof Node && event.currentTarget.contains(relatedTarget)) {
+      return
+    }
+    setIsImageDragActive(false)
+  }, [])
+
+  const handleImageDrop = useCallback(
+    (event: React.DragEvent<HTMLDivElement>) => {
+      const imageFiles = getImageFiles(event.dataTransfer)
+      if (imageFiles.length === 0) {
+        return
+      }
+      event.preventDefault()
+      event.stopPropagation()
+      setIsImageDragActive(false)
+      handlePastedFiles(imageFiles)
+    },
+    [handlePastedFiles]
+  )
+
   const handleShowAddModelPopup = () => {
     navigate(providerId ? `/settings/provider?id=${providerId}` : '/settings/provider')
   }
@@ -418,7 +540,9 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
   const onSelectPainting = (painting: PaintingAction) => {
     setSelectedPaintingId(painting.id)
     setComposerMode('continue')
+    uploadedEditFilesRef.current = []
     setUploadedEditFiles([])
+    setCombinedSourceImageIndex(null)
     setCurrentImageIndex(0)
     syncDraftFromPainting(painting)
   }
@@ -426,7 +550,9 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
   const handleCreateNew = () => {
     setComposerMode('create')
     setSelectedPaintingId(null)
+    uploadedEditFilesRef.current = []
     setUploadedEditFiles([])
+    setCombinedSourceImageIndex(null)
     setCurrentImageIndex(0)
     setDraft((prev) =>
       createEmptyDraft({
@@ -479,10 +605,10 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
   const createResultPainting = useCallback(
     (prompt: string) => {
       const sourceInfo =
-        composerMode === 'continue' && selectedPainting?.files?.length
+        ['continue', 'upload-edit'].includes(composerMode) && selectedPainting?.files?.length
           ? {
               sourcePaintingId: selectedPainting.id,
-              sourceImageIndex: currentImageIndex,
+              sourceImageIndex: isCombinedEdit ? (combinedSourceImageIndex ?? 0) : currentImageIndex,
               sourceImageCount: selectedPainting.files.length
             }
           : {}
@@ -504,6 +630,7 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
     },
     [
       composerMode,
+      combinedSourceImageIndex,
       createEmptyDraft,
       currentImageIndex,
       draft.background,
@@ -512,6 +639,7 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
       draft.n,
       draft.quality,
       draft.size,
+      isCombinedEdit,
       providerId,
       selectedPainting?.files?.length,
       selectedPainting?.id
@@ -569,10 +697,10 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
       throwIfAborted(controller.signal)
 
       const continueImages =
-        composerMode === 'continue' && selectedPainting?.files?.length
+        ['continue', 'upload-edit'].includes(composerMode) && selectedPainting?.files?.length
           ? await Promise.all(
               selectedPainting.files
-                .filter((_, index) => index === currentImageIndex)
+                .filter((_, index) => index === (isCombinedEdit ? (combinedSourceImageIndex ?? 0) : currentImageIndex))
                 .map(async (file, index) => {
                   const { data, mime } = await window.api.file.binaryImage(FileManager.getStorageFileName(file))
                   const ext = file.ext ? (file.ext.startsWith('.') ? file.ext : `.${file.ext}`) : ''
@@ -587,7 +715,7 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
 
       throwIfAborted(controller.signal)
 
-      const inputImages = composerMode === 'upload-edit' ? uploadedEditFiles : continueImages
+      const inputImages = composerMode === 'upload-edit' ? [...continueImages, ...uploadedEditFiles] : continueImages
       const shouldEdit = inputImages.length > 0
 
       if (!shouldEdit) {
@@ -667,6 +795,9 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
 
       updatePainting('openai_image_generate', completedPainting)
       if (composerMode === 'upload-edit') {
+        uploadedEditFilesRef.current = []
+        setUploadedEditFiles([])
+        setCombinedSourceImageIndex(null)
         setComposerMode('continue')
         setSelectedPaintingId((currentId) => (currentId === resultPainting.id ? completedPainting.id : currentId))
       }
@@ -732,7 +863,7 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
   }
 
   const nextImage = () => {
-    const activePreviewUrls = taskPreviewUrls.length > 0 ? taskPreviewUrls : uploadedPreviewUrls
+    const activePreviewUrls = taskPreviewUrls.length > 0 ? taskPreviewUrls : combinedEditPreviewUrls
     const totalImages = artboardPainting.files.length > 0 ? artboardPainting.files.length : activePreviewUrls.length
     if (totalImages === 0) return
     const step = artboardPainting.files.length === 0 && activePreviewUrls.length > 1 ? 9 : 1
@@ -740,7 +871,7 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
   }
 
   const prevImage = () => {
-    const activePreviewUrls = taskPreviewUrls.length > 0 ? taskPreviewUrls : uploadedPreviewUrls
+    const activePreviewUrls = taskPreviewUrls.length > 0 ? taskPreviewUrls : combinedEditPreviewUrls
     const totalImages = artboardPainting.files.length > 0 ? artboardPainting.files.length : activePreviewUrls.length
     if (totalImages === 0) return
     const step = artboardPainting.files.length === 0 && activePreviewUrls.length > 1 ? 9 : 1
@@ -783,18 +914,13 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
   }
 
   const handlePaste = (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
-    const imageFiles = getClipboardImageFiles(event.clipboardData)
+    const imageFiles = getImageFiles(event.clipboardData)
     if (imageFiles.length === 0) {
       return
     }
     event.preventDefault()
     handlePastedFiles(imageFiles)
   }
-
-  const uploadedPreviewUrls = useMemo(
-    () => uploadedEditFiles.map((file) => URL.createObjectURL(file)),
-    [uploadedEditFiles]
-  )
 
   useEffect(() => {
     return () => {
@@ -979,25 +1105,41 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
             onNextImage={nextImage}
             onCancel={onCancel}
             retry={handleRetry}
-            previewUrls={taskPreviewUrls.length > 0 ? taskPreviewUrls : uploadedPreviewUrls}
-            onDeletePreview={taskPreviewUrls.length > 0 ? undefined : handleDeleteUploadedImage}
+            previewUrls={taskPreviewUrls.length > 0 ? taskPreviewUrls : combinedEditPreviewUrls}
+            onDeletePreview={taskPreviewUrls.length > 0 ? undefined : handleDeletePreview}
+            canDeletePreview={taskPreviewUrls.length > 0 ? undefined : canDeletePreview}
+            isImageDragActive={isImageDragActive}
+            onImageDragEnter={handleImageDragEnter}
+            onImageDragOver={handleImageDragOver}
+            onImageDragLeave={handleImageDragLeave}
+            onImageDrop={handleImageDrop}
+            uploadAction={
+              <ImageUploadButton
+                accept="image/png, image/jpeg, image/gif, image/webp"
+                maxCount={MAX_IMAGE_INPUTS}
+                multiple
+                showUploadList={false}
+                beforeUpload={handleImageUpload}>
+                <Button size="small" icon={<UploadOutlined />} disabled={remainingImageSlots === 0}>
+                  {t('paintings.canvas_upload_action')}
+                </Button>
+              </ImageUploadButton>
+            }
             prompt={artboardPainting.prompt}
             imageCover={
               <CanvasGuide>
                 <GuideText>{t('paintings.canvas_guide_primary')}</GuideText>
                 <GuideTextMuted>{t('paintings.canvas_guide_secondary')}</GuideTextMuted>
-                <ImageUploadButton
-                  accept="image/png, image/jpeg, image/gif"
-                  maxCount={16}
-                  multiple
-                  showUploadList={false}
-                  beforeUpload={handleImageUpload}>
-                  <Button icon={<UploadOutlined />}>{t('paintings.canvas_upload_action')}</Button>
-                </ImageUploadButton>
+                <GuideTextMuted>{t('paintings.canvas_guide_limit')}</GuideTextMuted>
               </CanvasGuide>
             }
           />
-          <InputContainer>
+          <InputContainer
+            $dragActive={isImageDragActive}
+            onDragEnter={handleImageDragEnter}
+            onDragOver={handleImageDragOver}
+            onDragLeave={handleImageDragLeave}
+            onDrop={handleImageDrop}>
             {composerHint && <ComposerHint>{composerHint}</ComposerHint>}
             <Textarea
               ref={textareaRef}
@@ -1086,6 +1228,7 @@ const Container = styled.div`
   flex: 1;
   flex-direction: column;
   height: 100%;
+  min-height: 0;
 `
 
 const ContentContainer = styled.div`
@@ -1093,6 +1236,7 @@ const ContentContainer = styled.div`
   flex: 1;
   flex-direction: row;
   height: 100%;
+  min-height: 0;
   background-color: var(--color-background);
   overflow: hidden;
 `
@@ -1113,10 +1257,11 @@ const MainContainer = styled.div`
   flex: 1;
   flex-direction: column;
   height: 100%;
+  min-height: 0;
   background-color: var(--color-background);
 `
 
-const InputContainer = styled.div`
+const InputContainer = styled.div<{ $dragActive: boolean }>`
   display: flex;
   flex-direction: column;
   height: 95px;
@@ -1131,6 +1276,14 @@ const InputContainer = styled.div`
   margin: 0 20px 15px 20px;
   border-radius: 10px;
   overflow: hidden;
+
+  ${({ $dragActive }) =>
+    $dragActive &&
+    `
+      border-color: var(--color-primary);
+      box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary) 18%, transparent);
+      background: color-mix(in srgb, var(--color-primary) 4%, var(--color-background));
+    `}
 
   &:focus-within {
     border-color: var(--color-border);

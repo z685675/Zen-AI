@@ -200,12 +200,12 @@ describe('isVisionModel', () => {
   })
 
   it('leverages image enhancement regex when standard vision regex does not match', () => {
-    expect(isVisionModel(createModel({ id: 'qwen-image-edit' }))).toBe(true)
+    expect(isVisionModel(createModel({ id: 'qwen-image-edit' }))).toBe(false)
   })
 
-  it('returns false for doubao models that fail regex checks', () => {
+  it('uses the optimistic default for new doubao chat model IDs', () => {
     const doubao = createModel({ id: 'doubao-standard', provider: 'doubao', name: 'basic' })
-    expect(isVisionModel(doubao)).toBe(false)
+    expect(isVisionModel(doubao)).toBe(true)
   })
 
   describe('Gemini Models', () => {
@@ -359,7 +359,7 @@ describe('isVisionModel', () => {
       ).toBe(true)
     })
 
-    it('should return false for gemini 1.0 models', () => {
+    it('uses the optimistic default for older Gemini chat models', () => {
       expect(
         isVisionModel({
           id: 'gemini-1.0-pro',
@@ -367,7 +367,7 @@ describe('isVisionModel', () => {
           provider: '',
           group: ''
         })
-      ).toBe(false)
+      ).toBe(true)
     })
   })
 
@@ -376,8 +376,8 @@ describe('isVisionModel', () => {
       expect(isVisionModel(createModel({ id: 'kimi-k2.5' }))).toBe(true)
       expect(isVisionModel(createModel({ id: 'moonshot/kimi-k2.5' }))).toBe(true)
     })
-    it('should return false for kimi non-vision models', () => {
-      expect(isVisionModel(createModel({ id: 'kimi-k2-thinking' }))).toBe(false)
+    it('uses the optimistic default for new Kimi chat models', () => {
+      expect(isVisionModel(createModel({ id: 'kimi-k2-thinking' }))).toBe(true)
     })
   })
 
@@ -470,8 +470,8 @@ describe('Gemma 4 Models', () => {
     expect(isVisionModel(createModel({ id: 'gemma3:latest' }))).toBe(true)
   })
 
-  it('does NOT detect Gemma 2 as vision (no regression)', () => {
-    expect(isVisionModel(createModel({ id: 'gemma-2b' }))).toBe(false)
-    expect(isVisionModel(createModel({ id: 'gemma-2-27b-it' }))).toBe(false)
+  it('uses the optimistic default for Gemma 2 chat models', () => {
+    expect(isVisionModel(createModel({ id: 'gemma-2b' }))).toBe(true)
+    expect(isVisionModel(createModel({ id: 'gemma-2-27b-it' }))).toBe(true)
   })
 })

@@ -6,7 +6,8 @@ import {
   findAgentModelId,
   getAgentModelProviderId,
   isAssistantModelIdentifierAllowed,
-  isAssistantModelIdentifierBlocked
+  isAssistantModelIdentifierBlocked,
+  resolveAssistantFallbackModel
 } from '@renderer/config/agentModelPolicy'
 import { useActiveAgent } from '@renderer/hooks/agents/useActiveAgent'
 import { useAgentClient } from '@renderer/hooks/agents/useAgentClient'
@@ -332,33 +333,30 @@ const AgentChat = () => {
       !activeSession ||
       !hasLoadedSessionMessages ||
       isActiveSessionLoading ||
-      !modelPolicy?.policy ||
-      !isAssistantModelIdentifierBlocked(activeSession.model, modelPolicy.policy) ||
+      messages.length === 0 ||
       modelRepairAttemptsRef.current.has(activeSession.id)
     ) {
       return
     }
 
     modelRepairAttemptsRef.current.add(activeSession.id)
-    const repairBlockedModel = async () => {
+    const repairUnavailableModel = async () => {
       try {
         const { data } = await client.getModels({ limit: 1000 })
-        const fallbackCandidates = [
-          ...modelPolicy.policy.assistant.fallbackModels,
-          ...(modelPolicy.policy.rules.applyToNewSessions === false
-            ? []
-            : [modelPolicy.policy.defaults.assistantNewSession])
-        ]
-        const fallbackModel = fallbackCandidates
-          .map((candidate) => findAgentModelId(data, candidate, getAgentModelProviderId(activeSession.model)))
-          .find(
-            (candidate): candidate is string =>
-              Boolean(candidate) && isAssistantModelIdentifierAllowed(candidate, false, modelPolicy.policy)
-          )
+        const currentModelBlocked = isAssistantModelIdentifierBlocked(activeSession.model, modelPolicy?.policy)
+        const currentModelAvailable =
+          Boolean(activeSession.model?.trim()) && data.some((model) => model.id === activeSession.model)
+        if (currentModelAvailable && !currentModelBlocked) return
+
+        const fallbackModel = resolveAssistantFallbackModel(data, activeSession.model, modelPolicy?.policy)
 
         if (!fallbackModel) {
+          modelRepairAttemptsRef.current.delete(activeSession.id)
           window.toast.error(
-            t('agent.modelPolicy.noFallback', '当前模型已停用，且没有可用的备用模型，请在模型设置中选择其他模型。')
+            t(
+              'agent.modelPolicy.noFallback',
+              '当前会话使用的模型已停用或下架，且没有可用的备用模型，请先配置可用模型。'
+            )
           )
           return
         }
@@ -369,28 +367,32 @@ const AgentChat = () => {
         const updated = await updateSession(
           {
             id: activeSession.id,
-            model: fallbackModel
+            model: fallbackModel.id
           },
           { showSuccessToast: false }
         )
         if (updated) {
           window.toast.info(
-            t('agent.modelPolicy.switched', '当前模型已停用，本次会话已切换至备用模型，原有上下文已保留。')
+            t(
+              'agent.modelPolicy.switched',
+              '当前会话使用的模型已停用或下架，本次会话已切换至备用模型，原有上下文已保留。'
+            )
           )
         }
       } catch (error) {
         modelRepairAttemptsRef.current.delete(activeSession.id)
-        logger.warn('Failed to switch an existing Agent session away from a blocked model', error as Error)
+        logger.warn('Failed to switch an existing Agent session away from an unavailable model', error as Error)
       }
     }
 
-    void repairBlockedModel()
+    void repairUnavailableModel()
   }, [
     activeAgentId,
     activeSession,
     client,
     hasLoadedSessionMessages,
     isActiveSessionLoading,
+    messages.length,
     modelPolicy?.policy,
     t,
     updateSession

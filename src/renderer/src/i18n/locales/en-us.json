@@ -3261,6 +3261,7 @@
         "image": "New Image"
       }
     },
+    "canvas_guide_limit": "You can upload up to 6 images as references for image generation.",
     "canvas_guide_primary": "Describe the image you want below, and I'll generate it for you.",
     "canvas_guide_secondary": "You can upload or paste multiple images for image editing.",
     "canvas_upload_action": "Upload Image",
@@ -3371,6 +3372,7 @@
       "auto": "Auto (smart match)",
       "experimental_badge": "(High cost)"
     },
+    "image_upload_limit": "You can use up to {{max}} images, including the generated image. {{remaining}} more can be added.",
     "inference_steps": "Inference Steps",
     "inference_steps_tip": "The number of inference steps to perform. More steps produce higher quality but take longer",
     "input_image": "Input Image",
@@ -4863,6 +4865,11 @@
     "display": {
       "assistant": {
         "title": "Assistant Settings"
+      },
+      "conversation": {
+        "description": "Adjusts only the text in the conversation area. It does not affect overall zoom, the sidebar, buttons, the input box, or code areas.",
+        "font_size": "Conversation text size",
+        "title": "Conversation Text"
       },
       "custom": {
         "css": {

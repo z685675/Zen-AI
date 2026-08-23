@@ -22,7 +22,14 @@ interface ArtboardProps {
   loadText?: React.ReactNode
   previewUrls?: string[]
   onDeletePreview?: (index: number) => void
+  canDeletePreview?: (index: number) => boolean
   prompt?: string
+  uploadAction?: React.ReactNode
+  isImageDragActive?: boolean
+  onImageDragEnter?: (event: React.DragEvent<HTMLDivElement>) => void
+  onImageDragOver?: (event: React.DragEvent<HTMLDivElement>) => void
+  onImageDragLeave?: (event: React.DragEvent<HTMLDivElement>) => void
+  onImageDrop?: (event: React.DragEvent<HTMLDivElement>) => void
 }
 
 const Artboard: FC<ArtboardProps> = ({
@@ -37,7 +44,14 @@ const Artboard: FC<ArtboardProps> = ({
   loadText,
   previewUrls = [],
   onDeletePreview,
-  prompt
+  canDeletePreview,
+  prompt,
+  uploadAction,
+  isImageDragActive = false,
+  onImageDragEnter,
+  onImageDragOver,
+  onImageDragLeave,
+  onImageDrop
 }) => {
   const { t } = useTranslation()
 
@@ -67,7 +81,13 @@ const Artboard: FC<ArtboardProps> = ({
   ) : null
 
   return (
-    <Container>
+    <Container
+      data-testid="painting-artboard-dropzone"
+      $dragActive={isImageDragActive}
+      onDragEnter={onImageDragEnter}
+      onDragOver={onImageDragOver}
+      onDragLeave={onImageDragLeave}
+      onDrop={onImageDrop}>
       <ArtboardStack>
         <LoadingContainer spinning={isLoading}>
           {isPreviewGrid ? (
@@ -88,11 +108,12 @@ const Artboard: FC<ArtboardProps> = ({
                           cursor: 'pointer'
                         }}
                       />
-                      {onDeletePreview && (
+                      {onDeletePreview && (!canDeletePreview || canDeletePreview(absoluteIndex)) && (
                         <DeletePreviewButton
                           size="small"
                           type="text"
                           icon={<CloseOutlined />}
+                          aria-label={t('appMenu.delete')}
                           onClick={(event) => {
                             event.stopPropagation()
                             onDeletePreview(absoluteIndex)
@@ -115,17 +136,33 @@ const Artboard: FC<ArtboardProps> = ({
                   {'<'}
                 </NavigationButton>
               )}
-              <ImageViewer
-                src={currentDisplayUrl}
-                preview={{ mask: false }}
-                style={{
-                  maxWidth: 'var(--artboard-max)',
-                  maxHeight: 'var(--artboard-max)',
-                  objectFit: 'contain',
-                  backgroundColor: 'var(--color-background-soft)',
-                  cursor: 'pointer'
-                }}
-              />
+              <SingleImageStage>
+                <ImageViewer
+                  src={currentDisplayUrl}
+                  preview={{ mask: false }}
+                  style={{
+                    maxWidth: 'var(--artboard-max)',
+                    maxHeight: 'var(--artboard-max)',
+                    objectFit: 'contain',
+                    backgroundColor: 'var(--color-background-soft)',
+                    cursor: 'pointer'
+                  }}
+                />
+                {onDeletePreview &&
+                  previewUrls.length > 0 &&
+                  (!canDeletePreview || canDeletePreview(currentImageIndex)) && (
+                    <DeletePreviewButton
+                      size="small"
+                      type="text"
+                      icon={<CloseOutlined />}
+                      aria-label={t('appMenu.delete')}
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        onDeletePreview(currentImageIndex)
+                      }}
+                    />
+                  )}
+              </SingleImageStage>
               {displayUrls.length > 1 && (
                 <NavigationButton onClick={onNextImage} style={{ right: 10 }}>
                   {'>'}
@@ -160,6 +197,11 @@ const Artboard: FC<ArtboardProps> = ({
               )}
             </ImagePlaceholder>
           )}
+          {isImageDragActive && (
+            <ImageDropOverlay>
+              <ImageDropOverlayText>{t('paintings.canvas_upload_action')}</ImageDropOverlayText>
+            </ImageDropOverlay>
+          )}
           {isLoading && (
             <LoadingOverlay>
               <LoadingStatus>
@@ -172,6 +214,7 @@ const Artboard: FC<ArtboardProps> = ({
             </LoadingOverlay>
           )}
         </LoadingContainer>
+        {!isLoading && uploadAction && <CanvasUploadBar>{uploadAction}</CanvasUploadBar>}
         {(promptText || createdAtText) && (
           <InfoBar>
             {promptText && (
@@ -198,12 +241,14 @@ const Artboard: FC<ArtboardProps> = ({
   )
 }
 
-const Container = styled.div`
+const Container = styled.div<{ $dragActive: boolean }>`
   display: flex;
   flex: 1;
   flex-direction: row;
   justify-content: center;
   align-items: center;
+  min-height: 0;
+  overflow: auto;
   padding: 12px 20px 10px;
   background:
     linear-gradient(90deg, color-mix(in srgb, var(--color-border) 34%, transparent) 1px, transparent 1px),
@@ -211,6 +256,12 @@ const Container = styled.div`
   background-size: 24px 24px;
 
   --artboard-max: min(calc(100vh - 230px), calc(100vw - 500px));
+
+  ${({ $dragActive }) =>
+    $dragActive &&
+    `
+      background-color: color-mix(in srgb, var(--color-primary) 4%, var(--color-background));
+    `}
 `
 
 const ArtboardStack = styled.div`
@@ -279,6 +330,36 @@ const CanvasFrame = styled.div`
   }
 `
 
+const CanvasUploadBar = styled.div`
+  display: flex;
+  justify-content: center;
+  width: 100%;
+  margin-top: 2px;
+`
+
+const ImageDropOverlay = styled.div`
+  position: absolute;
+  inset: 0;
+  z-index: 15;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: color-mix(in srgb, var(--color-primary) 12%, var(--color-background) 88%);
+  border: 2px dashed var(--color-primary);
+  pointer-events: none;
+`
+
+const ImageDropOverlayText = styled.div`
+  padding: 10px 16px;
+  border-radius: 999px;
+  color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-background) 92%, transparent);
+  font-size: 14px;
+  font-weight: 600;
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--color-primary) 16%, transparent);
+`
+
 const PreviewGrid = styled.div<{ $columns: number }>`
   display: grid;
   grid-template-columns: repeat(${(props) => props.$columns}, minmax(0, 1fr));
@@ -343,6 +424,17 @@ const DeletePreviewButton = styled(Button)`
     color: #fff !important;
     background: rgba(0, 0, 0, 0.72) !important;
   }
+`
+
+const SingleImageStage = styled.div`
+  position: relative;
+  display: flex;
+  width: fit-content;
+  height: fit-content;
+  max-width: 100%;
+  max-height: 100%;
+  align-items: center;
+  justify-content: center;
 `
 
 const NavigationButton = styled(Button)`

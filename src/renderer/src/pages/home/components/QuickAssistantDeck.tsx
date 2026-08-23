@@ -387,7 +387,23 @@ const AddRoleButton = styled.button`
 const DeckScroller = styled.div`
   min-height: 150px;
   max-height: 150px;
-  overflow: hidden;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+
+  &::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    background: rgba(148, 163, 184, 0.45);
+  }
+
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
 `
 
 const RoleCard = styled.button`

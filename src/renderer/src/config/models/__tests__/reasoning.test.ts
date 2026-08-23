@@ -512,8 +512,8 @@ describe('GPT-5.1 Series Models', () => {
       expect(isReasoningModel(createModel({ id: 'gpt-5.1-codex-mini' }))).toBe(true)
     })
 
-    it('should not classify GPT-5.1 chat models as reasoning models', () => {
-      expect(isReasoningModel(createModel({ id: 'gpt-5.1-chat' }))).toBe(false)
+    it('uses the optimistic default for newly released chat variants', () => {
+      expect(isReasoningModel(createModel({ id: 'gpt-5.1-chat' }))).toBe(true)
     })
   })
 })
@@ -2788,14 +2788,14 @@ describe('Gemma 4 Models', () => {
       expect(isReasoningModel(createModel({ id: 'gemma4:latest' }))).toBe(true)
     })
 
-    it('does NOT detect Gemma 2 as reasoning (no regression)', () => {
-      expect(isReasoningModel(createModel({ id: 'gemma-2b' }))).toBe(false)
-      expect(isReasoningModel(createModel({ id: 'gemma-2-27b-it' }))).toBe(false)
+    it('uses the optimistic default for Gemma 2 chat models', () => {
+      expect(isReasoningModel(createModel({ id: 'gemma-2b' }))).toBe(true)
+      expect(isReasoningModel(createModel({ id: 'gemma-2-27b-it' }))).toBe(true)
     })
 
-    it('does NOT detect Gemma 3 as reasoning (no regression)', () => {
-      expect(isReasoningModel(createModel({ id: 'gemma-3-27b' }))).toBe(false)
-      expect(isReasoningModel(createModel({ id: 'gemma-3n-e4b-it' }))).toBe(false)
+    it('uses the optimistic default for Gemma 3 chat models', () => {
+      expect(isReasoningModel(createModel({ id: 'gemma-3-27b' }))).toBe(true)
+      expect(isReasoningModel(createModel({ id: 'gemma-3n-e4b-it' }))).toBe(true)
     })
   })
 

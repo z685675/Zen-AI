@@ -3261,6 +3261,7 @@
         "image": "新繪圖"
       }
     },
+    "canvas_guide_limit": "最多可上傳 6 張圖片作為圖片生成參考。",
     "canvas_guide_primary": "[to be translated]:请在下方输入你想要的图片内容，我来帮你生成。",
     "canvas_guide_secondary": "支援上傳或貼上多張圖片進行二次編輯。",
     "canvas_upload_action": "[to be translated]:上传图片",
@@ -3371,6 +3372,7 @@
       "auto": "自動",
       "experimental_badge": "(Experimental)"
     },
+    "image_upload_limit": "最多支援 {{max}} 張圖片（包含已生成圖片），目前還可以新增 {{remaining}} 張。",
     "inference_steps": "推理步數",
     "inference_steps_tip": "要執行的推理步數。步數越多，品質越高但耗時越長",
     "input_image": "輸入圖片",
@@ -4863,6 +4865,11 @@
     "display": {
       "assistant": {
         "title": "助手設定"
+      },
+      "conversation": {
+        "description": "只調整對話訊息區域的文字大小，不影響整體介面縮放、側邊欄、按鈕、輸入框和程式碼區域。",
+        "font_size": "對話區域文字大小",
+        "title": "對話文字設定"
       },
       "custom": {
         "css": {

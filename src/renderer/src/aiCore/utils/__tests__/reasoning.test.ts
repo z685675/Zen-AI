@@ -31,6 +31,8 @@ function defaultGetStoreSetting<K extends keyof SettingsState>(key: K): Settings
 }
 
 // Mock dependencies
+const { reasoningModelMock } = vi.hoisted(() => ({ reasoningModelMock: vi.fn(() => false) }))
+
 vi.mock('@logger', () => ({
   loggerService: {
     withContext: () => ({
@@ -68,7 +70,8 @@ vi.mock('@renderer/config/models', async (importOriginal) => {
   const actual: any = await importOriginal()
   return {
     ...actual,
-    isReasoningModel: vi.fn(() => false),
+    isReasoningModel: reasoningModelMock,
+    isReasoningParameterModel: reasoningModelMock,
     isOpenAIDeepResearchModel: vi.fn(() => false),
     isOpenAIModel: vi.fn(() => false),
     isSupportedReasoningEffortOpenAIModel: vi.fn(() => false),

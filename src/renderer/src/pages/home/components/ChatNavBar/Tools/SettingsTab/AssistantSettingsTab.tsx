@@ -27,8 +27,8 @@ import {
   setCodeWrappable,
   setConfirmDeleteMessage,
   setConfirmRegenerateMessage,
+  setConversationFontSize,
   setEnableQuickPanelTriggers,
-  setFontSize,
   setMathEnableSingleDollar,
   setMathEngine,
   setMessageFont,
@@ -69,11 +69,11 @@ const AssistantSettingsTab = (props: Props) => {
   const model = assistant.model || getDefaultModel()
   const { provider } = useProvider(model?.provider)
 
-  const { messageStyle, fontSize, language } = useSettings()
+  const { messageStyle, conversationFontSize, language } = useSettings()
   const { theme } = useTheme()
   const { themeNames } = useCodeStyle()
 
-  const [fontSizeValue, setFontSizeValue] = useState(fontSize)
+  const [fontSizeValue, setFontSizeValue] = useState(conversationFontSize)
   const { translateLanguages } = useTranslate()
 
   const { t } = useTranslation()
@@ -243,7 +243,7 @@ const AssistantSettingsTab = (props: Props) => {
               <Slider
                 value={fontSizeValue}
                 onChange={(value) => setFontSizeValue(value)}
-                onChangeComplete={(value) => dispatch(setFontSize(value))}
+                onChangeComplete={(value) => dispatch(setConversationFontSize(value))}
                 min={12}
                 max={22}
                 step={1}

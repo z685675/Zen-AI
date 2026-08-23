@@ -19,7 +19,7 @@ interface Props {
 const ThinkingBlock: React.FC<Props> = ({ block }) => {
   const [copied, setCopied] = useTemporaryValue(false, 2000)
   const { t } = useTranslation()
-  const { messageFont, fontSize, thoughtAutoCollapse } = useSettings()
+  const { messageFont, conversationFontSize, thoughtAutoCollapse } = useSettings()
   const [activeKey, setActiveKey] = useState<'thought' | ''>(thoughtAutoCollapse ? '' : 'thought')
 
   const isThinking = useMemo(() => block.status === MessageBlockStatus.STREAMING, [block.status])
@@ -76,7 +76,7 @@ const ThinkingBlock: React.FC<Props> = ({ block }) => {
             <ThinkingContent
               style={{
                 fontFamily: messageFont === 'serif' ? 'var(--font-family-serif)' : 'var(--font-family)',
-                fontSize
+                fontSize: conversationFontSize
               }}>
               {!isThinking && (
                 <Tooltip title={t('common.copy')} mouseEnterDelay={0.8}>

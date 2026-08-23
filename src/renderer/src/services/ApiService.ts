@@ -8,9 +8,15 @@ import { buildProviderOptions } from '@renderer/aiCore/utils/options'
 import {
   isDedicatedImageGenerationModel,
   isEmbeddingModel,
+  isFixedReasoningModel,
   isFunctionCallingModel,
   isVisionModel
 } from '@renderer/config/models'
+import {
+  isLikelyUnsupportedModelCapabilityError,
+  type LearnableModelCapability,
+  rememberModelCapabilityFailure
+} from '@renderer/config/models/modelCapabilityMemory'
 import { getStoreSetting } from '@renderer/hooks/useSettings'
 import i18n from '@renderer/i18n'
 import store from '@renderer/store'
@@ -872,6 +878,36 @@ export async function fetchChatCompletion({
     contextError?: unknown
   }
 
+  const containsImagePart = (modelMessages: ModelMessage[]): boolean => {
+    return modelMessages.some((message) => {
+      if (!Array.isArray(message.content)) return false
+      return message.content.some((part) => {
+        return typeof part === 'object' && part !== null && 'type' in part && part.type === 'image'
+      })
+    })
+  }
+
+  const getAttemptedCapabilities = (
+    modelMessages: ModelMessage[],
+    enableReasoning: boolean,
+    enableWebSearch: boolean
+  ): LearnableModelCapability[] => {
+    const attemptedCapabilities: LearnableModelCapability[] = []
+    if (isSupportedToolUse(assistant) && mcpTools.length > 0) {
+      attemptedCapabilities.push('function_calling')
+    }
+    if (isVisionModel(model) && containsImagePart(modelMessages)) {
+      attemptedCapabilities.push('vision')
+    }
+    if (enableReasoning && !isFixedReasoningModel(model)) {
+      attemptedCapabilities.push('reasoning')
+    }
+    if (enableWebSearch) {
+      attemptedCapabilities.push('web_search')
+    }
+    return attemptedCapabilities
+  }
+
   const runCompletionAttempt = async (attemptMessages: ModelMessage[]): Promise<CompletionAttemptResult> => {
     const {
       params: aiSdkParams,
@@ -943,6 +979,22 @@ export async function fetchChatCompletion({
       if (!contextError && isContextCapacityError(error)) {
         contextError = error
       } else if (!contextError) {
+        const attemptedCapabilities = getAttemptedCapabilities(
+          attemptMessages,
+          capabilities.enableReasoning,
+          capabilities.enableWebSearch
+        )
+        const failedCapability = attemptedCapabilities.find((capability) =>
+          isLikelyUnsupportedModelCapabilityError(error, capability)
+        )
+        if (failedCapability) {
+          rememberModelCapabilityFailure(model, failedCapability)
+          logger.warn('Learned that a provider/model capability is unavailable', {
+            providerId: model.provider,
+            modelId: model.id,
+            capability: failedCapability
+          })
+        }
         throw error
       }
     }

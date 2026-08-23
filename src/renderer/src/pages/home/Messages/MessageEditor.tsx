@@ -49,7 +49,8 @@ const MessageBlockEditor: FC<Props> = ({ message, topicId, onSave, onResend, onC
   const [isFileDragging, setIsFileDragging] = useState(false)
   const { assistant } = useAssistant(message.assistantId)
   const model = assistant.model || assistant.defaultModel
-  const { pasteLongTextAsFile, pasteLongTextThreshold, fontSize, sendMessageShortcut, enableSpellCheck } = useSettings()
+  const { pasteLongTextAsFile, pasteLongTextThreshold, conversationFontSize, sendMessageShortcut, enableSpellCheck } =
+    useSettings()
   const { t } = useTranslation()
   const textareaRef = useRef<TextAreaRef>(null)
   const isUserMessage = message.role === 'user'
@@ -286,7 +287,7 @@ const MessageBlockEditor: FC<Props> = ({ message, topicId, onSave, onResend, onC
               }}
               autoSize={{ minRows: 1, maxRows: 15 }}
               style={{
-                fontSize
+                fontSize: conversationFontSize
               }}>
               <TranslateButton onTranslated={onTranslated} />
             </TextArea>

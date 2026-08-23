@@ -132,3 +132,45 @@ export const findAgentModelId = (
 
   return candidates.find((model) => model.is_official_provider)?.id ?? candidates[0]?.id
 }
+
+const isUsableAgentChatModel = (model: ApiModel): boolean => {
+  if (model.endpoint_type === 'image-generation' || model.endpoint_type === 'jina-rerank') return false
+  const identifier = `${model.id} ${model.provider_model_id ?? ''}`
+  return !/(embedding|rerank|text-to-image|image-generation)/i.test(identifier)
+}
+
+/**
+ * Resolve a usable model for an existing Agent session whose model is no
+ * longer available. The current model is tried through another Provider first,
+ * followed by the remotely configured fallback order and finally any usable
+ * model allowed by the current policy.
+ */
+export const resolveAssistantFallbackModel = (
+  models: ApiModel[],
+  currentModelId: string | undefined,
+  policy?: ModelPolicy
+): ApiModel | undefined => {
+  const preferredProviderId = getAgentModelProviderId(currentModelId)
+  const currentModelIsBlocked = isAssistantModelIdentifierBlocked(currentModelId, policy)
+  const candidates = [
+    ...(currentModelId && !currentModelIsBlocked ? [currentModelId] : []),
+    ...(policy?.assistant.fallbackModels ?? []),
+    ...(policy?.rules.applyToNewSessions === false ? [] : [policy?.defaults.assistantNewSession]),
+    ...(policy?.defaults.assistant ? [policy.defaults.assistant] : [])
+  ].filter((candidate): candidate is string => Boolean(candidate?.trim()))
+
+  for (const candidate of candidates) {
+    const resolvedId = findAgentModelId(models, candidate, preferredProviderId)
+    const resolved = resolvedId ? models.find((model) => model.id === resolvedId) : undefined
+    if (resolved && isUsableAgentChatModel(resolved) && isAssistantModelAllowed(resolved, false, policy)) {
+      return resolved
+    }
+  }
+
+  return (
+    models.find(
+      (model) =>
+        isUsableAgentChatModel(model) && isAssistantModelAllowed(model, false, policy) && model.is_official_provider
+    ) ?? models.find((model) => isUsableAgentChatModel(model) && isAssistantModelAllowed(model, false, policy))
+  )
+}

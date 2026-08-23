@@ -3805,6 +3805,20 @@ const migrateConfig = {
       logger.error('migrate 225 error', error as Error)
       return state
     }
+  },
+  '226': (state: RootState) => {
+    try {
+      // Preserve the existing message font size when introducing the dedicated conversation text setting.
+      if (typeof state.settings.conversationFontSize !== 'number') {
+        state.settings.conversationFontSize = state.settings.fontSize
+      }
+
+      logger.info('migrate 226 success')
+      return state
+    } catch (error) {
+      logger.error('migrate 226 error', error as Error)
+      return state
+    }
   }
 }
 

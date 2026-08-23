@@ -14,6 +14,7 @@ import {
 export { GEMINI_FLASH_MODEL_REGEX } from './utils'
 
 import { isEmbeddingModel, isRerankModel } from './embedding'
+import { hasLearnedModelCapabilityFailure } from './modelCapabilityMemory'
 import { isClaude4SeriesModel } from './reasoning'
 import { isAnthropicModel } from './utils'
 import { isTextToImageModel } from './vision'
@@ -43,6 +44,10 @@ export function isWebSearchModel(model: Model): boolean {
 
   if (isUserSelectedModelType(model, 'web_search') !== undefined) {
     return isUserSelectedModelType(model, 'web_search')!
+  }
+
+  if (hasLearnedModelCapabilityFailure(model, 'web_search')) {
+    return false
   }
 
   const provider = getProviderByModel(model)

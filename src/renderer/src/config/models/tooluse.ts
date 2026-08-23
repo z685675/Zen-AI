@@ -3,6 +3,7 @@ import { isSystemProviderId } from '@renderer/types'
 import { getLowerBaseModelName, isUserSelectedModelType } from '@renderer/utils'
 
 import { isEmbeddingModel, isRerankModel } from './embedding'
+import { hasLearnedModelCapabilityFailure } from './modelCapabilityMemory'
 import { isDeepSeekHybridInferenceModel } from './reasoning'
 import { isTextToImageModel } from './vision'
 
@@ -74,8 +75,14 @@ export function isFunctionCallingModel(model?: Model): boolean {
     return isUserSelectedModelType(model, 'function_calling')!
   }
 
+  if (hasLearnedModelCapabilityFailure(model, 'function_calling')) {
+    return false
+  }
+
   if (model.provider === 'doubao' || modelId.includes('doubao')) {
-    return FUNCTION_CALLING_REGEX.test(modelId) || FUNCTION_CALLING_REGEX.test(model.name)
+    if (FUNCTION_CALLING_REGEX.test(modelId) || FUNCTION_CALLING_REGEX.test(model.name)) {
+      return true
+    }
   }
 
   // 2025/08/26 百炼与火山引擎均不支持 v3.1 函数调用
@@ -92,5 +99,12 @@ export function isFunctionCallingModel(model?: Model): boolean {
     return true
   }
 
-  return FUNCTION_CALLING_REGEX.test(modelId)
+  if (FUNCTION_CALLING_REGEX.test(modelId)) {
+    return true
+  }
+
+  // Provider model lists often contain aliases or newly released IDs. Treat
+  // unknown normal chat models optimistically and let the real provider
+  // response teach us when tool calling is unavailable.
+  return true
 }

@@ -469,6 +469,16 @@ const AgentSessionInputbarInner: FC<InnerProps> = ({
       return
     }
 
+    // The session repair runs asynchronously after the current Provider model
+    // list is loaded. Keep a final guard here so a stale or empty model can
+    // never be submitted while that repair is still in progress.
+    if (!assistant.model) {
+      window.toast.warning(
+        t('agent.modelPolicy.noFallback', '当前会话没有可用模型，请先配置模型或等待系统完成模型切换。')
+      )
+      return
+    }
+
     logger.info('Starting to send message')
 
     try {
@@ -582,7 +592,8 @@ const AgentSessionInputbarInner: FC<InnerProps> = ({
     reasoningEffort,
     deepResearchEnabled,
     deepResearchCacheKey,
-    topicMessages
+    topicMessages,
+    t
   ])
 
   useEffect(() => {

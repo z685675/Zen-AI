@@ -13,12 +13,13 @@ import type { AssistantIconType } from '@renderer/store/settings'
 import {
   setAssistantIconType,
   setClickAssistantToShowTopic,
+  setConversationFontSize,
   setCustomCss,
   setPinTopicsToTop,
   setShowTopicTime,
   setSidebarIcons
 } from '@renderer/store/settings'
-import { Button, ColorPicker, Segmented, Select, Switch, Tooltip } from 'antd'
+import { Button, ColorPicker, Segmented, Select, Slider, Switch, Tooltip } from 'antd'
 import { Minus, Plus } from 'lucide-react'
 import type { FC } from 'react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
@@ -67,6 +68,7 @@ const DisplaySettings: FC = () => {
     customCss,
     sidebarIcons,
     assistantIconType,
+    conversationFontSize,
     userTheme,
     useSystemTitleBar,
     setUseSystemTitleBar
@@ -292,6 +294,26 @@ const DisplaySettings: FC = () => {
         </SettingRow>
       </SettingGroup>
       <SettingGroup theme={theme}>
+        <SettingTitle>{t('settings.display.conversation.title')}</SettingTitle>
+        <SettingDivider />
+        <SettingRow>
+          <SettingRowTitle>{t('settings.display.conversation.font_size')}</SettingRowTitle>
+          <ZoomValue>{conversationFontSize}px</ZoomValue>
+        </SettingRow>
+        <Slider
+          value={conversationFontSize}
+          min={12}
+          max={22}
+          step={1}
+          marks={{
+            12: <span style={{ fontSize: '12px' }}>{t('common.default')}</span>,
+            22: <span style={{ fontSize: '18px' }}>A</span>
+          }}
+          onChange={(value) => dispatch(setConversationFontSize(value))}
+        />
+        <SettingDescription>{t('settings.display.conversation.description')}</SettingDescription>
+      </SettingGroup>
+      <SettingGroup theme={theme}>
         <SettingTitle style={{ justifyContent: 'flex-start', gap: 5 }}>
           {t('settings.display.font.title')} <TextBadge text="New" />
         </SettingTitle>
@@ -488,6 +510,13 @@ const ZoomValue = styled.span`
   width: 40px;
   text-align: center;
   margin: 0 5px;
+`
+
+const SettingDescription = styled.div`
+  margin-top: 4px;
+  color: var(--color-text-3);
+  font-size: 12px;
+  line-height: 1.5;
 `
 
 const SelectRow = styled.div`

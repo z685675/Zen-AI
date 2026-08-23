@@ -49,7 +49,7 @@ const MessageMcpTool: FC<Props> = ({ block }) => {
   const [activeKeys, setActiveKeys] = useState<string[]>([])
   const [copiedMap, setCopiedMap] = useState<Record<string, boolean>>({})
   const { t } = useTranslation()
-  const { messageFont, fontSize } = useSettings()
+  const { messageFont, conversationFontSize } = useSettings()
   const [progress, setProgress] = useState<number>(0)
   const { setTimeoutTimer } = useTimer()
 
@@ -177,7 +177,7 @@ const MessageMcpTool: FC<Props> = ({ block }) => {
         <ToolResponseContainer
           style={{
             fontFamily: messageFont === 'serif' ? 'var(--font-family-serif)' : 'var(--font-family)',
-            fontSize
+            fontSize: conversationFontSize
           }}>
           <ToolResponseContent
             isExpanded={activeKeys.includes(id)}

@@ -76,7 +76,7 @@ const MessageItem: FC<Props> = ({
   const assistant = sessionAssistant ?? fallbackAssistant
   const { isMultiSelectMode } = useChatContext(topic)
   const model = useModel(getMessageModelId(message), message.model?.provider) || message.model
-  const { messageFont, fontSize, messageStyle, showMessageOutline } = useSettings()
+  const { messageFont, conversationFontSize, messageStyle, showMessageOutline } = useSettings()
   const { editMessageBlocks, resendUserMessageWithEdit, editMessage } = useMessageOperations(topic)
   const messageContainerRef = useRef<HTMLDivElement>(null)
   const { editingMessageId, startEditing, stopEditing } = useMessageEditing()
@@ -281,7 +281,7 @@ const MessageItem: FC<Props> = ({
               className={classNames('message-content-container', { collapsed: canCollapse && isCollapsed })}
               style={{
                 fontFamily: messageFont === 'serif' ? 'var(--font-family-serif)' : 'var(--font-family)',
-                fontSize,
+                fontSize: conversationFontSize,
                 overflowY: 'visible'
               }}>
               <MessageErrorBoundary>

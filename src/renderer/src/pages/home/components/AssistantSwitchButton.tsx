@@ -70,6 +70,24 @@ const AssistantMenu = styled.div`
   flex-direction: column;
   gap: 4px;
   min-width: 220px;
+  max-height: min(52vh, 420px);
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+
+  &::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    background: rgba(148, 163, 184, 0.45);
+  }
+
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
 `
 
 const AssistantMenuItem = styled.button`

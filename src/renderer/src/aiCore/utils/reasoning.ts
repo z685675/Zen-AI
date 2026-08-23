@@ -24,7 +24,7 @@ import {
   isQwen35to39Model,
   isQwenAlwaysThinkModel,
   isQwenReasoningModel,
-  isReasoningModel,
+  isReasoningParameterModel,
   isSupportedReasoningEffortGrokModel,
   isSupportedReasoningEffortModel,
   isSupportedReasoningEffortOpenAIModel,
@@ -92,7 +92,7 @@ export function getReasoningEffort(assistant: Assistant, model: Model): Reasonin
     return {}
   }
 
-  if (!isReasoningModel(model)) {
+  if (!isReasoningParameterModel(model)) {
     return {}
   }
 
@@ -575,7 +575,7 @@ export function getOpenAIReasoningParams(
   assistant: Assistant,
   model: Model
 ): Pick<OpenAIResponsesProviderOptions, 'reasoningEffort' | 'reasoningSummary'> {
-  if (!isReasoningModel(model)) {
+  if (!isReasoningParameterModel(model)) {
     return {}
   }
 
@@ -671,7 +671,7 @@ export function getAnthropicReasoningParams(
   assistant: Assistant,
   model: Model
 ): Pick<AnthropicProviderOptions, 'thinking' | 'effort'> {
-  if (!isReasoningModel(model)) {
+  if (!isReasoningParameterModel(model)) {
     return {}
   }
 
@@ -769,7 +769,7 @@ export function getGeminiReasoningParams(
   assistant: Assistant,
   model: Model
 ): Pick<GoogleGenerativeAIProviderOptions, 'thinkingConfig'> {
-  if (!isReasoningModel(model) || !isSupportedThinkingTokenGeminiModel(model)) {
+  if (!isReasoningParameterModel(model) || !isSupportedThinkingTokenGeminiModel(model)) {
     return {}
   }
 
@@ -870,7 +870,7 @@ export function getBedrockReasoningParams(
   assistant: Assistant,
   model: Model
 ): Pick<BedrockProviderOptions, 'reasoningConfig'> {
-  if (!isReasoningModel(model)) {
+  if (!isReasoningParameterModel(model)) {
     return {}
   }
 

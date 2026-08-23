@@ -3,6 +3,7 @@ import type { Model } from '@renderer/types'
 import { getLowerBaseModelName, isUserSelectedModelType } from '@renderer/utils'
 
 import { isEmbeddingModel, isRerankModel } from './embedding'
+import { hasLearnedModelCapabilityFailure } from './modelCapabilityMemory'
 import { isFunctionCallingModel } from './tooluse'
 
 // Vision models
@@ -269,7 +270,7 @@ export function isImageEnhancementModel(model: Model): boolean {
 }
 
 export function isVisionModel(model: Model): boolean {
-  if (!model || isEmbeddingModel(model) || isRerankModel(model)) {
+  if (!model || isEmbeddingModel(model) || isRerankModel(model) || isTextToImageModel(model)) {
     return false
   }
   // 新添字段 copilot-vision-request 后可使用 vision
@@ -280,10 +281,23 @@ export function isVisionModel(model: Model): boolean {
     return isUserSelectedModelType(model, 'vision')!
   }
 
-  const modelId = getLowerBaseModelName(model.id)
-  if (model.provider === 'doubao' || modelId.includes('doubao')) {
-    return VISION_REGEX.test(model.name) || VISION_REGEX.test(modelId) || false
+  if (hasLearnedModelCapabilityFailure(model, 'vision')) {
+    return false
   }
 
-  return VISION_REGEX.test(modelId) || IMAGE_ENHANCEMENT_MODELS_REGEX.test(modelId) || false
+  const modelId = getLowerBaseModelName(model.id)
+  if (model.provider === 'doubao' || modelId.includes('doubao')) {
+    if (VISION_REGEX.test(model.name) || VISION_REGEX.test(modelId)) {
+      return true
+    }
+  }
+
+  if (VISION_REGEX.test(modelId) || IMAGE_ENHANCEMENT_MODELS_REGEX.test(modelId)) {
+    return true
+  }
+
+  // Unknown models from OpenAI-compatible providers are treated as ordinary
+  // multimodal chat candidates. If the route rejects an image, the failure is
+  // remembered for this provider/model pair and future requests stop sending it.
+  return true
 }

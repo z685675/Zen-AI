@@ -1,5 +1,6 @@
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import type { DragEvent, ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import Artboard from '../Artboard'
@@ -19,7 +20,8 @@ vi.mock('react-i18next', () => ({
         'paintings.copy_prompt': 'Copy prompt',
         'paintings.created_at': 'Created at',
         'paintings.image_placeholder': 'No image',
-        'paintings.prompt_used': 'Prompt used'
+        'paintings.prompt_used': 'Prompt used',
+        'appMenu.delete': 'Delete'
       }
       return translations[key] || key
     }
@@ -51,12 +53,22 @@ function renderArtboard({
   prompt,
   files = [],
   currentImageIndex = 0,
-  isLoading = false
+  isLoading = false,
+  uploadAction,
+  onImageDrop,
+  previewUrls = [],
+  onDeletePreview,
+  canDeletePreview
 }: {
   prompt?: string
   files?: any[]
   currentImageIndex?: number
   isLoading?: boolean
+  uploadAction?: ReactNode
+  onImageDrop?: (event: DragEvent<HTMLDivElement>) => void
+  previewUrls?: string[]
+  onDeletePreview?: (index: number) => void
+  canDeletePreview?: (index: number) => boolean
 } = {}) {
   return render(
     <Artboard
@@ -68,6 +80,11 @@ function renderArtboard({
       onCancel={vi.fn()}
       imageCover={<div>cover</div>}
       prompt={prompt}
+      uploadAction={uploadAction}
+      onImageDrop={onImageDrop}
+      previewUrls={previewUrls}
+      onDeletePreview={onDeletePreview}
+      canDeletePreview={canDeletePreview}
     />
   )
 }
@@ -131,5 +148,53 @@ describe('Artboard prompt popover', () => {
     renderArtboard({ prompt: 'image prompt', isLoading: true })
 
     expect(screen.queryByText(/Created at/)).not.toBeInTheDocument()
+  })
+
+  it('keeps an upload action available when a generated image is displayed', () => {
+    renderArtboard({
+      files: [createImageFile('generated-image', '2026-06-01T09:10:00')],
+      uploadAction: <button type="button">Add image</button>
+    })
+
+    expect(screen.getByRole('button', { name: 'Add image' })).toBeInTheDocument()
+  })
+
+  it('forwards dropped images from the artboard drop target', () => {
+    const onImageDrop = vi.fn()
+    renderArtboard({ onImageDrop })
+
+    const dropzone = screen.getByTestId('painting-artboard-dropzone')
+    const file = new File(['image'], 'reference.png', { type: 'image/png' })
+    const dataTransfer = {
+      files: [file],
+      items: [{ kind: 'file', type: 'image/png', getAsFile: () => file }]
+    }
+
+    fireEvent.drop(dropzone, { dataTransfer })
+
+    expect(onImageDrop).toHaveBeenCalledTimes(1)
+  })
+
+  it('allows deleting the last uploaded preview from the single-image view', async () => {
+    const onDeletePreview = vi.fn()
+    renderArtboard({ previewUrls: ['blob:http://localhost/uploaded.png'], onDeletePreview })
+
+    await userEvent.click(screen.getByRole('button', { name: 'Delete' }))
+
+    expect(onDeletePreview).toHaveBeenCalledWith(0)
+  })
+
+  it('can keep the generated source preview while deleting added previews', async () => {
+    const onDeletePreview = vi.fn()
+    renderArtboard({
+      previewUrls: ['blob:http://localhost/generated.png', 'blob:http://localhost/reference.png'],
+      onDeletePreview,
+      canDeletePreview: (index) => index > 0
+    })
+
+    expect(screen.getAllByRole('button', { name: 'Delete' })).toHaveLength(1)
+    await userEvent.click(screen.getByRole('button', { name: 'Delete' }))
+
+    expect(onDeletePreview).toHaveBeenCalledWith(1)
   })
 })

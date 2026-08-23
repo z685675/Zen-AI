@@ -11,6 +11,7 @@ import {
   isStandardAgentModel,
   isStandardAgentModelIdentifier,
   normalizeAgentModelIdentifier,
+  resolveAssistantFallbackModel,
   STANDARD_AGENT_MODEL_IDS
 } from './agentModelPolicy'
 
@@ -171,5 +172,53 @@ describe('agent model selection policy', () => {
     })
 
     expect(isAssistantModelAllowed(unrestrictedModel, true, policy)).toBe(true)
+  })
+
+  it('resolves a fallback when an existing session model disappeared', () => {
+    const policy = createPolicy({
+      nonDeveloperAllowlist: ['gpt-5.6-luna', 'gpt-5.4-mini'],
+      fallbackModels: ['gpt-5.4-mini']
+    })
+    const fallback = createApiModel({
+      id: 'provider-id:gpt-5.4-mini',
+      name: 'gpt-5.4-mini',
+      provider_model_id: 'gpt-5.4-mini'
+    })
+
+    expect(resolveAssistantFallbackModel([fallback], 'provider-id:old-model', policy)?.id).toBe(
+      'provider-id:gpt-5.4-mini'
+    )
+  })
+
+  it('keeps the same model through another Provider when the original Provider removed it', () => {
+    const policy = createPolicy({
+      nonDeveloperAllowlist: ['gpt-5.6-luna', 'gpt-5.4-mini'],
+      fallbackModels: ['gpt-5.4-mini']
+    })
+    const sameModel = createApiModel({
+      id: 'backup:gpt-5.6-luna',
+      name: 'gpt-5.6-luna',
+      provider: 'backup',
+      owned_by: 'backup',
+      provider_model_id: 'gpt-5.6-luna'
+    })
+
+    expect(resolveAssistantFallbackModel([sameModel], 'removed:gpt-5.6-luna', policy)?.id).toBe('backup:gpt-5.6-luna')
+  })
+
+  it('does not use a blocked fallback and ignores non-chat models', () => {
+    const policy = createPolicy({
+      nonDeveloperAllowlist: ['gpt-5.6-luna', 'gpt-5.4-mini'],
+      blockedModels: ['gpt-5.4-mini'],
+      fallbackModels: ['gpt-5.4-mini']
+    })
+    const imageModel = createApiModel({
+      id: 'provider-id:image-generation',
+      name: 'image-generation',
+      provider_model_id: 'image-generation',
+      endpoint_type: 'image-generation'
+    })
+
+    expect(resolveAssistantFallbackModel([imageModel], 'provider-id:old-model', policy)).toBeUndefined()
   })
 })

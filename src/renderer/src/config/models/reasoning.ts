@@ -8,6 +8,7 @@ import type {
 import { getLowerBaseModelName, isUserSelectedModelType } from '@renderer/utils'
 
 import { isEmbeddingModel, isRerankModel } from './embedding'
+import { hasLearnedModelCapabilityFailure } from './modelCapabilityMemory'
 import {
   isGPT5FamilyModel,
   isGPT5ProModel,
@@ -722,15 +723,7 @@ export function isKimiReasoningModel(model?: Model): boolean {
   return idResult || nameResult
 }
 
-export function isReasoningModel(model?: Model): boolean {
-  if (!model || isEmbeddingModel(model) || isRerankModel(model) || isTextToImageModel(model)) {
-    return false
-  }
-
-  if (isUserSelectedModelType(model, 'reasoning') !== undefined) {
-    return isUserSelectedModelType(model, 'reasoning')!
-  }
-
+function isKnownReasoningModel(model: Model): boolean {
   const modelId = getLowerBaseModelName(model.id)
 
   if (model.provider === 'doubao' || modelId.includes('doubao')) {
@@ -738,12 +731,11 @@ export function isReasoningModel(model?: Model): boolean {
       REASONING_REGEX.test(modelId) ||
       REASONING_REGEX.test(model.name) ||
       isSupportedThinkingTokenDoubaoModel(model) ||
-      isDeepSeekHybridInferenceModel(model) ||
-      false
+      isDeepSeekHybridInferenceModel(model)
     )
   }
 
-  if (
+  return (
     isClaudeReasoningModel(model) ||
     isOpenAIReasoningModel(model) ||
     isGeminiReasoningModel(model) ||
@@ -764,12 +756,54 @@ export function isReasoningModel(model?: Model): boolean {
     modelId.includes('seed-oss') ||
     modelId.includes('deepseek-v3.2-speciale') ||
     modelId.includes('gemma-4') ||
-    modelId.includes('gemma4')
-  ) {
+    modelId.includes('gemma4') ||
+    REASONING_REGEX.test(modelId)
+  )
+}
+
+export function isReasoningModel(model?: Model): boolean {
+  if (!model || isEmbeddingModel(model) || isRerankModel(model) || isTextToImageModel(model)) {
+    return false
+  }
+
+  if (isUserSelectedModelType(model, 'reasoning') !== undefined) {
+    return isUserSelectedModelType(model, 'reasoning')!
+  }
+
+  if (hasLearnedModelCapabilityFailure(model, 'reasoning')) {
+    return false
+  }
+
+  if (isKnownReasoningModel(model)) {
     return true
   }
 
-  return REASONING_REGEX.test(modelId) || false
+  // New ordinary chat models get the thinking affordance without causing
+  // reasoning parameters to be sent until a known provider-specific control
+  // path is available.
+  return true
+}
+
+/**
+ * Returns whether Zen AI has a provider-specific reasoning parameter path for
+ * this model. This is deliberately separate from isReasoningModel(): the UI
+ * may optimistically show the thinking affordance for a new model, but the
+ * request builder must not send an unknown thinking parameter shape.
+ */
+export function isReasoningParameterModel(model?: Model): boolean {
+  if (!model || isEmbeddingModel(model) || isRerankModel(model) || isTextToImageModel(model)) {
+    return false
+  }
+
+  if (isUserSelectedModelType(model, 'reasoning') !== undefined) {
+    return isUserSelectedModelType(model, 'reasoning')!
+  }
+
+  if (hasLearnedModelCapabilityFailure(model, 'reasoning')) {
+    return false
+  }
+
+  return isKnownReasoningModel(model)
 }
 
 const THINKING_TOKEN_MAP: Record<string, { min: number; max: number }> = {
@@ -849,7 +883,7 @@ export const findTokenLimit = (modelId: string): { min: number; max: number } | 
  * @returns `true` if the model is a fixed reasoning model, `false` otherwise
  */
 export const isFixedReasoningModel = (model: Model) =>
-  isReasoningModel(model) && !isSupportedThinkingTokenModel(model) && !isSupportedReasoningEffortModel(model)
+  isKnownReasoningModel(model) && !isSupportedThinkingTokenModel(model) && !isSupportedReasoningEffortModel(model)
 
 // https://platform.minimaxi.com/docs/guides/text-m2-function-call#openai-sdk
 // https://docs.z.ai/guides/capabilities/thinking-mode

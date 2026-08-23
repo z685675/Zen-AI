@@ -23,7 +23,7 @@ const MessageItem: FC<Props> = ({ message, index, total, route }) => {
   // const [message, setMessage] = useState(_message)
   // const [bl, setTextBlock] = useState<MainTextMessageBlock | null>(null)
   // const model = useModel(getMessageModelId(message))
-  const { messageFont, fontSize } = useSettings()
+  const { messageFont, conversationFontSize } = useSettings()
   const messageContainerRef = useRef<HTMLDivElement>(null)
 
   const isAssistantMessage = message.role === 'assistant'
@@ -50,7 +50,7 @@ const MessageItem: FC<Props> = ({ message, index, total, route }) => {
         className="message-content-container"
         style={{
           fontFamily: messageFont === 'serif' ? 'var(--font-family-serif)' : 'var(--font-family)',
-          fontSize,
+          fontSize: conversationFontSize,
           background: messageBackground
         }}>
         <MessageErrorBoundary>

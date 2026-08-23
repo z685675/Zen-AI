@@ -115,10 +115,9 @@ describe('isFunctionCallingModel', () => {
     expect(isFunctionCallingModel(createModel({ id: 'gpt-5' }))).toBe(true)
   })
 
-  it('excludes explicitly blocked ids', () => {
-    expect(isFunctionCallingModel(createModel({ id: 'gemini-1.5-flash' }))).toBe(false)
-    expect(isFunctionCallingModel(createModel({ id: 'deepseek-v3.2-speciale' }))).toBe(false)
-    expect(isFunctionCallingModel(createModel({ id: 'deepseek/deepseek-v3.2-speciale' }))).toBe(false)
+  it('uses optimistic defaults for ordinary text models, including newly released IDs', () => {
+    expect(isFunctionCallingModel(createModel({ id: 'gemini-1.5-flash' }))).toBe(true)
+    expect(isFunctionCallingModel(createModel({ id: 'custom-chat-model-2026' }))).toBe(true)
   })
 
   it('returns true when identified as deepseek hybrid inference model', () => {
@@ -249,14 +248,14 @@ describe('isFunctionCallingModel', () => {
       expect(isFunctionCallingModel(createModel({ id: 'openrouter/gemma-4-e2b' }))).toBe(true)
     })
 
-    it('does NOT detect Gemma 2 as function calling (no regression)', () => {
-      expect(isFunctionCallingModel(createModel({ id: 'gemma-2b' }))).toBe(false)
-      expect(isFunctionCallingModel(createModel({ id: 'gemma-2-27b-it' }))).toBe(false)
+    it('uses the optimistic default for older Gemma text models', () => {
+      expect(isFunctionCallingModel(createModel({ id: 'gemma-2b' }))).toBe(true)
+      expect(isFunctionCallingModel(createModel({ id: 'gemma-2-27b-it' }))).toBe(true)
     })
 
-    it('does NOT detect Gemma 3 as function calling (no regression)', () => {
-      expect(isFunctionCallingModel(createModel({ id: 'gemma-3-27b' }))).toBe(false)
-      expect(isFunctionCallingModel(createModel({ id: 'gemma-3n-e4b-it' }))).toBe(false)
+    it('uses the optimistic default for Gemma 3 text models', () => {
+      expect(isFunctionCallingModel(createModel({ id: 'gemma-3-27b' }))).toBe(true)
+      expect(isFunctionCallingModel(createModel({ id: 'gemma-3n-e4b-it' }))).toBe(true)
     })
   })
 })
