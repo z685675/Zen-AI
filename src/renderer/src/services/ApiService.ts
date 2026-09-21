@@ -987,6 +987,7 @@ export async function fetchChatCompletion({
       const compactionModels = resolveContextCompactionModels({
         providers: store.getState().llm.providers,
         configuredModelIds: configuredCompactionModels,
+        health: store.getState().llm.modelPolicy?.contextCompactionHealth,
         currentModel: model
       })
 

@@ -1,8 +1,10 @@
+import type { Model } from '@renderer/types'
 import type { Message } from '@renderer/types/newMessage'
 import type { ModelMessage } from 'ai'
 import { approximateTokenSize } from 'tokenx'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { createContextCompactionGenerator } from '../ContextCompactionModelService'
 import { manageConversationContext, manageStandaloneInput, serializeModelMessages } from '../ContextCompactionService'
 import type { ContextBudget } from '../ContextWindowService'
 
@@ -223,6 +225,40 @@ describe('ContextCompactionService', () => {
       action: 'checkpoint-created',
       checkpoint: { summary: expect.stringContaining('模型摘要暂时不可用') }
     })
+  })
+
+  it('falls through every configured model before returning a local checkpoint', async () => {
+    const messages = [uiMessage('u1', 'user'), uiMessage('a1', 'assistant'), uiMessage('u2', 'user')]
+    const convert = async (sourceMessages: Message[]): Promise<ModelMessage[]> =>
+      sourceMessages.map((message) => ({
+        role: message.role,
+        content: `${message.id} 连续故障时也必须继续回答 `.repeat(1_500)
+      }))
+    const models = ['model-a', 'model-b', 'model-c'].map(
+      (id) => ({ id, provider: 'provider-a', name: id, group: 'default' }) as Model
+    )
+    const calls: string[] = []
+    const generate = createContextCompactionGenerator({
+      models,
+      generate: async (model) => {
+        calls.push(model.id)
+        throw new Error(`${model.id} unavailable`)
+      }
+    })
+
+    const result = await manageConversationContext({
+      modelMessages: await convert(messages),
+      uiMessages: messages,
+      topicId: 'topic-all-checkpoint-models-failed',
+      budget,
+      convert,
+      generate
+    })
+
+    expect(calls).toEqual(['model-a', 'model-b', 'model-c'])
+    expect(result.action).toBe('checkpoint-created')
+    expect(result.checkpoint?.summary).toContain('模型摘要暂时不可用')
+    expect(result.usageAfter.totalTokens).toBeLessThanOrEqual(budget.safeInputTokens)
   })
 
   it('keeps application-injected webpage context across compaction', async () => {

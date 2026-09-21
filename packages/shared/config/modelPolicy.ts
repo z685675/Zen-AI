@@ -24,6 +24,18 @@ export interface ModelPolicyRules {
   developerModeBypassAllowlist: boolean
 }
 
+export type ContextCompactionModelHealthStatus = 'healthy' | 'unavailable' | 'unknown'
+
+export interface ContextCompactionModelHealth {
+  status: ContextCompactionModelHealthStatus
+  checkedAt: string
+  reason?: string
+  availableRoutes?: number
+  totalRoutes?: number
+}
+
+export type ContextCompactionModelHealthMap = Record<string, ContextCompactionModelHealth>
+
 export interface ModelPolicy {
   schemaVersion: number
   version: number
@@ -42,6 +54,7 @@ export interface ModelPolicySnapshot {
   fetchedAt: string
   appliedAt: string
   source: ModelPolicySource
+  contextCompactionHealth?: ContextCompactionModelHealthMap
 }
 
 export const DEFAULT_MODEL_POLICY: ModelPolicy = {

@@ -41,6 +41,20 @@ describe('resolveContextCompactionModels', () => {
     ).toEqual([])
   })
 
+  it('skips models marked unavailable by the API panel', () => {
+    expect(
+      resolveContextCompactionModels({
+        providers: [provider],
+        configuredModelIds: ['model-1', 'model-2', 'model-3'],
+        health: {
+          'model-1': { status: 'unavailable', checkedAt: '2026-09-22T00:00:00Z' },
+          'model-2': { status: 'healthy', checkedAt: '2026-09-22T00:00:00Z' }
+        },
+        currentModel
+      }).map((model) => model.id)
+    ).toEqual(['model-2', 'model-3'])
+  })
+
   it('skips disabled providers and duplicate resolved candidates', () => {
     const disabled = createProvider('disabled', ['model-2'], false)
     expect(

@@ -7,8 +7,11 @@ import { getLowerBaseModelName } from '@renderer/utils/naming'
 import type { ModelPolicySnapshot } from '@shared/config/modelPolicy'
 
 const logger = loggerService.withContext('RemoteModelPolicyClient')
-const POLL_INTERVAL = 30 * 60 * 1000
-const FOREGROUND_REFRESH_THRESHOLD = 15 * 60 * 1000
+// Health is dynamic and is backed by the API panel's automatic channel probe.
+// Refresh it more frequently than the static model defaults so a recovered
+// context model can re-enter the fallback order without waiting 30 minutes.
+const HEALTH_POLL_INTERVAL = 5 * 60 * 1000
+const FOREGROUND_REFRESH_THRESHOLD = 5 * 60 * 1000
 
 let started = false
 let lastRefreshAt = 0
@@ -151,7 +154,7 @@ export const startRemoteModelPolicySync = (): void => {
   })
   void refresh()
 
-  const interval = window.setInterval(() => void refresh(), POLL_INTERVAL)
+  const interval = window.setInterval(() => void refresh(), HEALTH_POLL_INTERVAL)
   const onVisibilityChange = () => {
     if (document.visibilityState === 'visible' && Date.now() - lastRefreshAt >= FOREGROUND_REFRESH_THRESHOLD) {
       void refresh()

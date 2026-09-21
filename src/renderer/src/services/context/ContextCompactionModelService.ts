@@ -1,10 +1,13 @@
 import { resolveRemoteDefaultModel } from '@renderer/config/remoteModelPolicy'
 import type { Model, Provider } from '@renderer/types'
+import { getLowerBaseModelName } from '@renderer/utils/naming'
+import type { ContextCompactionModelHealthMap } from '@shared/config/modelPolicy'
 
 export type ResolveContextCompactionModelsOptions = {
   providers: Provider[]
   /** Undefined means the server has not published this setting yet. */
   configuredModelIds?: string[]
+  health?: ContextCompactionModelHealthMap
   currentModel?: Model
 }
 
@@ -30,6 +33,7 @@ export type CreateContextCompactionGeneratorOptions = {
 export const resolveContextCompactionModels = ({
   providers,
   configuredModelIds,
+  health,
   currentModel
 }: ResolveContextCompactionModelsOptions): Model[] => {
   if (configuredModelIds === undefined) {
@@ -42,6 +46,12 @@ export const resolveContextCompactionModels = ({
   for (const modelId of configuredModelIds.slice(0, 3)) {
     const target = modelId.trim()
     if (!target) continue
+
+    const normalizedTarget = getLowerBaseModelName(target)
+    const targetHealth =
+      health?.[target] ??
+      Object.entries(health ?? {}).find(([model]) => getLowerBaseModelName(model) === normalizedTarget)?.[1]
+    if (targetHealth?.status === 'unavailable') continue
 
     const model = resolveRemoteDefaultModel(providers, target, currentModel)
     if (!model) continue
