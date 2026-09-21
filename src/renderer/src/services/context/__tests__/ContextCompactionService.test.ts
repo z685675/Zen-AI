@@ -5,7 +5,13 @@ import { approximateTokenSize } from 'tokenx'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { createContextCompactionGenerator } from '../ContextCompactionModelService'
-import { manageConversationContext, manageStandaloneInput, serializeModelMessages } from '../ContextCompactionService'
+import {
+  CHECKPOINT_SECTION_HEADINGS,
+  manageConversationContext,
+  manageStandaloneInput,
+  serializeModelMessages,
+  validateCheckpointSummary
+} from '../ContextCompactionService'
 import type { ContextBudget } from '../ContextWindowService'
 
 const storage = new Map<string, unknown>()
@@ -37,6 +43,9 @@ const uiMessage = (id: string, role: 'user' | 'assistant'): Message =>
     role,
     blocks: []
   }) as Message
+
+const structuredCheckpoint = (body: string): string =>
+  CHECKPOINT_SECTION_HEADINGS.map((heading) => `${heading}\n- ${body}`).join('\n')
 
 describe('ContextCompactionService', () => {
   beforeEach(() => {
@@ -88,7 +97,9 @@ describe('ContextCompactionService', () => {
     const uiMessages = [uiMessage('u1', 'user'), uiMessage('a1', 'assistant'), uiMessage('u2', 'user')]
     const convert = async (messages: Message[]) => messages.flatMap((message) => messagesById[message.id] ?? [])
     const allMessages = await convert(uiMessages)
-    const generate = vi.fn(async () => '## Current goals\n- Keep the exact project ID ZEN-42.')
+    const generate = vi.fn(async () =>
+      structuredCheckpoint('Keep the exact project ID ZEN-42 and continue the confirmed plan.')
+    )
 
     const first = await manageConversationContext({
       modelMessages: allMessages,
@@ -135,12 +146,14 @@ describe('ContextCompactionService', () => {
       if (prompt.includes('older checkpoint') && prompt.includes('later conversation')) {
         updatePromptSeen = true
         updateContents.push(content)
-        return 'CHECKPOINT-2：方案 B 已覆盖方案 A。'
+        return structuredCheckpoint('CHECKPOINT-2：方案 B 已覆盖方案 A。')
       }
       if (prompt.includes('Merge checkpoint fragments')) {
-        return updatePromptSeen ? 'CHECKPOINT-2：方案 B 已覆盖方案 A。' : 'CHECKPOINT-1：方案 A 是旧结论。'
+        return structuredCheckpoint(
+          updatePromptSeen ? 'CHECKPOINT-2：方案 B 已覆盖方案 A。' : 'CHECKPOINT-1：方案 A 是旧结论。'
+        )
       }
-      return 'CHECKPOINT-1：方案 A 是旧结论。'
+      return structuredCheckpoint('CHECKPOINT-1：方案 A 是旧结论。')
     })
 
     const first = await manageConversationContext({
@@ -199,6 +212,15 @@ describe('ContextCompactionService', () => {
     expect(result.checkpoint?.summary).toContain('模型摘要暂时不可用')
     expect(result.messages.length).toBeGreaterThan(0)
     expect(result.usageAfter.totalTokens).toBeLessThanOrEqual(budget.safeInputTokens)
+  })
+
+  it('rejects an incomplete model checkpoint and keeps the important source anchor locally', () => {
+    const source = '请记住项目编号 ZEN-CHECK-77，并继续处理 report.xlsx。'
+    const invalid = '## Current goals\n- 只保留了一个章节。'
+    const valid = structuredCheckpoint(`保留项目编号 ZEN-CHECK-77 和文件 report.xlsx。`)
+
+    expect(validateCheckpointSummary(invalid, source).valid).toBe(false)
+    expect(validateCheckpointSummary(valid, source)).toMatchObject({ valid: true, anchorCoverage: 1 })
   })
 
   it('uses a local checkpoint when the auxiliary model throws', async () => {
@@ -275,7 +297,7 @@ describe('ContextCompactionService', () => {
     let sawWebpageContext = false
     const generate = vi.fn(async (_prompt: string, content: string) => {
       sawWebpageContext ||= content.includes('这是压缩后仍必须保留的事实')
-      return '## Files, links, and resources\n- 网页正文：这是压缩后仍必须保留的事实。'
+      return structuredCheckpoint('网页正文：https://example.com 这是压缩后仍必须保留的事实。')
     })
 
     const result = await manageConversationContext({
@@ -319,7 +341,7 @@ describe('ContextCompactionService', () => {
       topicId: 'topic-image-budget',
       budget: visualBudget,
       convert,
-      generate: vi.fn(async () => '## Current goals\n- Keep visual context.')
+      generate: vi.fn(async () => structuredCheckpoint('Keep visual context.'))
     })
 
     const imageCount = result.messages.reduce(

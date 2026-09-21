@@ -31,6 +31,17 @@ describe('resolveContextCompactionModels', () => {
     ).toEqual(['model-2', 'model-3', 'model-1'])
   })
 
+  it('prefers an independent provider for checkpoint generation when available', () => {
+    const independentProvider = createProvider('provider-b', ['model-2'])
+    expect(
+      resolveContextCompactionModels({
+        providers: [provider, independentProvider],
+        configuredModelIds: ['model-2'],
+        currentModel: provider.models[1]
+      }).map((model) => model.provider)
+    ).toEqual(['provider-b'])
+  })
+
   it('does not silently fall back to the current model when an explicit list is unavailable', () => {
     expect(
       resolveContextCompactionModels({

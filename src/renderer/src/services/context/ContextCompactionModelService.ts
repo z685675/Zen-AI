@@ -1,4 +1,4 @@
-import { resolveRemoteDefaultModel } from '@renderer/config/remoteModelPolicy'
+import { resolveIndependentModel } from '@renderer/config/remoteModelPolicy'
 import type { Model, Provider } from '@renderer/types'
 import { getLowerBaseModelName } from '@renderer/utils/naming'
 import type { ContextCompactionModelHealthMap } from '@shared/config/modelPolicy'
@@ -53,7 +53,7 @@ export const resolveContextCompactionModels = ({
       Object.entries(health ?? {}).find(([model]) => getLowerBaseModelName(model) === normalizedTarget)?.[1]
     if (targetHealth?.status === 'unavailable') continue
 
-    const model = resolveRemoteDefaultModel(providers, target, currentModel)
+    const model = resolveIndependentModel(providers, target, currentModel)
     if (!model) continue
 
     const key = `${model.provider}:${model.id}`.toLowerCase()

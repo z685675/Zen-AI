@@ -56,6 +56,8 @@
     "test": "vitest run --silent --maxWorkers=1",
     "test:main": "vitest run --project main --pool=forks --maxWorkers=1 --no-file-parallelism",
     "test:renderer": "vitest run --project renderer",
+    "test:context": "vitest run src/renderer/src/services/context/__tests__ --silent --maxWorkers=1",
+    "test:context:stress": "vitest run src/renderer/src/services/context/__tests__/ContextCompactionStress.test.ts --silent --maxWorkers=1",
     "test:aicore": "vitest run --project aiCore",
     "test:shared": "vitest run --project shared",
     "test:update": "pnpm test:renderer --update",

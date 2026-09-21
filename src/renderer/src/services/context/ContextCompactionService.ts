@@ -20,6 +20,24 @@ const MIN_LOCAL_CHECKPOINT_TOKENS = 256
 const LOCAL_CHECKPOINT_NOTICE =
   '模型摘要暂时不可用；以下内容由客户端按原始对话顺序保留。原始对话和附件仍保存在本地，必要时可继续检索。'
 
+export const CHECKPOINT_SECTION_HEADINGS = [
+  '## Current goals',
+  '## Confirmed decisions and preferences',
+  '## Exact facts and identifiers',
+  '## Files, links, and resources',
+  '## Completed work',
+  '## Open tasks and next steps',
+  '## Constraints, failures, and risks'
+] as const
+
+export type CheckpointIntegrityResult = {
+  valid: boolean
+  missingSections: string[]
+  missingAnchors: string[]
+  anchorCoverage: number
+  reason?: string
+}
+
 export type ContextCheckpoint = {
   version: number
   topicId: string
@@ -46,6 +64,64 @@ export type ManagedStandaloneInputResult = {
   usageAfterTokens: number
 }
 
+const normalizeIntegrityAnchor = (value: string): string => value.replace(/[.,;:!?，。；：！？）》)\]}]+$/g, '')
+
+/**
+ * Extract high-signal values that a checkpoint must not silently lose. The
+ * list is intentionally conservative: URLs, file names and identifier-like
+ * tokens are more important than trying to compare every ordinary word.
+ */
+export const extractCheckpointIntegrityAnchors = (source: string): string[] => {
+  const matches = [
+    ...(source.match(/https?:\/\/[^\s<>"'`]+/gi) ?? []),
+    ...(source.match(/\b[\w.-]+\.(?:docx|xlsx|xls|pptx|ppt|pdf|csv|ts|tsx|js|jsx|go|py|json|md)\b/gi) ?? []),
+    ...(source.match(/\b[A-Z][A-Z0-9]*(?:[-_][A-Z0-9]+)+\b/g) ?? [])
+  ]
+
+  return [...new Set(matches.map(normalizeIntegrityAnchor).filter((value) => value.length >= 3))].slice(0, 24)
+}
+
+/**
+ * Validate an AI-generated checkpoint before it is persisted. A malformed or
+ * over-aggressive summary is less useful than a bounded local excerpt, so the
+ * caller should use the deterministic local fallback when this returns false.
+ */
+export const validateCheckpointSummary = (summary: string, source = ''): CheckpointIntegrityResult => {
+  const normalizedSummary = summary.trim()
+  const missingSections = CHECKPOINT_SECTION_HEADINGS.filter((heading) => !normalizedSummary.includes(heading))
+  const anchors = extractCheckpointIntegrityAnchors(source)
+  const missingAnchors = anchors.filter(
+    (anchor) => !normalizedSummary.toLocaleLowerCase().includes(anchor.toLocaleLowerCase())
+  )
+  const anchorCoverage = anchors.length === 0 ? 1 : (anchors.length - missingAnchors.length) / anchors.length
+  const bodyLength = normalizedSummary
+    .split('\n')
+    .filter(
+      (line) => !CHECKPOINT_SECTION_HEADINGS.includes(line.trim() as (typeof CHECKPOINT_SECTION_HEADINGS)[number])
+    )
+    .join('\n')
+    .trim().length
+  const minimumCoverage = anchors.length <= 8 ? 1 : 0.75
+  const valid = missingSections.length === 0 && bodyLength >= 80 && anchorCoverage >= minimumCoverage
+
+  return {
+    valid,
+    missingSections,
+    missingAnchors,
+    anchorCoverage,
+    ...(valid
+      ? {}
+      : { reason: missingSections.length > 0 ? 'required sections are missing' : 'important facts are missing' })
+  }
+}
+
+const isPersistableCheckpointSummary = (summary: string): boolean => {
+  const normalized = summary.trim()
+  if (!normalized) return false
+  if (normalized.includes(LOCAL_CHECKPOINT_NOTICE) && normalized.includes('## 原始内容片段')) return true
+  return CHECKPOINT_SECTION_HEADINGS.every((heading) => normalized.includes(heading))
+}
+
 type ContextMessageGroup = {
   id: string
   messages: ModelMessage[]
@@ -68,7 +144,23 @@ export function loadContextCheckpoint(topicId?: string): ContextCheckpoint | und
   }
 
   const checkpoint = value as ContextCheckpoint
-  return checkpoint.version === CHECKPOINT_VERSION && checkpoint.topicId === topicId ? checkpoint : undefined
+  const valid =
+    checkpoint.version === CHECKPOINT_VERSION &&
+    checkpoint.topicId === topicId &&
+    typeof checkpoint.includedThroughMessageId === 'string' &&
+    checkpoint.includedThroughMessageId.length > 0 &&
+    typeof checkpoint.sourceFingerprint === 'string' &&
+    checkpoint.sourceFingerprint.length > 0 &&
+    Number.isFinite(checkpoint.sourceTokens) &&
+    checkpoint.sourceTokens >= 0 &&
+    typeof checkpoint.createdAt === 'string' &&
+    typeof checkpoint.updatedAt === 'string' &&
+    isPersistableCheckpointSummary(checkpoint.summary)
+  if (!valid) {
+    clearContextCheckpoint(topicId)
+    return undefined
+  }
+  return checkpoint
 }
 
 export function saveContextCheckpoint(checkpoint: ContextCheckpoint): void {
@@ -544,7 +636,17 @@ export async function manageConversationContext({
     MIN_LOCAL_CHECKPOINT_TOKENS,
     budget.safeInputTokens - estimateModelMessagesTokens(finalRecentMessages).totalTokens - checkpointPrefixTokens - 32
   )
-  const summary = fitTextToTokenBudget(generatedSummary, summaryBudget)
+  let summary = fitTextToTokenBudget(generatedSummary, summaryBudget)
+  const integrity = validateCheckpointSummary(summary, serialized)
+  if (!integrity.valid) {
+    logger.warn('Checkpoint integrity validation failed; using a deterministic local checkpoint', {
+      topicId,
+      missingSections: integrity.missingSections,
+      missingAnchors: integrity.missingAnchors,
+      anchorCoverage: integrity.anchorCoverage
+    })
+    summary = fitTextToTokenBudget(createLocalCheckpointSummary(serialized, summaryBudget), summaryBudget)
+  }
   const checkpoint: ContextCheckpoint = {
     version: CHECKPOINT_VERSION,
     topicId,
@@ -566,7 +668,7 @@ export async function manageConversationContext({
     logger.warn('Compacted context remains above the safe estimate; using the latest message only')
     const latestMessage = finalRecentMessages.at(-1)
     const minimalSummary = fitTextToTokenBudget(
-      generatedSummary,
+      summary,
       Math.max(
         MIN_LOCAL_CHECKPOINT_TOKENS,
         budget.safeInputTokens -
