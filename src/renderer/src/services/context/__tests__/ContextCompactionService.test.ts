@@ -128,6 +128,71 @@ describe('ContextCompactionService', () => {
     expect(generate).not.toHaveBeenCalled()
   })
 
+  it('invalidates a checkpoint when a compacted message is edited', async () => {
+    const messagesById: Record<string, ModelMessage[]> = {
+      u1: [{ role: 'user', content: 'original decision '.repeat(4_000) }],
+      a1: [{ role: 'assistant', content: 'original answer '.repeat(4_000) }],
+      u2: [{ role: 'user', content: 'recent question' }]
+    }
+    const uiMessages = [uiMessage('u1', 'user'), uiMessage('a1', 'assistant'), uiMessage('u2', 'user')]
+    const convert = async (messages: Message[]) => messages.flatMap((message) => messagesById[message.id] ?? [])
+    const generate = vi.fn(async () => structuredCheckpoint('Keep the edited conversation facts.'))
+
+    await manageConversationContext({
+      modelMessages: await convert(uiMessages),
+      uiMessages,
+      topicId: 'topic-edited-checkpoint',
+      budget,
+      convert,
+      generate
+    })
+    generate.mockClear()
+
+    uiMessages[0].updatedAt = '2026-09-22T01:00:00.000Z'
+    const result = await manageConversationContext({
+      modelMessages: await convert(uiMessages),
+      uiMessages,
+      topicId: 'topic-edited-checkpoint',
+      budget,
+      convert,
+      generate
+    })
+
+    expect(result.action).toBe('checkpoint-created')
+    expect(generate).toHaveBeenCalled()
+  })
+
+  it('serializes same-topic compaction operations to protect checkpoint writes', async () => {
+    const messages = [uiMessage('u1', 'user'), uiMessage('a1', 'assistant'), uiMessage('u2', 'user')]
+    const convert = async (sourceMessages: Message[]): Promise<ModelMessage[]> =>
+      sourceMessages.map((message) => ({
+        role: message.role,
+        content:
+          message.id === 'u2'
+            ? `${message.id} recent concurrent checkpoint question`
+            : `${message.id} concurrent checkpoint facts `.repeat(600)
+      }))
+    const modelMessages = await convert(messages)
+    const generate = vi.fn(async () => structuredCheckpoint('Keep concurrent checkpoint facts.'))
+
+    const [first, second] = await Promise.all(
+      [1, 2].map(() =>
+        manageConversationContext({
+          modelMessages,
+          uiMessages: messages,
+          topicId: 'topic-concurrent-checkpoint',
+          budget,
+          convert,
+          generate
+        })
+      )
+    )
+
+    expect(first.action).toBe('checkpoint-created')
+    expect(second.action).toBe('checkpoint-reused')
+    expect(generate).toHaveBeenCalled()
+  })
+
   it('merges a previous checkpoint with only the messages after its boundary', async () => {
     const messagesById: Record<string, ModelMessage[]> = {
       u1: [{ role: 'user', content: '旧结论：使用方案 A。'.repeat(1_800) }],

@@ -123,6 +123,7 @@ import { prepareWebPageMessages, type WebPageContext } from './WebPageContextSer
 
 const logger = loggerService.withContext('ApiService')
 const SUMMARY_REQUEST_TIMEOUT_MS = 15_000
+const CONTEXT_CHECKPOINT_TOTAL_TIMEOUT_MS = 45_000
 export const CONTEXT_AUXILIARY_REQUEST_TIMEOUT_MS = SUMMARY_REQUEST_TIMEOUT_MS
 const MAX_IMAGE_GENERATION_INPUTS = 6
 const IMAGE_GENERATION_REQUEST_TIMEOUT_MS = 150_000
@@ -995,19 +996,25 @@ export async function fetchChatCompletion({
       // model 1 fails, all remaining chunks try model 2, then model 3. This
       // avoids repeatedly hitting a known-bad model and preserves the order
       // configured by the API panel.
+      const checkpointDeadline = Date.now() + CONTEXT_CHECKPOINT_TOTAL_TIMEOUT_MS
       const generateCheckpoint = createContextCompactionGenerator({
         models: compactionModels,
-        generate: (compactionModel, systemPrompt, content) =>
-          fetchGenerate({
+        generate: (compactionModel, systemPrompt, content) => {
+          const remainingMs = checkpointDeadline - Date.now()
+          if (remainingMs <= 0) {
+            throw new Error('Context checkpoint total timeout exceeded.')
+          }
+          return fetchGenerate({
             prompt: systemPrompt,
             content,
             model: compactionModel,
             signal: requestOptions?.signal,
-            timeoutMs: SUMMARY_REQUEST_TIMEOUT_MS,
+            timeoutMs: Math.min(SUMMARY_REQUEST_TIMEOUT_MS, remainingMs),
             throwOnError: true,
             maxOutputTokens: Math.min(8_000, compactionModel.maxOutputTokens ?? 8_000)
-          }),
-        shouldTryNext: () => !requestOptions?.signal?.aborted,
+          })
+        },
+        shouldTryNext: () => !requestOptions?.signal?.aborted && Date.now() < checkpointDeadline,
         onModelFailure: (compactionModel, error, nextPosition) => {
           logger.warn('Context checkpoint model failed; trying the next configured model', error as Error, {
             topicId,

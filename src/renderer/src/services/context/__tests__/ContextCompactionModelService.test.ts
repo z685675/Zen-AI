@@ -1,6 +1,12 @@
 import type { Model, Provider } from '@renderer/types'
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
 
+import {
+  isContextCompactionModelCoolingDown,
+  recordContextCompactionModelFailure,
+  recordContextCompactionModelSuccess,
+  resetContextCompactionModelHealth
+} from '../ContextCompactionModelHealthService'
 import { createContextCompactionGenerator, resolveContextCompactionModels } from '../ContextCompactionModelService'
 
 const createProvider = (id: string, modelIds: string[], enabled = true): Provider => ({
@@ -16,6 +22,10 @@ const createProvider = (id: string, modelIds: string[], enabled = true): Provide
 describe('resolveContextCompactionModels', () => {
   const provider = createProvider('provider-a', ['model-1', 'model-2', 'model-3'])
   const currentModel = provider.models[0]
+
+  beforeEach(() => {
+    resetContextCompactionModelHealth()
+  })
 
   it('keeps the legacy current-model behavior when remote config is absent', () => {
     expect(resolveContextCompactionModels({ providers: [provider], currentModel })).toEqual([currentModel])
@@ -64,6 +74,29 @@ describe('resolveContextCompactionModels', () => {
         currentModel
       }).map((model) => model.id)
     ).toEqual(['model-2', 'model-3'])
+  })
+
+  it('temporarily skips a locally failed model and restores it after success', () => {
+    const failureNow = Date.now()
+    recordContextCompactionModelFailure(currentModel, failureNow)
+    expect(isContextCompactionModelCoolingDown(currentModel, failureNow + 1)).toBe(true)
+    expect(
+      resolveContextCompactionModels({
+        providers: [provider],
+        configuredModelIds: ['model-1'],
+        currentModel
+      })
+    ).toEqual([])
+
+    recordContextCompactionModelSuccess(currentModel)
+    expect(isContextCompactionModelCoolingDown(currentModel, failureNow + 1)).toBe(false)
+    expect(
+      resolveContextCompactionModels({
+        providers: [provider],
+        configuredModelIds: ['model-1'],
+        currentModel
+      }).map((model) => model.id)
+    ).toEqual(['model-1'])
   })
 
   it('skips disabled providers and duplicate resolved candidates', () => {

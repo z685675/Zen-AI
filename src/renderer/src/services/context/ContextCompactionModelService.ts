@@ -3,6 +3,12 @@ import type { Model, Provider } from '@renderer/types'
 import { getLowerBaseModelName } from '@renderer/utils/naming'
 import type { ContextCompactionModelHealthMap } from '@shared/config/modelPolicy'
 
+import {
+  isContextCompactionModelCoolingDown,
+  recordContextCompactionModelFailure,
+  recordContextCompactionModelSuccess
+} from './ContextCompactionModelHealthService'
+
 export type ResolveContextCompactionModelsOptions = {
   providers: Provider[]
   /** Undefined means the server has not published this setting yet. */
@@ -18,6 +24,7 @@ export type CreateContextCompactionGeneratorOptions = {
   generate: (model: Model, prompt: string, content: string) => Promise<string>
   shouldTryNext?: (error: unknown) => boolean
   onModelFailure?: (model: Model, error: unknown, nextPosition: number) => void
+  onModelSuccess?: (model: Model) => void
   onExhausted?: (models: Model[]) => void
 }
 
@@ -56,6 +63,8 @@ export const resolveContextCompactionModels = ({
     const model = resolveIndependentModel(providers, target, currentModel)
     if (!model) continue
 
+    if (isContextCompactionModelCoolingDown(model)) continue
+
     const key = `${model.provider}:${model.id}`.toLowerCase()
     if (seen.has(key)) continue
     seen.add(key)
@@ -76,6 +85,7 @@ export const createContextCompactionGenerator = ({
   generate,
   shouldTryNext = () => true,
   onModelFailure,
+  onModelSuccess,
   onExhausted
 }: CreateContextCompactionGeneratorOptions): ContextCompactionGenerator => {
   let modelIndex = 0
@@ -85,12 +95,17 @@ export const createContextCompactionGenerator = ({
       const model = models[modelIndex]
       try {
         const result = await generate(model, prompt, content)
-        if (result.trim()) return result
+        if (result.trim()) {
+          recordContextCompactionModelSuccess(model)
+          onModelSuccess?.(model)
+          return result
+        }
         throw new Error('Context checkpoint model returned empty output.')
       } catch (error) {
         if (!shouldTryNext(error)) {
           throw error
         }
+        recordContextCompactionModelFailure(model)
         modelIndex += 1
         onModelFailure?.(model, error, modelIndex + 1)
       }
