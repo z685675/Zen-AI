@@ -1,5 +1,9 @@
 import { createSelector } from '@reduxjs/toolkit'
-import { getEffectiveModelEndpointType, isNotSupportTextDeltaModel } from '@renderer/config/models'
+import {
+  getEffectiveModelEndpointType,
+  isImageGenerationEndpointModel,
+  isNotSupportTextDeltaModel
+} from '@renderer/config/models'
 import { CHERRYAI_PROVIDER } from '@renderer/config/providers'
 import { getDefaultProvider } from '@renderer/services/AssistantService'
 import { type RootState, useAppDispatch, useAppSelector } from '@renderer/store'
@@ -45,7 +49,12 @@ const selectUserProviders = createSelector(selectProviders, (providers) =>
 )
 
 const selectPaintingProviders = createSelector(selectProviders, (providers) =>
-  providers.filter((p) => !isSystemProvider(p)).map(normalizeProvider)
+  providers
+    .filter(
+      (p) =>
+        !isSystemProvider(p) || (p.id === 'grok' && p.models.some((model) => isImageGenerationEndpointModel(model, p)))
+    )
+    .map(normalizeProvider)
 )
 
 const selectAllProviders = createSelector(selectProviders, (providers) => providers.map(normalizeProvider))

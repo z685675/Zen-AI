@@ -3,7 +3,14 @@ import type { ModelMessage } from 'ai'
 import { approximateTokenSize } from 'tokenx'
 
 export const DEFAULT_CONTEXT_WINDOW_TOKENS = 200_000
-export const DEFAULT_NEW_API_CONTEXT_WINDOW_TOKENS = 256_000
+/**
+ * Zen AI deliberately keeps one safe upper bound across providers. A
+ * provider may advertise a larger window, but using it directly would make
+ * context behavior depend on the current route and could cause a request to
+ * fail after a provider/channel switch.
+ */
+export const MAX_SUPPORTED_CONTEXT_WINDOW_TOKENS = 200_000
+export const DEFAULT_NEW_API_CONTEXT_WINDOW_TOKENS = MAX_SUPPORTED_CONTEXT_WINDOW_TOKENS
 export const DEFAULT_OUTPUT_RESERVE_TOKENS = 32_000
 export const MIN_OUTPUT_RESERVE_TOKENS = 8_000
 export const MAX_OUTPUT_RESERVE_TOKENS = 32_000
@@ -163,9 +170,11 @@ export function isContextCapacityError(error: unknown): boolean {
 
 export function resolveModelContextProfile(model: Model, provider?: Provider): ModelContextProfile {
   const explicitContextWindow = normalizePositiveInteger(model.contextWindowTokens)
-  const configuredContextWindowTokens =
+  const configuredContextWindowTokens = Math.min(
+    MAX_SUPPORTED_CONTEXT_WINDOW_TOKENS,
     explicitContextWindow ??
-    (isNewApiLikeProvider(provider) ? DEFAULT_NEW_API_CONTEXT_WINDOW_TOKENS : DEFAULT_CONTEXT_WINDOW_TOKENS)
+      (isNewApiLikeProvider(provider) ? DEFAULT_NEW_API_CONTEXT_WINDOW_TOKENS : DEFAULT_CONTEXT_WINDOW_TOKENS)
+  )
   const adaptiveContextWindowTokens = getAdaptiveContextWindowTokens(model, provider)
   const contextWindowTokens = adaptiveContextWindowTokens
     ? Math.min(configuredContextWindowTokens, adaptiveContextWindowTokens)

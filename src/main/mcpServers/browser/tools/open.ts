@@ -90,6 +90,8 @@ export async function handleOpen(controller: CdpBrowserController, args: unknown
         controller.fetch(url, format, timeout ?? 10000, privateMode ?? false, newTab ?? false, showWindow, selector)
       )
 
+      const userAction = controller.getUserAction(privateMode ?? false, tabId)
+
       const contentLimit = Math.min(Math.max(maxChars ?? 12000, 1000), 16000)
       let finalContent: string | object = content
       if (typeof finalContent === 'string' && finalContent.length > contentLimit) {
@@ -105,7 +107,7 @@ export async function handleOpen(controller: CdpBrowserController, args: unknown
         }
       }
 
-      return successResponse(JSON.stringify({ tabId, content: finalContent }))
+      return successResponse(JSON.stringify({ tabId, content: finalContent, ...(userAction ? { userAction } : {}) }))
     } else {
       const res = await withBrowserToolTimeout(
         controller.open(url, timeout ?? 10000, privateMode ?? false, newTab ?? false, showWindow)

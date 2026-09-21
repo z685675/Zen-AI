@@ -313,7 +313,7 @@
       "export_success": "诊断包已导出：{{path}}",
       "fix_environment": "修复环境",
       "model_title": "模型暂时无法完成任务",
-      "privacy_notice": "这个诊断包用于排查智能助手任务失败原因，可能包含当前任务的对话内容、错误详情、本地文件路径和运行环境信息。发送给他人前，请先确认其中没有你不希望分享的隐私内容。",
+      "privacy_notice": "这个诊断包用于排查 AI 对话或智能助手任务失败原因，可能包含当前对话内容、错误详情、本地文件路径和运行环境信息。发送给他人前，请先确认其中没有你不希望分享的隐私内容。",
       "retry": "重试任务",
       "retry_missing_user": "找不到原始任务，无法自动重试",
       "subtitle": "智能助手已停止本次任务，未完成的步骤不会继续执行",
@@ -435,6 +435,7 @@
           "failed": "会话排序失败"
         }
       },
+      "scheduled_task": "定时任务：{{name}}",
       "search": {
         "empty": "没有找到匹配的会话",
         "error": "搜索会话失败",
@@ -1321,6 +1322,9 @@
         "settings": "网络搜索设置",
         "toast_disabled": "已取消本次联网搜索",
         "toast_enabled": "已开启本次联网搜索，仅下一条消息生效，发送后自动关闭"
+      },
+      "welcome": {
+        "description": "直接输入问题会使用默认助手。也可以先在下面选一个角色，让这一轮对话从一开始就带着明确风格。"
       }
     },
     "mcp": {
@@ -3261,7 +3265,7 @@
         "image": "新建图片"
       }
     },
-    "canvas_guide_limit": "最多可上传 6 张图片作为图片生成参考。",
+    "canvas_guide_limit": "最多可上传 {{max}} 张图片作为图片生成参考。",
     "canvas_guide_primary": "请在下方输入你想要的图片内容，我来帮你生成。",
     "canvas_guide_secondary": "支持上传或粘贴多张图片进行二次编辑。",
     "canvas_upload_action": "上传图片",
@@ -3327,6 +3331,7 @@
     },
     "generate_failed": "生成图像失败",
     "generated_image": "生成图片",
+    "gif_conversion_failed": "GIF 图片无法读取，建议改用 PNG、JPG 或 WEBP 图片。",
     "go_to_settings": "去设置",
     "guidance_scale": "引导比例",
     "guidance_scale_tip": "无分类器指导。控制模型在寻找相关图像时对提示词的遵循程度",
@@ -3340,17 +3345,22 @@
         "experimental": "这些更高分辨率预设仍在官方支持范围内，只是通常生成更慢、消耗也更高。",
         "gpt_image_2": "gpt-image-2 在此页已支持更高的官方预设分辨率，也支持 auto 自动模式。选择 auto 时，会优先根据提示词中的横图、竖图、方图、2K、3K、4K 等描述智能匹配更合适的预设尺寸。"
       },
-      "moderation": "控制内容审核强度，不影响画质。默认使用低敏感度，限制更少，适合大多数创作场景。",
+      "moderation": "控制内容审核强度，不影响画质。自动模式使用模型的默认审核策略；低敏感度限制更少，适合大多数创作场景。",
       "quality": "质量用于控制速度、成本和细节之间的平衡。low 更快更省，high 细节更多，auto 则交由模型自动决定。"
     },
     "image": {
       "size": "图片尺寸"
     },
+    "image_file_empty": "图片“{{name}}”为空，无法使用。",
     "image_file_required": "请先上传图片",
     "image_file_retry": "请重新上传图片",
+    "image_file_too_large": "图片“{{name}}”过大，单张图片不能超过 {{size}} MB。",
+    "image_format_unsupported": "仅支持 PNG、JPG、WEBP 和静态 GIF 图片。",
     "image_handle_required": "请先上传图片",
     "image_mix_failed": "图像混合失败",
+    "image_no_result": "模型没有返回有效图片，请重试或检查当前渠道。",
     "image_placeholder": "暂无图片",
+    "image_prompt_too_long": "提示词过长，当前图片模型最多支持 {{max}} 个字符。",
     "image_retry": "重试",
     "image_size_auto": {
       "conflict": "检测到横图/竖图/方图意图冲突，已回退为官方 Auto。",
@@ -3365,14 +3375,18 @@
       "2048x2048": "2K 方图 · 2048 × 2048",
       "2048x3072": "3K 竖图 · 2048 × 3072",
       "2048x3840": "4K级竖图 · 2048 × 3840",
+      "2160x3840": "4K级竖图 · 2160 × 3840",
       "2560x1440": "2K 横图 · 2560 × 1440",
       "2880x2880": "高分方图 · 2880 × 2880",
       "3072x2048": "3K 横图 · 3072 × 2048",
       "3840x2048": "4K级横图 · 3840 × 2048",
+      "3840x2160": "4K级横图 · 3840 × 2160",
       "auto": "自动（智能匹配）",
       "experimental_badge": "(高成本)"
     },
+    "image_total_too_large": "参考图片总大小过大，不能超过 {{size}} MB。",
     "image_upload_limit": "最多支持 {{max}} 张图片（包括已生成图片），当前还可以添加 {{remaining}} 张。",
+    "image_upload_while_generating": "当前正在生成图片，请等待完成后再添加参考图。",
     "inference_steps": "推理步数",
     "inference_steps_tip": "要执行的推理步数。步数越多，质量越高但耗时越长",
     "input_image": "输入图片",

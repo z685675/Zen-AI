@@ -5,7 +5,7 @@ A Model Context Protocol (MCP) server for controlling browser windows via Chrome
 ## Features
 
 ### ✨ User Data Persistence
-- **Normal mode (default)**: Cookies, localStorage, and sessionStorage persist across browser restarts
+- **Normal mode (default)**: Cookies and localStorage persist across browser restarts
 - **Private mode**: Ephemeral browsing - no data persists (like incognito mode)
 
 ### 🔄 Window Management
@@ -75,6 +75,38 @@ Reset browser windows and tabs.
 - Omit all parameters to close all windows
 - Set `privateMode` to close a specific window
 - Set both `privateMode` and `tabId` to close a specific tab only
+
+### `clear_browser_data`
+
+Clear cookies, localStorage, cache, and other browser storage for one mode.
+This is a destructive sign-out operation and should only be called after the
+user explicitly requests it. `privateMode: false` clears the persistent
+normal browser session; `privateMode: true` targets the private session.
+
+### `list_downloads`
+List recent downloads started by this browser session, including status, progress, saved path, and errors.
+
+### `wait_for_download`
+Wait for a download triggered by a page click to finish. Downloads are saved automatically under the user's
+`Downloads/Zen AI Browser Downloads` directory. After a successful download, the assistant should call
+`mcp__assistant__present_files` for a final user-facing file.
+
+For reliable multi-tab behavior, call `list_downloads` after triggering the download and pass the returned `id` to
+`wait_for_download`. Calling `wait_for_download` without an ID is supported as a convenience, but may match the most
+recent download completed within a short grace period.
+
+### Login and verification handoff
+- Normal mode uses the persistent `persist:default` partition. Cookies and localStorage are retained across browser
+  window resets and application restarts.
+- Private mode uses an ephemeral partition and must not be used when the user wants to reuse a login.
+- Navigation and page-load events inspect only basic page signals for login, CAPTCHA, 2FA, authorization, and
+  verification screens. When detected, the visible browser is shown with a handoff banner.
+- The model must call `wait_for_user` and the user must complete the requested operation. Zen AI never bypasses CAPTCHA,
+  payment, account security, or anti-abuse controls.
+
+### Snapshot size
+- `snapshot` returns at most 12,000 characters by default.
+- `maxChars` is clamped to 1,000–16,000 characters to prevent an oversized page from exhausting the model context.
 
 ## Usage Examples
 

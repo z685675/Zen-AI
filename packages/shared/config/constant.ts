@@ -1,9 +1,23 @@
 import { codeLanguages } from './code-languages'
 
-export const imageExts = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp']
+export const imageExts = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.svg']
 export const videoExts = ['.mp4', '.avi', '.mov', '.wmv', '.flv', '.mkv']
 export const audioExts = ['.mp3', '.wav', '.ogg', '.flac', '.aac']
-export const documentExts = ['.pdf', '.doc', '.docx', '.pptx', '.xlsx', '.odt', '.odp', '.ods']
+export const documentExts = [
+  '.pdf',
+  '.doc',
+  '.docx',
+  '.docm',
+  '.ppt',
+  '.pptx',
+  '.pptm',
+  '.xls',
+  '.xlsx',
+  '.xlsm',
+  '.odt',
+  '.odp',
+  '.ods'
+]
 export const thirdPartyApplicationExts = ['.draftsExport']
 export const bookExts = ['.epub']
 

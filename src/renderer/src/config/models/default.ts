@@ -1202,6 +1202,24 @@ export const SYSTEM_MODELS: Record<SystemProviderId | 'defaultModel', Model[]> =
       provider: 'grok',
       name: 'Grok 3 Mini Fast',
       group: 'Grok'
+    },
+    {
+      id: 'grok-imagine-image-2.0',
+      provider: 'grok',
+      name: 'Grok Imagine Image 2.0',
+      group: 'Grok'
+    },
+    {
+      id: 'grok-imagine-image',
+      provider: 'grok',
+      name: 'Grok Imagine Image',
+      group: 'Grok'
+    },
+    {
+      id: 'grok-imagine-image-quality',
+      provider: 'grok',
+      name: 'Grok Imagine Image Quality',
+      group: 'Grok'
     }
   ],
   mistral: [

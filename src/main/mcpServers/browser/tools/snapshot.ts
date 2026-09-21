@@ -14,11 +14,32 @@ export const SnapshotSchema = z.object({
   tabId: z.string().optional().describe('Target specific tab by ID')
 })
 
+const DEFAULT_SNAPSHOT_MAX_CHARS = 12_000
+const MIN_SNAPSHOT_MAX_CHARS = 1_000
+const MAX_SNAPSHOT_MAX_CHARS = 16_000
+const MAX_SNAPSHOT_SOURCE_CHARS = 200_000
+
+function normalizeMaxChars(value: number | undefined): number {
+  if (value === undefined || !Number.isFinite(value) || value <= 0) {
+    return DEFAULT_SNAPSHOT_MAX_CHARS
+  }
+  return Math.min(MAX_SNAPSHOT_MAX_CHARS, Math.max(MIN_SNAPSHOT_MAX_CHARS, Math.floor(value)))
+}
+
 // Script that walks the DOM and produces an AI-friendly text snapshot with numbered refs for interactive elements
 const SNAPSHOT_SCRIPT = `(() => {
   const out = [];
   let n = 0;
+  let outputChars = 0;
   const skip = new Set(['SCRIPT','STYLE','NOSCRIPT','SVG','PATH','META','LINK','BR','HR']);
+
+  function append(value) {
+    if (outputChars >= ${MAX_SNAPSHOT_SOURCE_CHARS}) return;
+    const text = String(value);
+    const remaining = ${MAX_SNAPSHOT_SOURCE_CHARS} - outputChars;
+    out.push(text.slice(0, remaining));
+    outputChars += Math.min(text.length, remaining);
+  }
 
   function vis(e) {
     if (!e.getBoundingClientRect) return false;
@@ -29,9 +50,10 @@ const SNAPSHOT_SCRIPT = `(() => {
   }
 
   function walk(node) {
+    if (outputChars >= ${MAX_SNAPSHOT_SOURCE_CHARS}) return;
     if (node.nodeType === 3) {
       const t = node.textContent.trim();
-      if (t) out.push(t);
+      if (t) append(t);
       return;
     }
     if (node.nodeType !== 1) return;
@@ -43,34 +65,34 @@ const SNAPSHOT_SCRIPT = `(() => {
 
     if (tag === 'A' && node.href) {
       const t = node.textContent.trim();
-      if (t) out.push('[' + r + '] link: ' + t + ' (' + node.href + ')');
+      if (t) append('[' + r + '] link: ' + t + ' (' + node.href + ')');
       return;
     }
     if (tag === 'BUTTON' || (tag === 'INPUT' && (node.type === 'submit' || node.type === 'button'))) {
-      out.push('[' + r + '] button: ' + (node.textContent.trim() || node.value || ''));
+      append('[' + r + '] button: ' + (node.textContent.trim() || node.value || ''));
       return;
     }
     if (tag === 'INPUT') {
       if (node.type === 'hidden') return;
-      out.push('[' + r + '] input(' + (node.type || 'text') + '): ' + (node.name || node.placeholder || ''));
+      append('[' + r + '] input(' + (node.type || 'text') + '): ' + (node.name || node.placeholder || ''));
       return;
     }
     if (tag === 'TEXTAREA') {
-      out.push('[' + r + '] textarea: ' + (node.name || node.placeholder || ''));
+      append('[' + r + '] textarea: ' + (node.name || node.placeholder || ''));
       return;
     }
     if (tag === 'SELECT') {
       const sel = node.options && node.options[node.selectedIndex];
-      out.push('[' + r + '] select: ' + (sel ? sel.text : node.name || ''));
+      append('[' + r + '] select: ' + (sel ? sel.text : node.name || ''));
       return;
     }
     if (tag === 'IMG' && node.alt) {
-      out.push('[' + r + '] img: ' + node.alt);
+      append('[' + r + '] img: ' + node.alt);
       return;
     }
     if (/^H[1-6]$/.test(tag)) {
       const level = tag[1];
-      out.push('\\n' + '#'.repeat(+level) + ' ' + node.textContent.trim() + '\\n');
+      append('\\n' + '#'.repeat(+level) + ' ' + node.textContent.trim() + '\\n');
       return;
     }
 
@@ -94,7 +116,7 @@ export const snapshotToolDefinition = {
       },
       maxChars: {
         type: 'number',
-        description: 'Maximum characters to return (default: unlimited)'
+        description: 'Maximum characters to return (default: 12000; allowed range: 1000-16000)'
       },
       privateMode: {
         type: 'boolean',
@@ -121,11 +143,13 @@ export async function handleSnapshot(controller: CdpBrowserController, args: unk
     const result = await controller.execute(script, 10000, privateMode ?? false, tabId)
 
     let content = typeof result === 'string' ? result : (JSON.stringify(result) ?? '')
-    if (maxChars && content.length > maxChars) {
-      content = content.slice(0, maxChars) + '\n... [truncated at ' + maxChars + ' chars]'
+    const normalizedMaxChars = normalizeMaxChars(maxChars)
+    if (content.length > normalizedMaxChars) {
+      content = content.slice(0, normalizedMaxChars) + '\n... [truncated at ' + normalizedMaxChars + ' chars]'
     }
 
-    return successResponse(content)
+    const userAction = await controller.waitForUserActionDetection(privateMode ?? false, tabId)
+    return successResponse(userAction ? JSON.stringify({ content, userAction }) : content)
   } catch (error) {
     logger.error('Snapshot failed', { error })
     return errorResponse(error instanceof Error ? error : String(error))

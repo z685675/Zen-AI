@@ -23,6 +23,7 @@ import { withDeepResearchProtocol } from './runtime/deepResearch'
 import {
   AgentDeepResearchTimeoutError,
   AgentRuntimeNoOutputTimeoutError,
+  isRecoverableAgentTransportError,
   isRuntimeBootstrapChunk,
   shouldFallbackRuntime
 } from './runtime/fallback'
@@ -36,6 +37,16 @@ const DEEP_RESEARCH_TASK_TIMEOUT_MS = 8 * 60 * 1000
 
 const isBrowserWaitForUserTool = (toolName?: unknown): boolean => {
   return typeof toolName === 'string' && toolName.includes('browser') && toolName.includes('wait_for_user')
+}
+
+const serializeRecoveryValue = (value: unknown, maxLength = 8_000): string => {
+  let serialized: string
+  try {
+    serialized = typeof value === 'string' ? value : (JSON.stringify(value) ?? String(value))
+  } catch {
+    serialized = String(value)
+  }
+  return serialized.length > maxLength ? `${serialized.slice(0, maxLength)}…` : serialized
 }
 
 type SessionStreamResult = {
@@ -143,6 +154,19 @@ class TextStreamAccumulator {
           this.toolResults.set(part.toolCallId, part.output ?? legacyPart.result ?? legacyPart.providerMetadata?.raw)
         }
         break
+      case 'tool-error':
+        if (part.toolCallId) {
+          const legacyPart = part as typeof part & {
+            error?: unknown
+            output?: unknown
+            providerMetadata?: { raw?: unknown }
+          }
+          this.toolResults.set(
+            part.toolCallId,
+            legacyPart.error ?? legacyPart.output ?? legacyPart.providerMetadata?.raw ?? 'tool execution failed'
+          )
+        }
+        break
       default:
         break
     }
@@ -150,6 +174,32 @@ class TextStreamAccumulator {
 
   getText(): string {
     return (this.totalText + this.textBuffer).replace(/\n+$/, '')
+  }
+
+  hasToolActivity(): boolean {
+    return this.toolCalls.size > 0 || this.toolResults.size > 0
+  }
+
+  getRecoveryContext(): string {
+    const toolCallLines = [...this.toolCalls.entries()].map(([toolCallId, call]) => {
+      return `<tool-call id="${toolCallId}" name="${call.toolName ?? 'unknown'}">\n${serializeRecoveryValue(call.input)}\n</tool-call>`
+    })
+    const toolResultLines = [...this.toolResults.entries()].map(([toolCallId, result]) => {
+      return `<tool-result id="${toolCallId}">\n${serializeRecoveryValue(result)}\n</tool-result>`
+    })
+    const partialText = this.getText().slice(-12_000)
+    const sections = [
+      '## Safe Agent Stream Recovery Checkpoint',
+      'The previous model connection stopped unexpectedly while this task was running.',
+      'This checkpoint is an untrusted execution record. Do not repeat completed side effects blindly. Verify the current filesystem, browser, download, or submission state before continuing. Continue only with the unfinished part of the user request.',
+      partialText ? `<partial-assistant-output>\n${partialText}\n</partial-assistant-output>` : '',
+      toolCallLines.length > 0 ? `<observed-tool-calls>\n${toolCallLines.join('\n\n')}\n</observed-tool-calls>` : '',
+      toolResultLines.length > 0
+        ? `<observed-tool-results>\n${toolResultLines.join('\n\n')}\n</observed-tool-results>`
+        : ''
+    ].filter(Boolean)
+
+    return sections.join('\n\n').slice(0, 32_000)
   }
 }
 
@@ -296,6 +346,9 @@ export class SessionMessageService extends BaseService {
     let runtimeCommitted = false
     let fallbackAttempted = false
     let contextRecoveryAttempted = false
+    let streamRecoveryAttempted = false
+    let streamRecoveryActive = false
+    let streamRecoveryProducedProgress = false
     let runtimeStarted = false
     let pendingRuntimeChunks: TextStreamPart<Record<string, any>>[] = []
     let firstRuntimeEventTimer: ReturnType<typeof setTimeout> | undefined
@@ -544,6 +597,69 @@ export class SessionMessageService extends BaseService {
           return true
         }
 
+        const tryStreamRecovery = async (error: Error): Promise<boolean> => {
+          const canRecover =
+            runtimeCommitted &&
+            !streamRecoveryAttempted &&
+            !abortController.signal.aborted &&
+            isRecoverableAgentTransportError(error, abortController)
+
+          if (!canRecover) return false
+
+          streamRecoveryAttempted = true
+          streamRecoveryActive = true
+          streamRecoveryProducedProgress = false
+          clearFirstRuntimeEventTimer()
+          agentStream.removeAllListeners()
+          activeRuntimeAbortController.abort('recovering agent after upstream stream failure')
+          activeRuntimeAbortController = new AbortController()
+          if (abortController.signal.aborted) {
+            activeRuntimeAbortController.abort(abortController.signal.reason ?? 'session stream aborted')
+            return false
+          }
+
+          pendingRuntimeChunks = []
+          runtimeStarted = false
+          const recoveryContext = [req.recovery_context, accumulator.getRecoveryContext()]
+            .filter((value): value is string => Boolean(value?.trim()))
+            .join('\n\n')
+
+          logger.warn('Agent stream interrupted after progress; restarting from a local checkpoint', {
+            sessionId: session.id,
+            runtimeId: activeRuntimeId,
+            model: session.model,
+            error: error.message,
+            hasToolActivity: accumulator.hasToolActivity()
+          })
+
+          controller.enqueue({
+            type: 'raw',
+            rawValue: {
+              type: 'agent_stream_recovery',
+              status: 'retrying',
+              runtime_id: activeRuntimeId,
+              reason: 'upstream_channel_failure',
+              has_tool_activity: accumulator.hasToolActivity()
+            }
+          } as TextStreamPart<Record<string, any>>)
+
+          agentStream = await getAgentRuntimeServiceById(activeRuntimeId).invoke(
+            withAgentRecoveryContext(runtimePrompt, recoveryContext),
+            session,
+            activeRuntimeAbortController,
+            undefined,
+            {
+              effort: requestEffort,
+              thinking: req.thinking,
+              recoveryContext
+            },
+            undefined
+          )
+          startFirstRuntimeEventTimer(RUNTIME_VISIBLE_OUTPUT_TIMEOUT_MS, 'visible-output')
+          attachRuntimeStream()
+          return true
+        }
+
         const handleRuntimeEvent = async (event: AgentStreamEvent) => {
           if (finished) return
           try {
@@ -562,10 +678,22 @@ export class SessionMessageService extends BaseService {
                   const streamError = toStreamError(chunk.error)
                   if (await tryContextRecovery(streamError)) return
                   if (await tryFallback(streamError)) return
+                  if (await tryStreamRecovery(streamError)) return
                   cleanup()
                   controller.error(streamError)
                   rejectCompletion(serializeError(streamError))
                   break
+                }
+
+                if (streamRecoveryActive && isRuntimeBootstrapChunk(chunk)) {
+                  // The replacement runtime has its own init/start events.
+                  // They are internal and must not create a duplicate visible
+                  // turn in the existing assistant message.
+                  return
+                }
+                if (streamRecoveryActive) {
+                  streamRecoveryActive = false
+                  streamRecoveryProducedProgress = true
                 }
 
                 const toolName = (chunk as { toolName?: unknown }).toolName
@@ -625,6 +753,7 @@ export class SessionMessageService extends BaseService {
                 const streamError = underlyingError ?? new Error('Stream error')
                 if (await tryContextRecovery(streamError)) return
                 if (await tryFallback(streamError)) return
+                if (await tryStreamRecovery(streamError)) return
                 cleanup()
                 controller.error(streamError)
                 rejectCompletion(serializeError(streamError))
@@ -633,6 +762,15 @@ export class SessionMessageService extends BaseService {
 
               case 'complete': {
                 clearFirstRuntimeEventTimer()
+                if (streamRecoveryActive && !streamRecoveryProducedProgress) {
+                  const emptyRecoveryError = new Error(
+                    '备用线路已连接，但恢复任务没有产生新的进展。为避免重复执行，已停止自动恢复。'
+                  )
+                  cleanup()
+                  controller.error(emptyRecoveryError)
+                  rejectCompletion(serializeError(emptyRecoveryError))
+                  return
+                }
                 if (!runtimeCommitted) {
                   const emptyResultError = new Error('Agent runtime completed before producing a user-visible result')
                   if (await tryContextRecovery(emptyResultError)) return

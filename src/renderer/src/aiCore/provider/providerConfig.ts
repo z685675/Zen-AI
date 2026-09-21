@@ -181,7 +181,7 @@ function buildCommonOptions(ctx: BuilderContext) {
   return options
 }
 
-function withZenTraceFetch(baseFetch: typeof fetch = fetch): typeof fetch {
+export function withZenTraceFetch(baseFetch: typeof fetch = fetch): typeof fetch {
   return async (input: RequestInfo | URL, init?: RequestInit) => {
     const traceId = createZenTraceId()
     const headers = new Headers(init?.headers)

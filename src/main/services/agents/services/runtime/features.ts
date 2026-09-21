@@ -15,6 +15,6 @@ export function isCodexRuntimeEnabled(env: NodeJS.ProcessEnv = process.env): boo
 
 export function getCodexRuntimeDisabledError(): Error {
   return new Error(
-    'The Codex runtime candidate is disabled by configuration. Auto will use another available runtime. Remove ZEN_ENABLE_CODEX_RUNTIME=false to re-enable Codex.'
+    'The Codex runtime is disabled by configuration. Automatic routing will use Claude Code when it is compatible. Remove ZEN_ENABLE_CODEX_RUNTIME=false to re-enable Codex.'
   )
 }

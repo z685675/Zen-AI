@@ -1,3 +1,11 @@
+export { ClearBrowserDataSchema, clearBrowserDataToolDefinition, handleClearBrowserData } from './clearData'
+export {
+  handleListDownloads,
+  handleWaitForDownload,
+  listDownloadsToolDefinition,
+  WaitForDownloadSchema,
+  waitForDownloadToolDefinition
+} from './downloads'
 export { ExecuteSchema, executeToolDefinition, handleExecute } from './execute'
 export { handleOpen, OpenSchema, openToolDefinition } from './open'
 export { handleReset, resetToolDefinition } from './reset'
@@ -14,6 +22,13 @@ export {
 export { handleWaitForUser, WaitForUserSchema, waitForUserToolDefinition } from './waitForUser'
 
 import type { CdpBrowserController } from '../controller'
+import { clearBrowserDataToolDefinition, handleClearBrowserData } from './clearData'
+import {
+  handleListDownloads,
+  handleWaitForDownload,
+  listDownloadsToolDefinition,
+  waitForDownloadToolDefinition
+} from './downloads'
 import { executeToolDefinition, handleExecute } from './execute'
 import { handleOpen, openToolDefinition } from './open'
 import { handleReset, resetToolDefinition } from './reset'
@@ -33,6 +48,9 @@ import { handleWaitForUser, waitForUserToolDefinition } from './waitForUser'
 export const toolDefinitions = [
   openToolDefinition,
   executeToolDefinition,
+  listDownloadsToolDefinition,
+  waitForDownloadToolDefinition,
+  clearBrowserDataToolDefinition,
   screenshotToolDefinition,
   snapshotToolDefinition,
   listTabsToolDefinition,
@@ -48,6 +66,9 @@ export const toolHandlers: Record<
 > = {
   open: handleOpen,
   execute: handleExecute,
+  list_downloads: handleListDownloads,
+  wait_for_download: handleWaitForDownload,
+  clear_browser_data: handleClearBrowserData,
   screenshot: handleScreenshot,
   snapshot: handleSnapshot,
   list_tabs: handleListTabs,

@@ -39,16 +39,16 @@ describe('runtime registry', () => {
     await expect(getAgentRuntimeService(session)).resolves.toMatchObject({ id: 'claude-service' })
   })
 
-  it('prefers Codex for GPT models on a declared OpenAI endpoint', async () => {
+  it('prefers Codex for GPT models on a declared OpenAI endpoint and keeps Claude Code as fallback', async () => {
     const resolution = await resolveAgentRuntime(
       {
         agent_type: 'claude-code',
-        model: 'openai:gpt-5.4-mini',
+        model: 'openai:gpt-5.6-Terra',
         configuration: { agent_runtime: 'auto' }
       },
       {
         codexEnabled: true,
-        validateModel: validModel({ type: 'openai' }, 'gpt-5.4-mini')
+        validateModel: validModel({ type: 'openai' }, 'gpt-5.6-Terra')
       }
     )
 
@@ -77,7 +77,7 @@ describe('runtime registry', () => {
     })
   })
 
-  it('allows model affinity to rank unverified mixed-gateway candidates', async () => {
+  it('keeps GPT models on Codex even when the gateway has not declared Responses support', async () => {
     const resolution = await resolveAgentRuntime(
       {
         agent_type: 'claude-code',
@@ -90,7 +90,26 @@ describe('runtime registry', () => {
     )
 
     expect(resolution.runtimeId).toBe('codex')
+    expect(resolution.candidates).toEqual(['codex', 'claude-code'])
     expect(resolution.capabilities?.codex.state).toBe('unknown')
+  })
+
+  it('uses Claude Code as the GPT fallback when Codex is explicitly disabled', async () => {
+    const resolution = await resolveAgentRuntime(
+      {
+        agent_type: 'claude-code',
+        model: 'gateway:gpt-5.6-Terra',
+        configuration: { agent_runtime: 'auto' }
+      },
+      {
+        codexEnabled: false,
+        validateModel: validModel({ type: 'new-api' }, 'gpt-5.6-Terra')
+      }
+    )
+
+    expect(resolution.runtimeId).toBe('claude-code')
+    expect(resolution.candidates).toEqual(['claude-code'])
+    expect(resolution.reason).toContain('codex-runtime-disabled')
   })
 
   it('routes Gemini models imported through OpenAI-compatible providers to the Claude Code bridge first', async () => {
@@ -144,7 +163,7 @@ describe('runtime registry', () => {
     expect(resolution.capabilities?.['claude-code'].state).toBe('declared')
   })
 
-  it('excludes a runtime only when supported endpoint metadata explicitly rules it out', async () => {
+  it('uses Claude Code when GPT metadata explicitly excludes the Codex protocol', async () => {
     const modelId = 'gpt-through-anthropic'
     const resolution = await resolveAgentRuntime(
       {
@@ -177,16 +196,35 @@ describe('runtime registry', () => {
       }
     )
 
+    expect(resolution.runtimeId).toBe('claude-code')
     expect(resolution.candidates).toEqual(['claude-code'])
+    expect(resolution.capabilities?.codex.state).toBe('unsupported')
+  })
+
+  it('uses Claude Code for model names that are not GPT/OpenAI reasoning models', async () => {
+    const resolution = await resolveAgentRuntime(
+      {
+        agent_type: 'claude-code',
+        model: 'gateway:deepseek-chat',
+        configuration: { agent_runtime: 'auto' }
+      },
+      {
+        codexEnabled: true,
+        validateModel: validModel({ type: 'openai' }, 'deepseek-chat')
+      }
+    )
+
+    expect(resolution.runtimeId).toBe('claude-code')
+    expect(resolution.candidates).toEqual(['claude-code', 'codex'])
   })
 
   it('ignores persisted runtime choices unless the internal configuration override is enabled', async () => {
     const session = {
       agent_type: 'claude-code' as const,
-      model: 'openai:gpt-5.4-mini',
+      model: 'openai:gpt-5.6-Terra',
       configuration: { agent_runtime: 'claude-code' as const }
     }
-    const validateModel = validModel({ type: 'openai' }, 'gpt-5.4-mini')
+    const validateModel = validModel({ type: 'openai' }, 'gpt-5.6-Terra')
 
     await expect(resolveAgentRuntime(session, { codexEnabled: true, validateModel })).resolves.toMatchObject({
       runtimeId: 'codex',
@@ -206,12 +244,12 @@ describe('runtime registry', () => {
     const resolution = await resolveAgentRuntime(
       {
         agent_type: 'claude-code',
-        model: 'openai:gpt-5.4-mini'
+        model: 'openai:gpt-5.6-Terra'
       },
       {
         env: { ZEN_AGENT_RUNTIME_OVERRIDE: 'claude-code' },
         codexEnabled: true,
-        validateModel: validModel({ type: 'openai' }, 'gpt-5.4-mini')
+        validateModel: validModel({ type: 'openai' }, 'gpt-5.6-Terra')
       }
     )
 

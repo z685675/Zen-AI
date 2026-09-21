@@ -1,3 +1,4 @@
+import * as XLSX from '@e965/xlsx'
 import { loggerService } from '@logger'
 import { toAsarUnpackedPath } from '@main/utils'
 import {
@@ -7,13 +8,22 @@ import {
   getName,
   getNotesDir,
   getTempDir,
+  isPathInside,
   readTextFileWithAutoEncoding,
   scanDir
 } from '@main/utils/file'
 import { t } from '@main/utils/locales'
 import { documentExts, imageExts, KB, MB } from '@shared/config/constant'
 import { parseDataUrl } from '@shared/utils'
-import type { FileMetadata, FileType, NotesTreeNode, StructuredFileContent, StructuredFileSection } from '@types'
+import type {
+  EmbeddedFileImage,
+  EmbeddedFileImageOptions,
+  FileMetadata,
+  FileType,
+  NotesTreeNode,
+  StructuredFileContent,
+  StructuredFileSection
+} from '@types'
 import { FILE_TYPE } from '@types'
 import AdmZip from 'adm-zip'
 import chardet from 'chardet'
@@ -51,7 +61,93 @@ const sanitizeZipEntryName = (entryPath: string): string => {
 }
 
 const SAVE_DIALOG_CANCELED = 'SAVE_DIALOG_CANCELED'
-const STRUCTURED_FILE_PARSER_VERSION = 1
+const STRUCTURED_FILE_PARSER_VERSION = 2
+const AGENT_ATTACHMENT_ID_PATTERN = /^[a-zA-Z0-9_-]{1,160}$/
+
+const resolveAgentAttachmentDirectory = (workspace: string, sessionId: string, messageId?: string): string => {
+  if (typeof workspace !== 'string' || !workspace.trim()) {
+    throw new Error('智能助手工作区路径无效')
+  }
+  if (
+    !AGENT_ATTACHMENT_ID_PATTERN.test(sessionId) ||
+    (messageId !== undefined && !AGENT_ATTACHMENT_ID_PATTERN.test(messageId))
+  ) {
+    throw new Error('智能助手附件标识无效')
+  }
+
+  const workspaceRoot = path.resolve(workspace)
+  const attachmentRoot = path.resolve(workspaceRoot, '.zen-ai', 'ui-attachments')
+  const target = path.resolve(attachmentRoot, sessionId, ...(messageId ? [messageId] : []))
+  if (!isPathInside(attachmentRoot, workspaceRoot) || !isPathInside(target, attachmentRoot)) {
+    throw new Error('智能助手附件路径无效')
+  }
+  return target
+}
+
+const validateAgentAttachmentFileName = (fileName: string): string => {
+  if (
+    typeof fileName !== 'string' ||
+    !fileName.trim() ||
+    fileName !== path.basename(fileName) ||
+    /[\\/]/.test(fileName) ||
+    fileName === '.' ||
+    fileName === '..' ||
+    fileName.length > 240
+  ) {
+    throw new Error('智能助手附件文件名无效')
+  }
+  return fileName
+}
+
+const ensureAgentAttachmentDirectory = async (
+  workspace: string,
+  sessionId: string,
+  messageId: string
+): Promise<string> => {
+  const workspaceRoot = path.resolve(workspace)
+  const directory = resolveAgentAttachmentDirectory(workspace, sessionId, messageId)
+  const relativeParts = path.relative(workspaceRoot, directory).split(path.sep).filter(Boolean)
+  let current = workspaceRoot
+
+  for (const part of relativeParts) {
+    current = path.join(current, part)
+    if (fs.existsSync(current)) {
+      const lstatSync = (fs as typeof fs & { lstatSync?: typeof fs.lstatSync }).lstatSync
+      const stats = lstatSync ? lstatSync(current) : fs.statSync(current)
+      if (stats.isSymbolicLink() || !stats.isDirectory()) {
+        throw new Error('智能助手附件目录包含不安全的路径节点')
+      }
+    } else {
+      await fs.promises.mkdir(current)
+    }
+  }
+
+  return directory
+}
+
+const getMimeTypeForExtension = (extension: string): string => {
+  const normalized = extension.toLowerCase()
+  const mimeTypes: Record<string, string> = {
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.png': 'image/png',
+    '.gif': 'image/gif',
+    '.bmp': 'image/bmp',
+    '.webp': 'image/webp',
+    '.svg': 'image/svg+xml',
+    '.pdf': 'application/pdf',
+    '.doc': 'application/msword',
+    '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    '.docm': 'application/vnd.ms-word.document.macroEnabled.12',
+    '.ppt': 'application/vnd.ms-powerpoint',
+    '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    '.pptm': 'application/vnd.ms-powerpoint.presentation.macroEnabled.12',
+    '.xls': 'application/vnd.ms-excel',
+    '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    '.xlsm': 'application/vnd.ms-excel.sheet.macroEnabled.12'
+  }
+  return mimeTypes[normalized] ?? 'application/octet-stream'
+}
 
 const decodeXmlText = (value: string): string =>
   value
@@ -71,6 +167,52 @@ const extractXmlTagText = (xml: string, tag: string): string[] =>
 const getZipEntryText = (zip: AdmZip, entryName: string): string =>
   zip.getEntry(entryName)?.getData().toString('utf8') ?? ''
 
+const MAX_ZIP_ENTRIES = 10_000
+const MAX_ZIP_ENTRY_SIZE = 64 * MB
+const MAX_ZIP_TOTAL_SIZE = 256 * MB
+const MAX_ZIP_COMPRESSION_RATIO = 200
+
+/**
+ * Opens an Office ZIP container after checking its central directory. This
+ * prevents malformed files and zip bombs from expanding unbounded data while
+ * extracting XML or embedded media.
+ */
+const openSafeZip = (filePath: string): AdmZip => {
+  const zip = new AdmZip(filePath)
+  const entries = zip.getEntries()
+  if (entries.length > MAX_ZIP_ENTRIES) {
+    throw new Error(`文件包含过多压缩条目（最多支持 ${MAX_ZIP_ENTRIES} 个）`)
+  }
+
+  let totalSize = 0
+  for (const entry of entries) {
+    const header = (entry as unknown as { header?: { size?: number; compressedSize?: number } }).header
+    const size = Math.max(0, Number(header?.size ?? 0))
+    const compressedSize = Math.max(0, Number(header?.compressedSize ?? 0))
+    if (size > MAX_ZIP_ENTRY_SIZE || totalSize + size > MAX_ZIP_TOTAL_SIZE) {
+      throw new Error('文件解压后的内容过大，已停止读取以保护设备安全')
+    }
+    if (compressedSize > 0 && size / compressedSize > MAX_ZIP_COMPRESSION_RATIO) {
+      throw new Error('文件压缩比例异常，已停止读取以保护设备安全')
+    }
+    totalSize += size
+  }
+
+  return zip
+}
+
+const zipEntryNamesForFormat = (filePath: string, prefix: string): string[] => {
+  try {
+    const zip = openSafeZip(filePath)
+    return zip
+      .getEntries()
+      .filter((entry) => entry.entryName.toLowerCase().startsWith(`${prefix.toLowerCase()}/`))
+      .map((entry) => path.posix.basename(entry.entryName))
+  } catch {
+    return []
+  }
+}
+
 const parseXmlAttributes = (value: string): Record<string, string> =>
   Object.fromEntries(
     Array.from(value.matchAll(/([\w:.-]+)\s*=\s*(?:"([^"]*)"|'([^']*)')/g)).map((match) => [
@@ -78,6 +220,97 @@ const parseXmlAttributes = (value: string): Record<string, string> =>
       decodeXmlText(match[2] ?? match[3] ?? '')
     ])
   )
+
+const resolveZipTarget = (baseDirectory: string, target: string): string => {
+  const normalizedTarget = target.replace(/\\/g, '/').replace(/^\/+/, '')
+  return path.posix.normalize(path.posix.join(baseDirectory, normalizedTarget)).replace(/^\/+/, '')
+}
+
+const getZipRelationshipTargets = (zip: AdmZip, relationshipPath: string): Map<string, string> => {
+  const xml = getZipEntryText(zip, relationshipPath)
+  return new Map(
+    Array.from(xml.matchAll(/<Relationship\b([^>]*)\/?>(?:<\/Relationship>)?/g))
+      .map((match) => parseXmlAttributes(match[1]))
+      .filter((attributes) => attributes.Id && attributes.Target)
+      .map((attributes) => [attributes.Id, attributes.Target])
+  )
+}
+
+const getPptImageLocations = (zip: AdmZip): Map<string, string[]> => {
+  const locations = new Map<string, string[]>()
+  for (const slideEntry of zip.getEntries().filter((entry) => /^ppt\/slides\/slide\d+\.xml$/i.test(entry.entryName))) {
+    const slideNumber = numericSuffix(slideEntry.entryName)
+    const relationshipPath = `ppt/slides/_rels/slide${slideNumber}.xml.rels`
+    const relationships = getZipRelationshipTargets(zip, relationshipPath)
+    const slideXml = slideEntry.getData().toString('utf8')
+
+    for (const match of slideXml.matchAll(/<a:blip\b([^>]*)\/?>(?:<\/a:blip>)?/g)) {
+      const attributes = parseXmlAttributes(match[1])
+      const target = attributes['r:embed'] ? relationships.get(attributes['r:embed']) : undefined
+      if (!target) continue
+      const mediaPath = resolveZipTarget('ppt/slides', target)
+      if (!mediaPath.toLowerCase().startsWith('ppt/media/')) continue
+      const previous = locations.get(mediaPath) ?? []
+      previous.push(`幻灯片 ${slideNumber}`)
+      locations.set(mediaPath, previous)
+    }
+  }
+  return locations
+}
+
+const getXlsxImageLocations = (zip: AdmZip): Map<string, string[]> => {
+  const locations = new Map<string, string[]>()
+  const workbookXml = getZipEntryText(zip, 'xl/workbook.xml')
+  const workbookRelationships = getZipRelationshipTargets(zip, 'xl/_rels/workbook.xml.rels')
+
+  const sheets = Array.from(workbookXml.matchAll(/<sheet\b([^>]*)\/?>(?:<\/sheet>)?/g)).map((match, index) => {
+    const attributes = parseXmlAttributes(match[1])
+    const target = workbookRelationships.get(attributes['r:id'] ?? attributes.id ?? '')
+    return {
+      name: attributes.name ?? `工作表 ${index + 1}`,
+      worksheetPath: target ? resolveZipTarget('xl', target) : `xl/worksheets/sheet${index + 1}.xml`
+    }
+  })
+
+  for (const sheet of sheets) {
+    const worksheetName = path.posix.basename(sheet.worksheetPath)
+    const worksheetRelationships = getZipRelationshipTargets(zip, `xl/worksheets/_rels/${worksheetName}.rels`)
+    const drawingTarget = [...worksheetRelationships.entries()].find(([, target]) => /drawing/i.test(target))?.[1]
+    if (!drawingTarget) continue
+
+    const drawingPath = resolveZipTarget('xl/worksheets', drawingTarget)
+    const drawingXml = getZipEntryText(zip, drawingPath)
+    const drawingRelationships = getZipRelationshipTargets(
+      zip,
+      `${path.posix.dirname(drawingPath)}/_rels/${path.posix.basename(drawingPath)}.rels`
+    )
+
+    for (const anchorMatch of drawingXml.matchAll(
+      /<xdr:(?:twoCellAnchor|oneCellAnchor)\b[^>]*>([\s\S]*?)<\/xdr:(?:twoCellAnchor|oneCellAnchor)>/g
+    )) {
+      const anchor = anchorMatch[1]
+      const blip = anchor.match(/<a:blip\b([^>]*)\/?>(?:<\/a:blip>)?/)
+      if (!blip) continue
+      const blipAttributes = parseXmlAttributes(blip[1])
+      const target = blipAttributes['r:embed'] ? drawingRelationships.get(blipAttributes['r:embed']) : undefined
+      if (!target) continue
+      const mediaPath = resolveZipTarget(path.posix.dirname(drawingPath), target)
+      if (!mediaPath.toLowerCase().startsWith('xl/media/')) continue
+
+      const from = anchor.match(
+        /<xdr:from>[\s\S]*?<xdr:col>(\d+)<\/xdr:col>[\s\S]*?<xdr:row>(\d+)<\/xdr:row>[\s\S]*?<\/xdr:from>/
+      )
+      const location = from
+        ? `${sheet.name}!${numberToColumnName(Number(from[1]) + 1)}${Number(from[2]) + 1}`
+        : sheet.name
+      const previous = locations.get(mediaPath) ?? []
+      previous.push(location)
+      locations.set(mediaPath, previous)
+    }
+  }
+
+  return locations
+}
 
 const numericSuffix = (value: string): number => Number(value.match(/(\d+)(?:\.[^.]+)?$/)?.[1] ?? 0)
 
@@ -233,6 +466,24 @@ class FileStorage {
       fs.mkdirSync(this._tempDir, { recursive: true })
     }
     return this._tempDir
+  }
+
+  /** Resolves a stored-file identifier without allowing path traversal. */
+  private getStoredFilePath = (id: string): string => {
+    if (!id || typeof id !== 'string') {
+      throw new Error('文件标识无效')
+    }
+    if (id.includes('/') || id.includes('\\')) {
+      throw new Error('文件路径无效')
+    }
+    const storageRoot = path.resolve(this.storageDir)
+    const resolved = path.resolve(storageRoot, id)
+    const normalizedRoot = storageRoot.replace(/[\\/]+/g, '/').replace(/\/$/, '')
+    const normalizedResolved = resolved.replace(/[\\/]+/g, '/')
+    if (normalizedResolved !== normalizedRoot && !normalizedResolved.startsWith(`${normalizedRoot}/`)) {
+      throw new Error('文件路径无效')
+    }
+    return resolved
   }
 
   constructor() {
@@ -437,17 +688,19 @@ class FileStorage {
 
   // @TraceProperty({ spanName: 'deleteFile', tag: 'FileStorage' })
   public deleteFile = async (_: Electron.IpcMainInvokeEvent, id: string): Promise<void> => {
-    if (!fs.existsSync(path.join(this.storageDir, id))) {
+    const filePath = this.getStoredFilePath(id)
+    if (!fs.existsSync(filePath)) {
       return
     }
-    await fs.promises.unlink(path.join(this.storageDir, id))
+    await fs.promises.unlink(filePath)
   }
 
   public deleteDir = async (_: Electron.IpcMainInvokeEvent, id: string): Promise<void> => {
-    if (!fs.existsSync(path.join(this.storageDir, id))) {
+    const dirPath = this.getStoredFilePath(id)
+    if (!fs.existsSync(dirPath)) {
       return
     }
-    await fs.promises.rm(path.join(this.storageDir, id), { recursive: true })
+    await fs.promises.rm(dirPath, { recursive: true })
   }
 
   public deleteExternalFile = async (_: Electron.IpcMainInvokeEvent, filePath: string): Promise<void> => {
@@ -474,6 +727,38 @@ class FileStorage {
       logger.debug(`External directory deleted successfully: ${dirPath}`)
     } catch (error) {
       logger.error('Failed to delete external directory:', error as Error)
+      throw error
+    }
+  }
+
+  /**
+   * Deletes only the attachment directory owned by one Agent session/message.
+   * This deliberately does not reuse deleteExternalDir because the Agent
+   * workspace path can come from a remote session response.
+   */
+  public deleteAgentAttachmentDir = async (
+    _: Electron.IpcMainInvokeEvent,
+    workspace: string,
+    sessionId: string,
+    messageId?: string
+  ): Promise<void> => {
+    const dirPath = resolveAgentAttachmentDirectory(workspace, sessionId, messageId)
+    try {
+      if (!fs.existsSync(dirPath)) return
+      const lstatSync = (fs as typeof fs & { lstatSync?: typeof fs.lstatSync }).lstatSync
+      const stats = lstatSync ? lstatSync(dirPath) : fs.statSync(dirPath)
+      if (stats.isSymbolicLink()) {
+        await fs.promises.unlink(dirPath)
+        return
+      }
+      if (!stats.isDirectory()) {
+        throw new Error('智能助手附件目标不是目录')
+      }
+      await fs.promises.rm(dirPath, { recursive: true, force: true })
+      logger.debug(`Agent attachment directory deleted successfully: ${dirPath}`)
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return
+      logger.error('Failed to delete Agent attachment directory:', error as Error)
       throw error
     }
   }
@@ -576,7 +861,7 @@ class FileStorage {
    * @throws Error if file reading fails
    */
   private async readFileCore(filePath: string, detectEncoding: boolean = false): Promise<string> {
-    const fileExtension = path.extname(filePath)
+    const fileExtension = path.extname(filePath).toLowerCase()
 
     if (documentExts.includes(fileExtension)) {
       try {
@@ -609,7 +894,7 @@ class FileStorage {
   }
 
   private readStructuredDocx(filePath: string): StructuredFileSection[] {
-    const zip = new AdmZip(filePath)
+    const zip = openSafeZip(filePath)
     const documentXml = getZipEntryText(zip, 'word/document.xml')
     if (!documentXml) return []
 
@@ -674,15 +959,26 @@ class FileStorage {
   }
 
   private readStructuredPptx(filePath: string): StructuredFileSection[] {
-    const zip = new AdmZip(filePath)
-    return zip
+    const zip = openSafeZip(filePath)
+    const slideSections = zip
       .getEntries()
       .filter((entry) => /^ppt\/slides\/slide\d+\.xml$/i.test(entry.entryName))
       .sort((left, right) => numericSuffix(left.entryName) - numericSuffix(right.entryName))
       .map((entry, index) => {
         const text = extractXmlTagText(entry.getData().toString('utf8'), 'a:t').filter(Boolean)
+        const slideNumber = numericSuffix(entry.entryName)
+        const notes = getZipEntryText(zip, `ppt/notesSlides/notesSlide${slideNumber}.xml`)
+        const notesText = extractXmlTagText(notes, 'a:t').filter(Boolean)
+        const mediaEntries = zip
+          .getEntries()
+          .filter((mediaEntry) => /^ppt\/media\//i.test(mediaEntry.entryName))
+          .map((mediaEntry) => path.posix.basename(mediaEntry.entryName))
         return {
-          text: text.join('\n'),
+          text: [
+            ...text,
+            ...(notesText.length > 0 ? [`[备注]\n${notesText.join('\n')}`] : []),
+            ...(mediaEntries.length > 0 ? [`[嵌入图片/媒体]\n${mediaEntries.join(', ')}`] : [])
+          ].join('\n'),
           metadata: {
             slide: index + 1,
             ...(text[0] ? { section: text[0] } : {})
@@ -690,10 +986,134 @@ class FileStorage {
         }
       })
       .filter((section) => section.text.trim())
+
+    const chartSections = zip
+      .getEntries()
+      .filter((entry) => /^ppt\/charts\/chart\d+\.xml$/i.test(entry.entryName))
+      .map((entry) => {
+        const xml = entry.getData().toString('utf8')
+        const titles = extractXmlTagText(xml, 'c:t').filter(Boolean)
+        const formulas = extractXmlTagText(xml, 'c:f').filter(Boolean)
+        const values = extractXmlTagText(xml, 'c:v').filter(Boolean)
+        return {
+          text: [
+            `图表：${path.posix.basename(entry.entryName)}`,
+            ...(titles.length > 0 ? [`标题：${titles.join(' / ')}`] : []),
+            ...(formulas.length > 0 ? [`数据范围：${formulas.join('；')}`] : []),
+            ...(values.length > 0 ? [`缓存数据：${values.join('、')}`] : [])
+          ].join('\n'),
+          metadata: { section: 'chart' }
+        }
+      })
+      .filter((section) => section.text.trim())
+
+    return [...slideSections, ...chartSections]
   }
 
-  private readStructuredXlsx(filePath: string): StructuredFileSection[] {
-    const zip = new AdmZip(filePath)
+  private async readStructuredXlsxWithLibrary(filePath: string): Promise<StructuredFileSection[]> {
+    // Validate the ZIP central directory before the XLSX library expands it.
+    openSafeZip(filePath)
+    const workbook = XLSX.read(await readFile(filePath), {
+      type: 'array',
+      cellDates: true,
+      cellFormula: true,
+      cellNF: true,
+      cellStyles: true
+    })
+    const sections: StructuredFileSection[] = []
+    const maxRowsPerSection = 80
+
+    for (const sheetName of workbook.SheetNames) {
+      const sheet = workbook.Sheets[sheetName]
+      if (!sheet || !sheet['!ref']) continue
+
+      const range = XLSX.utils.decode_range(sheet['!ref'])
+      const columnNumbers = Array.from({ length: range.e.c - range.s.c + 1 }, (_, offset) => range.s.c + offset)
+      const rows: string[][] = []
+
+      for (let row = range.s.r; row <= range.e.r; row += 1) {
+        rows.push(
+          columnNumbers.map((column) => {
+            const address = XLSX.utils.encode_cell({ r: row, c: column })
+            const cell = sheet[address] as { v?: unknown; w?: string; f?: string; t?: string; z?: string } | undefined
+            if (!cell || (cell.v === undefined && !cell.f)) return ''
+
+            const formatted = cell.w ?? (cell.v instanceof Date ? cell.v.toISOString() : String(cell.v ?? ''))
+            if (cell.f) {
+              return formatted && formatted !== cell.f ? `=${cell.f} [结果: ${formatted}]` : `=${cell.f}`
+            }
+            return formatted
+          })
+        )
+      }
+
+      const mergedRanges = Array.isArray(sheet['!merges'])
+        ? sheet['!merges'].map((merge) => XLSX.utils.encode_range(merge)).join(', ')
+        : ''
+      const embeddedMedia = zipEntryNamesForFormat(filePath, 'xl/media')
+
+      for (let offset = 0; offset < rows.length; offset += maxRowsPerSection) {
+        const batch = rows.slice(offset, offset + maxRowsPerSection)
+        const firstRow = range.s.r + offset + 1
+        const lastRow = firstRow + batch.length - 1
+        const firstColumn = numberToColumnName(range.s.c + 1)
+        const lastColumn = numberToColumnName(range.e.c + 1)
+        const header = columnNumbers.map((column) => numberToColumnName(column + 1))
+        const markdownRows = batch.map((row, rowOffset) => {
+          const values = row.map((value) => value.replace(/\|/g, '\\|').replace(/\r?\n/g, '<br>'))
+          return `| ${firstRow + rowOffset} | ${values.join(' | ')} |`
+        })
+        const text = [
+          `工作表：${sheetName}`,
+          `单元格范围：${firstColumn}${firstRow}:${lastColumn}${lastRow}`,
+          '| 行号 | ' + header.join(' | ') + ' |',
+          '| --- | ' + header.map(() => '---').join(' | ') + ' |',
+          ...markdownRows,
+          ...(offset === 0 && mergedRanges ? [`合并单元格：${mergedRanges}`] : []),
+          ...(offset === 0 && embeddedMedia.length > 0 ? [`嵌入图片/媒体：${embeddedMedia.join(', ')}`] : [])
+        ].join('\n')
+
+        sections.push({
+          text,
+          metadata: {
+            sheet: sheetName,
+            table: sections.filter((section) => section.metadata.sheet === sheetName).length + 1,
+            cellRange: `${firstColumn}${firstRow}:${lastColumn}${lastRow}`
+          }
+        })
+      }
+    }
+
+    // Keep chart series and cached values as text evidence as well. The
+    // workbook parser exposes cell data, but chart-only information otherwise
+    // disappears before the model sees the spreadsheet.
+    try {
+      const zip = openSafeZip(filePath)
+      for (const entry of zip.getEntries().filter((item) => /^xl\/charts\/chart\d+\.xml$/i.test(item.entryName))) {
+        const xml = entry.getData().toString('utf8')
+        const titles = extractXmlTagText(xml, 'c:t').filter(Boolean)
+        const formulas = extractXmlTagText(xml, 'c:f').filter(Boolean)
+        const values = extractXmlTagText(xml, 'c:v').filter(Boolean)
+        if (titles.length === 0 && formulas.length === 0 && values.length === 0) continue
+        sections.push({
+          text: [
+            `图表：${path.posix.basename(entry.entryName)}`,
+            ...(titles.length > 0 ? [`标题：${titles.join(' / ')}`] : []),
+            ...(formulas.length > 0 ? [`数据范围：${formulas.join('；')}`] : []),
+            ...(values.length > 0 ? [`缓存数据：${values.join('、')}`] : [])
+          ].join('\n'),
+          metadata: { section: 'chart' }
+        })
+      }
+    } catch (error) {
+      logger.debug(`Spreadsheet chart extraction skipped for ${path.basename(filePath)}`, error as Error)
+    }
+
+    return sections
+  }
+
+  private readStructuredXlsxXml(filePath: string): StructuredFileSection[] {
+    const zip = openSafeZip(filePath)
     const sharedStringsXml = getZipEntryText(zip, 'xl/sharedStrings.xml')
     const sharedStrings = (sharedStringsXml.match(/<si(?:\s[^>]*)?>[\s\S]*?<\/si>/g) ?? []).map((item) =>
       extractXmlTagText(item, 't').join('')
@@ -788,40 +1208,198 @@ class FileStorage {
     return sections
   }
 
+  private async readStructuredXlsx(filePath: string): Promise<StructuredFileSection[]> {
+    try {
+      const sections = await this.readStructuredXlsxWithLibrary(filePath)
+      if (sections.length > 0) {
+        return sections
+      }
+    } catch (error) {
+      // Keep the lightweight XML parser as a compatibility fallback for
+      // partially-written workbooks and the minimal files produced by older
+      // versions of the application.
+      logger.warn(`XLSX library parsing failed for ${path.basename(filePath)}; using XML fallback`, error as Error)
+    }
+
+    return this.readStructuredXlsxXml(filePath)
+  }
+
   private async readStructuredPdf(filePath: string): Promise<StructuredFileSection[]> {
-    const parser = new PDFParse({ data: await fs.promises.readFile(filePath) })
+    const parser = new PDFParse({ data: await readFile(filePath) })
     try {
       const result = await parser.getText()
+      let tablesByPage = new Map<number, string[]>()
+      try {
+        const tables = await parser.getTable()
+        tablesByPage = new Map(
+          tables.pages.map((page) => [
+            page.num,
+            page.tables
+              .filter((table) => table.length > 0)
+              .map((table) => table.map((row) => `| ${row.join(' | ')} |`).join('\n'))
+          ])
+        )
+      } catch (error) {
+        // Table detection depends on visible vector lines and is not available
+        // for every PDF. Text extraction must remain a reliable fallback.
+        logger.debug(`PDF table detection skipped for ${path.basename(filePath)}`, error as Error)
+      }
+
       return result.pages
-        .map((page) => ({ text: page.text.trim(), metadata: { page: page.num } }))
+        .map((page) => {
+          const text = page.text.trim()
+          const tables = tablesByPage.get(page.num) ?? []
+          return {
+            text: [text, ...(tables.length > 0 ? [`[检测到的表格]\n${tables.join('\n\n')}`] : [])]
+              .filter(Boolean)
+              .join('\n\n'),
+            metadata: { page: page.num }
+          }
+        })
         .filter((section) => section.text)
     } finally {
       await parser.destroy()
     }
   }
 
+  /**
+   * Reads embedded Office images so a vision-capable model can inspect charts,
+   * screenshots and photos instead of receiving only the surrounding text.
+   * This intentionally handles only OOXML containers; legacy binary Office
+   * files are still supported through officeParser text extraction.
+   */
+  public readEmbeddedImages = async (
+    _: Electron.IpcMainInvokeEvent,
+    id: string,
+    options: EmbeddedFileImageOptions = {}
+  ): Promise<EmbeddedFileImage[]> => {
+    const filePath = this.getStoredFilePath(id)
+    const extension = path.extname(filePath).toLowerCase()
+    if (extension === '.pdf') {
+      try {
+        const parser = new PDFParse({ data: await readFile(filePath) })
+        try {
+          const requestedPages = [
+            ...new Set((options.pageNumbers ?? []).filter((page) => Number.isInteger(page) && page > 0))
+          ]
+          const maxPages = Math.min(12, Math.max(1, Math.floor(options.maxPages ?? 6)))
+          const screenshots = await parser.getScreenshot({
+            ...(requestedPages.length > 0 ? { partial: requestedPages.slice(0, maxPages) } : { first: maxPages }),
+            desiredWidth: 1600,
+            imageBuffer: true,
+            imageDataUrl: false
+          })
+          const maxBytes = 24 * MB
+          let totalBytes = 0
+          return screenshots.pages.flatMap((page) => {
+            if (!page.data || totalBytes + page.data.length > maxBytes) return []
+            totalBytes += page.data.length
+            return [
+              {
+                name: `page-${page.pageNumber}.png`,
+                mediaType: 'image/png',
+                base64: Buffer.from(page.data).toString('base64'),
+                page: page.pageNumber
+              }
+            ]
+          })
+        } finally {
+          await parser.destroy()
+        }
+      } catch (error) {
+        logger.warn(`Failed to render PDF pages from ${path.basename(filePath)}`, error as Error)
+        return []
+      }
+    }
+
+    const mediaPrefix = extension.startsWith('.doc')
+      ? 'word/media/'
+      : extension.startsWith('.ppt')
+        ? 'ppt/media/'
+        : extension.startsWith('.xls')
+          ? 'xl/media/'
+          : ''
+
+    if (!mediaPrefix) {
+      return []
+    }
+
+    try {
+      const zip = openSafeZip(filePath)
+      const imageLocations = extension.startsWith('.ppt')
+        ? getPptImageLocations(zip)
+        : extension.startsWith('.xls')
+          ? getXlsxImageLocations(zip)
+          : new Map<string, string[]>()
+      const maxImages = 16
+      const maxImageBytes = 6 * MB
+      const maxTotalBytes = 24 * MB
+      let totalBytes = 0
+      const images: EmbeddedFileImage[] = []
+
+      for (const entry of zip.getEntries()) {
+        const entryName = entry.entryName.replace(/\\/g, '/')
+        if (images.length >= maxImages || !entryName.toLowerCase().startsWith(mediaPrefix)) {
+          continue
+        }
+        const extension = path.posix.extname(entryName).toLowerCase()
+        if (!imageExts.includes(extension) || !getMimeTypeForExtension(extension).startsWith('image/')) {
+          continue
+        }
+        const data = entry.getData()
+        if (data.length > maxImageBytes || totalBytes + data.length > maxTotalBytes) {
+          logger.warn(`Skipping oversized embedded image ${entryName}`)
+          continue
+        }
+        totalBytes += data.length
+        const location = imageLocations.get(entryName)?.join('、')
+        images.push({
+          name: path.posix.basename(entryName),
+          mediaType: getMimeTypeForExtension(extension),
+          base64: data.toString('base64'),
+          ...(location ? { location } : {})
+        })
+      }
+
+      return images
+    } catch (error) {
+      logger.warn(`Failed to read embedded images from ${path.basename(filePath)}`, error as Error)
+      return []
+    }
+  }
+
   public readStructuredFile = async (_: Electron.IpcMainInvokeEvent, id: string): Promise<StructuredFileContent> => {
-    const filePath = path.join(this.storageDir, id)
+    const filePath = this.getStoredFilePath(id)
     const format = path.extname(filePath).toLowerCase().replace(/^\./, '')
     let sections: StructuredFileSection[] = []
 
-    switch (format) {
-      case 'docx':
-        sections = this.readStructuredDocx(filePath)
-        break
-      case 'pptx':
-        sections = this.readStructuredPptx(filePath)
-        break
-      case 'xlsx':
-        sections = this.readStructuredXlsx(filePath)
-        break
-      case 'pdf':
-        sections = await this.readStructuredPdf(filePath)
-        break
-      default: {
-        const text = await this.readFileCore(filePath, true)
-        sections = text.trim() ? [{ text, metadata: { section: path.basename(filePath) } }] : []
+    try {
+      switch (format) {
+        case 'docx':
+        case 'docm':
+          sections = this.readStructuredDocx(filePath)
+          break
+        case 'pptx':
+        case 'pptm':
+          sections = this.readStructuredPptx(filePath)
+          break
+        case 'xlsx':
+        case 'xlsm':
+        case 'xls':
+          sections = await this.readStructuredXlsx(filePath)
+          break
+        case 'pdf':
+          sections = await this.readStructuredPdf(filePath)
+          break
+        default: {
+          const text = await this.readFileCore(filePath, true)
+          sections = text.trim() ? [{ text, metadata: { section: path.basename(filePath) } }] : []
+        }
       }
+    } catch (error) {
+      logger.warn(`Failed to parse structured file ${path.basename(filePath)}`, error as Error)
+      const reason = error instanceof Error && error.message ? `：${error.message}` : ''
+      throw new Error(`无法读取文件“${path.basename(filePath)}”${reason}`, { cause: error })
     }
 
     if (sections.length === 0) {
@@ -873,7 +1451,7 @@ class FileStorage {
     id: string,
     detectEncoding: boolean = false
   ): Promise<string> => {
-    const filePath = path.join(this.storageDir, id)
+    const filePath = this.getStoredFilePath(id)
     return this.readFileCore(filePath, detectEncoding)
   }
 
@@ -951,7 +1529,7 @@ class FileStorage {
     _: Electron.IpcMainInvokeEvent,
     id: string
   ): Promise<{ mime: string; base64: string; data: string }> => {
-    const filePath = path.join(this.storageDir, id)
+    const filePath = this.getStoredFilePath(id)
     const data = await fs.promises.readFile(filePath)
     const base64 = data.toString('base64')
     const ext = path.extname(filePath).slice(1) == 'jpg' ? 'jpeg' : path.extname(filePath).slice(1)
@@ -1080,15 +1658,15 @@ class FileStorage {
   }
 
   public base64File = async (_: Electron.IpcMainInvokeEvent, id: string): Promise<{ data: string; mime: string }> => {
-    const filePath = path.join(this.storageDir, id)
+    const filePath = this.getStoredFilePath(id)
     const buffer = await fs.promises.readFile(filePath)
     const base64 = buffer.toString('base64')
-    const mime = `application/${path.extname(filePath).slice(1)}`
+    const mime = getMimeTypeForExtension(path.extname(filePath))
     return { data: base64, mime }
   }
 
   public pdfPageCount = async (_: Electron.IpcMainInvokeEvent, id: string): Promise<number> => {
-    const filePath = path.join(this.storageDir, id)
+    const filePath = this.getStoredFilePath(id)
     const buffer = await fs.promises.readFile(filePath)
 
     const pdfDoc = await PDFDocument.load(buffer)
@@ -1096,7 +1674,7 @@ class FileStorage {
   }
 
   public binaryImage = async (_: Electron.IpcMainInvokeEvent, id: string): Promise<{ data: Buffer; mime: string }> => {
-    const filePath = path.join(this.storageDir, id)
+    const filePath = this.getStoredFilePath(id)
     const data = await fs.promises.readFile(filePath)
     const mime = `image/${path.extname(filePath).slice(1)}`
     return { data, mime }
@@ -1917,7 +2495,7 @@ class FileStorage {
   // @TraceProperty({ spanName: 'copyFile', tag: 'FileStorage' })
   public copyFile = async (_: Electron.IpcMainInvokeEvent, id: string, destPath: string): Promise<void> => {
     try {
-      const sourcePath = path.join(this.storageDir, id)
+      const sourcePath = this.getStoredFilePath(id)
 
       // 确保目标目录存在
       const destDir = path.dirname(destPath)
@@ -1934,9 +2512,26 @@ class FileStorage {
     }
   }
 
+  /** Copies a stored file into the validated workspace of one Agent message. */
+  public copyFileToAgentAttachment = async (
+    _: Electron.IpcMainInvokeEvent,
+    id: string,
+    workspace: string,
+    sessionId: string,
+    messageId: string,
+    fileName: string
+  ): Promise<string> => {
+    const safeFileName = validateAgentAttachmentFileName(fileName)
+    const attachmentDir = await ensureAgentAttachmentDirectory(workspace, sessionId, messageId)
+    const destination = path.join(attachmentDir, safeFileName)
+    await fs.promises.copyFile(this.getStoredFilePath(id), destination)
+    logger.debug(`Agent attachment copied successfully: ${id} to ${destination}`)
+    return destination
+  }
+
   public writeFileWithId = async (_: Electron.IpcMainInvokeEvent, id: string, content: string): Promise<void> => {
     try {
-      const filePath = path.join(this.storageDir, id)
+      const filePath = this.getStoredFilePath(id)
       logger.debug(`Writing file: ${filePath}`)
 
       // 确保目录存在
@@ -2159,7 +2754,7 @@ class FileStorage {
   }
 
   public getFilePathById(file: FileMetadata): string {
-    return path.join(this.storageDir, file.id + file.ext)
+    return this.getStoredFilePath(file.id + file.ext)
   }
 
   public isTextFile = async (_: Electron.IpcMainInvokeEvent, filePath: string): Promise<boolean> => {

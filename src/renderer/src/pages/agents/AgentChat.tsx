@@ -20,6 +20,7 @@ import { useRuntime } from '@renderer/hooks/useRuntime'
 import { useNavbarPosition, useSettings } from '@renderer/hooks/useSettings'
 import { useShortcut } from '@renderer/hooks/useShortcuts'
 import { useShowAssistants } from '@renderer/hooks/useStore'
+import { cleanupAgentSessionAttachmentDirectory } from '@renderer/services/AgentAttachmentService'
 import {
   ASSISTANT_DEPENDENCY_I18N_KEYS,
   type AssistantEnvironmentCheckResult,
@@ -194,6 +195,10 @@ const AgentChat = () => {
         }
 
         await client.deleteSession(agentId, session.id)
+        const workspace = session.accessible_paths?.[0]
+        if (workspace) {
+          await cleanupAgentSessionAttachmentDirectory(workspace, session.id)
+        }
         CacheService.remove(draftCacheKey)
         dispatch(newMessagesActions.clearTopicMessages(topicId))
 

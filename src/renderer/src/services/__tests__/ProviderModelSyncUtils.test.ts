@@ -266,6 +266,7 @@ describe('ProviderModelSyncUtils', () => {
       'nano-banana-pro',
       'gemini-2.5-flash-image',
       'grok-imagine-image',
+      'grok-imagine-image-2.0',
       'imagen-4.0-generate-001',
       'flux-2-pro',
       'seedream-4.5',

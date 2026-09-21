@@ -3819,6 +3819,24 @@ const migrateConfig = {
       logger.error('migrate 226 error', error as Error)
       return state
     }
+  },
+  '227': (state: RootState) => {
+    try {
+      // URL Context is now handled automatically by the application layer.
+      // Remove it from persisted toolbar layouts created by older versions.
+      const toolOrders = [state.inputTools?.toolOrder, state.inputTools?.sessionToolOrder]
+      for (const toolOrder of toolOrders) {
+        if (!toolOrder) continue
+        toolOrder.visible = toolOrder.visible.filter((tool) => tool !== 'url_context')
+        toolOrder.hidden = toolOrder.hidden.filter((tool) => tool !== 'url_context')
+      }
+
+      logger.info('migrate 227 success')
+      return state
+    } catch (error) {
+      logger.error('migrate 227 error', error as Error)
+      return state
+    }
   }
 }
 

@@ -123,7 +123,7 @@ describe('ThinkingBlock', () => {
     // Default mock implementations
     mockUseSettings.mockReturnValue({
       messageFont: 'sans-serif',
-      fontSize: 14,
+      conversationFontSize: 14,
       thoughtAutoCollapse: false
     })
 
@@ -276,7 +276,7 @@ describe('ThinkingBlock', () => {
       // Test expanded by default (auto-collapse disabled)
       mockUseSettings.mockReturnValue({
         messageFont: 'sans-serif',
-        fontSize: 14,
+        conversationFontSize: 14,
         thoughtAutoCollapse: false
       })
 
@@ -290,7 +290,7 @@ describe('ThinkingBlock', () => {
       // Test collapsed by default (auto-collapse enabled)
       mockUseSettings.mockReturnValue({
         messageFont: 'sans-serif',
-        fontSize: 14,
+        conversationFontSize: 14,
         thoughtAutoCollapse: true
       })
 
@@ -326,12 +326,12 @@ describe('ThinkingBlock', () => {
     it('should apply font settings to thinking content', () => {
       const testCases = [
         {
-          settings: { messageFont: 'serif', fontSize: 16 },
+          settings: { messageFont: 'serif', conversationFontSize: 16 },
           expectedFont: 'var(--font-family-serif)',
           expectedSize: '16px'
         },
         {
-          settings: { messageFont: 'sans-serif', fontSize: 14 },
+          settings: { messageFont: 'sans-serif', conversationFontSize: 14 },
           expectedFont: 'var(--font-family)',
           expectedSize: '14px'
         }

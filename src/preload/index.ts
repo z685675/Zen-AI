@@ -24,6 +24,8 @@ import type { Notification } from '@types'
 import type {
   AddMemoryOptions,
   AssistantMessage,
+  EmbeddedFileImage,
+  EmbeddedFileImageOptions,
   FileListResponse,
   FileMetadata,
   FileUploadResponse,
@@ -216,6 +218,8 @@ const api = {
     deleteDir: (dirPath: string) => ipcRenderer.invoke(IpcChannel.File_DeleteDir, dirPath),
     deleteExternalFile: (filePath: string) => ipcRenderer.invoke(IpcChannel.File_DeleteExternalFile, filePath),
     deleteExternalDir: (dirPath: string) => ipcRenderer.invoke(IpcChannel.File_DeleteExternalDir, dirPath),
+    deleteAgentAttachmentDir: (workspace: string, sessionId: string, messageId?: string) =>
+      ipcRenderer.invoke(IpcChannel.File_DeleteAgentAttachmentDir, workspace, sessionId, messageId),
     move: (path: string, newPath: string) => ipcRenderer.invoke(IpcChannel.File_Move, path, newPath),
     moveDir: (dirPath: string, newDirPath: string) => ipcRenderer.invoke(IpcChannel.File_MoveDir, dirPath, newDirPath),
     rename: (path: string, newName: string) => ipcRenderer.invoke(IpcChannel.File_Rename, path, newName),
@@ -224,6 +228,8 @@ const api = {
       ipcRenderer.invoke(IpcChannel.File_Read, fileId, detectEncoding),
     readStructured: (fileId: string): Promise<StructuredFileContent> =>
       ipcRenderer.invoke(IpcChannel.File_ReadStructured, fileId),
+    readEmbeddedImages: (fileId: string, options?: EmbeddedFileImageOptions): Promise<EmbeddedFileImage[]> =>
+      ipcRenderer.invoke(IpcChannel.File_ReadEmbeddedImages, fileId, options),
     readExternal: (filePath: string, detectEncoding?: boolean) =>
       ipcRenderer.invoke(IpcChannel.File_ReadExternal, filePath, detectEncoding),
     clear: (spanContext?: SpanContext) => ipcRenderer.invoke(IpcChannel.File_Clear, spanContext),
@@ -254,6 +260,13 @@ const api = {
     download: (url: string, isUseContentType?: boolean) =>
       ipcRenderer.invoke(IpcChannel.File_Download, url, isUseContentType),
     copy: (fileId: string, destPath: string) => ipcRenderer.invoke(IpcChannel.File_Copy, fileId, destPath),
+    copyToAgentAttachment: (
+      fileId: string,
+      workspace: string,
+      sessionId: string,
+      messageId: string,
+      fileName: string
+    ) => ipcRenderer.invoke(IpcChannel.File_CopyToAgentAttachment, fileId, workspace, sessionId, messageId, fileName),
     base64File: (fileId: string) => ipcRenderer.invoke(IpcChannel.File_Base64File, fileId),
     pdfInfo: (fileId: string) => ipcRenderer.invoke(IpcChannel.File_GetPdfInfo, fileId),
     getPathForFile: (file: File) => webUtils.getPathForFile(file),
@@ -521,6 +534,9 @@ const api = {
       url: string
     ): Promise<{ body: string; contentType: string; finalUrl: string; ok: boolean; status: number }> =>
       ipcRenderer.invoke(IpcChannel.SearchWindow_FetchResource, url)
+  },
+  webPage: {
+    read: (url: string) => ipcRenderer.invoke(IpcChannel.WebPage_Read, url)
   },
   webview: {
     setOpenLinkExternal: (webviewId: number, isExternal: boolean) =>

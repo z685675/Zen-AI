@@ -1,4 +1,5 @@
 import { DEFAULT_SESSION_PAGE_SIZE } from '@renderer/api/agent'
+import { cleanupAgentSessionAttachmentDirectory } from '@renderer/services/AgentAttachmentService'
 import type {
   AgentSessionEntity,
   CreateAgentSessionResponse,
@@ -113,7 +114,14 @@ export const useSessions = (agentId: string | null, pageSize = DEFAULT_SESSION_P
     async (id: string): Promise<boolean> => {
       if (!agentId) return false
       try {
+        const targetSession = sessions.find((session) => session.id === id)
         await client.deleteSession(agentId, id)
+        const workspace = targetSession?.accessible_paths?.[0]
+        if (workspace) {
+          // Session deletion removes the remote session; clean the local
+          // app-owned attachment tree as a separate best-effort step.
+          await cleanupAgentSessionAttachmentDirectory(workspace, id)
+        }
         void mutate(
           (prev) => {
             if (!prev || prev.length === 0) return prev
@@ -132,7 +140,7 @@ export const useSessions = (agentId: string | null, pageSize = DEFAULT_SESSION_P
         return false
       }
     },
-    [agentId, client, mutate, t]
+    [agentId, client, mutate, sessions, t]
   )
 
   const reorderSessions = useCallback(

@@ -104,6 +104,11 @@ vi.mock('electron', () => {
     shouldUseDarkColors: false
   }
 
+  const privateBrowserSession = {
+    clearStorageData: vi.fn(async () => {}),
+    clearCache: vi.fn(async () => {})
+  }
+
   return {
     BrowserWindow: MockBrowserWindow as any,
     BrowserView: MockBrowserView as any,
@@ -112,7 +117,11 @@ vi.mock('electron', () => {
     __mockDebugger: debuggerObj,
     __mockSendCommand: sendCommand,
     __mockWindows: windows,
-    __mockViews: views
+    __mockViews: views,
+    session: {
+      fromPartition: vi.fn(() => privateBrowserSession)
+    },
+    __mockPrivateBrowserSession: privateBrowserSession
   }
 })
 
@@ -278,6 +287,13 @@ describe('CdpBrowserController', () => {
 
       await expect(controller.switchTab(false, 'non-existent-tab')).rejects.toThrow('Tab non-existent-tab not found')
     })
+
+    it('does not fall back to the active tab when an explicit tab ID is invalid', async () => {
+      const controller = new CdpBrowserController()
+      await controller.open('https://example.com/', 5000, false)
+
+      await expect(controller.execute('1+1', 5000, false, 'missing-tab')).rejects.toThrow('Tab missing-tab not found')
+    })
   })
 
   describe('Reset behavior', () => {
@@ -318,6 +334,18 @@ describe('CdpBrowserController', () => {
 
       expect(normalTabs.length).toBe(0)
       expect(privateTabs.length).toBe(0)
+    })
+
+    it('clears private storage when the private window is reset', async () => {
+      const controller = new CdpBrowserController()
+      await controller.open('https://example.com/', 5000, true)
+
+      await controller.reset(true)
+
+      const electronMock = await import('electron')
+      const privateSession = (electronMock as any).__mockPrivateBrowserSession
+      expect(privateSession.clearStorageData).toHaveBeenCalled()
+      expect(privateSession.clearCache).toHaveBeenCalled()
     })
   })
 
@@ -370,6 +398,36 @@ describe('CdpBrowserController', () => {
 
       await expect(waitPromise).resolves.toMatchObject({ status: 'continued' })
       expect(windowInfo.handoff).toBeUndefined()
+    })
+
+    it('continues immediately when the user clicks an automatic handoff before wait_for_user starts', async () => {
+      const controller = new CdpBrowserController()
+      const opened = await controller.open('https://example.com/', 5000, false)
+      const windows = (controller as any).windows as Map<string, any>
+      const windowInfo = Array.from(windows.values())[0]
+      const tab = windowInfo.tabs.get(opened.tabId)
+
+      tab.userAction = {
+        reason: 'login_required',
+        message: '请完成登录。',
+        url: 'https://example.com/login',
+        detectedAt: Date.now()
+      }
+      tab.userActionFingerprint = 'login_required:https://example.com/login'
+      ;(controller as any).handleTabBarAction(windowInfo, { type: 'handoff-continue' })
+
+      await expect(
+        controller.waitForUser('请完成登录。', 'login_required', 1000, false, opened.tabId)
+      ).resolves.toMatchObject({ status: 'continued' })
+      expect(windowInfo.handoff).toBeUndefined()
+    })
+
+    it('rejects a handoff for a non-existent tab instead of creating a window-level handoff', async () => {
+      const controller = new CdpBrowserController()
+
+      await expect(
+        controller.waitForUser('请完成登录。', 'login_required', 1000, false, 'missing-tab')
+      ).rejects.toThrow('Tab missing-tab not found')
     })
   })
 

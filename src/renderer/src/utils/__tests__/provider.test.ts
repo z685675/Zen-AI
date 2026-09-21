@@ -167,7 +167,8 @@ describe('provider utils', () => {
         tokenThreshold: 4096,
         cacheSystemMessage: true,
         cacheEarlyMessages: 2,
-        ttlSeconds: 3600
+        ttlSeconds: 3600,
+        cacheScope: 'gemini:custom:https://api.example.com:gemini-2.5-pro'
       }
     )
 
@@ -190,7 +191,8 @@ describe('provider utils', () => {
       tokenThreshold: 3000,
       cacheSystemMessage: false,
       cacheEarlyMessages: 3,
-      ttlSeconds: 1800
+      ttlSeconds: 1800,
+      cacheScope: 'gemini:custom:https://api.example.com:gemini-2.5-pro'
     })
 
     expect(
@@ -206,7 +208,8 @@ describe('provider utils', () => {
       tokenThreshold: 4096,
       cacheSystemMessage: true,
       cacheEarlyMessages: 2,
-      ttlSeconds: 3600
+      ttlSeconds: 3600,
+      cacheScope: 'new-api:new-api:https://api.example.com:gemini-2.5-pro'
     })
   })
 

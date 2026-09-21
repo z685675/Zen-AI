@@ -115,6 +115,186 @@ describe('ContextCompactionService', () => {
     expect(generate).not.toHaveBeenCalled()
   })
 
+  it('merges a previous checkpoint with only the messages after its boundary', async () => {
+    const messagesById: Record<string, ModelMessage[]> = {
+      u1: [{ role: 'user', content: '旧结论：使用方案 A。'.repeat(1_800) }],
+      a1: [{ role: 'assistant', content: '旧答复：方案 A 已确认。'.repeat(1_800) }],
+      u2: [{ role: 'user', content: '最近补充：先保留方案 A。'.repeat(1_800) }],
+      a2: [{ role: 'assistant', content: '最近答复：收到。'.repeat(1_800) }],
+      u3: [{ role: 'user', content: '新决定：改为方案 B，方案 A 作废。'.repeat(1_800) }],
+      u4: [{ role: 'user', content: '请继续执行。' }]
+    }
+    const firstMessages = ['u1', 'a1', 'u2'].map((id) => uiMessage(id, id.startsWith('u') ? 'user' : 'assistant'))
+    const convert = async (sourceMessages: Message[]): Promise<ModelMessage[]> =>
+      sourceMessages.flatMap((message) => messagesById[message.id] ?? [])
+    const updateContents: string[] = []
+    let updatePromptSeen = false
+    const generate = vi.fn(async (prompt: string, content: string) => {
+      if (prompt.includes('older checkpoint') && prompt.includes('later conversation')) {
+        updatePromptSeen = true
+        updateContents.push(content)
+        return 'CHECKPOINT-2：方案 B 已覆盖方案 A。'
+      }
+      if (prompt.includes('Merge checkpoint fragments')) {
+        return updatePromptSeen ? 'CHECKPOINT-2：方案 B 已覆盖方案 A。' : 'CHECKPOINT-1：方案 A 是旧结论。'
+      }
+      return 'CHECKPOINT-1：方案 A 是旧结论。'
+    })
+
+    const first = await manageConversationContext({
+      modelMessages: await convert(firstMessages),
+      uiMessages: firstMessages,
+      topicId: 'topic-incremental-checkpoint',
+      budget,
+      convert,
+      generate
+    })
+    expect(first.action).toBe('checkpoint-created')
+
+    const allMessages = [
+      ...firstMessages,
+      uiMessage('a2', 'assistant'),
+      uiMessage('u3', 'user'),
+      uiMessage('u4', 'user')
+    ]
+    const second = await manageConversationContext({
+      modelMessages: await convert(allMessages),
+      uiMessages: allMessages,
+      topicId: 'topic-incremental-checkpoint',
+      budget,
+      convert,
+      generate
+    })
+
+    expect(second.action).toBe('checkpoint-created')
+    expect(second.checkpoint?.summary).toContain('CHECKPOINT-2')
+    expect(second.checkpoint?.includedThroughMessageId).toBe('u3')
+    expect(second.messages[0].content).toContain('CHECKPOINT-2')
+    expect(updateContents.some((content) => content.includes('CHECKPOINT-1'))).toBe(true)
+    expect(updateContents.some((content) => content.includes('新决定：改为方案 B'))).toBe(true)
+    expect(updateContents.every((content) => !content.includes('旧结论：使用方案 A。'))).toBe(true)
+  })
+
+  it('uses a local checkpoint when the auxiliary model returns empty text', async () => {
+    const messages = [uiMessage('u1', 'user'), uiMessage('a1', 'assistant'), uiMessage('u2', 'user')]
+    const convert = async (sourceMessages: Message[]): Promise<ModelMessage[]> =>
+      sourceMessages.map((message) => ({
+        role: message.role,
+        content: `${message.id} 项目事实 ZEN-LOCAL-42 `.repeat(1_500)
+      }))
+    const generate = vi.fn(async () => '')
+
+    const result = await manageConversationContext({
+      modelMessages: await convert(messages),
+      uiMessages: messages,
+      topicId: 'topic-empty-checkpoint',
+      budget,
+      convert,
+      generate
+    })
+
+    expect(result.action).toBe('checkpoint-created')
+    expect(result.checkpoint?.summary).toContain('模型摘要暂时不可用')
+    expect(result.messages.length).toBeGreaterThan(0)
+    expect(result.usageAfter.totalTokens).toBeLessThanOrEqual(budget.safeInputTokens)
+  })
+
+  it('uses a local checkpoint when the auxiliary model throws', async () => {
+    const messages = [uiMessage('u1', 'user'), uiMessage('a1', 'assistant'), uiMessage('u2', 'user')]
+    const convert = async (sourceMessages: Message[]): Promise<ModelMessage[]> =>
+      sourceMessages.map((message) => ({
+        role: message.role,
+        content: `${message.id} 不应因整理失败而阻断回答 `.repeat(1_500)
+      }))
+    const generate = vi.fn(async () => {
+      throw new Error('The model returned an empty context checkpoint.')
+    })
+
+    await expect(
+      manageConversationContext({
+        modelMessages: await convert(messages),
+        uiMessages: messages,
+        topicId: 'topic-failed-checkpoint',
+        budget,
+        convert,
+        generate
+      })
+    ).resolves.toMatchObject({
+      action: 'checkpoint-created',
+      checkpoint: { summary: expect.stringContaining('模型摘要暂时不可用') }
+    })
+  })
+
+  it('keeps application-injected webpage context across compaction', async () => {
+    const messages = [uiMessage('u1', 'user'), uiMessage('a1', 'assistant'), uiMessage('u2', 'user')]
+    const convert = async (sourceMessages: Message[]): Promise<ModelMessage[]> =>
+      sourceMessages.map((message) => ({
+        role: message.role,
+        content: message.id === 'u2' ? '请总结 https://example.com' : 'old conversation '.repeat(2_500)
+      }))
+    const webpageContext: ModelMessage = {
+      role: 'system',
+      content: '<web-page-context>网页正文：这是压缩后仍必须保留的事实。</web-page-context>'
+    }
+    let sawWebpageContext = false
+    const generate = vi.fn(async (_prompt: string, content: string) => {
+      sawWebpageContext ||= content.includes('这是压缩后仍必须保留的事实')
+      return '## Files, links, and resources\n- 网页正文：这是压缩后仍必须保留的事实。'
+    })
+
+    const result = await manageConversationContext({
+      modelMessages: [...(await convert(messages)), webpageContext],
+      uiMessages: messages,
+      topicId: 'topic-webpage-compaction',
+      budget,
+      convert,
+      additionalContextMessages: [webpageContext],
+      generate
+    })
+
+    expect(result.action).toBe('checkpoint-created')
+    expect(sawWebpageContext).toBe(true)
+    expect(result.messages[0].content).toContain('这是压缩后仍必须保留的事实')
+  })
+
+  it('keeps the direct visual payload within the image budget after compaction', async () => {
+    const messages = ['u1', 'u2', 'u3'].map((id) => uiMessage(id, 'user'))
+    const convert = async (sourceMessages: Message[]): Promise<ModelMessage[]> =>
+      sourceMessages.map((message) => ({
+        role: 'user',
+        content: [
+          { type: 'text', text: message.id },
+          ...Array.from({ length: 8 }, (_, index) => ({
+            type: 'image' as const,
+            image: `image-${message.id}-${index}`
+          }))
+        ]
+      }))
+    const modelMessages = await convert(messages)
+    const visualBudget = {
+      ...budget,
+      safeInputTokens: 20_000,
+      compactionTriggerTokens: 10_000,
+      compactionTargetTokens: 8_000
+    }
+    const result = await manageConversationContext({
+      modelMessages,
+      uiMessages: messages,
+      topicId: 'topic-image-budget',
+      budget: visualBudget,
+      convert,
+      generate: vi.fn(async () => '## Current goals\n- Keep visual context.')
+    })
+
+    const imageCount = result.messages.reduce(
+      (total, message) =>
+        total + (Array.isArray(message.content) ? message.content.filter((part) => part.type === 'image').length : 0),
+      0
+    )
+    expect(result.action).toBe('checkpoint-created')
+    expect(imageCount).toBeLessThanOrEqual(20)
+  })
+
   it('processes oversized standalone Agent input in chunks', async () => {
     const generate = vi.fn(async (_prompt: string, content: string) => {
       expect(approximateTokenSize(content)).toBeLessThanOrEqual(4_500)

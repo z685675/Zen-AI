@@ -1,4 +1,8 @@
 import { loggerService } from '@logger'
+import {
+  clearLearnedModelCapabilityFailure,
+  clearLearnedModelCapabilityFailuresForProvider
+} from '@renderer/config/models/modelCapabilityMemory'
 import { fetchModels, hasApiKey } from '@renderer/services/ApiService'
 import store from '@renderer/store'
 import { updateAssistants, updateDefaultAssistant } from '@renderer/store/assistants'
@@ -8,7 +12,8 @@ import type { Assistant, Message, Model, Provider, Topic } from '@renderer/types
 import {
   getProviderModelSyncFingerprint,
   markProviderModelSyncFailed,
-  mergeSyncedProviderModels
+  mergeSyncedProviderModels,
+  normalizeSyncedModel
 } from './ProviderModelSyncUtils'
 import { reconcileRemoteModelPolicyDefaults } from './RemoteModelPolicyService'
 
@@ -83,6 +88,32 @@ const shouldSyncProvider = (provider: Provider, options?: SyncProviderModelsOpti
 }
 
 const getModelKey = (model: Pick<Model, 'id' | 'provider'>): string => `${model.provider}:${model.id}`
+
+const getCapabilityMetadataFingerprint = (model: Model): string =>
+  JSON.stringify({
+    id: model.id,
+    provider: model.provider,
+    name: model.name,
+    endpoint_type: model.endpoint_type,
+    supported_endpoint_types: model.supported_endpoint_types,
+    capabilities: model.capabilities,
+    type: model.type
+  })
+
+const clearChangedModelCapabilityFailures = (provider: Provider, fetchedModels: Model[]): void => {
+  const previousModels = new Map(provider.models.map((model) => [model.id, model]))
+
+  for (const fetchedModel of fetchedModels) {
+    const normalizedFetchedModel = normalizeSyncedModel(provider, fetchedModel)
+    const previousModel = previousModels.get(normalizedFetchedModel.id)
+    if (
+      !previousModel ||
+      getCapabilityMetadataFingerprint(previousModel) !== getCapabilityMetadataFingerprint(normalizedFetchedModel)
+    ) {
+      clearLearnedModelCapabilityFailure(normalizedFetchedModel, undefined)
+    }
+  }
+}
 
 const isRunningMessageStatus = (status: string | undefined): boolean =>
   status === 'processing' || status === 'pending' || status === 'searching'
@@ -338,6 +369,10 @@ export const syncProviderModelsOnce = async (options?: SyncProviderModelsOptions
             }
 
             const syncBaseline = getProviderSyncBaseline(provider)
+            if (!provider.modelSync || provider.modelSync.sourceFingerprint !== syncResult.sourceFingerprint) {
+              clearLearnedModelCapabilityFailuresForProvider(provider.id)
+            }
+            clearChangedModelCapabilityFailures(provider, syncResult.models)
             const missingModelIds = getMissingRemoteModelIds(syncBaseline, syncResult.models)
             const deferredModelIds = getRunningDeferredModelIds(provider, missingModelIds)
 

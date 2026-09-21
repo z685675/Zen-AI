@@ -89,6 +89,7 @@ const DEDICATED_IMAGE_MODELS = [
   // OpenAI series
   'dall-e(?:-[\\w-]+)?',
   'gpt-image(?:-[\\w.-]+)?',
+  'gpt-image2(?:[\\w.-]+)?',
   // Google Gemini image generation (Nano Banana family) and Imagen
   'nano[-_.]?banana(?:[-_.]?[\\w.-]+)?',
   'gemini-\\d+(?:\\.\\d+)?-(?:flash|pro)-image(?:[-\\w.]*)?',
@@ -96,7 +97,7 @@ const DEDICATED_IMAGE_MODELS = [
   'imagen(?:-[\\w.-]+)?',
   // xAI
   'grok-2-image(?:-[\\w-]+)?',
-  'grok[-_.]?imagine(?:[-_.]?image)?(?:[-_.]?[\\w.-]+)?',
+  'grok[-_.]?imagine[-_.]?image(?:[-_.]?[\\w.-]+)?',
   // Stable Diffusion series
   'flux(?:[-_.]?[\\w.-]+)?',
   'stable-?diffusion(?:[-_.]?[\\w.-]+)?',
@@ -133,9 +134,10 @@ const DEDICATED_IMAGE_MODELS = [
 
 const IMAGE_ENHANCEMENT_MODELS = [
   'grok-2-image(?:-[\\w-]+)?',
-  'grok[-_.]?imagine(?:[-_.]?image)?(?:[-_.]?[\\w.-]+)?',
+  'grok[-_.]?imagine[-_.]?image(?:[-_.]?[\\w.-]+)?',
   'qwen-image-edit',
   'gpt-image(?:-[\\w.-]+)?',
+  'gpt-image2(?:[\\w.-]+)?',
   'nano[-_.]?banana(?:[-_.]?[\\w.-]+)?',
   'flux(?:[-_.]?)kontext(?:[-_.]?[\\w.-]+)?',
   'seededit(?:[-_.]?[\\w.-]+)?',

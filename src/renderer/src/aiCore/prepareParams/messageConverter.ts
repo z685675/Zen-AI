@@ -6,7 +6,7 @@
 import type { ReasoningPart } from '@ai-sdk/provider-utils'
 import { loggerService } from '@logger'
 import { isVisionModel } from '@renderer/config/models'
-import type { Message, Model } from '@renderer/types'
+import { FILE_TYPE, type Message, type Model } from '@renderer/types'
 import type {
   FileMessageBlock,
   ImageMessageBlock,
@@ -32,9 +32,14 @@ import type {
 } from 'ai'
 import i18n from 'i18next'
 
-import { convertFileBlockToFilePart, convertFileBlockToTextPart } from './fileProcessor'
+import { convertEmbeddedImagesToParts, convertFileBlockToFilePart, convertFileBlockToTextPart } from './fileProcessor'
 
 const logger = loggerService.withContext('messageConverter')
+const MAX_DIRECT_DOCUMENT_VISUAL_PARTS = 12
+
+type DocumentVisualBudget = {
+  remaining: number
+}
 
 /**
  * 转换消息为 AI SDK 参数格式
@@ -43,7 +48,9 @@ const logger = loggerService.withContext('messageConverter')
 export async function convertMessageToSdkParam(
   message: Message,
   isVisionModel = false,
-  model?: Model
+  model?: Model,
+  includeDocumentVisuals = true,
+  documentVisualBudget?: DocumentVisualBudget
 ): Promise<ModelMessage | ModelMessage[]> {
   const content = getMainTextContent(message)
   const fileBlocks = findFileBlocks(message)
@@ -51,7 +58,15 @@ export async function convertMessageToSdkParam(
   const reasoningBlocks = findThinkingBlocks(message)
   const mainTextBlocks = findMainTextBlocks(message)
   if (message.role === 'user' || message.role === 'system') {
-    return convertMessageToUserModelMessage(content, fileBlocks, imageBlocks, isVisionModel, model)
+    return convertMessageToUserModelMessage(
+      content,
+      fileBlocks,
+      imageBlocks,
+      isVisionModel,
+      model,
+      includeDocumentVisuals,
+      documentVisualBudget
+    )
   } else {
     return convertMessageToAssistantModelMessage(
       content,
@@ -112,9 +127,12 @@ async function convertMessageToUserModelMessage(
   fileBlocks: FileMessageBlock[],
   imageBlocks: ImageMessageBlock[],
   isVisionModel = false,
-  model?: Model
+  model?: Model,
+  includeDocumentVisuals = true,
+  documentVisualBudget?: DocumentVisualBudget
 ): Promise<UserModelMessage | (UserModelMessage | SystemModelMessage)[]> {
   const parts: Array<TextPart | FilePart | ImagePart> = []
+  const fileReferenceInstructions: string[] = []
   if (content) {
     parts.push({ type: 'text', text: content })
   }
@@ -134,21 +152,34 @@ async function convertMessageToUserModelMessage(
       if (filePart) {
         // 判断filePart是否为string
         if (typeof filePart.data === 'string' && filePart.data.startsWith('fileid://')) {
-          return [
-            {
-              role: 'system',
-              content: filePart.data
-            },
-            {
-              role: 'user',
-              content: parts.length > 0 ? parts : ''
-            }
-          ]
+          // Keep processing the remaining attachments. Previously the first
+          // remote file reference caused an early return and silently dropped
+          // every file after it.
+          fileReferenceInstructions.push(filePart.data)
+        } else {
+          parts.push(filePart)
         }
-        parts.push(filePart)
         logger.debug(`File ${file.origin_name} processed as native file format`)
         processed = true
       }
+    }
+
+    // A scanned PDF (or an Office file containing only visual content) may
+    // have no extractable text. If page/embedded images are available, that
+    // is still a valid multimodal attachment and should not show a failure
+    // toast to the user.
+    const documentVisualParts =
+      includeDocumentVisuals && (!processed || file.ext.toLowerCase() !== '.pdf')
+        ? await convertEmbeddedImagesToParts(fileBlock, model, {
+            maxImages: documentVisualBudget?.remaining,
+            query: content
+          })
+        : []
+    if (documentVisualBudget) {
+      documentVisualBudget.remaining = Math.max(
+        0,
+        documentVisualBudget.remaining - documentVisualParts.filter((part) => part.type === 'image').length
+      )
     }
 
     // 如果原生处理失败，回退到文本提取
@@ -157,17 +188,45 @@ async function convertMessageToUserModelMessage(
       if (textPart) {
         parts.push(textPart)
         logger.debug(`File ${file.origin_name} processed as text content`)
-      } else {
+      } else if (file.type === FILE_TYPE.IMAGE) {
+        // A learned vision-capability failure must not turn an otherwise valid
+        // image attachment into a file-processing error. Keep a durable
+        // textual marker so the request can continue through OCR/context
+        // retrieval or a provider fallback without claiming the file is broken.
+        parts.push({
+          type: 'text',
+          text: `[图片附件：${file.origin_name}；当前模型或渠道不支持视觉输入，图片内容未直接发送]`
+        })
+      } else if (documentVisualParts.length === 0) {
         logger.warn(`File ${file.origin_name} could not be processed in any format`)
         window.toast.error(i18n.t('message.error.file.process_failed', { name: file.origin_name }))
+      } else {
+        logger.info(`File ${file.origin_name} processed as visual-only attachment`)
       }
     }
+
+    // Native PDF-capable providers already receive the original PDF. For
+    // non-native routes the helper supplies page screenshots, preserving
+    // tables and layout without duplicating a native PDF payload.
+    parts.push(...documentVisualParts)
   }
 
-  return {
+  const userMessage: UserModelMessage = {
     role: 'user',
     content: parts
   }
+
+  if (fileReferenceInstructions.length === 0) {
+    return userMessage
+  }
+
+  return [
+    ...fileReferenceInstructions.map<SystemModelMessage>((content) => ({
+      role: 'system',
+      content
+    })),
+    userMessage
+  ]
 }
 
 /**
@@ -318,10 +377,24 @@ async function convertMessageToAssistantModelMessage(
 export async function convertMessagesToSdkMessages(messages: Message[], model: Model): Promise<ModelMessage[]> {
   const sdkMessages: ModelMessage[] = []
   const isVision = isVisionModel(model)
+  const documentVisualBudget: DocumentVisualBudget = { remaining: MAX_DIRECT_DOCUMENT_VISUAL_PARTS }
 
+  // Convert the newest messages first so a follow-up can still inspect the
+  // most recent workbook/PDF when older turns contain many embedded images.
+  // The converted messages are emitted in their original order below.
+  const convertedByMessageId = new Map<string, ModelMessage[]>()
+  for (const message of [...messages].reverse()) {
+    // Keep visual evidence attached to every historical user message. The
+    // previous implementation only sent embedded document images and PDF
+    // page screenshots from the latest user message, so a follow-up such as
+    // “what did the chart in the file above mean?” lost the chart entirely.
+    // Context compaction still protects the request budget; compacted history
+    // is represented by structured text and visual checkpoint evidence.
+    const sdkMessage = await convertMessageToSdkParam(message, isVision, model, true, documentVisualBudget)
+    convertedByMessageId.set(message.id, Array.isArray(sdkMessage) ? sdkMessage : [sdkMessage])
+  }
   for (const message of messages) {
-    const sdkMessage = await convertMessageToSdkParam(message, isVision, model)
-    sdkMessages.push(...(Array.isArray(sdkMessage) ? sdkMessage : [sdkMessage]))
+    sdkMessages.push(...(convertedByMessageId.get(message.id) ?? []))
   }
   // Special handling for vison models
   // These models support multi-turn conversations but need images from previous assistant messages
@@ -384,4 +457,65 @@ export async function convertMessagesToSdkMessages(messages: Message[], model: M
   }
 
   return sdkMessages
+}
+
+/**
+ * Rebuilds a conversation without native file or image parts.
+ *
+ * This is deliberately separate from the normal conversion path. It is used
+ * only after a provider explicitly rejects multimodal input, so PDF/Office
+ * files still have a chance to be understood through local structured text
+ * extraction instead of replaying the same failing request.
+ */
+export async function convertMessagesToTextOnlyMessages(messages: Message[]): Promise<ModelMessage[]> {
+  return convertMessagesToTextOnlyMessagesWithOptions(messages)
+}
+
+export async function convertMessagesToTextOnlyMessagesWithOptions(
+  messages: Message[],
+  options: {
+    resolveImageText?: (imageBlock: ImageMessageBlock, message: Message) => Promise<string | undefined>
+  } = {}
+): Promise<ModelMessage[]> {
+  const converted: ModelMessage[] = []
+
+  for (const message of messages) {
+    const sdkMessage = await convertMessageToSdkParam(message, false, undefined, false)
+    const sdkMessages = Array.isArray(sdkMessage) ? sdkMessage : [sdkMessage]
+    const imageBlocks = findImageBlocks(message)
+
+    if (imageBlocks.length === 0) {
+      converted.push(...sdkMessages)
+      continue
+    }
+
+    const imageNames = imageBlocks.map((block, index) => block.file?.origin_name || `图片 ${index + 1}`).join('、')
+    const resolvedImageText = options.resolveImageText
+      ? (await Promise.all(imageBlocks.map((block) => options.resolveImageText?.(block, message)))).filter(
+          (text): text is string => !!text?.trim()
+        )
+      : []
+    const marker: TextPart = {
+      type: 'text',
+      text: [
+        `[图片附件：${imageNames}；当前请求已回退为文字模式，图片原始内容未发送]`,
+        ...(resolvedImageText.length > 0 ? [`OCR 文字参考：\n${resolvedImageText.join('\n\n')}`] : [])
+      ].join('\n')
+    }
+    const lastMessage = sdkMessages.at(-1)
+    if (lastMessage && Array.isArray(lastMessage.content)) {
+      const updatedMessage = {
+        ...lastMessage,
+        content: [...lastMessage.content, marker]
+      } as ModelMessage
+      converted.push(...sdkMessages.slice(0, -1), updatedMessage)
+      continue
+    } else if (lastMessage) {
+      converted.push(...sdkMessages.slice(0, -1), { ...lastMessage, content: [marker] } as ModelMessage)
+      continue
+    }
+    converted.push(...sdkMessages)
+  }
+
+  return converted
 }

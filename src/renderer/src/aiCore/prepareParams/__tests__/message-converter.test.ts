@@ -13,12 +13,16 @@ import {
 } from '@renderer/types/newMessage'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { convertFileBlockToFilePartMock, convertFileBlockToTextPartMock } = vi.hoisted(() => ({
-  convertFileBlockToFilePartMock: vi.fn(),
-  convertFileBlockToTextPartMock: vi.fn()
-}))
+const { convertEmbeddedImagesToPartsMock, convertFileBlockToFilePartMock, convertFileBlockToTextPartMock } = vi.hoisted(
+  () => ({
+    convertEmbeddedImagesToPartsMock: vi.fn(),
+    convertFileBlockToFilePartMock: vi.fn(),
+    convertFileBlockToTextPartMock: vi.fn()
+  })
+)
 
 vi.mock('../fileProcessor', () => ({
+  convertEmbeddedImagesToParts: convertEmbeddedImagesToPartsMock,
   convertFileBlockToFilePart: convertFileBlockToFilePartMock,
   convertFileBlockToTextPart: convertFileBlockToTextPartMock
 }))
@@ -47,7 +51,12 @@ vi.mock('@renderer/utils/messageUtils/find', () => ({
   findMainTextBlocks: (message: Message) => (message as MockableMessage).__mockMainTextBlocks ?? []
 }))
 
-import { convertMessagesToSdkMessages, convertMessageToSdkParam, stripMarkdownBase64Images } from '../messageConverter'
+import {
+  convertMessagesToSdkMessages,
+  convertMessagesToTextOnlyMessages,
+  convertMessageToSdkParam,
+  stripMarkdownBase64Images
+} from '../messageConverter'
 
 let messageCounter = 0
 let blockCounter = 0
@@ -143,8 +152,10 @@ describe('messageConverter', () => {
   beforeEach(() => {
     convertFileBlockToFilePartMock.mockReset()
     convertFileBlockToTextPartMock.mockReset()
+    convertEmbeddedImagesToPartsMock.mockReset()
     convertFileBlockToFilePartMock.mockResolvedValue(null)
     convertFileBlockToTextPartMock.mockResolvedValue(null)
+    convertEmbeddedImagesToPartsMock.mockResolvedValue([])
     messageCounter = 0
     blockCounter = 0
   })
@@ -258,6 +269,69 @@ describe('messageConverter', () => {
           content: [{ type: 'text', text: 'Summarize the PDF' }]
         }
       ])
+    })
+
+    it('keeps later attachments when an earlier file uses a remote file reference', async () => {
+      const model = createModel()
+      const message = createMessage('user')
+      message.__mockContent = 'Compare these files'
+      message.__mockFileBlocks = [
+        createFileBlock(message.id, { file: { id: 'remote-one', ext: '.pdf', type: FILE_TYPE.DOCUMENT } }),
+        createFileBlock(message.id, { file: { id: 'remote-two', ext: '.xlsx', type: FILE_TYPE.DOCUMENT } })
+      ]
+      convertFileBlockToFilePartMock
+        .mockResolvedValueOnce({
+          type: 'file',
+          filename: 'first.pdf',
+          mediaType: 'application/pdf',
+          data: 'fileid://remote-one'
+        })
+        .mockResolvedValueOnce({
+          type: 'file',
+          filename: 'second.xlsx',
+          mediaType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          data: 'second-file-data'
+        })
+
+      const result = await convertMessageToSdkParam(message, false, model)
+
+      expect(result).toEqual([
+        { role: 'system', content: 'fileid://remote-one' },
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: 'Compare these files' },
+            {
+              type: 'file',
+              filename: 'second.xlsx',
+              mediaType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+              data: 'second-file-data'
+            }
+          ]
+        }
+      ])
+    })
+
+    it('uses visual attachment fallback when a document has no extractable text', async () => {
+      const model = createModel()
+      const message = createMessage('user')
+      message.__mockContent = 'Read this scanned PDF'
+      message.__mockFileBlocks = [createFileBlock(message.id, { file: { ext: '.pdf', type: FILE_TYPE.DOCUMENT } })]
+      convertEmbeddedImagesToPartsMock.mockResolvedValue([
+        { type: 'text', text: '[PDF page 1]' },
+        { type: 'image', image: 'page-image-data', mediaType: 'image/png' }
+      ])
+
+      const result = await convertMessageToSdkParam(message, true, model)
+
+      expect(result).toEqual({
+        role: 'user',
+        content: [
+          { type: 'text', text: 'Read this scanned PDF' },
+          { type: 'text', text: '[PDF page 1]' },
+          { type: 'image', image: 'page-image-data', mediaType: 'image/png' }
+        ]
+      })
     })
 
     it('includes reasoning parts for assistant messages with thinking blocks', async () => {
@@ -428,6 +502,53 @@ describe('messageConverter', () => {
   })
 
   describe('convertMessagesToSdkMessages', () => {
+    it('keeps embedded document visuals available during follow-up turns', async () => {
+      const model = createModel()
+      const firstUser = createMessage('user')
+      firstUser.__mockContent = 'Analyze the chart in this workbook'
+      firstUser.__mockFileBlocks = [createFileBlock(firstUser.id, { file: { ext: '.xlsx', type: FILE_TYPE.DOCUMENT } })]
+      const secondUser = createMessage('user')
+      secondUser.__mockContent = 'What did that chart mean?'
+
+      convertEmbeddedImagesToPartsMock
+        .mockResolvedValueOnce([
+          { type: 'text', text: '[embedded chart]' },
+          { type: 'image', image: 'chart-image', mediaType: 'image/png' }
+        ])
+        .mockResolvedValueOnce([])
+
+      const result = await convertMessagesToSdkMessages([firstUser, secondUser], model)
+
+      expect(convertEmbeddedImagesToPartsMock).toHaveBeenCalledTimes(1)
+      expect(result[0]).toMatchObject({
+        role: 'user',
+        content: [
+          { type: 'text', text: 'Analyze the chart in this workbook' },
+          { type: 'text', text: '[embedded chart]' },
+          { type: 'image', image: 'chart-image', mediaType: 'image/png' }
+        ]
+      })
+      expect(result[1]).toMatchObject({ role: 'user', content: [{ type: 'text', text: 'What did that chart mean?' }] })
+    })
+
+    it('can rebuild a multimodal conversation as text when a provider rejects vision input', async () => {
+      const user = createMessage('user')
+      user.__mockContent = 'Please explain this image'
+      user.__mockImageBlocks = [createImageBlock(user.id, { url: 'https://example.com/chart.png' })]
+
+      const result = await convertMessagesToTextOnlyMessages([user])
+
+      expect(result).toEqual([
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: 'Please explain this image' },
+            { type: 'text', text: '[图片附件：图片 1；当前请求已回退为文字模式，图片原始内容未发送]' }
+          ]
+        }
+      ])
+    })
+
     it('preserves conversation history and merges images for image enhancement models', async () => {
       const model = createModel({ id: 'qwen-image-edit', name: 'Qwen Image Edit', provider: 'qwen', group: 'qwen' })
       const initialUser = createMessage('user')

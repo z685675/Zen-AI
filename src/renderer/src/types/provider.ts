@@ -91,6 +91,8 @@ export type GeminiCacheControlSettings = {
   cacheSystemMessage: boolean
   cacheEarlyMessages: number
   ttlSeconds: number
+  /** Stable, non-secret identity of the service that owns the cache handle. */
+  cacheScope?: string
 }
 
 export function isServiceTier(tier: string | null | undefined): tier is ServiceTier {

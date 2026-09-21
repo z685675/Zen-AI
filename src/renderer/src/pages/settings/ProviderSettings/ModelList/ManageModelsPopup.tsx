@@ -12,6 +12,7 @@ import {
   isWebSearchModel,
   SYSTEM_MODELS
 } from '@renderer/config/models'
+import { clearLearnedModelCapabilityFailuresForProvider } from '@renderer/config/models/modelCapabilityMemory'
 import { useProvider } from '@renderer/hooks/useProvider'
 import NewApiAddModelPopup from '@renderer/pages/settings/ProviderSettings/ModelList/NewApiAddModelPopup'
 import NewApiBatchAddModelPopup from '@renderer/pages/settings/ProviderSettings/ModelList/NewApiBatchAddModelPopup'
@@ -203,6 +204,10 @@ const PopupContainer: React.FC<Props> = ({ providerId, resolve }) => {
         // Empty responses can mean an unavailable endpoint and must not delete
         // the user's existing model configuration.
         if (filteredModels.length > 0) {
+          // A manual model refresh is an explicit request to re-check the
+          // current route. Do not keep a previous unsupported-capability
+          // result after the user has refreshed the provider model list.
+          clearLearnedModelCapabilityFailuresForProvider(provider.id)
           const latestProvider = store.getState().llm.providers.find((item) => item.id === provider.id)
 
           if (latestProvider) {

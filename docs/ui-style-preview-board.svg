@@ -1,0 +1,170 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1180" viewBox="0 0 1600 1180">
+  <defs>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="12" stdDeviation="18" flood-color="#58708d" flood-opacity="0.14"/>
+    </filter>
+    <filter id="softShadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="5" stdDeviation="8" flood-color="#58708d" flood-opacity="0.12"/>
+    </filter>
+    <linearGradient id="lightBg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f8fbff"/>
+      <stop offset="1" stop-color="#eaf3fb"/>
+    </linearGradient>
+    <linearGradient id="darkBg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#182746"/>
+      <stop offset="1" stop-color="#0d162d"/>
+    </linearGradient>
+    <linearGradient id="mintBg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f5fffc"/>
+      <stop offset="1" stop-color="#dff6f0"/>
+    </linearGradient>
+    <style>
+      .font { font-family: "Segoe UI", "Microsoft YaHei", sans-serif; }
+      .title { font-size: 30px; font-weight: 700; fill: #1d2a3c; }
+      .sub { font-size: 16px; fill: #6d7d91; }
+      .cardTitle { font-size: 21px; font-weight: 700; fill: #213047; }
+      .cardSub { font-size: 14px; fill: #8090a3; }
+      .tiny { font-size: 10px; }
+      .mini { font-size: 11px; }
+      .small { font-size: 12px; }
+      .label { font-size: 13px; font-weight: 600; }
+    </style>
+  </defs>
+
+  <rect width="1600" height="1180" fill="#eef3f8"/>
+  <circle cx="1480" cy="70" r="180" fill="#dff3fa" opacity="0.65"/>
+  <circle cx="80" cy="1080" r="230" fill="#e4eefb" opacity="0.6"/>
+
+  <text x="50" y="58" class="font title">Zen AI · 清透视觉方向预览</text>
+  <text x="50" y="88" class="font sub">四种可落地的桌面工作台风格，重点比较透明度、信息层次、对话可读性和整体气质</text>
+  <rect x="1354" y="38" width="196" height="36" rx="18" fill="#ffffff" opacity="0.9"/>
+  <text x="1452" y="61" text-anchor="middle" class="font label" fill="#4a7d9b">概念预览 · 非最终界面</text>
+
+  <!-- 01 Light glass -->
+  <g>
+    <rect x="50" y="125" width="730" height="475" rx="26" fill="#ffffff" filter="url(#shadow)"/>
+    <text x="80" y="167" class="font cardTitle">01 · 冰透浅色</text>
+    <text x="80" y="192" class="font cardSub">干净、安静、信息层次清楚，适合作为默认主题</text>
+    <rect x="74" y="216" width="682" height="350" rx="16" fill="url(#lightBg)" filter="url(#softShadow)"/>
+    <rect x="74" y="216" width="682" height="30" rx="16" fill="#ffffff" opacity="0.88"/>
+    <circle cx="92" cy="231" r="4" fill="#ff8d86"/><circle cx="106" cy="231" r="4" fill="#ffc86b"/><circle cx="120" cy="231" r="4" fill="#65cf9c"/>
+    <text x="145" y="235" class="font mini" fill="#718399">Zen AI</text>
+    <rect x="74" y="246" width="62" height="320" fill="#ffffff" opacity="0.78"/>
+    <rect x="86" y="265" width="38" height="38" rx="12" fill="#e1f5fb"/>
+    <text x="105" y="289" text-anchor="middle" class="font label" fill="#2eabc7">✦</text>
+    <rect x="88" y="323" width="34" height="7" rx="3.5" fill="#b8c7d7"/>
+    <rect x="88" y="343" width="34" height="7" rx="3.5" fill="#b8c7d7"/>
+    <rect x="88" y="363" width="34" height="7" rx="3.5" fill="#b8c7d7"/>
+    <rect x="88" y="500" width="34" height="7" rx="3.5" fill="#d2dce7"/>
+    <rect x="136" y="246" width="168" height="320" fill="#f9fcff" opacity="0.76"/>
+    <text x="154" y="272" class="font small" fill="#44566e" font-weight="700">对话记录</text>
+    <rect x="150" y="290" width="140" height="30" rx="9" fill="#eaf7fb"/>
+    <text x="163" y="309" class="font mini" fill="#2b9fbb">新对话</text>
+    <rect x="150" y="334" width="110" height="7" rx="3.5" fill="#cad6e2"/>
+    <rect x="150" y="350" width="134" height="7" rx="3.5" fill="#dce5ed"/>
+    <rect x="150" y="379" width="125" height="7" rx="3.5" fill="#cad6e2"/>
+    <rect x="150" y="395" width="95" height="7" rx="3.5" fill="#dce5ed"/>
+    <rect x="150" y="424" width="136" height="7" rx="3.5" fill="#cad6e2"/>
+    <rect x="150" y="440" width="82" height="7" rx="3.5" fill="#dce5ed"/>
+    <rect x="304" y="246" width="452" height="320" fill="#f6faff" opacity="0.56"/>
+    <text x="331" y="277" class="font small" fill="#53667c" font-weight="700">新对话</text>
+    <rect x="658" y="261" width="76" height="24" rx="12" fill="#ffffff" opacity="0.92"/>
+    <text x="696" y="277" text-anchor="middle" class="font tiny" fill="#5e7389">GPT · 自动</text>
+    <rect x="338" y="313" width="235" height="46" rx="14" fill="#ffffff" opacity="0.92"/>
+    <text x="356" y="333" class="font mini" fill="#64778d">你好，我可以帮你处理什么？</text>
+    <text x="356" y="349" class="font tiny" fill="#9aa9b9">支持文件、图片和智能助手任务</text>
+    <rect x="480" y="378" width="226" height="44" rx="14" fill="#dff3fa"/>
+    <text x="498" y="405" class="font mini" fill="#3b6579">帮我整理这份项目计划</text>
+    <rect x="331" y="504" width="400" height="42" rx="14" fill="#ffffff" opacity="0.96"/>
+    <text x="350" y="530" class="font mini" fill="#a0adbb">输入消息，或拖入文件和图片…</text>
+    <circle cx="701" cy="525" r="13" fill="#65c9dd"/><text x="701" y="529" text-anchor="middle" class="font small" fill="#ffffff">↑</text>
+    <rect x="80" y="580" width="138" height="9" rx="4.5" fill="#65c9dd"/>
+    <text x="232" y="589" class="font cardSub">推荐作为默认浅色主题</text>
+  </g>
+
+  <!-- 02 Aurora glass -->
+  <g>
+    <rect x="820" y="125" width="730" height="475" rx="26" fill="#ffffff" filter="url(#shadow)"/>
+    <text x="850" y="167" class="font cardTitle">02 · 深色极光玻璃</text>
+    <text x="850" y="192" class="font cardSub">沉浸、专业、适合开发和长时间对话</text>
+    <rect x="844" y="216" width="682" height="350" rx="16" fill="url(#darkBg)" filter="url(#softShadow)"/>
+    <rect x="844" y="216" width="682" height="30" rx="16" fill="#263657" opacity="0.92"/>
+    <circle cx="862" cy="231" r="4" fill="#ff777e"/><circle cx="876" cy="231" r="4" fill="#ffc65e"/><circle cx="890" cy="231" r="4" fill="#64d5a3"/>
+    <text x="915" y="235" class="font mini" fill="#dce9ff">Zen AI</text>
+    <circle cx="1486" cy="231" r="6" fill="#6bdcca"/><text x="1502" y="235" class="font tiny" fill="#a9bad7">线路正常</text>
+    <rect x="844" y="246" width="62" height="320" fill="#14213d" opacity="0.8"/>
+    <rect x="856" y="265" width="38" height="38" rx="12" fill="#293d6b"/><text x="875" y="289" text-anchor="middle" class="font label" fill="#9ae5f2">✦</text>
+    <rect x="858" y="323" width="34" height="7" rx="3.5" fill="#58709c"/>
+    <rect x="858" y="343" width="34" height="7" rx="3.5" fill="#58709c"/>
+    <rect x="858" y="363" width="34" height="7" rx="3.5" fill="#58709c"/>
+    <rect x="858" y="500" width="34" height="7" rx="3.5" fill="#334a74"/>
+    <rect x="906" y="246" width="168" height="320" fill="#182746" opacity="0.75"/>
+    <text x="924" y="272" class="font small" fill="#e1eaff" font-weight="700">对话记录</text>
+    <rect x="920" y="290" width="140" height="30" rx="9" fill="#254363"/>
+    <text x="933" y="309" class="font mini" fill="#86e1e0">新对话</text>
+    <rect x="920" y="334" width="110" height="7" rx="3.5" fill="#59739d"/><rect x="920" y="350" width="134" height="7" rx="3.5" fill="#30476f"/>
+    <rect x="920" y="379" width="125" height="7" rx="3.5" fill="#59739d"/><rect x="920" y="395" width="95" height="7" rx="3.5" fill="#30476f"/>
+    <rect x="920" y="424" width="136" height="7" rx="3.5" fill="#59739d"/><rect x="920" y="440" width="82" height="7" rx="3.5" fill="#30476f"/>
+    <rect x="1074" y="246" width="452" height="320" fill="#101b35" opacity="0.52"/>
+    <text x="1101" y="277" class="font small" fill="#dfe9ff" font-weight="700">智能助手</text>
+    <rect x="1424" y="261" width="76" height="24" rx="12" fill="#273b67"/><text x="1462" y="277" text-anchor="middle" class="font tiny" fill="#a8e9ed">GPT · 自动</text>
+    <rect x="1108" y="313" width="260" height="46" rx="14" fill="#1b2c4c"/><text x="1126" y="333" class="font mini" fill="#bdd0ed">我已读取项目目录，准备开始分析。</text><text x="1126" y="349" class="font tiny" fill="#7187ad">已连接工具 · 2 个文件</text>
+    <rect x="1245" y="378" width="226" height="44" rx="14" fill="#245166"/><text x="1263" y="405" class="font mini" fill="#d4f7f1">继续检查未完成的页面</text>
+    <rect x="1101" y="504" width="400" height="42" rx="14" fill="#1b2c4c"/><text x="1120" y="530" class="font mini" fill="#738bb1">输入指令，开始开发任务…</text>
+    <circle cx="1471" cy="525" r="13" fill="#5ecfca"/><text x="1471" y="529" text-anchor="middle" class="font small" fill="#10243d">↑</text>
+    <rect x="850" y="580" width="138" height="9" rx="4.5" fill="#5ecfca"/>
+    <text x="1002" y="589" class="font cardSub">适合开发者和深色主题用户</text>
+  </g>
+
+  <!-- 03 Warm minimal -->
+  <g>
+    <rect x="50" y="635" width="730" height="475" rx="26" fill="#ffffff" filter="url(#shadow)"/>
+    <text x="80" y="677" class="font cardTitle">03 · 暖白极简</text>
+    <text x="80" y="702" class="font cardSub">亲和、柔和、降低视觉压力，适合普通用户</text>
+    <rect x="74" y="726" width="682" height="350" rx="16" fill="#fbf8f2" filter="url(#softShadow)"/>
+    <rect x="74" y="726" width="682" height="30" rx="16" fill="#fffdf9"/>
+    <circle cx="92" cy="741" r="4" fill="#ed9a8d"/><circle cx="106" cy="741" r="4" fill="#e9be72"/><circle cx="120" cy="741" r="4" fill="#9bc59a"/>
+    <text x="145" y="745" class="font mini" fill="#786f66">Zen AI</text>
+    <rect x="74" y="756" width="62" height="320" fill="#fffdf9" opacity="0.86"/>
+    <rect x="86" y="775" width="38" height="38" rx="12" fill="#f9e6dc"/><text x="105" y="799" text-anchor="middle" class="font label" fill="#d48168">✦</text>
+    <rect x="88" y="833" width="34" height="7" rx="3.5" fill="#cfc5b9"/><rect x="88" y="853" width="34" height="7" rx="3.5" fill="#cfc5b9"/><rect x="88" y="873" width="34" height="7" rx="3.5" fill="#cfc5b9"/><rect x="88" y="1010" width="34" height="7" rx="3.5" fill="#ded5ca"/>
+    <rect x="136" y="756" width="168" height="320" fill="#fffdf9" opacity="0.78"/>
+    <text x="154" y="782" class="font small" fill="#625a52" font-weight="700">对话记录</text>
+    <rect x="150" y="800" width="140" height="30" rx="9" fill="#f9e6dc"/><text x="163" y="819" class="font mini" fill="#b76f5b">新对话</text>
+    <rect x="150" y="844" width="110" height="7" rx="3.5" fill="#d6cdc3"/><rect x="150" y="860" width="134" height="7" rx="3.5" fill="#e7dfd6"/><rect x="150" y="889" width="125" height="7" rx="3.5" fill="#d6cdc3"/><rect x="150" y="905" width="95" height="7" rx="3.5" fill="#e7dfd6"/><rect x="150" y="934" width="136" height="7" rx="3.5" fill="#d6cdc3"/><rect x="150" y="950" width="82" height="7" rx="3.5" fill="#e7dfd6"/>
+    <rect x="304" y="756" width="452" height="320" fill="#fffdf9" opacity="0.46"/>
+    <text x="331" y="787" class="font small" fill="#665d54" font-weight="700">新对话</text>
+    <rect x="658" y="771" width="76" height="24" rx="12" fill="#ffffff"/><text x="696" y="787" text-anchor="middle" class="font tiny" fill="#88766a">GPT · 自动</text>
+    <rect x="338" y="823" width="235" height="46" rx="14" fill="#ffffff"/><text x="356" y="843" class="font mini" fill="#756b61">你好，我可以帮你处理什么？</text><text x="356" y="859" class="font tiny" fill="#afa398">文件、图片、写作和项目开发都可以</text>
+    <rect x="480" y="888" width="226" height="44" rx="14" fill="#f9e6dc"/><text x="498" y="915" class="font mini" fill="#956454">帮我把这段内容写得更清楚</text>
+    <rect x="331" y="1014" width="400" height="42" rx="14" fill="#ffffff"/><text x="350" y="1040" class="font mini" fill="#afa398">输入消息…</text><circle cx="701" cy="1035" r="13" fill="#e9a087"/><text x="701" y="1039" text-anchor="middle" class="font small" fill="#ffffff">↑</text>
+    <rect x="80" y="1090" width="138" height="9" rx="4.5" fill="#e9a087"/><text x="232" y="1099" class="font cardSub">适合降低视觉刺激的场景</text>
+  </g>
+
+  <!-- 04 Mint workspace -->
+  <g>
+    <rect x="820" y="635" width="730" height="475" rx="26" fill="#ffffff" filter="url(#shadow)"/>
+    <text x="850" y="677" class="font cardTitle">04 · 青绿工作台</text>
+    <text x="850" y="702" class="font cardSub">轻快、现代、效率感更强，突出工具和文件协作</text>
+    <rect x="844" y="726" width="682" height="350" rx="16" fill="url(#mintBg)" filter="url(#softShadow)"/>
+    <rect x="844" y="726" width="682" height="30" rx="16" fill="#fafffd" opacity="0.9"/>
+    <circle cx="862" cy="741" r="4" fill="#f18e88"/><circle cx="876" cy="741" r="4" fill="#efc35f"/><circle cx="890" cy="741" r="4" fill="#60c99b"/>
+    <text x="915" y="745" class="font mini" fill="#55786f">Zen AI</text>
+    <rect x="844" y="756" width="62" height="320" fill="#f8fffc" opacity="0.84"/>
+    <rect x="856" y="775" width="38" height="38" rx="12" fill="#d8f4ec"/><text x="875" y="799" text-anchor="middle" class="font label" fill="#43a98a">✦</text>
+    <rect x="858" y="833" width="34" height="7" rx="3.5" fill="#9ccbbd"/><rect x="858" y="853" width="34" height="7" rx="3.5" fill="#9ccbbd"/><rect x="858" y="873" width="34" height="7" rx="3.5" fill="#9ccbbd"/><rect x="858" y="1010" width="34" height="7" rx="3.5" fill="#b7dcd1"/>
+    <rect x="906" y="756" width="168" height="320" fill="#f7fffb" opacity="0.72"/>
+    <text x="924" y="782" class="font small" fill="#486960" font-weight="700">对话记录</text>
+    <rect x="920" y="800" width="140" height="30" rx="9" fill="#d8f4ec"/><text x="933" y="819" class="font mini" fill="#3d9278">新对话</text>
+    <rect x="920" y="844" width="110" height="7" rx="3.5" fill="#b5d8ce"/><rect x="920" y="860" width="134" height="7" rx="3.5" fill="#d5eae4"/><rect x="920" y="889" width="125" height="7" rx="3.5" fill="#b5d8ce"/><rect x="920" y="905" width="95" height="7" rx="3.5" fill="#d5eae4"/><rect x="920" y="934" width="136" height="7" rx="3.5" fill="#b5d8ce"/><rect x="920" y="950" width="82" height="7" rx="3.5" fill="#d5eae4"/>
+    <rect x="1074" y="756" width="452" height="320" fill="#fafffd" opacity="0.56"/>
+    <text x="1101" y="787" class="font small" fill="#4c6c64" font-weight="700">智能助手</text>
+    <rect x="1424" y="771" width="76" height="24" rx="12" fill="#e4f8f1"/><text x="1462" y="787" text-anchor="middle" class="font tiny" fill="#3c987f">GPT · 自动</text>
+    <rect x="1108" y="823" width="260" height="46" rx="14" fill="#ffffff"/><text x="1126" y="843" class="font mini" fill="#5a786f">已找到 3 个相关文件，可以开始整理。</text><text x="1126" y="859" class="font tiny" fill="#91aaa2">文件已就绪 · 工具可用</text>
+    <rect x="1245" y="888" width="226" height="44" rx="14" fill="#d8f4ec"/><text x="1263" y="915" class="font mini" fill="#3c7b69">开始生成项目摘要</text>
+    <rect x="1101" y="1014" width="400" height="42" rx="14" fill="#ffffff"/><text x="1120" y="1040" class="font mini" fill="#91aaa2">输入指令，或拖入文件…</text><circle cx="1471" cy="1035" r="13" fill="#55c2a1"/><text x="1471" y="1039" text-anchor="middle" class="font small" fill="#ffffff">↑</text>
+    <rect x="850" y="1090" width="138" height="9" rx="4.5" fill="#55c2a1"/><text x="1002" y="1099" class="font cardSub">适合突出文件和工具协作</text>
+  </g>
+
+  <text x="50" y="1150" class="font sub">建议优先评估：01 冰透浅色作为默认主题；02 深色极光作为深色主题；04 青绿工作台可用于强化“智能助手 / 文件协作”感。</text>
+</svg>

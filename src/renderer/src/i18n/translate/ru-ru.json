@@ -435,6 +435,7 @@
           "failed": "Не удалось изменить порядок сеансов"
         }
       },
+      "scheduled_task": "[to be translated]:Scheduled task: {{name}}",
       "search": {
         "empty": "[to be translated]:No matching sessions found",
         "error": "[to be translated]:Failed to search sessions",
@@ -1321,6 +1322,9 @@
         "settings": "Настройки веб-поиска",
         "toast_disabled": "[to be translated]:Web search canceled for the next message",
         "toast_enabled": "[to be translated]:Web search is on for the next message and will turn off automatically after sending"
+      },
+      "welcome": {
+        "description": "[to be translated]:Type a question to use the default assistant, or choose a role below to start this conversation with a clear style."
       }
     },
     "mcp": {
@@ -3261,6 +3265,7 @@
         "image": "Новое изображение"
       }
     },
+    "canvas_guide_limit": "[to be translated]:You can upload up to {{max}} images as references for image generation.",
     "canvas_guide_primary": "[to be translated]:Describe the image you want below, and I'll generate it for you.",
     "canvas_guide_secondary": "[to be translated]:You can upload or paste multiple images for image editing.",
     "canvas_upload_action": "[to be translated]:Upload Image",
@@ -3326,6 +3331,7 @@
     },
     "generate_failed": "Не удалось сгенерировать изображение",
     "generated_image": "Сгенерированное изображение",
+    "gif_conversion_failed": "[to be translated]:The GIF image could not be read. Try using a PNG, JPG, or WEBP image instead.",
     "go_to_settings": "Перейти в настройки",
     "guidance_scale": "Масштаб руководства",
     "guidance_scale_tip": "Без классификатора руководства. Насколько близко вы хотите, чтобы модель придерживалась вашего промпта при поиске связанного изображения для показа вам",
@@ -3345,11 +3351,16 @@
     "image": {
       "size": "Размер изображения"
     },
+    "image_file_empty": "[to be translated]:Image “{{name}}” is empty and cannot be used.",
     "image_file_required": "Пожалуйста, сначала загрузите изображение",
     "image_file_retry": "Пожалуйста, сначала загрузите изображение",
+    "image_file_too_large": "[to be translated]:Image “{{name}}” is too large. Each image must be no larger than {{size}} MB.",
+    "image_format_unsupported": "[to be translated]:Only PNG, JPG, WEBP, and static GIF images are supported.",
     "image_handle_required": "Пожалуйста, сначала загрузите изображение.",
     "image_mix_failed": "Не удалось объединить изображения",
+    "image_no_result": "[to be translated]:The model returned no usable image. Please retry or check the current provider.",
     "image_placeholder": "Изображение недоступно",
+    "image_prompt_too_long": "[to be translated]:The prompt is too long. The current image model supports up to {{max}} characters.",
     "image_retry": "Повторить",
     "image_size_auto": {
       "conflict": "Conflicting landscape/portrait/square cues detected. Falling back to official Auto.",
@@ -3364,13 +3375,18 @@
       "2048x2048": "2048 × 2048 · 2K Square",
       "2048x3072": "2048 × 3072 · 3K Portrait",
       "2048x3840": "2048 × 3840 · 4K-class Portrait",
+      "2160x3840": "[to be translated]:4K-class Portrait · 2160 × 3840",
       "2560x1440": "2560 × 1440 · 2K Landscape",
       "2880x2880": "High-res Square · 2880 × 2880",
       "3072x2048": "3072 × 2048 · 3K Landscape",
       "3840x2048": "3840 × 2048 · 4K-class Landscape",
+      "3840x2160": "[to be translated]:4K-class Landscape · 3840 × 2160",
       "auto": "Авто",
       "experimental_badge": "(Experimental)"
     },
+    "image_total_too_large": "[to be translated]:The reference images are too large. Their total size must not exceed {{size}} MB.",
+    "image_upload_limit": "[to be translated]:You can use up to {{max}} images, including the generated image. {{remaining}} more can be added.",
+    "image_upload_while_generating": "[to be translated]:An image is being generated. Please wait until it finishes before adding reference images.",
     "inference_steps": "Шаги вывода",
     "inference_steps_tip": "Количество шагов вывода для выполнения. Больше шагов производят более высокое качество, но занимают больше времени",
     "input_image": "Входное изображение",
@@ -4863,6 +4879,11 @@
     "display": {
       "assistant": {
         "title": "Настройки ассистентов"
+      },
+      "conversation": {
+        "description": "[to be translated]:Adjusts only the text in the conversation area. It does not affect overall zoom, the sidebar, buttons, the input box, or code areas.",
+        "font_size": "[to be translated]:Conversation text size",
+        "title": "[to be translated]:Conversation Text"
       },
       "custom": {
         "css": {

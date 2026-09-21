@@ -159,7 +159,9 @@ vi.mock('node:fs', () => {
       mkdir: vi.fn(),
       readdir: vi.fn(),
       stat: vi.fn(),
+      lstat: vi.fn(),
       unlink: vi.fn(),
+      copyFile: vi.fn(),
       rmdir: vi.fn()
     },
     existsSync: vi.fn(),
@@ -168,6 +170,8 @@ vi.mock('node:fs', () => {
     mkdirSync: vi.fn(),
     readdirSync: vi.fn(),
     statSync: vi.fn(),
+    lstatSync: vi.fn(),
+    copyFileSync: vi.fn(),
     unlinkSync: vi.fn(),
     rmdirSync: vi.fn(),
     createReadStream: vi.fn(),

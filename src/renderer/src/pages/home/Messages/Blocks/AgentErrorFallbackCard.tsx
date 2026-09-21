@@ -1,11 +1,14 @@
 import { showErrorDetailPopup } from '@renderer/components/ErrorDetailModal'
+import { useAgentClient } from '@renderer/hooks/agents/useAgentClient'
 import { useTimer } from '@renderer/hooks/useTimer'
 import type { DiagnosisResult } from '@renderer/services/ErrorDiagnosisService'
+import { exportErrorDiagnosticPackage } from '@renderer/services/ErrorDiagnosticPackageService'
 import { useAppDispatch, useAppSelector } from '@renderer/store'
 import { removeBlocksThunk, resendMessageThunk } from '@renderer/store/thunk/messageThunk'
 import type { Assistant } from '@renderer/types'
-import type { ErrorMessageBlock, Message, MessageBlock } from '@renderer/types/newMessage'
-import { diagnoseClientError, formatClientErrorDiagnosis } from '@renderer/utils/clientErrorDiagnosis'
+import type { ErrorMessageBlock, Message } from '@renderer/types/newMessage'
+import { extractAgentSessionIdFromTopicId } from '@renderer/utils/agentSession'
+import { diagnoseClientError } from '@renderer/utils/clientErrorDiagnosis'
 import { classifyError } from '@renderer/utils/errorClassifier'
 import { Button } from 'antd'
 import { AlertTriangle, ChevronRight, Download, RefreshCw, Wrench, X } from 'lucide-react'
@@ -48,52 +51,9 @@ const isDependencyError = (error: unknown): boolean => {
   )
 }
 
-const SENSITIVE_KEY_PATTERN = /(api[-_]?key|authorization|token|secret|password|credential|cookie)/i
-const MAX_STRING_LENGTH = 4000
-
-const redactDiagnosticValue = (value: unknown, depth = 0): unknown => {
-  if (depth > 6) return '[Max depth reached]'
-
-  if (typeof value === 'string') {
-    return value.length > MAX_STRING_LENGTH ? `${value.slice(0, MAX_STRING_LENGTH)}\n...[truncated]` : value
-  }
-
-  if (Array.isArray(value)) {
-    return value.map((item) => redactDiagnosticValue(item, depth + 1))
-  }
-
-  if (value && typeof value === 'object') {
-    return Object.fromEntries(
-      Object.entries(value as Record<string, unknown>).map(([key, item]) => [
-        key,
-        SENSITIVE_KEY_PATTERN.test(key) ? '[REDACTED]' : redactDiagnosticValue(item, depth + 1)
-      ])
-    )
-  }
-
-  return value
-}
-
-const safeJson = (value: unknown): string => {
-  return JSON.stringify(redactDiagnosticValue(value), null, 2)
-}
-
-const formatTimestampForFileName = (date = new Date()) => {
-  const pad = (value: number) => String(value).padStart(2, '0')
-  return `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}-${pad(date.getHours())}${pad(
-    date.getMinutes()
-  )}${pad(date.getSeconds())}`
-}
-
-const collectMessageBlocks = (
-  message: Message | undefined,
-  blockEntities: Record<string, MessageBlock | undefined>
-): Array<MessageBlock | undefined> => {
-  return message?.blocks?.map((blockId) => blockEntities[blockId]) ?? []
-}
-
 const AgentErrorFallbackCard: React.FC<Props> = ({ block, message }) => {
   const dispatch = useAppDispatch()
+  const client = useAgentClient()
   const { setTimeoutTimer } = useTimer()
   const { t } = useTranslation()
   const navigate = useNavigate()
@@ -213,56 +173,32 @@ const AgentErrorFallbackCard: React.FC<Props> = ({ block, message }) => {
 
       try {
         const appInfo = await window.api.getAppInfo().catch(() => undefined)
-        const createdAt = new Date().toISOString()
-        const diagnosisText = formatClientErrorDiagnosis(clientDiagnosis)
         const privacyNotice = t('agent.errorFallback.privacy_notice')
-        const userBlocks = collectMessageBlocks(relatedUserMessage, blockEntities)
-        const assistantBlocks = collectMessageBlocks(message, blockEntities)
-        const packageId = clientDiagnosis.diagnosticId
-        const fileName = `zen-ai-agent-diagnostics-${packageId}-${formatTimestampForFileName()}.zip`
-        const summary = {
-          packageId,
-          createdAt,
-          issue: {
-            title,
-            description,
-            category: classification.category,
-            dependencyIssue,
-            navTarget: classification.navTarget
-          },
-          app: appInfo,
-          runtime: {
-            platform: navigator.platform,
-            language: navigator.language,
-            userAgent: navigator.userAgent
-          }
-        }
-
-        const messageContext = {
-          topicId: message.topicId,
-          assistantMessage: message,
-          userMessage: relatedUserMessage,
-          assistantBlocks,
-          userBlocks
-        }
-
-        const savedPath = await window.api.file.saveDiagnosticPackage(fileName, [
-          { path: 'summary.json', content: safeJson(summary) },
-          { path: 'privacy.txt', content: privacyNotice },
-          { path: 'diagnosis.txt', content: diagnosisText },
-          { path: 'error.json', content: safeJson(block.error ?? {}) },
-          { path: 'message-context.json', content: safeJson(messageContext) },
-          {
-            path: 'environment.json',
-            content: safeJson({
-              appInfo,
-              platform: navigator.platform,
-              language: navigator.language,
-              userAgent: navigator.userAgent,
-              exportedAt: createdAt
-            })
-          }
+        const sessionId = extractAgentSessionIdFromTopicId(message.topicId)
+        const sessionContext = await Promise.race([
+          client.getSession(message.assistantId, sessionId).catch(() => undefined),
+          new Promise<undefined>((resolve) => {
+            window.setTimeout(() => resolve(undefined), 1500)
+          })
         ])
+        const savedPath = await exportErrorDiagnosticPackage({
+          source: 'agent',
+          title,
+          description,
+          classification,
+          dependencyIssue,
+          diagnosis: clientDiagnosis,
+          error: block.error,
+          block,
+          message,
+          relatedUserMessage,
+          blockEntities,
+          model: message.model,
+          appInfo,
+          sessionContext,
+          aiDiagnosis: block.metadata?.diagnosis,
+          privacyNotice
+        })
 
         window.toast.success(t('agent.errorFallback.export_success', { path: savedPath }))
       } catch (error: any) {
@@ -278,10 +214,10 @@ const AgentErrorFallbackCard: React.FC<Props> = ({ block, message }) => {
       }
     },
     [
-      block.error,
+      block,
       blockEntities,
-      classification.category,
-      classification.navTarget,
+      client,
+      classification,
       clientDiagnosis,
       dependencyIssue,
       description,

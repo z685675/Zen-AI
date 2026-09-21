@@ -313,7 +313,7 @@
       "export_success": "診斷包已匯出：{{path}}",
       "fix_environment": "修復環境",
       "model_title": "模型暫時無法完成任務",
-      "privacy_notice": "這個診斷包用於排查智能助手任務失敗原因，可能包含目前任務的對話內容、錯誤詳情、本機檔案路徑和執行環境資訊。傳送給他人前，請先確認其中沒有你不希望分享的隱私內容。",
+      "privacy_notice": "這個診斷包用於排查 AI 對話或智能助手任務失敗原因，可能包含目前對話內容、錯誤詳情、本機檔案路徑和執行環境資訊。傳送給他人前，請先確認其中沒有你不希望分享的隱私內容。",
       "retry": "重試任務",
       "retry_missing_user": "找不到原始任務，無法自動重試",
       "subtitle": "智能助手已停止本次任務，未完成的步驟不會繼續執行",
@@ -435,6 +435,7 @@
           "failed": "無法重新排序工作階段"
         }
       },
+      "scheduled_task": "[to be translated]:Scheduled task: {{name}}",
       "search": {
         "empty": "[to be translated]:没有找到匹配的会话",
         "error": "[to be translated]:搜索会话失败",
@@ -1321,6 +1322,9 @@
         "settings": "網路搜尋設定",
         "toast_disabled": "已取消本次連網搜尋",
         "toast_enabled": "已開啟本次連網搜尋，僅下一則訊息生效，傳送後自動關閉"
+      },
+      "welcome": {
+        "description": "[to be translated]:Type a question to use the default assistant, or choose a role below to start this conversation with a clear style."
       }
     },
     "mcp": {
@@ -3261,7 +3265,7 @@
         "image": "新繪圖"
       }
     },
-    "canvas_guide_limit": "最多可上傳 6 張圖片作為圖片生成參考。",
+    "canvas_guide_limit": "最多可上傳 {{max}} 張圖片作為圖片生成參考。",
     "canvas_guide_primary": "[to be translated]:请在下方输入你想要的图片内容，我来帮你生成。",
     "canvas_guide_secondary": "支援上傳或貼上多張圖片進行二次編輯。",
     "canvas_upload_action": "[to be translated]:上传图片",
@@ -3327,6 +3331,7 @@
     },
     "generate_failed": "無法生成圖片",
     "generated_image": "產生的圖片",
+    "gif_conversion_failed": "GIF 圖片無法讀取，建議改用 PNG、JPG 或 WEBP 圖片。",
     "go_to_settings": "前往設定",
     "guidance_scale": "引導比例",
     "guidance_scale_tip": "無分類器指導。控制模型在尋找相關影像時對提示詞的遵循程度",
@@ -3346,11 +3351,16 @@
     "image": {
       "size": "影像尺寸"
     },
+    "image_file_empty": "圖片「{{name}}」為空，無法使用。",
     "image_file_required": "請先上傳圖片",
     "image_file_retry": "請重新上傳圖片",
+    "image_file_too_large": "圖片「{{name}}」過大，單張圖片不能超過 {{size}} MB。",
+    "image_format_unsupported": "僅支援 PNG、JPG、WEBP 和靜態 GIF 圖片。",
     "image_handle_required": "請先上傳圖片。",
     "image_mix_failed": "無法混合圖片",
+    "image_no_result": "模型沒有返回有效圖片，請重試或檢查目前渠道。",
     "image_placeholder": "無圖片",
+    "image_prompt_too_long": "提示詞過長，目前圖片模型最多支援 {{max}} 個字元。",
     "image_retry": "重試",
     "image_size_auto": {
       "conflict": "Conflicting landscape/portrait/square cues detected. Falling back to official Auto.",
@@ -3365,14 +3375,18 @@
       "2048x2048": "2048 × 2048 · 2K Square",
       "2048x3072": "2048 × 3072 · 3K Portrait",
       "2048x3840": "2048 × 3840 · 4K-class Portrait",
+      "2160x3840": "2160 × 3840 · 4K-class Portrait",
       "2560x1440": "2560 × 1440 · 2K Landscape",
       "2880x2880": "High-res Square · 2880 × 2880",
       "3072x2048": "3072 × 2048 · 3K Landscape",
       "3840x2048": "3840 × 2048 · 4K-class Landscape",
+      "3840x2160": "3840 × 2160 · 4K-class Landscape",
       "auto": "自動",
       "experimental_badge": "(Experimental)"
     },
+    "image_total_too_large": "參考圖片總大小過大，不能超過 {{size}} MB。",
     "image_upload_limit": "最多支援 {{max}} 張圖片（包含已生成圖片），目前還可以新增 {{remaining}} 張。",
+    "image_upload_while_generating": "目前正在生成圖片，請等待完成後再新增參考圖。",
     "inference_steps": "推理步數",
     "inference_steps_tip": "要執行的推理步數。步數越多，品質越高但耗時越長",
     "input_image": "輸入圖片",

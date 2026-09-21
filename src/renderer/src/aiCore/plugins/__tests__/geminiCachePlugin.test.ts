@@ -1,4 +1,4 @@
-import type { LanguageModelV3CallOptions, LanguageModelV3Message } from '@ai-sdk/provider'
+import type { LanguageModelV3, LanguageModelV3CallOptions, LanguageModelV3Message } from '@ai-sdk/provider'
 import type { GeminiCacheControlSettings } from '@renderer/types/provider'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -44,7 +44,11 @@ async function runMiddleware(params: LanguageModelV3CallOptions, settings = make
   } = { middlewares: [] }
   void plugin.configureContext!(context as never)
   const middleware = context.middlewares[0]
-  return middleware.transformParams({ params, type: 'generate', model: {} })
+  return middleware.transformParams({
+    params,
+    type: 'generate',
+    model: { modelId: 'gemini-2.5-pro' } as LanguageModelV3
+  })
 }
 
 describe('geminiCachePlugin', () => {
@@ -61,7 +65,6 @@ describe('geminiCachePlugin', () => {
   it('selects a stable prefix and keeps only the tail in the live request', async () => {
     const prompt = makePrompt()
     const result = await runMiddleware({
-      model: 'gemini-2.5-pro',
       prompt,
       headers: {
         'x-goog-api-key': 'test-key'
@@ -84,7 +87,6 @@ describe('geminiCachePlugin', () => {
   it('reuses created cache for the same prefix without creating a second remote cache', async () => {
     const prompt = makePrompt()
     const firstParams = {
-      model: 'gemini-2.5-pro',
       prompt,
       headers: {
         'x-goog-api-key': 'test-key'
@@ -109,7 +111,6 @@ describe('geminiCachePlugin', () => {
 
   it('skips cache when prompt is not text-only', async () => {
     const result = await runMiddleware({
-      model: 'gemini-2.5-pro',
       prompt: [
         {
           role: 'user',
@@ -137,7 +138,6 @@ describe('geminiCachePlugin', () => {
 
     const result = await runMiddleware(
       {
-        model: 'gemini-2.5-pro',
         prompt,
         headers: {
           'x-goog-api-key': 'test-key'
@@ -171,5 +171,19 @@ describe('geminiCachePlugin', () => {
 
     expect(candidate).toBeDefined()
     expect(candidate?.tailMessages).toHaveLength(1)
+  })
+
+  it('keeps the chat request working when remote cache creation fails', async () => {
+    createMock.mockRejectedValueOnce(new Error('gateway key cannot create Google cached content'))
+    const prompt = makePrompt()
+    const params = {
+      prompt,
+      headers: {
+        'X-Goog-Api-Key': 'test-key'
+      }
+    } as unknown as LanguageModelV3CallOptions
+
+    await expect(runMiddleware(params, makeSettings({ cacheScope: 'failure-test-service' }))).resolves.toEqual(params)
+    expect(createMock).toHaveBeenCalledTimes(1)
   })
 })

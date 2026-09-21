@@ -10,7 +10,7 @@ describe('resolveSmartAutoSize', () => {
   it('maps 4k landscape prompts to the highest legal landscape preset', () => {
     expect(resolveSmartAutoSize('gpt-image-2', '请生成 4K 宽屏横版电影海报')).toEqual({
       ratio: 'landscape',
-      size: '3840x2048',
+      size: '3840x2160',
       reason: 'ratio_and_tier',
       tier: '4k'
     })
@@ -19,7 +19,7 @@ describe('resolveSmartAutoSize', () => {
   it('maps 4k portrait prompts to the highest legal portrait preset', () => {
     expect(resolveSmartAutoSize('gpt-image-2', '4K 竖版时尚封面')).toEqual({
       ratio: 'portrait',
-      size: '2048x3840',
+      size: '2160x3840',
       reason: 'ratio_and_tier',
       tier: '4k'
     })
@@ -45,7 +45,7 @@ describe('resolveSmartAutoSize', () => {
   it('does not treat negated square wording as a square request', () => {
     expect(resolveSmartAutoSize('gpt-image-2', '请生成 4K 竖图，不要方图，不要横图')).toEqual({
       ratio: 'portrait',
-      size: '2048x3840',
+      size: '2160x3840',
       reason: 'ratio_and_tier',
       tier: '4k'
     })
@@ -62,7 +62,7 @@ describe('resolveSmartAutoSize', () => {
   it('also applies smart auto mapping to gpt-image-2-pro', () => {
     expect(resolveSmartAutoSize('gpt-image-2-pro', '4K 竖版时尚封面')).toEqual({
       ratio: 'portrait',
-      size: '2048x3840',
+      size: '2160x3840',
       reason: 'ratio_and_tier',
       tier: '4k'
     })
@@ -71,7 +71,7 @@ describe('resolveSmartAutoSize', () => {
   it('also applies smart auto mapping to gpt-image-2-vip', () => {
     expect(resolveSmartAutoSize('gpt-image-2-vip', '4K 宽屏横版电影海报')).toEqual({
       ratio: 'landscape',
-      size: '3840x2048',
+      size: '3840x2160',
       reason: 'ratio_and_tier',
       tier: '4k'
     })

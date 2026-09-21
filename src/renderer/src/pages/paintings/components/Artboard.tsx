@@ -7,6 +7,7 @@ import { Button, Popover, Spin } from 'antd'
 import dayjs from 'dayjs'
 import type { FC } from 'react'
 import React from 'react'
+import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import styled from 'styled-components'
 
@@ -54,9 +55,20 @@ const Artboard: FC<ArtboardProps> = ({
   onImageDrop
 }) => {
   const { t } = useTranslation()
+  const [failedLocalFileIndexes, setFailedLocalFileIndexes] = useState<Set<number>>(new Set())
 
   const fileUrls = painting.files.map((file) => FileManager.getFileUrl(file))
-  const displayUrls = fileUrls.length > 0 ? fileUrls : previewUrls
+  const fileKey = painting.files.map((file) => file.id).join(',')
+  useEffect(() => {
+    setFailedLocalFileIndexes(new Set())
+  }, [painting.id, fileKey])
+
+  const displayUrls =
+    fileUrls.length > 0
+      ? fileUrls.map((url, index) =>
+          failedLocalFileIndexes.has(index) && painting.urls[index] ? painting.urls[index] : url
+        )
+      : previewUrls
   const promptText = prompt?.trim()
   const createdAt = painting.files[currentImageIndex]?.created_at
   const createdAtDate = createdAt ? dayjs(createdAt) : null
@@ -140,6 +152,18 @@ const Artboard: FC<ArtboardProps> = ({
                 <ImageViewer
                   src={currentDisplayUrl}
                   preview={{ mask: false }}
+                  onError={() => {
+                    if (fileUrls[currentImageIndex] && painting.urls[currentImageIndex]) {
+                      setFailedLocalFileIndexes((previous) => {
+                        if (previous.has(currentImageIndex)) {
+                          return previous
+                        }
+                        const next = new Set(previous)
+                        next.add(currentImageIndex)
+                        return next
+                      })
+                    }
+                  }}
                   style={{
                     maxWidth: 'var(--artboard-max)',
                     maxHeight: 'var(--artboard-max)',

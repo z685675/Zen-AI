@@ -14,6 +14,13 @@ import { AssistantMessageStatus } from '@renderer/types/newMessage'
 const logger = loggerService.withContext('StreamProcessingService')
 type StreamCallbackResult = void | Promise<void>
 
+export interface StreamProcessorOptions {
+  /** Abort the stream and notify the callbacks exactly once. */
+  signal?: AbortSignal
+  /** Ignore chunks from a request which has been superseded. */
+  isActive?: () => boolean
+}
+
 // Define the structure for the callbacks that the StreamProcessor will invoke
 export interface StreamProcessorCallbacks {
   // LLM response created
@@ -67,15 +74,34 @@ export interface StreamProcessorCallbacks {
 }
 
 // Function to create a stream processor instance
-export function createStreamProcessor(callbacks: StreamProcessorCallbacks = {}) {
+export function createStreamProcessor(callbacks: StreamProcessorCallbacks = {}, options: StreamProcessorOptions = {}) {
   let processingQueue = Promise.resolve()
   let terminalState: 'open' | 'error' | 'complete' = 'open'
+
+  const cleanupAbortListener = () => {
+    options.signal?.removeEventListener('abort', handleAbort)
+  }
+
+  const handleAbort = () => {
+    if (terminalState !== 'open' || options.isActive?.() === false) return
+    terminalState = 'error'
+    cleanupAbortListener()
+    const abortError = new DOMException('Request was aborted', 'AbortError')
+    Promise.resolve(callbacks.onError?.(abortError)).catch((error) => {
+      logger.error('Error processing stream abort:', error as Error)
+    })
+  }
+
+  options.signal?.addEventListener('abort', handleAbort, { once: true })
+  if (options.signal?.aborted) {
+    queueMicrotask(handleAbort)
+  }
 
   // The returned function processes a single chunk or a final signal
   return (chunk: Chunk) => {
     processingQueue = processingQueue
       .then(async () => {
-        if (terminalState !== 'open') {
+        if (terminalState !== 'open' || options.signal?.aborted || options.isActive?.() === false) {
           logger.debug('Ignoring stream chunk after terminal state', {
             terminalState,
             chunkType: chunk.type
@@ -179,12 +205,14 @@ export function createStreamProcessor(callbacks: StreamProcessorCallbacks = {}) 
           }
           case ChunkType.LLM_RESPONSE_COMPLETE: {
             terminalState = 'complete'
+            cleanupAbortListener()
             if (callbacks.onLLMResponseComplete) await callbacks.onLLMResponseComplete(data.response)
             if (callbacks.onComplete) await callbacks.onComplete(AssistantMessageStatus.SUCCESS, data.response)
             break
           }
           case ChunkType.ERROR: {
             terminalState = 'error'
+            cleanupAbortListener()
             if (callbacks.onError) await callbacks.onError(data.error)
             break
           }
@@ -212,6 +240,7 @@ export function createStreamProcessor(callbacks: StreamProcessorCallbacks = {}) 
           return
         }
         terminalState = 'error'
+        cleanupAbortListener()
         if (callbacks.onError) {
           await callbacks.onError(error)
         }

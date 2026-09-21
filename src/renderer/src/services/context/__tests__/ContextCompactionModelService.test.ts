@@ -1,0 +1,112 @@
+import type { Model, Provider } from '@renderer/types'
+import { describe, expect, it } from 'vitest'
+
+import { createContextCompactionGenerator, resolveContextCompactionModels } from '../ContextCompactionModelService'
+
+const createProvider = (id: string, modelIds: string[], enabled = true): Provider => ({
+  id,
+  type: 'new-api',
+  name: id,
+  apiKey: 'test-key',
+  apiHost: `https://${id}.example.com`,
+  enabled,
+  models: modelIds.map((modelId): Model => ({ id: modelId, provider: id, name: modelId, group: 'default' }))
+})
+
+describe('resolveContextCompactionModels', () => {
+  const provider = createProvider('provider-a', ['model-1', 'model-2', 'model-3'])
+  const currentModel = provider.models[0]
+
+  it('keeps the legacy current-model behavior when remote config is absent', () => {
+    expect(resolveContextCompactionModels({ providers: [provider], currentModel })).toEqual([currentModel])
+  })
+
+  it('resolves at most three configured models in order', () => {
+    expect(
+      resolveContextCompactionModels({
+        providers: [provider],
+        configuredModelIds: ['model-2', 'model-3', 'model-1', 'ignored'],
+        currentModel
+      }).map((model) => model.id)
+    ).toEqual(['model-2', 'model-3', 'model-1'])
+  })
+
+  it('does not silently fall back to the current model when an explicit list is unavailable', () => {
+    expect(
+      resolveContextCompactionModels({
+        providers: [provider],
+        configuredModelIds: ['missing-model'],
+        currentModel
+      })
+    ).toEqual([])
+  })
+
+  it('skips disabled providers and duplicate resolved candidates', () => {
+    const disabled = createProvider('disabled', ['model-2'], false)
+    expect(
+      resolveContextCompactionModels({
+        providers: [disabled, provider],
+        configuredModelIds: ['model-2', 'model-2'],
+        currentModel
+      }).map((model) => model.provider)
+    ).toEqual(['provider-a'])
+  })
+
+  it('uses the first model when it succeeds', async () => {
+    const calls: string[] = []
+    const generate = createContextCompactionGenerator({
+      models: provider.models,
+      generate: async (model) => {
+        calls.push(model.id)
+        return 'checkpoint'
+      }
+    })
+
+    await expect(generate('prompt', 'content')).resolves.toBe('checkpoint')
+    expect(calls).toEqual(['model-1'])
+  })
+
+  it('moves to the next model and stays there after a failure', async () => {
+    const calls: string[] = []
+    const generate = createContextCompactionGenerator({
+      models: provider.models,
+      generate: async (model) => {
+        calls.push(model.id)
+        if (model.id === 'model-1') throw new Error('model 1 is unavailable')
+        return 'checkpoint'
+      }
+    })
+
+    await expect(generate('prompt', 'first')).resolves.toBe('checkpoint')
+    await expect(generate('prompt', 'second')).resolves.toBe('checkpoint')
+    expect(calls).toEqual(['model-1', 'model-2', 'model-2'])
+  })
+
+  it('throws after all models fail so the caller can use local checkpointing', async () => {
+    const failedModels: string[] = []
+    const generate = createContextCompactionGenerator({
+      models: provider.models,
+      generate: async () => '',
+      onModelFailure: (model) => failedModels.push(model.id)
+    })
+
+    await expect(generate('prompt', 'content')).rejects.toThrow('All configured context checkpoint models failed')
+    expect(failedModels).toEqual(['model-1', 'model-2', 'model-3'])
+  })
+
+  it('does not switch models after the user cancels the request', async () => {
+    const calls: string[] = []
+    const cancellation = new Error('cancelled')
+    const generate = createContextCompactionGenerator({
+      models: provider.models,
+      generate: async (model) => {
+        calls.push(model.id)
+        throw cancellation
+      },
+      shouldTryNext: () => false
+    })
+
+    await expect(generate('prompt', 'content')).rejects.toBe(cancellation)
+    expect(calls).toEqual(['model-1'])
+  })
+})

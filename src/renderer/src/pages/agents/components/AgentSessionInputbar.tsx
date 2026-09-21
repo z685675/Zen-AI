@@ -25,13 +25,14 @@ import type { ToolContext, ToolOrderConfig } from '@renderer/pages/home/Inputbar
 import { TopicType } from '@renderer/pages/home/Inputbar/types'
 import { CacheService } from '@renderer/services/CacheService'
 import { EVENT_NAMES, EventEmitter } from '@renderer/services/EventService'
+import FileManager from '@renderer/services/FileManager'
 import { pauseTrace } from '@renderer/services/SpanManagerService'
 import { estimateUserPromptUsage } from '@renderer/services/TokenService'
 import { useAppDispatch, useAppSelector } from '@renderer/store'
 import { newMessagesActions, selectMessagesForTopic } from '@renderer/store/newMessage'
 import { sendMessage as dispatchSendMessage } from '@renderer/store/thunk/messageThunk'
-import type { Assistant, Message, ThinkingOption } from '@renderer/types'
-import type { FileMetadata } from '@renderer/types'
+import type { Assistant, FileMetadata, Message, ThinkingOption } from '@renderer/types'
+import { FILE_TYPE } from '@renderer/types'
 import type { MessageBlock } from '@renderer/types/newMessage'
 import { MessageBlockStatus } from '@renderer/types/newMessage'
 import { abortCompletion } from '@renderer/utils/abortController'
@@ -45,7 +46,12 @@ import {
 import { buildAgentSessionTopicId } from '@renderer/utils/agentSession'
 import { getAgentSessionDraftCacheKey } from '@renderer/utils/agentSessionDraft'
 import { getSendMessageShortcutLabel } from '@renderer/utils/input'
-import { createMainTextBlock, createMessage } from '@renderer/utils/messageUtils/create'
+import {
+  createFileBlock,
+  createImageBlock,
+  createMainTextBlock,
+  createMessage
+} from '@renderer/utils/messageUtils/create'
 import {
   AGENT_DEFAULT_REASONING_EFFORT,
   type AgentReasoningEffort,
@@ -484,17 +490,30 @@ const AgentSessionInputbarInner: FC<InnerProps> = ({
     try {
       const userMessageId = uuid()
 
-      // For agent sessions, append file paths to the text content instead of uploading files
+      // Agent sessions still use the Agent workspace as the source of truth, but
+      // attachments must be persisted as message blocks first. This lets the
+      // request layer copy them into the workspace and extract Office/PDF text.
+      const uploadedFiles = files.length > 0 ? await FileManager.uploadFiles(files) : []
       let messageText = text
-      if (files.length > 0) {
-        const filePaths = files.map((file) => file.path).join('\n')
+      if (uploadedFiles.length > 0) {
+        const filePaths = uploadedFiles.map((file) => file.path).join('\n')
         messageText = text ? `${text}\n\nAttached files:\n${filePaths}` : `Attached files:\n${filePaths}`
       }
 
       const mainBlock = createMainTextBlock(userMessageId, messageText, {
         status: MessageBlockStatus.SUCCESS
       })
-      const userMessageBlocks: MessageBlock[] = [mainBlock]
+      const attachmentBlocks: MessageBlock[] = uploadedFiles.map((file) =>
+        file.type === FILE_TYPE.IMAGE
+          ? createImageBlock(userMessageId, {
+              file,
+              status: MessageBlockStatus.SUCCESS
+            })
+          : createFileBlock(userMessageId, file, {
+              status: MessageBlockStatus.SUCCESS
+            })
+      )
+      const userMessageBlocks: MessageBlock[] = [mainBlock, ...attachmentBlocks]
 
       // Calculate token usage for the user message
       const usage = await estimateUserPromptUsage({ content: text })

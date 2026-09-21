@@ -58,6 +58,16 @@ async function consume(stream: ReadableStream<unknown>) {
   }
 }
 
+async function collect(stream: ReadableStream<unknown>) {
+  const values: unknown[] = []
+  const reader = stream.getReader()
+  while (true) {
+    const result = await reader.read()
+    if (result.done) return values
+    values.push(result.value)
+  }
+}
+
 describe('SessionMessageService runtime stream lifecycle', () => {
   beforeEach(() => {
     vi.useFakeTimers()
@@ -264,6 +274,75 @@ describe('SessionMessageService runtime stream lifecycle', () => {
     recoveredStream.emit('data', { type: 'complete' })
 
     await expect(consumed).resolves.toBeUndefined()
+    await expect(result.completion).resolves.toEqual({})
+  })
+
+  it('restarts a stream from a checkpoint after a transient channel failure', async () => {
+    const interruptedStream = createAgentStream()
+    const recoveredStream = createAgentStream()
+    const attemptControllers: AbortController[] = []
+
+    resolveAgentRuntimeMock.mockResolvedValue({
+      runtimeId: 'claude-code',
+      candidates: ['claude-code'],
+      configuredRuntime: 'auto',
+      source: 'auto',
+      reason: 'test'
+    })
+    invokeMock.mockImplementation(async (_prompt: string, _session: unknown, attemptController: AbortController) => {
+      attemptControllers.push(attemptController)
+      return attemptControllers.length === 1 ? interruptedStream : recoveredStream
+    })
+
+    const service = new SessionMessageService()
+    vi.spyOn(service as any, 'getLastAgentSessionId').mockResolvedValue('active-thread')
+    const result = await service.createSessionMessage(
+      session(),
+      { content: 'finish the project safely' } as any,
+      new AbortController()
+    )
+    const collected = collect(result.stream)
+
+    interruptedStream.emit('data', {
+      type: 'chunk',
+      chunk: { type: 'text-delta', id: 'text-1', text: '已完成第一步，' }
+    })
+    interruptedStream.emit('data', {
+      type: 'chunk',
+      chunk: {
+        type: 'tool-call',
+        toolCallId: 'write-1',
+        toolName: 'mcp__assistant__create_file',
+        input: { path: 'README.md' }
+      }
+    })
+    interruptedStream.emit('data', {
+      type: 'chunk',
+      chunk: { type: 'tool-result', toolCallId: 'write-1', toolName: 'mcp__assistant__create_file', output: 'created' }
+    })
+    interruptedStream.emit('data', { type: 'error', error: new Error('Failed to fetch') })
+
+    await vi.waitFor(() => expect(invokeMock).toHaveBeenCalledTimes(2))
+
+    expect(attemptControllers[0].signal.aborted).toBe(true)
+    expect(attemptControllers[1].signal.aborted).toBe(false)
+    expect(invokeMock.mock.calls[1][0]).toContain('Safe Agent Stream Recovery Checkpoint')
+    expect(invokeMock.mock.calls[1][0]).toContain('mcp__assistant__create_file')
+    expect(invokeMock.mock.calls[1][3]).toBeUndefined()
+
+    recoveredStream.emit('data', { type: 'chunk', chunk: { type: 'raw', rawValue: { type: 'init' } } })
+    recoveredStream.emit('data', {
+      type: 'chunk',
+      chunk: { type: 'text-delta', id: 'text-2', text: '正在验证剩余步骤。' }
+    })
+    recoveredStream.emit('data', { type: 'complete' })
+
+    const chunks = await collected
+    expect(chunks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: 'raw', rawValue: expect.objectContaining({ type: 'agent_stream_recovery' }) })
+      ])
+    )
     await expect(result.completion).resolves.toEqual({})
   })
 

@@ -3,16 +3,17 @@ import { showErrorDetailPopup } from '@renderer/components/ErrorDetailModal'
 import { useTimer } from '@renderer/hooks/useTimer'
 import { getHttpMessageLabel, getProviderLabel } from '@renderer/i18n/label'
 import type { DiagnosisResult } from '@renderer/services/ErrorDiagnosisService'
+import { exportErrorDiagnosticPackage } from '@renderer/services/ErrorDiagnosticPackageService'
 import { getProviderById } from '@renderer/services/ProviderService'
-import { useAppDispatch } from '@renderer/store'
+import { useAppDispatch, useAppSelector } from '@renderer/store'
 import { removeBlocksThunk } from '@renderer/store/thunk/messageThunk'
 import type { ErrorMessageBlock, Message } from '@renderer/types/newMessage'
 import { isAgentSessionTopicId } from '@renderer/utils/agentSession'
 import { diagnoseClientError } from '@renderer/utils/clientErrorDiagnosis'
 import { classifyError } from '@renderer/utils/errorClassifier'
 import { Button } from 'antd'
-import { AlertTriangle, ChevronRight, X } from 'lucide-react'
-import React, { useCallback, useMemo } from 'react'
+import { AlertTriangle, ChevronRight, Download, X } from 'lucide-react'
+import React, { useCallback, useMemo, useState } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
 import { Link, useNavigate } from 'react-router-dom'
 
@@ -84,6 +85,11 @@ const MessageErrorInfo: React.FC<{ block: ErrorMessageBlock; message: Message }>
   const { setTimeoutTimer } = useTimer()
   const { t } = useTranslation()
   const navigate = useNavigate()
+  const [exporting, setExporting] = useState(false)
+  const relatedUserMessage = useAppSelector((state) =>
+    message.askId ? state.messages.entities[message.askId] : undefined
+  )
+  const blockEntities = useAppSelector((state) => state.messageBlocks.entities)
 
   const providerId = message.model?.provider ?? (block.error?.providerId as string | undefined)
   const classification = useMemo(() => classifyError(block.error, providerId), [block.error, providerId])
@@ -134,6 +140,45 @@ const MessageErrorInfo: React.FC<{ block: ErrorMessageBlock; message: Message }>
     }
   }
 
+  const exportDiagnosticPackage = useCallback(
+    async (e: React.MouseEvent) => {
+      e.stopPropagation()
+      setExporting(true)
+
+      try {
+        const appInfo = await window.api.getAppInfo().catch(() => undefined)
+        const savedPath = await exportErrorDiagnosticPackage({
+          source: 'chat',
+          title: clientDiagnosis.title,
+          description: clientDiagnosis.summary || block.error?.message || t('error.unknown'),
+          classification,
+          diagnosis: clientDiagnosis,
+          error: block.error,
+          block,
+          message,
+          relatedUserMessage,
+          blockEntities,
+          model: message.model,
+          appInfo,
+          aiDiagnosis: block.metadata?.diagnosis,
+          privacyNotice: t('agent.errorFallback.privacy_notice')
+        })
+        window.toast.success(t('agent.errorFallback.export_success', { path: savedPath }))
+      } catch (error: any) {
+        if (
+          !String(error?.message ?? error)
+            .toLowerCase()
+            .includes('canceled')
+        ) {
+          window.toast.error(t('agent.errorFallback.export_failed'))
+        }
+      } finally {
+        setExporting(false)
+      }
+    },
+    [block, blockEntities, classification, clientDiagnosis, message, relatedUserMessage, t]
+  )
+
   return (
     <div
       className="group relative my-2 cursor-pointer rounded-lg border px-3.5 py-3 text-[13px] transition-all duration-200 hover:border-[color-mix(in_srgb,var(--color-error)_35%,transparent)] hover:bg-[color-mix(in_srgb,var(--color-error)_7%,transparent)]"
@@ -181,6 +226,9 @@ const MessageErrorInfo: React.FC<{ block: ErrorMessageBlock; message: Message }>
             {t('error.diagnosis.go_to_settings')}
           </Button>
         )}
+        <Button size="small" icon={<Download size={14} />} onClick={exportDiagnosticPackage} loading={exporting}>
+          {t('agent.errorFallback.export_package')}
+        </Button>
         <div
           className="ml-auto inline-flex items-center gap-0.5 text-xs transition-colors duration-150 group-hover:text-(--color-error)"
           style={{ color: 'var(--color-text-3)' }}>

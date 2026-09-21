@@ -375,6 +375,10 @@ export type PaintingParams = {
   id: string
   urls: string[]
   files: FileMetadata[]
+  /** Original creation description retained for subsequent image edits. */
+  basePrompt?: string
+  /** Groups related generations into one editable image session. */
+  generationSessionId?: string
   // provider that this painting belongs to (for new-api family separation)
   providerId?: string
   // Legacy namespace retained for non-destructive image workspace migration.

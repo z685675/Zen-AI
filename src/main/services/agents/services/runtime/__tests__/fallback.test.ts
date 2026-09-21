@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest'
 import {
   AgentDeepResearchTimeoutError,
   AgentRuntimeNoOutputTimeoutError,
+  isRecoverableAgentTransportError,
   isRuntimeBootstrapChunk,
   shouldFallbackRuntime
 } from '../fallback'
@@ -43,6 +44,15 @@ describe('runtime fallback guards', () => {
     expect(
       shouldFallbackRuntime(new AgentDeepResearchTimeoutError('Deep research timed out'), new AbortController())
     ).toBe(false)
+  })
+
+  it('allows one checkpoint recovery for transient upstream transport failures', () => {
+    const controller = new AbortController()
+
+    expect(isRecoverableAgentTransportError(new Error('Failed to fetch'), controller)).toBe(true)
+    expect(isRecoverableAgentTransportError(new Error('502 upstream stream interrupted'), controller)).toBe(true)
+    expect(isRecoverableAgentTransportError(new Error('401 unauthorized'), controller)).toBe(false)
+    expect(isRecoverableAgentTransportError(new Error('tool execution failed'), controller)).toBe(false)
   })
 
   it('treats runtime init markers as buffered bootstrap chunks', () => {

@@ -608,15 +608,7 @@ const InputbarInner: FC<InputbarInnerProps> = ({
         toolOrderOverride={
           isHero
             ? {
-                visible: [
-                  'attachment',
-                  'thinking',
-                  'web_search',
-                  'url_context',
-                  'knowledge_base',
-                  'mcp_tools',
-                  'generate_image'
-                ],
+                visible: ['attachment', 'thinking', 'web_search', 'knowledge_base', 'mcp_tools', 'generate_image'],
                 hidden: ['new_topic', 'quick_phrases', 'clear_topic', 'toggle_expand', 'new_context']
               }
             : {

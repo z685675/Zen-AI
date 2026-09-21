@@ -39,9 +39,9 @@ describe('ContextWindowService', () => {
     adaptiveStorage.clear()
   })
 
-  it('uses the 256K fallback for New API models without provider metadata', () => {
+  it('uses the 200K fallback for New API models without provider metadata', () => {
     expect(resolveModelContextProfile(model, newApiProvider)).toMatchObject({
-      contextWindowTokens: 256_000,
+      contextWindowTokens: 200_000,
       maxOutputTokens: 32_000,
       source: 'fallback',
       confidence: 'low'
@@ -61,19 +61,19 @@ describe('ContextWindowService', () => {
     )
 
     expect(profile).toEqual({
-      contextWindowTokens: 400_000,
+      contextWindowTokens: 200_000,
       maxOutputTokens: 16_000,
       source: 'provider',
       confidence: 'high'
     })
   })
 
-  it('creates an approximately 180K compaction trigger for a 256K model', () => {
+  it('creates an approximately 140K compaction trigger for a 200K model', () => {
     const budget = createContextBudget({ model, provider: newApiProvider })
 
-    expect(budget.safeInputTokens).toBe(201_600)
-    expect(budget.compactionTriggerTokens).toBe(181_440)
-    expect(budget.compactionTargetTokens).toBe(116_927)
+    expect(budget.safeInputTokens).toBe(151_200)
+    expect(budget.compactionTriggerTokens).toBe(136_080)
+    expect(budget.compactionTargetTokens).toBe(87_696)
   })
 
   it('includes text and image parts in usage estimates', () => {
@@ -140,11 +140,11 @@ describe('ContextWindowService', () => {
       provider: newApiProvider,
       failedInputTokens: 190_000,
       maxOutputTokens: 32_000,
-      currentContextWindowTokens: 256_000
+      currentContextWindowTokens: 200_000
     })
     const profile = resolveModelContextProfile(model, newApiProvider)
 
-    expect(learnedCapacity).toBe(159_840)
+    expect(learnedCapacity).toBe(144_000)
     expect(profile).toMatchObject({
       contextWindowTokens: learnedCapacity,
       source: 'adaptive',
@@ -152,7 +152,7 @@ describe('ContextWindowService', () => {
     })
 
     clearAdaptiveContextWindowTokens(model, newApiProvider)
-    expect(resolveModelContextProfile(model, newApiProvider).contextWindowTokens).toBe(256_000)
+    expect(resolveModelContextProfile(model, newApiProvider).contextWindowTokens).toBe(200_000)
   })
 
   it('recognizes common upstream context-limit errors without matching normal failures', () => {

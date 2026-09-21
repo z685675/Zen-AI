@@ -13,6 +13,32 @@ export const DEFAULT_RESOURCE_CHUNK_TOKENS = 4_000
 export const DEFAULT_RESOURCE_RETRIEVAL_TOKENS = 12_000
 export const CONTEXT_SEMANTIC_VECTOR_DIMENSIONS = 128
 
+const resourceWriteLocks = new Map<string, Promise<unknown>>()
+
+/**
+ * Dexie's read-then-write de-duplication is not atomic. Serialize writes for
+ * the same conversation/content pair so two simultaneous messages cannot
+ * parse and store the same document twice.
+ */
+async function withResourceWriteLock<T>(key: string, operation: () => Promise<T>): Promise<T> {
+  const previous = resourceWriteLocks.get(key)
+  const current = (async () => {
+    if (previous) {
+      await previous.catch(() => undefined)
+    }
+    return operation()
+  })()
+
+  resourceWriteLocks.set(key, current)
+  try {
+    return await current
+  } finally {
+    if (resourceWriteLocks.get(key) === current) {
+      resourceWriteLocks.delete(key)
+    }
+  }
+}
+
 export const hashContextContent = (value: string): string => {
   let hash = 2166136261
   for (let index = 0; index < value.length; index += 1) {
@@ -149,15 +175,7 @@ export function chunkContextResourceText(
   return chunks
 }
 
-export async function saveTextContextResource({
-  conversationId,
-  sourceMessageId,
-  sourceName,
-  text,
-  kind = 'text',
-  metadata = {},
-  contentHash
-}: {
+type SaveTextContextResourceOptions = {
   conversationId: string
   sourceMessageId?: string
   sourceName: string
@@ -165,7 +183,17 @@ export async function saveTextContextResource({
   kind?: ContextResourceKind
   metadata?: Record<string, unknown>
   contentHash?: string
-}): Promise<ContextResource> {
+}
+
+async function saveTextContextResourceUnlocked({
+  conversationId,
+  sourceMessageId,
+  sourceName,
+  text,
+  kind = 'text',
+  metadata = {},
+  contentHash
+}: SaveTextContextResourceOptions): Promise<ContextResource> {
   const resolvedContentHash = contentHash ?? hashContextContent(text)
   const existing = await db.context_resources
     .where('contentHash')
@@ -195,6 +223,13 @@ export async function saveTextContextResource({
   }
   await db.context_resources.put(resource)
   return resource
+}
+
+export async function saveTextContextResource(options: SaveTextContextResourceOptions): Promise<ContextResource> {
+  const resolvedContentHash = options.contentHash ?? hashContextContent(options.text)
+  return withResourceWriteLock(`conversation:${options.conversationId}:content:${resolvedContentHash}`, () =>
+    saveTextContextResourceUnlocked({ ...options, contentHash: resolvedContentHash })
+  )
 }
 
 const cloneCachedResource = async ({
@@ -243,37 +278,39 @@ export async function saveCachedTextContextResource({
   metadata?: Record<string, unknown>
   contentHash: string
 }): Promise<{ resource: ContextResource; cacheHit: boolean }> {
-  const existingInConversation = await findCachedContextResource(conversationId, contentHash)
-  if (existingInConversation) {
-    return { resource: existingInConversation, cacheHit: true }
-  }
+  return withResourceWriteLock(`conversation:${conversationId}:content:${contentHash}`, async () => {
+    const existingInConversation = await findCachedContextResource(conversationId, contentHash)
+    if (existingInConversation) {
+      return { resource: existingInConversation, cacheHit: true }
+    }
 
-  const cached = await db.context_resources.where('contentHash').equals(contentHash).first()
-  if (cached) {
+    const cached = await db.context_resources.where('contentHash').equals(contentHash).first()
+    if (cached) {
+      return {
+        resource: await cloneCachedResource({
+          cached,
+          conversationId,
+          sourceMessageId,
+          sourceName,
+          metadata
+        }),
+        cacheHit: true
+      }
+    }
+
     return {
-      resource: await cloneCachedResource({
-        cached,
+      resource: await saveTextContextResourceUnlocked({
         conversationId,
         sourceMessageId,
         sourceName,
-        metadata
+        text,
+        kind,
+        metadata: { ...metadata, cacheHit: false },
+        contentHash
       }),
-      cacheHit: true
+      cacheHit: false
     }
-  }
-
-  return {
-    resource: await saveTextContextResource({
-      conversationId,
-      sourceMessageId,
-      sourceName,
-      text,
-      kind,
-      metadata: { ...metadata, cacheHit: false },
-      contentHash
-    }),
-    cacheHit: false
-  }
+  })
 }
 
 export async function saveStructuredFileContextResource({
@@ -290,63 +327,67 @@ export async function saveStructuredFileContextResource({
   read: () => Promise<StructuredFileContent>
 }): Promise<{ resource: ContextResource; cacheHit: boolean }> {
   const contentHash = hashContextContent(`structured-file:${fileFingerprint}`)
-  const existingInConversation = await db.context_resources
-    .where('contentHash')
-    .equals(contentHash)
-    .and((resource) => resource.conversationId === conversationId)
-    .first()
-  if (existingInConversation) {
-    return { resource: existingInConversation, cacheHit: true }
-  }
-
-  const cached = await db.context_resources.where('contentHash').equals(contentHash).first()
-  if (cached) {
-    return {
-      resource: await cloneCachedResource({
-        cached,
-        conversationId,
-        sourceMessageId,
-        sourceName,
-        metadata: { fileFingerprint }
-      }),
-      cacheHit: true
+  return withResourceWriteLock(`conversation:${conversationId}:content:${contentHash}`, async () => {
+    const existingInConversation = await db.context_resources
+      .where('contentHash')
+      .equals(contentHash)
+      .and((resource) => resource.conversationId === conversationId)
+      .first()
+    if (existingInConversation) {
+      return { resource: existingInConversation, cacheHit: true }
     }
-  }
 
-  const structured = await read()
-  const chunks = structured.sections.flatMap((section) =>
-    chunkContextResourceText(section.text).map((chunk) => ({
-      ...chunk,
-      metadata: {
-        ...chunk.metadata,
-        ...section.metadata,
-        parserVersion: structured.parserVersion,
-        format: structured.format
+    const cached = await db.context_resources.where('contentHash').equals(contentHash).first()
+    if (cached) {
+      return {
+        resource: await cloneCachedResource({
+          cached,
+          conversationId,
+          sourceMessageId,
+          sourceName,
+          metadata: { fileFingerprint }
+        }),
+        cacheHit: true
       }
-    }))
-  )
-  const now = new Date().toISOString()
-  const resource: ContextResource = {
-    id: uuid(),
-    conversationId,
-    sourceMessageId,
-    kind: 'document',
-    contentHash,
-    sourceName,
-    status: 'ready',
-    tokenEstimate: chunks.reduce((total, chunk) => total + chunk.tokenEstimate, 0),
-    chunks,
-    metadata: {
-      fileFingerprint,
-      parserVersion: structured.parserVersion,
-      format: structured.format,
-      cacheHit: false
-    },
-    createdAt: now,
-    updatedAt: now
-  }
-  await db.context_resources.put(resource)
-  return { resource, cacheHit: false }
+    }
+
+    const structured = await read()
+    let chunkIndex = 0
+    const chunks = structured.sections.flatMap((section) =>
+      chunkContextResourceText(section.text).map((chunk) => ({
+        ...chunk,
+        index: chunkIndex++,
+        metadata: {
+          ...chunk.metadata,
+          ...section.metadata,
+          parserVersion: structured.parserVersion,
+          format: structured.format
+        }
+      }))
+    )
+    const now = new Date().toISOString()
+    const resource: ContextResource = {
+      id: uuid(),
+      conversationId,
+      sourceMessageId,
+      kind: 'document',
+      contentHash,
+      sourceName,
+      status: 'ready',
+      tokenEstimate: chunks.reduce((total, chunk) => total + chunk.tokenEstimate, 0),
+      chunks,
+      metadata: {
+        fileFingerprint,
+        parserVersion: structured.parserVersion,
+        format: structured.format,
+        cacheHit: false
+      },
+      createdAt: now,
+      updatedAt: now
+    }
+    await db.context_resources.put(resource)
+    return { resource, cacheHit: false }
+  })
 }
 
 export async function findCachedContextResource(
@@ -422,18 +463,21 @@ const scoreChunk = (chunk: ContextResourceChunk, query: string, terms: string[])
 export async function searchContextResources({
   conversationId,
   query,
-  tokenBudget = DEFAULT_RESOURCE_RETRIEVAL_TOKENS
+  tokenBudget = DEFAULT_RESOURCE_RETRIEVAL_TOKENS,
+  excludeResourceIds = []
 }: {
   conversationId: string
   query: string
   tokenBudget?: number
+  excludeResourceIds?: string[]
 }): Promise<ContextResourceSearchResult[]> {
   const normalizedQuery = query.trim().toLocaleLowerCase()
-  if (!normalizedQuery) {
+  if (!normalizedQuery || tokenBudget <= 0) {
     return []
   }
 
-  const resources = await listContextResources(conversationId)
+  const excluded = new Set(excludeResourceIds)
+  const resources = (await listContextResources(conversationId)).filter((resource) => !excluded.has(resource.id))
   const terms = queryTerms(normalizedQuery)
   const queryVector = buildContextSemanticVector(normalizedQuery)
   const ranked = resources
@@ -462,7 +506,40 @@ export async function searchContextResources({
   const selected: ContextResourceSearchResult[] = []
   let selectedTokens = 0
   for (const result of ranked) {
-    if (selected.length > 0 && selectedTokens + result.chunk.tokenEstimate > tokenBudget) {
+    if (selectedTokens + result.chunk.tokenEstimate > tokenBudget) {
+      // A single resource chunk must never bypass the retrieval budget. This
+      // is especially important when a 4k-token document chunk is retrieved
+      // for an Agent request that has only a 1k-token remainder.
+      if (selected.length > 0) {
+        continue
+      }
+
+      const truncationMarker = '\n[本段资料因当前上下文预算已截断]'
+      const markerTokens = approximateTokenSize(truncationMarker)
+      if (tokenBudget <= markerTokens) {
+        continue
+      }
+      const approximateCharsPerToken = Math.max(1, result.chunk.text.length / result.chunk.tokenEstimate)
+      const charLimit = Math.max(128, Math.floor((tokenBudget - markerTokens) * approximateCharsPerToken * 0.85))
+      const truncatedText = result.chunk.text.slice(0, charLimit).trim()
+      if (!truncatedText) {
+        continue
+      }
+      const boundedText = `${truncatedText}${truncationMarker}`
+      const boundedTokenEstimate = approximateTokenSize(boundedText)
+      if (boundedTokenEstimate > tokenBudget) {
+        continue
+      }
+      selected.push({
+        ...result,
+        chunk: {
+          ...result.chunk,
+          text: boundedText,
+          tokenEstimate: boundedTokenEstimate,
+          metadata: { ...result.chunk.metadata, truncatedForBudget: true }
+        }
+      })
+      selectedTokens += selected[0].chunk.tokenEstimate
       continue
     }
     selected.push(result)

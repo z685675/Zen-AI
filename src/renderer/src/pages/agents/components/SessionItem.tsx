@@ -1,6 +1,7 @@
 import { loggerService } from '@logger'
 import { DeleteIcon, EditIcon } from '@renderer/components/Icons'
 import MarqueeText from '@renderer/components/MarqueeText'
+import PromptPopup from '@renderer/components/Popups/PromptPopup'
 import { isMac } from '@renderer/config/constant'
 import { useUpdateSession } from '@renderer/hooks/agents/useUpdateSession'
 import { useInPlaceEdit } from '@renderer/hooks/useInPlaceEdit'
@@ -9,7 +10,6 @@ import { useRuntime } from '@renderer/hooks/useRuntime'
 import { useSettings } from '@renderer/hooks/useSettings'
 import { useTimer } from '@renderer/hooks/useTimer'
 import { finishTopicRenaming, startTopicRenaming } from '@renderer/hooks/useTopic'
-import { SessionSettingsPopup } from '@renderer/pages/settings/AgentSettings'
 import { SessionLabel } from '@renderer/pages/settings/AgentSettings/shared'
 import { dbService } from '@renderer/services/db'
 import store, { type RootState, useAppDispatch, useAppSelector } from '@renderer/store'
@@ -72,11 +72,35 @@ const SessionItem = ({
 
   const { isEditing, isSaving, startEdit, inputProps } = useInPlaceEdit({
     onSave: async (value) => {
-      if (value !== session.name) {
-        await updateSession({ id: session.id, name: value })
+      if (value !== (session.name ?? '').trim()) {
+        const updatedSession = await updateSession({ id: session.id, name: value }, { showSuccessToast: false })
+        if (!updatedSession) {
+          throw new Error('Failed to update agent session name')
+        }
       }
     }
   })
+
+  const handleRename = useCallback(async () => {
+    const name = await PromptPopup.show({
+      title: t('chat.topics.edit.title'),
+      message: '',
+      defaultValue: session.name ?? '',
+      inputPlaceholder: t('chat.topics.edit.placeholder'),
+      inputProps: { maxLength: 200 },
+      extraNode: <div style={{ color: 'var(--color-text-3)', marginTop: 8 }}>{t('chat.topics.edit.title_tip')}</div>
+    })
+    const nextName = name?.trim()
+
+    if (!nextName || nextName === (session.name ?? '').trim()) {
+      return
+    }
+
+    const updatedSession = await updateSession({ id: session.id, name: nextName }, { showSuccessToast: false })
+    if (updatedSession) {
+      window.toast.success(t('common.saved'))
+    }
+  }, [session.id, session.name, t, updateSession])
 
   const DeleteButton = () => {
     return (
@@ -224,15 +248,11 @@ const SessionItem = ({
   const menuItems: MenuProps['items'] = useMemo(
     () => [
       {
-        label: t('common.edit'),
-        key: 'edit',
+        label: t('chat.topics.edit.title'),
+        key: 'rename',
         icon: <EditIcon size={14} />,
-        onClick: () => {
-          void SessionSettingsPopup.show({
-            agentId,
-            sessionId: session.id
-          })
-        }
+        disabled: isEditing,
+        onClick: () => void handleRename()
       },
       {
         label: t('chat.topics.auto_rename'),
@@ -315,11 +335,12 @@ const SessionItem = ({
       agentId,
       dispatch,
       exportItems,
+      handleRename,
       handleSaveAsNote,
+      isEditing,
       onDelete,
       onToggleArchived,
       onTogglePinned,
-      session.id,
       session.is_archived,
       session.is_pinned,
       sessionTopicId,
@@ -337,7 +358,6 @@ const SessionItem = ({
       <SessionListItem
         className={classNames(isActive ? 'active' : '', singlealone ? 'singlealone' : '')}
         onClick={isEditing ? undefined : onPress}
-        onDoubleClick={() => startEdit(session.name ?? '')}
         title={session.name ?? session.id}
         onContextMenu={() => setTargetSession(session)}
         style={{
@@ -348,10 +368,18 @@ const SessionItem = ({
         {isFulfilled && !isActive && <FulfilledIndicator />}
         <SessionNameContainer>
           {isEditing ? (
-            <SessionEditInput {...inputProps} style={{ opacity: isSaving ? 0.5 : 1 }} />
+            <SessionEditInput
+              {...inputProps}
+              onClick={(e) => e.stopPropagation()}
+              style={{ opacity: isSaving ? 0.5 : 1 }}
+            />
           ) : (
             <>
-              <SessionName>
+              <SessionName
+                onDoubleClick={(e) => {
+                  e.stopPropagation()
+                  startEdit(session.name ?? '')
+                }}>
                 {channelIcon && <ChannelIconImg src={channelIcon} />}
                 {showOfflineBadge && <OfflineBadge>{t('agent.cherryClaw.channels.disconnected')}</OfflineBadge>}
                 {session.is_pinned && <Pin size={11} className="shrink-0 text-(--color-text-secondary)" />}

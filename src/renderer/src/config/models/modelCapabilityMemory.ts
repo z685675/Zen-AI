@@ -134,6 +134,39 @@ export function clearLearnedModelCapabilityFailure(
 }
 
 /**
+ * Clears all remembered capability failures for one provider.
+ *
+ * Capability failures are deliberately short lived, but a provider refresh
+ * can also mean that the route, gateway or model implementation changed while
+ * the model id stayed the same. In that case the old result must not hide a
+ * capability for the new route.
+ */
+export function clearLearnedModelCapabilityFailuresForProvider(providerId: string): void {
+  const normalizedProviderId = providerId.trim()
+  if (!normalizedProviderId) return
+
+  const storage = getStorage()
+  if (!storage) return
+
+  const store = readStore()
+  const encodedProviderId = encodeURIComponent(normalizedProviderId)
+  let changed = false
+
+  for (const key of Object.keys(store)) {
+    const separatorIndex = key.indexOf(':')
+    if (separatorIndex === -1 || key.slice(0, separatorIndex) !== encodedProviderId) {
+      continue
+    }
+    delete store[key]
+    changed = true
+  }
+
+  if (changed) {
+    writeStore(store)
+  }
+}
+
+/**
  * Capability learning only applies to errors that look like an unsupported
  * request parameter. Network, authentication, rate-limit and server errors
  * must not permanently disable a model capability.
@@ -149,12 +182,13 @@ export function isLikelyUnsupportedModelCapabilityError(error: unknown, capabili
 
   const patterns: Record<LearnableModelCapability, RegExp> = {
     function_calling:
-      /tool|function[_ -]?call|tool[_ -]?choice|parallel[_ -]?tool|(?:unsupported|not support|unknown|invalid).{0,40}(?:tool|function)/,
+      /(?:unsupported|not support(?:ed)?|does not support|cannot|can't|invalid|unknown|unrecognized|rejected?).{0,60}(?:tool|function|parallel[_ -]?tool)|(?:tool|tool[_ -]?choice|function[_ -]?call|parallel[_ -]?tool).{0,60}(?:unsupported|not support(?:ed)?|invalid|not valid|rejected?)/,
     vision:
-      /image|vision|multimodal|content part|input[_ -]?image|(?:unsupported|not support|unknown|invalid).{0,40}(?:image|vision)/,
+      /(?:unsupported|not support(?:ed)?|does not support|cannot|can't|invalid|unknown|unrecognized|rejected?).{0,60}(?:image|vision|multimodal|content part|input[_ -]?image|file|attachment|document|pdf)|(?:image|vision|multimodal|content part|input[_ -]?image|file|attachment|document|pdf).{0,60}(?:unsupported|not support(?:ed)?|invalid|not valid|rejected?)/,
     reasoning:
-      /reasoning|reasoning[_ -]?effort|thinking|think[_ -]?budget|budget[_ -]?tokens|(?:unsupported|not support|unknown|invalid).{0,40}(?:think|reason)/,
-    web_search: /web[_ -]?search|search[_ -]?tool|search[_ -]?options|url[_ -]?context|grounding/
+      /(?:unsupported|not support(?:ed)?|does not support|cannot|can't|invalid|unknown|unrecognized|rejected?).{0,60}(?:reasoning|thinking|think[_ -]?budget|budget[_ -]?tokens)|(?:reasoning|thinking|think[_ -]?budget|budget[_ -]?tokens).{0,60}(?:unsupported|not support(?:ed)?|invalid|not valid|rejected?)/,
+    web_search:
+      /(?:unsupported|not support(?:ed)?|does not support|cannot|can't|invalid|unknown|unrecognized|rejected?).{0,60}(?:web[_ -]?search|search[_ -]?tool|search[_ -]?options|url[_ -]?context|grounding)|(?:web[_ -]?search|search[_ -]?tool|search[_ -]?options|url[_ -]?context|grounding).{0,60}(?:unsupported|not support(?:ed)?|invalid|not valid|rejected?)/
   }
 
   return patterns[capability].test(text)

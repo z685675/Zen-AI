@@ -54,35 +54,22 @@ function isConfigurationOverrideEnabled(env: NodeJS.ProcessEnv): boolean {
   return ENABLED_VALUES.has(env.ZEN_ENABLE_AGENT_RUNTIME_CONFIG_OVERRIDE?.trim().toLowerCase() ?? '')
 }
 
-function getModelAffinity(modelId: string): AgentRuntimeId | undefined {
+/**
+ * Resolve the product-owned runtime affinity for a model.
+ *
+ * This determines the preferred runtime. A provider may expose several
+ * protocols for the same model, but that must not silently change the first
+ * runtime Zen AI chooses: GPT/OpenAI reasoning models prefer Codex, while
+ * every other assistant model prefers Claude Code.
+ */
+function getModelAffinity(modelId: string): AgentRuntimeId {
   const normalized = modelId.toLowerCase()
-
-  if (normalized.includes('claude')) {
-    return 'claude-code'
-  }
-
-  if (normalized.includes('gemini') || normalized.includes('grok')) {
-    return 'claude-code'
-  }
 
   if (normalized.includes('gpt') || normalized.includes('codex') || /^o\d(?:[-_.]|$)/.test(normalized)) {
     return 'codex'
   }
 
-  return undefined
-}
-
-function capabilityScore(state: AgentRuntimeCapabilities[AgentRuntimeId]['state']): number {
-  switch (state) {
-    case 'verified':
-      return 40
-    case 'declared':
-      return 25
-    case 'unknown':
-      return 0
-    case 'unsupported':
-      return Number.NEGATIVE_INFINITY
-  }
+  return 'claude-code'
 }
 
 export function buildAutoRuntimeResolution(params: {
@@ -93,22 +80,16 @@ export function buildAutoRuntimeResolution(params: {
 }): AgentRuntimeResolution {
   const selectedModel = params.provider?.models?.find((model) => model.id === params.modelId)
   const capabilities = getAgentRuntimeCapabilities(params.provider, selectedModel)
-  const affinity = params.modelId ? getModelAffinity(params.modelId) : undefined
-  const runtimes: AgentRuntimeId[] = params.codexEnabled ? ['claude-code', 'codex'] : ['claude-code']
-
-  const candidates = runtimes
-    .map((runtimeId, index) => {
-      const stateScore = capabilityScore(capabilities[runtimeId].state)
-      const affinityScore = affinity === runtimeId ? 100 : 0
-      const continuityScore = params.session.agent_type === runtimeId ? 10 : 0
-      return { runtimeId, score: stateScore + affinityScore + continuityScore, index }
-    })
-    .filter((candidate) => Number.isFinite(candidate.score))
-    .sort((left, right) => right.score - left.score || left.index - right.index)
-    .map((candidate) => candidate.runtimeId)
-
-  const fallbackRuntime = params.session.agent_type
-  const orderedCandidates = candidates.length > 0 ? candidates : [fallbackRuntime]
+  const preferredRuntime = params.modelId ? getModelAffinity(params.modelId) : 'claude-code'
+  const fallbackRuntime: AgentRuntimeId = preferredRuntime === 'codex' ? 'claude-code' : 'codex'
+  const enabledRuntimes: AgentRuntimeId[] = params.codexEnabled ? ['claude-code', 'codex'] : ['claude-code']
+  const candidateOrder = [preferredRuntime, fallbackRuntime].filter((runtimeId) => enabledRuntimes.includes(runtimeId))
+  const compatibleCandidates = candidateOrder.filter((runtimeId) => capabilities[runtimeId].state !== 'unsupported')
+  // If both protocols are explicitly ruled out, keep the preferred runtime
+  // as the sole candidate so the user receives the precise incompatibility
+  // error instead of a misleading cross-runtime request.
+  const orderedCandidates: AgentRuntimeId[] =
+    compatibleCandidates.length > 0 ? compatibleCandidates : [preferredRuntime]
   const runtimeId = orderedCandidates[0]
   const capability = capabilities[runtimeId]
 
@@ -118,8 +99,11 @@ export function buildAutoRuntimeResolution(params: {
     configuredRuntime: params.session.configuration?.agent_runtime ?? 'auto',
     source: 'auto',
     reason: [
-      `model-affinity:${affinity ?? 'none'}`,
+      `model-affinity:${preferredRuntime}`,
+      `selected-runtime:${runtimeId}`,
+      ...(runtimeId !== preferredRuntime ? [`affinity-fallback:${preferredRuntime}->${runtimeId}`] : []),
       `selected-capability:${capability.state}`,
+      ...(preferredRuntime === 'codex' && !params.codexEnabled ? ['codex-runtime-disabled'] : []),
       ...capability.evidence
     ].join(','),
     capabilities,

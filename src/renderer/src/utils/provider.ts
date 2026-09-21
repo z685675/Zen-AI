@@ -361,6 +361,11 @@ export const getEffectiveGeminiCacheControl = (
     tokenThreshold: providerSettings?.tokenThreshold ?? getRecommendedGeminiCacheThreshold(model),
     cacheSystemMessage: providerSettings?.cacheSystemMessage ?? DEFAULT_GEMINI_CACHE_SYSTEM_MESSAGE,
     cacheEarlyMessages: providerSettings?.cacheEarlyMessages ?? DEFAULT_GEMINI_CACHE_EARLY_MESSAGES,
-    ttlSeconds: providerSettings?.ttlSeconds ?? DEFAULT_GEMINI_CACHE_TTL_SECONDS
+    ttlSeconds: providerSettings?.ttlSeconds ?? DEFAULT_GEMINI_CACHE_TTL_SECONDS,
+    // A Gemini cachedContent name is owned by the service/project that
+    // created it. Keep the scope non-secret; the cache plugin fingerprints it
+    // before using it as an in-memory key.
+    cacheScope:
+      providerSettings?.cacheScope ?? `${provider.type}:${provider.id}:${provider.apiHost || ''}:${model?.id || ''}`
   }
 }

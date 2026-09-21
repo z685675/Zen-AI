@@ -132,12 +132,15 @@ describe('vision helpers', () => {
 
     it.each([
       'gpt-image-2',
+      'gpt-image2.5',
+      'gpt-image-2.5',
       'nano-banana',
       'nano-banana-pro',
       'gemini-2.5-flash-image',
       'gemini-3.1-pro-image-preview',
       'imagen-4.0-generate-001',
       'grok-imagine-image',
+      'grok-imagine-image-2.0',
       'flux-2-pro',
       'stable-image-ultra',
       'sd3.5-large',
@@ -155,12 +158,16 @@ describe('vision helpers', () => {
       expect(isDedicatedImageGenerationModel(createModel({ id }))).toBe(true)
     })
 
-    it.each(['gemini-3-flash-preview', 'grok-4.5', 'wan2.6-video', 'kling-video-o1', 'usd3-chat'])(
-      'does not misclassify non-image model %s',
-      (id) => {
-        expect(isDedicatedImageGenerationModel(createModel({ id }))).toBe(false)
-      }
-    )
+    it.each([
+      'gemini-3-flash-preview',
+      'grok-4.5',
+      'grok-imagine-video',
+      'wan2.6-video',
+      'kling-video-o1',
+      'usd3-chat'
+    ])('does not misclassify non-image model %s', (id) => {
+      expect(isDedicatedImageGenerationModel(createModel({ id }))).toBe(false)
+    })
 
     it('returns false when models are not in dedicated or auto-enable sets', () => {
       expect(isDedicatedImageGenerationModel(createModel({ id: 'gpt-4o' }))).toBe(false)

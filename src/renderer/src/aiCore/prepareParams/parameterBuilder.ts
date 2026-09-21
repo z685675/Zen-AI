@@ -17,7 +17,6 @@ import {
   isGrokModel,
   isOpenAIModel,
   isOpenRouterBuiltInWebSearchModel,
-  isPureGenerateImageModel,
   isSupportedReasoningEffortModel,
   isSupportedThinkingTokenModel,
   isWebSearchModel
@@ -32,7 +31,7 @@ import { type Assistant, getEffectiveMcpMode, type MCPTool, type Provider, Syste
 import type { StreamTextParams } from '@renderer/types/aiCoreTypes'
 import { IdleTimeoutController, type IdleTimeoutHandle } from '@renderer/utils/IdleTimeoutController'
 import { replacePromptVariables } from '@renderer/utils/prompt'
-import { isAIGatewayProvider, isAwsBedrockProvider, isSupportUrlContextProvider } from '@renderer/utils/provider'
+import { isAIGatewayProvider, isAwsBedrockProvider } from '@renderer/utils/provider'
 import { DEFAULT_TIMEOUT } from '@shared/config/constant'
 import type { ModelMessage } from 'ai'
 import { stepCountIs } from 'ai'
@@ -136,13 +135,9 @@ export async function buildStreamTextParams(
       isOpenRouterBuiltInWebSearchModel(model) ||
       model.id.includes('sonar'))
 
-  // Validate provider and model support to prevent stale state from triggering urlContext
-  const enableUrlContext = !!(
-    assistant.enableUrlContext &&
-    isSupportUrlContextProvider(provider) &&
-    !isPureGenerateImageModel(model) &&
-    (isGeminiModel(model) || isAnthropicModel(model))
-  )
+  // Web pages are read by Zen AI at the application layer before the request,
+  // so this no longer depends on a provider-native URL Context implementation.
+  const enableUrlContext = false
 
   const enableGenerateImage = !!(isGenerateImageModel(model) && assistant.enableGenerateImage)
 

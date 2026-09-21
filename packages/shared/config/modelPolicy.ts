@@ -6,6 +6,8 @@ export interface ModelPolicyDefaults {
   translate: string
   assistant: string
   assistantNewSession: string
+  /** Ordered context checkpoint models. Empty/missing keeps legacy behavior. */
+  contextCompactionModels?: string[]
 }
 
 export interface ModelPolicyAssistant {
@@ -50,7 +52,8 @@ export const DEFAULT_MODEL_POLICY: ModelPolicy = {
     quick: '',
     translate: '',
     assistant: '',
-    assistantNewSession: ''
+    assistantNewSession: '',
+    contextCompactionModels: []
   },
   assistant: {
     nonDeveloperAllowlist: [],
@@ -99,6 +102,15 @@ export const isModelPolicy = (value: unknown): value is ModelPolicy => {
     !isString(defaults.translate) ||
     !isString(defaults.assistant) ||
     !isString(defaults.assistantNewSession)
+  ) {
+    return false
+  }
+
+  if (
+    defaults.contextCompactionModels !== undefined &&
+    (!isStringArray(defaults.contextCompactionModels) ||
+      defaults.contextCompactionModels.length > 3 ||
+      !validateModelList(defaults.contextCompactionModels))
   ) {
     return false
   }
@@ -153,7 +165,10 @@ export const normalizeModelPolicy = (value: ModelPolicy): ModelPolicy => ({
     quick: value.defaults.quick.trim(),
     translate: value.defaults.translate.trim(),
     assistant: value.defaults.assistant.trim(),
-    assistantNewSession: value.defaults.assistantNewSession.trim()
+    assistantNewSession: value.defaults.assistantNewSession.trim(),
+    ...(value.defaults.contextCompactionModels
+      ? { contextCompactionModels: value.defaults.contextCompactionModels.map((item) => item.trim()).slice(0, 3) }
+      : {})
   },
   assistant: {
     nonDeveloperAllowlist: value.assistant.nonDeveloperAllowlist.map((item) => item.trim()),

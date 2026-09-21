@@ -18,8 +18,10 @@ type GeminiCacheCandidate = {
 }
 
 const geminiCacheStore = new Map<string, GeminiCacheEntry>()
+const geminiCacheFailureStore = new Map<string, number>()
 const MAX_TAIL_MESSAGES = 4
 const MIN_STABLE_MESSAGES = 2
+const CACHE_FAILURE_RETRY_COOLDOWN_MS = 60_000
 
 function normalizeText(value: string): string {
   return value.replace(/\s+/g, ' ').trim()
@@ -59,8 +61,30 @@ function stringifyMessage(message: LanguageModelV3Message): string {
   return `${message.role}:${text}`
 }
 
-function buildStablePrefixKey(modelId: string, prefixMessages: LanguageModelV3Message[]): string {
-  return ['zen-gemini-cache', modelId, ...prefixMessages.map((message) => stringifyMessage(message))].join('\n')
+function hashCacheScope(value: string): string {
+  let hash = 2166136261
+  for (const char of value) {
+    hash ^= char.charCodeAt(0)
+    hash = Math.imul(hash, 16777619)
+  }
+  return (hash >>> 0).toString(16).padStart(8, '0')
+}
+
+function buildStablePrefixKey(
+  modelId: string,
+  prefixMessages: LanguageModelV3Message[],
+  cacheScope = '',
+  ttlSeconds = 0
+): string {
+  return [
+    'zen-gemini-cache',
+    modelId,
+    cacheScope ? `scope-${hashCacheScope(cacheScope)}` : '',
+    ttlSeconds > 0 ? `ttl-${ttlSeconds}` : '',
+    ...prefixMessages.map((message) => stringifyMessage(message))
+  ]
+    .filter(Boolean)
+    .join('\n')
 }
 
 function getEffectivePrefixThreshold(settings: GeminiCacheControlSettings): number {
@@ -132,7 +156,7 @@ export function selectGeminiCacheCandidate(
     }
 
     bestCandidate = {
-      cacheKey: buildStablePrefixKey(modelId, cacheablePrefixMessages),
+      cacheKey: buildStablePrefixKey(modelId, cacheablePrefixMessages, settings.cacheScope, settings.ttlSeconds),
       prefixMessages: cacheablePrefixMessages,
       tailMessages,
       prefixTokens
@@ -181,16 +205,29 @@ async function resolveGeminiCachedContent(
   return created.name
 }
 
+function getHeaderValue(headers: LanguageModelV3CallOptions['headers'] | undefined, name: string): string | undefined {
+  if (!headers) return undefined
+
+  if (typeof Headers !== 'undefined' && headers instanceof Headers) {
+    return headers.get(name) || undefined
+  }
+
+  const entry = Object.entries(headers).find(([key]) => key.toLowerCase() === name.toLowerCase())
+  return typeof entry?.[1] === 'string' && entry[1] ? entry[1] : undefined
+}
+
 function geminiCacheMiddleware(settings: GeminiCacheControlSettings): LanguageModelMiddleware {
   return {
     specificationVersion: 'v3',
-    transformParams: async ({ params }) => {
+    transformParams: async ({ params, model }) => {
       if (!settings.enabled || !Array.isArray(params.prompt) || params.prompt.length === 0) {
         return params
       }
 
-      const paramsWithModel = params as LanguageModelV3CallOptions & { model?: string }
-      const modelId = typeof paramsWithModel.model === 'string' ? paramsWithModel.model : ''
+      // AI SDK v3 keeps the resolved model outside of LanguageModelV3CallOptions.
+      // Reading params.model would make the cache appear to work in hand-written
+      // tests while silently disabling it for real streamText/generateText calls.
+      const modelId = typeof model?.modelId === 'string' ? model.modelId : ''
       if (!modelId) {
         return params
       }
@@ -200,19 +237,38 @@ function geminiCacheMiddleware(settings: GeminiCacheControlSettings): LanguageMo
         return params
       }
 
-      const headers = params.headers || {}
-      const apiKey = headers['x-goog-api-key']
+      const apiKey = getHeaderValue(params.headers, 'x-goog-api-key')
       if (!apiKey) {
         return params
       }
 
-      const cachedContent = await resolveGeminiCachedContent(
-        cacheCandidate.cacheKey,
-        apiKey,
-        modelId,
-        cacheCandidate.prefixMessages,
-        settings.ttlSeconds
-      )
+      // Google cache handles belong to the API key/project that created them.
+      // Include a one-way key fingerprint so changing keys cannot accidentally
+      // reuse a handle created under another credential.
+      const cacheRequestKey = `${cacheCandidate.cacheKey}\nkey-${hashCacheScope(apiKey)}`
+      const failureExpiresAt = geminiCacheFailureStore.get(cacheRequestKey)
+      if (failureExpiresAt && failureExpiresAt > Date.now()) {
+        return params
+      }
+
+      let cachedContent: string | undefined
+      try {
+        cachedContent = await resolveGeminiCachedContent(
+          cacheRequestKey,
+          apiKey,
+          modelId,
+          cacheCandidate.prefixMessages,
+          settings.ttlSeconds
+        )
+        geminiCacheFailureStore.delete(cacheRequestKey)
+      } catch {
+        // Prompt caching is an optimization. A cache-create failure (for
+        // example when a gateway key cannot call Google's cache API) must not
+        // fail the user's normal chat request. Avoid retrying the same broken
+        // side request on every message for a short cooldown.
+        geminiCacheFailureStore.set(cacheRequestKey, Date.now() + CACHE_FAILURE_RETRY_COOLDOWN_MS)
+        return params
+      }
 
       if (!cachedContent) {
         return params

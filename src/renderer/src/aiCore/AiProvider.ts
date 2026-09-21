@@ -1,6 +1,7 @@
 import { createExecutor } from '@cherrystudio/ai-core'
 import type { generateImageResult } from '@cherrystudio/ai-core/core/runtime/types'
 import { loggerService } from '@logger'
+import { isOpenAIModel } from '@renderer/config/models'
 import { getEnableDeveloperMode } from '@renderer/hooks/useSettings'
 import { normalizeGatewayModels } from '@renderer/services/models/ModelAdapter'
 import { addSpan, endSpan } from '@renderer/services/SpanManagerService'
@@ -20,6 +21,7 @@ import { gateway } from 'ai'
 
 import AiSdkToChunkAdapter from './chunk/AiSdkToChunkAdapter'
 import { buildPlugins } from './plugins/PluginBuilder'
+import { attachPromptCacheKeyToProviderOptions } from './promptCache'
 import { adaptProvider, getActualProvider, providerToAiSdkConfig } from './provider/providerConfig'
 import { listModels } from './services/listModels'
 import type { AppProviderSettingsMap, CompletionsResult, ProviderConfig } from './types'
@@ -41,6 +43,7 @@ export default class AiProvider {
   private readonly sessionAwareProviderIds = new Set(['openai-compatible', 'newapi', 'cherryin', 'aihubmix'])
   private readonly promptCacheKeyProviderIds = new Set([
     'openai',
+    'openai-chat',
     'azure',
     'azure-responses',
     'openai-compatible',
@@ -129,10 +132,6 @@ export default class AiProvider {
     }
   }
 
-  private buildPromptCacheKey(topicId: string, modelId: string): string {
-    return `${topicId}:${this.actualProvider.id}:${modelId}`
-  }
-
   private attachPromptCacheKey(
     params: StreamTextParams,
     topicId: string | undefined,
@@ -143,19 +142,23 @@ export default class AiProvider {
       return params
     }
 
-    const promptCacheKey = this.buildPromptCacheKey(topicId, modelId)
     const providerOptions = params.providerOptions || {}
-    const providerScopedOptions = (providerOptions[providerId] as Record<string, unknown> | undefined) || {}
+    const attachment = attachPromptCacheKeyToProviderOptions(providerOptions, topicId, {
+      runtimeProviderId: providerId,
+      actualProviderId: this.actualProvider.id,
+      modelId,
+      modelEndpointType: this.model?.endpoint_type,
+      isOpenAIModel: this.model ? isOpenAIModel(this.model) : false,
+      apiHost: this.actualProvider.apiHost
+    })
+
+    if (!attachment) {
+      return params
+    }
 
     return {
       ...params,
-      providerOptions: {
-        ...providerOptions,
-        [providerId]: {
-          ...providerScopedOptions,
-          promptCacheKey
-        }
-      }
+      providerOptions: attachment.providerOptions
     }
   }
 
@@ -169,22 +172,26 @@ export default class AiProvider {
     requestParams: StreamTextParams
   ): void {
     const providerOptions = requestParams.providerOptions || {}
-    const providerScopedOptions = (providerOptions[providerId] as Record<string, unknown> | undefined) || {}
-    const promptCacheKey =
-      typeof providerScopedOptions.promptCacheKey === 'string' ? providerScopedOptions.promptCacheKey : undefined
+    const promptCacheKey = Object.values(providerOptions)
+      .map((options) => {
+        if (!options || typeof options !== 'object') return undefined
+        const scoped = options as Record<string, unknown>
+        return typeof scoped.promptCacheKey === 'string'
+          ? scoped.promptCacheKey
+          : typeof scoped.prompt_cache_key === 'string'
+            ? scoped.prompt_cache_key
+            : undefined
+      })
+      .find((value): value is string => !!value)
 
     if (promptCacheKey) {
-      logger.info(
-        'Prompt cache key attached to request',
-        {
-          topicId,
-          modelId,
-          providerId,
-          actualProviderId: this.actualProvider.id,
-          promptCacheKey
-        },
-        { logToMain: true }
-      )
+      logger.debug('Prompt cache key attached to request', {
+        topicId,
+        modelId,
+        providerId,
+        actualProviderId: this.actualProvider.id,
+        promptCacheKey
+      })
       return
     }
 
@@ -593,6 +600,10 @@ export default class AiProvider {
         }
       }
     }
+    if (images.length === 0) {
+      throw new Error('Image generation returned no usable images.')
+    }
+
     return images
   }
 

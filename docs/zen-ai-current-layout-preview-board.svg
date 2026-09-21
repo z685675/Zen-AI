@@ -1,0 +1,152 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1180" viewBox="0 0 1600 1180">
+  <defs>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="12" stdDeviation="18" flood-color="#526b87" flood-opacity="0.14"/>
+    </filter>
+    <filter id="appShadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#526b87" flood-opacity="0.16"/>
+    </filter>
+    <filter id="darkGlass" x="-10%" y="-10%" width="120%" height="120%" color-interpolation-filters="sRGB">
+      <feColorMatrix type="matrix" values="-1 0 0 0 0.75 0 -1 0 0 0.80 0 0 -1 0 0.92 0 0 0 1 0"/>
+    </filter>
+    <filter id="warmGlass" x="-10%" y="-10%" width="120%" height="120%" color-interpolation-filters="sRGB">
+      <feColorMatrix type="matrix" values="1 0 0 0 0.02 0 1 0 0 -0.01 0 0 0.88 0 0.02 0 0 0 1 0"/>
+    </filter>
+    <filter id="mintGlass" x="-10%" y="-10%" width="120%" height="120%" color-interpolation-filters="sRGB">
+      <feColorMatrix type="matrix" values="0.94 0 0 0 0.01 0 1.02 0 0 0.02 0 0 0.98 0 0.01 0 0 0 1 0"/>
+    </filter>
+    <style>
+      .font { font-family: "Segoe UI", "Microsoft YaHei", sans-serif; }
+      .title { font-size: 30px; font-weight: 700; fill: #1e2c40; }
+      .sub { font-size: 16px; fill: #728399; }
+      .cardTitle { font-size: 21px; font-weight: 700; fill: #25354a; }
+      .cardSub { font-size: 14px; fill: #8190a3; }
+      .ui { --page:#f4f8fc; --chrome:#ffffff; --rail:#ffffff; --history:#f9fcff; --main:#f4f8fc; --text:#25364a; --muted:#93a2b2; --line:#e1e9f1; --accent:#64c7dc; --bubble:#e0f5fb; --assistant:#ffffff; --input:#ffffff; --chip:#ffffff; --icon:#a5b8c8; --folder:#edf4f9; --folderText:#6c8192; --status:#65cfa1; }
+      .v2 { --page:#111d36; --chrome:#263657; --rail:#15233f; --history:#1a2a4a; --main:#101b34; --text:#e1eaff; --muted:#7188ad; --line:#30466d; --accent:#59d1c5; --bubble:#244d62; --assistant:#1d2f50; --input:#1b2c4d; --chip:#2b406d; --icon:#6f8ab4; --folder:#22375c; --folderText:#a7bfdf; --status:#66d6b0; }
+      .v3 { --page:#fbf8f3; --chrome:#fffdf9; --rail:#fffdf9; --history:#fffdf9; --main:#fbf8f3; --text:#645c54; --muted:#aaa096; --line:#ebe3da; --accent:#eaa087; --bubble:#f9e5da; --assistant:#ffffff; --input:#ffffff; --chip:#ffffff; --icon:#c9beb3; --folder:#f8ece3; --folderText:#95786b; --status:#9cc59b; }
+      .v4 { --page:#effbf7; --chrome:#fafffd; --rail:#f7fffb; --history:#f5fffb; --main:#effbf7; --text:#456b62; --muted:#91aaa2; --line:#dcefe9; --accent:#55c2a1; --bubble:#d8f4eb; --assistant:#ffffff; --input:#ffffff; --chip:#e4f8f1; --icon:#94c9b8; --folder:#e0f5ee; --folderText:#4d8d78; --status:#55c2a1; }
+      .appText { font-size: 11px; fill: #25364a; }
+      .appMuted { font-size: 10px; fill: #93a2b2; }
+      .appLabel { font-size: 11px; font-weight: 700; fill: #25364a; }
+      .appLine { fill: #e1e9f1; }
+    </style>
+
+    <!-- A miniature of the real Zen AI page structure. The four variants reuse this exact layout. -->
+    <symbol id="actual-layout" viewBox="0 0 730 430">
+      <rect x="0" y="0" width="730" height="430" rx="14" fill="#f4f8fc"/>
+      <rect x="0" y="0" width="730" height="30" rx="14" fill="#ffffff" opacity="0.96"/>
+      <circle cx="18" cy="15" r="4" fill="#f08e88"/><circle cx="32" cy="15" r="4" fill="#efc25f"/><circle cx="46" cy="15" r="4" fill="#62c99e"/>
+      <text x="66" y="19" class="font appMuted">Zen AI</text>
+      <text x="681" y="19" text-anchor="end" class="font appMuted">⌕　－　□　×</text>
+
+      <!-- real left feature rail -->
+      <rect x="0" y="30" width="66" height="400" fill="#ffffff" opacity="0.9"/>
+      <rect x="0" y="30" width="3" height="30" rx="1.5" fill="#64c7dc"/>
+      <circle cx="33" cy="48" r="14" fill="#25364a" opacity="0.95"/>
+      <text x="33" y="53" text-anchor="middle" class="font" font-size="13" font-weight="700" fill="#ffffff">Z</text>
+      <text x="12" y="82" class="font appLabel">▰　AI对话</text>
+      <text x="12" y="113" class="font appMuted">✧　智能助手</text>
+      <text x="12" y="144" class="font appMuted">文　翻译</text>
+      <text x="12" y="175" class="font appMuted">▤　笔记</text>
+      <text x="12" y="206" class="font appMuted">□　文件</text>
+      <text x="12" y="237" class="font appMuted">✿　图片生成</text>
+      <text x="12" y="268" class="font appMuted">✦　助手库</text>
+      <text x="12" y="394" class="font appMuted">⚑　公告</text>
+      <text x="12" y="420" class="font appMuted">⚙　设置</text>
+
+      <!-- real conversation history column -->
+      <rect x="66" y="30" width="168" height="400" fill="#f9fcff" opacity="0.92"/>
+      <text x="82" y="57" class="font appLabel">对话记录</text>
+      <text x="213" y="57" class="font appMuted">◧</text>
+      <text x="83" y="83" class="font appMuted">＋　新建对话</text>
+      <text x="206" y="83" class="font appMuted">□</text>
+      <rect x="77" y="96" width="146" height="25" rx="10" fill="#edf4f9"/>
+      <text x="88" y="113" class="font appText">›　▱ 软件日常</text><text x="211" y="113" class="font appMuted">3</text>
+      <rect x="77" y="127" width="146" height="25" rx="10" fill="#edf4f9"/>
+      <text x="88" y="144" class="font appText">›　▱ 开发相关</text><text x="211" y="144" class="font appMuted">6</text>
+      <rect x="77" y="158" width="146" height="25" rx="10" fill="#edf4f9"/>
+      <text x="88" y="175" class="font appText">⌄　▱ 个人</text><text x="211" y="175" class="font appMuted">2</text>
+      <text x="89" y="201" class="font appLabel">加州湾湾统计</text><text x="89" y="216" class="font appMuted">默认助手　2026/06/20</text>
+      <text x="89" y="242" class="font appLabel">给我出一个文件…</text><text x="89" y="257" class="font appMuted">默认助手　2026/06/15</text>
+      <rect x="77" y="269" width="146" height="37" rx="10" fill="#edf4f9"/>
+      <text x="89" y="286" class="font appLabel">问候交流</text><text x="89" y="300" class="font appMuted">默认助手　2026/06/18</text>
+      <text x="89" y="329" class="font appLabel">简历修改咨询</text><text x="89" y="344" class="font appMuted">默认助手　2026/06/14</text>
+      <rect x="77" y="390" width="146" height="25" rx="10" fill="#edf4f9"/>
+      <text x="89" y="407" class="font appText">最近删除（16）</text>
+
+      <!-- real main chat area -->
+      <rect x="234" y="30" width="496" height="400" fill="#f4f8fc" opacity="0.78"/>
+      <rect x="245" y="38" width="135" height="28" rx="13" fill="#ffffff" opacity="0.94"/>
+      <circle cx="260" cy="52" r="8" fill="#64c7dc"/><text x="274" y="56" class="font appText">默认助手⌄</text>
+      <rect x="387" y="38" width="170" height="28" rx="13" fill="#ffffff" opacity="0.94"/>
+      <circle cx="402" cy="52" r="8" fill="#e889b5"/><text x="416" y="56" class="font appText">gpt-5.6-sol | Zen⌄</text>
+      <text x="704" y="57" text-anchor="end" class="font appMuted">☷</text>
+
+      <text x="258" y="91" class="font appLabel">所有 stream 相关，先全部改</text>
+      <rect x="258" y="103" width="214" height="7" rx="3.5" class="appLine"/><rect x="258" y="117" width="178" height="7" rx="3.5" class="appLine"/>
+      <text x="258" y="154" class="font" font-size="17" font-weight="700" fill="#25364a">如果你要我直接帮你判断，我现在给优先级</text>
+      <rect x="258" y="166" width="410" height="1" fill="#e1e9f1"/>
+      <text x="258" y="194" class="font" font-size="15" font-weight="700" fill="#25364a">高优先级排查</text>
+      <text x="270" y="220" class="font appText">1.　请求格式与接口兼容性</text>
+      <text x="270" y="240" class="font appText">2.　stream / stream_options</text>
+      <text x="270" y="260" class="font appText">3.　/responses 与 /chat/completions</text>
+      <rect x="258" y="275" width="410" height="1" fill="#e1e9f1"/>
+      <rect x="258" y="292" width="410" height="38" rx="12" fill="#ffffff" opacity="0.84"/>
+      <text x="273" y="314" class="font appText">如果还有问题，可以继续告诉我，我会接着分析。</text>
+
+      <!-- real bottom composer -->
+      <rect x="250" y="365" width="456" height="52" rx="15" fill="#ffffff" opacity="0.98"/>
+      <text x="268" y="389" class="font appMuted">在这里输入消息，按 Enter 发送</text>
+      <text x="268" y="408" class="font appMuted">⌕　ϟ　♟　◎　⚑　□　◇</text>
+      <text x="624" y="408" class="font appMuted">≈ 20.7K / 202K</text>
+      <circle cx="684" cy="391" r="13" fill="#64c7dc"/><text x="684" y="396" text-anchor="middle" class="font" font-size="15" fill="#ffffff">↑</text>
+    </symbol>
+  </defs>
+
+  <rect width="1600" height="1180" fill="#eef3f8"/>
+  <circle cx="1480" cy="60" r="190" fill="#e0f3fa" opacity="0.7"/>
+  <circle cx="40" cy="1120" r="220" fill="#e6eefb" opacity="0.7"/>
+  <text x="50" y="58" class="font title">Zen AI · 基于当前实际页面的清透改版预览</text>
+  <text x="50" y="88" class="font sub">保留当前真实布局：功能入口、对话记录、助手/模型栏、正文区和底部输入框</text>
+  <rect x="1350" y="38" width="200" height="36" rx="18" fill="#ffffff" opacity="0.9"/>
+  <text x="1450" y="61" text-anchor="middle" class="font" font-size="13" font-weight="600" fill="#4e7b98">真实布局参考 · 概念视觉稿</text>
+
+  <!-- four actual-layout variants -->
+  <g>
+    <rect x="50" y="125" width="730" height="475" rx="26" fill="#ffffff" filter="url(#shadow)"/>
+    <text x="80" y="167" class="font cardTitle">01 · 冰透浅色</text>
+    <text x="80" y="192" class="font cardSub">建议默认主题：清爽、透明、层次自然</text>
+    <use href="#actual-layout" class="ui v1" style="--page:#f4f8fc;--chrome:#ffffff;--rail:#ffffff;--history:#f9fcff;--main:#f4f8fc;--text:#25364a;--muted:#93a2b2;--line:#e1e9f1;--accent:#64c7dc;--bubble:#e0f5fb;--assistant:#ffffff;--input:#ffffff;--chip:#ffffff;--icon:#a5b8c8;--folder:#edf4f9;--folderText:#6c8192;--status:#65cfa1" x="50" y="205" width="680" height="370"/>
+    <rect x="80" y="580" width="138" height="9" rx="4.5" fill="#64c7dc"/>
+    <text x="232" y="589" class="font cardSub">最接近 Zen AI 当前气质</text>
+  </g>
+
+  <g>
+    <rect x="820" y="125" width="730" height="475" rx="26" fill="#ffffff" filter="url(#shadow)"/>
+    <text x="850" y="167" class="font cardTitle">02 · 深色极光</text>
+    <text x="850" y="192" class="font cardSub">深色主题：降低刺眼感，突出开发和长对话</text>
+    <use href="#actual-layout" class="ui v2" filter="url(#darkGlass)" style="--page:#111d36;--chrome:#263657;--rail:#15233f;--history:#1a2a4a;--main:#101b34;--text:#e1eaff;--muted:#7188ad;--line:#30466d;--accent:#59d1c5;--bubble:#244d62;--assistant:#1d2f50;--input:#1b2c4d;--chip:#2b406d;--icon:#6f8ab4;--folder:#22375c;--folderText:#a7bfdf;--status:#66d6b0" x="820" y="205" width="680" height="370"/>
+    <rect x="850" y="580" width="138" height="9" rx="4.5" fill="#59d1c5"/>
+    <text x="1002" y="589" class="font cardSub">适合开发者和夜间使用</text>
+  </g>
+
+  <g>
+    <rect x="50" y="635" width="730" height="475" rx="26" fill="#ffffff" filter="url(#shadow)"/>
+    <text x="80" y="677" class="font cardTitle">03 · 暖白极简</text>
+    <text x="80" y="702" class="font cardSub">柔和主题：减少对比刺激，整体更亲和</text>
+    <use href="#actual-layout" class="ui v3" filter="url(#warmGlass)" style="--page:#fbf8f3;--chrome:#fffdf9;--rail:#fffdf9;--history:#fffdf9;--main:#fbf8f3;--text:#645c54;--muted:#aaa096;--line:#ebe3da;--accent:#eaa087;--bubble:#f9e5da;--assistant:#ffffff;--input:#ffffff;--chip:#ffffff;--icon:#c9beb3;--folder:#f8ece3;--folderText:#95786b;--status:#9cc59b" x="50" y="715" width="680" height="370"/>
+    <rect x="80" y="1090" width="138" height="9" rx="4.5" fill="#eaa087"/>
+    <text x="232" y="1099" class="font cardSub">适合长时间阅读和普通用户</text>
+  </g>
+
+  <g>
+    <rect x="820" y="635" width="730" height="475" rx="26" fill="#ffffff" filter="url(#shadow)"/>
+    <text x="850" y="677" class="font cardTitle">04 · 青绿工作台</text>
+    <text x="850" y="702" class="font cardSub">协作主题：强化智能助手、文件和工具感</text>
+    <use href="#actual-layout" class="ui v4" filter="url(#mintGlass)" style="--page:#effbf7;--chrome:#fafffd;--rail:#f7fffb;--history:#f5fffb;--main:#effbf7;--text:#456b62;--muted:#91aaa2;--line:#dcefe9;--accent:#55c2a1;--bubble:#d8f4eb;--assistant:#ffffff;--input:#ffffff;--chip:#e4f8f1;--icon:#94c9b8;--folder:#e0f5ee;--folderText:#4d8d78;--status:#55c2a1" x="820" y="715" width="680" height="370"/>
+    <rect x="850" y="1090" width="138" height="9" rx="4.5" fill="#55c2a1"/>
+    <text x="1002" y="1099" class="font cardSub">适合突出文件和智能助手</text>
+  </g>
+
+  <text x="50" y="1150" class="font sub">建议优先看 01：它基本不改变现有产品性格，只把大面积纯白调整为半透明层次，并强化边界、留白和输入区。</text>
+</svg>

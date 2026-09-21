@@ -1,6 +1,7 @@
 import { UploadOutlined } from '@ant-design/icons'
 import { loggerService } from '@logger'
 import { AiProvider } from '@renderer/aiCore'
+import { withZenTraceFetch } from '@renderer/aiCore/provider/providerConfig'
 import { Navbar, NavbarCenter } from '@renderer/components/app/Navbar'
 import Scrollbar from '@renderer/components/Scrollbar'
 import InfoTooltip from '@renderer/components/TooltipIcons/InfoTooltip'
@@ -20,6 +21,7 @@ import PaintingsList from '@renderer/pages/paintings/components/PaintingsList'
 import {
   DEFAULT_PAINTING,
   isGptImage2Family,
+  isGrokImagineFamily,
   resolveModelConfig,
   SUPPORTED_MODELS
 } from '@renderer/pages/paintings/config/NewApiConfig'
@@ -43,14 +45,25 @@ import SendMessageButton from '../home/Inputbar/SendMessageButton'
 import { SettingTitle } from '../settings'
 import Artboard from './components/Artboard'
 import ProviderSelect from './components/ProviderSelect'
-import { checkProviderEnabled, resolveSmartAutoSize } from './utils'
+import {
+  buildGrokImagineImageRequestBody,
+  checkProviderEnabled,
+  composeImageEditPrompt,
+  extractImageGenerationSources,
+  fetchImageGenerationRequest,
+  fileToDataUrl,
+  isSupportedImageFile,
+  MAX_GROK_IMAGINE_IMAGE_INPUTS,
+  MAX_IMAGE_INPUTS,
+  MAX_IMAGE_PROMPT_LENGTH,
+  resolvePaintingBasePrompt,
+  resolveSmartAutoSize,
+  validateImageInputFiles
+} from './utils'
 
 const logger = loggerService.withContext('NewApiPage')
 
 type ComposerMode = 'create' | 'continue' | 'upload-edit'
-
-// Keep the total number of input samples manageable for image-editing quality and request size.
-const MAX_IMAGE_INPUTS = 6
 
 interface NewApiPaintingTask {
   controller: AbortController
@@ -89,6 +102,59 @@ const cancelNewApiPaintingTask = (paintingId: string) => {
   const task = activeNewApiPaintingTasks.get(paintingId)
   task?.controller.abort()
   unregisterNewApiPaintingTask(paintingId)
+}
+
+const isGifFile = (file: Pick<File, 'name' | 'type'>) => {
+  return file.type.trim().toLowerCase() === 'image/gif' || /\.gif$/i.test(file.name)
+}
+
+const convertGifToPng = async (file: File): Promise<File> => {
+  if (!isGifFile(file)) {
+    return file
+  }
+
+  const objectUrl = URL.createObjectURL(file)
+  try {
+    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const element = new Image()
+      element.onload = () => resolve(element)
+      element.onerror = () => reject(new Error('Unable to decode GIF image.'))
+      element.src = objectUrl
+    })
+
+    const width = image.naturalWidth || image.width
+    const height = image.naturalHeight || image.height
+    if (!width || !height) {
+      throw new Error('GIF image has no readable dimensions.')
+    }
+
+    const canvas = document.createElement('canvas')
+    canvas.width = width
+    canvas.height = height
+    const context = canvas.getContext('2d')
+    if (!context) {
+      throw new Error('Unable to prepare GIF image.')
+    }
+    context.drawImage(image, 0, 0, width, height)
+
+    const blob = await new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob((result) => {
+        if (result) {
+          resolve(result)
+        } else {
+          reject(new Error('Unable to convert GIF image.'))
+        }
+      }, 'image/png')
+    })
+
+    const fileName = file.name.replace(/\.[^./\\]+$/, '') || 'image'
+    return new File([blob], `${fileName}.png`, {
+      type: 'image/png',
+      lastModified: file.lastModified
+    })
+  } finally {
+    URL.revokeObjectURL(objectUrl)
+  }
 }
 
 const subscribeNewApiPaintingTasks = (listener: () => void) => {
@@ -138,11 +204,21 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
     () => paintings.find((painting) => painting.id === selectedPaintingId) ?? null,
     [paintings, selectedPaintingId]
   )
+  const selectedModelConfig = useMemo(() => resolveModelConfig(draft.model), [draft.model])
+  const isGrokImagine = selectedModelConfig.requestProtocol === 'grok-imagine'
+  const isGptImage2 = isGptImage2Family(selectedModelConfig.name)
+  const aspectRatioOptions = selectedModelConfig.aspectRatios ?? []
+  const maxImageInputs = isGrokImagine ? MAX_GROK_IMAGINE_IMAGE_INPUTS : MAX_IMAGE_INPUTS
 
   const uploadedPreviewUrls = useMemo(
     () => uploadedEditFiles.map((file) => URL.createObjectURL(file)),
     [uploadedEditFiles]
   )
+  useEffect(() => {
+    return () => {
+      uploadedPreviewUrls.forEach((url) => URL.revokeObjectURL(url))
+    }
+  }, [uploadedPreviewUrls])
   useEffect(() => {
     uploadedEditFilesRef.current = uploadedEditFiles
   }, [uploadedEditFiles])
@@ -150,7 +226,7 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
   const isCombinedEdit = Boolean(selectedPainting?.files?.length && uploadedEditFiles.length > 0)
   const generatedSourceImageCount =
     selectedPainting?.files?.length && ['continue', 'upload-edit'].includes(composerMode) ? 1 : 0
-  const remainingImageSlots = Math.max(0, MAX_IMAGE_INPUTS - generatedSourceImageCount - uploadedEditFiles.length)
+  const remainingImageSlots = Math.max(0, maxImageInputs - generatedSourceImageCount - uploadedEditFiles.length)
   const combinedEditPreviewUrls = useMemo(() => {
     if (!isCombinedEdit || !selectedPainting) {
       return uploadedPreviewUrls
@@ -181,7 +257,7 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
       .map((model) => ({
         label: model.name,
         value: model.id,
-        custom: !SUPPORTED_MODELS.includes(model.id),
+        custom: !SUPPORTED_MODELS.includes(model.id) && !isGptImage2Family(model.id) && !isGrokImagineFamily(model.id),
         group: model.group
       }))
   }, [newApiProvider, providerModels])
@@ -209,8 +285,6 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
     }, {})
   }, [modelOptions])
 
-  const selectedModelConfig = useMemo(() => resolveModelConfig(draft.model), [draft.model])
-  const isGptImage2 = isGptImage2Family(selectedModelConfig.name)
   const imageSizeOptions = selectedModelConfig.imageSizes
   const qualityOptions = selectedModelConfig.quality
   const moderationOptions = selectedModelConfig.moderation
@@ -267,11 +341,17 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
       failedPromptToRestoreRef.current = null
 
       setDraft((prev) => {
+        const paintingModelConfig = resolveModelConfig(painting.model)
         return {
           ...prev,
           providerId,
           model: resolveAvailableModel(painting.model, prev.model),
           prompt: restoredPrompt ?? '',
+          aspectRatio:
+            painting.aspectRatio ??
+            (paintingModelConfig.aspectRatios
+              ? prev.aspectRatio || paintingModelConfig.aspectRatios[0]?.value
+              : undefined),
           size: painting.size || prev.size || DEFAULT_PAINTING.size,
           quality: painting.quality || prev.quality || DEFAULT_PAINTING.quality,
           moderation: painting.moderation || prev.moderation || DEFAULT_PAINTING.moderation,
@@ -296,6 +376,7 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
       ...prev,
       providerId,
       model: resolveAvailableModel(prev.model),
+      aspectRatio: prev.aspectRatio || resolveModelConfig(prev.model).aspectRatios?.[0]?.value,
       size: prev.size || DEFAULT_PAINTING.size,
       quality: prev.quality || DEFAULT_PAINTING.quality,
       moderation: prev.moderation || DEFAULT_PAINTING.moderation,
@@ -323,6 +404,12 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
       updateDraft({ size: imageSizeOptions[0]?.value ?? DEFAULT_PAINTING.size })
     }
   }, [draft.size, imageSizeOptions, updateDraft])
+
+  useEffect(() => {
+    if (aspectRatioOptions.length > 0 && !aspectRatioOptions.some((option) => option.value === draft.aspectRatio)) {
+      updateDraft({ aspectRatio: aspectRatioOptions[0]?.value })
+    }
+  }, [aspectRatioOptions, draft.aspectRatio, updateDraft])
 
   useEffect(() => {
     if (!qualityOptions.some((option) => option.value === draft.quality)) {
@@ -360,6 +447,17 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
     }
   }, [])
 
+  useEffect(() => {
+    return () => {
+      // A route change must not leave an image request running against an
+      // unmounted page. The generated task itself remains in the store only
+      // after its result is committed, so cancellation here is safe.
+      for (const paintingId of [...activeNewApiPaintingTasks.keys()]) {
+        cancelNewApiPaintingTask(paintingId)
+      }
+    }
+  }, [])
+
   const handleProviderChange = (nextProviderId: string) => {
     const currentRouteName = location.pathname.split('/').pop()
     if (nextProviderId !== currentRouteName) {
@@ -375,6 +473,7 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
       DEFAULT_PAINTING.moderation
     updateDraft({
       model: value,
+      aspectRatio: modelConfig.aspectRatios?.[0]?.value,
       size: modelConfig.imageSizes[0]?.value ?? DEFAULT_PAINTING.size,
       quality: modelConfig.quality[0]?.value ?? DEFAULT_PAINTING.quality,
       moderation: defaultModeration,
@@ -384,20 +483,33 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
   }
 
   const handlePastedFiles = useCallback(
-    (files: File[]) => {
+    async (files: File[]) => {
       if (files.length === 0) {
+        return
+      }
+
+      if (isArtboardLoading) {
+        window.toast.warning(t('paintings.image_upload_while_generating'))
+        return
+      }
+
+      const supportedFiles = files.filter(isSupportedImageFile)
+      if (supportedFiles.length < files.length) {
+        window.toast.warning(t('paintings.image_format_unsupported'))
+      }
+      if (supportedFiles.length === 0) {
         return
       }
 
       const remainingSlots = Math.max(
         0,
-        MAX_IMAGE_INPUTS - generatedSourceImageCount - uploadedEditFilesRef.current.length
+        maxImageInputs - generatedSourceImageCount - uploadedEditFilesRef.current.length
       )
-      const acceptedFiles = files.slice(0, remainingSlots)
-      if (acceptedFiles.length < files.length) {
+      const acceptedFiles = supportedFiles.slice(0, remainingSlots)
+      if (acceptedFiles.length < supportedFiles.length) {
         window.toast.warning(
           t('paintings.image_upload_limit', {
-            max: MAX_IMAGE_INPUTS,
+            max: maxImageInputs,
             remaining: remainingSlots
           })
         )
@@ -406,8 +518,46 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
         return
       }
 
-      uploadedEditFilesRef.current = [...uploadedEditFilesRef.current, ...acceptedFiles]
-      setUploadedEditFiles((prev) => [...prev, ...acceptedFiles])
+      let normalizedFiles: File[]
+      try {
+        normalizedFiles = await Promise.all(acceptedFiles.map(convertGifToPng))
+      } catch (error) {
+        logger.error('Failed to normalize image input:', error as Error)
+        window.toast.error(t('paintings.gif_conversion_failed'))
+        return
+      }
+
+      const nextUploadedFiles = [...uploadedEditFilesRef.current, ...normalizedFiles]
+      const validationIssue = validateImageInputFiles(nextUploadedFiles)
+      if (validationIssue) {
+        switch (validationIssue.code) {
+          case 'unsupported_type':
+            window.toast.error(t('paintings.image_format_unsupported', { name: validationIssue.fileName }))
+            break
+          case 'empty_file':
+            window.toast.error(t('paintings.image_file_empty', { name: validationIssue.fileName }))
+            break
+          case 'file_too_large':
+            window.toast.error(
+              t('paintings.image_file_too_large', {
+                name: validationIssue.fileName,
+                size: Math.round(validationIssue.maxBytes / 1024 / 1024)
+              })
+            )
+            break
+          case 'total_too_large':
+            window.toast.error(
+              t('paintings.image_total_too_large', {
+                size: Math.round(validationIssue.maxBytes / 1024 / 1024)
+              })
+            )
+            break
+        }
+        return
+      }
+
+      uploadedEditFilesRef.current = nextUploadedFiles
+      setUploadedEditFiles(nextUploadedFiles)
       setComposerMode('upload-edit')
       if (selectedPainting?.files?.length) {
         if (!isCombinedEdit) {
@@ -419,12 +569,20 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
       }
       setCurrentImageIndex(0)
     },
-    [currentImageIndex, generatedSourceImageCount, isCombinedEdit, selectedPainting, t]
+    [
+      currentImageIndex,
+      generatedSourceImageCount,
+      isArtboardLoading,
+      isCombinedEdit,
+      maxImageInputs,
+      selectedPainting,
+      t
+    ]
   )
 
   const handleImageUpload = useCallback(
     (file: File) => {
-      handlePastedFiles([file])
+      void handlePastedFiles([file])
       return false
     },
     [handlePastedFiles]
@@ -466,7 +624,9 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
   const canDeletePreview = useCallback((previewIndex: number) => !isCombinedEdit || previewIndex > 0, [isCombinedEdit])
 
   const getImageFiles = (dataTransfer: DataTransfer) => {
-    const files = Array.from(dataTransfer.files).filter((file) => file.type.startsWith('image/'))
+    const files = Array.from(dataTransfer.files).filter(
+      (file) => file.type.startsWith('image/') || isSupportedImageFile(file)
+    )
 
     if (files.length > 0) {
       return files
@@ -474,9 +634,10 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
 
     const seen = new Set<string>()
     return Array.from(dataTransfer.items)
-      .filter((item) => item.kind === 'file' && item.type.startsWith('image/'))
+      .filter((item) => item.kind === 'file')
       .map((item) => item.getAsFile())
       .filter((file): file is File => Boolean(file))
+      .filter(isSupportedImageFile)
       .filter((file) => {
         const key = `${file.name}-${file.type}-${file.size}-${file.lastModified}`
         if (seen.has(key)) {
@@ -489,27 +650,39 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
 
   const isImageDataTransfer = (dataTransfer: DataTransfer) => {
     return (
-      Array.from(dataTransfer.files).some((file) => file.type.startsWith('image/')) ||
-      Array.from(dataTransfer.items).some((item) => item.kind === 'file' && item.type.startsWith('image/'))
+      Array.from(dataTransfer.files).some((file) => file.type.startsWith('image/') || isSupportedImageFile(file)) ||
+      Array.from(dataTransfer.items).some((item) => item.kind === 'file')
     )
   }
 
-  const handleImageDragEnter = useCallback((event: React.DragEvent<HTMLDivElement>) => {
-    if (!isImageDataTransfer(event.dataTransfer)) {
-      return
-    }
-    event.preventDefault()
-    setIsImageDragActive(true)
-  }, [])
+  const handleImageDragEnter = useCallback(
+    (event: React.DragEvent<HTMLDivElement>) => {
+      if (isArtboardLoading) {
+        return
+      }
+      if (!isImageDataTransfer(event.dataTransfer)) {
+        return
+      }
+      event.preventDefault()
+      setIsImageDragActive(true)
+    },
+    [isArtboardLoading]
+  )
 
-  const handleImageDragOver = useCallback((event: React.DragEvent<HTMLDivElement>) => {
-    if (!isImageDataTransfer(event.dataTransfer)) {
-      return
-    }
-    event.preventDefault()
-    event.dataTransfer.dropEffect = 'copy'
-    setIsImageDragActive(true)
-  }, [])
+  const handleImageDragOver = useCallback(
+    (event: React.DragEvent<HTMLDivElement>) => {
+      if (isArtboardLoading) {
+        return
+      }
+      if (!isImageDataTransfer(event.dataTransfer)) {
+        return
+      }
+      event.preventDefault()
+      event.dataTransfer.dropEffect = 'copy'
+      setIsImageDragActive(true)
+    },
+    [isArtboardLoading]
+  )
 
   const handleImageDragLeave = useCallback((event: React.DragEvent<HTMLDivElement>) => {
     const relatedTarget = event.relatedTarget
@@ -521,6 +694,11 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
 
   const handleImageDrop = useCallback(
     (event: React.DragEvent<HTMLDivElement>) => {
+      if (isArtboardLoading) {
+        event.preventDefault()
+        setIsImageDragActive(false)
+        return
+      }
       const imageFiles = getImageFiles(event.dataTransfer)
       if (imageFiles.length === 0) {
         return
@@ -528,9 +706,9 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
       event.preventDefault()
       event.stopPropagation()
       setIsImageDragActive(false)
-      handlePastedFiles(imageFiles)
+      void handlePastedFiles(imageFiles)
     },
-    [handlePastedFiles]
+    [handlePastedFiles, isArtboardLoading]
   )
 
   const handleShowAddModelPopup = () => {
@@ -554,22 +732,17 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
     setUploadedEditFiles([])
     setCombinedSourceImageIndex(null)
     setCurrentImageIndex(0)
-    setDraft((prev) =>
+    setDraft(
       createEmptyDraft({
-        prompt: prev.prompt
+        prompt: ''
       })
     )
   }
 
   const downloadImages = async (urls: string[]) => {
     const downloadedFiles = await Promise.all(
-      urls.map(async (url) => {
+      urls.filter(Boolean).map(async (url) => {
         try {
-          if (!url?.trim()) {
-            logger.error('Image URL is empty')
-            window.toast.warning(t('message.empty_url'))
-            return null
-          }
           return await window.api.file.download(url)
         } catch (error) {
           logger.error('Failed to download image:', error as Error)
@@ -604,20 +777,27 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
 
   const createResultPainting = useCallback(
     (prompt: string) => {
-      const sourceInfo =
+      const sourcePainting =
         ['continue', 'upload-edit'].includes(composerMode) && selectedPainting?.files?.length
-          ? {
-              sourcePaintingId: selectedPainting.id,
-              sourceImageIndex: isCombinedEdit ? (combinedSourceImageIndex ?? 0) : currentImageIndex,
-              sourceImageCount: selectedPainting.files.length
-            }
-          : {}
+          ? selectedPainting
+          : undefined
+      const sourceInfo = sourcePainting
+        ? {
+            sourcePaintingId: sourcePainting.id,
+            sourceImageIndex: isCombinedEdit ? (combinedSourceImageIndex ?? 0) : currentImageIndex,
+            sourceImageCount: sourcePainting.files.length
+          }
+        : {}
+      const basePrompt = resolvePaintingBasePrompt(sourcePainting, paintings) || prompt.trim()
 
       return {
         ...createEmptyDraft(),
         providerId,
         prompt,
+        basePrompt,
+        generationSessionId: sourcePainting?.generationSessionId || uuid(),
         model: draft.model,
+        aspectRatio: draft.aspectRatio,
         size: draft.size,
         quality: draft.quality,
         moderation: draft.moderation,
@@ -640,6 +820,7 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
       draft.quality,
       draft.size,
       isCombinedEdit,
+      paintings,
       providerId,
       selectedPainting?.files?.length,
       selectedPainting?.id
@@ -655,6 +836,28 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
 
     const prompt = textareaRef.current?.resizableTextArea?.textArea?.value || draft.prompt || ''
     updateDraft({ prompt })
+
+    if (prompt.length > MAX_IMAGE_PROMPT_LENGTH) {
+      window.modal.error({
+        content: t('paintings.image_prompt_too_long', { max: MAX_IMAGE_PROMPT_LENGTH }),
+        centered: true
+      })
+      return
+    }
+
+    const hasPaintingEditContext =
+      ['continue', 'upload-edit'].includes(composerMode) && Boolean(selectedPainting?.files?.length)
+    const requestPrompt = hasPaintingEditContext
+      ? composeImageEditPrompt(resolvePaintingBasePrompt(selectedPainting ?? undefined, paintings), prompt)
+      : prompt
+
+    if (requestPrompt.length > MAX_IMAGE_PROMPT_LENGTH) {
+      window.modal.error({
+        content: t('paintings.image_prompt_too_long', { max: MAX_IMAGE_PROMPT_LENGTH }),
+        centered: true
+      })
+      return
+    }
 
     const ai = new AiProvider(newApiProvider)
 
@@ -682,15 +885,23 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
     setCurrentImageIndex(0)
 
     let body: string | FormData = ''
+    let savedGeneratedFiles: FileMetadata[] = []
+    let generatedFilesRegistered = false
+    let resultCommitted = false
+    const customHeaders = Object.fromEntries(
+      Object.entries(newApiProvider.extra_headers ?? {}).filter(([key]) => key.toLowerCase() !== 'content-type')
+    )
     const headers: Record<string, string> = {
+      ...customHeaders,
       Authorization: `Bearer ${ai.getApiKey()}`,
       ...getZenClientHeaders(providerApiHost)
     }
-    let generationUrl = providerApiHost.replace(/\/v1$/, '') + `/v1/images/generations`
-    let editUrl = providerApiHost.replace(/\/v1$/, '') + `/v1/images/edits`
+    const normalizedProviderApiHost = providerApiHost.replace(/\/+$/, '').replace(/\/v1$/i, '')
+    let generationUrl = normalizedProviderApiHost + `/v1/images/generations`
+    let editUrl = normalizedProviderApiHost + `/v1/images/edits`
     if (newApiProvider.id === 'aionly') {
-      generationUrl = providerApiHost.replace(/\/v1$/, '') + `/openai/v1/images/generations`
-      editUrl = providerApiHost.replace(/\/v1$/, '') + `/openai/v1/images/edits`
+      generationUrl = normalizedProviderApiHost + `/openai/v1/images/generations`
+      editUrl = normalizedProviderApiHost + `/openai/v1/images/edits`
     }
 
     try {
@@ -705,10 +916,11 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
                   const { data, mime } = await window.api.file.binaryImage(FileManager.getStorageFileName(file))
                   const ext = file.ext ? (file.ext.startsWith('.') ? file.ext : `.${file.ext}`) : ''
                   const fileName = file.origin_name || file.name || `image_${index + 1}${ext}`
-                  return new File([data], fileName, {
+                  const restoredFile = new File([data], fileName, {
                     type: mime,
                     lastModified: new Date(file.created_at).getTime()
                   })
+                  return convertGifToPng(restoredFile)
                 })
             )
           : []
@@ -718,12 +930,58 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
       const inputImages = composerMode === 'upload-edit' ? [...continueImages, ...uploadedEditFiles] : continueImages
       const shouldEdit = inputImages.length > 0
 
-      if (!shouldEdit) {
+      if (inputImages.length > maxImageInputs) {
+        throw new Error(
+          t('paintings.image_upload_limit', {
+            max: maxImageInputs,
+            remaining: 0
+          })
+        )
+      }
+
+      const inputValidationIssue = validateImageInputFiles(inputImages)
+      if (inputValidationIssue) {
+        switch (inputValidationIssue.code) {
+          case 'unsupported_type':
+            throw new Error(t('paintings.image_format_unsupported', { name: inputValidationIssue.fileName }))
+          case 'empty_file':
+            throw new Error(t('paintings.image_file_empty', { name: inputValidationIssue.fileName }))
+          case 'file_too_large':
+            throw new Error(
+              t('paintings.image_file_too_large', {
+                name: inputValidationIssue.fileName,
+                size: Math.round(inputValidationIssue.maxBytes / 1024 / 1024)
+              })
+            )
+          case 'total_too_large':
+            throw new Error(
+              t('paintings.image_total_too_large', {
+                size: Math.round(inputValidationIssue.maxBytes / 1024 / 1024)
+              })
+            )
+        }
+      }
+
+      if (isGrokImagine) {
+        const imageDataUrls = shouldEdit ? await Promise.all(inputImages.map(fileToDataUrl)) : []
+        body = JSON.stringify(
+          buildGrokImagineImageRequestBody({
+            prompt: requestPrompt,
+            model: draft.model,
+            n: draft.n,
+            aspectRatio: draft.aspectRatio,
+            resolution: draft.size,
+            quality: draft.quality,
+            imageDataUrls
+          })
+        )
+        headers['Content-Type'] = 'application/json'
+      } else if (!shouldEdit) {
         const resolvedSize =
           draft.size === 'auto' ? (smartAutoSize?.size === undefined ? undefined : smartAutoSize.size) : draft.size
 
         body = JSON.stringify({
-          prompt,
+          prompt: requestPrompt,
           model: draft.model,
           size: resolvedSize,
           background: draft.background === 'auto' ? undefined : draft.background,
@@ -734,7 +992,7 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
         headers['Content-Type'] = 'application/json'
       } else {
         const formData = new FormData()
-        formData.append('prompt', prompt)
+        formData.append('prompt', requestPrompt)
         formData.append('model', draft.model)
         if (draft.background && draft.background !== 'auto') {
           formData.append('background', draft.background)
@@ -748,43 +1006,81 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
         if (draft.moderation && draft.moderation !== 'auto') {
           formData.append('moderation', draft.moderation)
         }
-        inputImages.forEach((file) => formData.append('image', file))
+        if (draft.n && draft.n > 1) {
+          formData.append('n', String(draft.n))
+        }
+        inputImages.forEach((file) => formData.append('image[]', file))
         body = formData
       }
 
-      const response = await fetch(shouldEdit ? editUrl : generationUrl, {
-        method: 'POST',
-        headers,
-        body,
-        signal: controller.signal
-      })
+      const response = await fetchImageGenerationRequest(
+        shouldEdit ? editUrl : generationUrl,
+        {
+          method: 'POST',
+          headers,
+          body
+        },
+        {
+          signal: controller.signal,
+          fetchFn: withZenTraceFetch()
+        }
+      )
 
       throwIfAborted(controller.signal)
 
       if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error?.message || t('paintings.generate_failed'))
+        const rawError = await response.text()
+        let errorMessage = rawError
+        try {
+          const errorData = JSON.parse(rawError) as { error?: { message?: string } }
+          errorMessage = errorData.error?.message || rawError
+        } catch {
+          // Some gateways return HTML or plain text for upstream failures.
+        }
+        throw new Error(errorMessage.trim().slice(0, 2_000) || t('paintings.generate_failed'))
       }
 
       const data = await response.json()
       throwIfAborted(controller.signal)
 
-      const urls = data.data.filter((item) => item.url).map((item) => item.url)
-      const base64s = data.data.filter((item) => item.b64_json).map((item) => item.b64_json)
+      const imageSources = extractImageGenerationSources(data)
+      const savedResults = await Promise.all(
+        imageSources.map(async (source) => {
+          try {
+            const file =
+              source.kind === 'url'
+                ? ((await downloadImages([source.value]))[0] ?? null)
+                : await window.api.file.saveBase64Image(source.value)
+            return file ? { file, source } : null
+          } catch (error) {
+            logger.error('Failed to save one generated image; continuing with the remaining results.', {
+              sourceKind: source.kind,
+              error: error as Error
+            })
+            return null
+          }
+        })
+      )
+      throwIfAborted(controller.signal)
 
-      let validFiles: FileMetadata[] = []
-
-      if (urls.length > 0) {
-        validFiles = await downloadImages(urls)
-        throwIfAborted(controller.signal)
+      const successfulResults = savedResults.filter(
+        (result): result is { file: FileMetadata; source: (typeof imageSources)[number] } => result !== null
+      )
+      if (successfulResults.length === 0) {
+        throw new Error(t('paintings.image_no_result'))
       }
 
-      if (base64s.length > 0) {
-        validFiles = await Promise.all(base64s.map((base64) => window.api.file.saveBase64Image(base64)))
-        throwIfAborted(controller.signal)
-      }
+      // Keep the fallback URL at the same index as its saved file. This is
+      // important when a compatible gateway mixes URL and Base64 items.
+      const validFiles = successfulResults.map((result) => result.file)
+      savedGeneratedFiles = validFiles
+      const hasFallbackUrls = successfulResults.some((result) => result.source.kind === 'url')
+      const urls = hasFallbackUrls
+        ? successfulResults.map((result) => (result.source.kind === 'url' ? result.source.value : ''))
+        : []
 
       await FileManager.addFiles(validFiles)
+      generatedFilesRegistered = true
       throwIfAborted(controller.signal)
 
       const completedPainting = {
@@ -794,6 +1090,7 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
       }
 
       updatePainting('openai_image_generate', completedPainting)
+      resultCommitted = true
       if (composerMode === 'upload-edit') {
         uploadedEditFilesRef.current = []
         setUploadedEditFiles([])
@@ -802,6 +1099,15 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
         setSelectedPaintingId((currentId) => (currentId === resultPainting.id ? completedPainting.id : currentId))
       }
     } catch (error: unknown) {
+      if (!resultCommitted && savedGeneratedFiles.length > 0) {
+        if (generatedFilesRegistered) {
+          await FileManager.deleteFiles(savedGeneratedFiles)
+        } else {
+          await Promise.allSettled(
+            savedGeneratedFiles.map((file) => window.api.file.delete(FileManager.getStorageFileName(file)))
+          )
+        }
+      }
       const shouldRestorePrompt = selectedPaintingIdRef.current === resultPainting.id
       const fallbackPaintingId = selectedPainting?.id ?? null
 
@@ -820,10 +1126,18 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
   }
 
   const handleRetry = async (painting: PaintingAction) => {
-    registerNewApiPaintingTask(painting.id, new AbortController())
+    const controller = new AbortController()
+    registerNewApiPaintingTask(painting.id, controller)
     try {
       const validFiles = await downloadImages(painting.urls)
+      if (controller.signal.aborted) {
+        return
+      }
       await FileManager.addFiles(validFiles)
+      if (controller.signal.aborted) {
+        await FileManager.deleteFiles(validFiles)
+        return
+      }
       const retriedPainting = {
         ...painting,
         files: validFiles
@@ -845,6 +1159,7 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
         ? paintings[targetIndex + 1] || paintings[targetIndex - 1] || null
         : selectedPainting
 
+    cancelNewApiPaintingTask(paintingToDelete.id)
     void removePainting('openai_image_generate', paintingToDelete)
 
     if (nextPainting) {
@@ -919,7 +1234,7 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
       return
     }
     event.preventDefault()
-    handlePastedFiles(imageFiles)
+    void handlePastedFiles(imageFiles)
   }
 
   useEffect(() => {
@@ -989,6 +1304,22 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
                   </Select.OptGroup>
                 ))}
               </Select>
+
+              {aspectRatioOptions.length > 0 && (
+                <>
+                  <SettingTitle>{t('paintings.aspect_ratio')}</SettingTitle>
+                  <Select
+                    value={draft.aspectRatio}
+                    onChange={(value) => updateDraft({ aspectRatio: value })}
+                    style={{ width: '100%', marginBottom: 15 }}>
+                    {aspectRatioOptions.map((aspectRatio) => (
+                      <Select.Option value={aspectRatio.value} key={aspectRatio.value}>
+                        {getPaintingsImageSizeOptionsLabel(aspectRatio.value, aspectRatio.label)}
+                      </Select.Option>
+                    ))}
+                  </Select>
+                </>
+              )}
 
               {imageSizeOptions.length > 0 && (
                 <>
@@ -1116,11 +1447,14 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
             uploadAction={
               <ImageUploadButton
                 accept="image/png, image/jpeg, image/gif, image/webp"
-                maxCount={MAX_IMAGE_INPUTS}
+                maxCount={maxImageInputs}
                 multiple
                 showUploadList={false}
                 beforeUpload={handleImageUpload}>
-                <Button size="small" icon={<UploadOutlined />} disabled={remainingImageSlots === 0}>
+                <Button
+                  size="small"
+                  icon={<UploadOutlined />}
+                  disabled={isArtboardLoading || remainingImageSlots === 0}>
                   {t('paintings.canvas_upload_action')}
                 </Button>
               </ImageUploadButton>
@@ -1130,7 +1464,7 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
               <CanvasGuide>
                 <GuideText>{t('paintings.canvas_guide_primary')}</GuideText>
                 <GuideTextMuted>{t('paintings.canvas_guide_secondary')}</GuideTextMuted>
-                <GuideTextMuted>{t('paintings.canvas_guide_limit')}</GuideTextMuted>
+                <GuideTextMuted>{t('paintings.canvas_guide_limit', { max: maxImageInputs })}</GuideTextMuted>
               </CanvasGuide>
             }
           />

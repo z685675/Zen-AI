@@ -1,13 +1,24 @@
 import { titleBarOverlayDark, titleBarOverlayLight } from '@main/config'
 import { isMac } from '@main/constant'
 import { randomUUID } from 'crypto'
-import { app, BrowserView, BrowserWindow, nativeTheme } from 'electron'
+import { app, BrowserView, BrowserWindow, nativeTheme, session } from 'electron'
 import TurndownService from 'turndown'
 
 import { SESSION_KEY_DEFAULT, SESSION_KEY_PRIVATE, TAB_BAR_HEIGHT } from './constants'
+import { type BrowserDownloadInfo, BrowserDownloadManager } from './downloads'
 import { BrowserOperationLimiter } from './operationLimiter'
 import { TAB_BAR_HTML } from './tabbar-html'
-import { type BrowserHandoffInfo, logger, type TabInfo, userAgent, type WindowInfo } from './types'
+import {
+  type BrowserHandoffInfo,
+  type BrowserUserAction,
+  logger,
+  type TabInfo,
+  userAgent,
+  type WindowInfo
+} from './types'
+import { type BrowserPageSignals, detectUserAction, USER_ACTION_DETECTION_SCRIPT } from './userAction'
+
+const EARLY_USER_CONTINUATION_GRACE_MS = 30_000
 
 /**
  * Controller for managing browser windows via Chrome DevTools Protocol (CDP).
@@ -22,6 +33,8 @@ export class CdpBrowserController {
   private readonly idleTimeoutMs: number
   private readonly turndownService: TurndownService
   private readonly operationLimiter: BrowserOperationLimiter
+  private readonly downloadManager: BrowserDownloadManager
+  private privateStorageClearPromise: Promise<void> | undefined
 
   constructor(options?: {
     maxWindows?: number
@@ -36,6 +49,7 @@ export class CdpBrowserController {
       options?.maxConcurrentOperations ?? 2,
       options?.operationQueueTimeoutMs ?? 5000
     )
+    this.downloadManager = new BrowserDownloadManager((webContentsId) => this.findTabByWebContentsId(webContentsId))
 
     // Listen for theme changes and update all tab bars
     nativeTheme.on('updated', () => {
@@ -64,6 +78,201 @@ export class CdpBrowserController {
     }
   }
 
+  /**
+   * Electron's non-persistent partitions live for the lifetime of the app,
+   * not the lifetime of a BrowserWindow. Clear the private partition
+   * explicitly so reopening a private browser in the same process cannot
+   * inherit cookies or localStorage from the previous private session.
+   */
+  private clearPrivateBrowserStorage(): Promise<void> {
+    if (this.privateStorageClearPromise) {
+      return this.privateStorageClearPromise
+    }
+
+    const clearPromise = (async () => {
+      try {
+        const fromPartition = session?.fromPartition
+        if (typeof fromPartition !== 'function') {
+          return
+        }
+
+        const browserSession = fromPartition.call(session, this.getPartition(true))
+        await browserSession.clearStorageData()
+        await browserSession.clearCache()
+        logger.info('Private browser storage cleared')
+      } catch (error) {
+        // Cleanup is best effort during window shutdown. Never let an
+        // Electron close event create an unhandled rejection.
+        logger.warn('Failed to clear private browser storage', { error })
+      }
+    })()
+
+    this.privateStorageClearPromise = clearPromise
+    void clearPromise.then(() => {
+      if (this.privateStorageClearPromise === clearPromise) {
+        this.privateStorageClearPromise = undefined
+      }
+    })
+    return clearPromise
+  }
+
+  private findTabByWebContentsId(webContentsId: number): { tabId: string; privateMode: boolean } | undefined {
+    for (const windowInfo of this.windows.values()) {
+      for (const tab of windowInfo.tabs.values()) {
+        if (tab.view.webContents.id === webContentsId) {
+          return { tabId: tab.id, privateMode: windowInfo.privateMode }
+        }
+      }
+    }
+    return undefined
+  }
+
+  private getWindowAndTab(privateMode: boolean, tabId?: string): { windowInfo: WindowInfo; tab: TabInfo } | undefined {
+    const windowInfo = this.windows.get(this.getWindowKey(privateMode))
+    if (!windowInfo) return undefined
+    const actualTabId = tabId ?? windowInfo.activeTabId
+    if (!actualTabId) return undefined
+    const tab = windowInfo.tabs.get(actualTabId)
+    return tab ? { windowInfo, tab } : undefined
+  }
+
+  private clearUserActionForNavigation(tab: TabInfo): void {
+    if (tab.userActionDetectionTimer) clearTimeout(tab.userActionDetectionTimer)
+    tab.userActionDetectionTimer = undefined
+    tab.userAction = undefined
+    tab.userActionFingerprint = undefined
+    tab.dismissedUserActionFingerprint = undefined
+  }
+
+  private scheduleUserActionDetection(windowInfo: WindowInfo, tab: TabInfo): void {
+    if (tab.userActionDetectionTimer) clearTimeout(tab.userActionDetectionTimer)
+    tab.userActionDetectionTimer = setTimeout(() => {
+      tab.userActionDetectionTimer = undefined
+      void this.detectUserActionForTab(windowInfo, tab)
+    }, 450)
+  }
+
+  private async detectUserActionForTab(windowInfo: WindowInfo, tab: TabInfo): Promise<void> {
+    if (tab.view.webContents.isDestroyed()) return
+
+    try {
+      const signals = (await tab.view.webContents.executeJavaScript(
+        USER_ACTION_DETECTION_SCRIPT,
+        true
+      )) as BrowserPageSignals
+      if (!signals || typeof signals !== 'object') return
+      const detected = detectUserAction(signals)
+      if (!detected) {
+        if (tab.userAction) {
+          tab.userAction = undefined
+          tab.userActionFingerprint = undefined
+          this.sendHandoffUpdate(windowInfo)
+          this.updateViewBounds(windowInfo)
+        }
+        return
+      }
+
+      const fingerprint = `${detected.reason}:${signals.url}`
+      if (tab.dismissedUserActionFingerprint === fingerprint || tab.userActionFingerprint === fingerprint) return
+
+      const userAction: BrowserUserAction = {
+        reason: detected.reason,
+        message: detected.message,
+        url: signals.url,
+        detectedAt: Date.now()
+      }
+      tab.userAction = userAction
+      tab.userActionFingerprint = fingerprint
+
+      if (windowInfo.activeTabId !== tab.id) {
+        await this.switchTab(windowInfo.privateMode, tab.id).catch(() => undefined)
+      }
+      if (!windowInfo.window.isDestroyed()) {
+        windowInfo.window.show()
+        windowInfo.window.focus()
+      }
+      this.sendHandoffUpdate(windowInfo)
+      this.updateViewBounds(windowInfo)
+      logger.info('Browser user action required', {
+        reason: userAction.reason,
+        tabId: tab.id,
+        privateMode: windowInfo.privateMode,
+        url: userAction.url
+      })
+    } catch (error) {
+      // Some pages deliberately block script execution. They are not
+      // necessarily authentication pages, so keep navigation usable.
+      logger.debug('Browser user-action detection skipped', {
+        tabId: tab.id,
+        error: error instanceof Error ? error.message : String(error)
+      })
+    }
+  }
+
+  private dismissUserAction(windowInfo: WindowInfo, tabId?: string, recordContinuation = true): void {
+    const tab = tabId
+      ? windowInfo.tabs.get(tabId)
+      : windowInfo.activeTabId
+        ? windowInfo.tabs.get(windowInfo.activeTabId)
+        : undefined
+    if (!tab) return
+    if (tab.userActionFingerprint) {
+      tab.dismissedUserActionFingerprint = tab.userActionFingerprint
+      if (recordContinuation && tab.userAction) {
+        tab.lastUserActionContinuation = {
+          fingerprint: tab.userActionFingerprint,
+          reason: tab.userAction.reason,
+          continuedAt: Date.now()
+        }
+      }
+    }
+    tab.userAction = undefined
+    tab.userActionFingerprint = undefined
+    this.sendHandoffUpdate(windowInfo)
+    this.updateViewBounds(windowInfo)
+  }
+
+  public getUserAction(privateMode = false, tabId?: string): (BrowserUserAction & { tabId: string }) | undefined {
+    const result = this.getWindowAndTab(privateMode, tabId)
+    if (!result?.tab.userAction) return undefined
+    return { ...result.tab.userAction, tabId: result.tab.id }
+  }
+
+  public getTabTitle(privateMode = false, tabId?: string): string | undefined {
+    const result = this.getWindowAndTab(privateMode, tabId)
+    if (!result || result.tab.view.webContents.isDestroyed()) return undefined
+    return result.tab.title || result.tab.view.webContents.getTitle() || undefined
+  }
+
+  public async waitForUserActionDetection(
+    privateMode = false,
+    tabId?: string,
+    delayMs = 350
+  ): Promise<(BrowserUserAction & { tabId: string }) | undefined> {
+    const delay = Math.max(0, Math.min(delayMs, 1500))
+    if (delay > 0) await new Promise((resolve) => setTimeout(resolve, delay))
+    const result = this.getWindowAndTab(privateMode, tabId)
+    if (result) await this.detectUserActionForTab(result.windowInfo, result.tab)
+    return this.getUserAction(privateMode, tabId)
+  }
+
+  public listDownloads(options?: { privateMode?: boolean; tabId?: string }): BrowserDownloadInfo[] {
+    return this.downloadManager.list(options)
+  }
+
+  public getDownload(downloadId: string): BrowserDownloadInfo | undefined {
+    return this.downloadManager.get(downloadId)
+  }
+
+  public waitForDownload(options?: {
+    downloadId?: string
+    privateMode?: boolean
+    tabId?: string
+    timeoutMs?: number
+  }): Promise<BrowserDownloadInfo> {
+    return this.downloadManager.waitForDownload(options)
+  }
+
   private touchWindow(windowKey: string) {
     const windowInfo = this.windows.get(windowKey)
     if (windowInfo) windowInfo.lastActive = Date.now()
@@ -82,6 +291,8 @@ export class CdpBrowserController {
     try {
       const tab = windowInfo.tabs.get(tabId)
       if (!tab) return
+
+      this.clearUserActionForNavigation(tab)
 
       if (!tab.view.webContents.isDestroyed()) {
         if (tab.view.webContents.debugger.isAttached()) {
@@ -203,6 +414,7 @@ export class CdpBrowserController {
     }
 
     windowInfo.handoff = undefined
+    this.dismissUserAction(windowInfo, handoff.tabId, false)
     this.sendHandoffUpdate(windowInfo)
     this.updateViewBounds(windowInfo)
     handoff.resolve({ id: handoff.id, status })
@@ -211,9 +423,9 @@ export class CdpBrowserController {
   private sendHandoffUpdate(windowInfo: WindowInfo) {
     if (!windowInfo.tabBarView || windowInfo.tabBarView.webContents.isDestroyed()) return
 
-    const script = windowInfo.handoff
-      ? `window.showHandoff(${JSON.stringify(windowInfo.handoff.message)})`
-      : 'window.hideHandoff()'
+    const activeTab = windowInfo.activeTabId ? windowInfo.tabs.get(windowInfo.activeTabId) : undefined
+    const message = windowInfo.handoff?.message ?? activeTab?.userAction?.message
+    const script = message ? `window.showHandoff(${JSON.stringify(message)})` : 'window.hideHandoff()'
 
     windowInfo.tabBarView.webContents.executeJavaScript(script).catch((error) => {
       logger.debug('Handoff bar update failed', { error, windowKey: windowInfo.windowKey })
@@ -320,7 +532,11 @@ export class CdpBrowserController {
     } else if (action.type === 'refresh') {
       this.handleRefreshAction(windowInfo)
     } else if (action.type === 'handoff-continue') {
-      this.resolveHandoff(windowInfo, 'continued')
+      if (windowInfo.handoff) {
+        this.resolveHandoff(windowInfo, 'continued')
+      } else {
+        this.dismissUserAction(windowInfo)
+      }
     } else if (action.type === 'window-minimize') {
       if (!windowInfo.window.isDestroyed()) {
         windowInfo.window.minimize()
@@ -416,6 +632,9 @@ export class CdpBrowserController {
         }
         this.windows.delete(windowKey)
       }
+      if (privateMode) {
+        void this.clearPrivateBrowserStorage()
+      }
     })
 
     return win
@@ -423,6 +642,9 @@ export class CdpBrowserController {
 
   private async getOrCreateWindow(privateMode: boolean, showWindow = false): Promise<WindowInfo> {
     await this.ensureAppReady()
+    if (privateMode && this.privateStorageClearPromise) {
+      await this.privateStorageClearPromise
+    }
     this.sweepIdle()
 
     const windowKey = this.getWindowKey(privateMode)
@@ -483,7 +705,8 @@ export class CdpBrowserController {
 
     const [width, height] = windowInfo.window.getContentSize()
 
-    const handoffHeight = windowInfo.handoff ? 48 : 0
+    const activeTab = windowInfo.activeTabId ? windowInfo.tabs.get(windowInfo.activeTabId) : undefined
+    const handoffHeight = windowInfo.handoff || activeTab?.userAction ? 48 : 0
     const tabBarHeight = TAB_BAR_HEIGHT + handoffHeight
 
     // Update tab bar bounds
@@ -528,14 +751,22 @@ export class CdpBrowserController {
     })
 
     view.webContents.setUserAgent(userAgent)
+    if (view.webContents.session) this.downloadManager.attachSession(view.webContents.session)
 
     const windowKey = windowInfo.windowKey
     view.webContents.on('did-start-loading', () => logger.info(`did-start-loading`, { windowKey, tabId }))
-    view.webContents.on('dom-ready', () => logger.info(`dom-ready`, { windowKey, tabId }))
-    view.webContents.on('did-finish-load', () => logger.info(`did-finish-load`, { windowKey, tabId }))
+    view.webContents.on('dom-ready', () => {
+      logger.info(`dom-ready`, { windowKey, tabId })
+      this.scheduleUserActionDetection(windowInfo, tabInfo)
+    })
+    view.webContents.on('did-finish-load', () => {
+      logger.info(`did-finish-load`, { windowKey, tabId })
+      this.scheduleUserActionDetection(windowInfo, tabInfo)
+    })
     view.webContents.on('did-fail-load', (_e, code, desc) => logger.warn('Navigation failed', { code, desc }))
 
     view.webContents.on('destroyed', () => {
+      this.clearUserActionForNavigation(tabInfo)
       windowInfo.tabs.delete(tabId)
       if (windowInfo.activeTabId === tabId) {
         windowInfo.activeTabId = windowInfo.tabs.keys().next().value ?? null
@@ -552,16 +783,21 @@ export class CdpBrowserController {
 
     view.webContents.on('page-title-updated', (_event, title) => {
       tabInfo.title = title
+      this.scheduleUserActionDetection(windowInfo, tabInfo)
       this.sendTabBarUpdate(windowInfo)
     })
 
     view.webContents.on('did-navigate', (_event, url) => {
       tabInfo.url = url
+      this.clearUserActionForNavigation(tabInfo)
+      this.scheduleUserActionDetection(windowInfo, tabInfo)
       this.sendTabBarUpdate(windowInfo)
     })
 
     view.webContents.on('did-navigate-in-page', (_event, url) => {
       tabInfo.url = url
+      this.clearUserActionForNavigation(tabInfo)
+      this.scheduleUserActionDetection(windowInfo, tabInfo)
       this.sendTabBarUpdate(windowInfo)
     })
 
@@ -618,7 +854,16 @@ export class CdpBrowserController {
     newTab?: boolean,
     showWindow = false
   ): Promise<{ tabId: string; tab: TabInfo }> {
-    const windowInfo = await this.getOrCreateWindow(privateMode, showWindow)
+    let windowInfo: WindowInfo
+    if (tabId && !newTab) {
+      const existingWindow = this.windows.get(this.getWindowKey(privateMode))
+      if (!existingWindow) {
+        throw new Error(`Tab ${tabId} not found`)
+      }
+      windowInfo = existingWindow
+    } else {
+      windowInfo = await this.getOrCreateWindow(privateMode, showWindow)
+    }
 
     // If newTab is requested, create a fresh tab
     if (newTab) {
@@ -636,6 +881,10 @@ export class CdpBrowserController {
         this.touchTab(windowInfo.windowKey, tabId)
         return { tabId, tab }
       }
+
+      // An explicit tab ID is an instruction, not a hint. Falling back to
+      // the active tab here can send clicks/scripts to an unrelated page.
+      throw new Error(`Tab ${tabId} not found`)
     }
 
     // Use active tab or create new one
@@ -742,7 +991,8 @@ export class CdpBrowserController {
     tab.url = currentUrl
     tab.title = title
 
-    return { currentUrl, title, tabId: actualTabId }
+    await this.detectUserActionForTab(this.windows.get(windowKey)!, tab)
+    return { currentUrl, title, tabId: actualTabId, userAction: this.getUserAction(privateMode, actualTabId) }
   }
 
   /**
@@ -789,6 +1039,7 @@ export class CdpBrowserController {
       }
 
       const value = evalResult?.result?.value ?? evalResult?.result?.description ?? null
+      this.scheduleUserActionDetection(this.windows.get(windowKey)!, tab)
       return value
     } finally {
       if (timeoutHandle) clearTimeout(timeoutHandle)
@@ -799,10 +1050,33 @@ export class CdpBrowserController {
     message = '请完成登录、验证码或确认操作，完成后点击继续。',
     reason?: string,
     timeout = 15 * 60 * 1000,
-    privateMode = false
+    privateMode = false,
+    tabId?: string
   ) {
+    if (tabId) {
+      const existingWindow = this.windows.get(this.getWindowKey(privateMode))
+      const existingTab = existingWindow?.tabs.get(tabId)
+      if (!existingTab || existingTab.view.webContents.isDestroyed()) {
+        throw new Error(`Tab ${tabId} not found`)
+      }
+    }
+
     const windowInfo = await this.getOrCreateWindow(privateMode, true)
     const handoffId = randomUUID()
+
+    const targetTab = this.getWindowAndTab(privateMode, tabId)?.tab
+    if (tabId && (!targetTab || targetTab.view.webContents.isDestroyed())) {
+      throw new Error(`Tab ${tabId} not found`)
+    }
+    const earlyContinuation = targetTab?.lastUserActionContinuation
+    if (
+      earlyContinuation &&
+      Date.now() - earlyContinuation.continuedAt <= EARLY_USER_CONTINUATION_GRACE_MS &&
+      (!reason || reason === earlyContinuation.reason)
+    ) {
+      targetTab.lastUserActionContinuation = undefined
+      return { id: handoffId, status: 'continued' as const }
+    }
 
     if (!windowInfo.window.isDestroyed()) {
       windowInfo.window.show()
@@ -818,6 +1092,7 @@ export class CdpBrowserController {
         id: handoffId,
         message,
         reason,
+        tabId: tabId ?? windowInfo.activeTabId ?? undefined,
         createdAt: Date.now(),
         resolve
       }
@@ -856,6 +1131,9 @@ export class CdpBrowserController {
           }
           this.windows.delete(windowKey)
           logger.info('Browser CDP window closed (last tab closed)', { windowKey, tabId })
+          if (privateMode) {
+            await this.clearPrivateBrowserStorage()
+          }
           return
         }
 
@@ -872,6 +1150,9 @@ export class CdpBrowserController {
         this.sendTabBarUpdate(windowInfo)
       }
       logger.info('Browser CDP tab reset', { windowKey, tabId })
+      if (privateMode && !windowInfo) {
+        await this.clearPrivateBrowserStorage()
+      }
       return
     }
 
@@ -889,6 +1170,9 @@ export class CdpBrowserController {
         }
       }
       this.windows.delete(windowKey)
+      if (privateMode) {
+        await this.clearPrivateBrowserStorage()
+      }
       logger.info('Browser CDP window reset', { windowKey, privateMode })
       return
     }
@@ -905,7 +1189,27 @@ export class CdpBrowserController {
       }
     }
     this.windows.clear()
+    this.downloadManager.detachAll()
+    await this.clearPrivateBrowserStorage()
     logger.info('Browser CDP context reset (all windows)')
+  }
+
+  /**
+   * Explicitly clears browser storage for one mode. Resetting a window only
+   * closes its views; it does not remove cookies from a persistent partition.
+   */
+  public async clearBrowserData(privateMode = false): Promise<void> {
+    await this.ensureAppReady()
+    await this.reset(privateMode)
+
+    const fromPartition = session?.fromPartition
+    if (typeof fromPartition !== 'function') {
+      throw new Error('Electron browser session is unavailable')
+    }
+    const browserSession = fromPartition.call(session, this.getPartition(privateMode))
+    await browserSession.clearStorageData()
+    await browserSession.clearCache()
+    logger.info('Browser storage cleared', { privateMode })
   }
 
   /**

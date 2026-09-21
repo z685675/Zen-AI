@@ -4,6 +4,8 @@ import { isEmpty } from 'lodash'
 
 import { isGptImage2Family } from '../config/NewApiConfig'
 
+export * from './imageGenerationUtils'
+
 export function checkProviderEnabled(provider: Provider, t: TFunction): Promise<boolean> {
   return new Promise((resolve, reject) => {
     if (provider.enabled && !isEmpty(provider.apiKey)) {
@@ -112,7 +114,7 @@ export function resolveSmartAutoSize(model: string | undefined, prompt: string |
 
   if (ratio === 'landscape') {
     if (tier === '4k') {
-      return { size: '3840x2048', reason: 'ratio_and_tier', ratio, tier }
+      return { size: '3840x2160', reason: 'ratio_and_tier', ratio, tier }
     }
     if (tier === '3k') {
       return { size: '3072x2048', reason: 'ratio_and_tier', ratio, tier }
@@ -125,7 +127,7 @@ export function resolveSmartAutoSize(model: string | undefined, prompt: string |
 
   if (ratio === 'portrait') {
     if (tier === '4k') {
-      return { size: '2048x3840', reason: 'ratio_and_tier', ratio, tier }
+      return { size: '2160x3840', reason: 'ratio_and_tier', ratio, tier }
     }
     if (tier === '3k') {
       return { size: '2048x3072', reason: 'ratio_and_tier', ratio, tier }

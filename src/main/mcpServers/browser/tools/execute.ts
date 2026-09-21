@@ -44,6 +44,10 @@ export async function handleExecute(controller: CdpBrowserController, args: unkn
   const { code, timeout, privateMode, tabId } = ExecuteSchema.parse(args)
   try {
     const value = await controller.execute(code, timeout, privateMode ?? false, tabId)
+    const userAction = await controller.waitForUserActionDetection(privateMode ?? false, tabId)
+    if (userAction) {
+      return successResponse(JSON.stringify({ result: value, userAction }))
+    }
     return successResponse(typeof value === 'string' ? value : JSON.stringify(value))
   } catch (error) {
     logger.error('Execute failed', { error, code: code.slice(0, 100), privateMode, tabId })

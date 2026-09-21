@@ -233,8 +233,9 @@ class CodexService implements AgentServiceInterface {
             '- Use mcp__assistant__ocr_file for local image or scanned-PDF OCR.',
             '- The python command resolves to Zen AI managed CPython. Do not probe or install into system Python.',
             '- Keep file access inside the session allowed paths and follow confirmation/backup rules for destructive changes.',
-            '- Use mcp__browser__open, mcp__browser__snapshot, and mcp__browser__screenshot for specific websites. Use mcp__browser__wait_for_user after opening a page visibly when login, CAPTCHA, 2FA, authorization, or another manual step is required.',
-            "- The browser is Zen AI internal browser, not the user's Edge or Chrome. Use normal mode for reusable login sessions and never bypass CAPTCHA or security prompts."
+            '- Use mcp__browser__open, mcp__browser__snapshot, and mcp__browser__screenshot for specific websites. When a page reports login, CAPTCHA, 2FA, authorization, or another manual step, use the visible browser and mcp__browser__wait_for_user; browser alerts may also be included in tool results.',
+            '- After clicking a download link or button, call mcp__browser__wait_for_download, verify the completed file, then call mcp__assistant__present_files for the final deliverable.',
+            "- The browser is Zen AI internal browser, not the user's Edge or Chrome. Use normal mode for reusable login sessions; its cookies and localStorage persist across app restarts. Use private mode only when the user does not want a reusable session, and never bypass CAPTCHA or security prompts."
           ].join('\n')
         : undefined,
       researchWorkflowGuidance,

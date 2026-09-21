@@ -423,11 +423,15 @@ function toAnthropicStopReason(reason: FinishReason): StopReason {
 
 function emptyUsage(inputTokens = 0, outputTokens = 0): Message['usage'] {
   return {
+    cache_creation: null,
     input_tokens: inputTokens,
     output_tokens: outputTokens,
     cache_creation_input_tokens: null,
     cache_read_input_tokens: null,
-    server_tool_use: null
+    inference_geo: null,
+    output_tokens_details: null,
+    server_tool_use: null,
+    service_tier: null
   }
 }
 
@@ -456,7 +460,9 @@ export async function* translateAiSdkStreamToAnthropicEvents(
       role: 'assistant',
       model: options.modelId,
       content: [],
+      container: null,
       stop_reason: null,
+      stop_details: null,
       stop_sequence: null,
       usage: emptyUsage()
     }
@@ -516,7 +522,7 @@ export async function* translateAiSdkStreamToAnthropicEvents(
           yield {
             type: 'content_block_start',
             index: block.index,
-            content_block: { type: 'tool_use', id: part.id, name: part.toolName, input: {} }
+            content_block: { type: 'tool_use', id: part.id, name: part.toolName, input: {}, caller: { type: 'direct' } }
           }
         }
         break
@@ -543,7 +549,13 @@ export async function* translateAiSdkStreamToAnthropicEvents(
           yield {
             type: 'content_block_start',
             index: block.index,
-            content_block: { type: 'tool_use', id: part.toolCallId, name: part.toolName, input: {} }
+            content_block: {
+              type: 'tool_use',
+              id: part.toolCallId,
+              name: part.toolName,
+              input: {},
+              caller: { type: 'direct' }
+            }
           }
         }
         if (!block.hasDelta) {
@@ -581,12 +593,18 @@ export async function* translateAiSdkStreamToAnthropicEvents(
   const tokens = usageTokens(finalUsage)
   yield {
     type: 'message_delta',
-    delta: { stop_reason: toAnthropicStopReason(finishReason), stop_sequence: null },
+    delta: {
+      container: null,
+      stop_details: null,
+      stop_reason: toAnthropicStopReason(finishReason),
+      stop_sequence: null
+    },
     usage: {
       input_tokens: tokens.input,
       output_tokens: tokens.output,
       cache_creation_input_tokens: null,
       cache_read_input_tokens: null,
+      output_tokens_details: null,
       server_tool_use: null
     }
   }
@@ -597,7 +615,13 @@ function buildNonStreamingMessage(modelId: string, result: Awaited<ReturnType<ty
   const content: Message['content'] = []
   if (result.text) content.push({ type: 'text', text: result.text, citations: null })
   for (const call of result.toolCalls) {
-    content.push({ type: 'tool_use', id: call.toolCallId, name: call.toolName, input: call.input })
+    content.push({
+      type: 'tool_use',
+      id: call.toolCallId,
+      name: call.toolName,
+      input: call.input,
+      caller: { type: 'direct' }
+    })
   }
   const tokens = usageTokens(result.usage)
   return {
@@ -606,7 +630,9 @@ function buildNonStreamingMessage(modelId: string, result: Awaited<ReturnType<ty
     role: 'assistant',
     model: modelId,
     content,
+    container: null,
     stop_reason: toAnthropicStopReason(result.finishReason),
+    stop_details: null,
     stop_sequence: null,
     usage: emptyUsage(tokens.input, tokens.output)
   }

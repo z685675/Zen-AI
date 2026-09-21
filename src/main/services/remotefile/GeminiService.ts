@@ -10,6 +10,30 @@ import { BaseFileService } from './BaseFileService'
 
 const logger = loggerService.withContext('GeminiService')
 
+const getGeminiMimeType = (file: FileMetadata): string => {
+  const extension = file.ext.toLowerCase()
+  const mimeTypes: Record<string, string> = {
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.png': 'image/png',
+    '.gif': 'image/gif',
+    '.bmp': 'image/bmp',
+    '.webp': 'image/webp',
+    '.svg': 'image/svg+xml',
+    '.pdf': 'application/pdf',
+    '.doc': 'application/msword',
+    '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    '.docm': 'application/vnd.ms-word.document.macroEnabled.12',
+    '.ppt': 'application/vnd.ms-powerpoint',
+    '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    '.pptm': 'application/vnd.ms-powerpoint.presentation.macroEnabled.12',
+    '.xls': 'application/vnd.ms-excel',
+    '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    '.xlsm': 'application/vnd.ms-excel.sheet.macroEnabled.12'
+  }
+  return mimeTypes[extension] ?? 'application/octet-stream'
+}
+
 export class GeminiService extends BaseFileService {
   private static readonly FILE_LIST_CACHE_KEY = 'gemini_file_list'
   private static readonly FILE_CACHE_DURATION = 48 * 60 * 60 * 1000
@@ -33,7 +57,7 @@ export class GeminiService extends BaseFileService {
       const uploadResult = await this.fileManager.upload({
         file: fileStorage.getFilePathById(file),
         config: {
-          mimeType: 'application/pdf',
+          mimeType: getGeminiMimeType(file),
           name: file.id,
           displayName: file.origin_name
         }

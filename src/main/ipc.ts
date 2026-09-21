@@ -99,6 +99,7 @@ import {
 import storeSyncService from './services/StoreSyncService'
 import { themeService } from './services/ThemeService'
 import VertexAIService from './services/VertexAIService'
+import { webPageReaderService } from './services/WebPageReaderService'
 import { setOpenLinkExternal } from './services/WebviewService'
 import { windowService } from './services/WindowService'
 import { calculateDirectorySize, getDataPath, getResourcePath } from './utils'
@@ -641,11 +642,13 @@ export async function registerIpc(mainWindow: BrowserWindow, app: Electron.App) 
   ipcMain.handle(IpcChannel.File_Clear, fileManager.clear.bind(fileManager))
   ipcMain.handle(IpcChannel.File_Read, fileManager.readFile.bind(fileManager))
   ipcMain.handle(IpcChannel.File_ReadStructured, fileManager.readStructuredFile.bind(fileManager))
+  ipcMain.handle(IpcChannel.File_ReadEmbeddedImages, fileManager.readEmbeddedImages.bind(fileManager))
   ipcMain.handle(IpcChannel.File_ReadExternal, fileManager.readExternalFile.bind(fileManager))
   ipcMain.handle(IpcChannel.File_Delete, fileManager.deleteFile.bind(fileManager))
   ipcMain.handle(IpcChannel.File_DeleteDir, fileManager.deleteDir.bind(fileManager))
   ipcMain.handle(IpcChannel.File_DeleteExternalFile, fileManager.deleteExternalFile.bind(fileManager))
   ipcMain.handle(IpcChannel.File_DeleteExternalDir, fileManager.deleteExternalDir.bind(fileManager))
+  ipcMain.handle(IpcChannel.File_DeleteAgentAttachmentDir, fileManager.deleteAgentAttachmentDir.bind(fileManager))
   ipcMain.handle(IpcChannel.File_Move, fileManager.moveFile.bind(fileManager))
   ipcMain.handle(IpcChannel.File_MoveDir, fileManager.moveDir.bind(fileManager))
   ipcMain.handle(IpcChannel.File_Rename, fileManager.renameFile.bind(fileManager))
@@ -664,6 +667,7 @@ export async function registerIpc(mainWindow: BrowserWindow, app: Electron.App) 
   ipcMain.handle(IpcChannel.File_GetPdfInfo, fileManager.pdfPageCount.bind(fileManager))
   ipcMain.handle(IpcChannel.File_Download, fileManager.downloadFile.bind(fileManager))
   ipcMain.handle(IpcChannel.File_Copy, fileManager.copyFile.bind(fileManager))
+  ipcMain.handle(IpcChannel.File_CopyToAgentAttachment, fileManager.copyFileToAgentAttachment.bind(fileManager))
   ipcMain.handle(IpcChannel.File_BinaryImage, fileManager.binaryImage.bind(fileManager))
   ipcMain.handle(IpcChannel.File_OpenWithRelativePath, fileManager.openFileWithRelativePath.bind(fileManager))
   ipcMain.handle(IpcChannel.File_IsTextFile, fileManager.isTextFile.bind(fileManager))
@@ -944,6 +948,9 @@ export async function registerIpc(mainWindow: BrowserWindow, app: Electron.App) 
   })
   ipcMain.handle(IpcChannel.SearchWindow_FetchResource, async (_, url: string) => {
     return await searchService.fetchSearchResource(url)
+  })
+  ipcMain.handle(IpcChannel.WebPage_Read, async (_, url: string) => {
+    return await webPageReaderService.read(url)
   })
 
   // webview

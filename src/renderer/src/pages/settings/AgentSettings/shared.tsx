@@ -20,6 +20,7 @@ import { Menu, Modal } from 'antd'
 import { Clock3 } from 'lucide-react'
 import type { ReactNode } from 'react'
 import React from 'react'
+import { useTranslation } from 'react-i18next'
 import styled from 'styled-components'
 
 import { SettingDivider } from '..'
@@ -106,6 +107,7 @@ export type SessionLabelProps = {
 }
 
 export const SessionLabel = ({ session, className }: SessionLabelProps) => {
+  const { t } = useTranslation()
   const displayName = session?.name ?? session?.id
   const scheduledTask = (session?.configuration as Record<string, unknown> | undefined)?.scheduled_task
   const scheduledTaskName =
@@ -116,7 +118,7 @@ export const SessionLabel = ({ session, className }: SessionLabelProps) => {
   return (
     <span
       className={cn('flex min-w-0 items-center gap-1 truncate font-normal text-(--color-text) text-[13px]', className)}
-      title={scheduledTaskName ? `定时任务：${scheduledTaskName}` : undefined}>
+      title={scheduledTaskName ? t('agents.session.scheduled_task', { name: scheduledTaskName }) : undefined}>
       {scheduledTaskName && <Clock3 size={11} className="shrink-0 text-(--color-primary)" />}
       <span className="truncate">{displayName}</span>
     </span>

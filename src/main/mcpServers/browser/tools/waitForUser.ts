@@ -17,7 +17,8 @@ export const WaitForUserSchema = z.object({
   privateMode: z
     .boolean()
     .optional()
-    .describe('Target private session (default: false). Avoid private mode for login reuse.')
+    .describe('Target private session (default: false). Avoid private mode for login reuse.'),
+  tabId: z.string().optional().describe('Target specific tab when multiple tabs are open')
 })
 
 export const waitForUserToolDefinition = {
@@ -43,6 +44,10 @@ export const waitForUserToolDefinition = {
       privateMode: {
         type: 'boolean',
         description: 'Target private session (default: false). Avoid private mode for login reuse.'
+      },
+      tabId: {
+        type: 'string',
+        description: 'Target specific tab when multiple tabs are open'
       }
     }
   }
@@ -50,8 +55,8 @@ export const waitForUserToolDefinition = {
 
 export async function handleWaitForUser(controller: CdpBrowserController, args: unknown) {
   try {
-    const { message, reason, timeout, privateMode } = WaitForUserSchema.parse(args)
-    const result = await controller.waitForUser(message, reason, timeout, privateMode ?? false)
+    const { message, reason, timeout, privateMode, tabId } = WaitForUserSchema.parse(args)
+    const result = await controller.waitForUser(message, reason, timeout, privateMode ?? false, tabId)
     return successResponse(JSON.stringify(result))
   } catch (error) {
     logger.error('Wait for user failed', { error })

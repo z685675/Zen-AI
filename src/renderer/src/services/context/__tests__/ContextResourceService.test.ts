@@ -84,6 +84,21 @@ Closing notes.`
     expect(formatResourceSearchContext(results)).toContain('research-notes.txt')
   })
 
+  it('deduplicates simultaneous writes for the same conversation and content', async () => {
+    const writes = await Promise.all(
+      Array.from({ length: 6 }, () =>
+        saveTextContextResource({
+          conversationId: 'concurrent-topic',
+          sourceName: 'same-source.txt',
+          text: 'The same content was submitted at the same time.'
+        })
+      )
+    )
+
+    expect(new Set(writes.map((resource) => resource.id)).size).toBe(1)
+    expect(storedResources.filter((resource) => resource.conversationId === 'concurrent-topic')).toHaveLength(1)
+  })
+
   it('uses semantic aliases when the query and source use different wording', async () => {
     const conversationId = `resource-semantic-${Date.now()}`
     await saveTextContextResource({
@@ -99,6 +114,26 @@ Closing notes.`
 
     expect(results[0]?.sourceName).toBe('finance-plan.txt')
     expect(results[0]?.semanticScore).toBeGreaterThan(0)
+  })
+
+  it('never lets one oversized retrieval chunk bypass the token budget', async () => {
+    const conversationId = `resource-budget-${Date.now()}`
+    await saveTextContextResource({
+      conversationId,
+      sourceName: 'large-table.xlsx',
+      text: `年度销售表\n${Array.from({ length: 400 }, (_, index) => `第${index + 1}行：华东区域销售额为 ${index * 100} 元`).join('\n')}`
+    })
+
+    const results = await searchContextResources({
+      conversationId,
+      query: '华东区域销售额',
+      tokenBudget: 900
+    })
+
+    expect(results.length).toBeGreaterThan(0)
+    expect(results[0].chunk.tokenEstimate).toBeLessThanOrEqual(900)
+    expect(results[0].chunk.metadata?.truncatedForBudget).toBe(true)
+    expect(results[0].chunk.text).toContain('本段资料因当前上下文预算已截断')
   })
 
   it('preserves structured locators and reuses parsed file content', async () => {

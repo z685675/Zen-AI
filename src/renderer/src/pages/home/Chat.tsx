@@ -284,9 +284,7 @@ const Chat: FC<Props> = ({
                   {hasAvailableChatModels ? (
                     <WelcomeInner>
                       <WelcomeTitle>从一次更轻松的对话开始</WelcomeTitle>
-                      <WelcomeDescription>
-                        直接输入问题会使用默认助手。也可以先在下面选一个角色，让这一轮对话从一开始就带着明确风格。
-                      </WelcomeDescription>
+                      <WelcomeDescription>{t('chat.welcome.description')}</WelcomeDescription>
                       <WelcomeMeta>
                         <AssistantSwitchButton
                           assistant={assistant}

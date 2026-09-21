@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 
 import {
   clearLearnedModelCapabilityFailure,
+  clearLearnedModelCapabilityFailuresForProvider,
   hasLearnedModelCapabilityFailure,
   isLikelyUnsupportedModelCapabilityError,
   rememberModelCapabilityFailure
@@ -43,6 +44,22 @@ describe('model capability memory', () => {
     expect(hasLearnedModelCapabilityFailure(model, 'vision')).toBe(false)
   })
 
+  it('clears all remembered capabilities when a provider route is refreshed', () => {
+    const model = createModel()
+    const anotherModel = createModel({ id: 'another-model' })
+    const otherProviderModel = createModel({ provider: 'another-provider' })
+
+    rememberModelCapabilityFailure(model, 'vision')
+    rememberModelCapabilityFailure(anotherModel, 'function_calling')
+    rememberModelCapabilityFailure(otherProviderModel, 'vision')
+
+    clearLearnedModelCapabilityFailuresForProvider('test-provider')
+
+    expect(hasLearnedModelCapabilityFailure(model, 'vision')).toBe(false)
+    expect(hasLearnedModelCapabilityFailure(anotherModel, 'function_calling')).toBe(false)
+    expect(hasLearnedModelCapabilityFailure(otherProviderModel, 'vision')).toBe(true)
+  })
+
   it('recognizes unsupported capability errors but ignores connectivity failures', () => {
     expect(
       isLikelyUnsupportedModelCapabilityError(
@@ -57,6 +74,9 @@ describe('model capability memory', () => {
       )
     ).toBe(true)
     expect(isLikelyUnsupportedModelCapabilityError({ message: 'Failed to fetch' }, 'function_calling')).toBe(false)
+    expect(
+      isLikelyUnsupportedModelCapabilityError({ message: 'Failed to fetch image from the provider' }, 'vision')
+    ).toBe(false)
     expect(
       isLikelyUnsupportedModelCapabilityError(
         { statusCode: 500, message: 'tools are not supported' },

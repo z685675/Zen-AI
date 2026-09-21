@@ -51,6 +51,25 @@ export type StructuredFileContent = {
   sections: StructuredFileSection[]
 }
 
+/** An image embedded in an Office document, exposed for multimodal prompts. */
+export type EmbeddedFileImage = {
+  name: string
+  mediaType: string
+  base64: string
+  /** 1-based PDF page number when the image is a rendered PDF page. */
+  page?: number
+  /** Human-readable Office location, such as slide 2 or Sheet1!B4. */
+  location?: string
+}
+
+/** Options used when rendering document pages as visual evidence. */
+export type EmbeddedFileImageOptions = {
+  /** Explicit 1-based PDF pages to render. */
+  pageNumbers?: number[]
+  /** Maximum number of rendered pages. The main process applies its own hard cap. */
+  maxPages?: number
+}
+
 export type ContextProcessingStatus =
   | 'idle'
   | 'analyzing'

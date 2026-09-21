@@ -11,7 +11,7 @@ import { EventEmitter } from '@renderer/services/EventService'
 import type { McpMode, MCPPrompt, MCPResource, MCPServer } from '@renderer/types'
 import { getEffectiveMcpMode } from '@renderer/types'
 import { isToolUseModeFunction } from '@renderer/utils/assistant'
-import { isGeminiWebSearchProvider, isSupportUrlContextProvider } from '@renderer/utils/provider'
+import { isGeminiWebSearchProvider } from '@renderer/utils/provider'
 import { Form, Input, Tooltip } from 'antd'
 import { CircleX, Hammer, Plus, Sparkles } from 'lucide-react'
 import type { FC } from 'react'
@@ -149,15 +149,10 @@ const MCPToolsButton: FC<Props> = ({ quickPanel, setInputValue, resizeTextArea, 
         ? mcpServers.filter((s) => s.id !== server.id)
         : [...mcpServers, server]
 
-      let enableUrlContext = assistant.enableUrlContext
       let enableWebSearch = assistant.enableWebSearch
 
       if (nextMcpServers.length > 0 && isGeminiModel(model) && isToolUseModeFunction(assistant)) {
         const provider = getProviderByModel(model)
-        if (isSupportUrlContextProvider(provider) && assistant.enableUrlContext) {
-          window.toast.warning(t('chat.mcp.warning.url_context'))
-          enableUrlContext = false
-        }
         // Gemini 3+ supports combining built-in tools with function calling
         if (isGeminiWebSearchProvider(provider) && assistant.enableWebSearch && !isGemini3Model(model)) {
           window.toast.warning(t('chat.mcp.warning.gemini_web_search'))
@@ -168,7 +163,6 @@ const MCPToolsButton: FC<Props> = ({ quickPanel, setInputValue, resizeTextArea, 
       updateAssistant({
         mcpServers: nextMcpServers,
         mcpMode: 'manual',
-        enableUrlContext,
         enableWebSearch
       })
     },
