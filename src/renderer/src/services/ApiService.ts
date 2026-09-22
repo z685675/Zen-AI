@@ -67,6 +67,7 @@ import {
 } from './AssistantService'
 import { getErrorStatusCode, orderChatApiKeys, shouldRotateChatApiKey } from './chatKeyFailover'
 import {
+  CONTEXT_COMPACTION_REQUEST_HEADERS,
   createContextCompactionGenerator,
   resolveContextCompactionModels
 } from './context/ContextCompactionModelService'
@@ -1011,6 +1012,7 @@ export async function fetchChatCompletion({
             signal: requestOptions?.signal,
             timeoutMs: Math.min(SUMMARY_REQUEST_TIMEOUT_MS, remainingMs),
             throwOnError: true,
+            headers: CONTEXT_COMPACTION_REQUEST_HEADERS,
             maxOutputTokens: Math.min(8_000, compactionModel.maxOutputTokens ?? 8_000)
           })
         },
@@ -1872,6 +1874,7 @@ export async function fetchGenerate({
   content,
   model,
   signal,
+  headers,
   maxOutputTokens,
   timeoutMs,
   throwOnError = false
@@ -1880,6 +1883,7 @@ export async function fetchGenerate({
   content: string | ModelMessage[]
   model?: Model
   signal?: AbortSignal
+  headers?: Record<string, string>
   maxOutputTokens?: number
   timeoutMs?: number
   /** Context checkpointing needs to distinguish an empty result from a failed request. */
@@ -1947,6 +1951,7 @@ export async function fetchGenerate({
         system: prompt,
         ...input,
         abortSignal: requestSignal,
+        ...(headers ? { headers } : {}),
         ...(timeoutMs ? { maxRetries: 0 } : {}),
         ...(maxOutputTokens ? { maxOutputTokens } : {})
       },

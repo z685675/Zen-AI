@@ -9,6 +9,13 @@ import {
   recordContextCompactionModelSuccess
 } from './ContextCompactionModelHealthService'
 
+// The API panel uses this marker to route auxiliary checkpoint generation to
+// the exact `default` channel group. It is deliberately sent only for
+// context-compaction requests; ordinary chat and agent traffic is unchanged.
+export const CONTEXT_COMPACTION_REQUEST_HEADERS = {
+  'X-Zen-Context-Compaction': 'default-only'
+} as const
+
 export type ResolveContextCompactionModelsOptions = {
   providers: Provider[]
   /** Undefined means the server has not published this setting yet. */

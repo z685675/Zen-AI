@@ -7,7 +7,11 @@ import {
   recordContextCompactionModelSuccess,
   resetContextCompactionModelHealth
 } from '../ContextCompactionModelHealthService'
-import { createContextCompactionGenerator, resolveContextCompactionModels } from '../ContextCompactionModelService'
+import {
+  CONTEXT_COMPACTION_REQUEST_HEADERS,
+  createContextCompactionGenerator,
+  resolveContextCompactionModels
+} from '../ContextCompactionModelService'
 
 const createProvider = (id: string, modelIds: string[], enabled = true): Provider => ({
   id,
@@ -25,6 +29,12 @@ describe('resolveContextCompactionModels', () => {
 
   beforeEach(() => {
     resetContextCompactionModelHealth()
+  })
+
+  it('marks auxiliary checkpoint requests as default-group-only', () => {
+    expect(CONTEXT_COMPACTION_REQUEST_HEADERS).toEqual({
+      'X-Zen-Context-Compaction': 'default-only'
+    })
   })
 
   it('keeps the legacy current-model behavior when remote config is absent', () => {
