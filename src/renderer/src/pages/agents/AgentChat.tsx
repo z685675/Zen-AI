@@ -6,7 +6,6 @@ import {
   findAgentModelId,
   getAgentModelProviderId,
   isAssistantModelIdentifierAllowed,
-  isAssistantModelIdentifierBlocked,
   resolveAssistantFallbackModel
 } from '@renderer/config/agentModelPolicy'
 import { useActiveAgent } from '@renderer/hooks/agents/useActiveAgent'
@@ -17,7 +16,7 @@ import { useSession } from '@renderer/hooks/agents/useSession'
 import { useUpdateSession } from '@renderer/hooks/agents/useUpdateSession'
 import { useTopicMessages } from '@renderer/hooks/useMessageOperations'
 import { useRuntime } from '@renderer/hooks/useRuntime'
-import { useNavbarPosition, useSettings } from '@renderer/hooks/useSettings'
+import { useEnableDeveloperMode, useNavbarPosition, useSettings } from '@renderer/hooks/useSettings'
 import { useShortcut } from '@renderer/hooks/useShortcuts'
 import { useShowAssistants } from '@renderer/hooks/useStore'
 import { cleanupAgentSessionAttachmentDirectory } from '@renderer/services/AgentAttachmentService'
@@ -100,6 +99,7 @@ const EMPTY_SESSION_LOADING_RETRY_ATTEMPTS = 30
 const AgentChat = () => {
   const { t } = useTranslation()
   const { messageNavigation, messageStyle } = useSettings()
+  const { enableDeveloperMode } = useEnableDeveloperMode()
   const { showAssistants, setShowAssistants } = useShowAssistants()
   const dispatch = useAppDispatch()
   const { chat } = useRuntime()
@@ -284,7 +284,7 @@ const AgentChat = () => {
       isActiveSessionLoading ||
       messages.length > 0 ||
       !isUnnamedAgentSessionName(activeSession.name, t('common.unnamed')) ||
-      isAssistantModelIdentifierAllowed(activeSession.model, false, modelPolicy?.policy) ||
+      isAssistantModelIdentifierAllowed(activeSession.model, enableDeveloperMode, modelPolicy?.policy) ||
       modelRepairAttemptsRef.current.has(activeSession.id)
     ) {
       return
@@ -298,21 +298,26 @@ const AgentChat = () => {
           modelPolicy?.policy.rules.applyToNewSessions === false
             ? undefined
             : modelPolicy?.policy.defaults.assistantNewSession
-        if (!configuredDefault) return
+        if (!configuredDefault) {
+          modelRepairAttemptsRef.current.delete(activeSession.id)
+          return
+        }
         const currentDefaultModel = findAgentModelId(
           data,
           configuredDefault,
           getAgentModelProviderId(activeSession.model)
         )
-        if (currentDefaultModel) {
-          await updateSession(
-            {
-              id: activeSession.id,
-              model: currentDefaultModel
-            },
-            { showSuccessToast: false }
-          )
+        if (!currentDefaultModel) {
+          modelRepairAttemptsRef.current.delete(activeSession.id)
+          return
         }
+        await updateSession(
+          {
+            id: activeSession.id,
+            model: currentDefaultModel
+          },
+          { showSuccessToast: false }
+        )
       } catch (error) {
         modelRepairAttemptsRef.current.delete(activeSession.id)
         logger.warn('Failed to align an empty Agent session with the current default model', error as Error)
@@ -324,6 +329,7 @@ const AgentChat = () => {
     activeAgentId,
     activeSession,
     client,
+    enableDeveloperMode,
     hasLoadedSessionMessages,
     isActiveSessionLoading,
     messages.length,
@@ -338,7 +344,6 @@ const AgentChat = () => {
       !activeSession ||
       !hasLoadedSessionMessages ||
       isActiveSessionLoading ||
-      messages.length === 0 ||
       modelRepairAttemptsRef.current.has(activeSession.id)
     ) {
       return
@@ -348,12 +353,21 @@ const AgentChat = () => {
     const repairUnavailableModel = async () => {
       try {
         const { data } = await client.getModels({ limit: 1000 })
-        const currentModelBlocked = isAssistantModelIdentifierBlocked(activeSession.model, modelPolicy?.policy)
         const currentModelAvailable =
           Boolean(activeSession.model?.trim()) && data.some((model) => model.id === activeSession.model)
-        if (currentModelAvailable && !currentModelBlocked) return
+        const currentModelAllowed = isAssistantModelIdentifierAllowed(
+          activeSession.model,
+          enableDeveloperMode,
+          modelPolicy?.policy
+        )
+        if (currentModelAvailable && currentModelAllowed) return
 
-        const fallbackModel = resolveAssistantFallbackModel(data, activeSession.model, modelPolicy?.policy)
+        const fallbackModel = resolveAssistantFallbackModel(
+          data,
+          activeSession.model,
+          modelPolicy?.policy,
+          enableDeveloperMode
+        )
 
         if (!fallbackModel) {
           modelRepairAttemptsRef.current.delete(activeSession.id)
@@ -395,6 +409,7 @@ const AgentChat = () => {
     activeAgentId,
     activeSession,
     client,
+    enableDeveloperMode,
     hasLoadedSessionMessages,
     isActiveSessionLoading,
     messages.length,

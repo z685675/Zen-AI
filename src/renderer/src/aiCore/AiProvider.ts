@@ -352,10 +352,20 @@ export default class AiProvider {
     middlewareConfig: AiProviderConfig,
     providerConfig: ProviderConfig
   ): Promise<CompletionsResult> {
+    const cacheProviderSettings = providerConfig.providerSettings as {
+      apiKey?: string
+      baseURL?: string
+      headers?: Record<string, string>
+    }
     const plugins = buildPlugins({
       provider: this.actualProvider,
       model: this.model!,
       runtimeProviderId: providerConfig.providerId,
+      geminiCacheClient: {
+        apiKey: cacheProviderSettings.apiKey || this.actualProvider.apiKey,
+        baseURL: cacheProviderSettings.baseURL,
+        headers: cacheProviderSettings.headers
+      },
       config: middlewareConfig
     })
 

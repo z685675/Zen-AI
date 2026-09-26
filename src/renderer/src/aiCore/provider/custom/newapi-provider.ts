@@ -38,6 +38,7 @@ export interface NewApiProviderSettings {
   headers?: Record<string, string>
   fetch?: FetchFunction
   endpointType?: NewApiEndpointType
+  includeUsage?: boolean
 }
 
 export interface NewApiProvider extends ProviderV3 {
@@ -48,7 +49,7 @@ export interface NewApiProvider extends ProviderV3 {
 }
 
 export function createNewApi(options: NewApiProviderSettings = {}): NewApiProvider {
-  const { baseURL = '', fetch: customFetch, endpointType } = options
+  const { baseURL = '', fetch: customFetch, endpointType, includeUsage } = options
 
   const resolveApiKey = () =>
     loadApiKey({ apiKey: options.apiKey, environmentVariableName: 'NEWAPI_API_KEY', description: 'NewAPI' })
@@ -97,7 +98,8 @@ export function createNewApi(options: NewApiProviderSettings = {}): NewApiProvid
       provider: `${NEWAPI_PROVIDER_NAME}.chat`,
       url,
       headers: authHeaders,
-      fetch: customFetch
+      fetch: customFetch,
+      includeUsage
     })
 
   const createChatModel = (modelId: string): LanguageModelV3 => {

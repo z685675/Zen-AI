@@ -181,24 +181,46 @@ const getAvailableModel = (model: Model | undefined, availableModels: Model[]): 
 
 const repairAssistantModelReferences = (
   assistant: Assistant,
-  fallbackModel: Model,
+  fallbackModel: Model | undefined,
   availableModels: Model[]
 ): Assistant => {
+  let changed = false
   const repairModel = (model: Model | undefined): Model | undefined => {
     if (!model) {
       return undefined
     }
 
-    return getAvailableModel(model, availableModels) ? model : fallbackModel
+    const availableModel = getAvailableModel(model, availableModels)
+    if (availableModel) {
+      if (availableModel !== model) changed = true
+      return availableModel
+    }
+
+    changed = true
+    return fallbackModel
   }
 
   const nextTopics = (assistant.topics ?? []).map((topic: Topic) => {
-    if (!topic.model || getAvailableModel(topic.model, availableModels)) {
+    if (!topic.model) {
       return topic
     }
 
+    const availableModel = getAvailableModel(topic.model, availableModels)
+    if (availableModel) {
+      if (availableModel !== topic.model) {
+        changed = true
+        return { ...topic, model: availableModel }
+      }
+      return topic
+    }
+
+    changed = true
     return { ...topic, model: fallbackModel }
   })
+
+  if (!changed) {
+    return assistant
+  }
 
   return {
     ...assistant,
@@ -234,8 +256,10 @@ export const reconcileProviderModelReferences = (): void => {
     store.dispatch(setTranslateModel({ model: undefined }))
   }
 
-  const fallbackModel = nextDefaultModel
-  if (!fallbackModel) return
+  // Prefer a configured chat default, then the user's quick/translation
+  // defaults. If none exists, clear invalid references instead of leaving a
+  // disabled model in a session that will fail on the next send.
+  const fallbackModel = nextDefaultModel ?? nextQuickModel ?? nextTranslateModel
 
   const nextAssistants = state.assistants.assistants.map((assistant) =>
     repairAssistantModelReferences(assistant, fallbackModel, availableModels)

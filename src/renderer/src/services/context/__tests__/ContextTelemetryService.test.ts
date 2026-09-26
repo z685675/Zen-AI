@@ -5,6 +5,7 @@ import {
   getContextTelemetry,
   recordContextCache,
   recordContextCompression,
+  recordContextLocalCheckpointFallback,
   recordContextRetrieval,
   recordContextRetry,
   setContextProcessingStatus
@@ -55,5 +56,16 @@ describe('ContextTelemetryService', () => {
 
     expect(getContextTelemetry('topic-1')?.compressionCount).toBe(0)
     expect(getContextTelemetry('topic-2')?.compressionCount).toBe(1)
+  })
+
+  it('records local checkpoint fallback so the user can see the degraded path', () => {
+    recordContextLocalCheckpointFallback('topic-fallback', 'all-remote-models-failed')
+
+    expect(getContextTelemetry('topic-fallback')).toMatchObject({
+      localCheckpointUsed: true,
+      localCheckpointReason: 'all-remote-models-failed',
+      lastAction: 'local-checkpoint-fallback',
+      detail: expect.stringContaining('本地 checkpoint')
+    })
   })
 })

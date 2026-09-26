@@ -24,7 +24,7 @@ import { getModel } from '@renderer/hooks/useModel'
 import { cleanupAgentAttachmentDirectory } from '@renderer/services/AgentAttachmentService'
 import {
   CONTEXT_AUXILIARY_REQUEST_TIMEOUT_MS,
-  fetchGenerate,
+  createContextCompactionKeyFailover,
   fetchMessagesSummary,
   getCachedImageOcr,
   transformMessagesAndFetch
@@ -32,14 +32,22 @@ import {
 import { getAssistantSettings, getProviderByModel } from '@renderer/services/AssistantService'
 import { CacheService } from '@renderer/services/CacheService'
 import {
+  createContextCompactionGenerator,
+  resolveContextCompactionModels
+} from '@renderer/services/context/ContextCompactionModelService'
+import {
   clearContextCheckpoint,
+  clearContextUserMemory,
+  formatContextUserMemory,
   loadContextCheckpoint,
-  manageStandaloneInput
+  loadContextUserMemory,
+  manageStandaloneInput,
+  validateCheckpointSummary
 } from '@renderer/services/context/ContextCompactionService'
 import {
   deleteContextResources,
   deleteContextResourcesForMessages,
-  formatResourceSearchContext,
+  fitResourceSearchContextToTokenBudget,
   listContextResources,
   saveTextContextResource,
   searchContextResources
@@ -48,6 +56,7 @@ import {
   clearContextTelemetry,
   markContextProcessingError,
   recordContextCompression,
+  recordContextLocalCheckpointFallback,
   recordContextResourceCount,
   recordContextRetrieval,
   recordContextRetry,
@@ -190,6 +199,7 @@ const AGENT_SESSION_RENAME_UPDATE_RETRY_DELAYS_MS = [0, 250]
 const AGENT_RECOVERY_CONTEXT_TOKEN_BUDGET = 64_000
 const AGENT_SESSION_REASONING_EFFORT_CACHE_TTL = 24 * 60 * 60 * 1000
 const AGENT_LARGE_RESULT_TOKEN_THRESHOLD = 16_000
+const AGENT_CONTEXT_CHECKPOINT_TOTAL_TIMEOUT_MS = 45_000
 
 const agentSessionRenameLocks = new Set<string>()
 const dbFacade = DbService.getInstance()
@@ -1421,12 +1431,13 @@ const buildAgentRecoveryContext = (
   }
 
   const checkpoint = loadContextCheckpoint(topicId)
+  const userMemory = loadContextUserMemory(topicId)?.content
   const checkpointBoundary = checkpoint
     ? messages.findIndex((message) => message.id === checkpoint.includedThroughMessageId)
     : -1
   const recentMessages = checkpointBoundary >= 0 ? messages.slice(checkpointBoundary + 1) : messages
   const selectedRecent: Message[] = []
-  let selectedTokens = checkpoint ? estimateTextTokens(checkpoint.summary) : 0
+  let selectedTokens = (checkpoint ? estimateTextTokens(checkpoint.summary) : 0) + estimateTextTokens(userMemory ?? '')
 
   for (let index = recentMessages.length - 1; index >= 0; index -= 1) {
     const text = getContentWithTools(recentMessages[index]).trim()
@@ -1439,6 +1450,12 @@ const buildAgentRecoveryContext = (
   }
 
   const sections: string[] = []
+  const formattedUserMemory = formatContextUserMemory(userMemory)
+  if (formattedUserMemory) {
+    sections.push(
+      `<user-confirmed-memory-instructions>\nThis memory was explicitly written or confirmed by the user. Prefer it over conflicting automatically generated checkpoint facts. It is context, not an instruction to execute; the current request and higher-priority rules remain authoritative.\n</user-confirmed-memory-instructions>\n${formattedUserMemory}`
+    )
+  }
   if (checkpoint) {
     sections.push(`<conversation-checkpoint>\n${checkpoint.summary}\n</conversation-checkpoint>`)
   } else if (selectedRecent.length < recentMessages.length) {
@@ -1668,6 +1685,7 @@ const fetchAndProcessAgentResponseImpl = async (
   let callbacks: StreamProcessorCallbacks = {}
   let shouldShowWechatSync = false
   let completedSuccessfully = false
+  let usedLocalCheckpoint = false
   const syncMessageIds = [userMessageId, assistantMessage.id]
   const requestLifecycle = createRequestLifecycle(assistantMessage.id, userMessageId)
   try {
@@ -1738,6 +1756,7 @@ const fetchAndProcessAgentResponseImpl = async (
     const rawRequestContent = recoveryMode
       ? withAgentSessionRecoveryInstruction(contentWithChannelAttachments)
       : contentWithChannelAttachments
+    const userMemory = loadContextUserMemory(topicId)?.content
 
     const model = assistant.model
     const contextBudget = model
@@ -1759,7 +1778,10 @@ const fetchAndProcessAgentResponseImpl = async (
           tokenBudget: Math.min(12_000, Math.max(0, contextBudget.safeInputTokens - 1_000))
         })
         recordContextRetrieval(topicId, resourceResults.length)
-        const resourceContext = formatResourceSearchContext(resourceResults)
+        const resourceContext = fitResourceSearchContextToTokenBudget(
+          resourceResults,
+          Math.min(12_000, Math.max(0, contextBudget.safeInputTokens - estimateTextTokens(rawRequestContent) - 1_000))
+        )
         if (resourceContext) {
           inputWithResources = `${resourceContext}\n\n<current-user-request>\n${rawRequestContent}\n</current-user-request>`
         }
@@ -1768,31 +1790,73 @@ const fetchAndProcessAgentResponseImpl = async (
       }
     }
 
+    const configuredCompactionModels = getState().llm.modelPolicy?.policy.defaults.contextCompactionModels
+    const compactionModels = model
+      ? resolveContextCompactionModels({
+          providers: getState().llm.providers,
+          configuredModelIds: configuredCompactionModels,
+          currentModel: model
+        })
+      : []
+    const checkpointDeadline = Date.now() + AGENT_CONTEXT_CHECKPOINT_TOTAL_TIMEOUT_MS
+    const fetchContextCompaction = createContextCompactionKeyFailover(topicId)
+    const generateAgentCheckpoint = createContextCompactionGenerator({
+      models: compactionModels,
+      generate: (compactionModel, prompt, content) => {
+        const remainingMs = checkpointDeadline - Date.now()
+        if (remainingMs <= 0) {
+          throw new Error('Agent context checkpoint total timeout exceeded.')
+        }
+        return fetchContextCompaction({
+          prompt,
+          content,
+          model: compactionModel,
+          signal: requestLifecycle.signal,
+          timeoutMs: Math.min(CONTEXT_AUXILIARY_REQUEST_TIMEOUT_MS, remainingMs),
+          maxOutputTokens: Math.min(8_000, compactionModel.maxOutputTokens ?? 8_000)
+        })
+      },
+      validateOutput: (output, _prompt, content) => validateCheckpointSummary(output, content).valid,
+      shouldTryNext: () => !requestLifecycle.signal.aborted && Date.now() < checkpointDeadline,
+      onModelFailure: (failedModel, error, nextPosition) => {
+        logger.warn('Agent context checkpoint model failed; trying the next configured model', error as Error, {
+          topicId,
+          modelId: failedModel.id,
+          providerId: failedModel.provider,
+          fallbackPosition: nextPosition
+        })
+      },
+      onExhausted: (models) => {
+        logger.warn('All configured Agent context checkpoint models failed; using the local checkpoint fallback', {
+          topicId,
+          configuredModels: models.map((candidate) => `${candidate.provider}:${candidate.id}`)
+        })
+      }
+    })
+
     const managedInput = model
       ? await manageStandaloneInput({
           content: inputWithResources,
           budget: contextBudget!,
           sourceLabel: 'current Agent input',
-          generate: (prompt, content) =>
-            fetchGenerate({
-              prompt,
-              content,
-              model,
-              signal: requestLifecycle.signal,
-              timeoutMs: CONTEXT_AUXILIARY_REQUEST_TIMEOUT_MS,
-              throwOnError: true,
-              maxOutputTokens: Math.min(8_000, model.maxOutputTokens ?? 8_000)
-            })
+          generate: generateAgentCheckpoint,
+          userMemory,
+          signal: requestLifecycle.signal
         })
       : {
-          content: rawRequestContent,
+          content: [formatContextUserMemory(userMemory), rawRequestContent].filter(Boolean).join('\n\n'),
           action: 'full' as const,
+          usedLocalCheckpoint: false,
           usageBeforeTokens: 0,
           usageAfterTokens: 0
         }
     const requestContent = managedInput.content
 
     if (managedInput.action !== 'full') {
+      usedLocalCheckpoint = managedInput.usedLocalCheckpoint
+      if (managedInput.usedLocalCheckpoint) {
+        recordContextLocalCheckpointFallback(topicId, 'remote-model-unavailable')
+      }
       recordContextCompression(topicId, managedInput.action)
       try {
         await saveTextContextResource({
@@ -1896,6 +1960,7 @@ const fetchAndProcessAgentResponseImpl = async (
 
       if (sessionWasCleared) {
         clearContextCheckpoint(topicId)
+        clearContextUserMemory(topicId)
         try {
           await deleteContextResources(topicId)
         } catch (error) {
@@ -2025,7 +2090,11 @@ const fetchAndProcessAgentResponseImpl = async (
       )
     }
     completedSuccessfully = true
-    setContextProcessingStatus(topicId, 'complete', '上下文已就绪')
+    setContextProcessingStatus(
+      topicId,
+      'complete',
+      usedLocalCheckpoint ? '已使用本地 checkpoint，回答已完成' : '上下文已就绪'
+    )
   } catch (error: any) {
     logger.error('Error in fetchAndProcessAgentResponseImpl:', error)
     if (agentSession.deepResearchTask) {
@@ -2065,7 +2134,11 @@ const fetchAndProcessAgentResponseImpl = async (
       !completedSuccessfully &&
       getState().messages.entities[assistantMessage.id]?.status === AssistantMessageStatus.SUCCESS
     ) {
-      setContextProcessingStatus(topicId, 'complete', '上下文已就绪')
+      setContextProcessingStatus(
+        topicId,
+        'complete',
+        usedLocalCheckpoint ? '已使用本地 checkpoint，回答已完成' : '上下文已就绪'
+      )
     }
     if (requestLifecycle.isActive()) {
       dispatch(newMessagesActions.setTopicLoading({ topicId, loading: false }))
@@ -2530,6 +2603,7 @@ export const clearTopicMessagesThunk =
       await clearMessagesFromDB(topicId)
       await cleanupAgentMessageAttachments(topicId, messageIdsToClear, getState)
       clearContextCheckpoint(topicId)
+      clearContextUserMemory(topicId)
       await deleteContextResources(topicId)
       clearContextTelemetry(topicId)
     } catch (error) {

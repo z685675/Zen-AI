@@ -15,7 +15,7 @@ import {
 import type { AiSdkMiddlewareConfig } from '../types/middlewareConfig'
 import { getReasoningTagName } from '../utils/reasoning'
 import { createAnthropicCachePlugin } from './anthropicCachePlugin'
-import { createGeminiCachePlugin } from './geminiCachePlugin'
+import { createGeminiCachePlugin, type GeminiCacheClientOptions } from './geminiCachePlugin'
 import { createNoThinkPlugin } from './noThinkPlugin'
 import { createOpenrouterReasoningPlugin } from './openrouterReasoningPlugin'
 import { createPdfCompatibilityPlugin } from './pdfCompatibilityPlugin'
@@ -38,13 +38,20 @@ export interface BuildPluginsContext {
   provider: Provider
   model: Model
   runtimeProviderId?: string
+  geminiCacheClient?: GeminiCacheClientOptions
   config: AiSdkMiddlewareConfig & { assistant: Assistant; topicId?: string }
 }
 
 /**
  * 根据条件构建插件数组
  */
-export function buildPlugins({ provider, model, runtimeProviderId, config }: BuildPluginsContext): AiPlugin[] {
+export function buildPlugins({
+  provider,
+  model,
+  runtimeProviderId,
+  geminiCacheClient,
+  config
+}: BuildPluginsContext): AiPlugin[] {
   const plugins: AiPlugin<any, any>[] = []
 
   if (config.topicId && getEnableDeveloperMode()) {
@@ -88,8 +95,11 @@ export function buildPlugins({ provider, model, runtimeProviderId, config }: Bui
   }
 
   const geminiCacheControl = getEffectiveGeminiCacheControl(provider, model)
-  if (geminiCacheControl?.tokenThreshold) {
-    plugins.push(createGeminiCachePlugin(geminiCacheControl))
+  // New API selects the actual upstream channel remotely. A Gemini-looking
+  // model can still be routed through an OpenAI-compatible channel, where a
+  // Google cachedContents resource cannot be created or reused safely.
+  if (runtimeProviderId !== 'newapi' && geminiCacheControl?.tokenThreshold) {
+    plugins.push(createGeminiCachePlugin(geminiCacheControl, geminiCacheClient))
   }
 
   // 0.3 OpenRouter reasoning redaction

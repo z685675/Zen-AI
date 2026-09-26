@@ -93,6 +93,9 @@ export type ContextTelemetry = {
   resourceCount: number
   cacheHits: number
   cacheMisses: number
+  /** True when the latest context operation used a deterministic local checkpoint. */
+  localCheckpointUsed?: boolean
+  localCheckpointReason?: string
   lastAction?: string
   lastError?: string
   updatedAt: string

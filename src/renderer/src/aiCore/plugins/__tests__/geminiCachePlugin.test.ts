@@ -3,17 +3,23 @@ import type { GeminiCacheControlSettings } from '@renderer/types/provider'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const createMock = vi.fn()
+const googleGenAIMock = vi.fn()
 
 vi.mock('@google/genai', () => ({
-  GoogleGenAI: vi.fn().mockImplementation(() => ({
-    caches: {
-      create: createMock
+  GoogleGenAI: vi.fn().mockImplementation((options) => {
+    googleGenAIMock(options)
+    return {
+      caches: {
+        create: createMock
+      }
     }
-  })),
+  }),
   createModelContent: (parts: unknown[]) => ({ role: 'model', parts }),
   createUserContent: (parts: unknown[]) => ({ role: 'user', parts }),
   createPartFromText: (text: string) => ({ text })
 }))
+
+import { GoogleGenAI } from '@google/genai'
 
 import { createGeminiCachePlugin, selectGeminiCacheCandidate } from '../geminiCachePlugin'
 
@@ -37,8 +43,12 @@ function makePrompt(): LanguageModelV3Message[] {
   ]
 }
 
-async function runMiddleware(params: LanguageModelV3CallOptions, settings = makeSettings()) {
-  const plugin = createGeminiCachePlugin(settings)
+async function runMiddleware(
+  params: LanguageModelV3CallOptions,
+  settings = makeSettings(),
+  clientOptions: { apiKey?: string; baseURL?: string; headers?: Record<string, string> } = {}
+) {
+  const plugin = createGeminiCachePlugin(settings, clientOptions)
   const context: {
     middlewares: Array<{ transformParams: (opts: Record<string, unknown>) => Promise<LanguageModelV3CallOptions> }>
   } = { middlewares: [] }
@@ -54,6 +64,8 @@ async function runMiddleware(params: LanguageModelV3CallOptions, settings = make
 describe('geminiCachePlugin', () => {
   beforeEach(() => {
     createMock.mockReset()
+    googleGenAIMock.mockReset()
+    vi.mocked(GoogleGenAI).mockClear()
     createMock.mockResolvedValue({ name: 'cachedContents/abc123' })
   })
 
@@ -109,6 +121,41 @@ describe('geminiCachePlugin', () => {
     expect(second.providerOptions?.google).toMatchObject({ cachedContent: 'cachedContents/abc123' })
   })
 
+  it('creates explicit caches through the configured gateway URL with the configured credentials', async () => {
+    const prompt = makePrompt()
+    const result = await runMiddleware(
+      {
+        prompt,
+        providerOptions: { google: {} }
+      } as unknown as LanguageModelV3CallOptions,
+      makeSettings({ cacheScope: 'gateway-settings-test' }),
+      {
+        apiKey: 'gateway-test-key',
+        baseURL: 'https://api.example.test/v1beta/',
+        headers: { 'X-Zen-Test': 'enabled' }
+      }
+    )
+
+    expect(result.providerOptions?.google).toMatchObject({ cachedContent: 'cachedContents/abc123' })
+    expect(GoogleGenAI).toHaveBeenCalledWith({
+      apiKey: 'gateway-test-key',
+      httpOptions: {
+        baseUrl: 'https://api.example.test',
+        apiVersion: 'v1beta',
+        headers: { 'X-Zen-Test': 'enabled' }
+      }
+    })
+    expect(createMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        model: 'gemini-2.5-pro',
+        config: expect.objectContaining({
+          systemInstruction: expect.anything(),
+          ttl: '3600s'
+        })
+      })
+    )
+  })
+
   it('skips cache when prompt is not text-only', async () => {
     const result = await runMiddleware({
       prompt: [
@@ -159,18 +206,10 @@ describe('geminiCachePlugin', () => {
     expect(candidate?.cacheKey).toContain('zen-gemini-cache')
   })
 
-  it('accepts normal chat prefixes below the original threshold using a conservative relaxed floor', () => {
-    const prompt = [
-      { role: 'system', content: 'You are helping me polish an academic paragraph. '.repeat(24) },
-      { role: 'user', content: 'Please keep the meaning unchanged and improve the wording. '.repeat(24) },
-      { role: 'assistant', content: 'Understood. I will preserve the scientific meaning. '.repeat(24) },
-      { role: 'user', content: 'Now rewrite this sentence more formally.' }
-    ] satisfies LanguageModelV3Message[]
+  it('does not attempt cache creation below the configured minimum token threshold', () => {
+    const candidate = selectGeminiCacheCandidate(makePrompt(), makeSettings({ tokenThreshold: 5000 }), 'gemini-2.5-pro')
 
-    const candidate = selectGeminiCacheCandidate(prompt, makeSettings({ tokenThreshold: 220 }), 'gemini-2.5-pro')
-
-    expect(candidate).toBeDefined()
-    expect(candidate?.tailMessages).toHaveLength(1)
+    expect(candidate).toBeUndefined()
   })
 
   it('keeps the chat request working when remote cache creation fails', async () => {
@@ -185,5 +224,34 @@ describe('geminiCachePlugin', () => {
 
     await expect(runMiddleware(params, makeSettings({ cacheScope: 'failure-test-service' }))).resolves.toEqual(params)
     expect(createMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('retries once with the original prompt when the cached-content route fails', async () => {
+    const settings = makeSettings({ cacheScope: 'expired-handle-fallback-test' })
+    const plugin = createGeminiCachePlugin(settings)
+    const context: { middlewares: unknown[] } = { middlewares: [] }
+    void plugin.configureContext!(context as never)
+    const middleware = context.middlewares[0] as {
+      transformParams: (options: Record<string, unknown>) => Promise<LanguageModelV3CallOptions>
+      wrapStream: (options: Record<string, unknown>) => Promise<unknown>
+    }
+    const originalParams = {
+      prompt: makePrompt(),
+      headers: { 'x-goog-api-key': 'fallback-test-key' },
+      providerOptions: { google: { temperature: 0.1 } }
+    } as unknown as LanguageModelV3CallOptions
+    const model = {
+      modelId: 'gemini-2.5-pro',
+      doStream: vi.fn().mockResolvedValue({ stream: 'retried-with-full-prompt' })
+    }
+    const cachedParams = await middleware.transformParams({ params: originalParams, model, type: 'stream' })
+    const cachedRouteError = Object.assign(new Error('Upstream channel unavailable'), { statusCode: 503 })
+    const doStream = vi.fn().mockRejectedValue(cachedRouteError)
+
+    const result = await middleware.wrapStream({ doStream, params: cachedParams, model })
+
+    expect(result).toEqual({ stream: 'retried-with-full-prompt' })
+    expect(model.doStream).toHaveBeenCalledWith(originalParams)
+    expect(doStream).toHaveBeenCalledTimes(1)
   })
 })

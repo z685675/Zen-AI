@@ -1,7 +1,7 @@
 import type { Model, Provider } from '@renderer/types'
 import { describe, expect, it } from 'vitest'
 
-import { resolveRemoteDefaultModel } from './remoteModelPolicy'
+import { resolveIndependentModel, resolveRemoteDefaultModel } from './remoteModelPolicy'
 
 const createProvider = (id: string, apiHost: string, modelIds: string[], enabled = true): Provider => ({
   id,
@@ -37,5 +37,22 @@ describe('remote default model resolution', () => {
 
   it('returns undefined when no enabled Provider exposes the configured model', () => {
     expect(resolveRemoteDefaultModel([localProvider], 'grok-4.5')).toBeUndefined()
+  })
+
+  it('restricts independent context models to the exact Zen AI Provider host', () => {
+    expect(resolveIndependentModel([localProvider, officialProvider], 'gpt-5.6-luna')?.provider).toBe('zen-official')
+    expect(resolveIndependentModel([localProvider], 'gpt-5.6-luna')).toBeUndefined()
+  })
+
+  it('does not confuse client model grouping with API panel route grouping', () => {
+    const expensiveProvider = createProvider('zen-svip', 'https://zenai.925636.xyz', ['gpt-5.6-luna'])
+    expensiveProvider.models[0].group = 'svip'
+    const defaultProvider = createProvider('zen-default', 'https://zenai.925636.xyz', ['gpt-5.6-luna'])
+
+    // The desktop request carries the default-only routing marker. The local
+    // `group` value is only a display/vendor grouping and must not decide
+    // whether the model can be used for checkpointing.
+    expect(resolveIndependentModel([expensiveProvider, defaultProvider], 'gpt-5.6-luna')?.provider).toBe('zen-svip')
+    expect(resolveIndependentModel([expensiveProvider], 'gpt-5.6-luna')?.provider).toBe('zen-svip')
   })
 })

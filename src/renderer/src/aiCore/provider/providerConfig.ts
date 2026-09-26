@@ -550,6 +550,8 @@ function formatNewApiBaseURL(baseURL: string, endpointType?: string): string {
 
 function buildNewApiConfig(ctx: BuilderContext): ProviderConfig<'newapi'> {
   const baseURL = formatNewApiBaseURL(ctx.baseConfig.baseURL, ctx.model.endpoint_type)
+  const usesOpenAICompatibleChat =
+    !ctx.model.endpoint_type || ctx.model.endpoint_type === 'openai' || ctx.model.endpoint_type === 'image-generation'
 
   return {
     providerId: 'newapi',
@@ -558,6 +560,10 @@ function buildNewApiConfig(ctx: BuilderContext): ProviderConfig<'newapi'> {
       ...ctx.baseConfig,
       baseURL,
       endpointType: ctx.model.endpoint_type,
+      includeUsage:
+        usesOpenAICompatibleChat && isSupportStreamOptionsProvider(ctx.actualProvider)
+          ? (store.getState().settings.openAI?.streamOptions?.includeUsage ?? true)
+          : undefined,
       headers: { ...defaultAppHeaders(), ...getZenClientHeaders(baseURL), ...ctx.actualProvider.extra_headers },
       fetch: withZenTraceFetch()
     }

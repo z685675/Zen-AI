@@ -1208,6 +1208,20 @@
         "retrievals": "[to be translated]:Relevant resource calls",
         "title": "[to be translated]:Resources and context"
       },
+      "context_memory": {
+        "auto_summary": "AI-organized memory",
+        "intro": "This conversation's automatic summary is shown here. Add or correct important details separately; these additions are merged into the next generated summary and remain saved until then.",
+        "not_ready": "Automatic summarization has not started for this conversation yet. It will be created when needed as the conversation grows; any manual notes you save now will still be used.",
+        "note": "Changes apply starting with your next request. They do not edit chat history or interrupt a response already in progress. Save an empty field to remove your manual notes.",
+        "placeholder": "For example: The budget is now 20,000; the project code is ZEN-42; use option B going forward.",
+        "save_error": "Could not save. Please try again.",
+        "saved": "Saved. Your next request will use these notes.",
+        "short_title": "Conversation memory",
+        "source_tokens": "About {{tokens}} source tokens",
+        "title": "View and edit conversation memory",
+        "updated_at": "Last organized: {{time}}",
+        "user_memory": "My corrections and additions"
+      },
       "estimated_tokens": {
         "tip": "Estimation du nombre de tokens"
       },

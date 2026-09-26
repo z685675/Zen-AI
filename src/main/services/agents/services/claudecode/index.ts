@@ -1018,6 +1018,9 @@ class ClaudeCodeService implements AgentServiceInterface {
       // Built-in agents skip CLAUDE.md loading to save tokens
       settingSources: builtinRole ? [] : ['project', 'local'],
       includePartialMessages: true,
+      // Set the official Claude Code setting in the SDK's highest-priority
+      // settings layer so user/project config cannot accidentally disable it.
+      settings: { autoCompactEnabled: true },
       permissionMode: session.configuration?.permission_mode,
       maxTurns: session.configuration?.max_turns,
       allowedTools: session.allowed_tools,

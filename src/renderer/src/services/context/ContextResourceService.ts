@@ -577,3 +577,59 @@ ${results
   .join('\n\n')}
 </local-resource-context>`
 }
+
+const RESOURCE_TRUNCATION_MARKER = '\n[本段资料因最终上下文预算已截断]'
+
+/**
+ * Bound the fully formatted retrieval payload, including XML-like wrappers,
+ * source names, and locators. `searchContextResources` limits chunk bodies,
+ * but those wrappers are part of the actual request and must be counted too.
+ */
+export function fitResourceSearchContextToTokenBudget(
+  results: ContextResourceSearchResult[],
+  tokenBudget: number
+): string {
+  const limit = Math.max(0, Math.floor(tokenBudget))
+  if (limit === 0 || results.length === 0) return ''
+
+  const selected: ContextResourceSearchResult[] = []
+  for (const result of results) {
+    const candidate = [...selected, result]
+    if (approximateTokenSize(formatResourceSearchContext(candidate)) <= limit) {
+      selected.push(result)
+      continue
+    }
+
+    // If the highest-ranked chunk alone is too large after formatting, keep a
+    // bounded prefix rather than dropping all local evidence.
+    if (selected.length === 0) {
+      let low = 0
+      let high = result.chunk.text.length
+      let best: ContextResourceSearchResult | undefined
+
+      while (low <= high) {
+        const middle = Math.floor((low + high) / 2)
+        const text = `${result.chunk.text.slice(0, middle).trimEnd()}${RESOURCE_TRUNCATION_MARKER}`
+        const truncated: ContextResourceSearchResult = {
+          ...result,
+          chunk: {
+            ...result.chunk,
+            text,
+            tokenEstimate: approximateTokenSize(text),
+            metadata: { ...result.chunk.metadata, truncatedForBudget: true }
+          }
+        }
+        if (approximateTokenSize(formatResourceSearchContext([truncated])) <= limit) {
+          best = truncated
+          low = middle + 1
+        } else {
+          high = middle - 1
+        }
+      }
+
+      if (best) selected.push(best)
+    }
+  }
+
+  return formatResourceSearchContext(selected)
+}

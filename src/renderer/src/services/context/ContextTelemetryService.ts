@@ -17,6 +17,7 @@ const createTelemetry = (conversationId: string): ContextTelemetry => ({
   resourceCount: 0,
   cacheHits: 0,
   cacheMisses: 0,
+  localCheckpointUsed: false,
   updatedAt: new Date().toISOString()
 })
 
@@ -58,7 +59,17 @@ export function setContextProcessingStatus(
     status,
     detail,
     ...progress,
+    ...(status === 'analyzing' ? { localCheckpointUsed: false, localCheckpointReason: undefined } : {}),
     ...(status !== 'error' ? { lastError: undefined } : {})
+  })
+}
+
+export function recordContextLocalCheckpointFallback(conversationId: string, reason: string): ContextTelemetry {
+  return updateContextTelemetry(conversationId, {
+    localCheckpointUsed: true,
+    localCheckpointReason: reason,
+    lastAction: 'local-checkpoint-fallback',
+    detail: '远程上下文整理模型暂不可用，已使用本地 checkpoint，正在继续回答'
   })
 }
 

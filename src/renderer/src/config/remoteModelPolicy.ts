@@ -1,6 +1,6 @@
 import type { Model, Provider } from '@renderer/types'
 import { getLowerBaseModelName } from '@renderer/utils/naming'
-import { isZenManagedApiHost } from '@shared/config/zenProvider'
+import { isZenContextCompactionApiHost, isZenManagedApiHost } from '@shared/config/zenProvider'
 
 type ModelCandidate = {
   model: Model
@@ -55,16 +55,24 @@ export const resolveIndependentModel = (
 ): Model | undefined => {
   if (!target?.trim()) return undefined
 
-  const candidates = getModelCandidates(providers, target)
+  const candidates = getModelCandidates(providers, target).filter(({ provider }) =>
+    isZenContextCompactionApiHost(provider.apiHost)
+  )
   if (candidates.length === 0) return undefined
 
-  const independentCandidates = current?.provider
-    ? candidates.filter(({ provider }) => provider.id !== current.provider)
-    : candidates
-  const preferredCandidates = independentCandidates.length > 0 ? independentCandidates : candidates
+  // `Model.group` is a client-side display/vendor grouping. It is not the
+  // API panel's channel routing group. Models returned by a New API/OpenAI
+  // compatible `/models` endpoint commonly have no group and are normalized
+  // locally to the Provider id, even when the server can route them through
+  // the `default` channel group. The auxiliary request carries the explicit
+  // default-only routing marker; do not reject the model here based on this
+  // unrelated client field.
+  const managedCandidates = candidates
 
-  return (
-    preferredCandidates.find(({ provider }) => isZenManagedApiHost(provider.apiHost))?.model ??
-    preferredCandidates[0].model
-  )
+  const independentCandidates = current?.provider
+    ? managedCandidates.filter(({ provider }) => provider.id !== current.provider)
+    : managedCandidates
+  const preferredCandidates = independentCandidates.length > 0 ? independentCandidates : managedCandidates
+
+  return preferredCandidates[0].model
 }

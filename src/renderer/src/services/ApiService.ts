@@ -15,6 +15,7 @@ import {
   isEmbeddingModel,
   isFixedReasoningModel,
   isFunctionCallingModel,
+  isRerankModel,
   isVisionModel
 } from '@renderer/config/models'
 import {
@@ -66,6 +67,8 @@ import {
   getQuickModel
 } from './AssistantService'
 import { getErrorStatusCode, orderChatApiKeys, shouldRotateChatApiKey } from './chatKeyFailover'
+import { createAttachmentReference, getCompletedAssistantResponseSourceIds } from './context/ContextAttachmentPolicy'
+import { createContextCompactionKeyFailover as createKeyFailover } from './context/ContextCompactionKeyFailover'
 import {
   CONTEXT_COMPACTION_REQUEST_HEADERS,
   createContextCompactionGenerator,
@@ -74,12 +77,13 @@ import {
 import {
   clearContextCheckpoint,
   manageConversationContext,
-  type ManagedContextResult
+  type ManagedContextResult,
+  validateCheckpointSummary
 } from './context/ContextCompactionService'
 import {
   deleteContextResources,
   findAnyCachedContextResource,
-  formatResourceSearchContext,
+  fitResourceSearchContextToTokenBudget,
   hashContextContent,
   listContextResources,
   saveCachedTextContextResource,
@@ -92,6 +96,7 @@ import {
   markContextProcessingError,
   recordContextCache,
   recordContextCompression,
+  recordContextLocalCheckpointFallback,
   recordContextResourceCount,
   recordContextRetrieval,
   recordContextRetry,
@@ -347,7 +352,7 @@ async function describeImagesForCheckpoint(
           parsed.get(image.index) ??
           (batch.length === 1
             ? description.trim()
-            : `Image ${image.index} (${image.sourceName}): ${description.trim()}`)
+            : `Image ${image.index} (${image.sourceName}): The visual model did not return a structured description for this image. The original image is retained locally and can be analyzed again.`)
         const { resource, cacheHit } = await saveCachedTextContextResource({
           conversationId: topicId,
           sourceMessageId: message.id,
@@ -482,10 +487,11 @@ async function convertMessagesForCheckpoint(
   const state = store.getState()
   const ocrProvider = state.ocr.providers.find((provider) => provider.id === state.ocr.imageProviderId)
   const converted: ModelMessage[] = []
-  const totalItems = messages.reduce(
-    (total, message) => total + findFileBlocks(message).length + findImageBlocks(message).length,
-    0
-  )
+  const answeredMessageIds = getCompletedAssistantResponseSourceIds(messages)
+  const totalItems = messages.reduce((total, message) => {
+    if (answeredMessageIds.has(message.id)) return total
+    return total + findFileBlocks(message).length + findImageBlocks(message).length
+  }, 0)
   let processedItems = 0
   if (totalItems > 0) {
     setContextProcessingStatus(topicId, 'extracting', '正在解析文件和图片', { processedItems, totalItems })
@@ -493,10 +499,15 @@ async function convertMessagesForCheckpoint(
 
   for (const message of messages) {
     const sections = [getContentWithTools(message).trim()]
+    const attachmentAlreadyDiscussed = answeredMessageIds.has(message.id)
 
     for (const fileBlock of findFileBlocks(message)) {
       const file = fileBlock.file
       if (!file) {
+        continue
+      }
+      if (attachmentAlreadyDiscussed) {
+        sections.push(createAttachmentReference(file.origin_name, 'file'))
         continue
       }
       try {
@@ -544,7 +555,11 @@ async function convertMessagesForCheckpoint(
       }
     }
 
-    for (const imageBlock of findImageBlocks(message)) {
+    for (const [imageIndex, imageBlock] of findImageBlocks(message).entries()) {
+      if (attachmentAlreadyDiscussed) {
+        sections.push(createAttachmentReference(imageBlock.file?.origin_name ?? `image-${imageIndex + 1}`, 'image'))
+        continue
+      }
       const file = imageBlock.file
       if (!file) {
         processedItems += 1
@@ -576,13 +591,15 @@ async function convertMessagesForCheckpoint(
       setContextProcessingStatus(topicId, 'extracting', '正在解析文件和图片', { processedItems, totalItems })
     }
 
-    const visualDescriptions = await describeImagesForCheckpoint(message, model, topicId, signal)
-    if (visualDescriptions.length > 0) {
-      sections.push(
-        visualDescriptions
-          .map((description, index) => `<visual-batch index="${index + 1}">\n${description}\n</visual-batch>`)
-          .join('\n\n')
-      )
+    if (!attachmentAlreadyDiscussed) {
+      const visualDescriptions = await describeImagesForCheckpoint(message, model, topicId, signal)
+      if (visualDescriptions.length > 0) {
+        sections.push(
+          visualDescriptions
+            .map((description, index) => `<visual-batch index="${index + 1}">\n${description}\n</visual-batch>`)
+            .join('\n\n')
+        )
+      }
     }
 
     converted.push({
@@ -597,6 +614,7 @@ async function convertMessagesForCheckpoint(
 async function persistMessagesAsContextResources(topicId: string, messages: Message[]): Promise<void> {
   const state = store.getState()
   const ocrProvider = state.ocr.providers.find((provider) => provider.id === state.ocr.imageProviderId)
+  const answeredMessageIds = getCompletedAssistantResponseSourceIds(messages)
 
   for (const message of messages) {
     const messageText = getContentWithTools(message).trim()
@@ -609,6 +627,33 @@ async function persistMessagesAsContextResources(topicId: string, messages: Mess
         kind: message.role === 'user' ? 'text' : 'tool-result',
         metadata: { role: message.role }
       })
+    }
+
+    if (answeredMessageIds.has(message.id)) {
+      for (const fileBlock of findFileBlocks(message)) {
+        const file = fileBlock.file
+        if (!file) continue
+        await saveTextContextResource({
+          conversationId: topicId,
+          sourceMessageId: message.id,
+          sourceName: file.origin_name,
+          text: createAttachmentReference(file.origin_name, 'file'),
+          kind: 'document',
+          metadata: { analysisStrategy: 'dialogue-first' }
+        })
+      }
+      for (const imageBlock of findImageBlocks(message)) {
+        const name = imageBlock.file?.origin_name ?? `image-${message.id}`
+        await saveTextContextResource({
+          conversationId: topicId,
+          sourceMessageId: message.id,
+          sourceName: name,
+          text: createAttachmentReference(name, 'image'),
+          kind: 'image',
+          metadata: { analysisStrategy: 'dialogue-first' }
+        })
+      }
+      continue
     }
 
     for (const fileBlock of findFileBlocks(message)) {
@@ -920,7 +965,11 @@ export async function fetchChatCompletion({
     ...baseProvider,
     apiKey: activeChatKey
   })
-  const provider = activeAI.getActualProvider()
+  // Keep the provider object in sync with the active AI instance. A chat key
+  // rotation rebuilds `activeAI`; using the original provider here would make
+  // parameter construction (cache/options/endpoint metadata) keep pointing at
+  // the failed key even though the completion call uses the new one.
+  let provider = activeAI.getActualProvider()
 
   const mcpTools: MCPTool[] = []
   await onChunkReceived({ type: ChunkType.LLM_RESPONSE_CREATED })
@@ -959,6 +1008,7 @@ export async function fetchChatCompletion({
   }
   let activeBudget: ReturnType<typeof createContextBudget> | undefined
   let contextPrepared = false
+  let usedLocalCheckpoint = false
 
   const prepareMessagesForContext = async (): Promise<ModelMessage[]> => {
     if (prompt || !uiMessages?.length || !topicId) {
@@ -989,7 +1039,6 @@ export async function fetchChatCompletion({
       const compactionModels = resolveContextCompactionModels({
         providers: store.getState().llm.providers,
         configuredModelIds: configuredCompactionModels,
-        health: store.getState().llm.modelPolicy?.contextCompactionHealth,
         currentModel: model
       })
 
@@ -998,6 +1047,7 @@ export async function fetchChatCompletion({
       // avoids repeatedly hitting a known-bad model and preserves the order
       // configured by the API panel.
       const checkpointDeadline = Date.now() + CONTEXT_CHECKPOINT_TOTAL_TIMEOUT_MS
+      const fetchContextCompaction = createContextCompactionKeyFailover(topicId)
       const generateCheckpoint = createContextCompactionGenerator({
         models: compactionModels,
         generate: (compactionModel, systemPrompt, content) => {
@@ -1005,17 +1055,16 @@ export async function fetchChatCompletion({
           if (remainingMs <= 0) {
             throw new Error('Context checkpoint total timeout exceeded.')
           }
-          return fetchGenerate({
+          return fetchContextCompaction({
             prompt: systemPrompt,
             content,
             model: compactionModel,
             signal: requestOptions?.signal,
             timeoutMs: Math.min(SUMMARY_REQUEST_TIMEOUT_MS, remainingMs),
-            throwOnError: true,
-            headers: CONTEXT_COMPACTION_REQUEST_HEADERS,
             maxOutputTokens: Math.min(8_000, compactionModel.maxOutputTokens ?? 8_000)
           })
         },
+        validateOutput: (output, _prompt, content) => validateCheckpointSummary(output, content).valid,
         shouldTryNext: () => !requestOptions?.signal?.aborted && Date.now() < checkpointDeadline,
         onModelFailure: (compactionModel, error, nextPosition) => {
           logger.warn('Context checkpoint model failed; trying the next configured model', error as Error, {
@@ -1042,9 +1091,13 @@ export async function fetchChatCompletion({
         convertForCheckpoint: (sourceMessages) =>
           convertMessagesForCheckpoint(sourceMessages, model, topicId, requestOptions?.signal),
         additionalContextMessages: webPageContext ? [{ role: 'system', content: webPageContext.prompt }] : [],
-        generate: generateCheckpoint
+        generate: generateCheckpoint,
+        signal: requestOptions?.signal
       })
     } catch (error) {
+      if (isAbortError(error) || requestOptions?.signal?.aborted) {
+        throw error
+      }
       const uncompressedMessages = sourceModelMessages
       const uncompressedUsage = estimateModelMessagesTokens(uncompressedMessages)
       if (uncompressedUsage.totalTokens > budget.safeInputTokens) {
@@ -1054,9 +1107,15 @@ export async function fetchChatCompletion({
       managedContext = {
         messages: uncompressedMessages,
         action: 'full',
+        usedLocalCheckpoint: false,
         usageBefore: uncompressedUsage,
         usageAfter: uncompressedUsage
       }
+    }
+
+    if (managedContext.usedLocalCheckpoint) {
+      usedLocalCheckpoint = true
+      recordContextLocalCheckpointFallback(topicId, 'remote-model-unavailable')
     }
 
     if (managedContext.action !== 'full' && managedContext.action !== 'checkpoint-reused') {
@@ -1108,14 +1167,26 @@ export async function fetchChatCompletion({
         recordContextRetrieval(topicId, resourceResults.length)
         managedMessages = insertResourceContextBeforeLastUser(
           managedMessages,
-          formatResourceSearchContext(resourceResults)
+          fitResourceSearchContextToTokenBudget(resourceResults, remainingResourceBudget)
         )
       } catch (error) {
         logger.warn('Failed to retrieve local context resources', error as Error)
       }
     }
 
-    const finalUsage = estimateModelMessagesTokens(managedMessages)
+    let finalUsage = estimateModelMessagesTokens(managedMessages)
+    if (finalUsage.totalTokens > budget.safeInputTokens) {
+      // Retrieval is optional. Never let wrapper overhead or a provider-side
+      // token-estimation difference turn a safe checkpoint into an oversized
+      // request; the next completion can still use the durable checkpoint.
+      logger.warn('Retrieved context exceeded the final safe budget; dropping retrieval excerpts', {
+        topicId,
+        finalUsage: finalUsage.totalTokens,
+        safeInputTokens: budget.safeInputTokens
+      })
+      managedMessages = managedContext.messages
+      finalUsage = estimateModelMessagesTokens(managedMessages)
+    }
     logger.info('Context window plan applied', {
       topicId,
       action: managedContext.action,
@@ -1154,6 +1225,7 @@ export async function fetchChatCompletion({
       ...baseProvider,
       apiKey: activeChatKey
     })
+    provider = activeAI.getActualProvider()
     persistStableChatApiKey(activeChatKey)
     logger.warn('Chat API key failed with a key-scoped error; switching to the next configured key', {
       topicId,
@@ -1438,7 +1510,11 @@ export async function fetchChatCompletion({
     let preparedMessages = await prepareMessagesForContext()
     contextPrepared = true
     if (topicId) {
-      setContextProcessingStatus(topicId, 'complete', '上下文已就绪')
+      setContextProcessingStatus(
+        topicId,
+        'complete',
+        usedLocalCheckpoint ? '已使用本地 checkpoint，回答已完成' : '上下文已就绪'
+      )
     }
     let attemptResult = await runCompletionAttempt(preparedMessages)
 
@@ -1465,7 +1541,11 @@ export async function fetchChatCompletion({
 
       preparedMessages = await prepareMessagesForContext()
       contextPrepared = true
-      setContextProcessingStatus(topicId, 'complete', '上下文已就绪')
+      setContextProcessingStatus(
+        topicId,
+        'complete',
+        usedLocalCheckpoint ? '已使用本地 checkpoint，回答已完成' : '上下文已就绪'
+      )
       attemptResult = await runCompletionAttempt(preparedMessages)
     }
 
@@ -1873,6 +1953,7 @@ export async function fetchGenerate({
   prompt,
   content,
   model,
+  apiKey,
   signal,
   headers,
   maxOutputTokens,
@@ -1882,6 +1963,8 @@ export async function fetchGenerate({
   prompt: string
   content: string | ModelMessage[]
   model?: Model
+  /** Use a caller-selected key without rotating it for this request. */
+  apiKey?: string
   signal?: AbortSignal
   headers?: Record<string, string>
   maxOutputTokens?: number
@@ -1906,7 +1989,7 @@ export async function fetchGenerate({
   // Nested properties (if any) are never modified after creation.
   const providerWithRotatedKey = {
     ...provider,
-    apiKey: getRotatedApiKey(provider)
+    apiKey: apiKey ?? getRotatedApiKey(provider)
   }
 
   const AI = new AiProvider(model, providerWithRotatedKey)
@@ -2080,6 +2163,40 @@ function getStableChatApiKey(provider: Provider, topicId?: string, modelId?: str
   return selectedKey
 }
 
+/**
+ * Keep one key sticky for a whole checkpoint operation, but rotate within the
+ * same model when the provider explicitly reports a key-scoped failure. Only
+ * after every key for that model fails does the model fallback chain get a
+ * chance to move on.
+ */
+export const createContextCompactionKeyFailover = (topicId?: string) =>
+  createKeyFailover({
+    topicId,
+    resolveProvider: getProviderByModel,
+    generate: ({ model, prompt, content, apiKey, signal, timeoutMs, maxOutputTokens }) =>
+      fetchGenerate({
+        prompt,
+        content,
+        model,
+        ...(apiKey !== undefined ? { apiKey } : {}),
+        signal,
+        timeoutMs,
+        throwOnError: true,
+        headers: CONTEXT_COMPACTION_REQUEST_HEADERS,
+        maxOutputTokens
+      }),
+    onKeyRotation: ({ model, fromIndex, toIndex, statusCode }) => {
+      logger.warn('Context checkpoint API key failed; switching key within the same model', {
+        topicId,
+        modelId: model.id,
+        providerId: model.provider,
+        statusCode,
+        keyIndex: toIndex,
+        previousKeyIndex: fromIndex
+      })
+    }
+  })
+
 export async function fetchModels(provider: Provider): Promise<Model[]> {
   // Apply API key rotation
   // NOTE: Shallow copy is intentional. Provider objects are not mutated by downstream code.
@@ -2133,14 +2250,27 @@ export function checkApiProvider(provider: Provider): void {
  * @param timeout - Maximum time (ms) to wait for the request to complete. Defaults to 15000 ms.
  * @throws {Error} If the request fails or times out, indicating the API is not usable.
  */
-export async function checkApi(provider: Provider, model: Model, timeout = 15000): Promise<void> {
+export async function checkApi(
+  provider: Provider,
+  model: Model,
+  timeout = 15000,
+  headers?: Record<string, string>,
+  requireTextGeneration = false
+): Promise<void> {
   checkApiProvider(provider)
+
+  if (
+    requireTextGeneration &&
+    (isEmbeddingModel(model) || isRerankModel(model) || isDedicatedImageGenerationModel(model))
+  ) {
+    throw new Error(`Model "${model.id}" is not a text-generation model and cannot be used for context checkpoints.`)
+  }
 
   const ai = new AiProvider(model, provider)
 
   const assistant = getDefaultAssistant()
   assistant.model = model
-  assistant.prompt = 'test' // 避免部分 provider 空系统提示词会报错
+  assistant.prompt = requireTextGeneration ? 'For this health check, reply with exactly: ZEN_OK.' : 'test' // 避免部分 provider 空系统提示词会报错
 
   if (isEmbeddingModel(model)) {
     logger.info('checkApi: embedding model detected, calling getEmbeddingDimensions', { modelId: model.id })
@@ -2150,9 +2280,12 @@ export async function checkApi(provider: Provider, model: Model, timeout = 15000
     const abortId = uuid()
     const signal = readyToAbort(abortId)
     let streamError: ResponseError | undefined
+    let receivedText = ''
     const params: StreamTextParams = {
       system: assistant.prompt,
-      prompt: 'hi',
+      prompt: requireTextGeneration ? 'Reply with exactly: ZEN_OK.' : 'hi',
+      ...(requireTextGeneration ? { maxOutputTokens: 8 } : {}),
+      ...(headers ? { headers } : {}),
       abortSignal: signal
     }
     const config: AiProviderConfig = {
@@ -2168,6 +2301,12 @@ export async function checkApi(provider: Provider, model: Model, timeout = 15000
       onChunk: (chunk: Chunk) => {
         if (chunk.type === ChunkType.ERROR) {
           streamError = chunk.error
+        } else if (requireTextGeneration) {
+          if (chunk.type === ChunkType.TEXT_DELTA && typeof chunk.text === 'string') {
+            receivedText += chunk.text
+          } else if (chunk.type === ChunkType.TEXT_COMPLETE && typeof chunk.text === 'string' && !receivedText) {
+            receivedText = chunk.text
+          }
         } else {
           abortCompletion(abortId)
         }
@@ -2175,17 +2314,48 @@ export async function checkApi(provider: Provider, model: Model, timeout = 15000
     }
 
     try {
-      await ai.completions(model.id, params, config)
+      let timeoutHandle: ReturnType<typeof setTimeout> | undefined
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        timeoutHandle = setTimeout(() => {
+          // The model-test path uses an internal abort controller. Abort the
+          // underlying request as well as rejecting the race so a hung probe
+          // cannot keep an in-flight request alive forever.
+          abortCompletion(abortId)
+          reject(new Error(`Model health check timed out after ${timeout}ms.`))
+        }, timeout)
+      })
+
+      try {
+        const result = await Promise.race([ai.completions(model.id, params, config), timeoutPromise])
+        if (streamError) throw streamError
+        if (requireTextGeneration) {
+          const output = result.getText()?.trim() || receivedText.trim()
+          if (!output) {
+            throw new Error(`Model "${model.id}" completed the health check without returning text.`)
+          }
+          if (!output.toLocaleUpperCase().includes('ZEN_OK')) {
+            throw new Error(`Model "${model.id}" did not return the expected health-check text.`)
+          }
+        }
+      } finally {
+        if (timeoutHandle) clearTimeout(timeoutHandle)
+      }
     } catch (e) {
-      if (!isAbortError(e) && !isAbortError(streamError)) {
+      if (requireTextGeneration || (!isAbortError(e) && !isAbortError(streamError))) {
         throw streamError ?? e
       }
     }
   }
 }
 
-export async function checkModel(provider: Provider, model: Model, timeout = 15000): Promise<{ latency: number }> {
+export async function checkModel(
+  provider: Provider,
+  model: Model,
+  timeout = 15000,
+  headers?: Record<string, string>,
+  requireTextGeneration = false
+): Promise<{ latency: number }> {
   const startTime = performance.now()
-  await checkApi(provider, model, timeout)
+  await checkApi(provider, model, timeout, headers, requireTextGeneration)
   return { latency: performance.now() - startTime }
 }

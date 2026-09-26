@@ -16,12 +16,13 @@ export async function checkModelWithMultipleKeys(
   provider: Provider,
   model: Model,
   apiKeys: string[],
-  timeout?: number
+  timeout?: number,
+  headers?: Record<string, string>
 ): Promise<ApiKeyWithStatus[]> {
   const checkPromises = apiKeys.map(async (key) => {
     const startTime = Date.now()
     // 如果 checkModel 抛出错误，让这个 promise 失败
-    await checkModel({ ...provider, apiKey: key }, model, timeout)
+    await checkModel({ ...provider, apiKey: key }, model, timeout, headers)
     const latency = Date.now() - startTime
 
     return {
@@ -46,6 +47,38 @@ export async function checkModelWithMultipleKeys(
       }
     }
   })
+}
+
+/**
+ * Check a model using the same low-level model test as the Provider settings
+ * page. For recovery probes, one working API key is enough: the API panel may
+ * route the model through any healthy channel, and a second key should not
+ * prevent recovery merely because it is expired or rate-limited.
+ */
+export async function checkModelWithAnyKey(
+  provider: Provider,
+  model: Model,
+  apiKeys: string[],
+  timeout?: number,
+  headers?: Record<string, string>,
+  requireTextGeneration = false
+): Promise<{ key: string; latency: number }> {
+  const keys = apiKeys.length > 0 ? apiKeys : ['']
+  let lastError: unknown
+
+  for (const key of keys) {
+    const startTime = Date.now()
+    try {
+      const result = requireTextGeneration
+        ? await checkModel({ ...provider, apiKey: key }, model, timeout, headers, true)
+        : await checkModel({ ...provider, apiKey: key }, model, timeout, headers)
+      return { key, latency: result.latency || Date.now() - startTime }
+    } catch (error) {
+      lastError = error
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error('All API keys failed the model health check.')
 }
 
 /**

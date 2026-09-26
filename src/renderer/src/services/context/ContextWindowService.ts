@@ -14,6 +14,7 @@ export const DEFAULT_NEW_API_CONTEXT_WINDOW_TOKENS = MAX_SUPPORTED_CONTEXT_WINDO
 export const DEFAULT_OUTPUT_RESERVE_TOKENS = 32_000
 export const MIN_OUTPUT_RESERVE_TOKENS = 8_000
 export const MAX_OUTPUT_RESERVE_TOKENS = 32_000
+export const MIN_CONTEXT_INPUT_RESERVE_TOKENS = 1_024
 export const CONTEXT_SAFETY_RATIO = 0.9
 export const CONTEXT_COMPACTION_TRIGGER_RATIO = 0.9
 export const CONTEXT_COMPACTION_TARGET_RATIO = 0.58
@@ -216,14 +217,22 @@ export function createContextBudget({
 }): ContextBudget {
   const profile = resolveModelContextProfile(model, provider)
   const requestedReserve = normalizePositiveInteger(requestedOutputTokens)
-  const maxOutputTokens = requestedReserve
+  const requestedMaxOutputTokens = requestedReserve
     ? Math.min(MAX_OUTPUT_RESERVE_TOKENS, Math.max(MIN_OUTPUT_RESERVE_TOKENS, requestedReserve))
     : profile.maxOutputTokens
   const normalizedFixedInputTokens = Math.max(0, Math.floor(fixedInputTokens))
-  const safeInputTokens = Math.max(
-    MIN_OUTPUT_RESERVE_TOKENS,
-    Math.floor((profile.contextWindowTokens - maxOutputTokens) * CONTEXT_SAFETY_RATIO) - normalizedFixedInputTokens
+  // Never reserve more output than the model can expose while still leaving
+  // room for a useful input. The previous lower bound of 8K could make a
+  // 4K/8K local model report an impossible 8K safe input budget.
+  const maxOutputCapacity = Math.max(
+    1,
+    profile.contextWindowTokens - normalizedFixedInputTokens - MIN_CONTEXT_INPUT_RESERVE_TOKENS
   )
+  const maxOutputTokens = Math.min(requestedMaxOutputTokens, maxOutputCapacity)
+  const rawSafeInputTokens =
+    Math.floor((profile.contextWindowTokens - maxOutputTokens) * CONTEXT_SAFETY_RATIO) - normalizedFixedInputTokens
+  const maximumInputTokens = Math.max(0, profile.contextWindowTokens - maxOutputTokens - normalizedFixedInputTokens)
+  const safeInputTokens = Math.max(0, Math.min(rawSafeInputTokens, maximumInputTokens))
 
   return {
     ...profile,

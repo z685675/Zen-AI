@@ -207,7 +207,7 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
   const selectedModelConfig = useMemo(() => resolveModelConfig(draft.model), [draft.model])
   const isGrokImagine = selectedModelConfig.requestProtocol === 'grok-imagine'
   const isGptImage2 = isGptImage2Family(selectedModelConfig.name)
-  const aspectRatioOptions = selectedModelConfig.aspectRatios ?? []
+  const aspectRatioOptions = useMemo(() => selectedModelConfig.aspectRatios ?? [], [selectedModelConfig.aspectRatios])
   const maxImageInputs = isGrokImagine ? MAX_GROK_IMAGINE_IMAGE_INPUTS : MAX_IMAGE_INPUTS
 
   const uploadedPreviewUrls = useMemo(
@@ -814,6 +814,7 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
       createEmptyDraft,
       currentImageIndex,
       draft.background,
+      draft.aspectRatio,
       draft.model,
       draft.moderation,
       draft.n,
@@ -822,8 +823,7 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
       isCombinedEdit,
       paintings,
       providerId,
-      selectedPainting?.files?.length,
-      selectedPainting?.id
+      selectedPainting
     ]
   )
 

@@ -76,6 +76,22 @@ describe('ContextWindowService', () => {
     expect(budget.compactionTargetTokens).toBe(87_696)
   })
 
+  it('does not report an input budget larger than a small model can accept', () => {
+    const budget = createContextBudget({
+      model: {
+        ...model,
+        contextWindowTokens: 4_000,
+        maxOutputTokens: 8_000
+      },
+      provider: newApiProvider,
+      fixedInputTokens: 200
+    })
+
+    expect(budget.maxOutputTokens).toBeLessThan(8_000)
+    expect(budget.safeInputTokens).toBeLessThanOrEqual(4_000 - budget.maxOutputTokens - 200)
+    expect(budget.compactionTriggerTokens).toBeLessThanOrEqual(budget.safeInputTokens)
+  })
+
   it('includes text and image parts in usage estimates', () => {
     const messages: ModelMessage[] = [
       { role: 'user', content: 'hello world' },

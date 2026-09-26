@@ -2,7 +2,7 @@ import { loggerService } from '@logger'
 import db from '@renderer/databases'
 import i18n from '@renderer/i18n'
 import { fetchMessagesSummary } from '@renderer/services/ApiService'
-import { clearContextCheckpoint } from '@renderer/services/context/ContextCompactionService'
+import { clearContextCheckpoint, clearContextUserMemory } from '@renderer/services/context/ContextCompactionService'
 import { clearContextTelemetry } from '@renderer/services/context/ContextTelemetryService'
 import { EVENT_NAMES, EventEmitter } from '@renderer/services/EventService'
 import { safeDeleteFiles } from '@renderer/services/MessagesService'
@@ -324,6 +324,7 @@ export const TopicManager = {
         await db.context_resources.where('conversationId').equals(id).delete()
       })
       clearContextCheckpoint(id)
+      clearContextUserMemory(id)
       clearContextTelemetry(id)
     } catch (dbError) {
       logger.error(`Failed to clear database records for topic ${id}:`, dbError as Error)

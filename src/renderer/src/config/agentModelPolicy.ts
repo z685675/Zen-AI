@@ -74,7 +74,9 @@ export const isAssistantModelIdentifierBlocked = (modelId: string | undefined, p
 }
 
 export const isAssistantModelAllowed = (model: ApiModel, developerMode: boolean, policy?: ModelPolicy): boolean => {
-  if (isAssistantModelBlocked(model, policy)) return false
+  if (isAssistantModelBlocked(model, policy) && !(developerMode && policy?.rules.developerModeBypassAllowlist)) {
+    return false
+  }
 
   if (!policy) return true
   if (developerMode && policy.rules.developerModeBypassAllowlist) return true
@@ -94,7 +96,12 @@ export const isAssistantModelIdentifierAllowed = (
 ): boolean => {
   if (!modelId) return false
   const normalizedModelId = normalizeAgentModelIdentifier(modelId)
-  if (isAssistantModelIdentifierBlocked(modelId, policy)) return false
+  if (
+    isAssistantModelIdentifierBlocked(modelId, policy) &&
+    !(developerMode && policy?.rules.developerModeBypassAllowlist)
+  ) {
+    return false
+  }
   if (!policy) return true
   if (developerMode && policy.rules.developerModeBypassAllowlist) return true
 
@@ -148,10 +155,13 @@ const isUsableAgentChatModel = (model: ApiModel): boolean => {
 export const resolveAssistantFallbackModel = (
   models: ApiModel[],
   currentModelId: string | undefined,
-  policy?: ModelPolicy
+  policy?: ModelPolicy,
+  developerMode = false
 ): ApiModel | undefined => {
   const preferredProviderId = getAgentModelProviderId(currentModelId)
-  const currentModelIsBlocked = isAssistantModelIdentifierBlocked(currentModelId, policy)
+  const currentModelIsBlocked =
+    isAssistantModelIdentifierBlocked(currentModelId, policy) &&
+    !(developerMode && policy?.rules.developerModeBypassAllowlist)
   const candidates = [
     ...(currentModelId && !currentModelIsBlocked ? [currentModelId] : []),
     ...(policy?.assistant.fallbackModels ?? []),
@@ -162,7 +172,7 @@ export const resolveAssistantFallbackModel = (
   for (const candidate of candidates) {
     const resolvedId = findAgentModelId(models, candidate, preferredProviderId)
     const resolved = resolvedId ? models.find((model) => model.id === resolvedId) : undefined
-    if (resolved && isUsableAgentChatModel(resolved) && isAssistantModelAllowed(resolved, false, policy)) {
+    if (resolved && isUsableAgentChatModel(resolved) && isAssistantModelAllowed(resolved, developerMode, policy)) {
       return resolved
     }
   }
@@ -170,7 +180,9 @@ export const resolveAssistantFallbackModel = (
   return (
     models.find(
       (model) =>
-        isUsableAgentChatModel(model) && isAssistantModelAllowed(model, false, policy) && model.is_official_provider
-    ) ?? models.find((model) => isUsableAgentChatModel(model) && isAssistantModelAllowed(model, false, policy))
+        isUsableAgentChatModel(model) &&
+        isAssistantModelAllowed(model, developerMode, policy) &&
+        model.is_official_provider
+    ) ?? models.find((model) => isUsableAgentChatModel(model) && isAssistantModelAllowed(model, developerMode, policy))
   )
 }

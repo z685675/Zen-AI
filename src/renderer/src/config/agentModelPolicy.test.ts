@@ -143,8 +143,8 @@ describe('agent model selection policy', () => {
     expect(isStandardAgentModelIdentifier('provider-id:grok-4.5')).toBe(false)
   })
 
-  it('uses the remote allowlists and gives blocked models priority', () => {
-    const policy = createPolicy({ blockedModels: ['provider-id:gpt-5.4-mini'] })
+  it('uses the remote allowlists while developer mode can bypass blocked models', () => {
+    const policy = createPolicy({ blockedModels: ['provider-id:gpt-5.4-mini'] }, { developerModeBypassAllowlist: true })
     const allowedForUser = createApiModel({
       id: 'provider-id:gpt-5.6-luna',
       name: 'gpt-5.6-luna',
@@ -157,10 +157,10 @@ describe('agent model selection policy', () => {
     })
 
     expect(isAssistantModelAllowed(allowedForUser, false, policy)).toBe(true)
-    expect(isAssistantModelAllowed(blockedForDeveloper, true, policy)).toBe(false)
+    expect(isAssistantModelAllowed(blockedForDeveloper, true, policy)).toBe(true)
     expect(isAssistantModelBlocked(blockedForDeveloper, policy)).toBe(true)
     expect(isAssistantModelIdentifierBlocked('provider-id:gpt-5.4-mini', policy)).toBe(true)
-    expect(isAssistantModelIdentifierAllowed('provider-id:gpt-5.4-mini', true, policy)).toBe(false)
+    expect(isAssistantModelIdentifierAllowed('provider-id:gpt-5.4-mini', true, policy)).toBe(true)
   })
 
   it('treats an empty developer allowlist as unrestricted except for blocked models', () => {

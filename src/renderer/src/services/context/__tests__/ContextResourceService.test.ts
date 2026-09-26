@@ -1,4 +1,5 @@
 import type { ContextResource } from '@renderer/types'
+import { approximateTokenSize } from 'tokenx'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const storedResources: ContextResource[] = []
@@ -42,6 +43,7 @@ vi.mock('@renderer/databases', () => ({
 import {
   chunkContextResourceText,
   deleteContextResourcesForMessages,
+  fitResourceSearchContextToTokenBudget,
   formatResourceSearchContext,
   saveStructuredFileContextResource,
   saveTextContextResource,
@@ -134,6 +136,31 @@ Closing notes.`
     expect(results[0].chunk.tokenEstimate).toBeLessThanOrEqual(900)
     expect(results[0].chunk.metadata?.truncatedForBudget).toBe(true)
     expect(results[0].chunk.text).toContain('本段资料因当前上下文预算已截断')
+  })
+
+  it('counts retrieval wrappers and locators in the final token budget', () => {
+    const results = [
+      {
+        resourceId: 'resource-1',
+        sourceName: 'large-table.xlsx',
+        chunk: {
+          id: 'chunk-1',
+          index: 0,
+          text: '表格内容 '.repeat(2_000),
+          tokenEstimate: 2_000,
+          metadata: { sheet: '年度汇总', cellRange: 'A1:Z200' }
+        },
+        lexicalScore: 20,
+        semanticScore: 1,
+        score: 38
+      }
+    ] as ContextResourceSearchResult[]
+
+    const formatted = fitResourceSearchContextToTokenBudget(results, 300)
+
+    expect(approximateTokenSize(formatted)).toBeLessThanOrEqual(300)
+    expect(formatted).toContain('large-table.xlsx')
+    expect(formatted).toContain('最终上下文预算已截断')
   })
 
   it('preserves structured locators and reuses parsed file content', async () => {

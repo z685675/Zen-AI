@@ -882,6 +882,21 @@ describe('providerToAiSdkConfig', () => {
       const settings = config.providerSettings as NewApiProviderSettings
       expect(settings.endpointType).toBe('openai')
       expect(settings.baseURL).toBe('https://api.newapi.com/v1')
+      expect(settings.includeUsage).toBe(true)
+    })
+
+    it('respects the stream usage setting for New API OpenAI-compatible requests', async () => {
+      setupStoreMock({ includeUsage: false })
+      const provider = makeProvider({
+        id: 'new-api',
+        type: 'openai',
+        apiHost: 'https://api.newapi.com'
+      })
+      const model = makeModel('gpt-4', provider.id, { endpoint_type: 'openai' })
+
+      const config = await providerToAiSdkConfig(provider, model)
+
+      expect((config.providerSettings as NewApiProviderSettings).includeUsage).toBe(false)
     })
   })
 

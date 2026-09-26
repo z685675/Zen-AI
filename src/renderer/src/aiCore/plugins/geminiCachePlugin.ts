@@ -1,6 +1,7 @@
 import type { LanguageModelV3CallOptions, LanguageModelV3Message, LanguageModelV3TextPart } from '@ai-sdk/provider'
 import { definePlugin } from '@cherrystudio/ai-core/core/plugins'
 import { createModelContent, createPartFromText, createUserContent, GoogleGenAI } from '@google/genai'
+import { loggerService } from '@logger'
 import { estimateTextTokens } from '@renderer/services/TokenService'
 import type { GeminiCacheControlSettings } from '@renderer/types/provider'
 import type { LanguageModelMiddleware } from 'ai'
@@ -22,26 +23,27 @@ const geminiCacheFailureStore = new Map<string, number>()
 const MAX_TAIL_MESSAGES = 4
 const MIN_STABLE_MESSAGES = 2
 const CACHE_FAILURE_RETRY_COOLDOWN_MS = 60_000
+const logger = loggerService.withContext('GeminiCachePlugin')
 
-function normalizeText(value: string): string {
-  return value.replace(/\s+/g, ' ').trim()
+export type GeminiCacheClientOptions = {
+  apiKey?: string
+  baseURL?: string
+  headers?: Record<string, string>
 }
 
 function getMessageText(message: LanguageModelV3Message): string {
   if (typeof message.content === 'string') {
-    return normalizeText(message.content)
+    return message.content
   }
 
   if (!Array.isArray(message.content)) {
     return ''
   }
 
-  return normalizeText(
-    message.content
-      .filter((part): part is LanguageModelV3TextPart => part.type === 'text' && typeof part.text === 'string')
-      .map((part) => part.text)
-      .join('\n')
-  )
+  return message.content
+    .filter((part): part is LanguageModelV3TextPart => part.type === 'text' && typeof part.text === 'string')
+    .map((part) => part.text)
+    .join('\n')
 }
 
 function isTextOnlyMessage(message: LanguageModelV3Message): boolean {
@@ -53,7 +55,11 @@ function isTextOnlyMessage(message: LanguageModelV3Message): boolean {
 }
 
 function isCacheEligiblePrompt(prompt: LanguageModelV3Message[]): boolean {
-  return prompt.every((message) => isTextOnlyMessage(message))
+  return prompt.every(
+    (message) =>
+      isTextOnlyMessage(message) &&
+      (message.role === 'system' || message.role === 'user' || message.role === 'assistant')
+  )
 }
 
 function stringifyMessage(message: LanguageModelV3Message): string {
@@ -92,11 +98,10 @@ function getEffectivePrefixThreshold(settings: GeminiCacheControlSettings): numb
     return 0
   }
 
-  if (settings.tokenThreshold <= 32) {
-    return settings.tokenThreshold
-  }
-
-  return Math.max(64, Math.floor(settings.tokenThreshold * 0.75))
+  // Do not call the cache API before its configured/model-specific minimum.
+  // A rejected under-sized cache can otherwise recur every time the prefix
+  // grows, wasting requests without ever improving the conversation cache.
+  return settings.tokenThreshold
 }
 
 function isStableCacheRole(role: LanguageModelV3Message['role']): boolean {
@@ -105,6 +110,10 @@ function isStableCacheRole(role: LanguageModelV3Message['role']): boolean {
 
 function buildGeminiCacheContents(prefixMessages: LanguageModelV3Message[]) {
   return prefixMessages.flatMap((message) => {
+    if (message.role === 'system') {
+      return []
+    }
+
     const text = getMessageText(message)
     if (!text) {
       return []
@@ -118,12 +127,31 @@ function buildGeminiCacheContents(prefixMessages: LanguageModelV3Message[]) {
   })
 }
 
+function buildGeminiSystemInstruction(prefixMessages: LanguageModelV3Message[]) {
+  const text = prefixMessages
+    .filter((message) => message.role === 'system')
+    .map(getMessageText)
+    .filter(Boolean)
+    .join('\n\n')
+
+  return text ? createUserContent([createPartFromText(text)]) : undefined
+}
+
+function normalizeCacheApiBaseUrl(baseURL?: string): string | undefined {
+  if (!baseURL) return undefined
+  return baseURL.replace(/\/(v1beta|v1)\/?$/i, '').replace(/\/$/, '')
+}
+
 export function selectGeminiCacheCandidate(
   prompt: LanguageModelV3Message[],
   settings: GeminiCacheControlSettings,
   modelId: string
 ): GeminiCacheCandidate | undefined {
   if (!settings.enabled || !settings.tokenThreshold || prompt.length < MIN_STABLE_MESSAGES + 1) {
+    return undefined
+  }
+
+  if (!settings.cacheSystemMessage && prompt.some((message) => message.role === 'system')) {
     return undefined
   }
 
@@ -169,6 +197,7 @@ export function selectGeminiCacheCandidate(
 async function resolveGeminiCachedContent(
   cacheKey: string,
   apiKey: string,
+  clientOptions: GeminiCacheClientOptions,
   modelId: string,
   prefixMessages: LanguageModelV3Message[],
   ttlSeconds: number
@@ -184,18 +213,26 @@ async function resolveGeminiCachedContent(
     return undefined
   }
 
-  const ai = new GoogleGenAI({ apiKey })
+  const ai = new GoogleGenAI({
+    apiKey,
+    httpOptions: {
+      ...(normalizeCacheApiBaseUrl(clientOptions.baseURL)
+        ? { baseUrl: normalizeCacheApiBaseUrl(clientOptions.baseURL) }
+        : {}),
+      apiVersion: 'v1beta',
+      headers: clientOptions.headers
+    }
+  })
   const created = await ai.caches.create({
     model: modelId,
     config: {
       ttl: `${ttlSeconds}s`,
-      contents
+      contents,
+      systemInstruction: buildGeminiSystemInstruction(prefixMessages)
     }
   })
 
-  if (!created.name) {
-    return undefined
-  }
+  if (!created.name) throw new Error('Gemini cached-content creation returned no resource name')
 
   geminiCacheStore.set(cacheKey, {
     cachedContent: created.name,
@@ -216,7 +253,31 @@ function getHeaderValue(headers: LanguageModelV3CallOptions['headers'] | undefin
   return typeof entry?.[1] === 'string' && entry[1] ? entry[1] : undefined
 }
 
-function geminiCacheMiddleware(settings: GeminiCacheControlSettings): LanguageModelMiddleware {
+function geminiCacheMiddleware(
+  settings: GeminiCacheControlSettings,
+  clientOptions: GeminiCacheClientOptions
+): LanguageModelMiddleware {
+  const originalParamsByCachedParams = new WeakMap<object, LanguageModelV3CallOptions>()
+  const cacheKeyByCachedParams = new WeakMap<object, string>()
+
+  const retryWithoutExpiredCache = async <T>(
+    params: LanguageModelV3CallOptions,
+    retry: (originalParams: LanguageModelV3CallOptions) => PromiseLike<T>,
+    originalError: unknown
+  ): Promise<T> => {
+    const originalParams = originalParamsByCachedParams.get(params)
+    const cacheKey = cacheKeyByCachedParams.get(params)
+    if (!originalParams || !cacheKey) {
+      throw originalError
+    }
+
+    geminiCacheStore.delete(cacheKey)
+    geminiCacheFailureStore.set(cacheKey, Date.now() + CACHE_FAILURE_RETRY_COOLDOWN_MS)
+    logger.warn('Gemini request using cached context failed; retrying once with the full prompt.')
+
+    return await retry(originalParams)
+  }
+
   return {
     specificationVersion: 'v3',
     transformParams: async ({ params, model }) => {
@@ -237,7 +298,17 @@ function geminiCacheMiddleware(settings: GeminiCacheControlSettings): LanguageMo
         return params
       }
 
-      const apiKey = getHeaderValue(params.headers, 'x-goog-api-key')
+      // Gemini cached contents can include tool definitions and non-text parts,
+      // but those need provider-specific conversion. Keep these requests whole
+      // until the cache representation can be proven equivalent.
+      if (params.tools?.length) {
+        return params
+      }
+
+      const apiKey =
+        clientOptions.apiKey ||
+        getHeaderValue(params.headers, 'x-goog-api-key') ||
+        getHeaderValue(params.headers, 'authorization')?.replace(/^Bearer\s+/i, '')
       if (!apiKey) {
         return params
       }
@@ -256,17 +327,22 @@ function geminiCacheMiddleware(settings: GeminiCacheControlSettings): LanguageMo
         cachedContent = await resolveGeminiCachedContent(
           cacheRequestKey,
           apiKey,
+          clientOptions,
           modelId,
           cacheCandidate.prefixMessages,
           settings.ttlSeconds
         )
         geminiCacheFailureStore.delete(cacheRequestKey)
-      } catch {
+      } catch (error) {
         // Prompt caching is an optimization. A cache-create failure (for
         // example when a gateway key cannot call Google's cache API) must not
         // fail the user's normal chat request. Avoid retrying the same broken
         // side request on every message for a short cooldown.
         geminiCacheFailureStore.set(cacheRequestKey, Date.now() + CACHE_FAILURE_RETRY_COOLDOWN_MS)
+        logger.warn('Unable to create Gemini cached content; using the regular prompt.', {
+          modelId,
+          error: error instanceof Error ? error.message : String(error)
+        })
         return params
       }
 
@@ -276,7 +352,7 @@ function geminiCacheMiddleware(settings: GeminiCacheControlSettings): LanguageMo
 
       const googleOptions = (params.providerOptions?.google as Record<string, unknown> | undefined) || {}
 
-      return {
+      const cachedParams: LanguageModelV3CallOptions = {
         ...params,
         prompt: cacheCandidate.tailMessages,
         providerOptions: {
@@ -287,16 +363,36 @@ function geminiCacheMiddleware(settings: GeminiCacheControlSettings): LanguageMo
           }
         }
       }
+      originalParamsByCachedParams.set(cachedParams, params)
+      cacheKeyByCachedParams.set(cachedParams, cacheRequestKey)
+      return cachedParams
+    },
+    wrapStream: async ({ doStream, params, model }) => {
+      try {
+        return await doStream()
+      } catch (error) {
+        return retryWithoutExpiredCache(params, (originalParams) => model.doStream(originalParams), error)
+      }
+    },
+    wrapGenerate: async ({ doGenerate, params, model }) => {
+      try {
+        return await doGenerate()
+      } catch (error) {
+        return retryWithoutExpiredCache(params, (originalParams) => model.doGenerate(originalParams), error)
+      }
     }
   }
 }
 
-export const createGeminiCachePlugin = (settings: GeminiCacheControlSettings) =>
+export const createGeminiCachePlugin = (
+  settings: GeminiCacheControlSettings,
+  clientOptions: GeminiCacheClientOptions = {}
+) =>
   definePlugin({
     name: 'geminiCache',
     enforce: 'pre',
     configureContext: (context) => {
       context.middlewares = context.middlewares || []
-      context.middlewares.push(geminiCacheMiddleware(settings))
+      context.middlewares.push(geminiCacheMiddleware(settings, clientOptions))
     }
   })

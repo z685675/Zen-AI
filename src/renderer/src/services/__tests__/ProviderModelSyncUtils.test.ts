@@ -2,6 +2,7 @@ import type { Model, Provider } from '@renderer/types'
 import { describe, expect, it } from 'vitest'
 
 import {
+  getProviderContextHealthFingerprint,
   getProviderModelSyncFingerprint,
   markProviderModelSyncFailed,
   mergeSyncedProviderModels
@@ -323,6 +324,27 @@ describe('ProviderModelSyncUtils', () => {
           createProvider({ apiKey: provider.apiKey, apiHost: 'https://new.example.com/v1' })
         )
       ).not.toBe(getProviderModelSyncFingerprint(provider))
+    })
+  })
+
+  describe('getProviderContextHealthFingerprint', () => {
+    it('changes when a model routing group changes', () => {
+      const provider = createProvider({ models: [createModel('gpt-5.6-terra', { group: 'default' })] })
+      const svipProvider = createProvider({
+        models: [createModel('gpt-5.6-terra', { group: 'svip' })]
+      })
+
+      expect(getProviderContextHealthFingerprint(svipProvider)).not.toBe(getProviderContextHealthFingerprint(provider))
+    })
+
+    it('is stable when only display metadata changes', () => {
+      const provider = createProvider({ models: [createModel('gpt-5.6-terra')] })
+      const renamedProvider = createProvider({
+        name: 'Renamed Provider',
+        models: [createModel('gpt-5.6-terra', { name: 'Renamed Model' })]
+      })
+
+      expect(getProviderContextHealthFingerprint(renamedProvider)).toBe(getProviderContextHealthFingerprint(provider))
     })
   })
 

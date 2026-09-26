@@ -27,6 +27,19 @@ export const getProviderModelSyncFingerprint = (provider: Provider): string =>
     apiKeyHash: hashSyncSourceValue(provider.apiKey)
   })
 
+/**
+ * Fingerprint the Provider fields that affect local context-model health.
+ * Model routing groups are included because changing a model from svip to
+ * default (or vice versa) changes which API-panel route the probe exercises.
+ */
+export const getProviderContextHealthFingerprint = (provider: Provider): string =>
+  JSON.stringify({
+    sync: getProviderModelSyncFingerprint(provider),
+    models: (provider.models ?? [])
+      .map((model) => ({ id: model.id.trim().toLowerCase(), group: (model.group ?? '').trim().toLowerCase() }))
+      .sort((left, right) => left.id.localeCompare(right.id) || left.group.localeCompare(right.group))
+  })
+
 export const normalizeSyncedModel = (provider: Provider, model: Model): Model => {
   return {
     ...model,

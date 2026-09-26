@@ -314,6 +314,12 @@ export function getModelLogoById(modelId: string): string | undefined {
     }
   }
 
+  // Keep newly released OpenAI model IDs on the established GPT family logo
+  // without requiring a per-version entry in logoMap.
+  if (/(?:^|[^a-z0-9])gpt(?=[-_.\s]|$)/i.test(modelId)) {
+    return ChatGptModelLogo
+  }
+
   return undefined
 }
 

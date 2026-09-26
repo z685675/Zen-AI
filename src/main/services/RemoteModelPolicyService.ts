@@ -1,6 +1,5 @@
 import { loggerService } from '@logger'
 import {
-  type ContextCompactionModelHealthMap,
   DEFAULT_MODEL_POLICY,
   isModelPolicy,
   type ModelPolicySnapshot,
@@ -11,9 +10,6 @@ import { app, net } from 'electron'
 import { ConfigKeys, configManager } from './ConfigManager'
 
 const logger = loggerService.withContext('RemoteModelPolicyService')
-// The response also carries dynamic context-compaction model health. Keep
-// this aligned with the renderer poll interval so an API-panel recovery can
-// re-enter the fallback order without waiting for a stale main-process cache.
 const REFRESH_MIN_INTERVAL_MS = 5 * 60 * 1000
 const REQUEST_TIMEOUT_MS = 10 * 1000
 const DEFAULT_ENDPOINT = 'https://zenai.925636.xyz/api/client/model-policy'
@@ -24,14 +20,12 @@ type RemoteModelPolicyResponse = {
   updatedAt?: string
   etag?: string
   policy?: unknown
-  contextCompactionHealth?: ContextCompactionModelHealthMap
   data?: {
     policy?: unknown
     version?: number
     schemaVersion?: number
     updatedAt?: string
     etag?: string
-    contextCompactionHealth?: ContextCompactionModelHealthMap
   }
 }
 
@@ -43,7 +37,7 @@ const createSnapshot = (
   policy: ModelPolicySnapshot['policy'],
   source: ModelPolicySnapshot['source'],
   previous?: ModelPolicySnapshot,
-  metadata?: { etag?: string; fetchedAt?: string; contextCompactionHealth?: ContextCompactionModelHealthMap }
+  metadata?: { etag?: string; fetchedAt?: string }
 ): ModelPolicySnapshot => {
   const now = metadata?.fetchedAt ?? new Date().toISOString()
   return {
@@ -52,8 +46,7 @@ const createSnapshot = (
     etag: metadata?.etag ?? previous?.etag,
     fetchedAt: now,
     appliedAt: previous?.appliedAt ?? now,
-    source,
-    contextCompactionHealth: metadata?.contextCompactionHealth ?? previous?.contextCompactionHealth
+    source
   }
 }
 
@@ -128,8 +121,7 @@ class RemoteModelPolicyService {
       if (policy.version < current.version) throw new Error(`model policy version regressed: ${policy.version}`)
 
       const next = createSnapshot(normalizeModelPolicy(policy), 'remote', current, {
-        etag: response.headers.get('etag') ?? data.etag ?? payload.etag ?? undefined,
-        contextCompactionHealth: data.contextCompactionHealth ?? payload.contextCompactionHealth
+        etag: response.headers.get('etag') ?? data.etag ?? payload.etag ?? undefined
       })
       configManager.set(ConfigKeys.RemoteModelPolicyCache, next)
       return next
