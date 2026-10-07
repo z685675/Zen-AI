@@ -61,7 +61,8 @@ const AnnouncementModal: FC<{
       centered
       open={Boolean(item)}
       title={item?.title}
-      width="min(720px, calc(100vw - 48px))"
+      width="min(80vw, calc(100vw - 32px))"
+      bodyStyle={{ minHeight: 'calc(80vh - 160px)', maxHeight: 'calc(80vh - 160px)', overflowY: 'auto' }}
       footer={footer}
       onCancel={onClose}>
       {item && (

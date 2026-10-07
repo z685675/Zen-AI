@@ -22,6 +22,8 @@ type InstallFailureResult = {
   installerPath?: string
 }
 
+const LARGE_MODAL_WIDTH = 'min(80vw, calc(100vw - 32px))'
+
 export function formatReleaseDate(value?: string) {
   if (!value) {
     return undefined
@@ -51,8 +53,14 @@ const updateContainerStyle: CSSProperties = {
   lineHeight: 1.6
 }
 
+const largeModalBodyStyle: CSSProperties = {
+  minHeight: 'calc(80vh - 160px)',
+  maxHeight: 'calc(80vh - 160px)',
+  overflowY: 'auto'
+}
+
 const releaseNotesStyle: CSSProperties = {
-  maxHeight: 420,
+  maxHeight: 'calc(80vh - 260px)',
   overflowY: 'auto',
   padding: '12px 14px',
   border: '1px solid var(--color-border)',
@@ -135,7 +143,8 @@ export function showAppUpdateAvailableModal(t: Translate, updateInfo: UpdateInfo
     okText: t('update.downloadNow'),
     cancelText: t('update.later'),
     centered: true,
-    width: 720,
+    width: LARGE_MODAL_WIDTH,
+    bodyStyle: largeModalBodyStyle,
     maskClosable: false,
     content: renderUpdateContent(t, updateInfo, 'update.available'),
     async onOk() {
@@ -173,7 +182,8 @@ export function showAppUpdateDownloadedModal(t: Translate, updateInfo: UpdateInf
     okText: shouldUseManualMacInstall ? '打开安装包' : t('update.installNow'),
     cancelText: t('update.later'),
     centered: true,
-    width: 720,
+    width: LARGE_MODAL_WIDTH,
+    bodyStyle: largeModalBodyStyle,
     maskClosable: false,
     content: renderDownloadedContent(),
     async onOk() {

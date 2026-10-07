@@ -10,7 +10,6 @@ import { getModel } from '@renderer/hooks/useModel'
 import { useSettings } from '@renderer/hooks/useSettings'
 import { useTextareaResize } from '@renderer/hooks/useTextareaResize'
 import { useTimer } from '@renderer/hooks/useTimer'
-import ContextStatusIndicator from '@renderer/pages/home/Inputbar/components/ContextStatusIndicator'
 import { InputbarCore } from '@renderer/pages/home/Inputbar/components/InputbarCore'
 import ScrollToBottomButton from '@renderer/pages/home/Inputbar/components/ScrollToBottomButton'
 import {
@@ -700,7 +699,6 @@ const AgentSessionInputbarInner: FC<InnerProps> = ({
         isHero ? undefined : (
           <>
             <ScrollToBottomButton conversationKey={sessionId} />
-            <ContextStatusIndicator conversationId={buildAgentSessionTopicId(sessionId)} />
           </>
         )
       }
