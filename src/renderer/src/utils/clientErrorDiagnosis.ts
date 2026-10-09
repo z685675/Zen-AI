@@ -1,5 +1,8 @@
 import type { Model } from '@renderer/types'
 import type { SerializedError } from '@renderer/types/error'
+import i18next from 'i18next'
+
+import { isAgentRuntimeStartupError } from './agentRuntimeError'
 
 type DiagnosisCategory =
   | 'account'
@@ -13,6 +16,7 @@ type DiagnosisCategory =
   | 'model'
   | 'response'
   | 'content'
+  | 'runtime'
   | 'unknown'
 
 export interface ClientErrorDiagnosis {
@@ -281,6 +285,25 @@ export function diagnoseClientError(error?: SerializedError, options: DiagnoseOp
       typeof (error as Record<string, unknown> | undefined)?.zenTraceId === 'string'
         ? String((error as Record<string, unknown>).zenTraceId)
         : buildDiagnosticId(options.blockId, options.messageId, options.createdAt)
+  }
+
+  if (isAgentRuntimeStartupError(error)) {
+    return {
+      ...base,
+      category: 'runtime',
+      title: i18next.t('agent.errorFallback.runtime_title', { defaultValue: '智能助手启动失败：运行组件异常' }),
+      summary: i18next.t('agent.errorFallback.runtime_description', {
+        defaultValue: '软件未能启动智能助手所需的本地运行组件，本次任务尚未开始。'
+      }),
+      stage: i18next.t('agent.errorFallback.runtime_stage', { defaultValue: '启动智能助手' }),
+      errorType: i18next.t('agent.errorFallback.runtime_error_type', { defaultValue: '本地运行组件异常' }),
+      serviceConnectivity: UNKNOWN,
+      serviceReceived: '否',
+      startedGenerating: '否',
+      suggestion: i18next.t('agent.errorFallback.runtime_suggestion', {
+        defaultValue: '请更新至修复版本；如果已是最新版本，请导出诊断包并联系管理员检查安装包。'
+      })
+    }
   }
 
   if (status === 401 || status === 403) {

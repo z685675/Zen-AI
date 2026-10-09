@@ -9,6 +9,7 @@ import { getProxyEnvironment } from '@main/services/proxy/nodeProxy'
 import { managedPythonService } from '@main/services/python/ManagedPythonService'
 import { buildCurrentLocalTimeContext } from '@shared/localTimeContext'
 import { classifyRealtimeSearchIntent } from '@shared/searchIntent'
+import { app } from 'electron'
 
 import type { GetAgentSessionResponse } from '../..'
 import type {
@@ -90,6 +91,13 @@ class CodexService implements AgentServiceInterface {
 
     if (!isCodexRuntimeEnabled()) {
       return failAgentStreamBeforeStart(aiStream, getCodexRuntimeDisabledError())
+    }
+
+    if (app.isPackaged && !this.codexExecutable) {
+      return failAgentStreamBeforeStart(
+        aiStream,
+        new Error(`Agent runtime executable not found: Codex (${process.platform}-${process.arch}).`)
+      )
     }
 
     const cwd = session.accessible_paths[0]

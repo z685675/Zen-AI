@@ -1,5 +1,7 @@
 import type { SerializedError } from '@renderer/types/error'
 
+import { isAgentRuntimeStartupError } from './agentRuntimeError'
+
 export interface ErrorClassification {
   category:
     | 'auth'
@@ -17,6 +19,7 @@ export interface ErrorClassification {
     | 'ocr'
     | 'mcp'
     | 'parse'
+    | 'runtime'
     | 'unknown'
   i18nKey: string
   navTarget: string | null
@@ -31,6 +34,10 @@ export function classifyError(error?: SerializedError, providerId?: string): Err
   const numStatus = typeof status === 'number' ? status : typeof status === 'string' ? parseInt(status, 10) : undefined
   const msg = ((error.message as string) || '').toLowerCase()
   const providerSuffix = providerId ? `?id=${providerId}` : ''
+
+  if (isAgentRuntimeStartupError(error)) {
+    return { category: 'runtime', i18nKey: 'agent.errorFallback.runtime_description', navTarget: null }
+  }
 
   // Auth errors (401/403)
   if (

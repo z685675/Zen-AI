@@ -316,6 +316,11 @@
       "privacy_notice": "This diagnostic package is used to troubleshoot AI chat or smart assistant task failures. It may include the current conversation, error details, local file paths, and runtime environment information. Before sharing it with others, make sure it does not contain private content you do not want to share.",
       "retry": "Retry task",
       "retry_missing_user": "The original task could not be found, so it cannot be retried automatically.",
+      "runtime_description": "The app could not start a required local assistant component. This task has not started.",
+      "runtime_error_type": "Local runtime component error",
+      "runtime_stage": "Starting the assistant",
+      "runtime_suggestion": "Update to a fixed version. If you already have the latest version, export the diagnostic package and ask your administrator to check the installer.",
+      "runtime_title": "Assistant could not start: runtime component error",
       "subtitle": "The smart assistant has stopped this task. Unfinished steps will not continue in the background.",
       "title": "Task not completed"
     },

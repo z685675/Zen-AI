@@ -1,5 +1,4 @@
 // src/main/services/agents/services/claudecode/index.ts
-import { fork } from 'node:child_process'
 import { EventEmitter } from 'node:events'
 import * as fs from 'node:fs'
 import os from 'node:os'
@@ -69,6 +68,7 @@ import { sessionService } from '../SessionService'
 import { buildNamespacedToolCallId } from './claude-stream-state'
 import { resolveClaudeExecutablePath } from './executable'
 import { failAgentStreamBeforeStart } from './preflight'
+import { isClaudeJavaScriptProcess, spawnClaudeProcess } from './process'
 import { buildClaudeThinkingOptions } from './thinking'
 import { promptForToolApproval } from './tool-permissions'
 import { ClaudeStreamState, transformSDKMessageToStreamParts } from './transform'
@@ -578,6 +578,13 @@ class ClaudeCodeService implements AgentServiceInterface {
   ): Promise<AgentStream> {
     const aiStream = new ClaudeCodeStream()
 
+    if (app.isPackaged && !this.claudeExecutablePath) {
+      return failAgentStreamBeforeStart(
+        aiStream,
+        new Error(`Agent runtime executable not found: Claude Code (${process.platform}-${process.arch}).`)
+      )
+    }
+
     // Validate session accessible paths and make sure it exists as a directory
     const cwd = session.accessible_paths[0]
     if (!cwd) {
@@ -972,7 +979,7 @@ class ClaudeCodeService implements AgentServiceInterface {
         let execArgv = process.execArgv
 
         const activeProxyConfig = getNodeProxyConfigFromEnvironment(childEnv)
-        if (activeProxyConfig) {
+        if (activeProxyConfig && isClaudeJavaScriptProcess(spawnOptions)) {
           const proxyProtocol = getProxyProtocol(activeProxyConfig.proxyRules)
 
           logger.info('Injecting proxy into Claude Code child process', {
@@ -985,13 +992,7 @@ class ClaudeCodeService implements AgentServiceInterface {
           execArgv = [...process.execArgv, '--disable-warning=UNDICI-EHPA', '--require', this.claudeProxyBootstrapPath]
         }
 
-        const child = fork(spawnOptions.args[0], spawnOptions.args.slice(1), {
-          cwd: spawnOptions.cwd,
-          env: childEnv,
-          execArgv,
-          stdio: ['pipe', 'pipe', 'pipe', 'ipc'],
-          signal: spawnOptions.signal
-        })
+        const child = spawnClaudeProcess({ ...spawnOptions, env: childEnv }, execArgv)
         child.stderr?.on('data', (data: Buffer) => {
           const text = data.toString()
           logger.warn('claude stderr', { chunk: text })

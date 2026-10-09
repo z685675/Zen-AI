@@ -1,19 +1,11 @@
 const fs = require('fs')
 const path = require('path')
 const { execFileSync } = require('child_process')
+const { createRequire } = require('node:module')
 const { Arch } = require('electron-builder')
+const { AGENT_TARGETS, getPackagedAgentPaths, verifyPackagedAgentRuntimes } = require('./agent-runtime-packaging')
 
-const CODEX_TARGETS = {
-  'linux:arm64': { packageSuffix: 'linux-arm64', targetTriple: 'aarch64-unknown-linux-musl' },
-  'linux:x64': { packageSuffix: 'linux-x64', targetTriple: 'x86_64-unknown-linux-musl' },
-  'mac:arm64': { packageSuffix: 'darwin-arm64', targetTriple: 'aarch64-apple-darwin' },
-  'mac:x64': { packageSuffix: 'darwin-x64', targetTriple: 'x86_64-apple-darwin' },
-  'windows:arm64': { packageSuffix: 'win32-arm64', targetTriple: 'aarch64-pc-windows-msvc' },
-  'windows:x64': { packageSuffix: 'win32-x64', targetTriple: 'x86_64-pc-windows-msvc' }
-}
-
-function findCodexVendorSource(target) {
-  const rootDir = path.join(__dirname, '..')
+function findCodexVendorSource(target, rootDir) {
   const packageName = `codex-${target.packageSuffix}`
   const directVendor = path.join(rootDir, 'node_modules', '@openai', packageName, 'vendor', target.targetTriple)
   if (fs.existsSync(directVendor)) {
@@ -35,15 +27,40 @@ function findCodexVendorSource(target) {
   return candidates.at(-1) ?? null
 }
 
-function copyCodexRuntime(context) {
+function findClaudeNativeSource(target, rootDir) {
+  const packageName = `@anthropic-ai/claude-agent-sdk-${target.packageSuffix}`
+  const binaryName = target.packageSuffix.startsWith('win32-') ? 'claude.exe' : 'claude'
+  const directDir = path.join(rootDir, 'node_modules', ...packageName.split('/'))
+  if (fs.existsSync(path.join(directDir, binaryName))) return directDir
+
+  try {
+    const projectRequire = createRequire(path.join(rootDir, 'package.json'))
+    const sdkRequire = createRequire(projectRequire.resolve('@anthropic-ai/claude-agent-sdk'))
+    return path.dirname(sdkRequire.resolve(`${packageName}/${binaryName}`))
+  } catch {
+    // pnpm may keep target-platform optional packages only in its virtual store.
+  }
+  const pnpmDir = path.join(rootDir, 'node_modules', '.pnpm')
+  if (!fs.existsSync(pnpmDir)) return null
+  const candidates = fs
+    .readdirSync(pnpmDir)
+    .filter((entry) => entry.startsWith(`${packageName.replace('/', '+')}@`))
+    .map((entry) => path.join(pnpmDir, entry, 'node_modules', ...packageName.split('/')))
+    .filter((dir) => fs.existsSync(path.join(dir, binaryName)))
+  return candidates.at(-1) ?? null
+}
+
+function copyAgentRuntimes(context, rootDir = path.join(__dirname, '..')) {
   const platform = context.packager.platform.name
   const arch = context.arch === Arch.arm64 ? 'arm64' : 'x64'
-  const target = CODEX_TARGETS[`${platform}:${arch}`]
+  const target = AGENT_TARGETS[`${platform}:${arch}`]
   if (!target) {
     throw new Error(`[after-pack] unsupported Codex target: ${platform}/${arch}`)
   }
 
-  const sourceDir = findCodexVendorSource(target)
+  const resourcesDir = context.packager.getResourcesDir(context.appOutDir)
+  const paths = getPackagedAgentPaths(resourcesDir, platform, arch)
+  const sourceDir = findCodexVendorSource(target, rootDir)
   if (!sourceDir) {
     throw new Error(`[after-pack] Codex native package is missing for ${platform}/${arch}`)
   }
@@ -55,10 +72,21 @@ function copyCodexRuntime(context) {
     throw new Error(`[after-pack] Codex native package is incomplete: ${sourceDir}`)
   }
 
-  const destinationDir = path.join(context.appOutDir, 'resources', 'codex', 'vendor', target.targetTriple)
+  const destinationDir = paths.codexDir
   fs.mkdirSync(path.dirname(destinationDir), { recursive: true })
-  fs.cpSync(sourceDir, destinationDir, { recursive: true, force: true })
+  fs.cpSync(sourceDir, destinationDir, { recursive: true, force: true, dereference: true })
   console.log(`[after-pack] copied Codex runtime: ${destinationDir}`)
+
+  const claudeSource = findClaudeNativeSource(target, rootDir)
+  if (!claudeSource) throw new Error(`[after-pack] Claude Code native package is missing for ${platform}/${arch}`)
+  fs.mkdirSync(path.dirname(paths.claudeDir), { recursive: true })
+  fs.cpSync(claudeSource, paths.claudeDir, { recursive: true, force: true, dereference: true })
+  if (platform !== 'windows') {
+    fs.chmodSync(paths.codexBinary, 0o755)
+    fs.chmodSync(paths.claudeBinary, 0o755)
+  }
+  verifyPackagedAgentRuntimes(resourcesDir, platform, arch)
+  console.log(`[after-pack] copied and verified Claude Code runtime: ${paths.claudeDir}`)
 }
 
 function findFilesRecursively(rootDir, fileName) {
@@ -127,10 +155,12 @@ function patchWindowsIcon(appOutDir) {
 
 exports.default = async function (context) {
   const platform = context.packager.platform.name
-  copyCodexRuntime(context)
+  copyAgentRuntimes(context)
   if (platform === 'windows') {
     fs.rmSync(path.join(context.appOutDir, 'LICENSE.electron.txt'), { force: true })
     fs.rmSync(path.join(context.appOutDir, 'LICENSES.chromium.html'), { force: true })
     patchWindowsIcon(context.appOutDir)
   }
 }
+
+exports.copyAgentRuntimes = copyAgentRuntimes

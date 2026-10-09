@@ -8,6 +8,16 @@ function makeError(overrides: Partial<SerializedError> = {}): SerializedError {
 }
 
 describe('classifyError', () => {
+  it('classifies native agent startup errors as runtime issues without directing users to provider or network settings', () => {
+    const result = classifyError(
+      makeError({
+        message: 'Native CLI binary for darwin-arm64 not found.',
+        cause: '{"type":"stream_error","code":"stream_processing_failed"}'
+      })
+    )
+    expect(result).toMatchObject({ category: 'runtime', navTarget: null })
+  })
+
   it('returns unknown for undefined error', () => {
     const result = classifyError(undefined)
     expect(result.category).toBe('unknown')

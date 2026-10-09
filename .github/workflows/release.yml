@@ -169,6 +169,27 @@ jobs:
           RENDERER_VITE_AIHUBMIX_SECRET: ${{ secrets.RENDERER_VITE_AIHUBMIX_SECRET }}
           RENDERER_VITE_PPIO_APP_SECRET: ${{ secrets.RENDERER_VITE_PPIO_APP_SECRET }}
 
+      - name: Verify Mac agent runtimes
+        if: matrix.os == 'macos-latest'
+        run: |
+          node scripts/check-packaged-agent-runtimes.js "dist/mac-arm64/Zen AI.app/Contents/Resources" mac arm64
+          node scripts/check-packaged-agent-runtimes.js "dist/mac/Zen AI.app/Contents/Resources" mac x64
+          if [ "$(node -p 'process.arch')" = "arm64" ]; then
+            MAC_APP_DIR="dist/mac-arm64/Zen AI.app"
+          else
+            MAC_APP_DIR="dist/mac/Zen AI.app"
+          fi
+          ELECTRON_RUN_AS_NODE=1 "$MAC_APP_DIR/Contents/MacOS/Zen AI" \
+            scripts/check-packaged-runtime-dependencies.js \
+            "dist/mac-arm64/Zen AI.app/Contents/Resources/app.asar" \
+            "dist/mac/Zen AI.app/Contents/Resources/app.asar"
+
+      - name: Verify Windows agent runtimes
+        if: matrix.os == 'windows-2022'
+        run: |
+          node scripts/check-packaged-agent-runtimes.js "dist/win-unpacked/resources" windows x64
+          node scripts/check-packaged-agent-runtimes.js "dist/win-arm64-unpacked/resources" windows arm64
+
       - name: Verify Windows runtime dependencies
         if: matrix.os == 'windows-2022'
         shell: pwsh

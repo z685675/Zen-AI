@@ -3,7 +3,7 @@ const { createRequire } = require('node:module')
 const path = require('node:path')
 
 const archives = process.argv.slice(2)
-const requiredPackages = ['archiver']
+const requiredPackages = ['archiver', '@anthropic-ai/claude-agent-sdk']
 
 if (archives.length === 0) {
   console.error('Usage: check-packaged-runtime-dependencies.js <app.asar> [...]')

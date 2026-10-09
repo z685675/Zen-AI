@@ -1,4 +1,5 @@
 import type { GetAgentSessionResponse } from '@types'
+import { app } from 'electron'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const codexSdkMocks = vi.hoisted(() => ({
@@ -123,6 +124,24 @@ describe('CodexService startup errors', () => {
     expect(event.error.message).toContain('Codex runtime is disabled')
     expect(listener).toHaveBeenCalledTimes(1)
     expect(validateModelIdMock).not.toHaveBeenCalled()
+  })
+
+  it('rejects a missing packaged native runtime before contacting the model service', async () => {
+    const originalDescriptor = Object.getOwnPropertyDescriptor(app, 'isPackaged')
+    Object.defineProperty(app, 'isPackaged', { value: true, configurable: true })
+    try {
+      const service = new CodexService()
+      const stream = await service.invoke('hello', baseSession, new AbortController())
+      const event = await waitForStreamEvent(stream)
+
+      expect(event.type).toBe('error')
+      expect(event.error.message).toContain('Agent runtime executable not found: Codex')
+      expect(validateModelIdMock).not.toHaveBeenCalled()
+      expect(codexSdkMocks.startThread).not.toHaveBeenCalled()
+    } finally {
+      if (originalDescriptor) Object.defineProperty(app, 'isPackaged', originalDescriptor)
+      else Reflect.deleteProperty(app, 'isPackaged')
+    }
   })
 
   it('emits invalid model errors after callers can attach listeners', async () => {

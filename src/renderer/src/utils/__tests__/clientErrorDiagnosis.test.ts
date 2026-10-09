@@ -18,6 +18,35 @@ function makeError(message: string, statusCode?: number) {
 }
 
 describe('clientErrorDiagnosis', () => {
+  it('recognizes the reported Mac native CLI failure before generic stream_error metadata', () => {
+    const diagnosis = diagnoseClientError(
+      {
+        ...makeError(
+          'Native CLI binary for darwin-arm64 not found. Reinstall @anthropic-ai/claude-agent-sdk without --omit=optional, or set options.pathToClaudeCodeExecutable.'
+        ),
+        cause: '{"type":"stream_error","code":"stream_processing_failed"}'
+      },
+      baseOptions
+    )
+    expect(diagnosis).toMatchObject({
+      category: 'runtime',
+      serviceConnectivity: '未确认',
+      serviceReceived: '否',
+      startedGenerating: '否'
+    })
+  })
+
+  it('identifies Windows native executable failures as local startup failures', () => {
+    expect(
+      diagnoseClientError(makeError('spawn C:\\Program Files\\Zen AI\\resources\\claude.exe ENOENT'), baseOptions)
+    ).toMatchObject({ category: 'runtime', serviceReceived: '否', startedGenerating: '否' })
+  })
+
+  it('identifies a missing packaged Codex binary before a request is sent', () => {
+    expect(
+      diagnoseClientError(makeError('Agent runtime executable not found: Codex (win32-arm64).'), baseOptions)
+    ).toMatchObject({ category: 'runtime', serviceReceived: '否', startedGenerating: '否' })
+  })
   it('uses exact reviewed Chinese copy for account permission errors', () => {
     const diagnosis = diagnoseClientError(makeError('unauthorized', 401), baseOptions)
 

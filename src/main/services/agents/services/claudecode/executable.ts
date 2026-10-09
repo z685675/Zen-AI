@@ -14,6 +14,8 @@ export type ClaudeExecutableResolverOptions = {
   arch?: ClaudeExecutableArch
   existsSync?: (filePath: string) => boolean
   resolveModule?: (id: string) => string
+  createRequireFromPath?: (filePath: string) => { resolve: (id: string) => string }
+  searchRoots?: string[]
   toUnpackedPath?: (filePath: string) => string
 }
 
@@ -48,32 +50,52 @@ export function resolveClaudeExecutablePath(options: ClaudeExecutableResolverOpt
   const existsSync = options.existsSync ?? fs.existsSync
   const resolveModule = options.resolveModule ?? require_.resolve
   const toUnpackedPath = options.toUnpackedPath ?? toAsarUnpackedPath
+  const existingExecutable = (candidate: string): string | undefined => {
+    const unpacked = toUnpackedPath(candidate)
+    return existsSync(unpacked) ? unpacked : undefined
+  }
+
+  const resourcesPath = (process as NodeJS.Process & { resourcesPath?: string }).resourcesPath
+  for (const root of options.searchRoots ?? (resourcesPath ? [resourcesPath] : [])) {
+    const bundled = existingExecutable(
+      path.join(root, 'claude-code', `${platform}-${options.arch ?? process.arch}`, binaryName)
+    )
+    if (bundled) return bundled
+  }
+
+  const resolvers = [resolveModule]
+  try {
+    const sdkRequire = (options.createRequireFromPath ?? createRequire)(resolveModule('@anthropic-ai/claude-agent-sdk'))
+    resolvers.push((id) => sdkRequire.resolve(id))
+  } catch {
+    // A bundled copy can still be resolved from process.resourcesPath above.
+  }
 
   for (const packageName of getNativeClaudeExecutablePackageCandidates(options)) {
-    try {
-      const directPath = resolveModule(`${packageName}/${binaryName}`)
-      return toUnpackedPath(directPath)
-    } catch {
-      // Try package.json below; some packages may not expose the binary subpath.
-    }
-
-    try {
-      const packageJsonPath = resolveModule(`${packageName}/package.json`)
-      const candidate = path.join(path.dirname(packageJsonPath), binaryName)
-      if (existsSync(candidate)) {
-        return toUnpackedPath(candidate)
+    for (const resolve of resolvers) {
+      try {
+        const directPath = existingExecutable(resolve(`${packageName}/${binaryName}`))
+        if (directPath) return directPath
+      } catch {
+        // Try package.json below; some packages may not expose the binary subpath.
       }
-    } catch {
-      // Optional native package is not installed for this platform.
+
+      try {
+        const packageJsonPath = resolve(`${packageName}/package.json`)
+        const candidate = path.join(path.dirname(packageJsonPath), binaryName)
+        const executable = existingExecutable(candidate)
+        if (executable) return executable
+      } catch {
+        // Optional native package is not installed for this platform.
+      }
     }
   }
 
   try {
     const sdkDir = path.dirname(resolveModule('@anthropic-ai/claude-agent-sdk'))
     const legacyCliPath = path.join(sdkDir, 'cli.js')
-    if (existsSync(legacyCliPath)) {
-      return toUnpackedPath(legacyCliPath)
-    }
+    const executable = existingExecutable(legacyCliPath)
+    if (executable) return executable
   } catch {
     // Let the SDK attempt auto-discovery when neither old nor new paths resolve.
   }

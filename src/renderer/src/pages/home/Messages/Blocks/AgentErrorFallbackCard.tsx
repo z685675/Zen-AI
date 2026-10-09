@@ -66,7 +66,10 @@ const AgentErrorFallbackCard: React.FC<Props> = ({ block, message }) => {
 
   const providerId = message.model?.provider ?? (block.error?.providerId as string | undefined)
   const classification = useMemo(() => classifyError(block.error, providerId), [block.error, providerId])
-  const dependencyIssue = useMemo(() => isDependencyError(block.error), [block.error])
+  const dependencyIssue = useMemo(
+    () => classification.category !== 'runtime' && isDependencyError(block.error),
+    [classification.category, block.error]
+  )
   const clientDiagnosis = useMemo(
     () =>
       diagnoseClientError(block.error, {
@@ -103,16 +106,21 @@ const AgentErrorFallbackCard: React.FC<Props> = ({ block, message }) => {
     [message.assistantId, message.model, t]
   )
 
-  const title = dependencyIssue
-    ? t('agent.errorFallback.dependency_title')
-    : classification.category === 'auth' || classification.category === 'model' || classification.category === 'quota'
-      ? t('agent.errorFallback.model_title')
-      : classification.category === 'network' ||
-          classification.category === 'proxy' ||
-          classification.category === 'server' ||
-          classification.category === 'stream'
-        ? t('agent.errorFallback.connection_title')
-        : t('agent.errorFallback.title')
+  const title =
+    classification.category === 'runtime'
+      ? clientDiagnosis.title
+      : dependencyIssue
+        ? t('agent.errorFallback.dependency_title')
+        : classification.category === 'auth' ||
+            classification.category === 'model' ||
+            classification.category === 'quota'
+          ? t('agent.errorFallback.model_title')
+          : classification.category === 'network' ||
+              classification.category === 'proxy' ||
+              classification.category === 'server' ||
+              classification.category === 'stream'
+            ? t('agent.errorFallback.connection_title')
+            : t('agent.errorFallback.title')
 
   const description = dependencyIssue
     ? t('agent.errorFallback.dependency_description')
