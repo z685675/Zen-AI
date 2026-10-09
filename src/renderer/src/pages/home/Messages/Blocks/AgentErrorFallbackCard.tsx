@@ -2,7 +2,7 @@ import { showErrorDetailPopup } from '@renderer/components/ErrorDetailModal'
 import { useAgentClient } from '@renderer/hooks/agents/useAgentClient'
 import { useTimer } from '@renderer/hooks/useTimer'
 import type { DiagnosisResult } from '@renderer/services/ErrorDiagnosisService'
-import { exportErrorDiagnosticPackage } from '@renderer/services/ErrorDiagnosticPackageService'
+import { exportErrorDiagnosticPackage, getDiagnosticAppInfo } from '@renderer/services/ErrorDiagnosticPackageService'
 import { useAppDispatch, useAppSelector } from '@renderer/store'
 import { removeBlocksThunk, resendMessageThunk } from '@renderer/store/thunk/messageThunk'
 import type { Assistant } from '@renderer/types'
@@ -180,13 +180,16 @@ const AgentErrorFallbackCard: React.FC<Props> = ({ block, message }) => {
       setExporting(true)
 
       try {
-        const appInfo = await window.api.getAppInfo().catch(() => undefined)
+        const appInfo = await getDiagnosticAppInfo()
         const privacyNotice = t('agent.errorFallback.privacy_notice')
         const sessionId = extractAgentSessionIdFromTopicId(message.topicId)
-        const sessionContext = await Promise.race([
-          client.getSession(message.assistantId, sessionId).catch(() => undefined),
-          new Promise<undefined>((resolve) => {
-            window.setTimeout(() => resolve(undefined), 1500)
+        const sessionCollection = await Promise.race([
+          client
+            .getSession(message.assistantId, sessionId)
+            .then((value) => ({ value, status: 'collected-at-export-time' }))
+            .catch(() => ({ value: undefined, status: 'collection-failed' })),
+          new Promise<{ value: undefined; status: string }>((resolve) => {
+            window.setTimeout(() => resolve({ value: undefined, status: 'timed-out' }), 1500)
           })
         ])
         const savedPath = await exportErrorDiagnosticPackage({
@@ -203,7 +206,8 @@ const AgentErrorFallbackCard: React.FC<Props> = ({ block, message }) => {
           blockEntities,
           model: message.model,
           appInfo,
-          sessionContext,
+          sessionContext: sessionCollection.value,
+          sessionContextStatus: sessionCollection.status,
           aiDiagnosis: block.metadata?.diagnosis,
           privacyNotice
         })

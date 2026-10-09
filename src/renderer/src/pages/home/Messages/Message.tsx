@@ -8,6 +8,7 @@ import { selectNewTopicLoading, useMessageOperations } from '@renderer/hooks/use
 import { useModel } from '@renderer/hooks/useModel'
 import { useSettings } from '@renderer/hooks/useSettings'
 import { useTimer } from '@renderer/hooks/useTimer'
+import { getDiagnosticEvidence, recordDiagnostic } from '@renderer/services/DiagnosticEvidenceService'
 import { EVENT_NAMES, EventEmitter } from '@renderer/services/EventService'
 import { getMessageModelId } from '@renderer/services/MessagesService'
 import { getModelUniqId } from '@renderer/services/ModelService'
@@ -72,6 +73,15 @@ const MessageItem: FC<Props> = ({
   isGroupContextMessage
 }) => {
   const { t } = useTranslation()
+  useEffect(() => {
+    if (
+      message.role === 'assistant' &&
+      (message.status === 'success' || message.status === 'error') &&
+      getDiagnosticEvidence(message.id)
+    ) {
+      recordDiagnostic(message.id, 'ui', 'render-committed', { status: message.status })
+    }
+  }, [message.id, message.role, message.status])
   const { assistant: fallbackAssistant, setModel } = useAssistant(message.assistantId)
   const assistant = sessionAssistant ?? fallbackAssistant
   const { isMultiSelectMode } = useChatContext(topic)
@@ -284,7 +294,7 @@ const MessageItem: FC<Props> = ({
                 fontSize: conversationFontSize,
                 overflowY: 'visible'
               }}>
-              <MessageErrorBoundary>
+              <MessageErrorBoundary messageId={message.id}>
                 <MessageContent message={message} isStreaming={isProcessing} />
               </MessageErrorBoundary>
             </MessageContentContainer>

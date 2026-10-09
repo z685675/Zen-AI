@@ -59,13 +59,15 @@ const defaultClaudeCodeSystem: Array<TextBlockParam> = [
 export function getSdkClient(
   provider: Provider,
   oauthToken?: string | null,
-  extraHeaders?: Record<string, string | string[]>
+  extraHeaders?: Record<string, string | string[]>,
+  customFetch?: typeof fetch
 ): Anthropic {
   if (provider.authType === 'oauth') {
     if (!oauthToken) {
       throw new Error('OAuth token is not available')
     }
     return new Anthropic({
+      ...(customFetch ? { fetch: customFetch } : {}),
       authToken: oauthToken,
       baseURL: 'https://api.anthropic.com',
       dangerouslyAllowBrowser: true,
@@ -99,6 +101,7 @@ export function getSdkClient(
 
   if (provider.id === 'aihubmix') {
     return new Anthropic({
+      ...(customFetch ? { fetch: customFetch } : {}),
       apiKey: provider.apiKey,
       baseURL,
       dangerouslyAllowBrowser: true,
@@ -112,13 +115,15 @@ export function getSdkClient(
   }
 
   return new Anthropic({
+    ...(customFetch ? { fetch: customFetch } : {}),
     apiKey: provider.apiKey,
     authToken: provider.apiKey,
     baseURL,
     dangerouslyAllowBrowser: true,
     defaultHeaders: {
       'anthropic-beta': 'output-128k-2025-02-19',
-      ...provider.extra_headers
+      ...provider.extra_headers,
+      ...extraHeaders
     }
   })
 }

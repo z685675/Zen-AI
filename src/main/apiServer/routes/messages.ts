@@ -70,6 +70,12 @@ async function handleMessageProcessing({
     }
 
     const resolvedModelId = modelId ?? request.model
+    const diagnosticId = req.get('X-Zen-Diagnostic-Operation')
+    if (diagnosticId && /^[\w.-]{1,128}$/.test(diagnosticId))
+      provider = {
+        ...provider,
+        extra_headers: { ...provider.extra_headers, 'X-Zen-Diagnostic-Operation': diagnosticId }
+      }
     const selectedModel = provider.models?.find((model) => model.id === resolvedModelId)
     if (shouldUseAgentProtocolBridge(provider, selectedModel)) {
       const abortController = new AbortController()

@@ -5,6 +5,7 @@ import { config as apiConfigService } from '@main/apiServer/config'
 import { cleanupAssistantMcpContext, registerAssistantMcpContext } from '@main/apiServer/routes/assistant-mcp'
 import { cleanupBrowserMcpContext, registerBrowserMcpContext } from '@main/apiServer/routes/browser-mcp'
 import { validateModelId } from '@main/apiServer/utils'
+import { recordMainDiagnostic } from '@main/services/DiagnosticEvidenceService'
 import { getProxyEnvironment } from '@main/services/proxy/nodeProxy'
 import { managedPythonService } from '@main/services/python/ManagedPythonService'
 import { buildCurrentLocalTimeContext } from '@shared/localTimeContext'
@@ -24,6 +25,7 @@ import {
   isProvisioned,
   provisionBuiltinAgent
 } from '../builtin/BuiltinAgentProvisioner'
+import { assertAgentStreamCompleted } from '../runtime/fallback'
 import { getCodexRuntimeDisabledError, isCodexRuntimeEnabled } from '../runtime/features'
 import { failAgentStreamBeforeStart } from '../runtime/preflight'
 import { buildResearchWorkflowGuidance } from '../runtime/researchWorkflows'
@@ -116,6 +118,13 @@ class CodexService implements AgentServiceInterface {
     if (!modelInfo.provider || !modelInfo.modelId) {
       return failAgentStreamBeforeStart(aiStream, new Error('Provider or model not found for Codex runtime'))
     }
+    recordMainDiagnostic(thinkingOptions?.diagnosticId, 'runtime', 'transport-config', {
+      apiHost: modelInfo.provider.apiHost,
+      providerId: modelInfo.provider.id,
+      modelId: modelInfo.modelId,
+      executable: this.codexExecutable?.executablePath,
+      transport: 'codex-responses-direct'
+    })
 
     const builtinRole = (session.configuration as Record<string, unknown> | undefined)?.builtin_role as
       | string
@@ -299,10 +308,14 @@ class CodexService implements AgentServiceInterface {
       let observedEvent = false
 
       const consumeThread = async (thread: CodexThread) => {
+        let completed = false
         const { events } = await thread.runStreamed(currentInput.input, { signal: params.abortController.signal })
 
         for await (const event of events) {
           observedEvent = true
+          if (event.type === 'turn.failed') throw new Error(event.error.message)
+          if (event.type === 'error') throw new Error(event.message)
+          if (event.type === 'turn.completed') completed = true
           if (event.type === 'thread.started') {
             params.stream.sdkSessionId = event.thread_id
           } else if (thread.id && !params.stream.sdkSessionId) {
@@ -331,6 +344,7 @@ class CodexService implements AgentServiceInterface {
             }
           }
         }
+        assertAgentStreamCompleted(completed, params.abortController.signal)
       }
 
       const thread = params.lastAgentSessionId

@@ -10,6 +10,7 @@ import {
 } from '@renderer/hooks/useAwsBedrock'
 import { createVertexProvider, isVertexAIConfigured } from '@renderer/hooks/useVertexAI'
 import { getProviderByModel } from '@renderer/services/AssistantService'
+import { recordDiagnostic } from '@renderer/services/DiagnosticEvidenceService'
 import { getProviderById } from '@renderer/services/ProviderService'
 import store from '@renderer/store'
 import { type Model, type Provider, SystemProviderIds } from '@renderer/types'
@@ -30,6 +31,7 @@ import {
   isSupportStreamOptionsProvider,
   isVertexProvider
 } from '@renderer/utils/provider'
+import { diagnosticFetch } from '@shared/diagnostics'
 import { defaultAppHeaders } from '@shared/utils'
 import { cloneDeep, isEmpty } from 'lodash'
 
@@ -182,13 +184,14 @@ function buildCommonOptions(ctx: BuilderContext) {
 }
 
 export function withZenTraceFetch(baseFetch: typeof fetch = fetch): typeof fetch {
+  const observedFetch = diagnosticFetch(baseFetch, recordDiagnostic)
   return async (input: RequestInfo | URL, init?: RequestInit) => {
     const traceId = createZenTraceId()
-    const headers = new Headers(init?.headers)
+    const headers = new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined))
     headers.set(ZEN_TRACE_HEADER, traceId)
 
     try {
-      const response = await baseFetch(input, { ...init, headers })
+      const response = await observedFetch(input, { ...init, headers })
       if (!response.ok) {
         logger.warn('Provider request returned an HTTP error', {
           traceId,

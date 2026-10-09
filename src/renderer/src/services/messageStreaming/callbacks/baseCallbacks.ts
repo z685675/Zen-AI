@@ -1,6 +1,7 @@
 import { loggerService } from '@logger'
 import { autoRenameTopic } from '@renderer/hooks/useTopic'
 import i18n from '@renderer/i18n'
+import { getDiagnosticEvidence, recordDiagnostic } from '@renderer/services/DiagnosticEvidenceService'
 import { EVENT_NAMES, EventEmitter } from '@renderer/services/EventService'
 import { NotificationService } from '@renderer/services/NotificationService'
 import { estimateMessagesUsage } from '@renderer/services/TokenService'
@@ -151,6 +152,13 @@ export const createBaseCallbacks = (deps: BaseCallbacksDependencies) => {
       terminalStatus = isErrorTypeAbort ? AssistantMessageStatus.SUCCESS : AssistantMessageStatus.ERROR
       const isErrorTypeTimeout = isTimeoutError(error)
       const serializableError = serializeError(error)
+      if (!getDiagnosticEvidence(assistantMsgId)?.events.some((event) => event.event === 'failed')) {
+        const startup = (serializableError as Record<string, unknown>).zenFailureStage === 'runtime-startup'
+        recordDiagnostic(assistantMsgId, startup ? 'runtime' : 'response', isErrorTypeAbort ? 'cancelled' : 'failed', {
+          error: serializableError,
+          startup
+        })
+      }
       if (isErrorTypeAbort) {
         serializableError.i18nKey = ERROR_I18N_KEY_STREAM_PAUSED
       } else if (isErrorTypeTimeout) {
@@ -393,6 +401,7 @@ export const createBaseCallbacks = (deps: BaseCallbacksDependencies) => {
         })
       )
       await saveUpdatesToDB(assistantMsgId, topicId, messageUpdates, todoBlocksToSave)
+      recordDiagnostic(assistantMsgId, 'ui', 'state-applied', { status, usage: response?.usage })
 
       // Track token usage for agent sessions (chat sessions are tracked in fetchChatCompletion)
       if (status === 'success' && isAgentSessionTopicId(topicId)) {

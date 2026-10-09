@@ -9,7 +9,6 @@ import type {
   HookCallback,
   McpHttpServerConfig,
   Options,
-  SDKMessage,
   SdkPluginConfig,
   SDKUserMessage,
   SpawnedProcess
@@ -24,6 +23,7 @@ import AssistantServer from '@main/mcpServers/assistant'
 import BrowserServer from '@main/mcpServers/browser/server'
 import ClawServer from '@main/mcpServers/claw'
 import { configManager } from '@main/services/ConfigManager'
+import { recordMainDiagnostic } from '@main/services/DiagnosticEvidenceService'
 import {
   getNodeProxyConfigFromEnvironment,
   getProxyEnvironment,
@@ -62,6 +62,7 @@ import {
 import { channelService } from '../ChannelService'
 import { PromptBuilder } from '../cherryclaw/prompt'
 import { isModelCompatibleWithAgentRuntime } from '../runtime/compatibility'
+import { assertAgentStreamCompleted } from '../runtime/fallback'
 import { getAgentProtocolBridgeTarget, shouldUseAgentProtocolBridge } from '../runtime/protocol'
 import { RESEARCH_BUILTIN_SKILL_WORKFLOWS } from '../runtime/researchWorkflows'
 import { sessionService } from '../SessionService'
@@ -608,6 +609,14 @@ class ClaudeCodeService implements AgentServiceInterface {
     const selectedModel = provider.models?.find((model) => model.id === modelInfo.modelId)
     const useProtocolBridge = shouldUseAgentProtocolBridge(provider, selectedModel)
     const protocolBridgeTarget = getAgentProtocolBridgeTarget(provider, selectedModel)
+    recordMainDiagnostic(thinkingOptions?.diagnosticId, 'runtime', 'transport-config', {
+      apiHost: provider.apiHost,
+      providerId: provider.id,
+      modelId: modelInfo.modelId,
+      executable: this.claudeExecutablePath,
+      transport: useProtocolBridge ? 'zen-protocol-bridge' : 'anthropic-direct',
+      target: protocolBridgeTarget
+    })
 
     if (!isModelCompatibleWithAgentRuntime(provider, selectedModel, 'claude-code')) {
       logger.error('Claude Code provider protocol is explicitly unsupported', {
@@ -731,6 +740,14 @@ class ClaudeCodeService implements AgentServiceInterface {
     }
 
     const errorChunks: string[] = []
+    if (thinkingOptions?.diagnosticId) {
+      env['ANTHROPIC_CUSTOM_HEADERS'] = [
+        env['ANTHROPIC_CUSTOM_HEADERS'],
+        `X-Zen-Diagnostic-Operation: ${thinkingOptions.diagnosticId}`
+      ]
+        .filter(Boolean)
+        .join('\n')
+    }
 
     const sessionAllowedTools = new Set<string>(session.allowed_tools ?? [])
     const autoAllowTools = new Set<string>([...DEFAULT_AUTO_ALLOW_TOOLS, ...sessionAllowedTools])
@@ -996,7 +1013,8 @@ class ClaudeCodeService implements AgentServiceInterface {
         child.stderr?.on('data', (data: Buffer) => {
           const text = data.toString()
           logger.warn('claude stderr', { chunk: text })
-          errorChunks.push(text)
+          errorChunks.push(text.slice(-4096))
+          if (errorChunks.length > 32) errorChunks.shift()
         })
         return child as unknown as SpawnedProcess
       },
@@ -1147,7 +1165,7 @@ class ClaudeCodeService implements AgentServiceInterface {
     const requiresToolCall = enhancedPrompt.includes(FUSION_TOOL_REQUIRED_MARKER)
 
     logger.info('Starting Claude Code SDK query', {
-      prompt,
+      promptCharacters: prompt.length,
       hasFusionIntentGuidance,
       requiresToolCall,
       cwd: options.cwd,
@@ -1402,7 +1420,7 @@ class ClaudeCodeService implements AgentServiceInterface {
     agentId: string,
     sessionId: string
   ): Promise<void> {
-    const jsonOutput: SDKMessage[] = []
+    let messageCount = 0
     let hasCompleted = false
     const startTime = Date.now()
     const streamState = new ClaudeStreamState({ agentSessionId: sessionId })
@@ -1411,7 +1429,7 @@ class ClaudeCodeService implements AgentServiceInterface {
       for await (const message of query({ prompt: promptStream, options })) {
         if (hasCompleted) break
 
-        jsonOutput.push(message)
+        messageCount += 1
 
         // Handle init message - merge builtin and SDK slash_commands
         if (message.type === 'system' && message.subtype === 'init') {
@@ -1477,18 +1495,10 @@ class ClaudeCodeService implements AgentServiceInterface {
         }
       }
 
-      const duration = Date.now() - startTime
-
-      logger.debug('SDK query completed successfully', {
-        duration,
-        messageCount: jsonOutput.length
-      })
-
-      if (!hasCompleted) {
-        stream.emit('data', {
-          type: 'complete'
-        })
-      }
+      // Iterator EOF is not a successful turn. A killed process or broken
+      // transport can end after a tool ran but before the final SDK result.
+      logger.debug('SDK query iterator ended', { duration: Date.now() - startTime, messageCount })
+      assertAgentStreamCompleted(hasCompleted, options.abortController?.signal)
     } catch (error) {
       if (hasCompleted) return
       hasCompleted = true
@@ -1519,7 +1529,7 @@ class ClaudeCodeService implements AgentServiceInterface {
 
       stream.emit('data', {
         type: 'error',
-        error: new Error(errorMessage)
+        error: Object.assign(new Error(errorMessage), { cause: error, zenRuntimeStderr: errorChunks })
       })
     } finally {
       closePromptStream()

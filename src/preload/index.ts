@@ -247,6 +247,7 @@ const api = {
       files: Array<{ path: string; content: string }>,
       options?: SaveDialogOptions
     ): Promise<string> => ipcRenderer.invoke(IpcChannel.File_SaveDiagnosticPackage, fileName, files, options),
+    collectDiagnosticEvidence: (operationId: string) => ipcRenderer.invoke(IpcChannel.Diagnostic_Collect, operationId),
     selectFolder: (options?: OpenDialogOptions): Promise<string | null> =>
       ipcRenderer.invoke(IpcChannel.File_SelectFolder, options),
     saveImage: (name: string, data: string): Promise<boolean> =>

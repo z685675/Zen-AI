@@ -11,6 +11,58 @@ const baseStreamMetadata = {
 const uuid = (n: number) => `00000000-0000-0000-0000-${n.toString().padStart(12, '0')}`
 
 describe('stripLocalCommandTags', () => {
+  it.each([
+    '[Your previous response had no visible output. Please continue and produce a user-visible response.]',
+    [{ type: 'text', text: 'Internal recovery instructions' }],
+    '用户原始问题及附件内容'
+  ])('does not render SDK user input as an assistant answer: %j', (content) => {
+    const state = new ClaudeStreamState({ agentSessionId: 'input-echo-test' })
+    expect(
+      transformSDKMessageToStreamParts(
+        {
+          type: 'user',
+          message: { role: 'user', content },
+          ...baseStreamMetadata,
+          uuid: uuid(100),
+          isSynthetic: true
+        } as SDKMessage,
+        state
+      )
+    ).toEqual([])
+  })
+
+  it('surfaces a 503 SDK assistant error as a failure, never as answer text', () => {
+    const state = new ClaudeStreamState({ agentSessionId: 'error-test' })
+    const parts = transformSDKMessageToStreamParts(
+      {
+        type: 'assistant',
+        error: 'server_error',
+        message: { role: 'assistant', content: [{ type: 'text', text: '503 Service Unavailable' }] },
+        ...baseStreamMetadata,
+        uuid: uuid(101)
+      } as SDKMessage,
+      state
+    )
+    expect(parts).toEqual([
+      { type: 'error', error: expect.objectContaining({ message: 'server_error: 503 Service Unavailable' }) }
+    ])
+  })
+
+  it('keeps explicit SDK local command output visible', () => {
+    const state = new ClaudeStreamState({ agentSessionId: 'command-test' })
+    const parts = transformSDKMessageToStreamParts(
+      {
+        type: 'system',
+        subtype: 'local_command_output',
+        content: 'Current status',
+        session_id: 'command-test',
+        uuid: uuid(102)
+      },
+      state
+    )
+    expect(parts.map((part) => part.type)).toEqual(['text-start', 'text-delta', 'text-end'])
+  })
+
   it('removes stdout wrapper while preserving inner text', () => {
     const input = 'before <local-command-stdout>echo "hi"</local-command-stdout> after'
     expect(stripLocalCommandTags(input)).toBe('before echo "hi" after')

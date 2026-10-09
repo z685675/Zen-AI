@@ -10,6 +10,7 @@ import DailyRotateFile from 'winston-daily-rotate-file'
 import { isMainThread } from 'worker_threads'
 
 import { isDev } from '../constant'
+import { captureDiagnosticLog } from './DiagnosticEvidenceService'
 
 const ANSICOLORS = {
   RED: '\x1b[31m',
@@ -270,6 +271,7 @@ class LoggerService {
       meta.push(extra)
     }
 
+    captureDiagnosticLog(level, message, meta)
     this.logger.log(level, message, ...meta)
   }
 

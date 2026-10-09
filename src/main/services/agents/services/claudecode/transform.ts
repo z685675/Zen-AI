@@ -112,16 +112,6 @@ export const stripLocalCommandTags = (text: string): string => {
 }
 
 /**
- * Filters out command-* tags from text content to prevent internal command
- * messages from appearing in the user-facing UI.
- * Removes tags like <command-message>...</command-message> and <command-name>...</command-name>
- */
-const filterCommandTags = (text: string): string => {
-  const withoutLocalCommandTags = stripLocalCommandTags(text)
-  return withoutLocalCommandTags.replace(/<command-[^>]+>.*?<\/command-[^>]+>/gs, '')
-}
-
-/**
  * Extracts provider metadata from the raw Claude message so we can surface it
  * on every emitted stream part for observability and debugging purposes.
  */
@@ -141,7 +131,7 @@ const sdkMessageToProviderMetadata = (message: SDKMessage): ProviderMetadata => 
  * blocks across calls so that incremental deltas can be correlated correctly.
  */
 export function transformSDKMessageToStreamParts(sdkMessage: SDKMessage, state: ClaudeStreamState): AgentStreamPart[] {
-  logger.silly('Transforming SDKMessage', { message: JSON.stringify(sdkMessage) })
+  logger.silly('Transforming SDKMessage', { type: sdkMessage.type, uuid: sdkMessage.uuid })
   switch (sdkMessage.type) {
     case 'assistant':
       return handleAssistantMessage(sdkMessage, state)
@@ -171,6 +161,18 @@ function handleAssistantMessage(
 ): AgentStreamPart[] {
   // Clear skill content expectation when assistant starts responding
   state.consumeExpectingSkillContent()
+
+  if (message.error) {
+    const content = message.message.content
+    const detail =
+      typeof content === 'string'
+        ? content
+        : content
+            .filter((block) => block.type === 'text')
+            .map((block) => block.text)
+            .join('\n')
+    return [{ type: 'error', error: new Error(`${message.error}: ${detail || 'Model request failed'}`) }]
+  }
 
   const chunks: AgentStreamPart[] = []
   const providerMetadata = sdkMessageToProviderMetadata(message)
@@ -353,7 +355,6 @@ function handleUserMessage(
   state: ClaudeStreamState
 ): AgentStreamPart[] {
   const chunks: AgentStreamPart[] = []
-  const providerMetadata = sdkMessageToProviderMetadata(message)
   const content = message.message.content
 
   // Check if content contains tool_result blocks (synthetic tool result messages)
@@ -408,65 +409,8 @@ function handleUserMessage(
     return chunks
   }
 
-  // For non-synthetic messages (user-initiated content), render text content
-  if (typeof content === 'string') {
-    if (!content) {
-      return chunks
-    }
-
-    const filteredContent = filterCommandTags(content)
-    if (!filteredContent) {
-      return chunks
-    }
-
-    const id = message.uuid?.toString() || generateMessageId()
-    chunks.push({
-      type: 'text-start',
-      id,
-      providerMetadata
-    })
-    chunks.push({
-      type: 'text-delta',
-      id,
-      text: filteredContent,
-      providerMetadata
-    })
-    chunks.push({
-      type: 'text-end',
-      id,
-      providerMetadata
-    })
-    return chunks
-  }
-
-  // For non-synthetic array content, render text blocks
-  for (const block of content) {
-    if (block.type === 'text') {
-      const rawText = (block as { text: string }).text
-      const filteredText = filterCommandTags(rawText)
-
-      if (filteredText) {
-        const id = message.uuid?.toString() || generateMessageId()
-        chunks.push({
-          type: 'text-start',
-          id,
-          providerMetadata
-        })
-        chunks.push({
-          type: 'text-delta',
-          id,
-          text: filteredText,
-          providerMetadata
-        })
-        chunks.push({
-          type: 'text-end',
-          id,
-          providerMetadata
-        })
-      }
-    }
-  }
-
+  // User frames echo prompts, attachments and SDK-injected recovery messages.
+  // They are input records, never assistant output (including isSynthetic=false).
   return chunks
 }
 
@@ -730,6 +674,12 @@ function handleSystemMessage(message: Extract<SDKMessage, { type: 'system' }>): 
         raw: message
       }
     })
+  } else if (message.subtype === 'local_command_output') {
+    const text = stripLocalCommandTags(message.content)
+    if (text.trim()) {
+      const id = message.uuid || generateMessageId()
+      chunks.push({ type: 'text-start', id }, { type: 'text-delta', id, text }, { type: 'text-end', id })
+    }
   }
   return chunks
 }
@@ -742,7 +692,7 @@ function handleSystemMessage(message: Extract<SDKMessage, { type: 'system' }>): 
 function handleResultMessage(message: Extract<SDKMessage, { type: 'result' }>): AgentStreamPart[] {
   const chunks: AgentStreamPart[] = []
 
-  if (message.subtype === 'success') {
+  if (message.subtype === 'success' && !message.is_error) {
     chunks.push({
       type: 'finish',
       totalUsage: convertClaudeCodeUsage(message.usage),

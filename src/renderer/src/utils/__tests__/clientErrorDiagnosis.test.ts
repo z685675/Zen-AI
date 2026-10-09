@@ -147,7 +147,7 @@ describe('clientErrorDiagnosis', () => {
       errorType: '连接异常',
       serviceConnectivity: '未确认',
       serviceReceived: '未确认',
-      startedGenerating: '否',
+      startedGenerating: '未确认',
       suggestion: '请先重试；如果仍失败，请检查当前设备网络、代理、VPN 或安全软件拦截。'
     })
   })
@@ -175,9 +175,9 @@ describe('clientErrorDiagnosis', () => {
       summary: '回复生成过程中连接中断。通常重试即可恢复；如果连续出现，请检查网络或代理设置。',
       stage: '生成传输',
       errorType: '连接中断',
-      serviceConnectivity: '已连接',
-      serviceReceived: '是',
-      startedGenerating: '是',
+      serviceConnectivity: '未确认',
+      serviceReceived: '未确认',
+      startedGenerating: '未确认',
       suggestion: '请重试一次；如果经常在生成中途失败，请优先检查网络、代理或 VPN 稳定性。'
     })
   })

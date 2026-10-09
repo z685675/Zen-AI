@@ -25,6 +25,7 @@ import {
 } from '@renderer/config/models/modelCapabilityMemory'
 import { getStoreSetting } from '@renderer/hooks/useSettings'
 import i18n from '@renderer/i18n'
+import { getDiagnosticEvidence, recordDiagnostic } from '@renderer/services/DiagnosticEvidenceService'
 import store from '@renderer/store'
 import { hubMCPServer } from '@renderer/store/mcp'
 import type { Assistant, MCPServer, MCPTool, Model, Provider } from '@renderer/types'
@@ -53,6 +54,7 @@ import {
 import { containsSupportedVariables, replacePromptVariables } from '@renderer/utils/prompt'
 import { NOT_SUPPORT_API_KEY_PROVIDER_TYPES, NOT_SUPPORT_API_KEY_PROVIDERS } from '@renderer/utils/provider'
 import { getUsageCacheStats } from '@renderer/utils/usage'
+import { DIAGNOSTIC_OPERATION_HEADER } from '@shared/diagnostics'
 import type { ImagePart, ModelMessage, TextPart } from 'ai'
 import { isEmpty, takeRight } from 'lodash'
 
@@ -886,6 +888,17 @@ export async function transformMessagesAndFetch(
     }
 
     const { modelMessages, uiMessages } = await ConversationService.prepareMessagesForModel(messages, assistant)
+    recordDiagnostic(request.assistantMsgId, 'preparation', 'messages-ready', {
+      uiMessageCount: uiMessages.length,
+      convertedMessageCount: modelMessages.length,
+      estimatedTokens: estimateModelMessagesTokens(modelMessages).totalTokens,
+      attachments: uiMessages.flatMap((message) =>
+        [...findImageBlocks(message), ...findFileBlocks(message)].map((block) => ({
+          file: block.file?.origin_name,
+          size: block.file?.size
+        }))
+      )
+    })
 
     // replace prompt variables
     assistant.prompt = await replacePromptVariables(assistant.prompt, assistant.model?.name)
@@ -922,6 +935,9 @@ export async function transformMessagesAndFetch(
       onChunkReceived
     })
   } catch (error: any) {
+    if (!getDiagnosticEvidence(request.assistantMsgId)?.events.some((event) => event.event === 'failed')) {
+      recordDiagnostic(request.assistantMsgId, 'preparation', isAbortError(error) ? 'cancelled' : 'failed', { error })
+    }
     await onChunkReceived({ type: ChunkType.ERROR, error })
   }
 }
@@ -940,6 +956,7 @@ export async function fetchChatCompletion({
   uiMessages,
   allowedTools
 }: FetchChatCompletionParams) {
+  const diagnosticId = requestOptions?.headers?.[DIAGNOSTIC_OPERATION_HEADER]
   logger.info('fetchChatCompletion called with detailed context', {
     messageCount: messages?.length || 0,
     prompt: prompt,
@@ -1047,10 +1064,14 @@ export async function fetchChatCompletion({
       // avoids repeatedly hitting a known-bad model and preserves the order
       // configured by the API panel.
       const checkpointDeadline = Date.now() + CONTEXT_CHECKPOINT_TOTAL_TIMEOUT_MS
-      const fetchContextCompaction = createContextCompactionKeyFailover(topicId)
+      const fetchContextCompaction = createContextCompactionKeyFailover(topicId, diagnosticId)
       const generateCheckpoint = createContextCompactionGenerator({
         models: compactionModels,
         generate: (compactionModel, systemPrompt, content) => {
+          recordDiagnostic(diagnosticId, 'context', 'model-attempt', {
+            modelId: compactionModel.id,
+            providerId: compactionModel.provider
+          })
           const remainingMs = checkpointDeadline - Date.now()
           if (remainingMs <= 0) {
             throw new Error('Context checkpoint total timeout exceeded.')
@@ -1067,6 +1088,12 @@ export async function fetchChatCompletion({
         validateOutput: (output, _prompt, content) => validateCheckpointSummary(output, content).valid,
         shouldTryNext: () => !requestOptions?.signal?.aborted && Date.now() < checkpointDeadline,
         onModelFailure: (compactionModel, error, nextPosition) => {
+          recordDiagnostic(diagnosticId, 'context', 'model-fallback', {
+            modelId: compactionModel.id,
+            providerId: compactionModel.provider,
+            nextPosition,
+            error
+          })
           logger.warn('Context checkpoint model failed; trying the next configured model', error as Error, {
             topicId,
             modelId: compactionModel.id,
@@ -1196,6 +1223,17 @@ export async function fetchChatCompletion({
       usageBefore: managedContext.usageBefore.totalTokens,
       usageAfter: finalUsage.totalTokens
     })
+    recordDiagnostic(diagnosticId, 'context', 'ready', {
+      action: managedContext.action,
+      checkpoint: managedContext.checkpoint
+        ? { includedThroughMessageId: managedContext.checkpoint.includedThroughMessageId }
+        : undefined,
+      usedLocalCheckpoint: managedContext.usedLocalCheckpoint,
+      contextWindowTokens: budget.contextWindowTokens,
+      safeInputTokens: budget.safeInputTokens,
+      inputTokensBefore: managedContext.usageBefore.totalTokens,
+      inputTokensAfter: finalUsage.totalTokens
+    })
     return managedMessages
   }
 
@@ -1221,6 +1259,10 @@ export async function fetchChatCompletion({
 
     activeChatKeyIndex = nextIndex
     activeChatKey = chatApiKeys[activeChatKeyIndex]
+    recordDiagnostic(diagnosticId, 'transport', 'key-fallback', {
+      keyIndex: activeChatKeyIndex,
+      keyCount: chatApiKeys.length
+    })
     activeAI = new AiProvider(model, {
       ...baseProvider,
       apiKey: activeChatKey
@@ -1291,6 +1333,10 @@ export async function fetchChatCompletion({
   }
 
   const runSingleCompletionAttempt = async (attemptMessages: ModelMessage[]): Promise<CompletionAttemptResult> => {
+    recordDiagnostic(diagnosticId, 'response', 'attempt-started', {
+      inputTokens: estimateModelMessagesTokens(attemptMessages).totalTokens,
+      messageCount: attemptMessages.length
+    })
     const {
       params: aiSdkParams,
       modelId,
@@ -1336,9 +1382,11 @@ export async function fetchChatCompletion({
           return
         }
         if (visibleChunkTypes.has(chunk.type)) {
+          if (!visibleOutput) recordDiagnostic(diagnosticId, 'response', 'first-content', { type: chunk.type })
           visibleOutput = true
         }
         if (chunk.type === ChunkType.BLOCK_COMPLETE) {
+          recordDiagnostic(diagnosticId, 'response', 'model-complete', { usage: chunk.response?.usage })
           trackTokenUsage({ usage: chunk.response?.usage, model: assistant?.model, source: 'chat' })
           const cacheStats = getUsageCacheStats(chunk.response?.usage)
           logger.debug('Prompt cache usage received', {
@@ -1553,6 +1601,12 @@ export async function fetchChatCompletion({
       throw attemptResult.contextError
     }
   } catch (error) {
+    recordDiagnostic(
+      diagnosticId,
+      contextPrepared ? 'response' : 'context',
+      isAbortError(error) ? 'cancelled' : 'failed',
+      { error }
+    )
     if (topicId) {
       if (isAbortError(error)) {
         setContextProcessingStatus(topicId, 'complete', '任务已停止')
@@ -2169,7 +2223,7 @@ function getStableChatApiKey(provider: Provider, topicId?: string, modelId?: str
  * after every key for that model fails does the model fallback chain get a
  * chance to move on.
  */
-export const createContextCompactionKeyFailover = (topicId?: string) =>
+export const createContextCompactionKeyFailover = (topicId?: string, diagnosticId?: string) =>
   createKeyFailover({
     topicId,
     resolveProvider: getProviderByModel,
@@ -2182,7 +2236,10 @@ export const createContextCompactionKeyFailover = (topicId?: string) =>
         signal,
         timeoutMs,
         throwOnError: true,
-        headers: CONTEXT_COMPACTION_REQUEST_HEADERS,
+        headers: {
+          ...CONTEXT_COMPACTION_REQUEST_HEADERS,
+          ...(diagnosticId ? { [DIAGNOSTIC_OPERATION_HEADER]: diagnosticId } : {})
+        },
         maxOutputTokens
       }),
     onKeyRotation: ({ model, fromIndex, toIndex, statusCode }) => {

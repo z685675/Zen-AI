@@ -4,12 +4,26 @@ import { describe, expect, it } from 'vitest'
 import {
   AgentDeepResearchTimeoutError,
   AgentRuntimeNoOutputTimeoutError,
+  assertAgentStreamCompleted,
   isRecoverableAgentTransportError,
   isRuntimeBootstrapChunk,
   shouldFallbackRuntime
 } from '../fallback'
 
 describe('runtime fallback guards', () => {
+  it('requires a terminal SDK result and distinguishes cancellation from transport loss', () => {
+    expect(() => assertAgentStreamCompleted(true)).not.toThrow()
+    expect(() => assertAgentStreamCompleted(false)).toThrow('stream interrupted')
+    expect(
+      isRecoverableAgentTransportError(
+        new Error('Agent stream interrupted before a successful completion'),
+        new AbortController()
+      )
+    ).toBe(true)
+    const cancelled = new AbortController()
+    cancelled.abort()
+    expect(() => assertAgentStreamCompleted(false, cancelled.signal)).toThrow('Request aborted')
+  })
   it('allows a pre-output protocol failure to try one Auto fallback', () => {
     expect(shouldFallbackRuntime(new Error('404: /v1/messages is unsupported'), new AbortController())).toBe(true)
     expect(

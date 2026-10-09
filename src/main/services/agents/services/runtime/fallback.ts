@@ -8,6 +8,11 @@ export class AgentDeepResearchTimeoutError extends Error {
   override name = 'AgentDeepResearchTimeoutError'
 }
 
+export function assertAgentStreamCompleted(completed: boolean, signal?: AbortSignal): void {
+  if (signal?.aborted) throw new DOMException('Request aborted', 'AbortError')
+  if (!completed) throw new Error('Agent stream interrupted before a successful completion')
+}
+
 export function shouldFallbackRuntime(error: Error, abortController: AbortController): boolean {
   if (abortController.signal.aborted || error.name === 'AbortError') return false
   if (error.name === 'AgentDeepResearchTimeoutError') return false
@@ -52,7 +57,8 @@ export function isRecoverableAgentTransportError(error: Error, abortController: 
     /connection|connection reset|connection refused|premature eof|unexpected end/,
     /stream (closed|interrupted|ended|reset)|upstream stream interrupted/,
     /\b429\b|\b502\b|\b503\b|\b504\b|\b524\b|bad gateway|service unavailable|gateway timeout/,
-    /timed out|timeout/
+    /timed out|timeout/,
+    /empty response without text or tool calls/
   ].some((pattern) => pattern.test(message))
 }
 
@@ -62,4 +68,12 @@ export function isRuntimeBootstrapChunk(chunk: TextStreamPart<Record<string, any
 
   const rawType = (chunk.rawValue as { type?: unknown } | undefined)?.type
   return rawType === 'init' || rawType === 'codex_thread_started'
+}
+
+/** Control frames and usage receipts do not prove that a task produced output. */
+export function isRuntimeProgressChunk(chunk: TextStreamPart<Record<string, any>>): boolean {
+  if (chunk.type === 'text-delta' || chunk.type === 'reasoning-delta') return Boolean(chunk.text.trim())
+  return (
+    chunk.type === 'tool-call' || chunk.type === 'tool-result' || chunk.type === 'tool-error' || chunk.type === 'file'
+  )
 }

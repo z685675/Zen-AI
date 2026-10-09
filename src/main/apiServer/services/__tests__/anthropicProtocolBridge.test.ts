@@ -315,7 +315,8 @@ describe('Anthropic protocol bridge', () => {
         input: { path: 'fallback.md' },
         providerExecuted: false,
         dynamic: false
-      }
+      },
+      { type: 'finish', finishReason: 'tool-calls', totalUsage: {} }
     ] as TextStreamPart<ToolSet>[]
 
     const events = []
@@ -331,5 +332,28 @@ describe('Anthropic protocol bridge', () => {
       index: 0,
       delta: { type: 'input_json_delta', partial_json: '{"path":"fallback.md"}' }
     })
+  })
+
+  it.each([
+    { parts: [{ type: 'finish', finishReason: 'stop', totalUsage: {} }], error: 'empty response' },
+    {
+      parts: [
+        { type: 'text-start', id: 'empty' },
+        { type: 'finish', finishReason: 'stop', totalUsage: {} }
+      ],
+      error: 'empty response'
+    },
+    { parts: [{ type: 'text-delta', id: 'partial', text: 'partial answer' }], error: 'stream interrupted' }
+  ])('does not acknowledge an empty or interrupted upstream response as success: $error', async ({ parts, error }) => {
+    const events: string[] = []
+    const consume = async () => {
+      for await (const event of translateAiSdkStreamToAnthropicEvents(streamParts(parts as TextStreamPart<ToolSet>[]), {
+        modelId: 'gemini'
+      })) {
+        events.push(event.type)
+      }
+    }
+    await expect(consume()).rejects.toThrow(error)
+    expect(events).not.toContain('message_stop')
   })
 })

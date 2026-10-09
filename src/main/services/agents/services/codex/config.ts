@@ -61,6 +61,7 @@ export type CodexClientOptions = {
         wire_api: 'responses'
         requires_openai_auth: boolean
         supports_websockets: boolean
+        http_headers?: Record<string, string>
       }
     >
     show_raw_agent_reasoning: boolean
@@ -211,7 +212,10 @@ export function buildCodexInvocationConfig(params: {
             env_key: 'CODEX_API_KEY',
             wire_api: 'responses',
             requires_openai_auth: false,
-            supports_websockets: false
+            supports_websockets: false,
+            ...(params.thinkingOptions?.diagnosticId
+              ? { http_headers: { 'X-Zen-Diagnostic-Operation': params.thinkingOptions.diagnosticId } }
+              : {})
           }
         },
         show_raw_agent_reasoning: true,

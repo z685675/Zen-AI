@@ -6,6 +6,8 @@ import {
   type StreamAbortController
 } from '@main/apiServer/utils/createStreamAbortController'
 import { agentService, sessionMessageService, sessionService } from '@main/services/agents'
+import { recordMainDiagnostic } from '@main/services/DiagnosticEvidenceService'
+import { sanitizeDiagnostic } from '@shared/diagnostics'
 import type { Request, Response } from 'express'
 
 const logger = loggerService.withContext('ApiServerMessagesHandlers')
@@ -59,11 +61,16 @@ const verifyAgentAndSession = async (agentId: string, sessionId: string) => {
 
 export const createMessage = async (req: Request, res: Response): Promise<void> => {
   let streamController: StreamAbortController | undefined
+  const requestedDiagnosticId = req.get('X-Zen-Diagnostic-Operation')
+  const diagnosticId =
+    requestedDiagnosticId && /^[\w.-]{1,128}$/.test(requestedDiagnosticId) ? requestedDiagnosticId : undefined
+  let sessionVerified = false
 
   try {
     const { agentId, sessionId } = req.params
 
     const session = await verifyAgentAndSession(agentId, sessionId)
+    sessionVerified = true
 
     const messageData = req.body
 
@@ -85,7 +92,11 @@ export const createMessage = async (req: Request, res: Response): Promise<void> 
       session,
       messageData,
       abortController,
-      { mirrorToBoundChannel: true, displayContent: messageData.content }
+      {
+        mirrorToBoundChannel: true,
+        displayContent: messageData.content,
+        diagnosticId
+      }
     )
     const reader = stream.getReader()
 
@@ -215,6 +226,7 @@ export const createMessage = async (req: Request, res: Response): Promise<void> 
             `data: ${JSON.stringify({
               type: 'error',
               error: {
+                ...(sanitizeDiagnostic(error) as Record<string, unknown>),
                 message: (error as Error).message || 'Stream processing error',
                 type: 'stream_error',
                 code: 'stream_processing_failed'
@@ -248,6 +260,7 @@ export const createMessage = async (req: Request, res: Response): Promise<void> 
             `data: ${JSON.stringify({
               type: 'error',
               error: {
+                ...(sanitizeDiagnostic(error) as Record<string, unknown>),
                 message: (error as { message?: string })?.message || 'Stream processing error',
                 type: 'stream_error',
                 code: 'stream_processing_failed'
@@ -266,6 +279,12 @@ export const createMessage = async (req: Request, res: Response): Promise<void> 
     res.on('finish', cleanup)
   } catch (error: any) {
     streamController?.dispose()
+    if (!sessionVerified) {
+      recordMainDiagnostic(diagnosticId, 'preparation', 'failed', {
+        phase: 'local-api-session-validation',
+        error
+      })
+    }
     logger.error('Error in streaming message handler', {
       error,
       agentId: req.params.agentId,

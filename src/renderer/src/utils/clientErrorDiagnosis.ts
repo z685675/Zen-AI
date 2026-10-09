@@ -265,7 +265,7 @@ export function diagnoseClientError(error?: SerializedError, options: DiagnoseOp
     msg.includes('client_gone') ||
     msg.includes('econnreset') ||
     msg.includes('connection reset') ||
-    msg.includes('stream') ||
+    msg.includes('stream interrupted') ||
     msg.includes('aborted')
   const isParseFailure =
     msg.includes('json') ||
@@ -322,13 +322,21 @@ export function diagnoseClientError(error?: SerializedError, options: DiagnoseOp
   }
 
   if (status === 429) {
+    const quotaFailure =
+      msg.includes('insufficient_quota') ||
+      msg.includes('quota_exceeded') ||
+      msg.includes('balance') ||
+      msg.includes('额度') ||
+      msg.includes('余额')
     return {
       ...base,
       category: 'rate_limited',
-      title: '生成失败：请求过于频繁',
-      summary: '当前请求频率较高，请稍后再试。如果持续出现，请联系管理员检查账号限制。',
+      title: quotaFailure ? '生成失败：可用额度不足' : '生成失败：请求过于频繁',
+      summary: quotaFailure
+        ? '服务返回额度或余额限制，请联系管理员检查账号与渠道额度。'
+        : '当前请求频率较高，请稍后再试。如果持续出现，请联系管理员检查账号限制。',
       stage: '请求校验',
-      errorType: '频率限制',
+      errorType: quotaFailure ? '额度限制' : '频率限制',
       serviceConnectivity: serviceConnectivityFromCheck(connectivityCheck, '已连接'),
       serviceReceived: '是',
       startedGenerating: '否',
@@ -336,7 +344,7 @@ export function diagnoseClientError(error?: SerializedError, options: DiagnoseOp
     }
   }
 
-  if (status === 404 || msg.includes('model_not_found') || msg.includes('model not found')) {
+  if (msg.includes('model_not_found') || msg.includes('model not found')) {
     return {
       ...base,
       category: 'model',
@@ -425,7 +433,7 @@ export function diagnoseClientError(error?: SerializedError, options: DiagnoseOp
       errorType: isProxyOrCert ? '网络或代理异常' : '连接异常',
       serviceConnectivity: serviceConnectivityFromCheck(connectivityCheck, UNKNOWN),
       serviceReceived: '未确认',
-      startedGenerating: '否',
+      startedGenerating: UNKNOWN,
       suggestion: '请先重试；如果仍失败，请检查当前设备网络、代理、VPN 或安全软件拦截。'
     }
   }
@@ -453,9 +461,9 @@ export function diagnoseClientError(error?: SerializedError, options: DiagnoseOp
       summary: '回复生成过程中连接中断。通常重试即可恢复；如果连续出现，请检查网络或代理设置。',
       stage: '生成传输',
       errorType: '连接中断',
-      serviceConnectivity: serviceConnectivityFromCheck(connectivityCheck, '已连接'),
-      serviceReceived: '是',
-      startedGenerating: '是',
+      serviceConnectivity: serviceConnectivityFromCheck(connectivityCheck, hasStatus ? '已连接' : UNKNOWN),
+      serviceReceived: hasStatus ? '是' : UNKNOWN,
+      startedGenerating: UNKNOWN,
       suggestion: '请重试一次；如果经常在生成中途失败，请优先检查网络、代理或 VPN 稳定性。'
     }
   }

@@ -1,6 +1,7 @@
 import * as XLSX from '@e965/xlsx'
 import { loggerService } from '@logger'
 import { toAsarUnpackedPath } from '@main/utils'
+import { buildDiagnosticArchive } from '@main/utils/diagnosticArchive'
 import {
   checkName,
   getFilesDir,
@@ -13,6 +14,7 @@ import {
   scanDir
 } from '@main/utils/file'
 import { t } from '@main/utils/locales'
+import { SpreadsheetExtractionLimitError, spreadsheetSections } from '@main/utils/spreadsheetSections'
 import { documentExts, imageExts, KB, MB } from '@shared/config/constant'
 import { parseDataUrl } from '@shared/utils'
 import type {
@@ -50,18 +52,8 @@ type DiagnosticPackageFile = {
   content: string
 }
 
-const sanitizeZipEntryName = (entryPath: string): string => {
-  const normalized = entryPath
-    .replace(/\\/g, '/')
-    .split('/')
-    .filter((part) => part && part !== '.' && part !== '..' && !part.includes(':'))
-    .join('/')
-
-  return normalized.slice(0, 180)
-}
-
 const SAVE_DIALOG_CANCELED = 'SAVE_DIALOG_CANCELED'
-const STRUCTURED_FILE_PARSER_VERSION = 2
+const STRUCTURED_FILE_PARSER_VERSION = 3
 const AGENT_ATTACHMENT_ID_PATTERN = /^[a-zA-Z0-9_-]{1,160}$/
 
 const resolveAgentAttachmentDirectory = (workspace: string, sessionId: string, messageId?: string): string => {
@@ -1020,69 +1012,7 @@ class FileStorage {
       cellNF: true,
       cellStyles: true
     })
-    const sections: StructuredFileSection[] = []
-    const maxRowsPerSection = 80
-
-    for (const sheetName of workbook.SheetNames) {
-      const sheet = workbook.Sheets[sheetName]
-      if (!sheet || !sheet['!ref']) continue
-
-      const range = XLSX.utils.decode_range(sheet['!ref'])
-      const columnNumbers = Array.from({ length: range.e.c - range.s.c + 1 }, (_, offset) => range.s.c + offset)
-      const rows: string[][] = []
-
-      for (let row = range.s.r; row <= range.e.r; row += 1) {
-        rows.push(
-          columnNumbers.map((column) => {
-            const address = XLSX.utils.encode_cell({ r: row, c: column })
-            const cell = sheet[address] as { v?: unknown; w?: string; f?: string; t?: string; z?: string } | undefined
-            if (!cell || (cell.v === undefined && !cell.f)) return ''
-
-            const formatted = cell.w ?? (cell.v instanceof Date ? cell.v.toISOString() : String(cell.v ?? ''))
-            if (cell.f) {
-              return formatted && formatted !== cell.f ? `=${cell.f} [结果: ${formatted}]` : `=${cell.f}`
-            }
-            return formatted
-          })
-        )
-      }
-
-      const mergedRanges = Array.isArray(sheet['!merges'])
-        ? sheet['!merges'].map((merge) => XLSX.utils.encode_range(merge)).join(', ')
-        : ''
-      const embeddedMedia = zipEntryNamesForFormat(filePath, 'xl/media')
-
-      for (let offset = 0; offset < rows.length; offset += maxRowsPerSection) {
-        const batch = rows.slice(offset, offset + maxRowsPerSection)
-        const firstRow = range.s.r + offset + 1
-        const lastRow = firstRow + batch.length - 1
-        const firstColumn = numberToColumnName(range.s.c + 1)
-        const lastColumn = numberToColumnName(range.e.c + 1)
-        const header = columnNumbers.map((column) => numberToColumnName(column + 1))
-        const markdownRows = batch.map((row, rowOffset) => {
-          const values = row.map((value) => value.replace(/\|/g, '\\|').replace(/\r?\n/g, '<br>'))
-          return `| ${firstRow + rowOffset} | ${values.join(' | ')} |`
-        })
-        const text = [
-          `工作表：${sheetName}`,
-          `单元格范围：${firstColumn}${firstRow}:${lastColumn}${lastRow}`,
-          '| 行号 | ' + header.join(' | ') + ' |',
-          '| --- | ' + header.map(() => '---').join(' | ') + ' |',
-          ...markdownRows,
-          ...(offset === 0 && mergedRanges ? [`合并单元格：${mergedRanges}`] : []),
-          ...(offset === 0 && embeddedMedia.length > 0 ? [`嵌入图片/媒体：${embeddedMedia.join(', ')}`] : [])
-        ].join('\n')
-
-        sections.push({
-          text,
-          metadata: {
-            sheet: sheetName,
-            table: sections.filter((section) => section.metadata.sheet === sheetName).length + 1,
-            cellRange: `${firstColumn}${firstRow}:${lastColumn}${lastRow}`
-          }
-        })
-      }
-    }
+    const sections = spreadsheetSections(workbook, zipEntryNamesForFormat(filePath, 'xl/media'))
 
     // Keep chart series and cached values as text evidence as well. The
     // workbook parser exposes cell data, but chart-only information otherwise
@@ -1218,6 +1148,7 @@ class FileStorage {
       // Keep the lightweight XML parser as a compatibility fallback for
       // partially-written workbooks and the minimal files produced by older
       // versions of the application.
+      if (error instanceof SpreadsheetExtractionLimitError) throw error
       logger.warn(`XLSX library parsing failed for ${path.basename(filePath)}; using XML fallback`, error as Error)
     }
 
@@ -2350,16 +2281,7 @@ class FileStorage {
         return Promise.reject(new Error(SAVE_DIALOG_CANCELED))
       }
 
-      const zip = new AdmZip()
-      for (const file of files) {
-        const entryName = sanitizeZipEntryName(file.path)
-        if (!entryName) {
-          continue
-        }
-        zip.addFile(entryName, Buffer.from(file.content ?? '', 'utf-8'))
-      }
-
-      await fs.promises.writeFile(result.filePath, zip.toBuffer())
+      await fs.promises.writeFile(result.filePath, buildDiagnosticArchive(files))
       return result.filePath
     } catch (err: any) {
       if (err?.message === SAVE_DIALOG_CANCELED) {

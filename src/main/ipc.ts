@@ -57,6 +57,7 @@ import CherryINOAuthService from './services/CherryINOAuthService'
 import { codeToolsService } from './services/CodeToolsService'
 import { ConfigKeys, configManager } from './services/ConfigManager'
 import CopilotService from './services/CopilotService'
+import { collectMainDiagnostic } from './services/DiagnosticEvidenceService'
 import DxtService from './services/DxtService'
 import { ExportService } from './services/ExportService'
 import { externalAppsService } from './services/ExternalAppsService'
@@ -144,6 +145,10 @@ function getHardwareArch() {
 }
 
 export async function registerIpc(mainWindow: BrowserWindow, app: Electron.App) {
+  ipcMain.handle(IpcChannel.Diagnostic_Collect, (_, operationId: unknown) => {
+    if (typeof operationId !== 'string') throw new Error('Invalid diagnostic operation ID')
+    return collectMainDiagnostic(operationId)
+  })
   const notificationService = new NotificationService()
   const appUpdateService = new AppUpdateService(mainWindow, app.getVersion(), () => configManager.getAutoUpdate())
 

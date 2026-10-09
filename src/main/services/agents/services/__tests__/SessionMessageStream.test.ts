@@ -17,6 +17,12 @@ const { invokeMock, resolveAgentRuntimeMock } = vi.hoisted(() => ({
   resolveAgentRuntimeMock: vi.fn()
 }))
 
+const { recordMainDiagnosticMock } = vi.hoisted(() => ({ recordMainDiagnosticMock: vi.fn() }))
+vi.mock('@main/services/DiagnosticEvidenceService', () => ({
+  beginMainDiagnostic: vi.fn(),
+  recordMainDiagnostic: recordMainDiagnosticMock
+}))
+
 vi.mock('../../BaseService', () => ({
   BaseService: class BaseService {}
 }))
@@ -74,10 +80,28 @@ describe('SessionMessageService runtime stream lifecycle', () => {
     invokeMock.mockReset()
     resolveAgentRuntimeMock.mockReset()
     broadcastAgentActionRequiredMock.mockReset()
+    recordMainDiagnosticMock.mockReset()
   })
 
   afterEach(() => {
     vi.useRealTimers()
+  })
+
+  it('records a preparation failure if runtime resolution throws before any SDK starts', async () => {
+    resolveAgentRuntimeMock.mockRejectedValue(new Error('invalid runtime configuration'))
+    const service = new SessionMessageService()
+    await expect(
+      service.createSessionMessage(session(), { content: 'hello' } as any, new AbortController(), {
+        diagnosticId: 'runtime-resolution-test'
+      })
+    ).rejects.toThrow('invalid runtime configuration')
+    expect(invokeMock).not.toHaveBeenCalled()
+    expect(recordMainDiagnosticMock).toHaveBeenCalledWith(
+      'runtime-resolution-test',
+      'preparation',
+      'failed',
+      expect.objectContaining({ phase: 'runtime-resolution' })
+    )
   })
 
   it('retries the next Auto candidate when the first runtime never starts', async () => {
@@ -202,6 +226,7 @@ describe('SessionMessageService runtime stream lifecycle', () => {
         input: { message: '请完成登录后点击继续。', reason: 'login_required' }
       }
     })
+    await vi.advanceTimersByTimeAsync(0)
     expect(broadcastAgentActionRequiredMock).toHaveBeenCalledWith({
       agentId: 'agent-runtime-test',
       sessionId: 'session-runtime-test',
@@ -367,11 +392,114 @@ describe('SessionMessageService runtime stream lifecycle', () => {
     )
     const consumed = consume(result.stream)
 
+    agentStream.emit('data', { type: 'chunk', chunk: { type: 'start-step' } })
+    agentStream.emit('data', { type: 'chunk', chunk: { type: 'text-start', id: 'empty-text' } })
+    agentStream.emit('data', { type: 'chunk', chunk: { type: 'text-delta', id: 'empty-text', text: '  ' } })
+    agentStream.emit('data', { type: 'chunk', chunk: { type: 'text-end', id: 'empty-text' } })
+    agentStream.emit('data', { type: 'chunk', chunk: { type: 'finish', finishReason: 'stop' } })
     agentStream.emit('data', { type: 'complete' })
 
     await expect(consumed).rejects.toThrow('completed before producing a user-visible result')
     await expect(result.completion).rejects.toMatchObject({
       message: 'Agent runtime completed before producing a user-visible result'
     })
+  })
+
+  it('does not let empty text blocks disable the first-output watchdog', async () => {
+    const agentStream = createAgentStream()
+    resolveAgentRuntimeMock.mockResolvedValue({ runtimeId: 'claude-code', candidates: ['claude-code'], source: 'auto' })
+    invokeMock.mockResolvedValue(agentStream)
+    const service = new SessionMessageService()
+    vi.spyOn(service as any, 'getLastAgentSessionId').mockResolvedValue('')
+    const result = await service.createSessionMessage(session(), { content: 'research' } as any, new AbortController())
+    const streamOutcome = consume(result.stream).catch((error) => error)
+    const completionOutcome = result.completion.catch((error) => error)
+    agentStream.emit('data', { type: 'chunk', chunk: { type: 'text-start', id: 'empty' } })
+    await vi.advanceTimersByTimeAsync(180_001)
+    await expect(streamOutcome).resolves.toMatchObject({ name: 'AgentRuntimeNoOutputTimeoutError' })
+    await expect(completionOutcome).resolves.toMatchObject({ name: 'AgentRuntimeNoOutputTimeoutError' })
+  })
+
+  it('recovers a 503 before output once and discards the failed stream finish queued in the same tick', async () => {
+    const failed = createAgentStream()
+    const recovered = createAgentStream()
+    resolveAgentRuntimeMock.mockResolvedValue({ runtimeId: 'claude-code', candidates: ['claude-code'], source: 'auto' })
+    invokeMock.mockResolvedValueOnce(failed).mockResolvedValueOnce(recovered)
+    const service = new SessionMessageService()
+    vi.spyOn(service as any, 'getLastAgentSessionId').mockResolvedValue('')
+    const result = await service.createSessionMessage(session(), { content: 'research' } as any, new AbortController())
+    const collected = collect(result.stream)
+    failed.emit('data', { type: 'chunk', chunk: { type: 'error', error: new Error('503 Service Unavailable') } })
+    failed.emit('data', { type: 'chunk', chunk: { type: 'text-delta', id: 'stale', text: 'stale reply' } })
+    failed.emit('data', { type: 'complete' })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(invokeMock).toHaveBeenCalledTimes(2)
+    recovered.emit('data', { type: 'chunk', chunk: { type: 'text-delta', id: 'new', text: 'Recovered answer' } })
+    recovered.emit('data', { type: 'complete' })
+    const chunks = await collected
+    expect(chunks).not.toContainEqual(expect.objectContaining({ text: 'stale reply' }))
+    expect(chunks).toContainEqual(expect.objectContaining({ text: 'Recovered answer' }))
+    await expect(result.completion).resolves.toEqual({})
+  })
+
+  it('stops after the recovery also receives a 503 instead of retrying indefinitely', async () => {
+    const failed = createAgentStream()
+    const recovered = createAgentStream()
+    resolveAgentRuntimeMock.mockResolvedValue({ runtimeId: 'claude-code', candidates: ['claude-code'], source: 'auto' })
+    invokeMock.mockResolvedValueOnce(failed).mockResolvedValueOnce(recovered)
+    const service = new SessionMessageService()
+    vi.spyOn(service as any, 'getLastAgentSessionId').mockResolvedValue('')
+    const result = await service.createSessionMessage(session(), { content: 'research' } as any, new AbortController())
+    const streamOutcome = consume(result.stream).catch((error) => error)
+    const completionOutcome = result.completion.catch((error) => error)
+    failed.emit('data', { type: 'error', error: new Error('503 Service Unavailable') })
+    await vi.advanceTimersByTimeAsync(0)
+    recovered.emit('data', { type: 'error', error: new Error('503 Service Unavailable') })
+    await expect(streamOutcome).resolves.toMatchObject({ message: '503 Service Unavailable' })
+    await expect(completionOutcome).resolves.toMatchObject({ message: '503 Service Unavailable' })
+    expect(invokeMock).toHaveBeenCalledTimes(2)
+    expect(invokeMock.mock.calls[0][2].signal.aborted).toBe(true)
+    expect(invokeMock.mock.calls[1][2].signal.aborted).toBe(true)
+  })
+
+  it('guards the next inference after tools finish without timing out a tool or user handoff', async () => {
+    const stalled = createAgentStream()
+    const recovered = createAgentStream()
+    resolveAgentRuntimeMock.mockResolvedValue({
+      runtimeId: 'codex',
+      candidates: ['codex', 'claude-code'],
+      source: 'auto'
+    })
+    invokeMock.mockResolvedValueOnce(stalled).mockResolvedValueOnce(recovered)
+    const service = new SessionMessageService()
+    vi.spyOn(service as any, 'getLastAgentSessionId').mockResolvedValue('')
+    const result = await service.createSessionMessage(
+      session(),
+      { content: 'read the spreadsheet' } as any,
+      new AbortController()
+    )
+    const collected = collect(result.stream)
+    stalled.emit('data', {
+      type: 'chunk',
+      chunk: { type: 'tool-call', toolCallId: 'read-1', toolName: 'Read', input: { path: 'report.xlsx' } }
+    })
+    await vi.advanceTimersByTimeAsync(600_000)
+    expect(invokeMock).toHaveBeenCalledTimes(1)
+    expect(invokeMock.mock.calls[0][2].signal.aborted).toBe(false)
+    stalled.emit('data', {
+      type: 'chunk',
+      chunk: { type: 'tool-result', toolCallId: 'read-1', toolName: 'Read', output: '12 rows' }
+    })
+    await vi.advanceTimersByTimeAsync(180_001)
+    expect(invokeMock).toHaveBeenCalledTimes(2)
+    expect(invokeMock.mock.calls[0][2].signal.aborted).toBe(true)
+    expect(invokeMock.mock.calls[1][0]).toContain('12 rows')
+    recovered.emit('data', { type: 'chunk', chunk: { type: 'text-delta', id: 'answer', text: '表格共有 12 行。' } })
+    recovered.emit('data', { type: 'complete' })
+    await expect(result.completion).resolves.toEqual({})
+    const chunks = await collected
+    expect(chunks).toContainEqual(expect.objectContaining({ text: '表格共有 12 行。' }))
+    await vi.advanceTimersByTimeAsync(600_000)
+    expect(invokeMock).toHaveBeenCalledTimes(2)
   })
 })

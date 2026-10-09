@@ -2,7 +2,9 @@ import type Anthropic from '@anthropic-ai/sdk'
 import type { MessageCreateParams, RawMessageStreamEvent } from '@anthropic-ai/sdk/resources'
 import { loggerService } from '@logger'
 import anthropicService from '@main/services/AnthropicService'
+import { recordMainDiagnostic } from '@main/services/DiagnosticEvidenceService'
 import { buildClaudeCodeSystemMessage, getSdkClient } from '@shared/anthropic'
+import { diagnosticFetch } from '@shared/diagnostics'
 import type { Provider } from '@types'
 import type { Response } from 'express'
 
@@ -100,9 +102,9 @@ export class MessagesService {
     // Create Anthropic client for the provider
     if (provider.authType === 'oauth') {
       const oauthToken = await anthropicService.getValidAccessToken()
-      return getSdkClient(provider, oauthToken, extraHeaders)
+      return getSdkClient(provider, oauthToken, extraHeaders, diagnosticFetch(fetch, recordMainDiagnostic))
     }
-    return getSdkClient(provider, null, extraHeaders)
+    return getSdkClient(provider, null, extraHeaders, diagnosticFetch(fetch, recordMainDiagnostic))
   }
 
   prepareHeaders(headers: Record<string, string | string[] | undefined>): Record<string, string | string[]> {

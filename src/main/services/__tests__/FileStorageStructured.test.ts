@@ -102,6 +102,21 @@ describe('FileStorage structured Office parsing', () => {
     expect(result.sections[0].text).toContain('=SUM(C2:C3)')
   })
 
+  it('reads a tiny XLSX declaring the full Excel grid without allocating empty cells', async () => {
+    const workbook = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([['收入', 123]]), '稀疏表格')
+    const zip = new AdmZip(XLSX.write(workbook, { bookType: 'xlsx', type: 'buffer' }))
+    const xml = zip
+      .readAsText('xl/worksheets/sheet1.xml')
+      .replace(/<dimension ref="[^"]+"\/>/, '<dimension ref="A1:XFD1048576"/>')
+    zip.updateFile('xl/worksheets/sheet1.xml', Buffer.from(xml))
+    zip.writeZip(path.join(tempDir, 'sparse.xlsx'))
+    const result = await fileStorage.readStructuredFile({} as Electron.IpcMainInvokeEvent, 'sparse.xlsx')
+    expect(result.sections).toHaveLength(1)
+    expect(result.sections[0].text).toContain('| 1 | 收入 | 123 |')
+    expect(result.sections[0].metadata.cellRange).toBe('A1:B1')
+  })
+
   it('extracts embedded Office images for multimodal prompts', async () => {
     const zip = new AdmZip()
     zip.addFile(

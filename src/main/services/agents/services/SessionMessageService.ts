@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto'
 
 import { loggerService } from '@logger'
+import { beginMainDiagnostic, recordMainDiagnostic } from '@main/services/DiagnosticEvidenceService'
+import { sanitizeDiagnostic } from '@shared/diagnostics'
 import type {
   AgentPersistedMessage,
   AgentSessionMessageEntity,
@@ -25,6 +27,7 @@ import {
   AgentRuntimeNoOutputTimeoutError,
   isRecoverableAgentTransportError,
   isRuntimeBootstrapChunk,
+  isRuntimeProgressChunk,
   shouldFallbackRuntime
 } from './runtime/fallback'
 import { getAgentRuntimeServiceById, resolveAgentRuntime } from './runtime/registry'
@@ -64,6 +67,7 @@ type SessionMirrorResult = {
 }
 
 export type CreateMessageOptions = {
+  diagnosticId?: string
   /** When true, persist user+assistant messages to DB on stream complete. Use for headless callers (channels, scheduler) where no UI handles persistence. */
   persist?: boolean
   /** Optional display-safe user content for persistence. When set, this is stored instead of req.content (which may contain security wrappers not meant for display). */
@@ -78,6 +82,7 @@ export type CreateMessageOptions = {
 function serializeError(error: unknown): { message: string; name?: string; stack?: string } {
   if (error instanceof Error) {
     return {
+      ...(sanitizeDiagnostic(error) as Record<string, unknown>),
       message: error.message,
       name: error.name,
       stack: error.stack
@@ -103,7 +108,7 @@ function toStreamError(error: unknown): Error {
   }
 
   if (error && typeof error === 'object' && 'message' in error && typeof error.message === 'string') {
-    return new Error(error.message)
+    return Object.assign(new Error(error.message), sanitizeDiagnostic(error))
   }
 
   return new Error('Stream error')
@@ -272,16 +277,38 @@ export class SessionMessageService extends BaseService {
     abortController: AbortController,
     options?: CreateMessageOptions
   ): Promise<SessionStreamResult> {
-    const runtimeResolution = await resolveAgentRuntime(session)
-    const agentSessionId = await this.getLastAgentSessionId(session.id, session.model)
+    const diagnosticId = options?.diagnosticId ?? `agent-${randomUUID()}`
+    beginMainDiagnostic(diagnosticId, {
+      sessionId: session.id,
+      model: session.model,
+      configuration: session.configuration,
+      accessiblePaths: session.accessible_paths
+    })
+    recordMainDiagnostic(diagnosticId, 'runtime', 'resolving')
+    let runtimeResolution: Awaited<ReturnType<typeof resolveAgentRuntime>>
+    let agentSessionId: string
+    try {
+      runtimeResolution = await resolveAgentRuntime(session)
+      agentSessionId = await this.getLastAgentSessionId(session.id, session.model)
+    } catch (error) {
+      recordMainDiagnostic(diagnosticId, 'preparation', 'failed', { error, phase: 'runtime-resolution' })
+      throw error
+    }
     logger.debug('Session Message stream message data:', {
-      message: req,
+      contentLength: req.content.length,
+      recoveryContextLength: req.recovery_context?.length ?? 0,
       session_id: agentSessionId,
       runtime_id: runtimeResolution.runtimeId,
       model: session.model
     })
 
     let activeRuntimeId = runtimeResolution.runtimeId
+    recordMainDiagnostic(diagnosticId, 'runtime', 'selected', {
+      runtime: activeRuntimeId,
+      candidates: runtimeResolution.candidates,
+      source: runtimeResolution.source,
+      reason: runtimeResolution.reason
+    })
     let activeCandidateIndex = 0
     let activeRuntimeAbortController = new AbortController()
     const forwardParentAbort = () => {
@@ -307,12 +334,14 @@ export class SessionMessageService extends BaseService {
         agentSessionId,
         {
           effort: requestEffort,
+          diagnosticId,
           thinking: req.thinking,
           recoveryContext: req.recovery_context
         },
         undefined
       )
     } catch (error) {
+      recordMainDiagnostic(diagnosticId, 'runtime', 'failed', { error, startup: true })
       abortController.signal.removeEventListener('abort', forwardParentAbort)
       throw error
     }
@@ -339,7 +368,18 @@ export class SessionMessageService extends BaseService {
       assistantMessage?: AgentSessionMessageEntity
     }>((resolve, reject) => {
       resolveCompletion = resolve
-      rejectCompletion = reject
+      rejectCompletion = (reason) => {
+        // A terminal UI failure must also stop the SDK; otherwise its internal
+        // retries can keep hitting the provider after this turn has ended.
+        activeRuntimeAbortController.abort('agent stream failed')
+        const serialized = reason as Record<string, unknown> | undefined
+        recordMainDiagnostic(diagnosticId, 'runtime', 'failed', {
+          error: reason,
+          runtime: activeRuntimeId,
+          startup: serialized?.zenFailureStage === 'runtime-startup'
+        })
+        reject(reason)
+      }
     })
 
     let finished = false
@@ -350,6 +390,7 @@ export class SessionMessageService extends BaseService {
     let streamRecoveryActive = false
     let streamRecoveryProducedProgress = false
     let runtimeStarted = false
+    const pendingToolCalls = new Set<string>()
     let pendingRuntimeChunks: TextStreamPart<Record<string, any>>[] = []
     let firstRuntimeEventTimer: ReturnType<typeof setTimeout> | undefined
     let deepResearchTaskTimer: ReturnType<typeof setTimeout> | undefined
@@ -390,7 +431,7 @@ export class SessionMessageService extends BaseService {
       start: (controller) => {
         const startFirstRuntimeEventTimer = (
           timeoutMs = RUNTIME_START_TIMEOUT_MS,
-          phase: 'startup' | 'visible-output' = 'startup'
+          phase: 'startup' | 'visible-output' | 'continuation' = 'startup'
         ) => {
           clearFirstRuntimeEventTimer()
           firstRuntimeEventTimer = setTimeout(async () => {
@@ -400,7 +441,9 @@ export class SessionMessageService extends BaseService {
             const timeoutError = new AgentRuntimeNoOutputTimeoutError(
               phase === 'startup'
                 ? `The Agent runtime did not start within ${timeoutSeconds} seconds.`
-                : `The Agent runtime started but did not produce a visible result within ${timeoutSeconds} seconds.`
+                : phase === 'continuation'
+                  ? `The Agent runtime stopped producing progress for ${timeoutSeconds} seconds while continuing the task.`
+                  : `The Agent runtime started but did not produce a visible result within ${timeoutSeconds} seconds.`
             )
             logger.warn('Agent runtime timed out before visible output', {
               sessionId: session.id,
@@ -412,6 +455,7 @@ export class SessionMessageService extends BaseService {
             })
 
             try {
+              if (phase === 'continuation' && (await tryStreamRecovery(timeoutError))) return
               if (await tryFallback(timeoutError)) return
             } catch (fallbackError) {
               logger.error('Failed to start fallback runtime after timeout', fallbackError as Error)
@@ -518,6 +562,11 @@ export class SessionMessageService extends BaseService {
           const previousRuntimeId = activeRuntimeId
           activeCandidateIndex += 1
           activeRuntimeId = nextCandidate
+          recordMainDiagnostic(diagnosticId, 'runtime', 'fallback', {
+            previousRuntimeId,
+            fallbackRuntimeId: activeRuntimeId,
+            error
+          })
 
           logger.warn('Auto runtime failed before output; trying one fallback candidate', {
             sessionId: session.id,
@@ -535,6 +584,7 @@ export class SessionMessageService extends BaseService {
             {
               effort: requestEffort,
               thinking: req.thinking,
+              diagnosticId,
               recoveryContext: req.recovery_context
             },
             undefined
@@ -555,6 +605,7 @@ export class SessionMessageService extends BaseService {
           if (!canRecover) return false
 
           contextRecoveryAttempted = true
+          recordMainDiagnostic(diagnosticId, 'runtime', 'context-recovery', { error, runtime: activeRuntimeId })
           clearFirstRuntimeEventTimer()
           agentStream.removeAllListeners()
           activeRuntimeAbortController.abort('rebuilding runtime session context')
@@ -588,6 +639,7 @@ export class SessionMessageService extends BaseService {
             {
               effort: requestEffort,
               thinking: req.thinking,
+              diagnosticId,
               recoveryContext: req.recovery_context
             },
             undefined
@@ -599,7 +651,6 @@ export class SessionMessageService extends BaseService {
 
         const tryStreamRecovery = async (error: Error): Promise<boolean> => {
           const canRecover =
-            runtimeCommitted &&
             !streamRecoveryAttempted &&
             !abortController.signal.aborted &&
             isRecoverableAgentTransportError(error, abortController)
@@ -607,6 +658,7 @@ export class SessionMessageService extends BaseService {
           if (!canRecover) return false
 
           streamRecoveryAttempted = true
+          recordMainDiagnostic(diagnosticId, 'runtime', 'stream-recovery', { error, runtime: activeRuntimeId })
           streamRecoveryActive = true
           streamRecoveryProducedProgress = false
           clearFirstRuntimeEventTimer()
@@ -620,6 +672,7 @@ export class SessionMessageService extends BaseService {
 
           pendingRuntimeChunks = []
           runtimeStarted = false
+          pendingToolCalls.clear()
           const recoveryContext = [req.recovery_context, accumulator.getRecoveryContext()]
             .filter((value): value is string => Boolean(value?.trim()))
             .join('\n\n')
@@ -651,6 +704,7 @@ export class SessionMessageService extends BaseService {
             {
               effort: requestEffort,
               thinking: req.thinking,
+              diagnosticId,
               recoveryContext
             },
             undefined
@@ -677,8 +731,8 @@ export class SessionMessageService extends BaseService {
                 if (chunk.type === 'error') {
                   const streamError = toStreamError(chunk.error)
                   if (await tryContextRecovery(streamError)) return
-                  if (await tryFallback(streamError)) return
                   if (await tryStreamRecovery(streamError)) return
+                  if (await tryFallback(streamError)) return
                   cleanup()
                   controller.error(streamError)
                   rejectCompletion(serializeError(streamError))
@@ -691,7 +745,8 @@ export class SessionMessageService extends BaseService {
                   // turn in the existing assistant message.
                   return
                 }
-                if (streamRecoveryActive) {
+                const hasProgress = isRuntimeProgressChunk(chunk)
+                if (streamRecoveryActive && hasProgress) {
                   streamRecoveryActive = false
                   streamRecoveryProducedProgress = true
                 }
@@ -725,21 +780,43 @@ export class SessionMessageService extends BaseService {
                   deepResearchTimerControls?.resume()
                 }
 
-                if (!runtimeCommitted && isRuntimeBootstrapChunk(chunk)) {
+                if ((!runtimeCommitted || streamRecoveryActive) && !hasProgress) {
                   pendingRuntimeChunks.push(chunk)
+                  // Bound metadata-only streams while retaining the latest frames.
+                  if (pendingRuntimeChunks.length > 64) pendingRuntimeChunks.splice(2, 1)
                   if (!runtimeStarted) {
                     runtimeStarted = true
+                    recordMainDiagnostic(diagnosticId, 'runtime', 'started', { runtime: activeRuntimeId })
                     startFirstRuntimeEventTimer(RUNTIME_VISIBLE_OUTPUT_TIMEOUT_MS, 'visible-output')
                   }
                   return
                 }
 
-                clearFirstRuntimeEventTimer()
+                if (chunk.type === 'tool-call') pendingToolCalls.add(chunk.toolCallId)
+                if (chunk.type === 'tool-result' || chunk.type === 'tool-error')
+                  pendingToolCalls.delete(chunk.toolCallId)
+                if (hasProgress) {
+                  clearFirstRuntimeEventTimer()
+                  // Do not time out tools or browser/user handoffs. Once tools
+                  // finish, guard the next inference just like the first one.
+                  if (pendingToolCalls.size === 0 && !req.deep_research && !req.deep_research_task) {
+                    startFirstRuntimeEventTimer(RUNTIME_VISIBLE_OUTPUT_TIMEOUT_MS, 'continuation')
+                  }
+                }
                 for (const pendingChunk of pendingRuntimeChunks) {
                   accumulator.add(pendingChunk)
                   controller.enqueue(pendingChunk)
                 }
                 pendingRuntimeChunks = []
+                if (!runtimeCommitted)
+                  recordMainDiagnostic(diagnosticId, 'runtime', 'visible-output', { runtime: activeRuntimeId })
+                if (chunk.type === 'tool-call' || chunk.type === 'tool-error' || chunk.type === 'tool-result') {
+                  recordMainDiagnostic(diagnosticId, 'tool', chunk.type, {
+                    toolName: chunk.toolName,
+                    toolCallId: chunk.toolCallId,
+                    ...(chunk.type === 'tool-error' ? { error: chunk.error } : {})
+                  })
+                }
                 runtimeCommitted = true
                 accumulator.add(chunk)
                 controller.enqueue(chunk)
@@ -752,8 +829,8 @@ export class SessionMessageService extends BaseService {
                 const underlyingError = event.error ?? (stderrMessage ? new Error(stderrMessage) : undefined)
                 const streamError = underlyingError ?? new Error('Stream error')
                 if (await tryContextRecovery(streamError)) return
-                if (await tryFallback(streamError)) return
                 if (await tryStreamRecovery(streamError)) return
+                if (await tryFallback(streamError)) return
                 cleanup()
                 controller.error(streamError)
                 rejectCompletion(serializeError(streamError))
@@ -771,7 +848,7 @@ export class SessionMessageService extends BaseService {
                   rejectCompletion(serializeError(emptyRecoveryError))
                   return
                 }
-                if (!runtimeCommitted) {
+                if (!runtimeCommitted || (!accumulator.getText().trim() && !accumulator.hasToolActivity())) {
                   const emptyResultError = new Error('Agent runtime completed before producing a user-visible result')
                   if (await tryContextRecovery(emptyResultError)) return
                   if (await tryFallback(emptyResultError)) return
@@ -787,6 +864,10 @@ export class SessionMessageService extends BaseService {
                 pendingRuntimeChunks = []
                 cleanup()
                 const assistantText = accumulator.getText()
+                recordMainDiagnostic(diagnosticId, 'runtime', 'complete', {
+                  runtime: activeRuntimeId,
+                  outputCharacters: assistantText.length
+                })
                 if (options?.mirrorToBoundChannel) {
                   this.mirrorSessionExchangeToBoundChannel(
                     session,
@@ -928,7 +1009,23 @@ export class SessionMessageService extends BaseService {
         }
 
         function attachRuntimeStream() {
-          agentStream.on('data', handleRuntimeEvent)
+          const attachedStream = agentStream
+          let eventQueue = Promise.resolve()
+          attachedStream.on('data', (event: AgentStreamEvent) => {
+            // SDKs can emit error + finish in the same tick. Finish must wait
+            // for recovery, and events from a replaced runtime must be ignored.
+            eventQueue = eventQueue
+              .then(async () => {
+                if (finished || agentStream !== attachedStream) return
+                await handleRuntimeEvent(event)
+              })
+              .catch((error) => {
+                if (finished) return
+                cleanup()
+                controller.error(error)
+                rejectCompletion(serializeError(error))
+              })
+          })
         }
 
         startDeepResearchTaskTimer()

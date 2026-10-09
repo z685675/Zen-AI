@@ -23,6 +23,7 @@ export interface AgentStream extends EventEmitter {
 }
 
 export interface AgentThinkingOptions {
+  diagnosticId?: string
   effort?: 'minimal' | 'low' | 'medium' | 'high' | 'max' | 'xhigh'
   thinking?: { type: 'enabled'; budgetTokens?: number } | { type: 'disabled' } | { type: 'adaptive' }
   recoveryContext?: string

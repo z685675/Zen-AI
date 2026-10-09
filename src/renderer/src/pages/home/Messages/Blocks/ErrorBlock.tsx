@@ -3,7 +3,7 @@ import { showErrorDetailPopup } from '@renderer/components/ErrorDetailModal'
 import { useTimer } from '@renderer/hooks/useTimer'
 import { getHttpMessageLabel, getProviderLabel } from '@renderer/i18n/label'
 import type { DiagnosisResult } from '@renderer/services/ErrorDiagnosisService'
-import { exportErrorDiagnosticPackage } from '@renderer/services/ErrorDiagnosticPackageService'
+import { exportErrorDiagnosticPackage, getDiagnosticAppInfo } from '@renderer/services/ErrorDiagnosticPackageService'
 import { getProviderById } from '@renderer/services/ProviderService'
 import { useAppDispatch, useAppSelector } from '@renderer/store'
 import { removeBlocksThunk } from '@renderer/store/thunk/messageThunk'
@@ -146,7 +146,7 @@ const MessageErrorInfo: React.FC<{ block: ErrorMessageBlock; message: Message }>
       setExporting(true)
 
       try {
-        const appInfo = await window.api.getAppInfo().catch(() => undefined)
+        const appInfo = await getDiagnosticAppInfo()
         const savedPath = await exportErrorDiagnosticPackage({
           source: 'chat',
           title: clientDiagnosis.title,

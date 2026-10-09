@@ -232,6 +232,9 @@ export const serializeError = (error: AiSdkErrorUnion): SerializedError => {
   if ('zenTraceId' in error && typeof error.zenTraceId === 'string') {
     serializedError.zenTraceId = error.zenTraceId
   }
+  for (const key of ['zenDiagnosticId', 'zenFailureStage', 'zenRuntimeStderr'] as const) {
+    if (key in error) Object.assign(serializedError, { [key]: error[key] })
+  }
   if ('zenRequestUrl' in error && typeof error.zenRequestUrl === 'string') {
     serializedError.zenRequestUrl = error.zenRequestUrl
   }

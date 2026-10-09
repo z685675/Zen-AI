@@ -17,6 +17,8 @@ import {
   type AgentProtocolBridgeTarget,
   getAgentProtocolBridgeTarget
 } from '@main/services/agents/services/runtime/protocol'
+import { recordMainDiagnostic } from '@main/services/DiagnosticEvidenceService'
+import { diagnosticFetch } from '@shared/diagnostics'
 import type { Model, Provider } from '@types'
 import {
   type FinishReason,
@@ -131,6 +133,7 @@ export function createBridgeLanguageModel(
   target: AgentProtocolBridgeTarget
 ): LanguageModel {
   const headers = provider.extra_headers
+  const observedFetch = diagnosticFetch(fetch, recordMainDiagnostic)
 
   switch (target) {
     case 'gemini': {
@@ -138,12 +141,13 @@ export function createBridgeLanguageModel(
         apiKey: provider.apiKey,
         baseURL: normalizeGeminiBaseUrl(provider.apiHost),
         headers,
+        fetch: observedFetch,
         name: `zen-${provider.id}`
       })
       return google(modelId)
     }
     case 'xai-chat': {
-      const xai = createXai({ apiKey: provider.apiKey, baseURL: provider.apiHost, headers })
+      const xai = createXai({ apiKey: provider.apiKey, baseURL: provider.apiHost, headers, fetch: observedFetch })
       return xai.chat(modelId)
     }
     case 'openai-responses': {
@@ -151,6 +155,7 @@ export function createBridgeLanguageModel(
         apiKey: provider.apiKey,
         baseURL: provider.apiHost,
         headers,
+        fetch: observedFetch,
         name: `zen-${provider.id}`
       })
       return openai.responses(modelId)
@@ -160,6 +165,7 @@ export function createBridgeLanguageModel(
         apiKey: provider.apiKey,
         baseURL: provider.apiHost,
         headers,
+        fetch: observedFetch,
         name: `zen-${provider.id}`,
         includeUsage: true
       })
@@ -266,6 +272,7 @@ export function convertAnthropicMessagesToModelMessages(request: MessageCreatePa
       toolName: string
       output: { type: 'text' | 'error-text'; value: string }
     }> = []
+    let toolImages: typeof userParts = []
 
     const flushUserParts = () => {
       if (userParts.length > 0) {
@@ -277,6 +284,13 @@ export function convertAnthropicMessagesToModelMessages(request: MessageCreatePa
       if (toolParts.length > 0) {
         result.push({ role: 'tool', content: toolParts })
         toolParts = []
+      }
+      // Chat-compatible APIs only accept text in tool results. Supply the
+      // actual screenshots as a following user message, after ALL parallel
+      // tool results, so the model can see them without breaking tool pairing.
+      if (toolImages.length > 0) {
+        result.push({ role: 'user', content: toolImages })
+        toolImages = []
       }
     }
 
@@ -292,6 +306,17 @@ export function convertAnthropicMessagesToModelMessages(request: MessageCreatePa
             value: toolResultText(block)
           }
         })
+        if (Array.isArray(block.content)) {
+          for (const part of block.content) {
+            if (part.type !== 'image') continue
+            toolImages.push({ type: 'text', text: `Image returned by tool call ${block.tool_use_id}:` })
+            if (part.source.type === 'base64') {
+              toolImages.push({ type: 'image', image: part.source.data, mediaType: part.source.media_type })
+            } else if (part.source.type === 'url') {
+              toolImages.push({ type: 'image', image: new URL(part.source.url) })
+            }
+          }
+        }
         continue
       }
 
@@ -410,7 +435,9 @@ export function buildBridgeRequest(
     topP: request.top_p,
     stopSequences: request.stop_sequences,
     providerOptions,
-    maxRetries: 1,
+    // The agent SDK and API gateway already retry. Retrying here as well
+    // multiplies requests and can trip the gateway's channel failure counter.
+    maxRetries: 0,
     abortSignal
   }
 }
@@ -446,11 +473,13 @@ export async function* translateAiSdkStreamToAnthropicEvents(
   const messageId = options.messageId ?? `msg_zen_${randomUUID().replaceAll('-', '')}`
   const blocks = new Map<
     string,
-    { index: number; type: 'text' | 'tool'; closed: boolean; started: boolean; hasDelta: boolean }
+    { index: number; type: 'text' | 'tool'; closed: boolean; started: boolean; hasDelta: boolean; inputJson: string }
   >()
   let nextIndex = 0
   let finishReason: FinishReason = 'stop'
   let finalUsage: LanguageModelUsage | undefined
+  let receivedFinish = false
+  let hasText = false
 
   yield {
     type: 'message_start',
@@ -471,7 +500,7 @@ export async function* translateAiSdkStreamToAnthropicEvents(
   const ensureBlock = (id: string, type: 'text' | 'tool') => {
     const existing = blocks.get(id)
     if (existing) return existing
-    const block = { index: nextIndex++, type, closed: false, started: false, hasDelta: false }
+    const block = { index: nextIndex++, type, closed: false, started: false, hasDelta: false, inputJson: '' }
     blocks.set(id, block)
     return block
   }
@@ -491,6 +520,7 @@ export async function* translateAiSdkStreamToAnthropicEvents(
         break
       }
       case 'text-delta': {
+        if (part.text.trim()) hasText = true
         const block = ensureBlock(part.id, 'text')
         if (!block.started) {
           block.started = true
@@ -529,7 +559,8 @@ export async function* translateAiSdkStreamToAnthropicEvents(
       }
       case 'tool-input-delta': {
         const block = ensureBlock(part.id, 'tool')
-        block.hasDelta = true
+        block.hasDelta ||= part.delta.length > 0
+        block.inputJson += part.delta
         yield {
           type: 'content_block_delta',
           index: block.index,
@@ -542,6 +573,7 @@ export async function* translateAiSdkStreamToAnthropicEvents(
         break
       }
       case 'tool-call': {
+        if (part.invalid) throw new Error('The model returned an invalid tool call')
         const existing = blocks.get(part.toolCallId)
         const block = existing ?? ensureBlock(part.toolCallId, 'tool')
         if (!block.started) {
@@ -560,12 +592,14 @@ export async function* translateAiSdkStreamToAnthropicEvents(
         }
         if (!block.hasDelta) {
           block.hasDelta = true
+          block.inputJson = JSON.stringify(part.input ?? {})
           yield {
             type: 'content_block_delta',
             index: block.index,
-            delta: { type: 'input_json_delta', partial_json: JSON.stringify(part.input ?? {}) }
+            delta: { type: 'input_json_delta', partial_json: block.inputJson }
           }
         }
+        assertCompleteToolInput(block.inputJson)
         if (!block.closed) {
           block.closed = true
           yield { type: 'content_block_stop', index: block.index }
@@ -573,6 +607,7 @@ export async function* translateAiSdkStreamToAnthropicEvents(
         break
       }
       case 'finish':
+        receivedFinish = true
         finishReason = part.finishReason
         finalUsage = part.totalUsage
         break
@@ -582,6 +617,16 @@ export async function* translateAiSdkStreamToAnthropicEvents(
         throw new DOMException(typeof part.reason === 'string' ? part.reason : 'Request aborted', 'AbortError')
     }
   }
+
+  if (!receivedFinish || finishReason === 'error') {
+    throw new Error('Upstream stream interrupted before a successful completion')
+  }
+  if (!hasText && ![...blocks.values()].some((block) => block.type === 'tool' && block.started && block.hasDelta)) {
+    throw new Error('The model returned an empty response without text or tool calls')
+  }
+
+  const toolBlocks = [...blocks.values()].filter((block) => block.type === 'tool')
+  for (const block of toolBlocks) assertCompleteToolInput(block.inputJson)
 
   for (const block of blocks.values()) {
     if (block.started && !block.closed) {
@@ -596,7 +641,11 @@ export async function* translateAiSdkStreamToAnthropicEvents(
     delta: {
       container: null,
       stop_details: null,
-      stop_reason: toAnthropicStopReason(finishReason),
+      // Some compatible providers emit "stop" despite returning tool calls.
+      // Claude SDK must see tool_use to continue the tool/result round-trip.
+      stop_reason: toAnthropicStopReason(
+        toolBlocks.length > 0 && finishReason === 'stop' ? 'tool-calls' : finishReason
+      ),
       stop_sequence: null
     },
     usage: {
@@ -611,10 +660,27 @@ export async function* translateAiSdkStreamToAnthropicEvents(
   yield { type: 'message_stop' }
 }
 
+function assertCompleteToolInput(inputJson: string): void {
+  let input: unknown
+  try {
+    input = JSON.parse(inputJson)
+  } catch {
+    throw new Error('The model returned incomplete tool arguments')
+  }
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    throw new Error('The model returned invalid tool arguments; expected an object')
+  }
+}
+
 function buildNonStreamingMessage(modelId: string, result: Awaited<ReturnType<typeof generateText>>): Message {
+  if (!result.text.trim() && result.toolCalls.length === 0) {
+    throw new Error('The model returned an empty response without text or tool calls')
+  }
   const content: Message['content'] = []
   if (result.text) content.push({ type: 'text', text: result.text, citations: null })
   for (const call of result.toolCalls) {
+    if (call.invalid) throw new Error('The model returned an invalid tool call')
+    assertCompleteToolInput(JSON.stringify(call.input ?? {}))
     content.push({
       type: 'tool_use',
       id: call.toolCallId,
@@ -631,7 +697,9 @@ function buildNonStreamingMessage(modelId: string, result: Awaited<ReturnType<ty
     model: modelId,
     content,
     container: null,
-    stop_reason: toAnthropicStopReason(result.finishReason),
+    stop_reason: toAnthropicStopReason(
+      result.toolCalls.length > 0 && result.finishReason === 'stop' ? 'tool-calls' : result.finishReason
+    ),
     stop_details: null,
     stop_sequence: null,
     usage: emptyUsage(tokens.input, tokens.output)
@@ -646,7 +714,34 @@ function writeSse(response: Response, event: RawMessageStreamEvent): void {
 }
 
 function errorMessage(error: unknown): string {
-  return error instanceof Error && error.message ? error.message : String(error)
+  const message = error instanceof Error && error.message ? error.message : String(error)
+  const status = upstreamStatusCode(error)
+  return status ? `Upstream HTTP ${status}: ${message}` : message
+}
+
+function upstreamStatusCode(error: unknown): number | undefined {
+  if (!error || typeof error !== 'object' || !('statusCode' in error)) return undefined
+  const status = error.statusCode
+  return typeof status === 'number' && status >= 400 && status <= 599 ? status : undefined
+}
+
+function anthropicErrorType(error: unknown): string {
+  switch (upstreamStatusCode(error)) {
+    case 400:
+    case 413:
+    case 422:
+      return 'invalid_request_error'
+    case 401:
+      return 'authentication_error'
+    case 403:
+      return 'permission_error'
+    case 429:
+      return 'rate_limit_error'
+    case 503:
+      return 'overloaded_error'
+    default:
+      return 'api_error'
+  }
 }
 
 export class AnthropicProtocolBridge {
@@ -707,7 +802,7 @@ export class AnthropicProtocolBridge {
       if (!response.writableEnded && !response.destroyed) {
         response.write('event: error\n')
         response.write(
-          `data: ${JSON.stringify({ type: 'error', error: { type: 'api_error', message: errorMessage(error) } })}\n\n`
+          `data: ${JSON.stringify({ type: 'error', error: { type: anthropicErrorType(error), message: errorMessage(error) } })}\n\n`
         )
       }
     } finally {

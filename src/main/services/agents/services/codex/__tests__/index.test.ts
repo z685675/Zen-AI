@@ -230,6 +230,10 @@ describe('CodexService startup errors', () => {
       runStreamed: vi.fn().mockResolvedValue({
         events: (async function* () {
           yield { type: 'thread.started', thread_id: 'thread-1' }
+          yield {
+            type: 'turn.completed',
+            usage: { input_tokens: 10, output_tokens: 2, cached_input_tokens: 0, reasoning_output_tokens: 0 }
+          }
         })()
       })
     })
@@ -253,4 +257,55 @@ describe('CodexService startup errors', () => {
     expect(assistantMcpMocks.cleanup).toHaveBeenCalledWith('session-1')
     expect(browserMcpMocks.cleanup).toHaveBeenCalledWith('session-1')
   })
+
+  it.each(['eof-after-tool', 'turn-failed'])(
+    'does not report a successful task when Codex exits with %s',
+    async (scenario) => {
+      validateModelIdMock.mockResolvedValue({
+        valid: true,
+        provider: {
+          id: 'gateway',
+          type: 'new-api',
+          apiKey: 'test',
+          apiHost: 'https://example.invalid/v1',
+          models: [{ id: 'gpt-6-luna' }]
+        },
+        modelId: 'gpt-6-luna'
+      } as any)
+      codexSdkMocks.startThread.mockReturnValue({
+        id: 'interrupted-thread',
+        runStreamed: vi.fn().mockResolvedValue({
+          events: (async function* () {
+            yield { type: 'thread.started', thread_id: 'interrupted-thread' }
+            yield { type: 'turn.started' }
+            yield {
+              type: 'item.completed',
+              item: {
+                id: 'read-1',
+                type: 'command_execution',
+                command: 'read report.xlsx',
+                aggregated_output: '12 rows',
+                exit_code: 0,
+                status: 'completed'
+              }
+            }
+            if (scenario === 'turn-failed') yield { type: 'turn.failed', error: { message: '524 origin timeout' } }
+          })()
+        })
+      })
+      const service = new CodexService()
+      const stream = await service.invoke('Read and summarize the table', baseSession, new AbortController())
+      const received: any[] = []
+      await new Promise<void>((resolve) => {
+        stream.on('data', (event) => {
+          received.push(event)
+          if (event.type === 'complete' || event.type === 'error') resolve()
+        })
+      })
+      expect(received.some((event) => event.type === 'complete')).toBe(false)
+      expect(received.at(-1)?.type).toBe('error')
+      expect(received.at(-1)?.error.message).toContain(scenario === 'turn-failed' ? '524' : 'stream interrupted')
+      expect(received.some((event) => event.chunk?.type === 'tool-result')).toBe(true)
+    }
+  )
 })
