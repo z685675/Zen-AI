@@ -1,12 +1,15 @@
 import { CheckCircleOutlined, ImportOutlined, ReloadOutlined, WarningOutlined } from '@ant-design/icons'
-import { isWin } from '@renderer/config/constant'
 import { useTheme } from '@renderer/context/ThemeProvider'
 import {
   ASSISTANT_DEPENDENCY_I18N_KEYS,
   ASSISTANT_DEPENDENCY_SOURCE_I18N_KEYS,
-  type AssistantEnvironmentCheckResult,
+  AUTO_PREPARED_ASSISTANT_DEPENDENCIES,
+  checkAssistantEnvironmentWithCache,
   type DependencyId,
-  type DependencyStatus
+  type DependencyStatus,
+  getAssistantEnvironmentState,
+  repairRequiredAssistantEnvironment,
+  subscribeAssistantEnvironment
 } from '@renderer/services/AssistantEnvironmentService'
 import { Alert, Button, Spin, Tag } from 'antd'
 import type { FC } from 'react'
@@ -24,21 +27,22 @@ import {
   SettingTitle
 } from '.'
 
-const CORE_DEPENDENCIES: DependencyId[] = isWin ? ['bun', 'uv', 'uvx', 'git', 'python'] : ['bun', 'uv', 'uvx', 'python']
-const OPTIONAL_DEPENDENCIES: DependencyId[] = isWin ? ['pyodide'] : ['git', 'pyodide']
+const CORE_DEPENDENCIES = AUTO_PREPARED_ASSISTANT_DEPENDENCIES
+const OPTIONAL_DEPENDENCIES: DependencyId[] = ['pyodide']
 
 const AssistantEnvironmentSettings: FC = () => {
   const { theme } = useTheme()
   const { t } = useTranslation()
   const [checking, setChecking] = useState(false)
-  const [installing, setInstalling] = useState(false)
-  const [result, setResult] = useState<AssistantEnvironmentCheckResult | null>(null)
+  const [importing, setImporting] = useState(false)
+  const [environment, setEnvironment] = useState(getAssistantEnvironmentState)
+  const result = environment.result
+  const installing = importing || environment.preparing
 
   const checkEnvironment = useCallback(async () => {
     try {
       setChecking(true)
-      const nextResult = await window.api.checkAssistantEnvironment()
-      setResult(nextResult)
+      await checkAssistantEnvironmentWithCache({ force: true })
     } catch (error: any) {
       window.toast.error(`${t('settings.assistantEnvironment.checkFailed')}: ${error.message}`)
     } finally {
@@ -46,52 +50,15 @@ const AssistantEnvironmentSettings: FC = () => {
     }
   }, [t])
 
+  useEffect(() => subscribeAssistantEnvironment(setEnvironment), [])
+
   useEffect(() => {
     void checkEnvironment()
   }, [checkEnvironment])
 
-  const installBun = async () => {
-    try {
-      setInstalling(true)
-      await window.api.installBunBinary()
-      window.toast.success(t('settings.assistantEnvironment.installSuccess'))
-      await checkEnvironment()
-    } catch (error: any) {
-      window.toast.error(`${t('settings.assistantEnvironment.installFailed')}: ${error.message}`)
-    } finally {
-      setInstalling(false)
-    }
-  }
-
-  const installUv = async () => {
-    try {
-      setInstalling(true)
-      await window.api.installUVBinary()
-      window.toast.success(t('settings.assistantEnvironment.installSuccess'))
-      await checkEnvironment()
-    } catch (error: any) {
-      window.toast.error(`${t('settings.assistantEnvironment.installFailed')}: ${error.message}`)
-    } finally {
-      setInstalling(false)
-    }
-  }
-
-  const installPython = async () => {
-    try {
-      setInstalling(true)
-      await window.api.installManagedPython()
-      window.toast.success(t('settings.assistantEnvironment.installSuccess'))
-      await checkEnvironment()
-    } catch (error: any) {
-      window.toast.error(`${t('settings.assistantEnvironment.installFailed')}: ${error.message}`)
-    } finally {
-      setInstalling(false)
-    }
-  }
-
   const importPython = async () => {
     try {
-      setInstalling(true)
+      setImporting(true)
       const imported = await window.api.importManagedPython()
       if (!imported) return
       window.toast.success(t('settings.assistantEnvironment.importRuntimeSuccess'))
@@ -99,110 +66,69 @@ const AssistantEnvironmentSettings: FC = () => {
     } catch (error: any) {
       window.toast.error(`${t('settings.assistantEnvironment.importRuntimeFailed')}: ${error.message}`)
     } finally {
-      setInstalling(false)
-    }
-  }
-
-  const confirmGitInstall = () =>
-    new Promise<boolean>((resolve) => {
-      window.modal.confirm({
-        title: t('settings.assistantEnvironment.installGitConfirmTitle'),
-        content: t('settings.assistantEnvironment.installGitConfirmContent'),
-        okText: t('settings.assistantEnvironment.installGitAuto'),
-        cancelText: t('common.cancel'),
-        centered: true,
-        onOk: () => resolve(true),
-        onCancel: () => resolve(false)
-      })
-    })
-
-  const installGit = async () => {
-    const confirmed = await confirmGitInstall()
-    if (!confirmed) {
-      return false
-    }
-
-    try {
-      setInstalling(true)
-      await window.api.installGitForWindows()
-      window.toast.success(t('settings.assistantEnvironment.installSuccess'))
-      await checkEnvironment()
-      return true
-    } catch (error: any) {
-      window.toast.error(`${t('settings.assistantEnvironment.installGitFailedFallback')}: ${error.message}`)
-      void window.api.openWebsite('https://git-scm.com/download/win')
-      return false
-    } finally {
-      setInstalling(false)
+      setImporting(false)
     }
   }
 
   const prepareCoreDependencies = async () => {
-    if (!result) return
-
     try {
-      setInstalling(true)
-
-      if (!result.bun.installed) {
-        await window.api.installBunBinary()
+      const prepared = await repairRequiredAssistantEnvironment()
+      if (CORE_DEPENDENCIES.every((id) => prepared[id].installed)) {
+        window.toast.success(t('settings.assistantEnvironment.prepareSuccess'))
+      } else {
+        window.toast.warning(t('settings.assistantEnvironment.prepareIncomplete'))
       }
-
-      if (!result.uv.installed || !result.uvx.installed) {
-        await window.api.installUVBinary()
-      }
-
-      if (!result.python.installed) {
-        await window.api.installManagedPython()
-      }
-
-      if (isWin && !result.git.installed) {
-        const gitInstalled = await installGit()
-        if (!gitInstalled) {
-          await checkEnvironment()
-          return
-        }
-      }
-
-      window.toast.success(t('settings.assistantEnvironment.prepareSuccess'))
-      await checkEnvironment()
     } catch (error: any) {
       window.toast.error(`${t('settings.assistantEnvironment.installFailed')}: ${error.message}`)
-    } finally {
-      setInstalling(false)
     }
   }
 
   const renderDependency = (dependency: DependencyStatus) => {
-    const needsInstall = !dependency.installed && (dependency.id === 'bun' || dependency.id === 'uv')
-    const needsGitInstall = isWin && !dependency.installed && dependency.id === 'git'
+    const needsInstall = !dependency.installed && ['bun', 'uv', 'uvx'].includes(dependency.id)
+    const isPreparing = environment.preparing && !dependency.installed && CORE_DEPENDENCIES.includes(dependency.id)
 
     return (
       <DependencyCard key={dependency.id}>
         <DependencyMain>
           <DependencyHeader>
             <DependencyName>
-              {dependency.installed ? <CheckCircleOutlined /> : <WarningOutlined />}
+              {isPreparing ? (
+                <Spin size="small" />
+              ) : dependency.installed ? (
+                <CheckCircleOutlined />
+              ) : (
+                <WarningOutlined />
+              )}
               {t(ASSISTANT_DEPENDENCY_I18N_KEYS[dependency.id].name)}
             </DependencyName>
             <StatusTag color={dependency.installed ? 'success' : dependency.source === 'error' ? 'error' : 'warning'}>
-              {dependency.installed
-                ? t(ASSISTANT_DEPENDENCY_SOURCE_I18N_KEYS[dependency.source])
-                : t(
-                    dependency.source === 'error'
-                      ? 'settings.assistantEnvironment.status.error'
-                      : 'settings.assistantEnvironment.status.missing'
-                  )}
+              {isPreparing
+                ? t('settings.assistantEnvironment.status.preparing')
+                : dependency.installed
+                  ? t(ASSISTANT_DEPENDENCY_SOURCE_I18N_KEYS[dependency.source])
+                  : t(
+                      dependency.source === 'error'
+                        ? 'settings.assistantEnvironment.status.error'
+                        : 'settings.assistantEnvironment.status.missing'
+                    )}
             </StatusTag>
           </DependencyHeader>
           <DependencyDescription>{t(ASSISTANT_DEPENDENCY_I18N_KEYS[dependency.id].description)}</DependencyDescription>
           <DependencyPath>
-            {dependency.path || dependency.message || t('settings.assistantEnvironment.noPath')}
+            {(!dependency.installed && dependency.message) ||
+              dependency.path ||
+              t('settings.assistantEnvironment.noPath')}
           </DependencyPath>
         </DependencyMain>
         {dependency.id === 'python' && (
           <DependencyActions>
             {!dependency.installed && (
-              <Button size="small" type="primary" loading={installing} disabled={installing} onClick={installPython}>
+              <Button
+                size="small"
+                type="primary"
+                loading={installing}
+                disabled={installing}
+                onClick={prepareCoreDependencies}>
                 {t('settings.assistantEnvironment.install')}
               </Button>
             )}
@@ -217,13 +143,8 @@ const AssistantEnvironmentSettings: FC = () => {
             type="primary"
             loading={installing}
             disabled={installing}
-            onClick={dependency.id === 'bun' ? installBun : installUv}>
+            onClick={prepareCoreDependencies}>
             {t('settings.assistantEnvironment.install')}
-          </Button>
-        )}
-        {needsGitInstall && (
-          <Button size="small" type="primary" loading={installing} disabled={installing} onClick={installGit}>
-            {t('settings.assistantEnvironment.installGitAuto')}
           </Button>
         )}
       </DependencyCard>
@@ -237,7 +158,15 @@ const AssistantEnvironmentSettings: FC = () => {
       <SettingGroup theme={theme}>
         <SettingTitle>{t('settings.assistantEnvironment.title')}</SettingTitle>
         <SettingDescription>{t('settings.assistantEnvironment.description')}</SettingDescription>
-        <IntroAlert type="info" showIcon description={t('settings.assistantEnvironment.intro')} />
+        <IntroAlert
+          type="info"
+          showIcon
+          description={t(
+            environment.preparing
+              ? 'settings.assistantEnvironment.preparingDescription'
+              : 'settings.assistantEnvironment.intro'
+          )}
+        />
         <ActionRow>
           <Button icon={<ReloadOutlined />} onClick={checkEnvironment} loading={checking} disabled={installing}>
             {t('settings.assistantEnvironment.refresh')}
@@ -246,7 +175,7 @@ const AssistantEnvironmentSettings: FC = () => {
             type="primary"
             onClick={prepareCoreDependencies}
             loading={installing}
-            disabled={!result || missingCoreCount === 0}>
+            disabled={installing || !result || missingCoreCount === 0}>
             {t('settings.assistantEnvironment.prepare')}
           </Button>
         </ActionRow>

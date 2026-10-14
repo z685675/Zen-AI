@@ -1,14 +1,12 @@
 import { loggerService } from '@logger'
-import { isWin } from '@main/constant'
-import { autoDiscoverGitBash, findExecutableInEnv, getBinaryPath, isBinaryExists } from '@main/utils/process'
-import { spawn } from 'child_process'
+import { findExecutableInEnv, getBinaryPath, isBinaryExists } from '@main/utils/process'
 import { dialog } from 'electron'
 
 import { managedPythonService } from './python/ManagedPythonService'
 
 const logger = loggerService.withContext('AssistantEnvironmentService')
 
-export type AssistantEnvironmentDependencyId = 'bun' | 'uv' | 'uvx' | 'git' | 'python' | 'pyodide'
+export type AssistantEnvironmentDependencyId = 'bun' | 'uv' | 'uvx' | 'python' | 'pyodide'
 
 export type AssistantEnvironmentDependencySource = 'app' | 'system' | 'network' | 'missing' | 'error'
 
@@ -24,7 +22,6 @@ export interface AssistantEnvironmentCheckResult {
   bun: AssistantEnvironmentDependencyStatus
   uv: AssistantEnvironmentDependencyStatus
   uvx: AssistantEnvironmentDependencyStatus
-  git: AssistantEnvironmentDependencyStatus
   python: AssistantEnvironmentDependencyStatus
   pyodide: AssistantEnvironmentDependencyStatus
   binariesDir: string
@@ -33,25 +30,17 @@ export interface AssistantEnvironmentCheckResult {
 
 const PYODIDE_BOOTSTRAP_URL = 'https://cdn.jsdelivr.net/pyodide/v0.28.0/full/pyodide.mjs'
 const NETWORK_CHECK_TIMEOUT_MS = 7000
-const WINGET_INSTALL_TIMEOUT_MS = 10 * 60 * 1000
 
-async function checkBinary(id: 'bun' | 'uv' | 'uvx' | 'git'): Promise<AssistantEnvironmentDependencyStatus> {
+async function checkBinary(id: 'bun' | 'uv' | 'uvx'): Promise<AssistantEnvironmentDependencyStatus> {
   try {
-    if (id === 'git' && isWin) {
-      const gitBashPath = autoDiscoverGitBash()
-      return gitBashPath
-        ? { id, installed: true, source: 'system', path: gitBashPath }
-        : { id, installed: false, source: 'missing' }
+    // Prefer application-owned tools even when their directory is also on PATH.
+    if (await isBinaryExists(id)) {
+      return { id, installed: true, source: 'app', path: await getBinaryPath(id) }
     }
 
     const systemPath = await findExecutableInEnv(id)
     if (systemPath) {
       return { id, installed: true, source: 'system', path: systemPath }
-    }
-
-    const appInstalled = await isBinaryExists(id)
-    if (appInstalled) {
-      return { id, installed: true, source: 'app', path: await getBinaryPath(id) }
     }
 
     return { id, installed: false, source: 'missing' }
@@ -64,67 +53,6 @@ async function checkBinary(id: 'bun' | 'uv' | 'uvx' | 'git'): Promise<AssistantE
       message: error instanceof Error ? error.message : String(error)
     }
   }
-}
-
-export function installGitForWindows(): Promise<void> {
-  return new Promise<void>((resolve, reject) => {
-    if (!isWin) {
-      reject(new Error('Git auto install is only supported on Windows'))
-      return
-    }
-
-    const args = [
-      'install',
-      '--id',
-      'Git.Git',
-      '-e',
-      '--silent',
-      '--accept-package-agreements',
-      '--accept-source-agreements'
-    ]
-    const child = spawn('winget', args, {
-      windowsHide: true,
-      stdio: ['ignore', 'pipe', 'pipe']
-    })
-    const timeout = setTimeout(() => {
-      child.kill()
-      reject(new Error('Git installation timed out'))
-    }, WINGET_INSTALL_TIMEOUT_MS)
-
-    let stderr = ''
-
-    child.stdout.on('data', (data) => {
-      logger.debug(`winget Git install output: ${data}`)
-    })
-
-    child.stderr.on('data', (data) => {
-      stderr += String(data)
-      logger.warn(`winget Git install error output: ${data}`)
-    })
-
-    child.on('error', (error) => {
-      clearTimeout(timeout)
-      reject(error)
-    })
-
-    child.on('close', (code) => {
-      clearTimeout(timeout)
-      if (code === 0) {
-        const gitBashPath = autoDiscoverGitBash()
-        if (gitBashPath) {
-          logger.info('Git for Windows installed successfully via winget', { gitBashPath })
-          resolve()
-          return
-        }
-
-        reject(
-          new Error('Git was installed, but Git Bash was not detected. Please restart the app or install Git manually.')
-        )
-      }
-
-      reject(new Error(stderr.trim() || `winget exited with code ${code}`))
-    })
-  })
 }
 
 async function checkPyodideNetwork(): Promise<AssistantEnvironmentDependencyStatus> {
@@ -216,11 +144,10 @@ export async function importManagedPython(): Promise<boolean> {
 }
 
 export async function checkAssistantEnvironment(): Promise<AssistantEnvironmentCheckResult> {
-  const [bun, uv, uvx, git, python, pyodide] = await Promise.all([
+  const [bun, uv, uvx, python, pyodide] = await Promise.all([
     checkBinary('bun'),
     checkBinary('uv'),
     checkBinary('uvx'),
-    checkBinary('git'),
     checkManagedPython(),
     checkPyodideNetwork()
   ])
@@ -229,7 +156,6 @@ export async function checkAssistantEnvironment(): Promise<AssistantEnvironmentC
     bun,
     uv,
     uvx,
-    git,
     python,
     pyodide,
     binariesDir: await getBinaryPath(),

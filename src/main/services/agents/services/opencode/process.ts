@@ -18,6 +18,7 @@ import {
 import { configManager } from '@main/services/ConfigManager'
 import { recordMainDiagnostic } from '@main/services/DiagnosticEvidenceService'
 import { getDataPath, getResourcePath, toAsarUnpackedPath } from '@main/utils'
+import { getBinaryPath } from '@main/utils/process'
 import { app } from 'electron'
 
 import { assertAssistantDataAvailable } from '../dataOperationGate'
@@ -176,7 +177,7 @@ export class OpenCodeProcess {
     })
     registerBrowserMcpContext(this.key)
     const password = randomBytes(32).toString('hex')
-    const env = buildOpenCodeEnvironment(process.env, this.root, password)
+    const env = buildOpenCodeEnvironment(process.env, this.root, password, await getBinaryPath())
     const expected = JSON.parse(JSON.stringify(config)) as Record<string, any>
     const providerOptions = expected.provider[OPENCODE_PROVIDER_ID].options
     const providerHost = providerOptions.baseURL as string

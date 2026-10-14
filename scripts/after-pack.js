@@ -5,6 +5,7 @@ const { createRequire } = require('node:module')
 const { Arch } = require('electron-builder')
 const { AGENT_TARGETS, getPackagedAgentPaths, verifyPackagedAgentRuntimes } = require('./agent-runtime-packaging')
 const { copyOpenCodeRuntime, copyOpenCodeOfflineRuntime } = require('./opencode-runtime-packaging')
+const { prepareMacBundleLinks } = require('./mac-bundle-links')
 
 function findCodexVendorSource(target, rootDir) {
   const packageName = `codex-${target.packageSuffix}`
@@ -159,6 +160,11 @@ exports.default = async function (context) {
   copyAgentRuntimes(context)
   copyOpenCodeRuntime(context)
   copyOpenCodeOfflineRuntime(context)
+  if (platform === 'mac') {
+    const links = prepareMacBundleLinks(context.packager.getResourcesDir(context.appOutDir), path.join(__dirname, '..'))
+    console.log(`[after-pack] verified Mac bundle links; materialized ${links.length} resource links`)
+    for (const link of links) console.log(`[after-pack] materialized: ${link}`)
+  }
   if (platform === 'windows') {
     fs.rmSync(path.join(context.appOutDir, 'LICENSE.electron.txt'), { force: true })
     fs.rmSync(path.join(context.appOutDir, 'LICENSES.chromium.html'), { force: true })

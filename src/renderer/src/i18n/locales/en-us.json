@@ -4480,16 +4480,12 @@
     "assistantEnvironment": {
       "binariesDir": "App tools directory",
       "checkFailed": "Environment check failed",
-      "coreDescription": "These tools affect the assistant's ability to use extensions, skills, and local tasks reliably.",
-      "coreTitle": "Core Readiness",
+      "coreDescription": "These tools are prepared automatically for Skill scripts, data processing and local tasks. Missing components do not block ordinary conversations in the new assistant.",
+      "coreTitle": "Automatic background setup",
       "dependencies": {
         "bun": {
           "description": "Runs some skills, tool services, and frontend-oriented automation tasks.",
           "name": "Bun runtime"
-        },
-        "git": {
-          "description": "On Windows, the assistant needs Git Bash to run local tasks reliably. It is also used for Git-based skills, repository downloads, and coding tasks.",
-          "name": "Git"
         },
         "pyodide": {
           "description": "Powers the in-browser Python sandbox. This version loads it from the network on first use and does not require system Python.",
@@ -4509,30 +4505,30 @@
         }
       },
       "description": "Check local tools and network readiness for the full smart assistant experience.",
-      "downloadGit": "Download Git",
-      "downloadGitHint": "Please finish installing Git with the setup wizard, then come back and check again.",
+      "importRuntime": "Import offline Python runtime",
+      "importRuntimeFailed": "Failed to import offline Python runtime",
+      "importRuntimeSuccess": "Offline Python runtime imported",
       "install": "Install",
       "installFailed": "Install failed",
-      "installGitAuto": "Auto Install Git",
-      "installGitConfirmContent": "On Windows, the smart assistant needs Git Bash from Git for Windows to run local tasks reliably. The app will try to install it through winget. A system permission prompt may appear. If auto install fails, the official download page will open as a fallback.",
-      "installGitConfirmTitle": "Install Git for Windows automatically?",
-      "installGitFailedFallback": "Auto install failed. The official Git download page has been opened",
       "installSuccess": "Installed",
-      "intro": "Zen AI prepares a private Python environment and local tools for every user. These components stay inside Zen AI and do not modify system Python.",
+      "intro": "The new assistant engine is included with Zen AI. Bun, UV/UVX and private Python are prepared in the background. Available components are reused, and system Python is not modified.",
       "noPath": "No available path detected yet",
       "optionalDescription": "These are not required for basic chat, but they improve some advanced tasks.",
       "optionalTitle": "Optional Enhancements",
       "prepare": "Repair Assistant Environment",
+      "prepareIncomplete": "Some tools are not ready. Ordinary chat remains available. Zen AI will make a limited number of background retries; you can also repair later.",
       "prepareSuccess": "Environment prepared",
+      "preparingDescription": "Preparing extension tools in the background. You can continue chatting and using ready capabilities. The first download may take some time; no manual configuration is needed.",
       "refresh": "Check Again",
       "sources": {
-        "app": "App tools directory",
+        "app": "Zen AI private directory",
         "network": "Network available",
         "system": "System install"
       },
       "status": {
         "error": "Check failed",
-        "missing": "Not ready"
+        "missing": "Not ready",
+        "preparing": "Preparing in background"
       },
       "title": "Assistant Environment"
     },

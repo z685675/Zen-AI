@@ -4481,15 +4481,11 @@
       "binariesDir": "[to be translated]:App tools directory",
       "checkFailed": "[to be translated]:Environment check failed",
       "coreDescription": "[to be translated]:These tools affect the assistant's ability to use extensions, skills, and local tasks reliably.",
-      "coreTitle": "[to be translated]:Core Readiness",
+      "coreTitle": "Préparation automatique en arrière-plan",
       "dependencies": {
         "bun": {
           "description": "[to be translated]:Runs some skills, tool services, and frontend-oriented automation tasks.",
           "name": "[to be translated]:Bun runtime"
-        },
-        "git": {
-          "description": "[to be translated]:On Windows, the assistant needs Git Bash to run local tasks reliably. It is also used for Git-based skills, repository downloads, and coding tasks.",
-          "name": "[to be translated]:Git"
         },
         "pyodide": {
           "description": "[to be translated]:Powers the in-browser Python sandbox. This version loads it from the network on first use and does not require system Python.",
@@ -4509,30 +4505,30 @@
         }
       },
       "description": "[to be translated]:Check local tools and network readiness for the full smart assistant experience.",
-      "downloadGit": "[to be translated]:Download Git",
-      "downloadGitHint": "[to be translated]:Please finish installing Git with the setup wizard, then come back and check again.",
+      "importRuntime": "Importer un environnement Python hors ligne",
+      "importRuntimeFailed": "Échec de l’importation de Python hors ligne",
+      "importRuntimeSuccess": "Environnement Python hors ligne importé",
       "install": "[to be translated]:Install",
       "installFailed": "[to be translated]:Install failed",
-      "installGitAuto": "[to be translated]:Auto Install Git",
-      "installGitConfirmContent": "[to be translated]:On Windows, the smart assistant needs Git Bash from Git for Windows to run local tasks reliably. The app will try to install it through winget. A system permission prompt may appear. If auto install fails, the official download page will open as a fallback.",
-      "installGitConfirmTitle": "[to be translated]:Install Git for Windows automatically?",
-      "installGitFailedFallback": "[to be translated]:Auto install failed. The official Git download page has been opened",
       "installSuccess": "[to be translated]:Installed",
       "intro": "[to be translated]:Zen AI prepares a private Python environment and local tools for every user. These components stay inside Zen AI and do not modify system Python.",
       "noPath": "[to be translated]:No available path detected yet",
       "optionalDescription": "[to be translated]:These are not required for basic chat, but they improve some advanced tasks.",
       "optionalTitle": "[to be translated]:Optional Enhancements",
       "prepare": "[to be translated]:Repair Assistant Environment",
+      "prepareIncomplete": "Certains outils ne sont pas prêts. Les conversations restent disponibles. Des tentatives limitées suivront en arrière-plan ; vous pouvez aussi réparer plus tard.",
       "prepareSuccess": "[to be translated]:Environment prepared",
+      "preparingDescription": "Préparation des outils en arrière-plan. Les conversations et les fonctions disponibles restent accessibles. Le premier téléchargement peut prendre du temps.",
       "refresh": "[to be translated]:Check Again",
       "sources": {
-        "app": "[to be translated]:App tools directory",
+        "app": "Répertoire privé Zen AI",
         "network": "[to be translated]:Network available",
         "system": "[to be translated]:System install"
       },
       "status": {
         "error": "[to be translated]:Check failed",
-        "missing": "[to be translated]:Not ready"
+        "missing": "[to be translated]:Not ready",
+        "preparing": "Préparation en arrière-plan"
       },
       "title": "[to be translated]:Assistant Environment"
     },

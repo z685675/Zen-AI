@@ -14,6 +14,7 @@ vi.mock('@main/utils', () => ({
   toAsarUnpackedPath: (value: string) => value
 }))
 vi.mock('@main/services/ConfigManager', () => ({ configManager: { getClientId: () => 'test-installation' } }))
+vi.mock('@main/utils/process', () => ({ getBinaryPath: async () => '/owned/tools' }))
 vi.mock('@main/apiServer/routes/assistant-mcp', () => ({
   cleanupAssistantMcpContext: vi.fn(),
   registerAssistantMcpContext: vi.fn(),

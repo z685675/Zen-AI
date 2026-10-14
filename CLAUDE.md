@@ -35,13 +35,9 @@ Only investigate CI failures by reading the logs, not by re-running checks local
 When creating an Issue, you MUST use the `gh-create-issue` skill.
 If the skill is unavailable, directly read `.agents/skills/gh-create-issue/SKILL.md` and follow it manually.
 
-### Branch Strategy (Effective April 3, 2026)
+### Branch Strategy (Effective October 14, 2026)
 
-> **IMPORTANT**: The `main` branch is now under **code freeze**. Only critical bug fixes submitted via `hotfix/*` branches are accepted. Fix PRs must be minimal in scope and must not include any refactoring code.
->
-> All new features, refactoring, and optimizations should be developed on the **`v2` branch**. We welcome every developer to actively participate in v2 development!
->
-> The `v2` branch will only accept new feature submissions after all current features have been fully refactored.
+Per the product owner's instruction, save and push authorized changes directly to `main` by default. Do not create a development branch unless the user explicitly requests one. Integrate the existing `v2` work without rewriting history; never force-push `main`. Release tags must point to the complete release commit on `main`.
 
 ## Development Commands
 
@@ -304,12 +300,9 @@ Several dependencies have patches in `patches/` — be careful when upgrading:
 
 ## Important Notes
 
-### V2 Refactoring in Progress
+### Legacy Refactoring Boundaries
 
-The `main` branch is under code freeze. All development has moved to the `v2` branch.
-
-- **`main` branch**: Only accepts critical bug fixes via `hotfix/*` branches. Minimal changes, no refactoring.
-- **`v2` branch**: All new features, refactoring, and optimizations go here.
+The previous `main` freeze / mandatory `v2` branch strategy has been superseded by the October 14, 2026 product-owner instruction above. This does not authorize unrelated refactoring or changes to the view-only legacy assistant.
 
 Files marked with the following header are **blocked for feature changes**:
 

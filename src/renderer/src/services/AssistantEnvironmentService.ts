@@ -1,9 +1,8 @@
 import { loggerService } from '@logger'
-import { isWin } from '@renderer/config/constant'
 
 const logger = loggerService.withContext('RendererAssistantEnvironmentService')
 
-export type DependencyId = 'bun' | 'uv' | 'uvx' | 'git' | 'python' | 'pyodide'
+export type DependencyId = 'bun' | 'uv' | 'uvx' | 'python' | 'pyodide'
 export type DependencySource = 'app' | 'system' | 'network' | 'missing' | 'error'
 
 export const ASSISTANT_DEPENDENCY_I18N_KEYS = {
@@ -18,10 +17,6 @@ export const ASSISTANT_DEPENDENCY_I18N_KEYS = {
   uvx: {
     name: 'settings.assistantEnvironment.dependencies.uvx.name',
     description: 'settings.assistantEnvironment.dependencies.uvx.description'
-  },
-  git: {
-    name: 'settings.assistantEnvironment.dependencies.git.name',
-    description: 'settings.assistantEnvironment.dependencies.git.description'
   },
   python: {
     name: 'settings.assistantEnvironment.dependencies.python.name',
@@ -53,16 +48,14 @@ export interface AssistantEnvironmentCheckResult {
   bun: DependencyStatus
   uv: DependencyStatus
   uvx: DependencyStatus
-  git: DependencyStatus
   python: DependencyStatus
   pyodide: DependencyStatus
   binariesDir: string
   checkedAt: number
 }
 
-export const REQUIRED_ASSISTANT_DEPENDENCIES: DependencyId[] = isWin
-  ? ['bun', 'uv', 'uvx', 'git', 'python']
-  : ['bun', 'uv', 'uvx', 'python']
+// Prepared automatically; not admission requirements for ordinary tasks.
+export const AUTO_PREPARED_ASSISTANT_DEPENDENCIES: DependencyId[] = ['bun', 'uv', 'uvx', 'python']
 
 const ASSISTANT_ENVIRONMENT_CACHE_TTL_MS = 5 * 60 * 1000
 
@@ -72,17 +65,30 @@ let cachedEnvironmentCheckedAt = 0
 let checkPromise: Promise<AssistantEnvironmentCheckResult> | null = null
 let repairPromise: Promise<AssistantEnvironmentCheckResult> | null = null
 let startupPreflightStarted = false
-const environmentListeners = new Set<
-  (state: { result: AssistantEnvironmentCheckResult | null; error: string | null }) => void
->()
+let preparing = false
+const STARTUP_RETRY_DELAYS_MS = [60_000, 5 * 60_000]
+export interface AssistantEnvironmentState {
+  result: AssistantEnvironmentCheckResult | null
+  error: string | null
+  preparing: boolean
+}
+const environmentListeners = new Set<(state: AssistantEnvironmentState) => void>()
 
-export const subscribeAssistantEnvironment = (
-  listener: (state: { result: AssistantEnvironmentCheckResult | null; error: string | null }) => void
-) => {
+export const subscribeAssistantEnvironment = (listener: (state: AssistantEnvironmentState) => void) => {
   environmentListeners.add(listener)
   return () => {
     environmentListeners.delete(listener)
   }
+}
+
+export const getAssistantEnvironmentState = (): AssistantEnvironmentState => ({
+  result: cachedEnvironmentResult,
+  error: cachedEnvironmentError,
+  preparing
+})
+
+const notifyEnvironmentListeners = () => {
+  for (const listener of environmentListeners) listener(getAssistantEnvironmentState())
 }
 
 export const getFreshAssistantEnvironmentCache = () => {
@@ -100,7 +106,7 @@ const setEnvironmentCache = (result: AssistantEnvironmentCheckResult | null, err
   cachedEnvironmentResult = result
   cachedEnvironmentError = error
   cachedEnvironmentCheckedAt = Date.now()
-  for (const listener of environmentListeners) listener({ result, error })
+  notifyEnvironmentListeners()
 }
 
 export const checkAssistantEnvironmentWithCache = async (options?: {
@@ -133,19 +139,19 @@ export const checkAssistantEnvironmentWithCache = async (options?: {
   return checkPromise
 }
 
-const hasMissingRequiredDependencies = (result: AssistantEnvironmentCheckResult) =>
-  REQUIRED_ASSISTANT_DEPENDENCIES.some((id) => !result[id].installed)
+const hasMissingPreparedDependencies = (result: AssistantEnvironmentCheckResult) =>
+  AUTO_PREPARED_ASSISTANT_DEPENDENCIES.some((id) => !result[id].installed)
 
-export const repairRequiredAssistantEnvironment = async (options?: {
-  installGit?: boolean
-}): Promise<AssistantEnvironmentCheckResult> => {
+export const repairRequiredAssistantEnvironment = async (): Promise<AssistantEnvironmentCheckResult> => {
   if (repairPromise) {
     return repairPromise
   }
 
+  preparing = true
+  notifyEnvironmentListeners()
   repairPromise = (async () => {
     const initialResult = await checkAssistantEnvironmentWithCache({ force: true })
-    if (!hasMissingRequiredDependencies(initialResult)) {
+    if (!hasMissingPreparedDependencies(initialResult)) {
       return initialResult
     }
 
@@ -173,17 +179,11 @@ export const repairRequiredAssistantEnvironment = async (options?: {
       }
     }
 
-    if (options?.installGit && isWin && !initialResult.git.installed) {
-      try {
-        await window.api.installGitForWindows()
-      } catch (error) {
-        logger.warn('Failed to auto install Git for Windows', { error })
-      }
-    }
-
     return checkAssistantEnvironmentWithCache({ force: true })
   })().finally(() => {
     repairPromise = null
+    preparing = false
+    notifyEnvironmentListeners()
   })
 
   return repairPromise
@@ -196,9 +196,20 @@ export const runStartupAssistantEnvironmentPreflight = async (): Promise<void> =
 
   startupPreflightStarted = true
 
-  try {
-    await repairRequiredAssistantEnvironment({ installGit: false })
-  } catch (error) {
-    logger.warn('Startup assistant environment preflight failed', { error })
+  // Bounded retries for temporary first-start failures. The task pipeline
+  // does not await this promise or any retry timer.
+  const attempt = async (retryIndex: number) => {
+    let retry = false
+    try {
+      const result = await repairRequiredAssistantEnvironment()
+      retry = hasMissingPreparedDependencies(result)
+    } catch (error) {
+      logger.warn('Startup assistant environment preflight failed', { error })
+      retry = true
+    }
+    if (retry && retryIndex < STARTUP_RETRY_DELAYS_MS.length) {
+      setTimeout(() => void attempt(retryIndex + 1), STARTUP_RETRY_DELAYS_MS[retryIndex])
+    }
   }
+  await attempt(0)
 }

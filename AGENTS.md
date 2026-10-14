@@ -18,6 +18,8 @@ If the user mentions "compare with upstream" or "check old 1.9.4 behavior", insp
 
 ## Assistant Product Boundary (2026-10-12)
 
+- Per the product owner's October 14, 2026 instruction, authorized changes and releases go directly to `main`; do not create a development branch unless explicitly requested. Preserve history when integrating existing `v2` work.
+
 - Future assistant development and feature extensions target the OpenCode-based new assistant only.
 - The legacy/deprecated assistant is no longer maintained and is view-only. Preserve history, exports, file access and continuation into the new assistant; forbid sending, retrying or executing tasks in the old assistant, including in developer mode.
 - Legacy WeChat and other external channels, scheduled tasks and heartbeats are shut down, including existing enabled connections/runs. Keep configuration, credentials and history; do not delete them or auto-resume them after restart.

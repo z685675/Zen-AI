@@ -175,7 +175,8 @@ async function main() {
     id: 'zen-smoke-2',
     name: 'Second mock model'
   }
-  const env = buildOpenCodeEnvironment(process.env, root, 'smoke-local-password')
+  const toolBinDir = path.join(root, 'tools')
+  const env = buildOpenCodeEnvironment(process.env, root, 'smoke-local-password', toolBinDir)
   const transportEvents: string[] = []
   const transport = await createOpenCodeGateway(config.provider['zen-selected'].options.baseURL, (_id, event) =>
     transportEvents.push(event)
@@ -243,6 +244,38 @@ async function main() {
     )
       throw new Error('Native Skill inventory did not report its actual definition path')
     if (requests !== 0) throw new Error('Read-only native Skill inventory unexpectedly called a model')
+    // Simulate background installation completing after the native process
+    // has started. No system installation, Git or model request is involved.
+    await mkdir(toolBinDir, { recursive: true })
+    await writeFile(
+      path.join(toolBinDir, process.platform === 'win32' ? 'zen-smoke-tool.cmd' : 'zen-smoke-tool'),
+      process.platform === 'win32'
+        ? '@echo off\r\necho ZEN_PRIVATE_TOOL_READY\r\n'
+        : '#!/bin/sh\nprintf ZEN_PRIVATE_TOOL_READY',
+      { mode: 0o755 }
+    )
+    const toolSession = await client.request<{ id: string }>(
+      '/session',
+      'POST',
+      { title: 'Tool readiness' },
+      controller.signal
+    )
+    const shellResult = await client.request<any>(
+      `/session/${toolSession.id}/shell`,
+      'POST',
+      { agent: 'build', model: { providerID: 'zen-selected', modelID: 'zen-smoke' }, command: 'zen-smoke-tool' },
+      controller.signal
+    )
+    if (
+      !shellResult.parts.some(
+        (part: any) => part.type === 'tool' && part.state?.output?.includes('ZEN_PRIVATE_TOOL_READY')
+      )
+    )
+      throw new Error('Native shell cannot find a tool prepared in the background')
+    if (requests !== 0) throw new Error('Local tool readiness unexpectedly called a model')
+    process.stdout.write(
+      'PASS background tool readiness: an already-running native shell can use the private tool directory.\n'
+    )
     const session = await client.request<{ id: string }>(
       '/session',
       'POST',

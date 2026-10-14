@@ -64,6 +64,8 @@ files:
   - "!**/{LICENSE,license,LICENSE.*,*.LICENSE.txt,NOTICE.txt,README.md,readme.md,CHANGELOG.md}"
   - "!node_modules/rollup-plugin-visualizer"
   - "!node_modules/js-tiktoken"
+  - "!**/node_modules/.bin{,/**}"
+  - "!**/node_modules/opencode-ai{,/**}"
   - "!node_modules/opencode-ai/bin/**"
   - "!node_modules/opencode-{darwin,windows,linux}-*/**"
   - "!node_modules/.pnpm/opencode-{darwin,windows,linux}-*/**"

@@ -55,7 +55,6 @@ import {
 import {
   checkAssistantEnvironment,
   importManagedPython,
-  installGitForWindows,
   installManagedPython
 } from './services/AssistantEnvironmentService'
 import { allowAssistantExit } from './services/AssistantExitGuard'
@@ -918,7 +917,6 @@ export async function registerIpc(mainWindow: BrowserWindow, app: Electron.App) 
   ipcMain.handle(IpcChannel.App_InstallManagedPython, () => installManagedPython())
   ipcMain.handle(IpcChannel.App_ImportManagedPython, () => importManagedPython())
   ipcMain.handle(IpcChannel.App_InstallBunBinary, () => runInstallScript('install-bun.js'))
-  ipcMain.handle(IpcChannel.App_InstallGitForWindows, () => installGitForWindows())
   ipcMain.handle(IpcChannel.App_InstallOvmsBinary, () => runInstallScript('install-ovms.js'))
 
   //copilot

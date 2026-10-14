@@ -23,6 +23,7 @@ vi.mock('@main/utils', () => ({
 }))
 vi.mock('@main/services/DiagnosticEvidenceService', () => ({ recordMainDiagnostic: mocks.record }))
 vi.mock('@main/services/ConfigManager', () => ({ configManager: { getClientId: () => 'test-installation' } }))
+vi.mock('@main/utils/process', () => ({ getBinaryPath: async () => '/owned/tools' }))
 vi.mock('@main/apiServer/routes/assistant-mcp', () => ({
   registerAssistantMcpContext: vi.fn(),
   cleanupAssistantMcpContext: vi.fn(),
@@ -120,6 +121,13 @@ const start = async (key = 'session', id = 'turn-1', signal = new AbortControlle
 }
 
 describe('OpenCode operation-scoped lifecycle evidence', () => {
+  it('starts independently of background provisioning and includes the private tool directory', async () => {
+    const runtime = await start()
+    const options = mocks.spawn.mock.calls.find((call) => call[0] !== 'taskkill')![2]
+    expect(options.env.PATH.split(process.platform === 'win32' ? ';' : ':')[0]).toBe('/owned/tools')
+    expect(mocks.spawn.mock.calls.filter((call) => call[0] !== 'taskkill')).toHaveLength(1)
+    runtime.release()
+  })
   it('does not start a runtime for Skill inspection and reads only the existing local inventory', async () => {
     const mod = await import('../process')
     expect(await mod.inspectOpenCodeSkills('unstarted')).toMatchObject({ status: 'not-running', skills: [] })

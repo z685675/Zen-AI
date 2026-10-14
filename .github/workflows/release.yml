@@ -128,6 +128,10 @@ jobs:
             echo "RELEASE_NOTES_FILE=.release-body.md"
           } >> "$GITHUB_ENV"
 
+      - name: Check Mac packaging links
+        if: matrix.os == 'macos-latest'
+        run: pnpm exec vitest run --project scripts scripts/__tests__/mac-bundle-links.test.ts scripts/__tests__/opencode-runtime-packaging.test.ts --pool=forks --maxWorkers=1 --no-file-parallelism
+
       - name: Build Mac
         if: matrix.os == 'macos-latest'
         run: |

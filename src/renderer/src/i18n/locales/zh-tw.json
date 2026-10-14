@@ -4480,16 +4480,12 @@
     "assistantEnvironment": {
       "binariesDir": "[to be translated]:应用工具目录",
       "checkFailed": "[to be translated]:环境检测失败",
-      "coreDescription": "[to be translated]:这些工具会影响智能助手调用扩展能力、技能和本地任务的稳定性。",
-      "coreTitle": "[to be translated]:核心能力准备",
+      "coreDescription": "軟體會自動準備這些擴充工具，用於技能腳本、資料處理和本機任務。缺少元件不會阻止新版助手的一般對話。",
+      "coreTitle": "背景自動準備",
       "dependencies": {
         "bun": {
           "description": "[to be translated]:用于运行部分技能、工具服务和前端类自动化任务。",
           "name": "[to be translated]:Bun 运行时"
-        },
-        "git": {
-          "description": "Windows 上智能助手需要 Git Bash 才能穩定執行本機任務；也用於 Git 來源的 Skill、倉庫下載和程式碼類任務。",
-          "name": "[to be translated]:Git"
         },
         "pyodide": {
           "description": "[to be translated]:用于浏览器内 Python 沙盒。当前版本首次使用需要联网加载，不要求用户安装本机 Python。",
@@ -4509,30 +4505,30 @@
         }
       },
       "description": "[to be translated]:检查智能助手完整能力所需的本地工具与联网条件。",
-      "downloadGit": "下載 Git",
-      "downloadGitHint": "Git 需要依照安裝精靈完成安裝。安裝完成後，請回到這裡重新偵測。",
+      "importRuntime": "匯入離線 Python 執行包",
+      "importRuntimeFailed": "離線 Python 執行包匯入失敗",
+      "importRuntimeSuccess": "離線 Python 執行包已匯入",
       "install": "[to be translated]:安装",
       "installFailed": "[to be translated]:安装失败",
-      "installGitAuto": "自動安裝 Git",
-      "installGitConfirmContent": "智能助手在 Windows 上需要 Git for Windows 提供的 Git Bash 才能穩定執行本機任務。軟體會嘗試透過 winget 自動安裝，過程中可能會出現系統權限確認；如果自動安裝失敗，會開啟官方下載頁作為備用方案。",
-      "installGitConfirmTitle": "是否自動安裝 Git for Windows？",
-      "installGitFailedFallback": "自動安裝 Git 失敗，已為你開啟官方下載頁",
       "installSuccess": "[to be translated]:安装完成",
-      "intro": "[to be translated]:基础对话和普通本地文件操作可以直接使用。下面的检测主要用于扩展能力：技能市场、定时任务、Python 沙盒、Git 来源工具等。",
+      "intro": "新版助手核心已隨軟體提供。Bun、UV/UVX 和私有 Python 會在背景自動準備；已有可用元件不會重複安裝，也不會修改系統 Python。",
       "noPath": "[to be translated]:暂未检测到可用路径",
       "optionalDescription": "[to be translated]:这些不是基础对话的硬性要求，但会影响部分高级任务体验。",
       "optionalTitle": "[to be translated]:可选增强",
       "prepare": "修復智能助手環境",
+      "prepareIncomplete": "部分工具尚未準備好，不影響一般對話；軟體會進行有限次數的背景重試，也可稍後點擊修復。",
       "prepareSuccess": "[to be translated]:环境准备完成",
+      "preparingDescription": "正在背景準備擴充工具，你可以繼續使用一般對話和已就緒的功能。首次下載可能需要一些時間，無需手動設定。",
       "refresh": "[to be translated]:重新检测",
       "sources": {
-        "app": "[to be translated]:应用内置目录",
+        "app": "Zen AI 私有目錄",
         "network": "[to be translated]:网络可用",
         "system": "[to be translated]:系统已安装"
       },
       "status": {
         "error": "[to be translated]:检测失败",
-        "missing": "[to be translated]:未就绪"
+        "missing": "[to be translated]:未就绪",
+        "preparing": "背景準備中"
       },
       "title": "[to be translated]:智能助手环境"
     },

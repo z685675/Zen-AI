@@ -11,6 +11,7 @@ import {
   findExecutable,
   findGitBash,
   findViaMise,
+  runInstallScript,
   validateGitBashPath
 } from '../process'
 
@@ -29,6 +30,7 @@ vi.mock('@main/services/ConfigManager', () => ({
 vi.mock('child_process')
 vi.mock('fs')
 vi.mock('path')
+vi.mock('@main/utils', () => ({ getResourcePath: () => '/resources' }))
 
 // These tests only run on Windows since the functions have platform guards
 describe.skipIf(process.platform !== 'win32')('process utilities', () => {
@@ -67,6 +69,19 @@ describe.skipIf(process.platform !== 'win32')('process utilities', () => {
 
     // Mock process.cwd()
     vi.spyOn(process, 'cwd').mockReturnValue('C:\\cwd')
+  })
+
+  it('runs an application installer in the background without a visible Windows console', async () => {
+    const child = Object.assign(new EventEmitter(), { stdout: new EventEmitter(), stderr: new EventEmitter() })
+    vi.mocked(spawn).mockReturnValue(child as unknown as ReturnType<typeof spawn>)
+    const installed = runInstallScript('install-bun.js')
+    expect(spawn).toHaveBeenCalledWith(
+      process.execPath,
+      [expect.stringContaining('install-bun.js')],
+      expect.objectContaining({ windowsHide: true, env: expect.objectContaining({ ELECTRON_RUN_AS_NODE: '1' }) })
+    )
+    child.emit('close', 0)
+    await installed
   })
 
   describe('findExecutable', () => {

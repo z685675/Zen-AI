@@ -512,7 +512,6 @@ const api = {
   installManagedPython: () => ipcRenderer.invoke(IpcChannel.App_InstallManagedPython),
   importManagedPython: (): Promise<boolean> => ipcRenderer.invoke(IpcChannel.App_ImportManagedPython),
   installBunBinary: () => ipcRenderer.invoke(IpcChannel.App_InstallBunBinary),
-  installGitForWindows: () => ipcRenderer.invoke(IpcChannel.App_InstallGitForWindows),
   installOvmsBinary: () => ipcRenderer.invoke(IpcChannel.App_InstallOvmsBinary),
   protocol: {
     onReceiveData: (callback: (data: { url: string; params: any }) => void) => {

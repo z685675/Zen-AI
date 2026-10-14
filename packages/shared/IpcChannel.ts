@@ -41,7 +41,6 @@ export enum IpcChannel {
   App_InstallManagedPython = 'app:install-managed-python',
   App_ImportManagedPython = 'app:import-managed-python',
   App_InstallBunBinary = 'app:install-bun-binary',
-  App_InstallGitForWindows = 'app:install-git-for-windows',
   App_InstallOvmsBinary = 'app:install-ovms-binary',
   App_LogToMain = 'app:log-to-main',
   App_SaveData = 'app:save-data',

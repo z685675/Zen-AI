@@ -28,6 +28,19 @@ const config = (id: string, type = 'new-api', endpoint?: string) =>
   })
 
 describe('OpenCode isolated model config', () => {
+  it('exposes automatically prepared tools without inspecting or installing them on task startup', () => {
+    const toolDir = path.resolve('owned-tools')
+    const env = buildOpenCodeEnvironment(
+      { Path: ['system', toolDir].join(path.delimiter), PATH: 'other-system', OPENAI_API_KEY: 'private' },
+      path.resolve('isolated'),
+      'password',
+      toolDir
+    )
+    expect(env.PATH?.split(path.delimiter)).toEqual([toolDir, 'system', 'other-system'])
+    expect(env.Path).toBeUndefined()
+    expect(env.OPENAI_API_KEY).toBeUndefined()
+    expect(env.OPENCODE_PURE).toBe('true')
+  })
   it.each(['gpt-6-sol', 'claude-sonnet-5', 'gemini-3-pro', 'grok-4'])(
     'uses the gateway protocol, not model name, for %s',
     (model) => {
