@@ -1,3 +1,4 @@
+import { AgentWorkspaceContext } from '@renderer/context/AgentWorkspaceProvider'
 import { renderHook, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -72,5 +73,18 @@ describe('useAgentSessionInitializer', () => {
       expect(mocks.listSessions).not.toHaveBeenCalled()
       expect(mocks.dispatch).not.toHaveBeenCalled()
     })
+  })
+  it('does not fetch a stale legacy identity while entering the new assistant', async () => {
+    renderHook(() => useAgentSessionInitializer(), {
+      wrapper: ({ children }) => <AgentWorkspaceContext value="opencode">{children}</AgentWorkspaceContext>
+    })
+    expect(mocks.listSessions).not.toHaveBeenCalled()
+    expect(mocks.dispatch).not.toHaveBeenCalled()
+  })
+  it('does not fetch the new identity from the old assistant namespace', async () => {
+    mocks.activeAgentId = 'zen-opencode-default'
+    renderHook(() => useAgentSessionInitializer())
+    expect(mocks.listSessions).not.toHaveBeenCalled()
+    expect(mocks.dispatch).not.toHaveBeenCalled()
   })
 })

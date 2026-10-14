@@ -1,4 +1,5 @@
 import { PlusOutlined } from '@ant-design/icons'
+import LegacyAutomationNotice from '@renderer/components/LegacyAutomationNotice'
 import ListItem from '@renderer/components/ListItem'
 import Scrollbar from '@renderer/components/Scrollbar'
 import {
@@ -23,6 +24,7 @@ import type {
   UpdateTaskRequest
 } from '@renderer/types'
 import { formatErrorMessageWithPrefix } from '@renderer/utils/error'
+import { isLegacyAutomationEnabled } from '@shared/agents/legacyAutomation'
 import type { ModelPolicy } from '@shared/config/modelPolicy'
 import {
   Alert,
@@ -1387,7 +1389,7 @@ type TasksSettingsProps = {
   onNavigateToSession?: () => void
 }
 
-const TasksSettings: FC<TasksSettingsProps> = ({ embedded = false, onNavigateToSession }) => {
+const LegacyTasksSettings: FC<TasksSettingsProps> = ({ embedded = false, onNavigateToSession }) => {
   const { t } = useTranslation()
   const client = useAgentClient()
   const { models } = useApiModels()
@@ -1638,5 +1640,8 @@ const TasksSettings: FC<TasksSettingsProps> = ({ embedded = false, onNavigateToS
     </div>
   )
 }
+
+const TasksSettings: FC<TasksSettingsProps> = (props) =>
+  isLegacyAutomationEnabled() ? <LegacyTasksSettings {...props} /> : <LegacyAutomationNotice />
 
 export default TasksSettings

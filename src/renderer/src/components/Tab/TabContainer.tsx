@@ -89,6 +89,8 @@ const getTabIcon = (
       return <Home size={14} />
     case 'agents':
       return <MousePointerClick size={14} />
+    case 'new-assistant':
+      return <Sparkle size={14} />
     case 'announcements':
       return <Megaphone size={14} />
     case 'store':
@@ -263,7 +265,7 @@ const TabsContainer: React.FC<TabsContainerProps> = ({ children }) => {
                   }}>
                   <TabHeader>
                     {tab.id && <TabIcon>{getTabIcon(tab.id, minapps, minAppsCache)}</TabIcon>}
-                    <TabTitle>{getTabTitle(tab.id)}</TabTitle>
+                    <TabTitle $deprecated={tab.id === 'agents'}>{getTabTitle(tab.id)}</TabTitle>
                   </TabHeader>
                   {isClosable && (
                     <CloseButton
@@ -385,8 +387,8 @@ const TabIcon = styled.span`
   flex-shrink: 0;
 `
 
-const TabTitle = styled.span`
-  color: var(--color-text);
+const TabTitle = styled.span<{ $deprecated?: boolean }>`
+  color: ${({ $deprecated }) => ($deprecated ? 'var(--color-deprecated-assistant)' : 'var(--color-text)')};
   font-size: 13px;
   display: flex;
   align-items: center;

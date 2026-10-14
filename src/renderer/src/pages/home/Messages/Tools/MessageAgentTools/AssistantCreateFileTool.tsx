@@ -10,6 +10,7 @@ import { ClickableFilePath } from './ClickableFilePath'
 export type AssistantFileResult = {
   status: 'created' | 'ready'
   path: string
+  kind?: 'directory'
   format?: string
   size?: number
   verified?: boolean
@@ -18,6 +19,11 @@ export type AssistantFileResult = {
 const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
+
+const isFailedResult = (value: Record<string, unknown>): boolean =>
+  value.isError === true ||
+  value.success === false ||
+  ['error', 'failed', 'cancelled', 'canceled'].includes(String(value.status))
 
 const normalizeStatus = (value: unknown, fallback: AssistantFileResult['status'] = 'ready') => {
   return value === 'created' || value === 'ready' ? value : fallback
@@ -56,10 +62,12 @@ const parseDirectFile = (
 ): AssistantFileResult | undefined => {
   const rawPath = value.path ?? value.file_path ?? value.filePath
   if (typeof rawPath !== 'string' || !rawPath.trim()) return undefined
+  if (isFailedResult(value)) return undefined
 
   return {
     status: normalizeStatus(value.status, fallbackStatus),
     path: rawPath.trim(),
+    ...(value.kind === 'directory' ? { kind: 'directory' as const } : {}),
     format: typeof value.format === 'string' && value.format.trim() ? value.format.trim() : inferFormat(rawPath),
     size: typeof value.size === 'number' && Number.isFinite(value.size) ? value.size : undefined,
     verified: typeof value.verified === 'boolean' ? value.verified : undefined
@@ -95,10 +103,19 @@ const collectAssistantFileResults = (
 
   if (!isRecord(value) || seen.has(value)) return
   seen.add(value)
+  if (isFailedResult(value)) return
 
   const status = normalizeStatus(value.status, fallbackStatus)
   const directFile = parseDirectFile(value, status)
   if (directFile) results.push(directFile)
+  if (typeof value.backup_path === 'string' && value.backup_path.trim()) {
+    results.push({
+      status: 'ready',
+      path: value.backup_path.trim(),
+      format: inferFormat(value.backup_path),
+      verified: false
+    })
+  }
 
   for (const key of [
     'files',
@@ -128,7 +145,9 @@ export const parseAssistantFileResults = (response: unknown): AssistantFileResul
 
   const seenPaths = new Set<string>()
   return results.filter((result) => {
-    const normalizedPath = result.path.replace(/\//g, '\\').toLowerCase()
+    const normalizedPath = /^[a-z]:[\\/]/i.test(result.path)
+      ? result.path.replace(/\//g, '\\').toLowerCase()
+      : result.path
     if (seenPaths.has(normalizedPath)) return false
     seenPaths.add(normalizedPath)
     return true
@@ -145,9 +164,12 @@ export const isAssistantFileOutputToolName = (toolName: string | undefined) => {
   return (
     normalized === 'create_file' ||
     normalized === 'present_files' ||
+    normalized === 'backup_file' ||
     normalized === 'assistant.create_file' ||
     normalized === 'assistant.present_files' ||
+    normalized === 'assistant.backup_file' ||
     normalized.endsWith('__assistant__create_file') ||
+    normalized.endsWith('__assistant__backup_file') ||
     normalized.endsWith('__assistant__present_files')
   )
 }
@@ -192,12 +214,16 @@ function AssistantFileCard({ result }: { result: AssistantFileResult }) {
 
   return (
     <Card>
-      <IconWrap>
-        <FileText size={22} />
-      </IconWrap>
+      <IconWrap>{result.kind === 'directory' ? <FolderOpen size={22} /> : <FileText size={22} />}</IconWrap>
       <Content>
         <HeaderRow>
-          <Title>{t('message.tools.assistantCreateFile.title')}</Title>
+          <Title>
+            {t(
+              result.kind === 'directory'
+                ? 'message.tools.assistantCreateFile.open_folder'
+                : 'message.tools.assistantCreateFile.title'
+            )}
+          </Title>
           {result.verified && (
             <Tooltip title={t('message.tools.assistantCreateFile.verified')}>
               <Tag color="success" icon={<ShieldCheck size={12} />}>
@@ -209,15 +235,21 @@ function AssistantFileCard({ result }: { result: AssistantFileResult }) {
         <FileName>
           <ClickableFilePath path={result.path} displayName={fileName} />
         </FileName>
-        {fileMeta && <Meta>{fileMeta}</Meta>}
+        {fileMeta && result.kind !== 'directory' && <Meta>{fileMeta}</Meta>}
         <PathLine title={result.path}>{result.path}</PathLine>
         <Actions>
           <Button type="primary" size="small" onClick={handleOpenFile}>
-            {t('message.tools.assistantCreateFile.open_file')}
+            {t(
+              result.kind === 'directory'
+                ? 'message.tools.assistantCreateFile.open_folder'
+                : 'message.tools.assistantCreateFile.open_file'
+            )}
           </Button>
-          <Button size="small" icon={<FolderOpen size={14} />} onClick={handleShowInFolder}>
-            {t('message.tools.assistantCreateFile.open_folder')}
-          </Button>
+          {result.kind !== 'directory' && (
+            <Button size="small" icon={<FolderOpen size={14} />} onClick={handleShowInFolder}>
+              {t('message.tools.assistantCreateFile.open_folder')}
+            </Button>
+          )}
         </Actions>
       </Content>
     </Card>

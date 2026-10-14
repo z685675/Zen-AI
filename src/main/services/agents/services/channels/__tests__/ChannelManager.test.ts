@@ -1,6 +1,11 @@
 import { DEFAULT_FUSION_AGENT_ID } from '@shared/config/agents'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+vi.mock('@shared/agents/legacyAutomation', () => ({
+  isLegacyAutomationEnabled: () => true,
+  assertLegacyAutomationEnabled: vi.fn()
+}))
+
 import { channelService } from '../../ChannelService'
 import { ChannelAdapter, type ChannelAdapterConfig } from '../ChannelAdapter'
 import { channelManager, registerAdapterFactory } from '../ChannelManager'
@@ -31,7 +36,8 @@ vi.mock('../ChannelMessageHandler', () => ({
   channelMessageHandler: {
     handleIncoming: vi.fn(),
     handleCommand: vi.fn(),
-    clearSessionTracker: vi.fn()
+    clearSessionTracker: vi.fn(),
+    stopAll: vi.fn().mockResolvedValue(undefined)
   }
 }))
 

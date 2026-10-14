@@ -1,18 +1,30 @@
 import { combineReducers, configureStore } from '@reduxjs/toolkit'
+import db from '@renderer/databases'
 import { autoRenameTopic } from '@renderer/hooks/useTopic'
+import { beginDiagnostic, getDiagnosticEvidence } from '@renderer/services/DiagnosticEvidenceService'
 import { BlockManager } from '@renderer/services/messageStreaming/BlockManager'
 import { createCallbacks } from '@renderer/services/messageStreaming/callbacks'
 import { createStreamProcessor } from '@renderer/services/StreamProcessingService'
+import { estimateMessagesUsage } from '@renderer/services/TokenService'
 import type { AppDispatch } from '@renderer/store'
 import { messageBlocksSlice } from '@renderer/store/messageBlock'
 import { messagesSlice } from '@renderer/store/newMessage'
+import toolPermissionsReducer, { toolPermissionsActions } from '@renderer/store/toolPermissions'
 import type { Assistant, Model } from '@renderer/types'
 import type { Chunk } from '@renderer/types/chunk'
 import { ChunkType } from '@renderer/types/chunk'
 import { AssistantMessageStatus, MessageBlockStatus, MessageBlockType } from '@renderer/types/newMessage'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { AgentTaskLimitError } from '@shared/agents/taskConcurrency'
+import { DEFAULT_FUSION_AGENT_ID } from '@shared/config/agents'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { RootState } from '../../index'
+import {
+  appendAssistantResponseThunk,
+  regenerateAssistantResponseThunk,
+  resendMessageThunk,
+  sendMessage
+} from '../messageThunk'
 
 vi.mock('@renderer/config/models', async (importOriginal) => {
   const actual = (await importOriginal()) as Record<string, unknown>
@@ -145,6 +157,7 @@ vi.mock('@renderer/utils/messageUtils/find', () => ({
 }))
 
 vi.mock('i18next', () => ({
+  t: vi.fn((key) => key),
   default: {
     use: vi.fn().mockReturnThis(),
     init: vi.fn().mockResolvedValue(undefined),
@@ -186,6 +199,7 @@ vi.mock('@renderer/utils', () => ({
 const reducer = combineReducers({
   messages: messagesSlice.reducer,
   messageBlocks: messageBlocksSlice.reducer,
+  toolPermissions: toolPermissionsReducer,
   topics: (state = { entities: {} }) => state
 })
 
@@ -250,6 +264,11 @@ describe('streamCallback integration', () => {
     type: 'test'
   }
 
+  afterEach(() => {
+    vi.restoreAllMocks()
+    vi.useRealTimers()
+  })
+
   beforeEach(() => {
     vi.clearAllMocks()
     store = createMockStore()
@@ -284,6 +303,120 @@ describe('streamCallback integration', () => {
       })
     )
   })
+
+  it.each([false, true])(
+    'blocks all old execution thunks without rewriting history (developer=%s)',
+    async (developer) => {
+      const legacyTopicId = 'agent-session:legacy-read-only'
+      const legacyAssistant = { ...assistant, id: DEFAULT_FUSION_AGENT_ID, type: 'agent-session' }
+      const user = {
+        id: 'legacy-user',
+        assistantId: legacyAssistant.id,
+        role: 'user',
+        topicId: legacyTopicId,
+        blocks: ['legacy-user-block'],
+        status: 'success',
+        createdAt: '2026-10-01T12:00:00.000Z'
+      } as any
+      const answer = {
+        ...user,
+        id: 'legacy-answer',
+        role: 'assistant',
+        askId: user.id,
+        blocks: ['legacy-answer-block']
+      }
+      store.dispatch(messagesSlice.actions.addMessage({ topicId: legacyTopicId, message: user }))
+      store.dispatch(messagesSlice.actions.addMessage({ topicId: legacyTopicId, message: answer }))
+      const before = structuredClone(store.getState().messages)
+      const readState = () => ({ ...getState(), settings: { enableDeveloperMode: developer } }) as RootState
+      const info = vi.fn()
+      Object.defineProperty(window, 'toast', { value: { info }, configurable: true })
+      const fetchSpy = vi.spyOn(globalThis, 'fetch')
+      await sendMessage(user, [], legacyAssistant, legacyTopicId)(dispatch, readState)
+      await resendMessageThunk(legacyTopicId, user, legacyAssistant)(dispatch, readState)
+      await regenerateAssistantResponseThunk(legacyTopicId, answer, legacyAssistant)(dispatch, readState)
+      await appendAssistantResponseThunk(
+        legacyTopicId,
+        answer.id,
+        assistant.model,
+        legacyAssistant
+      )(dispatch, readState)
+      expect(info).toHaveBeenCalledTimes(4)
+      expect(store.getState().messages).toEqual(before)
+      expect(db.message_blocks.bulkDelete).not.toHaveBeenCalled()
+      expect(db.topics.update).not.toHaveBeenCalled()
+      expect(fetchSpy).not.toHaveBeenCalled()
+    }
+  )
+
+  it.each(['success', 'error'] as const)(
+    'persists content-free OpenCode usage diagnostics alongside terminal timing on %s, without estimating native zero counters',
+    async (outcome) => {
+      const data = {
+        version: 1,
+        providerId: 'local',
+        modelId: 'test',
+        usage: {},
+        observedRequests: 1,
+        reportedRequests: 0,
+        inputReports: 0,
+        outputReports: 0,
+        cacheReadReports: 0,
+        cacheWriteReports: 0,
+        incompleteRequests: 0,
+        performance: {
+          outcome: outcome === 'success' ? 'completed' : 'failed',
+          totalMs: 10,
+          preparationMs: 0,
+          upstreamRequests: 1,
+          upstreamHeaderWaitMs: 1,
+          upstreamRequestMs: 5,
+          retryEvents: 0,
+          toolCalls: 0,
+          completedToolObservedMs: 0,
+          unfinishedTools: 0
+        }
+      }
+      const save = vi.fn().mockResolvedValue(undefined)
+      const testCallbacks = createCallbacks({
+        blockManager: new BlockManager({
+          dispatch,
+          getState,
+          saveUpdatedBlockToDB: vi.fn(),
+          saveUpdatesToDB: save,
+          assistantMsgId,
+          topicId,
+          throttledBlockUpdate: vi.fn(),
+          cancelThrottledBlockUpdate: vi.fn()
+        }),
+        dispatch,
+        getState,
+        topicId,
+        assistantMsgId,
+        saveUpdatesToDB: save,
+        assistant
+      })
+      await processChunks(
+        [{ type: ChunkType.RAW, content: { type: 'opencode_diagnostics', diagnostics: data } }],
+        testCallbacks
+      )
+      expect(getState().messages.entities[assistantMsgId].providerMetadata?.opencodeDiagnostics).toEqual(data)
+      expect(save).not.toHaveBeenCalled()
+      if (outcome === 'success')
+        await testCallbacks.onComplete(AssistantMessageStatus.SUCCESS, {
+          usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 }
+        })
+      else await testCallbacks.onError(new Error('test failure') as any)
+      const result = getState().messages.entities[assistantMsgId]
+      expect(result.providerMetadata?.opencodeDiagnostics).toEqual(data)
+      expect(result.providerMetadata?.responseTiming?.outcome).toBe(outcome === 'success' ? 'completed' : 'failed')
+      expect(estimateMessagesUsage).not.toHaveBeenCalled()
+      expect(save.mock.calls.at(-1)?.[2].providerMetadata).toMatchObject({
+        opencodeDiagnostics: data,
+        responseTiming: expect.any(Object)
+      })
+    }
+  )
 
   it('handles a complete text streaming flow', async () => {
     const callbacks = createMockCallbacks(assistantMsgId, topicId, assistant, dispatch, getState)
@@ -323,6 +456,68 @@ describe('streamCallback integration', () => {
     expect(message?.usage?.total_tokens).toBe(150)
     expect(autoRenameTopic).toHaveBeenCalledWith(assistant, topicId)
   })
+
+  it('records full-round timing, preserves other metadata and uses the actual finished timestamp', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime('2026-10-11T01:30:00Z')
+    let clock = 0
+    vi.spyOn(performance, 'now').mockImplementation(() => clock)
+    store.dispatch(
+      messagesSlice.actions.updateMessage({
+        topicId,
+        messageId: assistantMsgId,
+        updates: { providerMetadata: { agentSessionSync: { target: 'wechat', status: 'synced' } } }
+      })
+    )
+    const callbacks = createMockCallbacks(assistantMsgId, topicId, assistant, dispatch, getState)
+    const processor = createStreamProcessor(callbacks)
+    await processor({ type: ChunkType.LLM_RESPONSE_CREATED })
+    await processor({ type: ChunkType.THINKING_START })
+    clock = 1500
+    await processor({ type: ChunkType.THINKING_DELTA, text: 'thinking' })
+    await processor({ type: ChunkType.THINKING_COMPLETE, text: 'thinking' })
+    clock = 3000
+    await processor({ type: ChunkType.TEXT_START })
+    await processor({ type: ChunkType.TEXT_DELTA, text: 'done' })
+    await processor({ type: ChunkType.TEXT_COMPLETE, text: 'done' })
+    clock = 6500
+    vi.setSystemTime('2026-10-11T01:30:06.500Z')
+    await processor({
+      type: ChunkType.LLM_RESPONSE_COMPLETE,
+      response: { usage: { prompt_tokens: 100, completion_tokens: 50, total_tokens: 150 } }
+    })
+    const message = getState().messages.entities[assistantMsgId]
+    expect(message.updatedAt).toBe('2026-10-11T01:30:06.500Z')
+    expect(message.providerMetadata?.agentSessionSync).toEqual({ target: 'wechat', status: 'synced' })
+    expect(message.providerMetadata?.responseTiming).toEqual({
+      startedAt: '2026-10-11T01:30:00.000Z',
+      finishedAt: '2026-10-11T01:30:06.500Z',
+      firstTokenMs: 1500,
+      elapsedMs: 6500,
+      outcome: 'completed'
+    })
+    clock = 10_000
+    await processor({ type: ChunkType.ERROR, error: new Error('late error') })
+    expect(getState().messages.entities[assistantMsgId].providerMetadata?.responseTiming?.elapsedMs).toBe(6500)
+  })
+
+  it.each(['AbortError', 'Error'])(
+    'records %s termination without inventing a first token or success',
+    async (name) => {
+      let clock = 0
+      vi.spyOn(performance, 'now').mockImplementation(() => clock)
+      const callbacks = createMockCallbacks(assistantMsgId, topicId, assistant, dispatch, getState)
+      const processor = createStreamProcessor(callbacks)
+      await processor({ type: ChunkType.LLM_RESPONSE_CREATED })
+      clock = 2300
+      await processor({ type: ChunkType.ERROR, error: Object.assign(new Error('stopped'), { name }) })
+      expect(getState().messages.entities[assistantMsgId].providerMetadata?.responseTiming).toMatchObject({
+        firstTokenMs: undefined,
+        elapsedMs: 2300,
+        outcome: name === 'AbortError' ? 'cancelled' : 'failed'
+      })
+    }
+  )
 
   it('creates only one error block and ignores late terminal chunks', async () => {
     const callbacks = createMockCallbacks(assistantMsgId, topicId, assistant, dispatch, getState)
@@ -380,5 +575,94 @@ describe('streamCallback integration', () => {
     expect(thinkingBlock?.content).toBe('Final thoughts')
     expect(thinkingBlock?.status).toBe(MessageBlockStatus.SUCCESS)
     expect(typeof (thinkingBlock as any)?.thinking_millsec).toBe('number')
+  })
+
+  it('leaves a running task permission untouched when a new task is denied by capacity', async () => {
+    beginDiagnostic(assistantMsgId, {})
+    store.dispatch(
+      toolPermissionsActions.requestReceived({
+        requestId: 'other-permission',
+        toolName: 'Write',
+        toolId: 'Write',
+        toolCallId: 'other-call',
+        requiresPermissions: true,
+        input: {},
+        inputPreview: '',
+        createdAt: Date.now(),
+        suggestions: []
+      })
+    )
+    const callbacks = createMockCallbacks(assistantMsgId, topicId, assistant, dispatch, getState)
+    await processChunks([{ type: ChunkType.ERROR, error: new AgentTaskLimitError(1, 1) }], callbacks)
+    expect(getState().toolPermissions.requests['other-permission']?.status).toBe('pending')
+    expect(getDiagnosticEvidence(assistantMsgId)?.events).toContainEqual(
+      expect.objectContaining({
+        stage: 'preparation',
+        event: 'blocked',
+        details: expect.objectContaining({ phase: 'local-task-admission', limit: 1 })
+      })
+    )
+  })
+
+  it('removes only the stopped message pending permission, not another task or invoking entry', async () => {
+    for (const [requestId, toolCallId] of [
+      ['own-permission', 'own-call'],
+      ['other-permission', 'other-call'],
+      ['invoking-permission', 'own-invoking']
+    ]) {
+      store.dispatch(
+        toolPermissionsActions.requestReceived({
+          requestId,
+          toolName: 'Write',
+          toolId: 'Write',
+          toolCallId,
+          requiresPermissions: true,
+          input: {},
+          inputPreview: '',
+          createdAt: Date.now(),
+          suggestions: []
+        })
+      )
+    }
+    store.dispatch(
+      toolPermissionsActions.requestResolved({
+        requestId: 'invoking-permission',
+        behavior: 'allow',
+        reason: 'response'
+      })
+    )
+    store.dispatch(
+      messageBlocksSlice.actions.upsertManyBlocks([
+        {
+          id: 'own-tool-block',
+          messageId: assistantMsgId,
+          type: MessageBlockType.TOOL,
+          toolId: 'own-call',
+          status: MessageBlockStatus.PENDING,
+          createdAt: new Date().toISOString()
+        },
+        {
+          id: 'invoking-tool-block',
+          messageId: assistantMsgId,
+          type: MessageBlockType.TOOL,
+          toolId: 'own-invoking',
+          status: MessageBlockStatus.PENDING,
+          createdAt: new Date().toISOString()
+        }
+      ])
+    )
+    store.dispatch(
+      messagesSlice.actions.updateMessage({
+        topicId,
+        messageId: assistantMsgId,
+        updates: { blocks: ['own-tool-block', 'invoking-tool-block'] }
+      })
+    )
+    const callbacks = createMockCallbacks(assistantMsgId, topicId, assistant, dispatch, getState)
+    await processChunks([{ type: ChunkType.ERROR, error: new DOMException('Stopped', 'AbortError') }], callbacks)
+    const requests = getState().toolPermissions.requests
+    expect(requests['own-permission']).toBeUndefined()
+    expect(requests['other-permission']?.status).toBe('pending')
+    expect(requests['invoking-permission']?.status).toBe('invoking')
   })
 })

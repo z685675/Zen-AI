@@ -1,19 +1,23 @@
 import { validateModelId } from '@main/apiServer/utils'
+import { DEFAULT_OPENCODE_AGENT_ID } from '@shared/config/agents'
 import type { AgentRuntime, AgentType } from '@types'
 
 import type { AgentServiceInterface } from '../../interfaces/AgentStreamInterface'
 import ClaudeCodeService from '../claudecode'
 import CodexService from '../codex'
+import OpenCodeService from '../opencode'
 import { type AgentRuntimeCapabilities, getAgentRuntimeCapabilities } from './compatibility'
 import { isCodexRuntimeEnabled } from './features'
 
 const claudeCodeService = new ClaudeCodeService()
 const codexService = new CodexService()
+const openCodeService = new OpenCodeService()
 
-export type AgentRuntimeId = AgentType | 'codex'
+export type AgentRuntimeId = AgentType | 'codex' | 'opencode'
 
 type RuntimeResolvableSession = {
   id?: string
+  agent_id?: string
   agent_type: AgentType
   model?: string
   configuration?: {
@@ -27,7 +31,7 @@ export type AgentRuntimeResolution = {
   runtimeId: AgentRuntimeId
   candidates: AgentRuntimeId[]
   configuredRuntime: unknown
-  source: 'environment-override' | 'configuration-override' | 'auto' | 'legacy-fallback'
+  source: 'environment-override' | 'configuration-override' | 'auto' | 'legacy-fallback' | 'workspace'
   reason: string
   capabilities?: AgentRuntimeCapabilities
   modelId?: string
@@ -84,14 +88,16 @@ export function buildAutoRuntimeResolution(params: {
   const fallbackRuntime: AgentRuntimeId = preferredRuntime === 'codex' ? 'claude-code' : 'codex'
   const enabledRuntimes: AgentRuntimeId[] = params.codexEnabled ? ['claude-code', 'codex'] : ['claude-code']
   const candidateOrder = [preferredRuntime, fallbackRuntime].filter((runtimeId) => enabledRuntimes.includes(runtimeId))
-  const compatibleCandidates = candidateOrder.filter((runtimeId) => capabilities[runtimeId].state !== 'unsupported')
+  const compatibleCandidates = candidateOrder.filter(
+    (runtimeId) => runtimeId !== 'opencode' && capabilities[runtimeId].state !== 'unsupported'
+  )
   // If both protocols are explicitly ruled out, keep the preferred runtime
   // as the sole candidate so the user receives the precise incompatibility
   // error instead of a misleading cross-runtime request.
   const orderedCandidates: AgentRuntimeId[] =
     compatibleCandidates.length > 0 ? compatibleCandidates : [preferredRuntime]
   const runtimeId = orderedCandidates[0]
-  const capability = capabilities[runtimeId]
+  const capability = capabilities[runtimeId as 'codex' | 'claude-code']
 
   return {
     runtimeId,
@@ -118,6 +124,18 @@ export async function resolveAgentRuntime(
   const env = options.env ?? process.env
   const configuredRuntime = session.configuration?.agent_runtime ?? 'auto'
   const environmentOverride = getEnvironmentRuntimeOverride(env)
+
+  // Workspace identity is immutable. Legacy overrides/fallbacks must not
+  // silently route a new-assistant conversation into a different kernel.
+  if (session.agent_id === DEFAULT_OPENCODE_AGENT_ID) {
+    return {
+      runtimeId: 'opencode',
+      candidates: ['opencode'],
+      configuredRuntime,
+      source: 'workspace',
+      reason: 'new-assistant-workspace'
+    }
+  }
 
   if (environmentOverride) {
     return {
@@ -179,6 +197,8 @@ export function getAgentRuntimeServiceById(runtimeId: AgentRuntimeId): AgentServ
       return claudeCodeService
     case 'codex':
       return codexService
+    case 'opencode':
+      return openCodeService
     default:
       throw new Error(`Unsupported agent runtime: ${runtimeId}`)
   }

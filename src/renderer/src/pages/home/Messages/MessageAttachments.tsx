@@ -2,6 +2,7 @@ import { useAttachment } from '@renderer/hooks/useAttachment'
 import FileManager from '@renderer/services/FileManager'
 import type { FileMessageBlock } from '@renderer/types/newMessage'
 import { parseFileTypes } from '@renderer/utils'
+import { getMessageAttachmentPath } from '@renderer/utils/messageAttachmentPath'
 import { Upload } from 'antd'
 import { t } from 'i18next'
 import type { FC } from 'react'
@@ -36,7 +37,7 @@ const MessageAttachments: FC<Props> = ({ block }) => {
         fileList={[
           {
             uid: block.file.id,
-            url: 'file://' + FileManager.getSafePath(block.file),
+            url: 'file://' + getMessageAttachmentPath(block).replaceAll('\\', '/'),
             status: 'done' as const,
             name: FileManager.formatFileName(block.file),
             type: block.file.type,

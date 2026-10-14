@@ -88,10 +88,13 @@ vi.mock('electron', () => ({
 vi.mock('electron-updater', () => ({
   autoUpdater: mockAutoUpdater
 }))
+const allowExit = vi.hoisted(() => vi.fn(() => true))
+vi.mock('../AssistantExitGuard', () => ({ allowAssistantExit: allowExit }))
 
 describe('AppUpdateService', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    allowExit.mockReturnValue(true)
     mockIsMac = false
     mockApp.isQuitting = false
     mockApp.isInstallingUpdate = false
@@ -134,6 +137,26 @@ describe('AppUpdateService', () => {
     })
     expect(mockAutoUpdater.quitAndInstall).not.toHaveBeenCalled()
     expect(mockApp.isInstallingUpdate).toBe(false)
+  })
+
+  it('retains the downloaded update and running tasks when exit is cancelled', async () => {
+    const { AppUpdateService } = await import('../AppUpdateService')
+    const service = new AppUpdateService(
+      { isDestroyed: () => false, webContents: { send: vi.fn() } } as any,
+      '1.0.0',
+      () => true
+    )
+    ;(service as any).downloadedUpdateInfo = { version: '1.1.0' }
+    ;(service as any).downloadedUpdateReady = true
+    allowExit.mockReturnValue(false)
+    await expect(service.quitAndInstall()).resolves.toMatchObject({
+      success: false,
+      status: 'cancelled',
+      updateInfo: { version: '1.1.0' }
+    })
+    expect(mockApp.isQuitting).toBe(false)
+    expect(mockApp.isInstallingUpdate).toBe(false)
+    expect(mockAutoUpdater.quitAndInstall).not.toHaveBeenCalled()
   })
 
   it('marks the app as installing an update before quitting', async () => {

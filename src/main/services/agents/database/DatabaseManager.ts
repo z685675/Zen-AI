@@ -23,6 +23,7 @@ import { app } from 'electron'
 import fs from 'fs'
 import path from 'path'
 
+import { assertAssistantDataAvailable } from '../services/dataOperationGate'
 import { DataMigrationService } from './DataMigrationService'
 import { MigrationService } from './MigrationService'
 import * as schema from './schema'
@@ -66,6 +67,7 @@ export class DatabaseManager {
    * Get the singleton instance (database initialization starts automatically)
    */
   public static async getInstance(): Promise<DatabaseManager> {
+    assertAssistantDataAvailable()
     if (DatabaseManager.instance) {
       return DatabaseManager.instance
     }

@@ -270,6 +270,8 @@ export enum IpcChannel {
 
   // backup
   Backup_Backup = 'backup:backup',
+  Backup_BeginDataOperation = 'backup:beginDataOperation',
+  Backup_EndDataOperation = 'backup:endDataOperation',
   Backup_Restore = 'backup:restore',
   Backup_BackupToWebdav = 'backup:backupToWebdav',
   Backup_RestoreFromWebdav = 'backup:restoreFromWebdav',
@@ -436,6 +438,7 @@ export enum IpcChannel {
 
   // Global Skills
   Skill_List = 'skill:list',
+  Skill_Inspect = 'skill:inspect',
   Skill_Install = 'skill:install',
   Skill_Uninstall = 'skill:uninstall',
   Skill_Toggle = 'skill:toggle',

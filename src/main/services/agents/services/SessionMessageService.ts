@@ -1,7 +1,11 @@
 import { randomUUID } from 'node:crypto'
 
 import { loggerService } from '@logger'
+import { configManager } from '@main/services/ConfigManager'
 import { beginMainDiagnostic, recordMainDiagnostic } from '@main/services/DiagnosticEvidenceService'
+import { assertAssistantExecutionAllowed } from '@shared/agents/assistantAvailability'
+import { getAgentTaskLimit } from '@shared/agents/taskConcurrency'
+import { DEFAULT_OPENCODE_AGENT_ID } from '@shared/config/agents'
 import { sanitizeDiagnostic } from '@shared/diagnostics'
 import type {
   AgentPersistedMessage,
@@ -14,7 +18,7 @@ import type { TextStreamPart } from 'ai'
 import { and, desc, eq, not } from 'drizzle-orm'
 
 import { BaseService } from '../BaseService'
-import { sessionMessagesTable } from '../database/schema'
+import { sessionMessagesTable, sessionsTable } from '../database/schema'
 import { agentMessageRepository } from '../database/sessionMessageRepository'
 import type { AgentStream, AgentStreamEvent } from '../interfaces/AgentStreamInterface'
 import { broadcastAgentActionRequired } from './agentIpc'
@@ -32,6 +36,7 @@ import {
 } from './runtime/fallback'
 import { getAgentRuntimeServiceById, resolveAgentRuntime } from './runtime/registry'
 import { findCompatibleAgentSessionId } from './runtime/resume'
+import { acquireSessionActivity, assertSessionNotContinuing } from './sessionActivity'
 
 const logger = loggerService.withContext('SessionMessageService')
 const RUNTIME_START_TIMEOUT_MS = 45_000
@@ -254,7 +259,18 @@ export class SessionMessageService extends BaseService {
   }
 
   async deleteSessionMessage(sessionId: string, messageId: number): Promise<boolean> {
+    assertSessionNotContinuing(sessionId)
     const database = await this.getDatabase()
+    const [session] = await database
+      .select({ agentId: sessionsTable.agent_id })
+      .from(sessionsTable)
+      .where(eq(sessionsTable.id, sessionId))
+      .limit(1)
+    if (session?.agentId === DEFAULT_OPENCODE_AGENT_ID) {
+      throw Object.assign(new Error('New assistant messages require a native history operation'), {
+        code: 'native_history_required'
+      })
+    }
     const result = await database
       .delete(sessionMessagesTable)
       .where(and(eq(sessionMessagesTable.id, messageId), eq(sessionMessagesTable.session_id, sessionId)))
@@ -268,7 +284,17 @@ export class SessionMessageService extends BaseService {
     abortController: AbortController,
     options?: CreateMessageOptions
   ): Promise<SessionStreamResult> {
-    return await this.startSessionMessageStream(session, messageData, abortController, options)
+    abortController.signal.throwIfAborted()
+    assertAssistantExecutionAllowed(session.agent_id)
+    const release = acquireSessionActivity(session.id, 'run', getAgentTaskLimit(configManager.getEnableDeveloperMode()))
+    try {
+      const result = await this.startSessionMessageStream(session, messageData, abortController, options)
+      void result.completion.then(release, release)
+      return result
+    } catch (error) {
+      release()
+      throw error
+    }
   }
 
   private async startSessionMessageStream(
@@ -289,7 +315,8 @@ export class SessionMessageService extends BaseService {
     let agentSessionId: string
     try {
       runtimeResolution = await resolveAgentRuntime(session)
-      agentSessionId = await this.getLastAgentSessionId(session.id, session.model)
+      agentSessionId =
+        runtimeResolution.runtimeId === 'opencode' ? '' : await this.getLastAgentSessionId(session.id, session.model)
     } catch (error) {
       recordMainDiagnostic(diagnosticId, 'preparation', 'failed', { error, phase: 'runtime-resolution' })
       throw error
@@ -324,7 +351,10 @@ export class SessionMessageService extends BaseService {
 
     const runtimePrompt = withDeepResearchProtocol(req.content, req.deep_research, req.deep_research_task)
     const requestEffort = req.deep_research || req.deep_research_task ? 'high' : req.effort
-    const initialPrompt = agentSessionId ? runtimePrompt : withAgentRecoveryContext(runtimePrompt, req.recovery_context)
+    const initialPrompt =
+      agentSessionId || runtimeResolution.runtimeId === 'opencode'
+        ? runtimePrompt
+        : withAgentRecoveryContext(runtimePrompt, req.recovery_context)
     let agentStream: AgentStream
     try {
       agentStream = await getAgentRuntimeServiceById(activeRuntimeId).invoke(
@@ -595,6 +625,7 @@ export class SessionMessageService extends BaseService {
         }
 
         const tryContextRecovery = async (error: Error): Promise<boolean> => {
+          if (activeRuntimeId === 'opencode') return false
           const canRecover =
             !runtimeCommitted &&
             !contextRecoveryAttempted &&
@@ -650,6 +681,7 @@ export class SessionMessageService extends BaseService {
         }
 
         const tryStreamRecovery = async (error: Error): Promise<boolean> => {
+          if (activeRuntimeId === 'opencode') return false
           const canRecover =
             !streamRecoveryAttempted &&
             !abortController.signal.aborted &&
@@ -725,6 +757,24 @@ export class SessionMessageService extends BaseService {
                   return
                 }
 
+                if (
+                  activeRuntimeId === 'opencode' &&
+                  chunk.type === 'raw' &&
+                  (chunk.rawValue as { type?: string })?.type === 'opencode_status'
+                ) {
+                  const status = (chunk.rawValue as { status: string }).status
+                  if (status === 'waiting_permission') {
+                    clearFirstRuntimeEventTimer()
+                    deepResearchTimerControls?.pause()
+                  } else if (status === 'busy') {
+                    deepResearchTimerControls?.resume()
+                    if (!firstRuntimeEventTimer)
+                      startFirstRuntimeEventTimer(RUNTIME_VISIBLE_OUTPUT_TIMEOUT_MS, 'visible-output')
+                  }
+                  controller.enqueue(chunk)
+                  return
+                }
+
                 // AI SDK error parts are terminal. Converting them into a single
                 // stream rejection prevents repeated error chunks from creating
                 // multiple UI cards before the runtime emits its final event.
@@ -763,6 +813,7 @@ export class SessionMessageService extends BaseService {
                       : ''
                   const scheduledTask = (session.configuration as Record<string, any> | undefined)?.scheduled_task
                   broadcastAgentActionRequired({
+                    requestId: chunk.toolCallId,
                     agentId: session.agent_id,
                     sessionId: session.id,
                     taskId: typeof scheduledTask?.task_id === 'string' ? scheduledTask.task_id : undefined,
@@ -1034,6 +1085,10 @@ export class SessionMessageService extends BaseService {
       },
       cancel: (reason) => {
         abortController.abort(typeof reason === 'string' ? reason : 'stream cancelled')
+        // The HTTP abort listener can synchronously cancel this reader before
+        // dispatch reaches forwardParentAbort. Forward explicitly before cleanup
+        // removes that listener, even when the parent signal is already aborted.
+        forwardParentAbort()
         cleanup()
         resolveCompletion({})
       }

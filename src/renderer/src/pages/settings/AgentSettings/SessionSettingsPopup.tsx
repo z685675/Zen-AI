@@ -1,4 +1,5 @@
 import { TopView } from '@renderer/components/TopView'
+import { AgentWorkspaceBoundary, useAgentWorkspace } from '@renderer/context/AgentWorkspaceProvider'
 import { useSession } from '@renderer/hooks/agents/useSession'
 import { useUpdateSession } from '@renderer/hooks/agents/useUpdateSession'
 import { useMemo } from 'react'
@@ -24,6 +25,7 @@ interface SessionSettingPopupParams extends SessionSettingPopupShowParams {
 
 const SessionSettingPopupContainer: React.FC<SessionSettingPopupParams> = ({ tab, agentId, sessionId, resolve }) => {
   const { t } = useTranslation()
+  const workspace = useAgentWorkspace()
   const { session, isLoading, error } = useSession(agentId, sessionId)
   const { updateSession } = useUpdateSession(agentId)
 
@@ -32,10 +34,14 @@ const SessionSettingPopupContainer: React.FC<SessionSettingPopupParams> = ({ tab
       { key: 'essential', label: t('agent.settings.essential') },
       { key: 'prompt', label: t('agent.settings.prompt') },
       { key: 'permission-mode', label: t('agent.settings.permissionMode.tab', 'Permission Mode') },
-      { key: 'tools-mcp', label: t('agent.settings.toolsMcp.tab', 'Tools & MCP') },
-      { key: 'advanced', label: t('agent.settings.advance.title', 'Advanced Settings') }
+      ...(workspace === 'legacy'
+        ? ([
+            { key: 'tools-mcp', label: t('agent.settings.toolsMcp.tab', 'Tools & MCP') },
+            { key: 'advanced', label: t('agent.settings.advance.title', 'Advanced Settings') }
+          ] as SettingsMenuItem[])
+        : [])
     ],
-    [t]
+    [t, workspace]
   )
 
   const renderTabContent = (currentTab: SettingsPopupTab) => {
@@ -74,13 +80,15 @@ export default class SessionSettingsPopup {
   static show(props: SessionSettingPopupShowParams) {
     return new Promise<void>((resolve) => {
       TopView.show(
-        <SessionSettingPopupContainer
-          {...props}
-          resolve={() => {
-            resolve()
-            TopView.hide('SessionSettingsPopup')
-          }}
-        />,
+        <AgentWorkspaceBoundary agentId={props.agentId}>
+          <SessionSettingPopupContainer
+            {...props}
+            resolve={() => {
+              resolve()
+              TopView.hide('SessionSettingsPopup')
+            }}
+          />
+        </AgentWorkspaceBoundary>,
         'SessionSettingsPopup'
       )
     })

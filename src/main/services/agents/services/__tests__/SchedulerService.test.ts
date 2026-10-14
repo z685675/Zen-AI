@@ -1,4 +1,11 @@
+import { AgentTaskLimitError } from '@shared/agents/taskConcurrency'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+// Retain coverage of dormant internals; production shutdown is tested separately.
+vi.mock('@shared/agents/legacyAutomation', () => ({
+  isLegacyAutomationEnabled: () => true,
+  assertLegacyAutomationEnabled: vi.fn()
+}))
 
 vi.mock('@logger', () => ({
   loggerService: {
@@ -299,5 +306,40 @@ describe('SchedulerService', () => {
       'Error: Session not found: session-1',
       'error'
     )
+  })
+
+  it('does not count local task-capacity rejections as model failures or pause the schedule', async () => {
+    const { taskService } = await import('../TaskService')
+    const { agentService } = await import('../AgentService')
+    const { sessionService } = await import('../SessionService')
+    const { sessionMessageService } = await import('../SessionMessageService')
+    vi.clearAllMocks()
+    vi.mocked(agentService.getAgent).mockResolvedValue({
+      id: 'capacity-agent',
+      type: 'claude-code',
+      model: 'model-a',
+      configuration: {},
+      accessible_paths: ['/tmp']
+    } as any)
+    vi.mocked(sessionService.getSession).mockResolvedValue({
+      id: 'capacity-session',
+      agent_id: 'capacity-agent'
+    } as any)
+    vi.mocked(sessionMessageService.createSessionMessage).mockRejectedValue(new AgentTaskLimitError(1, 1))
+    const task = {
+      id: 'capacity-schedule',
+      agent_id: 'capacity-agent',
+      name: 'Test',
+      prompt: 'hello',
+      schedule_type: 'cron',
+      schedule_value: '0 * * * *',
+      status: 'active',
+      model_id: 'model-a'
+    }
+    const service = SchedulerServiceModule.schedulerService
+    for (let i = 0; i < 4; i++) await service.runTask(task, 'scheduled')
+    expect(taskService.updateTask).not.toHaveBeenCalledWith('capacity-agent', 'capacity-schedule', { status: 'paused' })
+    expect(service.consecutiveErrors.get('capacity-schedule')).toBeUndefined()
+    expect(service.activeTasks.size).toBe(0)
   })
 })

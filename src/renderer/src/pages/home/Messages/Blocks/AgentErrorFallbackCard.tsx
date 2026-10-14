@@ -10,6 +10,7 @@ import type { ErrorMessageBlock, Message } from '@renderer/types/newMessage'
 import { extractAgentSessionIdFromTopicId } from '@renderer/utils/agentSession'
 import { diagnoseClientError } from '@renderer/utils/clientErrorDiagnosis'
 import { classifyError } from '@renderer/utils/errorClassifier'
+import { isReadOnlyLegacySession } from '@renderer/utils/legacyMessageActions'
 import { Button } from 'antd'
 import { AlertTriangle, ChevronRight, Download, RefreshCw, Wrench, X } from 'lucide-react'
 import React, { useCallback, useMemo, useState } from 'react'
@@ -58,6 +59,7 @@ const AgentErrorFallbackCard: React.FC<Props> = ({ block, message }) => {
   const { t } = useTranslation()
   const navigate = useNavigate()
   const [exporting, setExporting] = useState(false)
+  const legacyReadOnly = isReadOnlyLegacySession(message.topicId, message.assistantId)
 
   const relatedUserMessage = useAppSelector((state) =>
     message.askId ? state.messages.entities[message.askId] : undefined
@@ -119,7 +121,7 @@ const AgentErrorFallbackCard: React.FC<Props> = ({ block, message }) => {
               classification.category === 'proxy' ||
               classification.category === 'server' ||
               classification.category === 'stream'
-            ? t('agent.errorFallback.connection_title')
+            ? clientDiagnosis.title
             : t('agent.errorFallback.title')
 
   const description = dependencyIssue
@@ -259,19 +261,21 @@ const AgentErrorFallbackCard: React.FC<Props> = ({ block, message }) => {
       <Description>{description}</Description>
 
       <Actions>
-        {dependencyIssue && (
+        {!legacyReadOnly && dependencyIssue && (
           <Button size="small" type="primary" icon={<Wrench size={14} />} onClick={openEnvironmentSettings}>
             {t('agent.errorFallback.fix_environment')}
           </Button>
         )}
-        {classification.navTarget && !dependencyIssue && (
+        {!legacyReadOnly && classification.navTarget && !dependencyIssue && (
           <Button size="small" onClick={openRelatedSettings}>
             {t('error.diagnosis.go_to_settings')}
           </Button>
         )}
-        <Button size="small" icon={<RefreshCw size={14} />} onClick={retryTask} disabled={!relatedUserMessage}>
-          {t('agent.errorFallback.retry')}
-        </Button>
+        {!legacyReadOnly && (
+          <Button size="small" icon={<RefreshCw size={14} />} onClick={retryTask} disabled={!relatedUserMessage}>
+            {t('agent.errorFallback.retry')}
+          </Button>
+        )}
         <Button size="small" icon={<Download size={14} />} onClick={exportDiagnosticPackage} loading={exporting}>
           {t('agent.errorFallback.export_package')}
         </Button>

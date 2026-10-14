@@ -1,6 +1,6 @@
 import ImageViewer from '@renderer/components/ImageViewer'
-import FileManager from '@renderer/services/FileManager'
 import { type ImageMessageBlock, MessageBlockStatus } from '@renderer/types/newMessage'
+import { getMessageAttachmentPath } from '@renderer/utils/messageAttachmentPath'
 import { Skeleton } from 'antd'
 import React from 'react'
 import styled from 'styled-components'
@@ -19,7 +19,7 @@ const ImageBlock: React.FC<Props> = ({ block, isSingle = false }) => {
     const images = block.metadata?.generateImageResponse?.images?.length
       ? block.metadata?.generateImageResponse?.images
       : block?.file
-        ? [`file://${FileManager.getFilePath(block?.file)}`]
+        ? [`file://${getMessageAttachmentPath(block)}`]
         : block?.url
           ? [block.url]
           : []

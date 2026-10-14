@@ -33,6 +33,7 @@
   --color-border-soft: #ffffff10;
   --color-border-mute: #ffffff05;
   --color-error: #ff4d50;
+  --color-deprecated-assistant: #ffc53d;
   --color-link: #338cff;
   --color-code-background: #323232;
   --color-inline-code-background: #323232;
@@ -105,6 +106,7 @@
   --color-border-soft: #00000010;
   --color-border-mute: #00000005;
   --color-error: #ff4d50;
+  --color-deprecated-assistant: #9a6700;
   --color-link: #1677ff;
   --color-code-background: #e3e3e3;
   --color-inline-code-background: rgba(0, 0, 0, 0.06);

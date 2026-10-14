@@ -1,9 +1,14 @@
 import { LoadingIcon } from '@renderer/components/Icons'
+import { useAgentWorkspace } from '@renderer/context/AgentWorkspaceProvider'
 import { selectNewTopicLoading } from '@renderer/hooks/useMessageOperations'
 import { getEffectiveStatus, getToolHasError } from '@renderer/pages/home/Messages/Tools/MessageAgentTools/GenericTools'
 import { getToolDisplayInfo, getToolStatusLabel } from '@renderer/pages/home/Messages/Tools/toolDisplay'
+import { getContextTelemetry } from '@renderer/services/context/ContextTelemetryService'
+import { EVENT_NAMES, EventEmitter } from '@renderer/services/EventService'
 import { useAppSelector } from '@renderer/store'
+import type { ContextTelemetry } from '@renderer/types'
 import { AssistantMessageStatus, type Message, MessageBlockStatus, MessageBlockType } from '@renderer/types/newMessage'
+import { isUserStoppedMessage } from '@renderer/utils/agentCancellation'
 import { CheckCircle, TriangleAlert } from 'lucide-react'
 import { type FC, useEffect, useMemo, useRef, useState } from 'react'
 import styled from 'styled-components'
@@ -20,6 +25,16 @@ type AgentTaskStatus = {
 const COMPLETED_VISIBLE_MS = 3600
 
 const AgentTaskStatusBar: FC<Props> = ({ topicId }) => {
+  const workspace = useAgentWorkspace()
+  const [nativeStatus, setNativeStatus] = useState<string | undefined>()
+  useEffect(() => {
+    setNativeStatus(workspace === 'opencode' ? getContextTelemetry(topicId)?.detail : undefined)
+    if (workspace !== 'opencode') return
+    const unsubscribe = EventEmitter.on(EVENT_NAMES.CONTEXT_STATUS_UPDATED, (value: ContextTelemetry) => {
+      if (value.conversationId === topicId) setNativeStatus(value.detail)
+    })
+    return () => unsubscribe()
+  }, [topicId, workspace])
   const loading = useAppSelector((state) => selectNewTopicLoading(state, topicId))
   const messageIds = useAppSelector((state) => state.messages.messageIdsByTopic[topicId] ?? [])
   const messageEntities = useAppSelector((state) => state.messages.entities)
@@ -37,6 +52,13 @@ const AgentTaskStatusBar: FC<Props> = ({ topicId }) => {
   )
 
   const hasInFlightBlocks = latestAssistantBlocks.some(isBlockInFlight)
+  const wasStopped = Boolean(
+    latestAssistantMessage &&
+      (isUserStoppedMessage(latestAssistantMessage) ||
+        latestAssistantBlocks.some(
+          (block) => block?.type === MessageBlockType.ERROR && isUserStoppedMessage(latestAssistantMessage, block)
+        ))
+  )
   const hasTerminalMessageStatus =
     latestAssistantMessage?.status === AssistantMessageStatus.SUCCESS ||
     latestAssistantMessage?.status === AssistantMessageStatus.ERROR
@@ -77,6 +99,7 @@ const AgentTaskStatusBar: FC<Props> = ({ topicId }) => {
   }, [isRunning, messageIds.length])
 
   const status = useMemo<AgentTaskStatus | undefined>(() => {
+    if (isRunning && nativeStatus) return { label: nativeStatus, tone: 'running' }
     if (latestAssistantMessage?.blocks?.length) {
       const latestToolBlock = latestAssistantBlocks.toReversed().find((block) => block?.type === MessageBlockType.TOOL)
       const latestToolStatus = getToolTaskStatus(latestToolBlock)
@@ -126,10 +149,13 @@ const AgentTaskStatusBar: FC<Props> = ({ topicId }) => {
     isRunning,
     latestAssistantBlocks,
     latestAssistantMessage,
+    nativeStatus,
     recentlyCompleted
   ])
 
-  if (!status || (!isRunning && !recentlyCompleted)) {
+  // New assistant progress lives next to the actual reply, not the composer.
+  // A manual stop already has one neutral transcript notice.
+  if (workspace === 'opencode' || wasStopped || !status || (!isRunning && !recentlyCompleted)) {
     return null
   }
 

@@ -50,6 +50,12 @@ export function cleanupBrowserMcpContext(contextId: string): void {
   }
 }
 
+export function touchBrowserMcpContext(contextId: string): boolean {
+  const context = contexts.get(contextId)
+  if (context) context.updatedAt = Date.now()
+  return Boolean(context)
+}
+
 function cleanupExpiredContexts(): void {
   const cutoff = Date.now() - CONTEXT_TTL_MS
   for (const [contextId, context] of contexts) {

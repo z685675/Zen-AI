@@ -5,6 +5,7 @@ import { useTheme } from '@renderer/context/ThemeProvider'
 import db from '@renderer/databases'
 import i18n, { setDayjsLocale } from '@renderer/i18n'
 import KnowledgeQueue from '@renderer/queue/KnowledgeQueue'
+import { notifyAssistantTask, permissionNotificationTarget } from '@renderer/services/AssistantNotificationService'
 import MemoryService from '@renderer/services/MemoryService'
 import { handleSaveData, useAppDispatch, useAppSelector } from '@renderer/store'
 import { selectMemoryConfig } from '@renderer/store/memory'
@@ -193,7 +194,9 @@ export function useAppInit() {
       dispatch(toolPermissionsActions.requestReceived(payload))
 
       // Send system notification for agent tool approval
-      sendToolApprovalNotification(payload.toolName)
+      const target = permissionNotificationTarget(payload.toolCallId)
+      if (target) void notifyAssistantTask(target, payload.requestId, 'permission')
+      else sendToolApprovalNotification(payload.toolName)
     }
 
     const resultListener = (_event: Electron.IpcRendererEvent, payload: ToolPermissionResultPayload) => {

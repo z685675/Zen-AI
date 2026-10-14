@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+vi.mock('@shared/agents/legacyAutomation', () => ({
+  isLegacyAutomationEnabled: () => true,
+  assertLegacyAutomationEnabled: vi.fn()
+}))
+
 // Mock TaskService before importing ClawServer
 const mockCreateTask = vi.fn()
 const mockListTasks = vi.fn()

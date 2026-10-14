@@ -16,6 +16,7 @@ Create presentation files that are usable, visually structured, and not just tit
 - Treat `visual` as internal design direction only; it is never visible fallback copy. Put user-facing supporting text in `subtitle`, `takeaway`, or `bullets`. For a real local image, pass it in `assets` as `{ id, file_path, alt_text }` and reference its ID with `image_asset_id`; the built-in generator normalizes the image, embeds the media part, and switches to the bounded `image` layout.
 - Avoid long paragraphs. Convert content into cards, process steps, comparisons, metrics, summaries, and section dividers.
 - Treat each layout as a content contract, not a decorative preference. Choose a layout only when its fields match the contracts below.
+- In the new assistant, generated slide bodies are checked for supplied visible text before writing; speaker notes and `visual` do not satisfy this check. If content is missing, split it across continuation slides or choose a fitting layout, rather than retrying the unchanged input or deleting requested points. Native-template modes retain their separate mapping validation.
 - Keep visible labels, helper copy, and fallback text in the deck's language. Never ship English generator placeholders inside an otherwise Chinese deck.
 - Do not fake a PPTX by writing text into a `.pptx` extension.
 

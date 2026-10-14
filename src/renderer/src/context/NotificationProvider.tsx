@@ -1,4 +1,6 @@
 import { NotificationQueue } from '@renderer/queue/NotificationQueue'
+import { openAssistantNotification } from '@renderer/services/AssistantNotificationService'
+import store from '@renderer/store'
 import type { Notification } from '@renderer/types/notification'
 import { isFocused } from '@renderer/utils/window'
 import { notification } from 'antd'
@@ -31,9 +33,11 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
   useEffect(() => {
     const queue = NotificationQueue.getInstance()
     const listener = async (notification: Notification) => {
+      // Re-check after queueing as the user may have muted notifications meanwhile.
+      if (notification.source === 'assistant' && !store.getState().settings.notification?.assistant) return
       // 判断是否需要系统通知
       if (notification.channel === 'system' || !isFocused()) {
-        void window.api.notification.send(notification)
+        await window.api.notification.send(notification).catch(() => undefined)
         return
       }
       return new Promise<void>((resolve) => {
@@ -45,6 +49,10 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
           placement: 'topRight',
           type: typeMap[notification.type] || 'info',
           key: notification.id,
+          onClick: () => {
+            openAssistantNotification(notification.meta)
+            api.destroy(notification.id)
+          },
           onClose: resolve
         })
       })

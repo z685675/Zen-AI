@@ -1,3 +1,4 @@
+import { agentBelongsToWorkspace, useAgentWorkspace } from '@renderer/context/AgentWorkspaceProvider'
 import { useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import useSWR from 'swr'
@@ -8,7 +9,8 @@ import { useAgentClient } from './useAgentClient'
 export const useAgent = (id: string | null) => {
   const { t } = useTranslation()
   const client = useAgentClient()
-  const key = id ? client.agentPaths.withId(id) : null
+  const workspace = useAgentWorkspace()
+  const key = agentBelongsToWorkspace(id, workspace) && id ? client.agentPaths.withId(id) : null
   const { apiServerConfig, apiServerRunning } = useApiServer()
 
   // Disable SWR fetching when server is not running by setting key to null

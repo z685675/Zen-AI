@@ -248,7 +248,10 @@ describe('AgentService built-in model resolution', () => {
     expect(resolved).toEqual({ modelId: 'new-api:openai/gpt-5-mini' })
   })
 
-  it('does not store a runtime override when creating a built-in Auto agent', async () => {
+  it.each([
+    { id: 'builtin-fusion', name: 'Fusion' },
+    { id: 'lobster-fusion-default', name: '请弃用旧助手' }
+  ])('creates a built-in agent with its display name and no runtime override ($id)', async ({ id, name }) => {
     const service = new AgentService() as AgentService & {
       getDatabase: ReturnType<typeof vi.fn>
       getPreferredBuiltinRuntimeModel: ReturnType<typeof vi.fn>
@@ -288,7 +291,7 @@ describe('AgentService built-in model resolution', () => {
     service.getDatabase = vi.fn().mockResolvedValue(database)
 
     const result = await service.initBuiltinAgent({
-      id: 'builtin-fusion',
+      id,
       builtinRole: 'fusion',
       provisionWorkspace: vi.fn().mockResolvedValue({
         name: 'Fusion',
@@ -301,7 +304,8 @@ describe('AgentService built-in model resolution', () => {
       })
     })
 
-    expect(result).toBe('builtin-fusion')
+    expect(result).toBe(id)
+    expect(insertedAgent.name).toBe(name)
     expect(insertedAgent.model).toBe('openai:gpt-5-mini')
     expect(JSON.parse(insertedAgent.configuration)).toMatchObject({
       builtin_role: 'fusion',
@@ -484,6 +488,64 @@ describe('AgentService built-in model resolution', () => {
     expect(service.getPreferredBuiltinRuntimeModel).not.toHaveBeenCalled()
     expect(updatedAgent).not.toHaveProperty('model')
   })
+
+  it.each(['zen-opencode-default', 'lobster-fusion-default', 'custom-builtin'])(
+    'refreshes managed display identities and preserves user defaults (%s)',
+    async (id) => {
+      const service = new AgentService() as AgentService & {
+        getDatabase: ReturnType<typeof vi.fn>
+        getPreferredBuiltinRuntimeModel: ReturnType<typeof vi.fn>
+        getAgent: ReturnType<typeof vi.fn>
+        resolveAccessiblePaths: ReturnType<typeof vi.fn>
+      }
+      service.getPreferredBuiltinRuntimeModel = vi.fn()
+      service.getAgent = vi.fn().mockResolvedValue({
+        id,
+        name: '新版助手',
+        model: 'zen:gemini-user-choice',
+        configuration: { avatar: '🩶', permission_mode: 'plan', custom_setting: 'keep' }
+      })
+      service.resolveAccessiblePaths = vi.fn().mockReturnValue(['C:\\workspace'])
+      let updatedAgent: Record<string, unknown> = {}
+      const database = {
+        select: vi.fn(() => ({ from: () => ({ where: () => ({ limit: async () => [{ id }] }) }) })),
+        update: vi.fn(() => ({
+          set: vi.fn((value: Record<string, unknown>) => {
+            updatedAgent = value
+            return { where: vi.fn(async () => undefined) }
+          })
+        }))
+      }
+      service.getDatabase = vi.fn().mockResolvedValue(database)
+
+      expect(
+        await service.initBuiltinAgent({
+          id,
+          builtinRole: 'fusion',
+          provisionWorkspace: vi.fn().mockResolvedValue({
+            name: '智能助手',
+            configuration: { avatar: '❤️', permission_mode: 'default', assistant_engine: 'opencode' }
+          })
+        })
+      ).toBe(id)
+
+      if (id === 'zen-opencode-default') {
+        expect(updatedAgent.name).toBe('智能助手')
+      } else if (id === 'lobster-fusion-default') {
+        expect(updatedAgent.name).toBe('请弃用旧助手')
+      } else {
+        expect(updatedAgent).not.toHaveProperty('name')
+      }
+      expect(JSON.parse(String(updatedAgent.configuration))).toMatchObject({
+        avatar: id === 'zen-opencode-default' ? '❤️' : '🩶',
+        permission_mode: 'plan',
+        custom_setting: 'keep'
+      })
+      expect(updatedAgent).not.toHaveProperty('model')
+      expect(updatedAgent).not.toHaveProperty('accessible_paths')
+      expect(service.getPreferredBuiltinRuntimeModel).not.toHaveBeenCalled()
+    }
+  )
 
   it('refreshes the product-managed prompt for the existing official assistant', async () => {
     const service = new AgentService() as AgentService & {

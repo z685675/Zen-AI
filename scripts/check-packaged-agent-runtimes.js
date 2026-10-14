@@ -1,17 +1,37 @@
 const { spawnSync } = require('node:child_process')
 const path = require('node:path')
-const { verifyPackagedAgentRuntimes } = require('./agent-runtime-packaging')
+const fs = require('node:fs')
+const { verifyPackagedAgentRuntimes, verifyNativeAgentBinary } = require('./agent-runtime-packaging')
 
 const [resourcesDir, platform, arch] = process.argv.slice(2)
 if (!resourcesDir || !platform || !arch || process.argv.length !== 5) {
   throw new Error('Usage: check-packaged-agent-runtimes.js <resources-directory> <mac|windows|linux> <arm64|x64>')
 }
 const paths = verifyPackagedAgentRuntimes(path.resolve(resourcesDir), platform, arch)
+const opencodeOS = { mac: 'darwin', windows: 'windows', linux: 'linux' }[platform]
+const opencodeBinary = path.join(
+  path.resolve(resourcesDir),
+  'opencode',
+  `${opencodeOS}-${arch}`,
+  platform === 'windows' ? 'opencode.exe' : 'opencode'
+)
+verifyNativeAgentBinary(opencodeBinary, platform, arch)
+for (const required of [
+  'opencode-runtime/package.json',
+  'opencode-runtime/package-lock.json',
+  'opencode-runtime/node_modules/@opencode-ai/plugin/package.json',
+  'licenses/opencode-LICENSE.txt',
+  'licenses/opencode-dependencies.txt'
+]) {
+  if (!fs.existsSync(path.join(resourcesDir, required)))
+    throw new Error(`Missing OpenCode installer resource: ${required}`)
+}
 const hostPlatform = { darwin: 'mac', win32: 'windows', linux: 'linux' }[process.platform]
 if (platform === hostPlatform && arch === process.arch) {
   for (const [name, binary] of [
     ['Codex', paths.codexBinary],
-    ['Claude Code', paths.claudeBinary]
+    ['Claude Code', paths.claudeBinary],
+    ['OpenCode', opencodeBinary]
   ]) {
     const result = spawnSync(binary, ['--version'], {
       encoding: 'utf8',
@@ -27,4 +47,4 @@ if (platform === hostPlatform && arch === process.arch) {
 } else {
   console.log(`[agent-runtimes] ${platform}/${arch}: cross-architecture binaries verified without executing them`)
 }
-console.log(`[agent-runtimes] Verified both runtimes for ${platform}/${arch}.`)
+console.log(`[agent-runtimes] Verified all three runtimes for ${platform}/${arch}.`)

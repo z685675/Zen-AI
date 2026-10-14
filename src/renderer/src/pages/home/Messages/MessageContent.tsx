@@ -3,6 +3,7 @@ import type { Message } from '@renderer/types/newMessage'
 import { Flex } from 'antd'
 import { isEmpty } from 'lodash'
 import React from 'react'
+import { useTranslation } from 'react-i18next'
 import styled from 'styled-components'
 
 import MessageBlockRenderer from './Blocks'
@@ -12,8 +13,14 @@ interface Props {
 }
 
 const MessageContent: React.FC<Props> = ({ message, isStreaming }) => {
+  const { t } = useTranslation()
   return (
     <>
+      {message.providerMetadata?.zenInterrupted && (
+        <div role="status" className="my-2 text-(--color-text-3) text-xs">
+          {t('assistantPeripheral.interrupted')}
+        </div>
+      )}
       {!isEmpty(message.mentions) && (
         <Flex gap="8px" wrap style={{ marginBottom: '10px' }}>
           {message.mentions?.map((model) => (

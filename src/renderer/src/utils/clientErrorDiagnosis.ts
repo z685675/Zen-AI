@@ -3,6 +3,8 @@ import type { SerializedError } from '@renderer/types/error'
 import i18next from 'i18next'
 
 import { isAgentRuntimeStartupError } from './agentRuntimeError'
+import { getAgentTaskDeadlineKind } from './agentTaskDeadline'
+import { connectionErrorText, getConnectionFailure } from './connectionFailure'
 
 type DiagnosisCategory =
   | 'account'
@@ -63,6 +65,38 @@ const UNKNOWN = '未确认'
 const NOT_AVAILABLE = '-'
 export const ZEN_TRACE_HEADER = 'X-Zen-Trace-Id'
 const CONNECTIVITY_CHECK_TIMEOUT_MS = 5000
+const CONNECTION_COPY = {
+  dns: {
+    title: 'error.connection.dns.title',
+    summary: 'error.connection.dns.summary',
+    suggestion: 'error.connection.dns.suggestion'
+  },
+  certificate: {
+    title: 'error.connection.certificate.title',
+    summary: 'error.connection.certificate.summary',
+    suggestion: 'error.connection.certificate.suggestion'
+  },
+  timeout: {
+    title: 'error.connection.timeout.title',
+    summary: 'error.connection.timeout.summary',
+    suggestion: 'error.connection.timeout.suggestion'
+  },
+  connect: {
+    title: 'error.connection.connect.title',
+    summary: 'error.connection.connect.summary',
+    suggestion: 'error.connection.connect.suggestion'
+  },
+  unknown: {
+    title: 'error.connection.unknown.title',
+    summary: 'error.connection.unknown.summary',
+    suggestion: 'error.connection.unknown.suggestion'
+  },
+  stream: {
+    title: 'error.connection.stream.title',
+    summary: 'error.connection.stream.summary',
+    suggestion: 'error.connection.stream.suggestion'
+  }
+} as const
 
 export function createZenTraceId(date = new Date()): string {
   const safeDate = Number.isNaN(date.getTime()) ? new Date() : date
@@ -120,10 +154,7 @@ function serviceConnectivityFromCheck(check: ClientConnectivityCheck | undefined
 }
 
 function normalizeMessage(error?: SerializedError): string {
-  const parts = [error?.name, error?.message, error?.stack, (error as Record<string, unknown> | undefined)?.cause]
-    .filter((item): item is string => typeof item === 'string')
-    .join('\n')
-  return parts.toLowerCase()
+  return connectionErrorText(error)
 }
 
 function formatTime(value?: string): string {
@@ -242,7 +273,9 @@ export async function runClientConnectivityCheck(
 }
 
 export function diagnoseClientError(error?: SerializedError, options: DiagnoseOptions = {}): ClientErrorDiagnosis {
-  const status = readStatus(error)
+  const connectionFailure = getConnectionFailure(error)
+  const transport = error?.zenTransportFailure as Record<string, unknown> | undefined
+  const status = transport?.receivedResponse === false ? undefined : readStatus(error)
   const connectivityCheck = readConnectivityCheck(error)
   const msg = normalizeMessage(error)
   const hasStatus = typeof status === 'number'
@@ -287,6 +320,22 @@ export function diagnoseClientError(error?: SerializedError, options: DiagnoseOp
         : buildDiagnosticId(options.blockId, options.messageId, options.createdAt)
   }
 
+  const deadlineKind = getAgentTaskDeadlineKind(error)
+  if (deadlineKind) {
+    const suffix = deadlineKind === 'execution' ? 'Execution' : 'HumanWait'
+    return {
+      ...base,
+      category: 'runtime',
+      title: i18next.t(`assistantTaskDeadline.title${suffix}`),
+      summary: i18next.t(`assistantTaskDeadline.summary${suffix}`),
+      stage: i18next.t(`assistantTaskDeadline.stage${suffix}`),
+      errorType: deadlineKind === 'execution' ? 'agent_execution_timeout' : 'agent_human_wait_timeout',
+      serviceConnectivity: UNKNOWN,
+      serviceReceived: UNKNOWN,
+      startedGenerating: UNKNOWN,
+      suggestion: i18next.t('assistantTaskDeadline.suggestion')
+    }
+  }
   if (isAgentRuntimeStartupError(error)) {
     return {
       ...base,
@@ -303,6 +352,24 @@ export function diagnoseClientError(error?: SerializedError, options: DiagnoseOp
       suggestion: i18next.t('agent.errorFallback.runtime_suggestion', {
         defaultValue: '请更新至修复版本；如果已是最新版本，请导出诊断包并联系管理员检查安装包。'
       })
+    }
+  }
+
+  if (connectionFailure) {
+    const { kind, beforeHttp } = connectionFailure
+    const copy = CONNECTION_COPY[kind]
+    return {
+      ...base,
+      httpStatus: transport?.receivedResponse === true ? String(transport.status ?? status ?? '无') : base.httpStatus,
+      category: kind === 'stream' ? 'stream' : 'network',
+      title: i18next.t(copy.title),
+      summary: i18next.t(copy.summary),
+      suggestion: i18next.t(copy.suggestion),
+      stage: kind === 'stream' ? '生成传输' : '建立连接',
+      errorType: i18next.t(copy.title),
+      serviceConnectivity: serviceConnectivityFromCheck(connectivityCheck, kind === 'stream' ? '已连接' : UNKNOWN),
+      serviceReceived: beforeHttp ? '否' : kind === 'stream' ? '是' : UNKNOWN,
+      startedGenerating: beforeHttp ? '否' : UNKNOWN
     }
   }
 
@@ -408,7 +475,7 @@ export function diagnoseClientError(error?: SerializedError, options: DiagnoseOp
     }
   }
 
-  if (isTimeout || status === 504) {
+  if ((isTimeout && !hasStatus) || status === 504) {
     return {
       ...base,
       category: 'timeout',
@@ -423,7 +490,7 @@ export function diagnoseClientError(error?: SerializedError, options: DiagnoseOp
     }
   }
 
-  if (isFetchFailure || isProxyOrCert) {
+  if ((isFetchFailure || isProxyOrCert) && !hasStatus) {
     return {
       ...base,
       category: 'network',

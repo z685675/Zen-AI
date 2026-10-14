@@ -75,11 +75,12 @@ describe('sidebar icons migration', () => {
 
       expect(migrated.settings.sidebarIcons.visible).toEqual([
         'assistants',
-        'agents',
+        'new_assistant',
         'translate',
         'notes',
         'files',
-        'paintings'
+        'paintings',
+        'agents'
       ])
       expect(migrated.settings.sidebarIcons.disabled).toEqual([
         'minapp',
@@ -124,11 +125,11 @@ describe('sidebar icons migration', () => {
 
       expect(migrated.settings.sidebarIcons.visible).toEqual([
         'assistants',
-        'agents',
         'translate',
         'notes',
         'files',
-        'paintings'
+        'paintings',
+        'agents'
       ])
       expect(migrated.settings.sidebarIcons.disabled).toEqual([
         'openclaw',

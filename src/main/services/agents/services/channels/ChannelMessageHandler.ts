@@ -3,6 +3,7 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 
 import { loggerService } from '@logger'
+import { isLegacyAutomationEnabled } from '@shared/agents/legacyAutomation'
 import { HOME_CHERRY_DIR } from '@shared/config/constant'
 import type { GetAgentSessionResponse, PermissionMode } from '@types'
 import { app } from 'electron'
@@ -65,6 +66,22 @@ export class ChannelMessageHandler {
   private readonly chatQueues = new Map<string, Promise<void>>()
   /** Active abort controllers per session — allows renderer to abort via IPC */
   private readonly activeAbortControllers = new Map<string, AbortController>()
+  private stopped = false
+
+  /** Stop remote-triggered runs only; never abort manually started desktop conversations. */
+  async stopAll(): Promise<void> {
+    this.stopped = true
+    for (const batch of this.pendingBatches.values()) {
+      clearTimeout(batch.timer)
+      batch.resolvers.forEach((resolver) => resolver.resolve())
+    }
+    this.pendingBatches.clear()
+    for (const controller of this.activeAbortControllers.values()) controller.abort()
+    await Promise.allSettled([...this.chatQueues.values()])
+    this.activeAbortControllers.clear()
+    this.chatQueues.clear()
+    this.sessionTracker.clear()
+  }
 
   static getInstance(): ChannelMessageHandler {
     if (!ChannelMessageHandler.instance) {
@@ -74,6 +91,7 @@ export class ChannelMessageHandler {
   }
 
   handleIncoming(adapter: ChannelAdapter, message: ChannelMessageEvent): Promise<void> {
+    if (this.stopped || !isLegacyAutomationEnabled()) return Promise.resolve()
     const batchKey = `${adapter.agentId}:${adapter.channelId}:${message.chatId}`
 
     return new Promise<void>((resolve, reject) => {
@@ -179,6 +197,7 @@ export class ChannelMessageHandler {
   }
 
   private async processIncoming(adapter: ChannelAdapter, message: ChannelMessageEvent): Promise<void> {
+    if (this.stopped || !isLegacyAutomationEnabled()) return
     const { agentId } = adapter
 
     try {
@@ -284,6 +303,7 @@ export class ChannelMessageHandler {
       }
 
       const abortController = new AbortController()
+      if (this.stopped || !isLegacyAutomationEnabled()) return
       this.activeAbortControllers.set(session.id, abortController)
 
       // Show typing indicator immediately and keep refreshing every 4s
@@ -333,6 +353,7 @@ export class ChannelMessageHandler {
   }
 
   async handleCommand(adapter: ChannelAdapter, command: ChannelCommandEvent): Promise<void> {
+    if (this.stopped || !isLegacyAutomationEnabled()) return
     const { agentId } = adapter
     try {
       switch (command.command) {

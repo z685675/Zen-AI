@@ -14,6 +14,7 @@ import { MessagesContainer, ScrollContainer } from '@renderer/pages/home/Message
 import { EVENT_NAMES, EventEmitter } from '@renderer/services/EventService'
 import { getGroupedMessages } from '@renderer/services/MessagesService'
 import store, { useAppDispatch } from '@renderer/store'
+import { newMessagesActions } from '@renderer/store/newMessage'
 import {
   addChannelUserMessage,
   type ChannelStreamController,
@@ -187,12 +188,15 @@ const AgentSessionMessages = ({ agentId, sessionId }: Props) => {
   const [displayMessages, setDisplayMessages] = useState<Message[]>([])
   const [hasMore, setHasMore] = useState(false)
   const [isLoadingMore, setIsLoadingMore] = useState(false)
+  const [pendingArtifactMessage, setPendingArtifactMessage] = useState<string | null>(null)
+  const displayCountRef = useRef(AGENT_PAGE_SIZE)
   const pendingRestorePositionRef = useRef<number | null | undefined>(undefined)
 
   // Guard: suppress InfiniteScroll triggers during scroll position restoration
   const isRestoringScrollRef = useRef(true)
 
   useEffect(() => {
+    displayCountRef.current = AGENT_PAGE_SIZE
     pendingRestorePositionRef.current = undefined
     isRestoringScrollRef.current = true
     const timer = setTimeout(() => {
@@ -202,9 +206,9 @@ const AgentSessionMessages = ({ agentId, sessionId }: Props) => {
   }, [sessionId])
 
   useEffect(() => {
-    const newDisplayMessages = computeDisplayMessages(messages, 0, AGENT_PAGE_SIZE)
-    setDisplayMessages(newDisplayMessages)
-    setHasMore(messages.length > AGENT_PAGE_SIZE)
+    const displayed = computeDisplayMessages(messages, 0, displayCountRef.current)
+    setDisplayMessages(displayed)
+    setHasMore(messages.length > displayed.length)
   }, [messages])
 
   // NOTE: displayMessages is reversed, so each group is also reversed — need to reverse back
@@ -224,6 +228,7 @@ const AgentSessionMessages = ({ agentId, sessionId }: Props) => {
       setIsLoadingMore(true)
       const currentLength = displayMessages.length
       const newMessages = computeDisplayMessages(messages, currentLength, AGENT_PAGE_SIZE)
+      displayCountRef.current = currentLength + newMessages.length
 
       setDisplayMessages((prev) => [...prev, ...newMessages])
       setHasMore(currentLength + newMessages.length < messages.length)
@@ -237,11 +242,49 @@ const AgentSessionMessages = ({ agentId, sessionId }: Props) => {
       const targetIndex = messages.findIndex((item) => item.id === message.id)
       if (targetIndex < 0) return
 
+      displayCountRef.current = messages.length - targetIndex
+
       setDisplayMessages(messages.slice(targetIndex).toReversed())
       setHasMore(targetIndex > 0)
     },
     [messages]
   )
+
+  useEffect(() => {
+    setPendingArtifactMessage(null)
+  }, [sessionTopicId])
+
+  useEffect(() => {
+    return EventEmitter.on(EVENT_NAMES.LOCATE_MESSAGE, (data: { topicId: string; messageId: string }) => {
+      if (data.topicId !== sessionTopicId) return
+      const target = messages.find((message) => message.id === data.messageId)
+      if (!target) return
+      pendingRestorePositionRef.current = null
+      // A deliverable can originate outside the currently rendered history page.
+      revealMessageForNavigation(target)
+      for (const message of messages) {
+        if (target.askId && message.askId === target.askId) {
+          dispatch(
+            newMessagesActions.updateMessage({
+              topicId: sessionTopicId,
+              messageId: message.id,
+              updates: { foldSelected: message.id === target.id }
+            })
+          )
+        }
+      }
+      setPendingArtifactMessage(target.id)
+    })
+  }, [sessionTopicId, messages, revealMessageForNavigation, dispatch])
+
+  useEffect(() => {
+    if (!pendingArtifactMessage || !displayMessages.some((message) => message.id === pendingArtifactMessage)) return
+    const frame = requestAnimationFrame(() => {
+      void EventEmitter.emit(EVENT_NAMES.LOCATE_MESSAGE + ':' + pendingArtifactMessage)
+      setPendingArtifactMessage(null)
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [displayMessages, pendingArtifactMessage])
 
   const sessionAssistantId = session?.agent_id ?? agentId
   const sessionName = session?.name ?? sessionId

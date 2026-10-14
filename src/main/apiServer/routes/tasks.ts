@@ -4,6 +4,7 @@ import { taskService } from '@main/services/agents/services/TaskService'
 import type { ListTaskLogsResponse, ListTasksResponse } from '@types'
 import express, { type Request, type Response, type Router } from 'express'
 
+import { guardLegacyAutomationWrites } from './legacyAutomation'
 import { formatScheduledTaskError } from './taskError'
 
 const logger = loggerService.withContext('ApiServerTasksRoute')
@@ -18,6 +19,7 @@ function getTaskInputErrorStatus(error: unknown): 400 | 500 {
 }
 
 const tasksRouter: Router = express.Router()
+tasksRouter.use(guardLegacyAutomationWrites)
 
 // GET /v1/tasks — list all tasks (excluding heartbeat)
 tasksRouter.get('/', async (req: Request, res: Response) => {

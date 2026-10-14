@@ -24,7 +24,7 @@ export function recordMainDiagnostic(
 ) {
   try {
     recorder.record(id, stage, event, details)
-    if (id && validId(id) && (event === 'failed' || event === 'complete')) {
+    if (id && validId(id) && ['failed', 'complete', 'process-error', 'process-exit', 'process-close'].includes(event)) {
       fs.mkdirSync(directory(), { recursive: true })
       fs.writeFileSync(filePath(id), JSON.stringify(recorder.get(id)))
       // Only our explicitly named diagnostic snapshots are eligible for retention cleanup.
@@ -56,6 +56,13 @@ export function captureDiagnosticLog(level: string, message: string, data: unkno
 
 export async function collectMainDiagnostic(id: string) {
   if (!validId(id)) throw new Error('Invalid diagnostic operation ID')
+  try {
+    // Snapshot already running processes only; never initialize one to export.
+    const { flushOpenCodeDiagnostic } = await import('./agents/services/opencode/process')
+    flushOpenCodeDiagnostic(id)
+  } catch {
+    /* Retain the evidence already collected. */
+  }
   let evidence = recorder.get(id)
   let snapshotStatus = evidence ? 'collected' : 'unavailable'
   if (!evidence) {
@@ -76,7 +83,7 @@ export async function collectMainDiagnostic(id: string) {
     return text.includes(id) || (typeof sessionId === 'string' && text.includes(sessionId))
   })
   const componentVersions: Record<string, unknown> = {}
-  for (const name of ['@openai/codex-sdk', '@anthropic-ai/claude-agent-sdk', '@anthropic-ai/sdk']) {
+  for (const name of ['opencode-ai', '@openai/codex-sdk', '@anthropic-ai/claude-agent-sdk', '@anthropic-ai/sdk']) {
     try {
       const pkg = JSON.parse(fs.readFileSync(path.join(app.getAppPath(), 'node_modules', name, 'package.json'), 'utf8'))
       componentVersions[name] = pkg.version
@@ -85,6 +92,12 @@ export async function collectMainDiagnostic(id: string) {
     }
   }
   const executables: Record<string, unknown> = {}
+  try {
+    const { inspectOpenCodeExecutable } = await import('./agents/services/opencode/executable')
+    executables.opencode = inspectOpenCodeExecutable()
+  } catch (error) {
+    executables.opencode = { collectionStatus: 'failed', error: sanitizeDiagnostic(error) }
+  }
   try {
     const { resolveCodexExecutable } = await import('./agents/services/codex/executable')
     const { resolveClaudeExecutablePath } = await import('./agents/services/claudecode/executable')

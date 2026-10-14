@@ -1,6 +1,8 @@
 import { EventEmitter } from 'events'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+vi.mock('@shared/agents/legacyAutomation', () => ({ isLegacyAutomationEnabled: () => true }))
+
 import { agentService } from '../../AgentService'
 import { channelService } from '../../ChannelService'
 import { sessionMessageService } from '../../SessionMessageService'

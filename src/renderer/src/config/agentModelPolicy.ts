@@ -1,5 +1,6 @@
-import type { AgentConfiguration, ApiModel } from '@renderer/types'
 import type { ModelPolicy, ModelPolicySnapshot } from '@shared/config/modelPolicy'
+
+import type { AgentConfiguration, ApiModel } from '../types'
 
 export const STANDARD_AGENT_MODEL_IDS = [] as const
 
@@ -53,7 +54,9 @@ export const isStandardAgentModel = (model: ApiModel): boolean => {
 export const isStandardAgentModelIdentifier = (modelId: string | undefined): boolean =>
   Boolean(modelId && standardAgentModelIds.has(normalizeAgentModelIdentifier(modelId)))
 
-const getModelIdentifiers = (model: ApiModel): string[] =>
+type AssistantModelIdentifiers = Pick<ApiModel, 'id' | 'provider_model_id' | 'name'>
+
+const getModelIdentifiers = (model: AssistantModelIdentifiers): string[] =>
   [model.provider_model_id, model.id, model.name].filter((identifier): identifier is string => Boolean(identifier))
 
 const matchesPolicyModel = (identifier: string, modelIds: string[]): boolean => {
@@ -61,7 +64,7 @@ const matchesPolicyModel = (identifier: string, modelIds: string[]): boolean => 
   return modelIds.some((modelId) => normalizeAgentModelIdentifier(modelId) === normalizedIdentifier)
 }
 
-export const isAssistantModelBlocked = (model: ApiModel, policy?: ModelPolicy): boolean => {
+export const isAssistantModelBlocked = (model: AssistantModelIdentifiers, policy?: ModelPolicy): boolean => {
   if (!policy) return false
   return getModelIdentifiers(model).some((identifier) => isAssistantModelIdentifierBlocked(identifier, policy))
 }
@@ -73,15 +76,18 @@ export const isAssistantModelIdentifierBlocked = (modelId: string | undefined, p
   )
 }
 
-export const isAssistantModelAllowed = (model: ApiModel, developerMode: boolean, policy?: ModelPolicy): boolean => {
-  if (isAssistantModelBlocked(model, policy) && !(developerMode && policy?.rules.developerModeBypassAllowlist)) {
-    return false
-  }
-
+export const isAssistantModelAllowed = (
+  model: AssistantModelIdentifiers,
+  developerMode: boolean,
+  policy?: ModelPolicy
+): boolean => {
+  // Developer/VIP mode always bypasses the panel's client-side selection lists.
+  // Legacy developerAllowlist/bypass flags are retained in the wire schema only.
+  if (developerMode) return true
+  if (isAssistantModelBlocked(model, policy)) return false
   if (!policy) return true
-  if (developerMode && policy.rules.developerModeBypassAllowlist) return true
 
-  const allowlist = developerMode ? policy.assistant.developerAllowlist : policy.assistant.nonDeveloperAllowlist
+  const allowlist = policy.assistant.nonDeveloperAllowlist
   if (allowlist.length > 0) {
     return getModelIdentifiers(model).some((identifier) => matchesPolicyModel(identifier, allowlist))
   }
@@ -94,18 +100,13 @@ export const isAssistantModelIdentifierAllowed = (
   developerMode: boolean,
   policy?: ModelPolicy
 ): boolean => {
-  if (!modelId) return false
+  if (!modelId?.trim()) return false
+  if (developerMode) return true
   const normalizedModelId = normalizeAgentModelIdentifier(modelId)
-  if (
-    isAssistantModelIdentifierBlocked(modelId, policy) &&
-    !(developerMode && policy?.rules.developerModeBypassAllowlist)
-  ) {
-    return false
-  }
+  if (isAssistantModelIdentifierBlocked(modelId, policy)) return false
   if (!policy) return true
-  if (developerMode && policy.rules.developerModeBypassAllowlist) return true
 
-  const allowlist = developerMode ? policy.assistant.developerAllowlist : policy.assistant.nonDeveloperAllowlist
+  const allowlist = policy.assistant.nonDeveloperAllowlist
   return allowlist.length > 0
     ? allowlist.some((allowed) => normalizeAgentModelIdentifier(allowed) === normalizedModelId)
     : true
@@ -149,7 +150,7 @@ const isUsableAgentChatModel = (model: ApiModel): boolean => {
 /**
  * Resolve a usable model for an existing Agent session whose model is no
  * longer available. The current model is tried through another Provider first,
- * followed by the remotely configured fallback order and finally any usable
+ * followed by the remote default, fallback order and finally any usable
  * model allowed by the current policy.
  */
 export const resolveAssistantFallbackModel = (
@@ -159,30 +160,23 @@ export const resolveAssistantFallbackModel = (
   developerMode = false
 ): ApiModel | undefined => {
   const preferredProviderId = getAgentModelProviderId(currentModelId)
-  const currentModelIsBlocked =
-    isAssistantModelIdentifierBlocked(currentModelId, policy) &&
-    !(developerMode && policy?.rules.developerModeBypassAllowlist)
+  const availableModels = models.filter(
+    (model) => isUsableAgentChatModel(model) && isAssistantModelAllowed(model, developerMode, policy)
+  )
   const candidates = [
-    ...(currentModelId && !currentModelIsBlocked ? [currentModelId] : []),
-    ...(policy?.assistant.fallbackModels ?? []),
-    ...(policy?.rules.applyToNewSessions === false ? [] : [policy?.defaults.assistantNewSession]),
-    ...(policy?.defaults.assistant ? [policy.defaults.assistant] : [])
+    currentModelId,
+    // An unavailable session must be repaired even when release-level default
+    // overwriting is disabled. That flag controls preferences, not availability.
+    policy?.defaults.assistantNewSession,
+    policy?.defaults.assistant,
+    ...(policy?.assistant.fallbackModels ?? [])
   ].filter((candidate): candidate is string => Boolean(candidate?.trim()))
 
   for (const candidate of candidates) {
-    const resolvedId = findAgentModelId(models, candidate, preferredProviderId)
-    const resolved = resolvedId ? models.find((model) => model.id === resolvedId) : undefined
-    if (resolved && isUsableAgentChatModel(resolved) && isAssistantModelAllowed(resolved, developerMode, policy)) {
-      return resolved
-    }
+    const resolvedId = findAgentModelId(availableModels, candidate, preferredProviderId)
+    const resolved = resolvedId ? availableModels.find((model) => model.id === resolvedId) : undefined
+    if (resolved) return resolved
   }
 
-  return (
-    models.find(
-      (model) =>
-        isUsableAgentChatModel(model) &&
-        isAssistantModelAllowed(model, developerMode, policy) &&
-        model.is_official_provider
-    ) ?? models.find((model) => isUsableAgentChatModel(model) && isAssistantModelAllowed(model, developerMode, policy))
-  )
+  return availableModels.find((model) => model.is_official_provider) ?? availableModels[0]
 }

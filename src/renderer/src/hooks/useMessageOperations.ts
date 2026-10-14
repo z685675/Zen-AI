@@ -55,8 +55,12 @@ export function useMessageOperations(topic: Topic) {
    */
   const deleteMessage = useCallback(
     async (id: string, traceId?: string, modelName?: string) => {
-      await dispatch(deleteSingleMessageThunk(topic.id, id))
-      void window.api.trace.cleanHistory(topic.id, traceId || '', modelName)
+      try {
+        await dispatch(deleteSingleMessageThunk(topic.id, id))
+        void window.api.trace.cleanHistory(topic.id, traceId || '', modelName)
+      } catch (error) {
+        logger.warn('Could not delete message; history retained', error as Error)
+      }
     },
     [dispatch, topic.id]
   )
@@ -116,9 +120,11 @@ export function useMessageOperations(topic: Topic) {
   const clearTopicMessages = useCallback(
     async (_topicId?: string) => {
       const topicIdToClear = _topicId || topic.id
-      await dispatch(clearTopicMessagesThunk(topicIdToClear))
+      return dispatch(
+        clearTopicMessagesThunk(topicIdToClear, topicIdToClear === topic.id ? topic.assistantId : undefined)
+      )
     },
-    [dispatch, topic.id]
+    [dispatch, topic.id, topic.assistantId]
   )
 
   /**

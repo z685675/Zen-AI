@@ -1,4 +1,5 @@
 import { loggerService } from '@logger'
+import { agentBelongsToWorkspace, useAgentWorkspace } from '@renderer/context/AgentWorkspaceProvider'
 import { useRuntime } from '@renderer/hooks/useRuntime'
 import { useAppDispatch } from '@renderer/store'
 import { setActiveSessionIdAction } from '@renderer/store/runtime'
@@ -17,6 +18,7 @@ const sessionInitializationRequests = new Map<string, Promise<string | null>>()
 export const useAgentSessionInitializer = () => {
   const dispatch = useAppDispatch()
   const client = useAgentClient()
+  const workspace = useAgentWorkspace()
   const { chat } = useRuntime()
   const { activeAgentId, activeSessionIdMap } = chat
 
@@ -30,7 +32,7 @@ export const useAgentSessionInitializer = () => {
    */
   const initializeAgentSession = useCallback(
     async (agentId: string) => {
-      if (!agentId) return
+      if (!agentBelongsToWorkspace(agentId, workspace)) return
 
       try {
         if (activeSessionIdMapRef.current[agentId]) {
@@ -60,7 +62,7 @@ export const useAgentSessionInitializer = () => {
         logger.error('Failed to initialize agent session:', error as Error)
       }
     },
-    [client, dispatch]
+    [client, dispatch, workspace]
   )
 
   /**

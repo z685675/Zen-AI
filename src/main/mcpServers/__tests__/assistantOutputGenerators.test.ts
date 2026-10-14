@@ -35,6 +35,33 @@ import { verifyGeneratedOutput } from '../assistantOutputValidation'
 import { createXlsxBuffer, type WorkbookInput } from '../assistantXlsx'
 
 describe('assistant output generators', () => {
+  it('applies the new visible-content guard to generated layouts and rejects truncated entries', async () => {
+    for (const layout of ['cards', 'insight', 'metric', 'chart', 'process', 'timeline', 'summary'] as const) {
+      const bullets =
+        layout === 'metric' || layout === 'chart'
+          ? ['收入: 120', '成本: 60', '利润: 60']
+          : ['第一点: 明确目标', '第二点: 实施行动', '第三点: 检查成果']
+      await expect(
+        createPptxBuffer(
+          [{ title: '测试结论', layout, accent: 'blue', bullets }],
+          new Map(),
+          undefined,
+          undefined,
+          true
+        )
+      ).resolves.toBeInstanceOf(Buffer)
+    }
+    await expect(
+      createPptxBuffer(
+        [{ title: '封面', layout: 'cover', accent: 'blue', bullets: ['一', '二', '三', '被截掉的第四条'] }],
+        new Map(),
+        undefined,
+        undefined,
+        true
+      )
+    ).rejects.toThrow(/visible content missing/)
+  })
+
   it('embeds the same normalized image contract into DOCX, PPTX, and PDF output', async () => {
     const officeRenderMode = process.env.ZEN_AI_OFFICE_RENDER_SMOKE === '1' ? 'required' : 'skip'
     const image = await sharp({
@@ -636,7 +663,8 @@ describe('assistant output generators', () => {
         title: 'Product experience in context',
         subtitle: 'The visual should lead while annotations remain readable.',
         layout: 'image' as const,
-        bullets: ['Show the real state', 'Explain the important detail', 'Keep a clear reading order'],
+        // Two annotations fit even the image-led layouts; excess copy must be split, not hidden.
+        bullets: ['Show the real state', 'Explain the important detail'],
         imageAssetId: 'layout-reference'
       },
       {
@@ -734,7 +762,7 @@ describe('assistant output generators', () => {
 
     for (const styleId of styles) {
       const style = resolveDocumentStyle({ visualStyle: styleId, title: slides[0].title, content: '', format: 'pptx' })
-      const zip = new AdmZip(await createPptxBuffer(slides, assets, style))
+      const zip = new AdmZip(await createPptxBuffer(slides, assets, style, undefined, true))
       const [processMarker, timelineMarker, chartMarker, imageMarker] = signatures[styleId]
       expect(zip.readAsText('ppt/slides/slide7.xml')).toContain(processMarker)
       expect(zip.readAsText('ppt/slides/slide8.xml')).toContain(timelineMarker)
@@ -874,7 +902,7 @@ describe('assistant output generators', () => {
       content: '面向公众的沉浸式活动。',
       format: 'pptx'
     })
-    const zip = new AdmZip(await createPptxBuffer(slides, new Map(), style))
+    const zip = new AdmZip(await createPptxBuffer(slides, new Map(), style, undefined, true))
     const markers = ['Network hub', 'Matrix quadrant 1', 'Schedule time field 1', 'Route path outbound']
 
     markers.forEach((marker, slideIndex) => {

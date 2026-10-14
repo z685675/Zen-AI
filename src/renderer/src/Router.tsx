@@ -7,6 +7,7 @@ import { HashRouter, Route, Routes } from 'react-router-dom'
 import Sidebar from './components/app/Sidebar'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import TabsContainer from './components/Tab/TabContainer'
+import { AgentWorkspaceContext } from './context/AgentWorkspaceProvider'
 import NavigationHandler from './handler/NavigationHandler'
 import { useOnboardingState } from './hooks/useOnboardingState'
 import { useNavbarPosition } from './hooks/useSettings'
@@ -37,6 +38,14 @@ const Router: FC = () => {
         <Routes>
           <Route path="/" element={<HomePage />} />
           <Route path="/agents" element={<AgentPage />} />
+          <Route
+            path="/new-assistant"
+            element={
+              <AgentWorkspaceContext value="opencode">
+                <AgentPage />
+              </AgentWorkspaceContext>
+            }
+          />
           <Route path="/announcements" element={<AnnouncementsPage />} />
           <Route path="/store" element={<AssistantPresetsPage />} />
           <Route path="/paintings/*" element={<PaintingsRoutePage />} />

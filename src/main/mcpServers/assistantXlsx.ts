@@ -14,6 +14,9 @@ export type WorkbookCellStyle =
   | 'pass'
   | 'fail'
   | 'warning'
+  | 'decimal'
+  | 'currency'
+  | 'date'
 
 export interface WorkbookCellInput {
   value?: WorkbookPrimitive
@@ -135,7 +138,10 @@ const STYLE_IDS: Record<WorkbookCellStyle, number> = {
   center: 8,
   pass: 9,
   fail: 10,
-  warning: 11
+  warning: 11,
+  decimal: 13,
+  currency: 14,
+  date: 15
 }
 const CHART_COLORS = ['2563EB', '059669', 'D97706', '7C3AED', 'DC2626', '0891B2']
 const CELL_RANGE_RE = /^\$?[A-Z]{1,3}\$?\d+(?::\$?[A-Z]{1,3}\$?\d+)?$/
@@ -143,8 +149,13 @@ const FORMULA_RANGE_REF_RE =
   /(?:(?:'((?:[^']|'')+)'|([\p{L}_][\p{L}\p{N}_.]*))!)?\$?([A-Z]{1,3})\$?([1-9]\d*)\s*:\s*\$?([A-Z]{1,3})\$?([1-9]\d*)/giu
 const FORMULA_CELL_REF_RE = /(?:(?:'((?:[^']|'')+)'|([\p{L}_][\p{L}\p{N}_.]*))!)?\$?([A-Z]{1,3})\$?([1-9]\d*)/giu
 
-export function createXlsxBuffer(workbookInput: WorkbookInput | undefined, fallbackRows: string[][], title: string) {
-  const workbook = normalizeWorkbook(workbookInput, fallbackRows, title)
+export function createXlsxBuffer(
+  workbookInput: WorkbookInput | undefined,
+  fallbackRows: string[][],
+  title: string,
+  productQuality = false
+) {
+  const workbook = normalizeWorkbook(workbookInput, fallbackRows, title, productQuality)
   const zip = new AdmZip()
   const drawings: Array<{ sheetIndex: number; drawingIndex: number; charts: NormalizedChart[] }> = []
   let chartIndex = 0
@@ -197,14 +208,15 @@ export function createXlsxBuffer(workbookInput: WorkbookInput | undefined, fallb
 function normalizeWorkbook(
   input: WorkbookInput | undefined,
   fallbackRows: string[][],
-  title: string
+  title: string,
+  productQuality: boolean
 ): NormalizedWorkbook {
   const rawSheets =
     Array.isArray(input?.sheets) && input.sheets.length ? input.sheets : [{ name: 'Sheet1', rows: fallbackRows }]
   if (rawSheets.length > MAX_SHEETS) throw new Error(`Workbook supports at most ${MAX_SHEETS} sheets.`)
 
   const usedNames = new Set<string>()
-  const sheets = rawSheets.map((sheet, index) => normalizeSheet(sheet, index, usedNames))
+  const sheets = rawSheets.map((sheet, index) => normalizeSheet(sheet, index, usedNames, productQuality))
   validateFormulaDependencies(sheets)
   validateSimpleAggregateFormulaCaches(sheets)
   return {
@@ -455,7 +467,12 @@ function formulaValuesEqual(left: WorkbookPrimitive, right: WorkbookPrimitive) {
   return String(left ?? '').toLocaleLowerCase() === String(right ?? '').toLocaleLowerCase()
 }
 
-function normalizeSheet(input: WorkbookSheetInput, index: number, usedNames: Set<string>): NormalizedSheet {
+function normalizeSheet(
+  input: WorkbookSheetInput,
+  index: number,
+  usedNames: Set<string>,
+  productQuality: boolean
+): NormalizedSheet {
   const name = normalizeSheetName(input.name || `Sheet${index + 1}`, usedNames)
   const rawRows = Array.isArray(input.rows) && input.rows.length ? input.rows : [['Content'], ['']]
   if (rawRows.length > MAX_ROWS) throw new Error(`${name}: at most ${MAX_ROWS} rows are supported.`)
@@ -463,7 +480,9 @@ function normalizeSheet(input: WorkbookSheetInput, index: number, usedNames: Set
   const rows = rawRows.map((row, rowIndex) => {
     if (!Array.isArray(row)) throw new Error(`${name}: row ${rowIndex + 1} must be an array.`)
     if (row.length > MAX_COLUMNS) throw new Error(`${name}: at most ${MAX_COLUMNS} columns are supported.`)
-    return row.map((cell) => normalizeCell(cell, name))
+    return row.map((cell, columnIndex) =>
+      normalizeCell(cell, `${name}!${columnName(columnIndex + 1)}${rowIndex + 1}`, productQuality)
+    )
   })
   const maxColumns = Math.max(1, ...rows.map((row) => row.length))
   const headerRows = clampInteger(input.header_rows ?? 1, 0, Math.min(10, rows.length))
@@ -485,6 +504,11 @@ function normalizeSheet(input: WorkbookSheetInput, index: number, usedNames: Set
   const conditionalFormats = (input.conditional_formats || []).map((format, formatIndex) =>
     normalizeConditionalFormat(format, name, formatIndex)
   )
+  if (productQuality && (input.charts?.length || 0) > MAX_CHARTS_PER_SHEET) {
+    throw new Error(
+      `${name}: office quality validation supports at most ${MAX_CHARTS_PER_SHEET} charts per sheet. Split charts across sheets.`
+    )
+  }
   const charts = (input.charts || [])
     .slice(0, MAX_CHARTS_PER_SHEET)
     .map((chart, chartPosition) => normalizeChart(chart, name, chartPosition))
@@ -503,15 +527,52 @@ function normalizeSheet(input: WorkbookSheetInput, index: number, usedNames: Set
   }
 }
 
-function normalizeCell(input: WorkbookPrimitive | WorkbookCellInput, sheetName: string): NormalizedCell {
+function normalizeCell(
+  input: WorkbookPrimitive | WorkbookCellInput,
+  sheetName: string,
+  productQuality: boolean
+): NormalizedCell {
   if (isCellObject(input)) {
     const formula =
       typeof input.formula === 'string' && input.formula.trim() ? normalizeFormula(input.formula, sheetName) : undefined
     const style = input.style && input.style in STYLE_IDS ? input.style : undefined
+    if (
+      productQuality &&
+      formula &&
+      !(
+        typeof input.result === 'string' ||
+        typeof input.result === 'boolean' ||
+        (typeof input.result === 'number' && Number.isFinite(input.result))
+      )
+    ) {
+      throw new Error(
+        `${sheetName}: formula requires an explicit finite result (number, string, or boolean). Calculate it from the source data; do not substitute zero.`
+      )
+    }
+    const formattedValue = formula ? input.result : input.value
+    if (
+      productQuality &&
+      style &&
+      ['decimal', 'currency', 'date'].includes(style) &&
+      formattedValue != null &&
+      (typeof formattedValue !== 'number' || !Number.isFinite(formattedValue))
+    ) {
+      throw new Error(`${sheetName}: office quality validation requires numeric values for ${style} formatting.`)
+    }
+    if (
+      productQuality &&
+      style === 'date' &&
+      typeof formattedValue === 'number' &&
+      (formattedValue < 0 || formattedValue >= 2958466)
+    ) {
+      throw new Error(`${sheetName}: office quality validation requires an Excel date serial between 0 and 2958466.`)
+    }
     return {
       value: normalizePrimitive(input.value),
       formula,
-      result: formula ? normalizePrimitive(input.result ?? input.value ?? 0) : undefined,
+      result: formula
+        ? normalizePrimitive(productQuality ? input.result : (input.result ?? input.value ?? 0))
+        : undefined,
       style
     }
   }
@@ -962,7 +1023,7 @@ function toBuffer(value: string) {
 
 const XLSX_STYLES = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
-  <numFmts count="2"><numFmt numFmtId="164" formatCode="0.0%"/><numFmt numFmtId="165" formatCode="0.0 &quot;s&quot;"/></numFmts>
+  <numFmts count="5"><numFmt numFmtId="164" formatCode="0.0%"/><numFmt numFmtId="165" formatCode="0.0 &quot;s&quot;"/><numFmt numFmtId="166" formatCode="0.00"/><numFmt numFmtId="167" formatCode="#,##0.00"/><numFmt numFmtId="168" formatCode="yyyy-mm-dd"/></numFmts>
   <fonts count="7">
     <font><sz val="11"/><color rgb="FF1F2937"/><name val="Microsoft YaHei"/><family val="2"/></font>
     <font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Microsoft YaHei"/><family val="2"/></font>
@@ -983,7 +1044,7 @@ const XLSX_STYLES = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
   </fills>
   <borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border><border><left style="thin"><color rgb="FFD1D5DB"/></left><right style="thin"><color rgb="FFD1D5DB"/></right><top style="thin"><color rgb="FFD1D5DB"/></top><bottom style="thin"><color rgb="FFD1D5DB"/></bottom><diagonal/></border></borders>
   <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
-  <cellXfs count="13">
+  <cellXfs count="16">
     <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
     <xf numFmtId="0" fontId="1" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
     <xf numFmtId="0" fontId="3" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment vertical="center"/></xf>
@@ -997,6 +1058,9 @@ const XLSX_STYLES = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
     <xf numFmtId="0" fontId="5" fillId="5" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center"/></xf>
     <xf numFmtId="0" fontId="6" fillId="6" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center"/></xf>
     <xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyAlignment="1"><alignment vertical="top" wrapText="1"/></xf>
+    <xf numFmtId="166" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1"/>
+    <xf numFmtId="167" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1"/>
+    <xf numFmtId="168" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1"/>
   </cellXfs>
   <cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
   <dxfs count="3"><dxf><font><b/><color rgb="FF166534"/></font><fill><patternFill patternType="solid"><fgColor rgb="FFDCFCE7"/><bgColor indexed="64"/></patternFill></fill></dxf><dxf><font><b/><color rgb="FF991B1B"/></font><fill><patternFill patternType="solid"><fgColor rgb="FFFEE2E2"/><bgColor indexed="64"/></patternFill></fill></dxf><dxf><font><b/><color rgb="FF92400E"/></font><fill><patternFill patternType="solid"><fgColor rgb="FFFEF3C7"/><bgColor indexed="64"/></patternFill></fill></dxf></dxfs>

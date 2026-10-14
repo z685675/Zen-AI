@@ -1,6 +1,7 @@
 import { loggerService } from '@logger'
 import { autoRenameTopic } from '@renderer/hooks/useTopic'
 import i18n from '@renderer/i18n'
+import { notifyAssistantTask } from '@renderer/services/AssistantNotificationService'
 import { getDiagnosticEvidence, recordDiagnostic } from '@renderer/services/DiagnosticEvidenceService'
 import { EVENT_NAMES, EventEmitter } from '@renderer/services/EventService'
 import { NotificationService } from '@renderer/services/NotificationService'
@@ -8,11 +9,12 @@ import { estimateMessagesUsage } from '@renderer/services/TokenService'
 import { isTodoWriteBlock, updateOneBlock } from '@renderer/store/messageBlock'
 import { selectMessagesForTopic } from '@renderer/store/newMessage'
 import { newMessagesActions } from '@renderer/store/newMessage'
-import { toolPermissionsActions } from '@renderer/store/toolPermissions'
+import { type ToolPermissionEntry, toolPermissionsActions } from '@renderer/store/toolPermissions'
 import type { Assistant } from '@renderer/types'
 import { ERROR_I18N_KEY_REQUEST_TIMEOUT, ERROR_I18N_KEY_STREAM_PAUSED } from '@renderer/types/error'
 import type {
   MessageBlock,
+  MessageResponseTiming,
   PlaceholderMessageBlock,
   Response,
   ThinkingMessageBlock,
@@ -20,12 +22,14 @@ import type {
 } from '@renderer/types/newMessage'
 import { AssistantMessageStatus, MessageBlockStatus, MessageBlockType } from '@renderer/types/newMessage'
 import { uuid } from '@renderer/utils'
-import { isAgentSessionTopicId } from '@renderer/utils/agentSession'
+import { extractAgentSessionIdFromTopicId, isAgentSessionTopicId } from '@renderer/utils/agentSession'
 import { trackTokenUsage } from '@renderer/utils/analytics'
 import { isAbortError, isTimeoutError, serializeError } from '@renderer/utils/error'
 import { createBaseMessageBlock, createErrorBlock } from '@renderer/utils/messageUtils/create'
 import { findAllBlocks, getMainTextContent } from '@renderer/utils/messageUtils/find'
 import { isFocused, isOnHomePage } from '@renderer/utils/window'
+import { getAgentTaskLimitDetails } from '@shared/agents/taskConcurrency'
+import { DEFAULT_OPENCODE_AGENT_ID } from '@shared/config/agents'
 import type { AISDKError } from 'ai'
 import { NoOutputGeneratedError } from 'ai'
 
@@ -41,6 +45,7 @@ interface BaseCallbacksDependencies {
   saveUpdatesToDB: any
   assistant: Assistant
   getCurrentThinkingInfo?: () => { blockId: string | null; millsec: number }
+  getResponseTiming: (outcome: MessageResponseTiming['outcome']) => MessageResponseTiming
 }
 
 export const createBaseCallbacks = (deps: BaseCallbacksDependencies) => {
@@ -52,7 +57,8 @@ export const createBaseCallbacks = (deps: BaseCallbacksDependencies) => {
     assistantMsgId,
     saveUpdatesToDB,
     assistant,
-    getCurrentThinkingInfo
+    getCurrentThinkingInfo,
+    getResponseTiming
   } = deps
 
   const startTime = Date.now()
@@ -149,15 +155,23 @@ export const createBaseCallbacks = (deps: BaseCallbacksDependencies) => {
         return
       }
       const isErrorTypeAbort = isAbortError(error)
+      const responseTiming = getResponseTiming(isErrorTypeAbort ? 'cancelled' : 'failed')
       terminalStatus = isErrorTypeAbort ? AssistantMessageStatus.SUCCESS : AssistantMessageStatus.ERROR
       const isErrorTypeTimeout = isTimeoutError(error)
       const serializableError = serializeError(error)
+      const taskLimit = getAgentTaskLimitDetails(error)
       if (!getDiagnosticEvidence(assistantMsgId)?.events.some((event) => event.event === 'failed')) {
         const startup = (serializableError as Record<string, unknown>).zenFailureStage === 'runtime-startup'
-        recordDiagnostic(assistantMsgId, startup ? 'runtime' : 'response', isErrorTypeAbort ? 'cancelled' : 'failed', {
-          error: serializableError,
-          startup
-        })
+        recordDiagnostic(
+          assistantMsgId,
+          taskLimit ? 'preparation' : startup ? 'runtime' : 'response',
+          taskLimit ? 'blocked' : isErrorTypeAbort ? 'cancelled' : 'failed',
+          {
+            error: serializableError,
+            ...(taskLimit ? { phase: 'local-task-admission', ...taskLimit } : {}),
+            startup
+          }
+        )
       }
       if (isErrorTypeAbort) {
         serializableError.i18nKey = ERROR_I18N_KEY_STREAM_PAUSED
@@ -167,18 +181,20 @@ export const createBaseCallbacks = (deps: BaseCallbacksDependencies) => {
 
       const duration = Date.now() - startTime
       // 发送错误通知（除了中止错误）
-      if (!isErrorTypeAbort) {
-        const timeOut = duration > 30 * 1000
-        if ((!isOnHomePage() && timeOut) || (!isFocused() && timeOut)) {
-          await notificationService.send({
-            id: uuid(),
-            type: 'error',
-            title: i18n.t('notification.assistant'),
-            message: serializableError.message ?? '',
-            silent: false,
-            timestamp: Date.now(),
-            source: 'assistant'
-          })
+      if (!isErrorTypeAbort && !taskLimit) {
+        if (assistant.id !== DEFAULT_OPENCODE_AGENT_ID) {
+          const timeOut = duration > 30 * 1000
+          if ((!isOnHomePage() && timeOut) || (!isFocused() && timeOut)) {
+            await notificationService.send({
+              id: uuid(),
+              type: 'error',
+              title: i18n.t('notification.assistant'),
+              message: serializableError.message ?? '',
+              silent: false,
+              timestamp: Date.now(),
+              source: 'assistant'
+            })
+          }
         }
       }
 
@@ -269,9 +285,25 @@ export const createBaseCallbacks = (deps: BaseCallbacksDependencies) => {
         }
       }
 
-      // Clean up pending/submitting tool permission requests from this stream.
-      // Preserve 'invoking' entries as they may belong to concurrent streams.
-      dispatch(toolPermissionsActions.clearPending())
+      // Clean up only this message's pending permissions. A rejected task has
+      // started no tools and must not clear permissions of another running task.
+      if (currentMessage && !taskLimit) {
+        const state = getState()
+        const toolCallIds = new Set<string>()
+        for (const id of currentMessage.blocks) {
+          const block = state.messageBlocks.entities[id] as MessageBlock | undefined
+          if (block?.type === MessageBlockType.TOOL) {
+            const callId = block.metadata?.rawMcpToolResponse?.id || block.toolId
+            if (callId) toolCallIds.add(callId)
+          }
+        }
+        const permissions = state.toolPermissions?.requests as Record<string, ToolPermissionEntry> | undefined
+        for (const entry of Object.values(permissions ?? {})) {
+          if (entry.status !== 'invoking' && toolCallIds.has(entry.toolCallId)) {
+            dispatch(toolPermissionsActions.removeByToolCallId({ toolCallId: entry.toolCallId }))
+          }
+        }
+      }
 
       // Mark in_progress todos as completed since stream ended
       const todoCleanupIds = cleanupInProgressTodos()
@@ -280,7 +312,12 @@ export const createBaseCallbacks = (deps: BaseCallbacksDependencies) => {
       const errorBlock = createErrorBlock(assistantMsgId, serializableError, { status: MessageBlockStatus.SUCCESS })
       await blockManager.handleBlockTransition(errorBlock, MessageBlockType.ERROR)
       const messageErrorUpdate = {
-        status: isErrorTypeAbort ? AssistantMessageStatus.SUCCESS : AssistantMessageStatus.ERROR
+        status: isErrorTypeAbort ? AssistantMessageStatus.SUCCESS : AssistantMessageStatus.ERROR,
+        updatedAt: responseTiming.finishedAt,
+        providerMetadata: {
+          ...getState().messages.entities[assistantMsgId]?.providerMetadata,
+          responseTiming
+        }
       }
       dispatch(
         newMessagesActions.updateMessage({
@@ -295,6 +332,13 @@ export const createBaseCallbacks = (deps: BaseCallbacksDependencies) => {
         .map((id) => getState().messageBlocks.entities[id])
         .filter(Boolean) as MessageBlock[]
       await saveUpdatesToDB(assistantMsgId, topicId, messageErrorUpdate, blocksToSave)
+      if (assistant.id === DEFAULT_OPENCODE_AGENT_ID && !isErrorTypeAbort && !taskLimit) {
+        void notifyAssistantTask(
+          { agentId: assistant.id, sessionId: extractAgentSessionIdFromTopicId(topicId) },
+          assistantMsgId,
+          'error'
+        )
+      }
 
       // A failed or cancelled response should still leave the conversation with
       // a useful title derived from the user's first message.
@@ -318,6 +362,9 @@ export const createBaseCallbacks = (deps: BaseCallbacksDependencies) => {
         return
       }
       terminalStatus = status
+      // Capture the terminal event before notifications, token estimation or
+      // persistence. Those background operations are not model response time.
+      const responseTiming = getResponseTiming(status === AssistantMessageStatus.SUCCESS ? 'completed' : 'failed')
 
       const finalStateOnComplete = getState()
       const finalAssistantMsg = finalStateOnComplete.messages.entities[assistantMsgId]
@@ -343,7 +390,7 @@ export const createBaseCallbacks = (deps: BaseCallbacksDependencies) => {
 
         const timeOut = duration > 30 * 1000
         // 发送长时间运行消息的成功通知
-        if ((!isOnHomePage() && timeOut) || (!isFocused() && timeOut)) {
+        if (assistant.id !== DEFAULT_OPENCODE_AGENT_ID && ((!isOnHomePage() && timeOut) || (!isFocused() && timeOut))) {
           await notificationService.send({
             id: uuid(),
             type: 'success',
@@ -363,6 +410,7 @@ export const createBaseCallbacks = (deps: BaseCallbacksDependencies) => {
         // For OpenRouter, always use the accurate usage data from API, don't estimate
         const isOpenRouter = assistant.model?.provider === 'openrouter'
         if (
+          !finalAssistantMsg.providerMetadata?.opencodeDiagnostics &&
           !isOpenRouter &&
           response &&
           (response.usage?.total_tokens === 0 ||
@@ -392,7 +440,16 @@ export const createBaseCallbacks = (deps: BaseCallbacksDependencies) => {
         .map((id) => getState().messageBlocks.entities[id])
         .filter(Boolean) as MessageBlock[]
 
-      const messageUpdates = { status, metrics: response?.metrics, usage: response?.usage }
+      const messageUpdates = {
+        status,
+        metrics: response?.metrics,
+        usage: response?.usage,
+        updatedAt: responseTiming.finishedAt,
+        providerMetadata: {
+          ...getState().messages.entities[assistantMsgId]?.providerMetadata,
+          responseTiming
+        }
+      }
       dispatch(
         newMessagesActions.updateMessage({
           topicId,
@@ -401,6 +458,16 @@ export const createBaseCallbacks = (deps: BaseCallbacksDependencies) => {
         })
       )
       await saveUpdatesToDB(assistantMsgId, topicId, messageUpdates, todoBlocksToSave)
+      if (
+        assistant.id === DEFAULT_OPENCODE_AGENT_ID &&
+        (status === AssistantMessageStatus.SUCCESS || status === AssistantMessageStatus.ERROR)
+      ) {
+        void notifyAssistantTask(
+          { agentId: assistant.id, sessionId: extractAgentSessionIdFromTopicId(topicId) },
+          assistantMsgId,
+          status === AssistantMessageStatus.SUCCESS ? 'success' : 'error'
+        )
+      }
       recordDiagnostic(assistantMsgId, 'ui', 'state-applied', { status, usage: response?.usage })
 
       // Track token usage for agent sessions (chat sessions are tracked in fetchChatCompletion)

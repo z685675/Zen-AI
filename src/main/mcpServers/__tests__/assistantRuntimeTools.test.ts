@@ -4,6 +4,7 @@ import path from 'node:path'
 
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
+import { readAssistantToolFailure } from '@shared/agents/toolFailure'
 import AdmZip from 'adm-zip'
 import { PDFDocument } from 'pdf-lib'
 import sharp from 'sharp'
@@ -52,11 +53,13 @@ vi.mock('electron', () => ({
 }))
 
 import AssistantServer from '../assistant'
+import { createDocxBuffer } from '../assistantDocx'
+import type { AssistantProductOptions } from '../assistantProductTools'
 
 const tempDirs: string[] = []
 
-async function createClient(allowedRoot: string) {
-  const assistant = new AssistantServer([allowedRoot])
+async function createClient(allowedRoot: string, product?: AssistantProductOptions) {
+  const assistant = new AssistantServer([allowedRoot], product)
   const client = new Client({ name: 'assistant-runtime-tools-test', version: '1.0.0' })
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
   await assistant.mcpServer.connect(serverTransport)
@@ -77,6 +80,172 @@ afterEach(async () => {
 })
 
 describe('AssistantServer runtime tools', () => {
+  it('returns actionable new-assistant failures and marks nonzero Python exits as failed observations', async () => {
+    const root = await fs.mkdtemp(path.join(tmpdir(), 'zen-tool-failure-'))
+    tempDirs.push(root)
+    const observe = vi.fn()
+    const { assistant, client } = await createClient(root, {
+      workspace: root,
+      readNativeSkills: async () => [],
+      approveOverwrite: async () => false,
+      onTool: observe
+    })
+    mocks.executePython.mockResolvedValue({
+      exitCode: 1,
+      stdout: '',
+      stderr: "ModuleNotFoundError: No module named 'missing'; password=secret " + 'trace '.repeat(12_000),
+      durationMs: 10
+    })
+    try {
+      const failed = await client.callTool({ name: 'python_execute', arguments: { code: 'import missing' } })
+      expect(failed.isError).toBe(true)
+      expect(readAssistantToolFailure(failed)?.code).toBe('dependency')
+      expect(JSON.stringify(failed).length).toBeLessThan(35_000)
+      expect(JSON.stringify(failed)).not.toContain('password=secret')
+      expect(mocks.executePython).toHaveBeenCalledOnce()
+      expect(observe).toHaveBeenCalledWith('python_execute', expect.any(Number), true)
+      const missing = await client.callTool({ name: 'backup_file', arguments: { file_path: 'absent.txt' } })
+      expect(readAssistantToolFailure(missing)?.code).toBe('missing_file')
+    } finally {
+      await client.close()
+      await assistant.mcpServer.close()
+    }
+  })
+
+  it('rejects unsafe Office results before writing or requesting overwrite approval', async () => {
+    const root = await fs.mkdtemp(path.join(tmpdir(), 'zen-office-quality-'))
+    tempDirs.push(root)
+    const approve = vi.fn(async () => true)
+    const { assistant, client } = await createClient(root, {
+      workspace: root,
+      readNativeSkills: async () => [],
+      approveOverwrite: approve
+    })
+    const output = path.join(root, 'existing.xlsx')
+    await fs.writeFile(output, 'original')
+    try {
+      const formula = await client.callTool({
+        name: 'create_file',
+        arguments: {
+          file_path: output,
+          format: 'xlsx',
+          overwrite: true,
+          render_validation: 'skip',
+          workbook: { sheets: [{ rows: [[{ formula: '1+1' }]] }] }
+        }
+      })
+      expect(readAssistantToolFailure(formula)?.code).toBe('validation')
+      expect(await fs.readFile(output, 'utf8')).toBe('original')
+      expect(approve).not.toHaveBeenCalled()
+      const deck = await client.callTool({
+        name: 'create_file',
+        arguments: {
+          file_path: 'overfull.pptx',
+          format: 'pptx',
+          render_validation: 'skip',
+          slides: [{ title: 'Test', layout: 'cover', bullets: ['One', 'Two', 'Three', 'Four'] }]
+        }
+      })
+      expect(readAssistantToolFailure(deck)?.code).toBe('validation')
+      await expect(fs.stat(path.join(root, 'overfull.pptx'))).rejects.toMatchObject({ code: 'ENOENT' })
+      const success = await client.callTool({
+        name: 'create_file',
+        arguments: {
+          file_path: 'safe.xlsx',
+          format: 'xlsx',
+          render_validation: 'skip',
+          workbook: { sheets: [{ header_rows: 0, rows: [[{ formula: '1+1', result: 2, style: 'decimal' }]] }] }
+        }
+      })
+      expect(success.isError).not.toBe(true)
+      expect((await fs.stat(path.join(root, 'safe.xlsx'))).size).toBeGreaterThan(0)
+    } finally {
+      await client.close()
+      await assistant.mcpServer.close()
+    }
+  })
+
+  it('exposes new product tools only in the new assistant, without outbound search on discovery', async () => {
+    const root = await fs.mkdtemp(path.join(tmpdir(), 'zen-product-tools-'))
+    tempDirs.push(root)
+    const readNativeSkills = vi.fn(async () => [
+      { name: 'xlsx', location: '/native/winner/SKILL.md', content: 'private body' }
+    ])
+    const product: AssistantProductOptions = { workspace: root, readNativeSkills, approveOverwrite: async () => false }
+    for (const options of [undefined, product]) {
+      const { assistant, client } = await createClient(root, options)
+      try {
+        const names = (await client.listTools()).tools.map((tool) => tool.name)
+        expect(names.includes('web_search')).toBe(Boolean(options))
+        expect(readNativeSkills).not.toHaveBeenCalled()
+        if (options) {
+          const status = await client.callTool({ name: 'skill_status', arguments: {} })
+          expect(JSON.stringify(status)).toContain('/native/winner/SKILL.md')
+          expect(JSON.stringify(status)).not.toContain('private body')
+          const environment = await client.callTool({ name: 'environment', arguments: {} })
+          expect(JSON.parse((environment.content[0] as any).text).workspace).toBe(root)
+          expect(JSON.stringify(environment)).toContain('informational only')
+        }
+      } finally {
+        await client.close()
+        await assistant.mcpServer.close()
+      }
+    }
+  })
+  it('protects existing new-assistant outputs and returns backup metadata for approved replacements', async () => {
+    const root = await fs.mkdtemp(path.join(tmpdir(), 'zen-product-backup-'))
+    tempDirs.push(root)
+    const file = path.join(root, 'report.txt')
+    await fs.writeFile(file, 'Original report')
+    const approve = vi.fn(async () => true)
+    const { assistant, client } = await createClient(root, {
+      workspace: root,
+      readNativeSkills: async () => [],
+      approveOverwrite: approve
+    })
+    try {
+      const denied = await client.callTool({
+        name: 'create_file',
+        arguments: { file_path: file, format: 'txt', content: 'New content' }
+      })
+      expect(denied.isError).toBe(true)
+      expect(approve).not.toHaveBeenCalled()
+      expect(await fs.readFile(file, 'utf8')).toBe('Original report')
+      const result = await client.callTool({
+        name: 'create_file',
+        arguments: { file_path: file, format: 'txt', content: 'New content', overwrite: true }
+      })
+      expect(result.isError).not.toBe(true)
+      const payload = JSON.parse((result.content[0] as any).text)
+      expect(await fs.readFile(payload.backup_path, 'utf8')).toBe('Original report')
+      expect(approve).toHaveBeenCalledOnce()
+      expect(payload.write_mode).toBe('replaced-with-backup')
+    } finally {
+      await client.close()
+      await assistant.mcpServer.close()
+    }
+  })
+  it('enforces read-only product context even when a mutating MCP tool is directly requested', async () => {
+    const root = await fs.mkdtemp(path.join(tmpdir(), 'zen-product-plan-'))
+    tempDirs.push(root)
+    const { assistant, client } = await createClient(root, {
+      workspace: root,
+      readOnly: true,
+      readNativeSkills: async () => [],
+      approveOverwrite: async () => true
+    })
+    try {
+      const result = await client.callTool({
+        name: 'create_file',
+        arguments: { file_path: 'no.txt', format: 'txt', content: 'No' }
+      })
+      expect(result.isError).toBe(true)
+      expect(await fs.readdir(root)).toEqual([])
+    } finally {
+      await client.close()
+      await assistant.mcpServer.close()
+    }
+  })
   it('creates a DOCX without inferring a duplicate source table from Markdown content', async () => {
     const root = await fs.mkdtemp(path.join(tmpdir(), 'zen-assistant-docx-'))
     tempDirs.push(root)
@@ -117,7 +286,7 @@ describe('AssistantServer runtime tools', () => {
     tempDirs.push(root)
     const reportPath = path.join(root, 'report.docx')
     const sourcesPath = path.join(root, 'sources.csv')
-    await fs.writeFile(reportPath, 'docx fixture')
+    await fs.writeFile(reportPath, await createDocxBuffer('Runtime Report', 'Actual report content', []))
     await fs.writeFile(sourcesPath, 'source,url')
     const { assistant, client } = await createClient(root)
 
@@ -131,20 +300,22 @@ describe('AssistantServer runtime tools', () => {
       expect(result.isError).not.toBe(true)
 
       const payload = JSON.parse((result.content[0] as { type: 'text'; text: string }).text)
-      expect(payload).toEqual({
+      expect(payload).toMatchObject({
         status: 'ready',
         files: [
           {
             path: reportPath,
             format: 'docx',
-            size: 12,
-            verified: true
+            verified: true,
+            verification_scope: 'structure-and-content',
+            verification: { checks: expect.arrayContaining(['ooxml-package', 'docx-body-content']) }
           },
           {
             path: sourcesPath,
             format: 'csv',
             size: 10,
-            verified: true
+            verified: true,
+            verification_scope: 'structure-and-content'
           }
         ]
       })
@@ -157,6 +328,65 @@ describe('AssistantServer runtime tools', () => {
       })
       expect(missing.isError).toBe(true)
       expect(JSON.stringify(missing.content)).toContain('does not exist')
+    } finally {
+      await client.close()
+      await assistant.mcpServer.close()
+    }
+  })
+
+  it('rejects a fake Office deliverable without publishing success cards or removing other outputs', async () => {
+    const root = await fs.mkdtemp(path.join(tmpdir(), 'zen-assistant-invalid-delivery-'))
+    tempDirs.push(root)
+    const valid = path.join(root, 'valid.txt')
+    const fake = path.join(root, 'fake.xlsx')
+    await fs.writeFile(valid, 'A real result')
+    await fs.writeFile(fake, 'This is not an Excel workbook')
+    const { assistant, client } = await createClient(root)
+    try {
+      const result = await client.callTool({ name: 'present_files', arguments: { file_paths: [valid, fake] } })
+      expect(result.isError).toBe(true)
+      expect(JSON.stringify(result.content)).not.toContain('"status":"ready"')
+      expect(JSON.stringify(result.content)).toContain('fake.xlsx')
+      expect(await fs.readFile(valid, 'utf8')).toBe('A real result')
+      expect(await fs.readFile(fake, 'utf8')).toBe('This is not an Excel workbook')
+    } finally {
+      await client.close()
+      await assistant.mcpServer.close()
+    }
+  })
+
+  it('keeps unsupported files openable without marking them content-verified', async () => {
+    const root = await fs.mkdtemp(path.join(tmpdir(), 'zen-assistant-existence-delivery-'))
+    tempDirs.push(root)
+    const output = path.join(root, 'app.js')
+    await fs.writeFile(output, 'export const result = 1')
+    const { assistant, client } = await createClient(root)
+    try {
+      const result = await client.callTool({ name: 'present_files', arguments: { file_paths: [output, output] } })
+      expect(result.isError).not.toBe(true)
+      const payload = JSON.parse((result.content[0] as { text: string }).text)
+      expect(payload.files).toHaveLength(1)
+      expect(payload.files[0]).toMatchObject({ path: output, verified: false, verification_scope: 'existence-only' })
+      expect(payload.files[0].warnings).not.toHaveLength(0)
+    } finally {
+      await client.close()
+      await assistant.mcpServer.close()
+    }
+  })
+
+  it('registers existing output folders for persistent shortcuts, still enforcing allowed roots', async () => {
+    const root = await fs.mkdtemp(path.join(tmpdir(), 'zen-assistant-present-folder-'))
+    tempDirs.push(root)
+    const project = path.join(root, 'project')
+    await fs.mkdir(project)
+    const { assistant, client } = await createClient(root)
+    try {
+      const result = await client.callTool({ name: 'present_files', arguments: { file_paths: [project] } })
+      expect(result.isError).not.toBe(true)
+      const payload = JSON.parse((result.content[0] as { text: string }).text)
+      expect(payload.files).toEqual([expect.objectContaining({ path: project, kind: 'directory', verified: true })])
+      const outside = await client.callTool({ name: 'present_files', arguments: { file_paths: [path.dirname(root)] } })
+      expect(outside.isError).toBe(true)
     } finally {
       await client.close()
       await assistant.mcpServer.close()

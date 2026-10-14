@@ -931,6 +931,30 @@ const createSessionsRouter = (): express.Router => {
    *               $ref: '#/components/schemas/ErrorResponse'
    */
   sessionsRouter.delete('/:sessionId', validateSessionId, handleValidationErrors, sessionHandlers.deleteSession)
+  sessionsRouter.get(
+    '/:sessionId/skill-inventory',
+    validateSessionId,
+    handleValidationErrors,
+    sessionHandlers.inspectSessionSkills
+  )
+  sessionsRouter.delete(
+    '/:sessionId/native-memory',
+    validateSessionId,
+    handleValidationErrors,
+    sessionHandlers.resetNativeMemory
+  )
+  sessionsRouter.post(
+    '/:sessionId/continue-new',
+    validateSessionId,
+    handleValidationErrors,
+    sessionHandlers.continueInNewAssistant
+  )
+  sessionsRouter.post(
+    '/:sessionId/native-history',
+    validateSessionId,
+    handleValidationErrors,
+    sessionHandlers.changeNativeHistory
+  )
 
   return sessionsRouter
 }

@@ -207,6 +207,10 @@ export function showAppUpdateDownloadedModal(t: Translate, updateInfo: UpdateInf
 
       if (shouldUseManualMacInstall) {
         const result = await window.api.quitAndInstallUpdate()
+        if (result?.status === 'cancelled') {
+          restoreModal()
+          return
+        }
         if (result === true || result?.success === true) {
           const message = result?.fallbackToFolder
             ? '没能直接打开安装包，已为你定位到安装包位置，请双击 DMG 完成安装。'
@@ -225,6 +229,10 @@ export function showAppUpdateDownloadedModal(t: Translate, updateInfo: UpdateInf
       }
 
       const result = await window.api.quitAndInstallUpdate()
+      if (result?.status === 'cancelled') {
+        restoreModal()
+        return
+      }
       if (result === true || result?.success === true) {
         return
       }

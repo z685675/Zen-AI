@@ -1,4 +1,7 @@
+import { randomUUID } from 'node:crypto'
+
 import { loggerService } from '@logger'
+import { DEFAULT_OPENCODE_AGENT_ID } from '@shared/config/agents'
 import type {
   AgentMessageAssistantPersistPayload,
   AgentMessagePersistExchangePayload,
@@ -10,10 +13,14 @@ import type {
 import { and, asc, eq, sql } from 'drizzle-orm'
 
 import { BaseService } from '../BaseService'
+import { repairInterruptedHistory } from '../services/interruptedHistory'
+import { hasSessionActivity } from '../services/sessionActivity'
 import type { InsertSessionMessageRow, SessionMessageRow } from './schema'
 import { sessionMessagesTable } from './schema'
 
 const logger = loggerService.withContext('AgentMessageRepository')
+const applicationStartedAt = Date.now()
+const applicationRunId = randomUUID()
 
 export type PersistUserMessageParams = AgentMessageUserPersistPayload & {
   sessionId: string
@@ -114,7 +121,19 @@ class AgentMessageRepository extends BaseService {
 
     const database = await this.getDatabase()
     const now = createdAt ?? payload.message.createdAt ?? new Date().toISOString()
-    const serializedPayload = this.serializeMessage(payload)
+    // Provenance, not a new DB field. Fresh pending messages must not be mistaken
+    // for abandoned history when the machine's wall clock changes.
+    const serializedPayload = this.serializeMessage(
+      payload.message.assistantId === DEFAULT_OPENCODE_AGENT_ID && payload.message.role === 'assistant'
+        ? {
+            ...payload,
+            message: {
+              ...payload.message,
+              providerMetadata: { ...payload.message.providerMetadata, zenAppRun: { id: applicationRunId } }
+            }
+          }
+        : payload
+    )
     const serializedMetadata = this.serializeMetadata(metadata)
 
     const existingRow = await this.findExistingMessageRow(sessionId, payload.message.role, payload.message.id)
@@ -207,7 +226,22 @@ class AgentMessageRepository extends BaseService {
       for (const row of rows) {
         const deserialized = this.deserialize(row)
         if (deserialized?.content) {
-          messages.push(deserialized.content as AgentPersistedMessage)
+          const original = deserialized.content as AgentPersistedMessage
+          const repaired =
+            original.message?.assistantId === DEFAULT_OPENCODE_AGENT_ID && !hasSessionActivity(sessionId)
+              ? repairInterruptedHistory(original, applicationStartedAt, applicationRunId)
+              : original
+          if (repaired !== original) {
+            // Compare the stored payload to avoid overwriting a concurrent final persist.
+            const updated = await database
+              .update(sessionMessagesTable)
+              .set({ content: JSON.stringify(repaired) })
+              .where(and(eq(sessionMessagesTable.id, row.id), eq(sessionMessagesTable.content, row.content)))
+            if (updated.rowsAffected === 0) {
+              return this.getSessionHistory(sessionId)
+            }
+          }
+          messages.push(repaired)
         }
       }
 

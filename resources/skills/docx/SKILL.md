@@ -11,6 +11,7 @@ Create professional documents with clear structure, readable formatting, and a r
 
 - Determine the document type, audience, tone, and required sections.
 - Use headings, short paragraphs, tables, and lists intentionally.
+- For long documents, keep headings with their following content and repeat table headers. Let long body table rows flow across pages; do not put a page-sized paragraph into an unbreakable cell. Check actual page layout when a renderer is available.
 - Use `mcp__assistant__create_file` with `format: "docx"` for the first verified file output.
 - Treat Markdown as an internal authoring format only. Convert headings, emphasis, links, lists, quotes, code blocks, and pipe tables into native Word structures; never expose `#`, `**`, table separators, or fenced-code markers in the finished document unless the user explicitly asks to quote Markdown source.
 - Preserve every cited URL in the `content` passed to `create_file` using Markdown link syntax such as `[Source title](https://example.com/page)`. Source lists must become visible native Word hyperlinks; never pass only a source title when its URL is known.

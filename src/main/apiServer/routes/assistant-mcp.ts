@@ -3,6 +3,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import path from 'node:path'
 
 import AssistantServer from '@main/mcpServers/assistant'
+import type { AssistantProductOptions } from '@main/mcpServers/assistantProductTools'
 import { loggerService } from '@main/services/LoggerService'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp'
 import type { JSONRPCMessage } from '@modelcontextprotocol/sdk/types'
@@ -17,6 +18,7 @@ const SESSION_INIT_TIMEOUT_MS = 30_000
 type AssistantContext = {
   allowedRoots: string[]
   updatedAt: number
+  product?: AssistantProductOptions
 }
 
 type SessionEntry = {
@@ -28,13 +30,18 @@ type SessionEntry = {
 const contexts = new Map<string, AssistantContext>()
 const sessions = new Map<string, SessionEntry>()
 
-export function registerAssistantMcpContext(contextId: string, allowedRoots: string[]): void {
+export function registerAssistantMcpContext(
+  contextId: string,
+  allowedRoots: string[],
+  product?: AssistantProductOptions
+): void {
   // A session can be invoked again after a cancelled or interrupted turn. Drop any
   // stale transport before replacing its authorization context.
   cleanupAssistantMcpContext(contextId)
   contexts.set(contextId, {
     allowedRoots: [...new Set(allowedRoots.filter(Boolean).map((root) => path.resolve(root)))],
-    updatedAt: Date.now()
+    updatedAt: Date.now(),
+    product
   })
 }
 
@@ -48,6 +55,12 @@ export function cleanupAssistantMcpContext(contextId: string): void {
   }
 }
 
+export function touchAssistantMcpContext(contextId: string): boolean {
+  const context = contexts.get(contextId)
+  if (context) context.updatedAt = Date.now()
+  return Boolean(context)
+}
+
 function cleanupExpiredContexts(): void {
   const cutoff = Date.now() - CONTEXT_TTL_MS
   for (const [contextId, context] of contexts) {
@@ -56,7 +69,7 @@ function cleanupExpiredContexts(): void {
 }
 
 function createSessionEntry(contextId: string, context: AssistantContext): SessionEntry {
-  const server = new AssistantServer(context.allowedRoots)
+  const server = new AssistantServer(context.allowedRoots, context.product)
   const pendingId = `pending:${randomUUID()}`
   let initialized = false
   const transport = new StreamableHTTPServerTransport({

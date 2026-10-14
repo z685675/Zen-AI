@@ -74,6 +74,10 @@ If the skill is unavailable, directly read `.agents/skills/gh-create-issue/SKILL
 
 ## Project Architecture
 
+### Assistant Maintenance Boundary
+
+All future assistant features and optimizations target the OpenCode-based new assistant. The deprecated assistant is view-only and not maintained: retain history, exports, file access and continuation into the new assistant, but prohibit old sending, retries and task execution at UI and service/API admission layers. Legacy external channels (including WeChat), scheduled tasks and heartbeats are disabled at UI, API/IPC and execution layers. Existing connections/runs must stop, persisted active flags must be cleared/paused, and configurations/credentials/history must remain intact. Developer mode is not an exception. Do not automatically reopen these features until separately implemented and authorized for the new assistant; do not alter OpenCode's native loop/compression to accommodate them.
+
 ### Electron Structure
 
 ```

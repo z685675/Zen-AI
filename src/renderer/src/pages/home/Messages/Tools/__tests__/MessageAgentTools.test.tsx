@@ -1,4 +1,5 @@
 import type { NormalToolResponse } from '@renderer/types'
+import { createAssistantToolFailure } from '@shared/agents/toolFailure'
 import { render, screen } from '@testing-library/react'
 import { parse as parsePartialJson } from 'partial-json'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -209,6 +210,21 @@ describe('MessageAgentTools', () => {
   })
 
   describe('isValidAgentToolsType', () => {
+    it('keeps native product error guidance visible outside collapsed tool details after reload', () => {
+      const failure = createAssistantToolFailure('create_file', 'Office quality validation failed')
+      const response = JSON.stringify({ failure })
+      const { rerender } = render(
+        <MessageAgentTools toolResponse={createToolResponse({ status: 'error', response })} />
+      )
+      expect(screen.getByRole('status')).toHaveTextContent('assistantToolFailure.validation.summary')
+      expect(screen.getByRole('status').closest('[data-testid="collapse"]')).toBeNull()
+      rerender(
+        <MessageAgentTools
+          toolResponse={createToolResponse({ status: 'error', response: JSON.parse(JSON.stringify(response)) })}
+        />
+      )
+      expect(screen.getByRole('status')).toHaveTextContent('assistantToolFailure.validation.next')
+    })
     it('should return true for valid tool types', () => {
       expect(isValidAgentToolsType('Read')).toBe(true)
       expect(isValidAgentToolsType('Bash')).toBe(true)

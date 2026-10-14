@@ -1,5 +1,6 @@
 import { loggerService } from '@logger'
 import { formatAgentServerError } from '@renderer/utils/error'
+import type { SessionSkillInventory } from '@shared/agents/skillInventory'
 import type {
   AddAgentForm,
   ApiModelsFilter,
@@ -11,6 +12,7 @@ import type {
   CreateSessionRequest,
   GetAgentResponse,
   GetAgentSessionResponse,
+  LegacyContinuationResponse,
   ListAgentSessionsResponse,
   ListOptions,
   SearchAgentSessionsResponse,
@@ -72,7 +74,11 @@ export const DEFAULT_SESSION_PAGE_SIZE = 20
 export class AgentApiClient {
   private axios: Axios
   private apiVersion: ApiVersion = 'v1'
-  constructor(config: AxiosRequestConfig, apiVersion?: ApiVersion) {
+  constructor(
+    config: AxiosRequestConfig,
+    apiVersion?: ApiVersion,
+    private workspace: 'legacy' | 'opencode' = 'legacy'
+  ) {
     if (!config.baseURL || !config.headers?.Authorization) {
       throw new Error('Please pass in baseUrl and Authroization header.')
     }
@@ -85,22 +91,75 @@ export class AgentApiClient {
     }
   }
 
-  public agentPaths = {
-    base: `/${this.apiVersion}/agents`,
-    withId: (id: string) => `/${this.apiVersion}/agents/${id}`
+  private get agentsBase() {
+    return `/${this.apiVersion}/${this.workspace === 'opencode' ? 'new-assistant/' : ''}agents`
+  }
+
+  public get agentPaths() {
+    return {
+      base: this.agentsBase,
+      withId: (id: string) => `${this.agentsBase}/${id}`
+    }
   }
 
   public getSessionPaths = (agentId: string) => ({
-    base: `/${this.apiVersion}/agents/${agentId}/sessions`,
-    withId: (id: string) => `/${this.apiVersion}/agents/${agentId}/sessions/${id}`
+    base: `${this.agentsBase}/${agentId}/sessions`,
+    withId: (id: string) => `${this.agentsBase}/${agentId}/sessions/${id}`
   })
 
-  public allSessionsPath = `/${this.apiVersion}/agents/sessions`
-  public allSessionsSearchPath = `/${this.apiVersion}/agents/sessions/search`
+  public get allSessionsPath() {
+    return `${this.agentsBase}/sessions`
+  }
+  public get allSessionsSearchPath() {
+    return `${this.agentsBase}/sessions/search`
+  }
+
+  public async resetNativeMemory(agentId: string, sessionId: string): Promise<void> {
+    await this.axios.delete(`${this.getSessionPaths(agentId).withId(sessionId)}/native-memory`)
+  }
+
+  public async inspectSessionSkills(agentId: string, sessionId: string): Promise<SessionSkillInventory> {
+    const response = await this.axios.get(`${this.getSessionPaths(agentId).withId(sessionId)}/skill-inventory`, {
+      timeout: 8000
+    })
+    return response.data
+  }
+
+  public async continueInNewAssistant(agentId: string, sessionId: string): Promise<LegacyContinuationResponse> {
+    const response = await this.axios.post(
+      `/${this.apiVersion}/agents/${encodeURIComponent(agentId)}/sessions/${encodeURIComponent(sessionId)}/continue-new`,
+      {},
+      { timeout: 125_000 }
+    )
+    return {
+      session: GetAgentSessionResponseSchema.parse(response.data.session),
+      reused: response.data.reused === true
+    }
+  }
+
+  public async getContinuationSource(agentId: string, sessionId: string): Promise<GetAgentSessionResponse> {
+    const response = await this.axios.get(
+      `/${this.apiVersion}/agents/${encodeURIComponent(agentId)}/sessions/${encodeURIComponent(sessionId)}`
+    )
+    return GetAgentSessionResponseSchema.parse(response.data)
+  }
+
+  public async changeNativeHistory(
+    agentId: string,
+    sessionId: string,
+    messageId: string,
+    action: 'retry' | 'delete' | 'fork'
+  ): Promise<GetAgentSessionResponse> {
+    const response = await this.axios.post(`${this.getSessionPaths(agentId).withId(sessionId)}/native-history`, {
+      messageId,
+      action
+    })
+    return GetAgentSessionResponseSchema.parse(response.data)
+  }
 
   public getSessionMessagesPaths = (agentId: string, sessionId: string) => ({
-    base: `/${this.apiVersion}/agents/${agentId}/sessions/${sessionId}/messages`,
-    withId: (id: number) => `/${this.apiVersion}/agents/${agentId}/sessions/${sessionId}/messages/${id}`
+    base: `${this.agentsBase}/${agentId}/sessions/${sessionId}/messages`,
+    withId: (id: number) => `${this.agentsBase}/${agentId}/sessions/${sessionId}/messages/${id}`
   })
 
   public channelPaths = {
@@ -278,10 +337,14 @@ export class AgentApiClient {
     }
   }
 
-  public async getSession(agentId: string, sessionId: string): Promise<GetAgentSessionResponse> {
+  public async getSession(
+    agentId: string,
+    sessionId: string,
+    options?: { timeout: number }
+  ): Promise<GetAgentSessionResponse> {
     const url = this.getSessionPaths(agentId).withId(sessionId)
     try {
-      const response = await this.axios.get(url)
+      const response = await this.axios.get(url, options)
       // const data = GetAgentSessionResponseSchema.parse(response.data)
       // TODO: enable validation
       const data = response.data

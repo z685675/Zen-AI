@@ -13,6 +13,8 @@ import type { ProgressInfo, UpdateDownloadedEvent, UpdateInfo } from 'electron-u
 import { autoUpdater } from 'electron-updater'
 import semver from 'semver'
 
+import { allowAssistantExit } from './AssistantExitGuard'
+
 export type AppUpdateCheckSource = 'auto' | 'manual'
 
 export interface AppUpdateInfo {
@@ -126,7 +128,7 @@ export type AppUpdateInstallResult =
     }
   | {
       success: false
-      status: 'not-downloaded' | 'error'
+      status: 'not-downloaded' | 'error' | 'cancelled'
       message: string
       updateInfo: AppUpdateInfo | null
       stage?: 'package-missing' | 'prepare-installer' | 'open-installer' | 'start-installer'
@@ -495,6 +497,9 @@ export class AppUpdateService {
       updateInfo: installUpdateInfo,
       progress: null
     })
+
+    if (!(await allowAssistantExit()))
+      return { success: false, status: 'cancelled', message: '', updateInfo: installUpdateInfo }
 
     try {
       app.isInstallingUpdate = true

@@ -3,7 +3,7 @@ import * as fs from 'node:fs'
 import * as path from 'node:path'
 
 import { loggerService } from '@logger'
-import { getDataPath } from '@main/utils'
+import { getDataPath, getResourcePath, toAsarUnpackedPath } from '@main/utils'
 import { directoryExists } from '@main/utils/file'
 import { deleteDirectoryRecursive } from '@main/utils/fileOperations'
 import { findAllSkillDirectories, findSkillMdPath, parseSkillMetadata } from '@main/utils/markdownParser'
@@ -21,6 +21,7 @@ import { app, net } from 'electron'
 import StreamZip from 'node-stream-zip'
 
 import { assertSafeSkillArchiveEntry } from './skillArchive'
+import { inspectSkillCompatibility } from './skillCompatibility'
 import { SkillInstaller } from './SkillInstaller'
 import { SkillRepository } from './SkillRepository'
 import { syncSkillsToWorkspace } from './skillWorkspaceSync'
@@ -74,6 +75,18 @@ export class SkillService {
     return this.repository.list()
   }
 
+  async inspect(skillId: string) {
+    if (typeof skillId !== 'string' || !/^[\w.-]{1,128}$/.test(skillId)) throw new Error('Invalid Skill ID')
+    const skill = await this.repository.getById(skillId)
+    if (!skill) throw new Error('Skill not found')
+    return inspectSkillCompatibility(
+      skill,
+      await this.repository.list(),
+      getDataPath('Skills'),
+      path.join(toAsarUnpackedPath(getResourcePath()), 'skills')
+    )
+  }
+
   async toggle(options: SkillToggleOptions): Promise<InstalledSkill | null> {
     const skill = await this.repository.getById(options.skillId)
     if (!skill) return null
@@ -86,7 +99,9 @@ export class SkillService {
       await this.unlinkSkill(skill.folderName)
     }
 
-    return this.repository.toggleEnabled(options.skillId, options.isEnabled)
+    const result = await this.repository.toggleEnabled(options.skillId, options.isEnabled)
+    await this.notifyNewAssistantSkillsChanged()
+    return result
   }
 
   async readFile(skillId: string, filename: string): Promise<string | null> {
@@ -127,6 +142,11 @@ export class SkillService {
   }
 
   async uninstall(skillId: string): Promise<void> {
+    const { withOpenCodeSkillMutation } = await import('../services/opencode/process')
+    await withOpenCodeSkillMutation(() => this.uninstallSkill(skillId))
+  }
+
+  private async uninstallSkill(skillId: string): Promise<void> {
     const skill = await this.repository.getById(skillId)
     if (!skill) {
       throw new Error(`Skill not found: ${skillId}`)
@@ -139,6 +159,7 @@ export class SkillService {
     const skillPath = this.getSkillStoragePath(skill.folderName)
     await this.installer.uninstall(skillPath)
     await this.repository.delete(skillId)
+    await this.notifyNewAssistantSkillsChanged()
     logger.info('Skill uninstalled', { skillId, folderName: skill.folderName })
   }
 
@@ -382,11 +403,22 @@ export class SkillService {
    * Built-in skills are auto-linked; other sources default to disabled.
    */
   private async installSkillDir(skillDir: string, source: string, sourceUrl: string | null): Promise<InstalledSkill> {
+    const { withOpenCodeSkillMutation } = await import('../services/opencode/process')
+    return withOpenCodeSkillMutation(() => this.installSkillDirSafely(skillDir, source, sourceUrl))
+  }
+
+  private async installSkillDirSafely(
+    skillDir: string,
+    source: string,
+    sourceUrl: string | null
+  ): Promise<InstalledSkill> {
     const metadata = await parseSkillMetadata(skillDir, path.basename(skillDir), 'skills')
     const folderName = this.sanitizeFolderName(metadata.filename)
 
     // Check for existing skill with same folder name
     const existing = await this.repository.getByFolderName(folderName)
+    if (existing?.source === 'builtin' && source !== 'builtin')
+      throw new Error('A third-party Skill cannot replace a built-in Skill directory; rename its directory first')
 
     const contentHash = await this.installer.computeContentHash(skillDir)
     const destPath = this.getSkillStoragePath(folderName)
@@ -427,7 +459,17 @@ export class SkillService {
     })
 
     logger.info('Skill installed', { id, name: metadata.name, folderName, source })
+    await this.notifyNewAssistantSkillsChanged()
     return skill
+  }
+
+  private async notifyNewAssistantSkillsChanged() {
+    try {
+      const { invalidateOpenCodeSkillInventory } = await import('../services/opencode/process')
+      invalidateOpenCodeSkillInventory()
+    } catch {
+      logger.warn('Unable to invalidate new-assistant Skill inventory; restart the assistant to refresh it')
+    }
   }
 
   // ===========================================================================

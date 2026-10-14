@@ -14,8 +14,8 @@ import type { AgentSessionSyncMetadata } from '@renderer/types/newMessage'
 import type { Message } from '@renderer/types/newMessage'
 import { firstLetter, isEmoji, removeLeadingEmoji } from '@renderer/utils'
 import { isAgentSessionTopicId } from '@renderer/utils/agentSession'
+import { formatMessageTimestamp } from '@renderer/utils/messageTiming'
 import { Avatar, Checkbox, Tooltip } from 'antd'
-import dayjs from 'dayjs'
 import { Sparkle } from 'lucide-react'
 import type { FC } from 'react'
 import { memo, useCallback, useMemo } from 'react'
@@ -145,8 +145,9 @@ const MessageHeader: FC<Props> = memo(({ assistant, model, message, topic, isGro
           )}
         </HStack>
         <InfoWrap className="message-header-info-wrap text-(--color-text-3) text-[10px]">
-          <MessageTime>{dayjs(message?.updatedAt ?? message.createdAt).format('MM/DD HH:mm')}</MessageTime>
-          {isBubbleStyle && message.usage !== undefined && (
+          <MessageTime>{formatMessageTimestamp(message)}</MessageTime>
+          {message.providerMetadata?.legacyContinuation && <span>{t('assistant_transition.historical_copy')}</span>}
+          {isBubbleStyle && (message.usage !== undefined || message.providerMetadata?.responseTiming) && (
             <>
               |
               <MessageTokens message={message} />
@@ -191,6 +192,7 @@ const UserWrap = styled.div`
 const InfoWrap = styled.div`
   display: flex;
   flex-direction: row;
+  flex-wrap: wrap;
   align-items: center;
   gap: 4px;
 `

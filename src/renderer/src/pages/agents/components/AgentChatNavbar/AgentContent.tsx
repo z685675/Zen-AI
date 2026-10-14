@@ -3,10 +3,13 @@ import { useActiveSession } from '@renderer/hooks/agents/useActiveSession'
 import { AgentSettingsPopup, SessionSettingsPopup } from '@renderer/pages/settings/AgentSettings'
 import { AgentLabel, SessionLabel } from '@renderer/pages/settings/AgentSettings/shared'
 import type { AgentEntity } from '@renderer/types'
+import { isAssistantExecutionAllowed } from '@shared/agents/assistantAvailability'
+import { DEFAULT_OPENCODE_AGENT_ID } from '@shared/config/agents'
 import { ChevronRight } from 'lucide-react'
 
 import SessionModelSelectButton from '../SessionModelSelectButton'
 import OpenExternalAppButton from './OpenExternalAppButton'
+import SessionInspectionMenu from './SessionInspectionMenu'
 import SessionWorkspaceMeta from './SessionWorkspaceMeta'
 import Tools from './Tools'
 
@@ -16,6 +19,7 @@ type AgentContentProps = {
 
 const AgentContent = ({ activeAgent }: AgentContentProps) => {
   const { session: activeSession } = useActiveSession()
+  const canExecute = isAssistantExecutionAllowed(activeAgent.id)
 
   return (
     <div className="flex w-full justify-between pr-2">
@@ -24,8 +28,8 @@ const AgentContent = ({ activeAgent }: AgentContentProps) => {
           <div className="flex flex-nowrap items-center gap-2">
             {/* Agent Label */}
             <div
-              className="flex h-full cursor-pointer items-center"
-              onClick={() => AgentSettingsPopup.show({ agentId: activeAgent.id })}>
+              className="flex h-full items-center"
+              onClick={canExecute ? () => AgentSettingsPopup.show({ agentId: activeAgent.id }) : undefined}>
               <AgentLabel
                 agent={activeAgent}
                 classNames={{ name: 'max-w-40 text-xs', avatar: 'h-4.5 w-4.5', container: 'gap-1.5' }}
@@ -39,8 +43,9 @@ const AgentContent = ({ activeAgent }: AgentContentProps) => {
 
                 {/* Session Label */}
                 <div
-                  className="flex h-full cursor-pointer items-center"
+                  className="flex h-full items-center"
                   onClick={() =>
+                    canExecute &&
                     SessionSettingsPopup.show({
                       agentId: activeAgent.id,
                       sessionId: activeSession.id
@@ -53,7 +58,11 @@ const AgentContent = ({ activeAgent }: AgentContentProps) => {
                 <ChevronRight className="h-4 w-4 text-gray-400" />
 
                 {/* Model Button */}
-                <SessionModelSelectButton agentId={activeAgent.id} session={activeSession} />
+                {canExecute ? (
+                  <SessionModelSelectButton agentId={activeAgent.id} session={activeSession} />
+                ) : (
+                  <span className="text-(--color-text-2) text-xs">{activeSession.model}</span>
+                )}
 
                 {/* Separator */}
                 <ChevronRight className="h-4 w-4 text-gray-400" />
@@ -70,7 +79,10 @@ const AgentContent = ({ activeAgent }: AgentContentProps) => {
         {activeSession && activeSession.accessible_paths?.[0] && (
           <OpenExternalAppButton workdir={activeSession.accessible_paths[0]} className="mr-2" />
         )}
-        <Tools />
+        {canExecute && <Tools />}
+        {activeAgent.id === DEFAULT_OPENCODE_AGENT_ID && activeSession && (
+          <SessionInspectionMenu session={activeSession} />
+        )}
       </div>
     </div>
   )

@@ -8,11 +8,13 @@ class NotificationService {
     // 使用 Electron Notification API
     const electronNotification = new ElectronNotification({
       title: notification.title,
-      body: notification.message
+      body: notification.message,
+      silent: notification.silent ?? false
     })
 
     electronNotification.on('click', () => {
-      windowService.getMainWindow()?.show()
+      windowService.showMainWindow()
+      windowService.getMainWindow()?.focus()
       windowService.getMainWindow()?.webContents.send('notification-click', notification)
     })
 

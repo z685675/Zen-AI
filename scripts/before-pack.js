@@ -3,6 +3,7 @@ const { execFileSync, execSync } = require('child_process')
 const fs = require('fs')
 const path = require('path')
 const { parse, stringify } = require('yaml')
+const { generateOpenCodeLicenses } = require('./opencode-runtime-packaging')
 
 const workspaceConfigPath = path.join(__dirname, '..', 'pnpm-workspace.yaml')
 
@@ -56,7 +57,19 @@ const packages = [
   '@openai/codex-linux-arm64',
   '@openai/codex-linux-x64',
   '@openai/codex-win32-arm64',
-  '@openai/codex-win32-x64'
+  '@openai/codex-win32-x64',
+  'opencode-windows-arm64',
+  'opencode-windows-x64',
+  'opencode-windows-x64-baseline',
+  'opencode-darwin-arm64',
+  'opencode-darwin-x64',
+  'opencode-darwin-x64-baseline',
+  'opencode-linux-arm64',
+  'opencode-linux-x64',
+  'opencode-linux-x64-baseline',
+  'opencode-linux-arm64-musl',
+  'opencode-linux-x64-musl',
+  'opencode-linux-x64-baseline-musl'
 ]
 
 const platformToArch = {
@@ -121,6 +134,12 @@ exports.default = async function (context) {
 
   await downloadPackages()
 
+  // Config initialization otherwise performs a detached npm install even in
+  // pure mode. Stage the complete pinned production tree at build time.
+  const opencodeRuntime = path.join(__dirname, '..', 'resources', 'opencode-runtime')
+  execSync('npm ci --omit=dev --ignore-scripts --no-audit --no-fund', { cwd: opencodeRuntime, stdio: 'inherit' })
+  generateOpenCodeLicenses()
+
   const excludePackages = async (packagesToExclude) => {
     // 从项目根目录的 electron-builder.yml 读取 files 配置，避免多次覆盖配置导致出错
     const electronBuilderConfigPath = path.join(__dirname, '..', 'electron-builder.yml')
@@ -133,12 +152,16 @@ exports.default = async function (context) {
     context.packager.config.files[0].filter = filters
   }
 
-  const arm64KeepPackages = packages.filter((p) => p.includes('arm64') && p.includes(platform))
+  const matchesTarget = (p, cpu) =>
+    p.startsWith('opencode-')
+      ? p === `opencode-${platform === 'win32' ? 'windows' : platform}-${cpu}${cpu === 'x64' ? '-baseline' : ''}`
+      : p.includes(cpu) && p.includes(platform)
+  const arm64KeepPackages = packages.filter((p) => matchesTarget(p, 'arm64'))
   const arm64ExcludePackages = packages
     .filter((p) => !arm64KeepPackages.includes(p))
     .map((p) => '!node_modules/' + p + '/**')
 
-  const x64KeepPackages = packages.filter((p) => p.includes('x64') && p.includes(platform))
+  const x64KeepPackages = packages.filter((p) => matchesTarget(p, 'x64'))
   const x64ExcludePackages = packages
     .filter((p) => !x64KeepPackages.includes(p))
     .map((p) => '!node_modules/' + p + '/**')

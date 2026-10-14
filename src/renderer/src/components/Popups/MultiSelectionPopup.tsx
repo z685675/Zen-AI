@@ -1,6 +1,7 @@
 import { CopyIcon, DeleteIcon } from '@renderer/components/Icons'
 import { useChatContext } from '@renderer/hooks/useChatContext'
 import type { Topic } from '@renderer/types'
+import { DEFAULT_OPENCODE_AGENT_ID } from '@shared/config/agents'
 import { Button, Tooltip } from 'antd'
 import { Save, X } from 'lucide-react'
 import type { FC } from 'react'
@@ -55,16 +56,18 @@ const MultiSelectActionPopup: FC<Props> = ({ topic }) => {
               onClick={() => handleAction('copy')}
             />
           </Tooltip>
-          <Tooltip title={t('common.delete')}>
-            <Button
-              shape="circle"
-              color="danger"
-              variant="text"
-              danger
-              icon={<DeleteIcon size={16} className="lucide-custom" />}
-              onClick={() => handleAction('delete')}
-            />
-          </Tooltip>
+          {topic.assistantId !== DEFAULT_OPENCODE_AGENT_ID && (
+            <Tooltip title={t('common.delete')}>
+              <Button
+                shape="circle"
+                color="danger"
+                variant="text"
+                danger
+                icon={<DeleteIcon size={16} className="lucide-custom" />}
+                onClick={() => handleAction('delete')}
+              />
+            </Tooltip>
+          )}
         </ActionButtons>
         <Tooltip title={t('chat.navigation.close')}>
           <Button shape="circle" color="default" variant="text" icon={<X size={16} />} onClick={handleClose} />

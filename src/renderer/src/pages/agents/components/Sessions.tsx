@@ -11,6 +11,7 @@ import { renameAgentSessionIfNeeded } from '@renderer/store/thunk/messageThunk'
 import { buildAgentSessionTopicId } from '@renderer/utils/agentSession'
 import { isUnnamedAgentSessionName } from '@renderer/utils/agentSessionTitle'
 import { formatErrorMessage } from '@renderer/utils/error'
+import { isAssistantExecutionAllowed } from '@shared/agents/assistantAvailability'
 import { Alert, Button, Spin } from 'antd'
 import { motion } from 'framer-motion'
 import { throttle } from 'lodash'
@@ -153,6 +154,8 @@ const Sessions = ({ agentId, onSelectItem }: SessionsProps) => {
 
   useEffect(() => {
     let cancelled = false
+
+    if (!isAssistantExecutionAllowed(agentId)) return
 
     const repairMissingTitles = async () => {
       for (const session of sessions) {

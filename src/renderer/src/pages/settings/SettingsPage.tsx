@@ -5,7 +5,6 @@ import ModelSettings from '@renderer/pages/settings/ModelSettings/ModelSettings'
 import { Divider as AntDivider } from 'antd'
 import {
   Brain,
-  CalendarClock,
   Cloud,
   Command,
   FileCode,
@@ -14,7 +13,6 @@ import {
   MonitorCog,
   Package,
   PictureInPicture2,
-  Radio,
   Search,
   Server,
   Settings2,
@@ -126,18 +124,6 @@ const SettingsPage: FC = () => {
             <MenuItem className={isRoute('/settings/api-server')}>
               <Server size={18} />
               {t('apiServer.title')}
-            </MenuItem>
-          </MenuItemLink>
-          <MenuItemLink to="/settings/channels">
-            <MenuItem className={isRoute('/settings/channels')}>
-              <Radio size={18} />
-              {t('settings.channels.title')}
-            </MenuItem>
-          </MenuItemLink>
-          <MenuItemLink to="/settings/scheduled-tasks">
-            <MenuItem className={isRoute('/settings/scheduled-tasks')}>
-              <CalendarClock size={18} />
-              {t('settings.scheduledTasks.title')}
             </MenuItem>
           </MenuItemLink>
           <MenuItemLink to="/settings/docprocess">

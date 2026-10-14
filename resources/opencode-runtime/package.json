@@ -1,0 +1,8 @@
+{
+  "name": "zen-opencode-isolated-runtime",
+  "version": "1.18.35",
+  "private": true,
+  "dependencies": {
+    "@opencode-ai/plugin": "1.18.35"
+  }
+}

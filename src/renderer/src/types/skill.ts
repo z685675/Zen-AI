@@ -177,6 +177,23 @@ export interface SkillInstallFromDirectoryOptions {
 
 export type SkillResult<T> = { success: true; data: T } | { success: false; error: unknown }
 
+/** On-demand compatibility evidence, not persisted state or a guarantee of execution. */
+export interface SkillCompatibilityReport {
+  name: string
+  enabled: boolean
+  definitionValid: boolean
+  compatibility: string | null
+  declaredTools: string[]
+  requiredCommands: string[]
+  missingCommands: string[]
+  alternativeCommands: string[]
+  alternativesAvailable: boolean | null
+  requiredEnvironment: string[]
+  missingEnvironment: string[]
+  conflicts: Array<{ name: string; source: string; folder: string }>
+  warnings: string[]
+}
+
 // ============================================================================
 // File tree node (for skill detail file browser)
 // ============================================================================

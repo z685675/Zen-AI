@@ -653,7 +653,8 @@
         }
       }
     },
-    "sidebar_title": "Agenten",
+    "sidebar_title": "Alter Assistent",
+    "task_limit": "Aufgabenlimit erreicht: Neuer und veralteter Assistent können zusammen {{limit}} Aufgabe(n) gleichzeitig ausführen. Beenden oder stoppen Sie zuerst eine andere Aufgabe.",
     "todo": {
       "panel": {
         "title": "{{completed}}/{{total}} Aufgaben abgeschlossen"
@@ -880,6 +881,214 @@
     "zoom": "Zoom",
     "zoomIn": "Heranzoomen",
     "zoomOut": "Herauszoomen"
+  },
+  "assistantDataSafety": {
+    "busy": "[to be translated]:Stop active assistant tasks first, then back up, restore or reset data. A data operation may also still be in progress."
+  },
+  "assistantDeliverables": {
+    "empty": "No registered outputs in this conversation yet.",
+    "entry": "Outputs · {{count}}",
+    "folder": "Folder",
+    "locate": "Go to response",
+    "no_match": "No matching outputs.",
+    "notice": "Only outputs registered by successful file tools in this conversation are listed. These are shortcuts, not copies; moved or deleted files may no longer open.",
+    "open": "Open",
+    "reveal": "Show in folder",
+    "search": "Search name or path",
+    "source": "Latest source: turn {{turn}} · registered in {{count}} responses",
+    "title": "Conversation outputs"
+  },
+  "assistantPeripheral": {
+    "callDone": "Succeeded",
+    "callFailed": "Failed",
+    "callStarted": "Started",
+    "callStopped": "Stopped",
+    "calledThisTurn": "Native skill calls in the latest user turn",
+    "discovered": "Discovered by OpenCode",
+    "enabled": "Enabled",
+    "exportFailed": "Could not export diagnostics. Please try again.",
+    "exportSaved": "Diagnostic package exported",
+    "exportTitle": "Export current conversation diagnostics",
+    "installed": "Installed / present",
+    "interrupted": "This task was interrupted by closing or restarting the app. Saved content is retained; it was not automatically replayed. Check existing files before continuing.",
+    "inventoryFailed": "Inventory unavailable. No runtime was started and no task was affected.",
+    "keepRunning": "Keep running",
+    "more": "Conversation options",
+    "name": "Skill",
+    "native_not-running": "No native runtime is running. Discovery is unconfirmed; nothing was started for this inspection.",
+    "native_observed": "Native inventory observed at inspection time.",
+    "native_starting": "The native runtime is starting. Discovery has not yet been observed.",
+    "native_unavailable": "Native inventory could not be read. Discovery remains unconfirmed.",
+    "no": "No",
+    "noCallEvidence": "No native skill call was observed in the loaded turn. Skills may guide work without a skill-tool call; lack of evidence does not prove non-use.",
+    "notificationTitle": "Zen AI assistant",
+    "notify_error": "Your task could not finish. Click to view details.",
+    "notify_handoff": "A task needs login, verification or confirmation. Click to open its conversation.",
+    "notify_permission": "A task needs your authorization. Click to review it.",
+    "notify_success": "Your task has finished. Click to view the conversation.",
+    "quitAnyway": "Stop tasks and quit",
+    "quitDetail": "Closing to the tray keeps tasks running. Fully quitting or restarting stops tasks. Unfinished tasks are not automatically replayed after restart; generated files and history are retained.",
+    "quitMessage": "Quitting will stop the current tasks. Quit anyway?",
+    "quitTitle": "Assistant tasks are still running",
+    "sessionUnavailable": "This conversation is unavailable or has been deleted. No task was restarted.",
+    "skillsHint": "Read-only, on-demand inspection; no model request. Installed, enabled and discovered are different states and do not prove use. Calls are shown separately by skill name; same-name definitions cannot be identified from name alone.",
+    "skillsTitle": "Skills in this conversation",
+    "snapshotHint": "Read-only snapshot at export time. This does not mean the task has failed; exporting does not stop or replay it.",
+    "source": "Source",
+    "source_installed": "Installed library",
+    "source_native": "Native inventory",
+    "source_workspace": "Workspace",
+    "staleSkills": "Skills changed after this runtime started. The next user-requested turn refreshes its inventory; this task was not interrupted.",
+    "unobserved": "Unconfirmed",
+    "yes": "Yes"
+  },
+  "assistantProduct": {
+    "alternatives": "Alternative commands (at least one)",
+    "commands": "Declared commands",
+    "compatibility": "Declared compatibility",
+    "conflictHint": "Same-name definitions exist. OpenCode selects a definition by discovery order, not skill quality. Ask the assistant to check its current skill inventory for the actual winning path. Disable or rename duplicates if needed.",
+    "conflicts": "Same-name candidates",
+    "declaredTools": "Declared tools (not automatically connected)",
+    "definition": "Definition",
+    "definitionInvalid": "Unreadable or invalid",
+    "definitionValid": "Readable native definition",
+    "disabledHint": "Disabled; not supplied through enabled global skills.",
+    "enabled": "Enabled state",
+    "enabledHint": "Enabled for discovery on the next task. This does not mean it was applied in this turn.",
+    "environment": "Declared environment variable names",
+    "inspectFailed": "Compatibility check failed. Ordinary chat is unaffected; retry later.",
+    "inspectSkill": "Compatibility check",
+    "missingCommands": "Not found in system PATH",
+    "missingEnvironment": "Unset environment variables",
+    "noneFound": "None found within this check",
+    "notDeclared": "Not declared / not verified",
+    "pathFound": "Found in system PATH",
+    "pathMissing": "Not found in system PATH",
+    "searchDisclosure": "Web research may send a search query to Exa public MCP. This third-party service may retain queries or use them for training and has usage limits. Do not submit personal information, secrets or private files. It is only called when research is needed; search failure does not block ordinary chat.",
+    "skillLimit": "This read-only check does not execute scripts, install dependencies or grant permissions. It checks declared command/environment requirements only; Python packages, external services, script safety and task quality remain unverified. Enabled/discovered does not mean successfully applied."
+  },
+  "assistantTaskDeadline": {
+    "stageExecution": "[to be translated]:Local task execution",
+    "stageHumanWait": "[to be translated]:Waiting for user action",
+    "suggestion": "[to be translated]:Review completed work, then explicitly ask to continue only the unfinished part. Avoid blindly repeating submissions or generation.",
+    "summaryExecution": "[to be translated]:The cumulative 15-minute execution limit was reached. The task is paused; saved history and outputs are retained, with no automatic replay.",
+    "summaryHumanWait": "[to be translated]:The cumulative 30-minute user-action wait limit was reached. The task is paused; saved history and outputs are retained, with no automatic replay.",
+    "titleExecution": "[to be translated]:Task paused: execution time limit reached",
+    "titleHumanWait": "[to be translated]:Task paused: user wait limit reached"
+  },
+  "assistantToolFailure": {
+    "cancelled": {
+      "next": "Check any files already produced before continuing; do not repeat a stopped action blindly.",
+      "summary": "This tool action was stopped."
+    },
+    "dependency": {
+      "next": "Use an available built-in tool where possible. Installing or changing dependencies requires your approval.",
+      "summary": "A required Python dependency is missing or incompatible."
+    },
+    "details": "Technical details",
+    "file_busy": {
+      "next": "Save under a new filename, or close the file and confirm replacement with a backup. Do not force overwrite.",
+      "summary": "The output already exists, is locked, or changed during the operation."
+    },
+    "invalid_input": {
+      "next": "Adjust the parameters or use a supported format. Do not retry unchanged input.",
+      "summary": "The tool cannot process these parameters or this format."
+    },
+    "missing_file": {
+      "next": "Check the path or upload the file again. Do not recreate or overwrite an unrelated file.",
+      "summary": "The requested file or folder could not be found."
+    },
+    "network": {
+      "next": "Check network and proxy settings or try later. This does not by itself prove the model service is unavailable.",
+      "summary": "This tool could not connect to its external service."
+    },
+    "permission": {
+      "next": "Use an authorized folder or confirm the required permission. Do not bypass a refusal with another tool.",
+      "summary": "This action is not permitted in the current mode or folder."
+    },
+    "rate_limit": {
+      "next": "Wait for the indicated cooldown or use an available alternative. Do not keep sending the same request.",
+      "summary": "The external service has temporarily limited this tool."
+    },
+    "runtime": {
+      "next": "Ordinary chat can continue. Check the managed runtime in settings; do not install or switch system runtimes automatically.",
+      "summary": "The required local runtime or Office renderer is unavailable."
+    },
+    "timeout": {
+      "next": "Check whether it already produced a result before continuing; do not replay downloads, writes or submissions blindly.",
+      "summary": "The tool did not finish within its time limit."
+    },
+    "unknown": {
+      "next": "Open the technical details. If it persists, export the diagnostic package; do not repeat completed actions.",
+      "summary": "This tool action failed; the cause is not yet confirmed."
+    },
+    "validation": {
+      "next": "Review the reported issue and change the affected content or definition. A failed check is not successful delivery.",
+      "summary": "The file did not pass the requested output checks."
+    }
+  },
+  "assistantUsage": {
+    "billing_notice": "Token usage is not a bill. No price is assumed; actual charges, including failed attempts, are determined by your provider.",
+    "cache_read": "Cache read tokens",
+    "cache_write": "Cache write tokens",
+    "cancelled": "Stopped",
+    "completed": "Completed",
+    "coverage": "Requests reporting usage",
+    "coverage_value": "{{reported}} / {{total}}",
+    "entry": "Details",
+    "failed": "Failed",
+    "first": "First token",
+    "headers": "Upstream header wait",
+    "inconsistent": "Reported cache reads exceed input tokens or lack a matching input count. No hit rate is calculated.",
+    "input": "Reported input total",
+    "model": "Model",
+    "outcome": "Outcome",
+    "output": "Reported output total",
+    "partial": "Usage is missing or incomplete for some requests. Totals include only reported values; missing values are unknown, not zero. No whole-turn cache hit rate is inferred.",
+    "preparation": "Local runtime preparation",
+    "provider": "Provider ID",
+    "rate": "Whole-turn cache read rate",
+    "rate_notice": "Rate = reported cache reads / reported input, only when every observed request has complete matching statistics. OpenAI-compatible is a protocol, not the model vendor; the upstream routing channel and cache policy are not visible here.",
+    "reasoning": "Reasoning tokens (already included in output)",
+    "requests": "Upstream requests",
+    "retries": "Native retry events",
+    "scope": "Read-only observations for this turn. Upstream totals may include native compaction or subtasks and are separate from the native reply totals in the compact bar. Never add the two.",
+    "timing_notice": "Total/first-token time follows the message timer. Runtime preparation excludes earlier attachment saving. Header wait is not first-token time; transport/tool times can overlap and must not be added together. Unfinished operations may be missing.",
+    "title": "Cache and usage diagnostics",
+    "tool_time": "Completed tool time",
+    "tools": "Tool calls",
+    "total": "Turn duration",
+    "transport": "Completed upstream request time",
+    "unfinished_tools": "Unfinished tools",
+    "unknown": "Unknown"
+  },
+  "assistant_transition": {
+    "attachments_unavailable": "[to be translated]:Could not copy these attachments. Upload again if needed: {{files}}",
+    "confirm_content": "[to be translated]:An independent history copy will be created; the original is preserved for viewing only. The authorized workspace is shared, not rolled back. Available uploads are copied separately. Old tools will not run again. IM, scheduled tasks and old approvals are not inherited. Long history uses bounded background with a full text archive for lookup. Send a new instruction after copying; the transfer itself does not call a model.",
+    "confirm_title": "[to be translated]:Continue this conversation in the new assistant?",
+    "continuation_busy": "[to be translated]:Stop or wait for the active task before continuing in the new assistant.",
+    "continuation_empty": "[to be translated]:No messages to copy. Start a new conversation in the new assistant.",
+    "continuation_invalid_history": "[to be translated]:History is incomplete. Transfer was cancelled; the original remains unchanged.",
+    "continuation_no_model": "[to be translated]:No allowed model is available. Check your Provider and model settings.",
+    "continuation_prepare_failed": "[to be translated]:Could not create a copy. The original is unchanged. Retry or export diagnostics if it persists.",
+    "continuation_source_changed": "[to be translated]:The original changed during copying. Please retry.",
+    "continuation_source_missing": "[to be translated]:The original conversation no longer exists.",
+    "continuation_too_large": "[to be translated]:History is too large. Export a backup and provide the needed background in a new conversation.",
+    "continuation_workspace_missing": "[to be translated]:The original workspace is missing or inaccessible. Check permissions and retry.",
+    "continue": "[to be translated]:Continue in new assistant",
+    "historical_copy": "[to be translated]:History copy",
+    "legacy_automation_disabled": "Der veraltete Assistent wird nicht mehr gepflegt. Externe Integrationen einschließlich WeChat und geplante Aufgaben sind auch im Entwicklermodus deaktiviert. Einstellungen und Verlauf bleiben erhalten. Die Funktionen werden erst wieder verfügbar, wenn der neue Assistent sie unterstützt.",
+    "legacy_read_only": "Der alte Assistent wurde eingestellt. Bitte wechseln Sie zum neuen Assistenten.",
+    "migrated_conversation": "Migrierte Unterhaltung",
+    "model_changed": "[to be translated]:The original model is unavailable; a usable model was selected under current rules.",
+    "open_new": "[to be translated]:Open new assistant",
+    "recommendation": "[to be translated]:Use the new assistant for new tasks. The original entry and history remain available.",
+    "reused": "[to be translated]:Opened the existing new-assistant copy of this history.",
+    "snapshot": "[to be translated]:This conversation includes a copy from the original assistant",
+    "snapshot_description": "[to be translated]:Imported records are read-only; new instructions use the new assistant. Background is a local excerpt that may omit details; the full text archive is available for lookup. Actual workspace files remain shared, not a historical file snapshot.",
+    "source_unavailable": "[to be translated]:The original was deleted or cannot be opened. This copy remains usable.",
+    "success": "[to be translated]:History copied. Send a new instruction to continue.",
+    "view_source": "[to be translated]:View original"
   },
   "assistants": {
     "abbr": "Assistent",
@@ -1917,6 +2126,38 @@
       "quota_exceeded": "Ihr kostenloses Kontingent für heute ist aufgebraucht. Bitte gehen Sie zu <provider>{{provider}}</provider>, um einen API-Schlüssel zu erhalten und konfigurieren Sie ihn, um fortzufahren",
       "response": "Ein Fehler ist aufgetreten. Falls kein API-Schlüssel konfiguriert ist, gehen Sie bitte zu Einstellungen > Modellanbieter, um einen Schlüssel zu konfigurieren"
     },
+    "connection": {
+      "certificate": {
+        "suggestion": "Retry, then check the service address, network and security software. Do not disable certificate verification.",
+        "summary": "A secure connection could not be established because the service certificate could not be verified. This does not establish a model outage.",
+        "title": "Cannot verify the service certificate"
+      },
+      "connect": {
+        "suggestion": "Retry, then check the service address, local network and firewall. A working browser does not guarantee the app uses the same network path.",
+        "summary": "The connection was refused or interrupted before the secure connection was established; no model response was received.",
+        "title": "Connection to the model service failed"
+      },
+      "dns": {
+        "suggestion": "Retry, then check the service address and DNS/network settings. This is not evidence that the model is unavailable.",
+        "summary": "DNS could not resolve the model service address; the request has not reached the model API.",
+        "title": "Cannot resolve the service address"
+      },
+      "stream": {
+        "suggestion": "Retry after checking network stability. The service may have processed this request; completed files have not been rolled back.",
+        "summary": "The service returned response headers, but the response transfer did not finish.",
+        "title": "Response transfer interrupted"
+      },
+      "timeout": {
+        "suggestion": "Retry, then check DNS and the app's direct/proxy network path. A working browser may use a different path.",
+        "summary": "The connection could not be established in time. No model response was received; this is not a confirmed model outage.",
+        "title": "Connection to the model service timed out"
+      },
+      "unknown": {
+        "suggestion": "Retry. If it persists, export the diagnostic package to check DNS, TLS and the app's network path; use a proxy only if your network needs one.",
+        "summary": "The app did not receive a usable response. The available evidence cannot determine whether the service received the request.",
+        "title": "Cannot connect to the model service"
+      }
+    },
     "content": "Inhalt",
     "data": "Daten",
     "detail": "Fehlerdetails",
@@ -1927,6 +2168,8 @@
       "ai_loading": "Wird diagnostiziert",
       "ai_result": "KI-Diagnoseergebnis",
       "auth": "API-Schlüssel ungültig, bitte überprüfen und neu konfigurieren",
+      "chain_error_line": "Fehlerstelle: {{owner}}",
+      "chain_observation_line": "Verbindungsbeobachtung (kein Hinweis auf einen Fehler): {{owner}}",
       "content": "Inhalt wurde vom Sicherheitssystem blockiert, bitte ändern und erneut versuchen",
       "context_length": "Unterhaltung zu lang, bitte Verlauf löschen oder einen neuen Chat beginnen",
       "deprecated": "Dieses Modell wurde außer Betrieb genommen, bitte wechseln Sie zu einem anderen Modell",
@@ -2920,6 +3163,34 @@
   },
   "navigate": {
     "provider_settings": "Zu Anbietereinstellungen navigieren"
+  },
+  "new_assistant": {
+    "clear_failed": "[to be translated]:Unable to clear native memory. Stop the task and try again.",
+    "compacting": "[to be translated]:Compacting conversation context",
+    "connecting": "[to be translated]:Connecting to the new assistant",
+    "deliverables": "[to be translated]:Files and folders",
+    "elapsed": "[to be translated]:{{seconds}}s elapsed",
+    "history": {
+      "busy": "Stop the current task before changing conversation history.",
+      "failed": "The operation could not be completed. Stop any active task and retry; if the history did not refresh, reopen this conversation.",
+      "retry_notice": "This reruns the task from this question and removes its current answer and later conversation records. Existing files and external actions are not rolled back; the task may perform those actions again."
+    },
+    "memory_notice": "Independent native memory survives model changes. Retry, branching and individual deletion are supported; direct editing and bulk deletion are not yet supported.",
+    "outputting": "The model is producing output",
+    "preparing": "[to be translated]:Request received; preparing the task",
+    "responding": "[to be translated]:Processing the response",
+    "restoring": "[to be translated]:Restoring this conversation",
+    "retrying": "[to be translated]:Service temporarily unavailable; retrying",
+    "starting": "[to be translated]:Starting the local assistant",
+    "stop": "[to be translated]:Stop",
+    "stopped": "[to be translated]:Stopped",
+    "stopping": "[to be translated]:Stopping…",
+    "title": "Neuer Assistent",
+    "trying_alternative": "[to be translated]:Tool execution encountered a problem; awaiting the assistant",
+    "wait_hint": "[to be translated]:This is taking longer than usual. No new output yet; you do not need to send it again. You can stop the task at any time.",
+    "waiting_model": "[to be translated]:Request sent; waiting for the model",
+    "waiting_permission": "[to be translated]:Waiting for tool approval",
+    "waiting_response": "[to be translated]:Task submitted; waiting for the assistant"
   },
   "notes": {
     "auto_rename": {
@@ -5337,6 +5608,9 @@
       },
       "prompt": "Prompt anzeigen",
       "show_message_outline": "Nachrichtenübersicht anzeigen",
+      "stats_time": "Erstes Token {{first}} · Dauer {{total}}",
+      "stats_tip": "Erster Token: Zeit bis zum ersten sichtbaren Text, einschließlich sichtbarer Überlegungen. Gesamtzeit: bis zum Ende der Aufgabe, einschließlich Tools und Wartezeiten. Cache zählt nur Lesezugriffe; — bedeutet, dass der Anbieter keine Statistik geliefert hat.",
+      "stats_tokens": "Eingabe {{input}} · Ausgabe {{output}} · Cache {{cached}}",
       "title": "Nachrichteneinstellungen",
       "use_serif_font": "Serifenschrift verwenden"
     },

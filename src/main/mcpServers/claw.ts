@@ -11,6 +11,7 @@ import { skillService } from '@main/services/agents/skills'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { Tool } from '@modelcontextprotocol/sdk/types.js'
 import { CallToolRequestSchema, ErrorCode, ListToolsRequestSchema, McpError } from '@modelcontextprotocol/sdk/types.js'
+import { assertLegacyAutomationEnabled, isLegacyAutomationEnabled } from '@shared/agents/legacyAutomation'
 import type { CherryClawConfiguration, TaskScheduleType } from '@types'
 import { net } from 'electron'
 import QRCode from 'qrcode'
@@ -368,7 +369,9 @@ class ClawServer {
 
   private setupHandlers() {
     this.mcpServer.server.setRequestHandler(ListToolsRequestSchema, async () => ({
-      tools: [CRON_TOOL, NOTIFY_TOOL, SKILLS_TOOL, MEMORY_TOOL, CONFIG_TOOL]
+      tools: isLegacyAutomationEnabled()
+        ? [CRON_TOOL, NOTIFY_TOOL, SKILLS_TOOL, MEMORY_TOOL, CONFIG_TOOL]
+        : [SKILLS_TOOL, MEMORY_TOOL]
     }))
 
     this.mcpServer.server.setRequestHandler(CallToolRequestSchema, async (request) => {
@@ -376,6 +379,7 @@ class ClawServer {
       const args = (request.params.arguments ?? {}) as Record<string, string | undefined>
 
       try {
+        if (['cron', 'notify', 'config'].includes(toolName)) assertLegacyAutomationEnabled()
         switch (toolName) {
           case 'cron': {
             const action = args.action

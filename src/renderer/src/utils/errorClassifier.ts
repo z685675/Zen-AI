@@ -1,6 +1,8 @@
 import type { SerializedError } from '@renderer/types/error'
 
 import { isAgentRuntimeStartupError } from './agentRuntimeError'
+import { getAgentTaskDeadlineKind } from './agentTaskDeadline'
+import { connectionErrorText, getConnectionFailure } from './connectionFailure'
 
 export interface ErrorClassification {
   category:
@@ -32,11 +34,27 @@ export function classifyError(error?: SerializedError, providerId?: string): Err
 
   const status = (error as Record<string, unknown>).statusCode ?? (error as Record<string, unknown>).status
   const numStatus = typeof status === 'number' ? status : typeof status === 'string' ? parseInt(status, 10) : undefined
-  const msg = ((error.message as string) || '').toLowerCase()
+  const msg = connectionErrorText(error)
   const providerSuffix = providerId ? `?id=${providerId}` : ''
+  const deadlineKind = getAgentTaskDeadlineKind(error)
+  if (deadlineKind)
+    return {
+      category: 'runtime',
+      i18nKey: `assistantTaskDeadline.${deadlineKind === 'execution' ? 'summaryExecution' : 'summaryHumanWait'}`,
+      navTarget: null
+    }
 
   if (isAgentRuntimeStartupError(error)) {
     return { category: 'runtime', i18nKey: 'agent.errorFallback.runtime_description', navTarget: null }
+  }
+
+  const connection = getConnectionFailure(error)
+  if (connection) {
+    return {
+      category: connection.kind === 'stream' ? 'stream' : connection.kind === 'certificate' ? 'proxy' : 'network',
+      i18nKey: `error.connection.${connection.kind}.summary`,
+      navTarget: connection.kind === 'stream' ? null : '/settings/general'
+    }
   }
 
   // Auth errors (401/403)
@@ -85,6 +103,11 @@ export function classifyError(error?: SerializedError, providerId?: string): Err
   // Payload too large (413)
   if (numStatus === 413 || msg.includes('payload too large') || msg.includes('request entity too large')) {
     return { category: 'payload', i18nKey: 'error.diagnosis.payload', navTarget: null }
+  }
+
+  // Network errors
+  if (numStatus && numStatus >= 500) {
+    return { category: 'server', i18nKey: 'error.diagnosis.server', navTarget: null }
   }
 
   // Network errors

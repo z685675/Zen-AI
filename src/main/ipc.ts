@@ -41,17 +41,24 @@ import fontList from 'font-list'
 
 import { agentMessageRepository } from './services/agents/database'
 import { bootstrapBuiltinAgents } from './services/agents/services/builtin/BuiltinAgentBootstrap'
+import { stopOpenCodeProcesses } from './services/agents/services/opencode/process'
 import { skillService } from './services/agents/skills/SkillService'
 import { analyticsService } from './services/AnalyticsService'
 import { apiServerService } from './services/ApiServerService'
 import appService from './services/AppService'
 import { AppUpdateService } from './services/AppUpdateService'
 import {
+  beginRendererDataOperation,
+  endRendererDataOperation,
+  markRendererDataCommitted
+} from './services/AssistantDataOperationService'
+import {
   checkAssistantEnvironment,
   importManagedPython,
   installGitForWindows,
   installManagedPython
 } from './services/AssistantEnvironmentService'
+import { allowAssistantExit } from './services/AssistantExitGuard'
 import BackupManager from './services/BackupManager'
 import CherryINOAuthService from './services/CherryINOAuthService'
 import { codeToolsService } from './services/CodeToolsService'
@@ -505,7 +512,8 @@ export async function registerIpc(mainWindow: BrowserWindow, app: Electron.App) 
   })
 
   // Relaunch app
-  ipcMain.handle(IpcChannel.App_RelaunchApp, (_, options?: Electron.RelaunchOptions) => {
+  ipcMain.handle(IpcChannel.App_RelaunchApp, async (event, options?: Electron.RelaunchOptions) => {
+    if (!(await allowAssistantExit())) return
     // Fix for .AppImage
     if (isLinux && process.env.APPIMAGE) {
       logger.info(`Relaunching app with options: ${process.env.APPIMAGE}`, options)
@@ -524,11 +532,15 @@ export async function registerIpc(mainWindow: BrowserWindow, app: Electron.App) 
     }
 
     app.relaunch(options)
+    markRendererDataCommitted(event.sender.id)
+    stopOpenCodeProcesses()
     app.exit(0)
   })
 
   // Reset all data (factory reset)
-  ipcMain.handle(IpcChannel.App_ResetData, () => backupManager.resetData())
+  ipcMain.handle(IpcChannel.App_ResetData, (event) => backupManager.resetData(event))
+  ipcMain.handle(IpcChannel.Backup_BeginDataOperation, beginRendererDataOperation)
+  ipcMain.handle(IpcChannel.Backup_EndDataOperation, endRendererDataOperation)
 
   // check for update
   ipcMain.handle(IpcChannel.App_CheckForUpdate, async () => {
@@ -1106,6 +1118,13 @@ export async function registerIpc(mainWindow: BrowserWindow, app: Electron.App) 
   ipcMain.handle(IpcChannel.Cherryai_GetSignature, (_, params) => generateSignature(params))
 
   // Global Skills
+  ipcMain.handle(IpcChannel.Skill_Inspect, async (_, skillId: string) => {
+    try {
+      return { success: true, data: await skillService.inspect(skillId) }
+    } catch {
+      return { success: false, error: 'Unable to inspect Skill compatibility' }
+    }
+  })
   ipcMain.handle(IpcChannel.Skill_List, async () => {
     try {
       const data = await skillService.list()
@@ -1239,6 +1258,11 @@ export async function registerIpc(mainWindow: BrowserWindow, app: Electron.App) 
   })
 
   ipcMain.handle(IpcChannel.WeChat_Reconnect, async (_, channelId: string) => {
+    const { isLegacyAutomationEnabled, LEGACY_AUTOMATION_DISABLED_MESSAGE, LEGACY_AUTOMATION_DISABLED_CODE } =
+      await import('@shared/agents/legacyAutomation')
+    if (!isLegacyAutomationEnabled()) {
+      return { success: false, error: LEGACY_AUTOMATION_DISABLED_MESSAGE, code: LEGACY_AUTOMATION_DISABLED_CODE }
+    }
     const tokenPath = path.join(getDataPath('Channels'), `weixin_bot_${channelId}.json`)
     try {
       const { DEFAULT_FUSION_AGENT_ID } = await import('@shared/config/agents')

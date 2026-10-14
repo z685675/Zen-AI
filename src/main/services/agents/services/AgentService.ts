@@ -3,6 +3,11 @@ import { modelsService } from '@main/apiServer/services/models'
 import {
   DEFAULT_AGENT_AVATAR,
   DEFAULT_CHERRY_CLAW_AGENT_ID,
+  DEFAULT_FUSION_AGENT_ID,
+  DEFAULT_FUSION_AGENT_NAME,
+  DEFAULT_OPENCODE_AGENT_AVATAR,
+  DEFAULT_OPENCODE_AGENT_ID,
+  DEFAULT_OPENCODE_AGENT_NAME,
   DEPRECATED_AGENT_NAME_PREFIX,
   isBuiltinAgentId
 } from '@shared/config/agents'
@@ -16,7 +21,7 @@ import type {
   UpdateAgentResponse
 } from '@types'
 import { AgentBaseSchema } from '@types'
-import { asc, count, desc, eq, min } from 'drizzle-orm'
+import { asc, count, desc, eq, min, ne } from 'drizzle-orm'
 
 import { remoteModelPolicyService } from '../../RemoteModelPolicyService'
 import { BaseService } from '../BaseService'
@@ -126,7 +131,13 @@ export class AgentService extends BaseService {
   async listAgents(options: ListOptions = {}): Promise<{ agents: AgentEntity[]; total: number }> {
     // Build query with pagination
     const database = await this.getDatabase()
-    const totalResult = await database.select({ count: count() }).from(agentsTable)
+    const workspaceFilter =
+      options.workspace === 'opencode'
+        ? eq(agentsTable.id, DEFAULT_OPENCODE_AGENT_ID)
+        : options.workspace === 'legacy'
+          ? ne(agentsTable.id, DEFAULT_OPENCODE_AGENT_ID)
+          : undefined
+    const totalResult = await database.select({ count: count() }).from(agentsTable).where(workspaceFilter)
 
     const sortBy = options.sortBy || 'sort_order'
     const orderBy = options.orderBy || (sortBy === 'sort_order' ? 'asc' : 'desc')
@@ -137,8 +148,12 @@ export class AgentService extends BaseService {
     // Use created_at DESC as secondary sort for tie-breaking (e.g., after migration when all sort_order = 0)
     const baseQuery =
       sortBy === 'sort_order'
-        ? database.select().from(agentsTable).orderBy(orderFn(sortField), desc(agentsTable.created_at))
-        : database.select().from(agentsTable).orderBy(orderFn(sortField))
+        ? database
+            .select()
+            .from(agentsTable)
+            .where(workspaceFilter)
+            .orderBy(orderFn(sortField), desc(agentsTable.created_at))
+        : database.select().from(agentsTable).where(workspaceFilter).orderBy(orderFn(sortField))
 
     const result =
       options.limit !== undefined
@@ -352,6 +367,7 @@ export class AgentService extends BaseService {
   async initBuiltinAgent(opts: {
     id: string
     builtinRole: string
+    fallbackToAvailableModel?: boolean
     provisionWorkspace: (
       workspacePath: string,
       builtinRole: string
@@ -396,6 +412,13 @@ export class AgentService extends BaseService {
             : currentConfiguration
 
           if (!existingAgent?.name && agentConfig.name) updateData.name = agentConfig.name
+          // Refresh managed display identities without replacing user defaults.
+          if (id === DEFAULT_OPENCODE_AGENT_ID) {
+            updateData.name = DEFAULT_OPENCODE_AGENT_NAME
+            mergedConfiguration.avatar = DEFAULT_OPENCODE_AGENT_AVATAR
+          } else if (id === DEFAULT_FUSION_AGENT_ID) {
+            updateData.name = DEFAULT_FUSION_AGENT_NAME
+          }
           if (!existingAgent?.description && agentConfig.description) updateData.description = agentConfig.description
           if (!existingAgent?.instructions && agentConfig.instructions) {
             updateData.instructions = agentConfig.instructions
@@ -419,7 +442,14 @@ export class AgentService extends BaseService {
         return id
       }
 
-      const preferredModel = await this.getPreferredBuiltinRuntimeModel()
+      let preferredModel = await this.getPreferredBuiltinRuntimeModel()
+      if (!preferredModel && opts.fallbackToAvailableModel) {
+        const models = await modelsService.getModels({})
+        const candidate = models.data.find(
+          (model) => !AgentService.NON_TEXT_MODEL_ID_PATTERN.test(model.provider_model_id ?? model.id)
+        )
+        if (candidate) preferredModel = { modelId: candidate.id }
+      }
       if (!preferredModel) {
         logger.info(`No available text models yet, skipping ${builtinRole} creation`)
         return null
@@ -443,7 +473,7 @@ export class AgentService extends BaseService {
 
       const req: CreateAgentRequest = {
         type: 'claude-code',
-        name: agentConfig?.name || builtinRole,
+        name: id === DEFAULT_FUSION_AGENT_ID ? DEFAULT_FUSION_AGENT_NAME : agentConfig?.name || builtinRole,
         description: agentConfig?.description || `Built-in ${builtinRole} agent`,
         instructions: agentConfig?.instructions || 'You are a helpful assistant.',
         model: preferredModel.modelId,

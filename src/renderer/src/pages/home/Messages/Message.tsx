@@ -1,6 +1,7 @@
 import { loggerService } from '@logger'
 import HorizontalScrollContainer from '@renderer/components/HorizontalScrollContainer'
 import Scrollbar from '@renderer/components/Scrollbar'
+import { useAgentWorkspace } from '@renderer/context/AgentWorkspaceProvider'
 import { useMessageEditing } from '@renderer/context/MessageEditingContext'
 import { useAssistant } from '@renderer/hooks/useAssistant'
 import { useChatContext } from '@renderer/hooks/useChatContext'
@@ -19,6 +20,7 @@ import type { Assistant, Topic } from '@renderer/types'
 import { type Message, type MessageBlock, MessageBlockType } from '@renderer/types/newMessage'
 import { classNames, cn } from '@renderer/utils'
 import { scrollIntoView } from '@renderer/utils/dom'
+import { isReadOnlyLegacySession } from '@renderer/utils/legacyMessageActions'
 import { isMessageProcessing } from '@renderer/utils/messageUtils/is'
 import { Divider } from 'antd'
 import { ChevronDown, ChevronUp } from 'lucide-react'
@@ -28,12 +30,15 @@ import { useTranslation } from 'react-i18next'
 import { useSelector } from 'react-redux'
 import styled from 'styled-components'
 
+import AgentTaskProgress from './AgentTaskProgress'
+import MessageArtifacts from './MessageArtifacts'
 import MessageContent from './MessageContent'
 import MessageEditor from './MessageEditor'
 import MessageErrorBoundary from './MessageErrorBoundary'
 import MessageHeader from './MessageHeader'
 import MessageMenubar from './MessageMenubar'
 import MessageOutline from './MessageOutline'
+import { useRenderedMessageActivity } from './useRenderedMessageActivity'
 
 interface Props {
   message: Message
@@ -73,6 +78,7 @@ const MessageItem: FC<Props> = ({
   isGroupContextMessage
 }) => {
   const { t } = useTranslation()
+  const nativeMemory = useAgentWorkspace() === 'opencode'
   useEffect(() => {
     if (
       message.role === 'assistant' &&
@@ -89,9 +95,11 @@ const MessageItem: FC<Props> = ({
   const { messageFont, conversationFontSize, messageStyle, showMessageOutline } = useSettings()
   const { editMessageBlocks, resendUserMessageWithEdit, editMessage } = useMessageOperations(topic)
   const messageContainerRef = useRef<HTMLDivElement>(null)
+  const responseContentRef = useRef<HTMLDivElement>(null)
   const { editingMessageId, startEditing, stopEditing } = useMessageEditing()
   const { setTimeoutTimer } = useTimer()
-  const isEditing = editingMessageId === message.id
+  const legacyReadOnly = isReadOnlyLegacySession(topic.id, message.assistantId)
+  const isEditing = !legacyReadOnly && editingMessageId === message.id
   const topicLoading = useSelector((state: RootState) => selectNewTopicLoading(state, topic.id))
   const mainTextLength = useSelector((state: RootState) =>
     message.blocks.reduce((length, blockId) => {
@@ -144,6 +152,11 @@ const MessageItem: FC<Props> = ({
   const isLastMessage = index === 0 || !!isGrouped
   const isAssistantMessage = message.role === 'assistant'
   const isProcessing = isMessageProcessing(message) && topicLoading
+  const hasRenderedContent = useRenderedMessageActivity(
+    responseContentRef,
+    message.id,
+    nativeMemory && isAssistantMessage && isProcessing
+  )
   const showMenubar = !hideMenuBar && !isEditing && !isProcessing
   const canCollapse = useMemo(() => {
     if (isEditing || isProcessing) return false
@@ -210,7 +223,7 @@ const MessageItem: FC<Props> = ({
   // Listen for external edit requests and activate editor for this message if it matches
   useEffect(() => {
     const handleEditRequest = (targetId: string) => {
-      if (targetId === message.id) {
+      if (targetId === message.id && !nativeMemory && !legacyReadOnly) {
         startEditing(message.id)
       }
     }
@@ -218,7 +231,7 @@ const MessageItem: FC<Props> = ({
     return () => {
       unsubscribe()
     }
-  }, [message.id, startEditing])
+  }, [message.id, nativeMemory, legacyReadOnly, startEditing])
 
   if (message.type === 'clear') {
     return (
@@ -288,6 +301,7 @@ const MessageItem: FC<Props> = ({
               <MessageOutline message={message} />
             )}
             <MessageContentContainer
+              ref={responseContentRef}
               className={classNames('message-content-container', { collapsed: canCollapse && isCollapsed })}
               style={{
                 fontFamily: messageFont === 'serif' ? 'var(--font-family-serif)' : 'var(--font-family)',
@@ -298,6 +312,10 @@ const MessageItem: FC<Props> = ({
                 <MessageContent message={message} isStreaming={isProcessing} />
               </MessageErrorBoundary>
             </MessageContentContainer>
+            {isAssistantMessage && <MessageArtifacts message={message} />}
+            {nativeMemory && isAssistantMessage && isProcessing && (
+              <AgentTaskProgress message={message} hasRenderedContent={hasRenderedContent} />
+            )}
             {showMenubar && (
               <MessageFooter className="MessageFooter">
                 <HorizontalScrollContainer

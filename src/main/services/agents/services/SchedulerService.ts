@@ -1,4 +1,10 @@
 import { loggerService } from '@logger'
+import {
+  assertLegacyAutomationEnabled,
+  isLegacyAutomationEnabled,
+  LEGACY_AUTOMATION_DISABLED_MESSAGE
+} from '@shared/agents/legacyAutomation'
+import { getAgentTaskLimitDetails } from '@shared/agents/taskConcurrency'
 import type { CherryClawConfiguration, ScheduledTaskEntity } from '@types'
 
 import { agentService } from './AgentService'
@@ -49,6 +55,7 @@ class SchedulerService {
   }
 
   startLoop(): void {
+    if (!isLegacyAutomationEnabled()) return
     if (this.running) {
       logger.debug('Scheduler loop already running')
       return
@@ -66,7 +73,7 @@ class SchedulerService {
     }
     // Abort all running tasks
     for (const [taskId, rt] of this.activeTasks) {
-      rt.abortController.abort()
+      rt.abortController.abort(TASK_PAUSED_ABORT_REASON)
       logger.info('Aborted running task on shutdown', { taskId })
     }
     this.activeTasks.clear()
@@ -75,6 +82,7 @@ class SchedulerService {
 
   /** Ensure the poll loop is running after agent config changes. */
   async syncScheduler(): Promise<void> {
+    if (!isLegacyAutomationEnabled()) return
     const hasActive = await taskService.hasActiveTasks()
     if (hasActive) {
       this.startLoop()
@@ -87,7 +95,22 @@ class SchedulerService {
     this.stopLoop()
   }
 
+  /** Cancel only scheduled runs, then persist paused state after their finalizers. */
+  async shutdownLegacyAutomation(): Promise<void> {
+    const completions = [...this.activeTasks.values()].map((task) => task.completion)
+    this.stopAll()
+    await Promise.allSettled(completions)
+    await taskService.pauseAllActiveTasks()
+    await taskService.recoverInterruptedTaskRuns({ status: 'paused', message: LEGACY_AUTOMATION_DISABLED_MESSAGE })
+    this.consecutiveErrors.clear()
+    logger.info('Legacy scheduled tasks disabled; configuration and history preserved')
+  }
+
   async restoreSchedulers(): Promise<void> {
+    if (!isLegacyAutomationEnabled()) {
+      await this.shutdownLegacyAutomation()
+      return
+    }
     await taskService.recoverInterruptedTaskRuns()
     const hasActive = await taskService.hasActiveTasks()
     if (hasActive) {
@@ -102,6 +125,7 @@ class SchedulerService {
    * Creates one if missing, or updates the interval if it changed.
    */
   async ensureHeartbeatTask(agentId: string, intervalMinutes: number = 30): Promise<void> {
+    if (!isLegacyAutomationEnabled()) return
     const { tasks } = await taskService.listTasks(agentId, { includeHeartbeat: true })
     const existing = tasks.find((t) => t.name === 'heartbeat')
 
@@ -133,6 +157,7 @@ class SchedulerService {
    * visible to the user instead of merely accepting a fire-and-forget promise.
    */
   async runTaskNow(agentId: string, taskId: string): Promise<void> {
+    assertLegacyAutomationEnabled()
     const task = await taskService.getTask(agentId, taskId)
     if (!task) throw new Error(`Task not found: ${taskId}`)
 
@@ -197,6 +222,7 @@ class SchedulerService {
 
   /** Update a task status and keep the in-memory scheduler state in sync. */
   async updateTaskStatus(agentId: string, taskId: string, status: 'active' | 'paused' | 'completed') {
+    if (status === 'active') assertLegacyAutomationEnabled()
     const task = await taskService.getTask(agentId, taskId)
     if (!task) throw new Error(`Task not found: ${taskId}`)
 
@@ -217,6 +243,7 @@ class SchedulerService {
   }
 
   private async tick(): Promise<void> {
+    if (!isLegacyAutomationEnabled()) return
     const dueTasks = await taskService.getDueTasks()
     if (dueTasks.length > 0) {
       logger.info('Found due tasks', { count: dueTasks.length })
@@ -244,6 +271,7 @@ class SchedulerService {
     triggerType: TaskRunTrigger = 'scheduled',
     onReady?: (sessionId?: string, error?: unknown) => void
   ): Promise<void> {
+    assertLegacyAutomationEnabled()
     const startTime = Date.now()
     const abortController = new AbortController()
     let resolveCompletion!: () => void
@@ -454,6 +482,8 @@ class SchedulerService {
       }
 
       // Send as user message (triggers agent response)
+      abortController.signal.throwIfAborted()
+      assertLegacyAutomationEnabled()
       const { stream, completion } = await sessionMessageService.createSessionMessage(
         session,
         { content: fullPrompt },
@@ -518,16 +548,18 @@ class SchedulerService {
         error = err instanceof Error ? err.message : String(err)
         logger.error('Task failed', { taskId: task.id, error })
 
-        // Track consecutive errors across invocations
-        const errCount = (this.consecutiveErrors.get(task.id) ?? 0) + 1
-        this.consecutiveErrors.set(task.id, errCount)
-        if (errCount >= MAX_CONSECUTIVE_ERRORS) {
-          logger.warn('Pausing task after consecutive errors', {
-            taskId: task.id,
-            errors: errCount
-          })
-          await taskService.updateTask(task.agent_id, task.id, { status: 'paused' })
-          this.consecutiveErrors.delete(task.id)
+        // A full local slot is not a failed model and must not disable a schedule.
+        if (!getAgentTaskLimitDetails(err)) {
+          const errCount = (this.consecutiveErrors.get(task.id) ?? 0) + 1
+          this.consecutiveErrors.set(task.id, errCount)
+          if (errCount >= MAX_CONSECUTIVE_ERRORS) {
+            logger.warn('Pausing task after consecutive errors', {
+              taskId: task.id,
+              errors: errCount
+            })
+            await taskService.updateTask(task.agent_id, task.id, { status: 'paused' })
+            this.consecutiveErrors.delete(task.id)
+          }
         }
       }
       if (onReady && !readyAcknowledged) {

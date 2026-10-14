@@ -2,12 +2,8 @@ import { loggerService } from '@logger'
 import { DEFAULT_SESSION_PAGE_SIZE } from '@renderer/api/agent'
 import EmojiIcon from '@renderer/components/EmojiIcon'
 import { QuickPanelProvider } from '@renderer/components/QuickPanel'
-import {
-  findAgentModelId,
-  getAgentModelProviderId,
-  isAssistantModelIdentifierAllowed,
-  resolveAssistantFallbackModel
-} from '@renderer/config/agentModelPolicy'
+import { isAssistantModelAllowed, resolveAssistantFallbackModel } from '@renderer/config/agentModelPolicy'
+import { useAgentWorkspace } from '@renderer/context/AgentWorkspaceProvider'
 import { useActiveAgent } from '@renderer/hooks/agents/useActiveAgent'
 import { useAgentClient } from '@renderer/hooks/agents/useAgentClient'
 import { useAgents } from '@renderer/hooks/agents/useAgents'
@@ -20,14 +16,6 @@ import { useEnableDeveloperMode, useNavbarPosition, useSettings } from '@rendere
 import { useShortcut } from '@renderer/hooks/useShortcuts'
 import { useShowAssistants } from '@renderer/hooks/useStore'
 import { cleanupAgentSessionAttachmentDirectory } from '@renderer/services/AgentAttachmentService'
-import {
-  ASSISTANT_DEPENDENCY_I18N_KEYS,
-  type AssistantEnvironmentCheckResult,
-  checkAssistantEnvironmentWithCache,
-  getFreshAssistantEnvironmentCache,
-  REQUIRED_ASSISTANT_DEPENDENCIES,
-  subscribeAssistantEnvironment
-} from '@renderer/services/AssistantEnvironmentService'
 import { CacheService } from '@renderer/services/CacheService'
 import { DbService } from '@renderer/services/db/DbService'
 import store, { useAppDispatch, useAppSelector } from '@renderer/store'
@@ -36,24 +24,13 @@ import { setActiveSessionIdAction } from '@renderer/store/runtime'
 import { loadTopicMessagesThunk } from '@renderer/store/thunk/messageThunk'
 import type { GetAgentSessionResponse, ListAgentSessionsResponse } from '@renderer/types'
 import { cn } from '@renderer/utils'
-import { buildAgentSessionTopicId, getChannelTypeIcon } from '@renderer/utils/agentSession'
+import { buildAgentSessionTopicId } from '@renderer/utils/agentSession'
 import { getAgentSessionDraftCacheKey } from '@renderer/utils/agentSessionDraft'
 import { isUnnamedAgentSessionName } from '@renderer/utils/agentSessionTitle'
 import { shouldDiscardEmptyConversation } from '@renderer/utils/conversationDraft'
 import { DEFAULT_FUSION_AGENT_ID, getAgentAvatar } from '@shared/config/agents'
-import { Alert, Button, Spin, Tooltip } from 'antd'
-import {
-  CalendarClock,
-  FolderOpen,
-  ListTodo,
-  PanelLeftOpen,
-  Puzzle,
-  RefreshCw,
-  ScrollText,
-  Search,
-  Sparkles,
-  Wrench
-} from 'lucide-react'
+import { Alert, Spin, Tooltip } from 'antd'
+import { FolderOpen, ListTodo, PanelLeftOpen, Puzzle, ScrollText, Search } from 'lucide-react'
 import type { PropsWithChildren, ReactNode } from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -69,6 +46,9 @@ import AgentQuickEntryModal, { type AgentQuickEntry } from './components/AgentQu
 import AgentSessionInputbar from './components/AgentSessionInputbar'
 import AgentSessionMessages from './components/AgentSessionMessages'
 import AgentTaskStatusBar from './components/AgentTaskStatusBar'
+import AssistantTransitionBanner from './components/AssistantTransitionBanner'
+import LegacyAssistantInputbar from './components/LegacyAssistantInputbar'
+import SessionDeliverables from './components/SessionDeliverables'
 import SessionModelSelectButton from './components/SessionModelSelectButton'
 
 type CapabilityCardItem = {
@@ -99,6 +79,7 @@ const EMPTY_SESSION_LOADING_RETRY_ATTEMPTS = 30
 const AgentChat = () => {
   const { t } = useTranslation()
   const { messageNavigation, messageStyle } = useSettings()
+  const workspace = useAgentWorkspace()
   const { enableDeveloperMode } = useEnableDeveloperMode()
   const { showAssistants, setShowAssistants } = useShowAssistants()
   const dispatch = useAppDispatch()
@@ -121,14 +102,9 @@ const AgentChat = () => {
     sessionTopicId ? Boolean(state.messages.loadingByTopic[sessionTopicId]) : false
   )
   const modelPolicy = useAppSelector((state) => state.llm.modelPolicy)
+  const providers = useAppSelector((state) => state.llm.providers)
   const isWelcomeState = hasLoadedSessionMessages && messages.length === 0
   const isSessionMessagesBootstrapping = !!activeSessionId && !!sessionTopicId && !hasLoadedSessionMessages
-  const [initialEnvironmentCache] = useState(() => getFreshAssistantEnvironmentCache())
-  const [environmentChecking, setEnvironmentChecking] = useState(!initialEnvironmentCache)
-  const [environmentResult, setEnvironmentResult] = useState<AssistantEnvironmentCheckResult | null>(
-    initialEnvironmentCache?.result ?? null
-  )
-  const [environmentError, setEnvironmentError] = useState<string | null>(initialEnvironmentCache?.error ?? null)
   const [quickEntry, setQuickEntry] = useState<AgentQuickEntry | null>(null)
   const trackedSessionRef = useRef<TrackedAgentSession | undefined>(undefined)
   const sessionsBeingDiscardedRef = useRef(new Set<string>())
@@ -136,6 +112,7 @@ const AgentChat = () => {
 
   const discardAbandonedSession = useCallback(
     async ({ agentId, session }: TrackedAgentSession) => {
+      if (workspace === 'legacy') return
       if (!isUnnamedAgentSessionName(session.name, t('common.unnamed'))) {
         return
       }
@@ -237,7 +214,7 @@ const AgentChat = () => {
         sessionsBeingDiscardedRef.current.delete(sessionKey)
       }
     },
-    [client, dispatch, t]
+    [client, dispatch, t, workspace]
   )
 
   const discardAbandonedSessionRef = useRef(discardAbandonedSession)
@@ -276,70 +253,15 @@ const AgentChat = () => {
     []
   )
 
+  // Recheck after a selection, mode or Provider change. Previously a successful
+  // check was remembered for the whole session, even after its model disappeared.
   useEffect(() => {
-    if (
-      !activeAgentId ||
-      !activeSession ||
-      !hasLoadedSessionMessages ||
-      isActiveSessionLoading ||
-      messages.length > 0 ||
-      !isUnnamedAgentSessionName(activeSession.name, t('common.unnamed')) ||
-      isAssistantModelIdentifierAllowed(activeSession.model, enableDeveloperMode, modelPolicy?.policy) ||
-      modelRepairAttemptsRef.current.has(activeSession.id)
-    ) {
-      return
-    }
-
-    modelRepairAttemptsRef.current.add(activeSession.id)
-    const repairLegacyModel = async () => {
-      try {
-        const { data } = await client.getModels({ limit: 1000 })
-        const configuredDefault =
-          modelPolicy?.policy.rules.applyToNewSessions === false
-            ? undefined
-            : modelPolicy?.policy.defaults.assistantNewSession
-        if (!configuredDefault) {
-          modelRepairAttemptsRef.current.delete(activeSession.id)
-          return
-        }
-        const currentDefaultModel = findAgentModelId(
-          data,
-          configuredDefault,
-          getAgentModelProviderId(activeSession.model)
-        )
-        if (!currentDefaultModel) {
-          modelRepairAttemptsRef.current.delete(activeSession.id)
-          return
-        }
-        await updateSession(
-          {
-            id: activeSession.id,
-            model: currentDefaultModel
-          },
-          { showSuccessToast: false }
-        )
-      } catch (error) {
-        modelRepairAttemptsRef.current.delete(activeSession.id)
-        logger.warn('Failed to align an empty Agent session with the current default model', error as Error)
-      }
-    }
-
-    void repairLegacyModel()
-  }, [
-    activeAgentId,
-    activeSession,
-    client,
-    enableDeveloperMode,
-    hasLoadedSessionMessages,
-    isActiveSessionLoading,
-    messages.length,
-    modelPolicy?.policy,
-    t,
-    updateSession
-  ])
+    modelRepairAttemptsRef.current.clear()
+  }, [activeSession?.id, activeSession?.model, enableDeveloperMode, modelPolicy, providers])
 
   useEffect(() => {
     if (
+      workspace === 'legacy' ||
       !activeAgentId ||
       !activeSession ||
       !hasLoadedSessionMessages ||
@@ -349,18 +271,15 @@ const AgentChat = () => {
       return
     }
 
-    modelRepairAttemptsRef.current.add(activeSession.id)
+    const repairAttempts = modelRepairAttemptsRef.current
+    repairAttempts.add(activeSession.id)
+    let cancelled = false
     const repairUnavailableModel = async () => {
       try {
-        const { data } = await client.getModels({ limit: 1000 })
-        const currentModelAvailable =
-          Boolean(activeSession.model?.trim()) && data.some((model) => model.id === activeSession.model)
-        const currentModelAllowed = isAssistantModelIdentifierAllowed(
-          activeSession.model,
-          enableDeveloperMode,
-          modelPolicy?.policy
-        )
-        if (currentModelAvailable && currentModelAllowed) return
+        const { data } = await client.getModels()
+        if (cancelled) return
+        const currentModel = data.find((model) => model.id === activeSession.model)
+        if (currentModel && isAssistantModelAllowed(currentModel, enableDeveloperMode, modelPolicy?.policy)) return
 
         const fallbackModel = resolveAssistantFallbackModel(
           data,
@@ -370,7 +289,6 @@ const AgentChat = () => {
         )
 
         if (!fallbackModel) {
-          modelRepairAttemptsRef.current.delete(activeSession.id)
           window.toast.error(
             t(
               'agent.modelPolicy.noFallback',
@@ -381,7 +299,12 @@ const AgentChat = () => {
         }
 
         const currentState = store.getState()
-        if (currentState.runtime.chat.activeSessionIdMap[activeAgentId] !== activeSession.id) return
+        if (
+          cancelled ||
+          currentState.runtime.chat.activeSessionIdMap[activeAgentId] !== activeSession.id ||
+          trackedSessionRef.current?.session.model !== activeSession.model
+        )
+          return
 
         const updated = await updateSession(
           {
@@ -390,7 +313,7 @@ const AgentChat = () => {
           },
           { showSuccessToast: false }
         )
-        if (updated) {
+        if (updated && !cancelled) {
           window.toast.info(
             t(
               'agent.modelPolicy.switched',
@@ -399,12 +322,17 @@ const AgentChat = () => {
           )
         }
       } catch (error) {
-        modelRepairAttemptsRef.current.delete(activeSession.id)
+        if (cancelled) return
+        repairAttempts.delete(activeSession.id)
         logger.warn('Failed to switch an existing Agent session away from an unavailable model', error as Error)
       }
     }
 
     void repairUnavailableModel()
+    return () => {
+      cancelled = true
+      repairAttempts.delete(activeSession.id)
+    }
   }, [
     activeAgentId,
     activeSession,
@@ -414,52 +342,11 @@ const AgentChat = () => {
     isActiveSessionLoading,
     messages.length,
     modelPolicy?.policy,
+    providers,
     t,
-    updateSession
+    updateSession,
+    workspace
   ])
-
-  const checkAssistantEnvironment = useCallback(
-    async (options?: { blocking?: boolean }) => {
-      const blocking = options?.blocking ?? true
-      try {
-        if (blocking) {
-          setEnvironmentChecking(true)
-          setEnvironmentError(null)
-        }
-        const nextResult = await checkAssistantEnvironmentWithCache({ force: true })
-        setEnvironmentResult(nextResult)
-      } catch (error: any) {
-        const errorMessage = error?.message || t('agent.environmentGate.checkFailed')
-        setEnvironmentError(errorMessage)
-        setEnvironmentResult(null)
-      } finally {
-        if (blocking) {
-          setEnvironmentChecking(false)
-        }
-      }
-    },
-    [t]
-  )
-
-  useEffect(() => {
-    void checkAssistantEnvironment({ blocking: !initialEnvironmentCache })
-  }, [checkAssistantEnvironment, initialEnvironmentCache])
-
-  useEffect(
-    () =>
-      subscribeAssistantEnvironment(({ result, error }) => {
-        setEnvironmentResult(result)
-        setEnvironmentError(error)
-      }),
-    []
-  )
-
-  const missingRequiredDependencies = useMemo(
-    () => REQUIRED_ASSISTANT_DEPENDENCIES.filter((id) => !environmentResult?.[id]?.installed),
-    [environmentResult]
-  )
-  const hasMissingRequiredEnvironment =
-    !environmentChecking && (!!environmentError || (!!environmentResult && missingRequiredDependencies.length > 0))
 
   useEffect(() => {
     if (!activeSessionId || !sessionTopicId) {
@@ -502,24 +389,6 @@ const AgentChat = () => {
   const quickEntryItems = useMemo<QuickEntryItem[]>(
     () => [
       {
-        key: 'wechat',
-        title: '微信接入',
-        description: '手机微信文字对话',
-        icon: getChannelTypeIcon('wechat') ? (
-          <QuickEntryImage src={getChannelTypeIcon('wechat')} alt="WeChat" />
-        ) : (
-          <Sparkles size={16} />
-        ),
-        onClick: () => window.navigate(`/settings/channels?type=wechat&open=1&agentId=${DEFAULT_FUSION_AGENT_ID}`)
-      },
-      {
-        key: 'tasks',
-        title: t('settings.scheduledTasks.title'),
-        description: t('agent.welcome.quick_entries.tasks_desc', '让智能助手按计划自动执行任务'),
-        icon: <CalendarClock size={19} />,
-        onClick: () => setQuickEntry('tasks')
-      },
-      {
         key: 'skills',
         title: t('settings.skills.title'),
         description: t('agent.welcome.quick_entries.skills_desc', '导入、搜索和管理智能助手技能'),
@@ -553,62 +422,20 @@ const AgentChat = () => {
       void createDefaultSession()
     },
     {
-      enabled: !hasMissingRequiredEnvironment,
+      enabled: workspace === 'opencode',
       preventDefault: true,
       enableOnFormTags: true
     }
   )
 
   const isInitializing =
-    environmentChecking ||
-    isAgentsLoading ||
-    isAgentLoading ||
-    !isSessionInitialized ||
-    !agents ||
-    (!activeAgentId && agents.length > 0)
+    isAgentsLoading || isAgentLoading || !isSessionInitialized || !agents || (!activeAgentId && agents.length > 0)
   const brandAvatar = getAgentAvatar(DEFAULT_FUSION_AGENT_ID)
 
   if (isInitializing) {
     return (
       <Container className="flex flex-1 flex-col items-center justify-center">
         <Spin />
-      </Container>
-    )
-  }
-
-  if (hasMissingRequiredEnvironment) {
-    return (
-      <Container className="flex flex-1 flex-col items-center justify-center">
-        <EnvironmentGateCard>
-          <EnvironmentGateIcon>
-            <Wrench size={24} />
-          </EnvironmentGateIcon>
-          <EnvironmentGateTitle>{t('agent.environmentGate.title')}</EnvironmentGateTitle>
-          <EnvironmentGateDescription>{t('agent.environmentGate.description')}</EnvironmentGateDescription>
-          <EnvironmentGateHint>{t('agent.environmentGate.repairHint')}</EnvironmentGateHint>
-          {environmentError ? (
-            <EnvironmentGateError>{environmentError}</EnvironmentGateError>
-          ) : (
-            <EnvironmentDependencyList>
-              {missingRequiredDependencies.map((id) => (
-                <EnvironmentDependencyPill key={id}>
-                  {t(ASSISTANT_DEPENDENCY_I18N_KEYS[id].name)}
-                </EnvironmentDependencyPill>
-              ))}
-            </EnvironmentDependencyList>
-          )}
-          <EnvironmentGateActions>
-            <Button type="primary" onClick={() => window.navigate('/settings/assistant-environment')}>
-              {t('agent.environmentGate.action')}
-            </Button>
-            <Button
-              icon={<RefreshCw size={14} />}
-              onClick={() => checkAssistantEnvironment()}
-              loading={environmentChecking}>
-              {t('agent.environmentGate.refresh')}
-            </Button>
-          </EnvironmentGateActions>
-        </EnvironmentGateCard>
       </Container>
     )
   }
@@ -627,8 +454,13 @@ const AgentChat = () => {
     return (
       <Container className="flex flex-1 flex-col justify-between">
         <div className="flex h-full w-full items-center justify-center">
-          <Alert type="warning" message={t('chat.alerts.create_session')} style={{ margin: '5px 16px' }} />
+          <Alert
+            type="info"
+            message={t(workspace === 'legacy' ? 'assistant_transition.legacy_read_only' : 'chat.alerts.create_session')}
+            style={{ margin: '5px 16px' }}
+          />
         </div>
+        {workspace === 'legacy' && <LegacyAssistantInputbar />}
       </Container>
     )
   }
@@ -645,8 +477,22 @@ const AgentChat = () => {
     <Container className={cn(messageStyle, { 'multi-select-mode': isMultiSelectMode })}>
       <QuickPanelProvider>
         <div className="flex min-w-0 flex-1 flex-col">
+          {(workspace === 'legacy' ||
+            messages.some((message) => Boolean(message.providerMetadata?.legacyContinuation))) && (
+            <AssistantTransitionBanner
+              agentId={activeAgentId}
+              session={activeSession}
+              welcome={isWelcomeState}
+              running={isActiveSessionLoading}
+            />
+          )}
           <div className="flex h-fit w-full min-w-0">
             {!isWelcomeState && activeAgent && <AgentChatNavbar className="min-w-0" activeAgent={activeAgent} />}
+            {!isWelcomeState && workspace === 'opencode' && (
+              <div className="flex shrink-0 items-center pr-2">
+                <SessionDeliverables key={sessionTopicId} topicId={sessionTopicId} />
+              </div>
+            )}
           </div>
 
           <div className="translate-z-0 relative flex w-full flex-1 flex-col justify-between overflow-y-auto overflow-x-hidden">
@@ -666,23 +512,30 @@ const AgentChat = () => {
                   <BrandHeader>
                     <BrandMark>
                       <EmojiIcon emoji={brandAvatar} size={30} className="h-[30px] w-[30px]" />
-                      <BrandText>智能助手</BrandText>
+                      <BrandText
+                        style={workspace === 'opencode' ? undefined : { color: 'var(--color-deprecated-assistant)' }}>
+                        {t(workspace === 'opencode' ? 'new_assistant.title' : 'agent.sidebar_title')}
+                      </BrandText>
                     </BrandMark>
                   </BrandHeader>
-                  <WelcomeTitle>{t('agent.welcome.title', '把任务交给我，轻松一点开始')}</WelcomeTitle>
-                  <CapabilityGrid>
-                    {capabilityItems.map((item) => (
-                      <CapabilityCard key={item.key}>
-                        <CapabilityIcon>{item.icon}</CapabilityIcon>
-                        <CapabilityContent>
-                          <CapabilityTitle>{item.title}</CapabilityTitle>
-                          <CapabilityDescription>{item.description}</CapabilityDescription>
-                        </CapabilityContent>
-                      </CapabilityCard>
-                    ))}
-                  </CapabilityGrid>
+                  <WelcomeTitle>
+                    {t(workspace === 'legacy' ? 'assistant_transition.legacy_read_only' : 'agent.welcome.title')}
+                  </WelcomeTitle>
+                  {workspace === 'opencode' && (
+                    <CapabilityGrid>
+                      {capabilityItems.map((item) => (
+                        <CapabilityCard key={item.key}>
+                          <CapabilityIcon>{item.icon}</CapabilityIcon>
+                          <CapabilityContent>
+                            <CapabilityTitle>{item.title}</CapabilityTitle>
+                            <CapabilityDescription>{item.description}</CapabilityDescription>
+                          </CapabilityContent>
+                        </CapabilityCard>
+                      ))}
+                    </CapabilityGrid>
+                  )}
                   <WelcomeComposer>
-                    {activeSession && (
+                    {workspace === 'opencode' && activeSession && (
                       <WelcomeModelRow>
                         <WelcomeModelLabel>{t('agent.welcome.model_label', '本次对话模型')}</WelcomeModelLabel>
                         <SessionModelSelectButton
@@ -701,7 +554,7 @@ const AgentChat = () => {
                     )}
                     <AgentSessionInputbar agentId={activeAgentId} sessionId={activeSessionId} variant="hero" />
                   </WelcomeComposer>
-                  {renderQuickEntrySection()}
+                  {workspace === 'opencode' && renderQuickEntrySection()}
                 </WelcomeInner>
               </WelcomeState>
             ) : (
@@ -1048,12 +901,6 @@ const QuickEntryIcon = styled.div`
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.86);
 `
 
-const QuickEntryImage = styled.img`
-  width: 22px;
-  height: 22px;
-  object-fit: contain;
-`
-
 const QuickEntryBody = styled.div`
   min-width: 0;
   display: flex;
@@ -1072,87 +919,6 @@ const QuickEntryDescription = styled.div`
   font-size: 12px;
   line-height: 1.55;
   color: #7f8896;
-`
-
-const EnvironmentGateCard = styled.div`
-  width: min(460px, calc(100vw - 48px));
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 30px 28px;
-  border-radius: 26px;
-  background: rgba(255, 255, 255, 0.86);
-  border: 1px solid rgba(255, 255, 255, 0.76);
-  box-shadow:
-    0 22px 56px rgba(15, 23, 42, 0.08),
-    0 1px 0 rgba(255, 255, 255, 0.9) inset;
-  text-align: center;
-`
-
-const EnvironmentGateIcon = styled.div`
-  width: 52px;
-  height: 52px;
-  border-radius: 18px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #e25d74;
-  background: linear-gradient(135deg, rgba(255, 235, 239, 0.95), rgba(255, 245, 228, 0.95));
-`
-
-const EnvironmentGateTitle = styled.div`
-  margin-top: 18px;
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--color-text-1);
-`
-
-const EnvironmentGateDescription = styled.div`
-  margin-top: 10px;
-  max-width: 360px;
-  font-size: 13px;
-  line-height: 1.65;
-  color: var(--color-text-2);
-`
-
-const EnvironmentGateHint = styled.div`
-  margin-top: 8px;
-  max-width: 420px;
-  font-size: 12px;
-  line-height: 1.6;
-  color: var(--color-text-3);
-`
-
-const EnvironmentGateError = styled.div`
-  margin-top: 14px;
-  max-width: 360px;
-  font-size: 12px;
-  line-height: 1.5;
-  color: var(--color-error);
-  word-break: break-word;
-`
-
-const EnvironmentDependencyList = styled.div`
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 8px;
-  margin-top: 16px;
-`
-
-const EnvironmentDependencyPill = styled.span`
-  padding: 5px 10px;
-  border-radius: 999px;
-  background: rgba(226, 93, 116, 0.09);
-  color: #d9485f;
-  font-size: 12px;
-  font-weight: 500;
-`
-
-const EnvironmentGateActions = styled.div`
-  display: flex;
-  gap: 10px;
-  margin-top: 22px;
 `
 
 const Container = ({ children, className }: PropsWithChildren<{ className?: string }>) => {

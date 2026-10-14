@@ -1,5 +1,9 @@
 import { EventEmitter } from 'node:events'
 
+import { createStreamAbortController } from '@main/apiServer/utils/createStreamAbortController'
+import { LEGACY_ASSISTANT_READ_ONLY_CODE } from '@shared/agents/assistantAvailability'
+import { AgentTaskLimitError } from '@shared/agents/taskConcurrency'
+import { DEFAULT_OPENCODE_AGENT_ID } from '@shared/config/agents'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const { broadcastAgentActionRequiredMock } = vi.hoisted(() => ({
@@ -17,6 +21,11 @@ const { invokeMock, resolveAgentRuntimeMock } = vi.hoisted(() => ({
   resolveAgentRuntimeMock: vi.fn()
 }))
 
+const { getEnableDeveloperModeMock } = vi.hoisted(() => ({ getEnableDeveloperModeMock: vi.fn(() => false) }))
+vi.mock('@main/services/ConfigManager', () => ({
+  configManager: { getEnableDeveloperMode: getEnableDeveloperModeMock }
+}))
+
 const { recordMainDiagnosticMock } = vi.hoisted(() => ({ recordMainDiagnosticMock: vi.fn() }))
 vi.mock('@main/services/DiagnosticEvidenceService', () => ({
   beginMainDiagnostic: vi.fn(),
@@ -24,7 +33,11 @@ vi.mock('@main/services/DiagnosticEvidenceService', () => ({
 }))
 
 vi.mock('../../BaseService', () => ({
-  BaseService: class BaseService {}
+  BaseService: class BaseService {
+    async getDatabase() {
+      throw new Error('Database access must be mocked')
+    }
+  }
 }))
 
 vi.mock('../runtime/registry', () => ({
@@ -49,7 +62,7 @@ function createAgentStream(): AgentStream {
 function session() {
   return {
     id: 'session-runtime-test',
-    agent_id: 'agent-runtime-test',
+    agent_id: DEFAULT_OPENCODE_AGENT_ID,
     agent_type: 'claude-code',
     model: 'provider:grok-4.5',
     configuration: { agent_runtime: 'auto' }
@@ -75,9 +88,35 @@ async function collect(stream: ReadableStream<unknown>) {
 }
 
 describe('SessionMessageService runtime stream lifecycle', () => {
+  it.each([DEFAULT_OPENCODE_AGENT_ID, 'legacy-agent'])(
+    'protects native history at service-level deletion for %s',
+    async (agentId) => {
+      const service = new SessionMessageService()
+      const remove = vi.fn(() => ({ where: vi.fn(async () => ({ rowsAffected: 1 })) }))
+      const database = {
+        select: () => ({ from: () => ({ where: () => ({ limit: async () => [{ agentId }] }) }) }),
+        delete: remove
+      }
+      vi.spyOn(service, 'getDatabase').mockResolvedValue(database as any)
+      try {
+        if (agentId === DEFAULT_OPENCODE_AGENT_ID) {
+          await expect(service.deleteSessionMessage('delete-safety', 1)).rejects.toMatchObject({
+            code: 'native_history_required'
+          })
+          expect(remove).not.toHaveBeenCalled()
+        } else {
+          expect(await service.deleteSessionMessage('delete-safety', 1)).toBe(true)
+          expect(remove).toHaveBeenCalledOnce()
+        }
+      } finally {
+        vi.restoreAllMocks()
+      }
+    }
+  )
   beforeEach(() => {
     vi.useFakeTimers()
     invokeMock.mockReset()
+    getEnableDeveloperModeMock.mockReset().mockReturnValue(false)
     resolveAgentRuntimeMock.mockReset()
     broadcastAgentActionRequiredMock.mockReset()
     recordMainDiagnosticMock.mockReset()
@@ -86,6 +125,76 @@ describe('SessionMessageService runtime stream lifecycle', () => {
   afterEach(() => {
     vi.useRealTimers()
   })
+
+  it.each([false, true])('rejects deprecated assistant execution before startup (developer=%s)', async (developer) => {
+    getEnableDeveloperModeMock.mockReturnValue(developer)
+    const service = new SessionMessageService()
+    const start = vi.spyOn(service as any, 'startSessionMessageStream')
+    await expect(
+      service.createSessionMessage(
+        { ...session(), agent_id: 'legacy-agent', configuration: { agent_runtime: 'opencode' } },
+        { content: 'hello' } as any,
+        new AbortController()
+      )
+    ).rejects.toMatchObject({ code: LEGACY_ASSISTANT_READ_ONLY_CODE })
+    expect(start).not.toHaveBeenCalled()
+    expect(resolveAgentRuntimeMock).not.toHaveBeenCalled()
+    expect(invokeMock).not.toHaveBeenCalled()
+    expect(getEnableDeveloperModeMock).not.toHaveBeenCalled()
+  })
+
+  it.each(['opencode', 'codex', 'claude-code'])(
+    'forwards disconnect cancellation to %s before reader cleanup removes abort listeners',
+    async (runtimeId) => {
+      let active = false
+      const attemptControllers: AbortController[] = []
+      resolveAgentRuntimeMock.mockResolvedValue({
+        runtimeId,
+        candidates: [runtimeId],
+        source: 'workspace',
+        configuredRuntime: 'auto',
+        reason: 'cancellation-test'
+      })
+      invokeMock.mockImplementation(async (_prompt: string, _session: unknown, controller: AbortController) => {
+        if (active) throw new Error('This new assistant session already has an active task')
+        active = true
+        attemptControllers.push(controller)
+        controller.signal.addEventListener('abort', () => {
+          active = false
+        })
+        return createAgentStream()
+      })
+      const service = new SessionMessageService()
+      vi.spyOn(service as any, 'getLastAgentSessionId').mockResolvedValue('')
+      // The HTTP abort controller registers its listener before the runtime
+      // forwarder. Cancelling its reader synchronously must not skip that forwarder.
+      const httpStream = createStreamAbortController({ timeoutMs: 0 })
+      const result = await service.createSessionMessage(
+        session(),
+        { content: 'long task' } as any,
+        httpStream.abortController
+      )
+      const reader = result.stream.getReader()
+      httpStream.registerAbortHandler((reason) => {
+        void reader.cancel(reason)
+      })
+      httpStream.abortController.abort('Client disconnected')
+
+      expect(attemptControllers[0].signal.aborted).toBe(true)
+      expect(attemptControllers[0].signal.reason).toBe('Client disconnected')
+      expect(active).toBe(false)
+      await expect(result.completion).resolves.toEqual({})
+      httpStream.dispose()
+
+      const nextController = new AbortController()
+      const next = await service.createSessionMessage(session(), { content: 'continue' } as any, nextController)
+      expect(attemptControllers).toHaveLength(2)
+      expect(attemptControllers[1].signal.aborted).toBe(false)
+      await next.stream.cancel('test finished')
+      await expect(next.completion).resolves.toEqual({})
+      expect(active).toBe(false)
+    }
+  )
 
   it('records a preparation failure if runtime resolution throws before any SDK starts', async () => {
     resolveAgentRuntimeMock.mockRejectedValue(new Error('invalid runtime configuration'))
@@ -228,7 +337,8 @@ describe('SessionMessageService runtime stream lifecycle', () => {
     })
     await vi.advanceTimersByTimeAsync(0)
     expect(broadcastAgentActionRequiredMock).toHaveBeenCalledWith({
-      agentId: 'agent-runtime-test',
+      requestId: 'handoff-1',
+      agentId: DEFAULT_OPENCODE_AGENT_ID,
       sessionId: 'session-runtime-test',
       reason: 'browser_handoff',
       message: '请完成登录后点击继续。'
@@ -501,5 +611,110 @@ describe('SessionMessageService runtime stream lifecycle', () => {
     expect(chunks).toContainEqual(expect.objectContaining({ text: '表格共有 12 行。' }))
     await vi.advanceTimersByTimeAsync(600_000)
     expect(invokeMock).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('SessionMessageService shared task admission', () => {
+  beforeEach(() => getEnableDeveloperModeMock.mockReturnValue(false))
+
+  function pendingTask(service: SessionMessageService) {
+    let finish!: () => void
+    let fail!: (error: Error) => void
+    const completion = new Promise<{}>((resolve, reject) => {
+      finish = () => resolve({})
+      fail = reject
+    })
+    const result = { stream: new ReadableStream(), completion }
+    const start = vi.spyOn(service as any, 'startSessionMessageStream').mockResolvedValue(result)
+    return { finish, fail, result, start }
+  }
+
+  it('reserves before asynchronous preparation across service instances and new assistant sessions', async () => {
+    const firstService = new SessionMessageService()
+    const secondService = new SessionMessageService()
+    const first = pendingTask(firstService)
+    const second = pendingTask(secondService)
+    let resolveStartup!: (value: typeof first.result) => void
+    first.start.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveStartup = resolve
+        })
+    )
+    const started = firstService.createSessionMessage(
+      { ...session(), id: 'admission-new', configuration: { agent_runtime: 'opencode' } },
+      { content: 'task' } as any,
+      new AbortController()
+    )
+    try {
+      await expect(
+        secondService.createSessionMessage(
+          { ...session(), id: 'admission-old' },
+          { content: 'task' } as any,
+          new AbortController()
+        )
+      ).rejects.toThrow(AgentTaskLimitError)
+      expect(second.start).not.toHaveBeenCalled()
+    } finally {
+      resolveStartup(first.result)
+      const running = await started
+      first.finish()
+      await running.completion
+    }
+    const next = await secondService.createSessionMessage(
+      { ...session(), id: 'admission-old' },
+      { content: 'task' } as any,
+      new AbortController()
+    )
+    second.finish()
+    await next.completion
+  })
+
+  it('reads developer mode from main-process configuration and enforces the new limit after it changes', async () => {
+    getEnableDeveloperModeMock.mockReturnValue(true)
+    const services = Array.from({ length: 4 }, () => new SessionMessageService())
+    const pending = services.map(pendingTask)
+    const running = [] as Array<{ completion: Promise<unknown> }>
+    const send = (index: number) =>
+      services[index].createSessionMessage(
+        { ...session(), id: `admission-dev-${index}` },
+        { content: 'task' } as any,
+        new AbortController()
+      )
+    try {
+      for (let i = 0; i < 3; i++) running.push(await send(i))
+      await expect(send(3)).rejects.toThrow(AgentTaskLimitError)
+      expect(pending[3].start).not.toHaveBeenCalled()
+      getEnableDeveloperModeMock.mockReturnValue(false)
+      pending[0].finish()
+      pending[1].finish()
+      await Promise.all(running.slice(0, 2).map((result) => result.completion))
+      await expect(send(3)).rejects.toThrow(AgentTaskLimitError)
+      pending[2].finish()
+      await running[2].completion
+      running.push(await send(3))
+    } finally {
+      pending.forEach((task) => task.finish())
+      await Promise.all(running.map((result) => result.completion))
+    }
+  })
+
+  it('releases after completion rejection and startup failure and skips already-cancelled requests', async () => {
+    const service = new SessionMessageService()
+    const first = pendingTask(service)
+    const send = (controller = new AbortController()) =>
+      service.createSessionMessage({ ...session(), id: 'admission-failure' }, { content: 'task' } as any, controller)
+    const running = await send()
+    first.fail(new Error('upstream failed'))
+    await expect(running.completion).rejects.toThrow('upstream failed')
+    first.start.mockRejectedValueOnce(new Error('startup failed'))
+    await expect(send()).rejects.toThrow('startup failed')
+    const cancelled = new AbortController()
+    cancelled.abort()
+    const calls = first.start.mock.calls.length
+    await expect(send(cancelled)).rejects.toThrow()
+    expect(first.start).toHaveBeenCalledTimes(calls)
+    first.start.mockResolvedValueOnce({ stream: new ReadableStream(), completion: Promise.resolve({}) })
+    await (await send()).completion
   })
 })

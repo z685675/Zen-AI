@@ -14,8 +14,9 @@
  * - v2 Refactor PR   : https://github.com/CherryHQ/cherry-studio/pull/10162
  * --------------------------------------------------------------------------
  */
+import { randomUUID } from 'node:crypto'
+
 import { loggerService } from '@logger'
-import { isWin } from '@main/constant'
 import { APP_BACKUP_PREFIX, APP_NAME, APP_TEMP_DIR_NAME } from '@shared/config/constant'
 import { IpcChannel } from '@shared/IpcChannel'
 import type { WebDavConfig } from '@types'
@@ -29,6 +30,12 @@ import type { CreateDirectoryOptions, FileStat } from 'webdav'
 
 import { getDataPath } from '../utils'
 import { resolveAndValidatePath } from '../utils/file'
+import { copyAssistantBackupData, stageAssistantBackupData } from './AssistantBackupSnapshot'
+import {
+  markRendererDataCommitted,
+  registerRendererDataStage,
+  withAssistantDataOperation
+} from './AssistantDataOperationService'
 import { BackupPathMigrationService } from './BackupPathMigrationService'
 import S3Storage from './S3Storage'
 import selectionService from './SelectionService'
@@ -78,6 +85,8 @@ class BackupManager {
     const indexedDBDest = path.join(userDataPath, 'IndexedDB')
     const localStorageDest = path.join(userDataPath, 'Local Storage')
     const dataDest = getDataPath()
+    const swaps: Array<{ source: string; destination: string; original: string; saved: boolean; installed: boolean }> =
+      []
 
     try {
       // Check if any restore markers exist
@@ -86,25 +95,28 @@ class BackupManager {
       const hasDataRestore = await fs.pathExists(dataRestore)
       const hasRestoreMarker = hasIndexedDBRestore || hasLocalStorageRestore || hasDataRestore
 
-      // Restore IndexedDB
-      if (hasIndexedDBRestore) {
-        logger.info('[handleStartupRestore] Found IndexedDB.restore directories, completing restoration...')
-        await fs.remove(indexedDBDest).catch(() => {})
-        await fs.rename(indexedDBRestore, indexedDBDest)
-      }
-
-      // Restore Local Storage
-      if (hasLocalStorageRestore) {
-        logger.info('[handleStartupRestore] Found Local Storage.restore directories, completing restoration...')
-        await fs.remove(localStorageDest).catch(() => {})
-        await fs.rename(localStorageRestore, localStorageDest)
-      }
-
-      // Restore Data
-      if (hasDataRestore) {
-        logger.info('[handleStartupRestore] Found Local Data.restore directories, completing restoration...')
-        await fs.remove(dataDest).catch(() => {})
-        await fs.rename(dataRestore, dataDest)
+      // Keep original directories until all swaps succeed. A file-lock/rename
+      // failure must not delete the only usable copy of the user's history.
+      for (const [present, source, destination] of [
+        [hasIndexedDBRestore, indexedDBRestore, indexedDBDest],
+        [hasLocalStorageRestore, localStorageRestore, localStorageDest],
+        [hasDataRestore, dataRestore, dataDest]
+      ] as const) {
+        if (!present) continue
+        const swap = {
+          source,
+          destination,
+          original: `${destination}.before-restore-${randomUUID()}`,
+          saved: false,
+          installed: false
+        }
+        swaps.push(swap)
+        if (await fs.pathExists(destination)) {
+          await fs.rename(destination, swap.original)
+          swap.saved = true
+        }
+        await fs.rename(source, destination)
+        swap.installed = true
       }
 
       if (hasRestoreMarker || !(await BackupPathMigrationService.hasMigrationMarker())) {
@@ -112,25 +124,39 @@ class BackupManager {
       }
 
       logger.info('[handleStartupRestore] Restoration completed successfully')
+      for (const swap of swaps)
+        if (swap.saved)
+          await fs.remove(swap.original).catch(() => {
+            logger.warn('[handleStartupRestore] Retained original directory after cleanup failure')
+          })
     } catch (error) {
       logger.error('[handleStartupRestore] Failed to complete restoration:', error as Error)
-      // Clean up restore markers to avoid endless retry loop
-      await fs.remove(indexedDBRestore).catch(() => {})
-      await fs.remove(localStorageRestore).catch(() => {})
-      await fs.remove(dataRestore).catch(() => {})
+      for (const swap of swaps.reverse()) {
+        try {
+          if (swap.installed) await fs.rename(swap.destination, swap.source)
+          if (swap.saved) await fs.rename(swap.original, swap.destination)
+        } catch (rollbackError) {
+          logger.error(
+            '[handleStartupRestore] Rollback failed; original and staged data retained',
+            rollbackError as Error
+          )
+        }
+      }
     }
   }
 
   /**
    * Backup metadata for direct backup format (version 6+)
    */
-  private createDirectBackupMetadata(): {
+  private createDirectBackupMetadata(slim = false): {
     version: number
     timestamp: number
     appName: string
     appVersion: string
     platform: string
     arch: string
+    dataMode: 'slim' | 'full'
+    assistantDataIncluded: boolean
   } {
     return {
       version: 6,
@@ -138,7 +164,9 @@ class BackupManager {
       appName: APP_NAME,
       appVersion: app.getVersion(),
       platform: process.platform,
-      arch: process.arch
+      arch: process.arch,
+      dataMode: slim ? 'slim' : 'full',
+      assistantDataIncluded: true
     }
   }
 
@@ -148,7 +176,7 @@ class BackupManager {
    * @param _ - Electron IPC event
    * @param fileName - Name of the backup file
    * @param destinationPath - Path to save the backup (defaults to this.backupDir)
-   * @param skipBackupFile - Whether to skip backing up the Data directory
+   * @param skipBackupFile - Omit large file data, but retain assistant history, native memory and skills
    * @returns Path to the created backup file
    */
   async backup(
@@ -157,9 +185,21 @@ class BackupManager {
     destinationPath: string = this.backupDir,
     skipBackupFile: boolean = false
   ): Promise<string> {
+    return withAssistantDataOperation('backup', () =>
+      this.backupProtected(_, fileName, destinationPath, skipBackupFile)
+    )
+  }
+
+  private async backupProtected(
+    _: Electron.IpcMainInvokeEvent,
+    fileName: string,
+    destinationPath: string,
+    skipBackupFile: boolean
+  ): Promise<string> {
     const onProgress = this.onProgress(IpcChannel.BackupProgress, true)
 
     try {
+      await fs.remove(this.tempDir)
       await fs.ensureDir(this.tempDir)
       onProgress({ stage: 'preparing', progress: 0, total: 100 })
 
@@ -190,29 +230,11 @@ class BackupManager {
       onProgress({ stage: 'copying_database', progress: currentProgress, total: 100 })
 
       // Step 3: Write metadata.json
-      const metadata = this.createDirectBackupMetadata()
+      const metadata = this.createDirectBackupMetadata(skipBackupFile)
       await fs.writeJson(path.join(this.tempDir, 'metadata.json'), metadata, { spaces: 2 })
       onProgress({ stage: 'copying_database', progress: 52, total: 100 })
 
-      // Step 4: Copy Data directory (if not skipped)
-      if (!skipBackupFile) {
-        const sourcePath = path.join(userDataPath, 'Data')
-        const tempDataDir = path.join(this.tempDir, 'Data')
-
-        if (await fs.pathExists(sourcePath)) {
-          const totalSize = await this.getDirSize(sourcePath)
-          let copiedSize = 0
-
-          await this.copyDirWithProgress(sourcePath, tempDataDir, (size) => {
-            copiedSize += size
-            const progress = Math.min(80, 52 + Math.floor((copiedSize / totalSize) * 28))
-            onProgress({ stage: 'copying_files', progress, total: 100 })
-          })
-        }
-      } else {
-        logger.debug('[backupDirect] Skip the backup of the file')
-        await fs.promises.mkdir(path.join(this.tempDir, 'Data'))
-      }
+      await copyAssistantBackupData(path.join(userDataPath, 'Data'), path.join(this.tempDir, 'Data'), skipBackupFile)
       onProgress({ stage: 'compressing', progress: 80, total: 100 })
 
       // Step 5: Create ZIP archive
@@ -257,7 +279,7 @@ class BackupManager {
    * @param fileName - Name of the backup file
    * @param data - JSON string data to backup
    * @param destinationPath - Path to save the backup (defaults to this.backupDir)
-   * @param skipBackupFile - Whether to skip backing up the Data directory
+   * @param skipBackupFile - Omit large file data, retaining assistant history, native memory and skills
    * @returns Path to the created backup file
    */
   async backupLegacy(
@@ -267,9 +289,22 @@ class BackupManager {
     destinationPath: string = this.backupDir,
     skipBackupFile: boolean = false
   ): Promise<string> {
+    return withAssistantDataOperation('backup', () =>
+      this.backupLegacyProtected(_, fileName, data, destinationPath, skipBackupFile)
+    )
+  }
+
+  private async backupLegacyProtected(
+    _: Electron.IpcMainInvokeEvent,
+    fileName: string,
+    data: string,
+    destinationPath: string,
+    skipBackupFile: boolean
+  ): Promise<string> {
     const onProgress = this.onProgress(IpcChannel.BackupProgress, true)
 
     try {
+      await fs.remove(this.tempDir)
       await fs.ensureDir(this.tempDir)
       onProgress({ stage: 'preparing', progress: 0, total: 100 })
 
@@ -289,27 +324,15 @@ class BackupManager {
 
       logger.debug(`BackupManager IPC, skipBackupFile: ${skipBackupFile}`)
 
-      if (!skipBackupFile) {
-        // Copy Data directory to temp directory
-        const sourcePath = path.join(app.getPath('userData'), 'Data')
-        const tempDataDir = path.join(this.tempDir, 'Data')
-
-        // Get total size of source directory
-        const totalSize = await this.getDirSize(sourcePath)
-        let copiedSize = 0
-
-        // Use streaming copy
-        await this.copyDirWithProgress(sourcePath, tempDataDir, (size) => {
-          copiedSize += size
-          const progress = Math.min(50, Math.floor((copiedSize / totalSize) * 50))
-          onProgress({ stage: 'copying_files', progress, total: 100 })
-        })
-
-        onProgress({ stage: 'preparing_compression', progress: 50, total: 100 })
-      } else {
-        logger.debug('Skip the backup of the file')
-        await fs.promises.mkdir(path.join(this.tempDir, 'Data')) // Creating empty Data dir is required, otherwise restore will fail
-      }
+      await copyAssistantBackupData(
+        path.join(app.getPath('userData'), 'Data'),
+        path.join(this.tempDir, 'Data'),
+        skipBackupFile
+      )
+      await fs.writeJson(path.join(this.tempDir, 'assistant-data.json'), {
+        dataMode: skipBackupFile ? 'slim' : 'full',
+        version: 1
+      })
 
       // Create output file stream
       const backupedFilePath = path.join(destinationPath, fileName)
@@ -507,10 +530,16 @@ class BackupManager {
    * @returns For legacy backup: the data string from data.json. For direct backup: void (app will relaunch)
    */
   async restore(_: Electron.IpcMainInvokeEvent, backupPath: string): Promise<string | void> {
+    return withAssistantDataOperation('restore', () => this.restoreProtected(_, backupPath), _?.sender?.id)
+  }
+
+  private async restoreProtected(_: Electron.IpcMainInvokeEvent, backupPath: string): Promise<string | void> {
     const onProgress = this.onProgress(IpcChannel.RestoreProgress, true)
+    const stagedPaths: string[] = []
 
     try {
       // Create temp directory
+      await fs.remove(this.tempDir)
       await fs.ensureDir(this.tempDir)
       onProgress({ stage: 'preparing', progress: 0, total: 100 })
 
@@ -518,7 +547,11 @@ class BackupManager {
 
       const zip = new StreamZip.async({ file: backupPath })
       onProgress({ stage: 'extracting', progress: 15, total: 100 })
-      await zip.extract(null, this.tempDir)
+      try {
+        await zip.extract(null, this.tempDir)
+      } finally {
+        await zip.close()
+      }
       onProgress({ stage: 'extracted', progress: 20, total: 100 })
 
       // Check for backup type: direct (version 6+) or legacy (version <= 5)
@@ -529,7 +562,7 @@ class BackupManager {
         // Direct backup format (version 6+)
         logger.debug('Detected direct backup format (version 6+)')
         // Note: tempDir is NOT cleaned up here - restoreDirect will use and clean it
-        await this.restoreDirect()
+        await this.restoreDirect(stagedPaths, _?.sender?.id)
         // Direct restore doesn't return data - app needs to relaunch
         return
       }
@@ -537,11 +570,13 @@ class BackupManager {
       // Legacy backup format (version <= 5)
       logger.debug('Detected legacy backup format (version <= 5)')
 
-      const data = await this.restoreLegacy()
+      const data = await this.restoreLegacy(stagedPaths, _?.sender?.id)
 
       return data
     } catch (error) {
       logger.error('Restore failed:', error as Error)
+      // Remove only markers prepared by this invocation; leave live data untouched.
+      for (const staged of stagedPaths) await fs.remove(staged).catch(() => {})
       await fs.remove(this.tempDir).catch(() => {})
       throw error
     }
@@ -549,10 +584,9 @@ class BackupManager {
 
   /**
    * Restore from direct backup format (version 6+)
-   * Directly replaces IndexedDB and Local Storage directories.
-   * On Windows, uses .restore suffix to avoid file lock issues - handled on next startup.
+   * Stages directories with .restore on every platform, swapped only at startup.
    */
-  private async restoreDirect(): Promise<void> {
+  private async restoreDirect(stagedPaths: string[], owner?: number): Promise<void> {
     const onProgress = this.onProgress(IpcChannel.RestoreProgress, true)
 
     try {
@@ -579,9 +613,8 @@ class BackupManager {
       const userDataPath = app.getPath('userData')
 
       // Restore IndexedDB and Local Storage
-      // On Windows, use .restore suffix to avoid file lock issues - handled on next startup
-      // On macOS/Linux, use direct replacement
-      const restoreSuffix = isWin ? '.restore' : ''
+      // Never replace directories underneath live database handles, on any platform.
+      const restoreSuffix = '.restore' // Swap only at startup on every platform, never underneath live databases.
 
       // IndexedDB & Local Storage Path
       const indexedDBSource = path.join(this.tempDir, 'IndexedDB')
@@ -591,15 +624,18 @@ class BackupManager {
 
       logger.debug('[restoreDirect] Restoring database directories...')
 
-      // Windows: copy to .restore suffix directories (swap happens on next startup)
-      // macOS/Linux: copy directly to target directories
+      // Copy to staging directories; the next startup performs the swap.
       // Always remove target directory first to ensure clean overwrite
       if (await fs.pathExists(indexedDBSource)) {
+        stagedPaths.push(indexedDBDest)
+        registerRendererDataStage(owner, indexedDBDest)
         await fs.remove(indexedDBDest).catch(() => {})
         await fs.copy(indexedDBSource, indexedDBDest)
       }
 
       if (await fs.pathExists(localStorageSource)) {
+        stagedPaths.push(localStorageDest)
+        registerRendererDataStage(owner, localStorageDest)
         await fs.remove(localStorageDest).catch(() => {})
         await fs.copy(localStorageSource, localStorageDest)
       }
@@ -615,16 +651,15 @@ class BackupManager {
       if (dataExists && dataFiles.length > 0) {
         logger.debug('[restoreDirect] Restoring Data directory...')
 
-        const totalSize = await this.getDirSize(dataSource)
-        let copiedSize = 0
-
-        await fs.remove(dataDest)
-
-        await this.copyDirWithProgress(dataSource, dataDest, (size) => {
-          copiedSize += size
-          const progress = Math.min(95, 65 + Math.floor((copiedSize / totalSize) * 30))
-          onProgress({ stage: 'restoring_data', progress, total: 100 })
-        })
+        stagedPaths.push(dataDest)
+        registerRendererDataStage(owner, dataDest)
+        await stageAssistantBackupData(
+          dataSource,
+          path.join(userDataPath, 'Data'),
+          dataDest,
+          metadata.dataMode === 'slim'
+        )
+        onProgress({ stage: 'restoring_data', progress: 95, total: 100 })
       } else {
         logger.debug('[restoreDirect] No Data directory to restore')
       }
@@ -638,6 +673,7 @@ class BackupManager {
       // Relaunch app to load restored data
       selectionService?.quit()
       app.relaunch()
+      markRendererDataCommitted(owner)
       app.exit(0)
     } catch (error) {
       logger.error('[restoreDirect] Restore failed:', error as Error)
@@ -652,7 +688,7 @@ class BackupManager {
    * @param onProgress - Callback function to report restore progress
    * @returns The data string read from data.json
    */
-  private async restoreLegacy(): Promise<string> {
+  private async restoreLegacy(stagedPaths: string[], owner?: number): Promise<string> {
     const onProgress = this.onProgress(IpcChannel.RestoreProgress, false)
 
     try {
@@ -666,7 +702,7 @@ class BackupManager {
       logger.debug('[restoreLegacy] restore Data directory')
 
       // Restore Data directory
-      const restoreSuffix = isWin ? '.restore' : ''
+      const restoreSuffix = '.restore'
       const userDataPath = app.getPath('userData')
       const dataSourcePath = path.join(this.tempDir, 'Data')
       const dataDestPath = path.join(userDataPath, 'Data' + restoreSuffix)
@@ -675,18 +711,17 @@ class BackupManager {
       const dataFiles = dataExists ? await fs.readdir(dataSourcePath) : []
 
       if (dataExists && dataFiles.length > 0) {
-        // Get total size of source directory
-        const dataTotalSize = await this.getDirSize(dataSourcePath)
-        let copiedSize = 0
-
-        await fs.remove(dataDestPath)
-
-        // Use streaming copy
-        await this.copyDirWithProgress(dataSourcePath, dataDestPath, (size) => {
-          copiedSize += size
-          const progress = Math.min(85, 35 + Math.floor((copiedSize / dataTotalSize) * 50))
-          onProgress({ stage: 'copying_files', progress, total: 100 })
-        })
+        const manifestPath = path.join(this.tempDir, 'assistant-data.json')
+        const manifest = (await fs.pathExists(manifestPath)) ? await fs.readJson(manifestPath) : undefined
+        stagedPaths.push(dataDestPath)
+        registerRendererDataStage(owner, dataDestPath)
+        await stageAssistantBackupData(
+          dataSourcePath,
+          path.join(userDataPath, 'Data'),
+          dataDestPath,
+          manifest?.dataMode === 'slim'
+        )
+        onProgress({ stage: 'copying_files', progress: 85, total: 100 })
       } else {
         logger.debug('[restoreLegacy] skipBackupFile is true, skip restoring Data directory')
       }
@@ -819,37 +854,19 @@ class BackupManager {
   }
 
   /**
-   * Calculate total size of a directory recursively
-   * @param dirPath - Directory path to calculate size
-   * @returns Total size in bytes
-   */
-  private async getDirSize(dirPath: string): Promise<number> {
-    let size = 0
-    const items = await fs.readdir(dirPath, { withFileTypes: true })
-
-    for (const item of items) {
-      const fullPath = path.join(dirPath, item.name)
-      if (item.isDirectory()) {
-        size += await this.getDirSize(fullPath)
-      } else {
-        const stats = await fs.stat(fullPath)
-        size += stats.size
-      }
-    }
-    return size
-  }
-
-  /**
    * Create a empty restore data path, it will be reset after app relaunch
    */
-  public async resetData() {
-    if (!isWin) {
-      return await fs.remove(getDataPath()).catch(() => {})
-    }
-
-    const dataRestorePath = getDataPath() + '.restore'
-    await fs.remove(dataRestorePath).catch(() => {})
-    await fs.ensureDir(dataRestorePath)
+  public async resetData(event?: Electron.IpcMainInvokeEvent) {
+    return withAssistantDataOperation(
+      'reset',
+      async () => {
+        const dataRestorePath = getDataPath() + '.restore'
+        registerRendererDataStage(event?.sender?.id, dataRestorePath)
+        await fs.remove(dataRestorePath)
+        await fs.ensureDir(dataRestorePath)
+      },
+      event?.sender?.id
+    )
   }
 
   /**
@@ -924,68 +941,6 @@ class BackupManager {
       logger.error('Failed to list WebDAV files:', error)
       throw new Error(error.message || 'Failed to list backup files')
     }
-  }
-
-  /**
-   * Copy directory with progress reporting
-   * Recursively copies files from source to destination while reporting progress
-   * @param source - Source directory path
-   * @param destination - Destination directory path
-   * @param onProgress - Callback function called with size of each copied file
-   */
-  private async copyDirWithProgress(
-    source: string,
-    destination: string,
-    onProgress: (size: number) => void
-  ): Promise<void> {
-    // First count total files
-    let totalFiles = 0
-    let processedFiles = 0
-    let lastProgressReported = 0
-
-    // Calculate total file count
-    const countFiles = async (dir: string): Promise<number> => {
-      let count = 0
-      const items = await fs.readdir(dir, { withFileTypes: true })
-      for (const item of items) {
-        if (item.isDirectory()) {
-          count += await countFiles(path.join(dir, item.name))
-        } else {
-          count++
-        }
-      }
-      return count
-    }
-
-    totalFiles = await countFiles(source)
-
-    // Copy files and update progress
-    const copyDir = async (src: string, dest: string): Promise<void> => {
-      const items = await fs.readdir(src, { withFileTypes: true })
-
-      for (const item of items) {
-        const sourcePath = path.join(src, item.name)
-        const destPath = path.join(dest, item.name)
-
-        if (item.isDirectory()) {
-          await fs.ensureDir(destPath)
-          await copyDir(sourcePath, destPath)
-        } else {
-          const stats = await fs.stat(sourcePath)
-          await fs.copy(sourcePath, destPath)
-          processedFiles++
-
-          // Only report progress when change exceeds 5%
-          const currentProgress = Math.floor((processedFiles / totalFiles) * 100)
-          if (currentProgress - lastProgressReported >= 5 || processedFiles === totalFiles) {
-            lastProgressReported = currentProgress
-            onProgress(stats.size)
-          }
-        }
-      }
-    }
-
-    await copyDir(source, destination)
   }
 
   /**

@@ -140,6 +140,7 @@ export const getRestoreProgressLabel = (key: string): string => {
 }
 
 const titleKeyMap = {
+  'new-assistant': 'new_assistant.title',
   announcements: 'announcements.title',
   // TODO: update i18n key
   store: 'title.store',
@@ -186,6 +187,7 @@ export const getThemeModeLabel = (key: string): string => {
 // } as const
 
 const sidebarIconKeyMap = {
+  new_assistant: 'new_assistant.title',
   assistants: 'assistants.title',
   agents: 'agent.sidebar_title',
   store: 'assistants.presets.title',

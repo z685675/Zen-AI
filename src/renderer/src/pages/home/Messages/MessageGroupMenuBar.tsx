@@ -7,12 +7,14 @@ import {
   ReloadOutlined
 } from '@ant-design/icons'
 import { HStack } from '@renderer/components/Layout'
+import { useAgentWorkspace } from '@renderer/context/AgentWorkspaceProvider'
 import { useAssistant } from '@renderer/hooks/useAssistant'
 import { useMessageOperations } from '@renderer/hooks/useMessageOperations'
 import type { MultiModelMessageStyle } from '@renderer/store/settings'
 import type { Topic } from '@renderer/types'
 import type { Message } from '@renderer/types/newMessage'
 import { AssistantMessageStatus } from '@renderer/types/newMessage'
+import { isReadOnlyLegacySession } from '@renderer/utils/legacyMessageActions'
 import { getMainTextContent } from '@renderer/utils/messageUtils/find'
 import { Button, Tooltip } from 'antd'
 import type { FC } from 'react'
@@ -41,6 +43,8 @@ const MessageGroupMenuBar: FC<Props> = ({
   topic
 }) => {
   const { t } = useTranslation()
+  const nativeMemory = useAgentWorkspace() === 'opencode'
+  const legacyReadOnly = isReadOnlyLegacySession(topic.id, topic.assistantId)
   const { deleteGroupMessages, regenerateAssistantMessage } = useMessageOperations(topic)
   const { assistant } = useAssistant(messages[0]?.assistantId)
 
@@ -82,6 +86,7 @@ const MessageGroupMenuBar: FC<Props> = ({
   const hasFailedMessages = messages.some((m) => isFailedMessage(m) && !isTransmittingMessage(m))
 
   const handleRetryAll = async () => {
+    if (legacyReadOnly) return
     const candidates = messages.filter((m) => isFailedMessage(m) && !isTransmittingMessage(m))
 
     for (const msg of candidates) {
@@ -134,7 +139,7 @@ const MessageGroupMenuBar: FC<Props> = ({
         )}
         {multiModelMessageStyle === 'grid' && <MessageGroupSettings />}
       </HStack>
-      {hasFailedMessages && (
+      {!nativeMemory && !legacyReadOnly && hasFailedMessages && (
         <Tooltip title={t('message.group.retry_failed')} mouseEnterDelay={0.6}>
           <Button
             type="text"
@@ -145,12 +150,14 @@ const MessageGroupMenuBar: FC<Props> = ({
           />
         </Tooltip>
       )}
-      <Button
-        type="text"
-        size="small"
-        icon={<DeleteOutlined style={{ color: 'var(--color-error)' }} />}
-        onClick={handleDeleteGroup}
-      />
+      {!nativeMemory && (
+        <Button
+          type="text"
+          size="small"
+          icon={<DeleteOutlined style={{ color: 'var(--color-error)' }} />}
+          onClick={handleDeleteGroup}
+        />
+      )}
     </GroupMenuBar>
   )
 }

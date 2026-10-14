@@ -1,8 +1,80 @@
+import AiSdkToChunkAdapter from '@renderer/aiCore/chunk/AiSdkToChunkAdapter'
+import { type Chunk, ChunkType } from '@renderer/types/chunk'
+import { AgentTaskLimitError, getAgentTaskLimitDetails } from '@shared/agents/taskConcurrency'
 import { describe, expect, it, vi } from 'vitest'
 
-import { formatErrorForClipboard, formatErrorMessage, getErrorDetails, isAbortError, isTimeoutError } from '../error'
+import { getAgentTaskDeadlineKind } from '../agentTaskDeadline'
+import {
+  formatErrorForClipboard,
+  formatErrorMessage,
+  getErrorDetails,
+  isAbortError,
+  isTimeoutError,
+  serializeError
+} from '../error'
 
 describe('error', () => {
+  it.each(['agent_human_wait_timeout', 'agent_execution_timeout'])(
+    'preserves %s through stream conversion and saved history',
+    async (code) => {
+      const chunks: Chunk[] = []
+      const adapter = new AiSdkToChunkAdapter((chunk) => chunks.push(chunk))
+      await adapter.processStream({
+        text: Promise.resolve(''),
+        fullStream: new ReadableStream({
+          start(controller) {
+            controller.enqueue({
+              type: 'error',
+              error: {
+                name: 'Error',
+                message: 'saved task state was preserved',
+                code,
+                zenFailureStage: 'local-task-deadline'
+              }
+            })
+            controller.close()
+          }
+        })
+      })
+      const chunk = chunks.find((part) => part.type === ChunkType.ERROR)
+      if (chunk?.type !== ChunkType.ERROR) throw new Error('Expected error chunk')
+      const saved = JSON.parse(JSON.stringify(serializeError(chunk.error)))
+      expect(getAgentTaskDeadlineKind(saved)).toBe(code === 'agent_human_wait_timeout' ? 'human-wait' : 'execution')
+      expect(saved.zenFailureStage).toBe('local-task-deadline')
+      expect(isAbortError(chunk.error)).toBe(false)
+    }
+  )
+  it('keeps task-capacity details for the compact notice after saving and reloading history', () => {
+    const saved = JSON.parse(JSON.stringify(serializeError(new AgentTaskLimitError(3, 3))))
+    expect(getAgentTaskLimitDetails(saved)).toEqual({ limit: 3, activeTasks: 3 })
+    expect(saved.zenFailureStage).toBe('local-task-admission')
+  })
+  it.each([1, 3])(
+    'preserves the %i-task notice through the actual SSE-to-SDK adapter and serialization',
+    async (limit) => {
+      const chunks: Chunk[] = []
+      const adapter = new AiSdkToChunkAdapter((chunk) => chunks.push(chunk))
+      await adapter.processStream({
+        text: Promise.resolve(''),
+        fullStream: new ReadableStream({
+          start(controller) {
+            controller.enqueue({
+              type: 'error',
+              error: JSON.parse(JSON.stringify(new AgentTaskLimitError(limit, limit)))
+            })
+            controller.close()
+          }
+        })
+      })
+      const errorChunk = chunks.find((chunk) => chunk.type === ChunkType.ERROR)
+      expect(errorChunk?.type).toBe(ChunkType.ERROR)
+      if (errorChunk?.type !== ChunkType.ERROR) throw new Error('Expected error chunk')
+      expect(getAgentTaskLimitDetails(errorChunk.error)).toEqual({ limit, activeTasks: limit })
+      const saved = JSON.parse(JSON.stringify(serializeError(errorChunk.error)))
+      expect(getAgentTaskLimitDetails(saved)).toEqual({ limit, activeTasks: limit })
+      expect(saved.zenFailureStage).toBe('local-task-admission')
+    }
+  )
   describe('getErrorDetails', () => {
     it('should handle null or non-object values', () => {
       expect(getErrorDetails(null)).toBeNull()

@@ -59,6 +59,7 @@ import type { ActionItem } from '../renderer/src/types/selectionTypes'
 import type {
   InstalledSkill,
   LocalSkill,
+  SkillCompatibilityReport,
   SkillFileNode,
   SkillInstallFromDirectoryOptions,
   SkillInstallFromZipOptions,
@@ -174,6 +175,12 @@ const api = {
     decompress: (text: Buffer) => ipcRenderer.invoke(IpcChannel.Zip_Decompress, text)
   },
   backup: {
+    beginDataOperation: (
+      kind: 'restore' | 'reset'
+    ): Promise<{ success: true; token: string } | { success: false; reason: 'busy' }> =>
+      ipcRenderer.invoke(IpcChannel.Backup_BeginDataOperation, kind),
+    endDataOperation: (token: string, committed = false): Promise<void> =>
+      ipcRenderer.invoke(IpcChannel.Backup_EndDataOperation, token, committed),
     restore: (path: string) => ipcRenderer.invoke(IpcChannel.Backup_Restore, path),
     // Direct backup methods (copy IndexedDB/LocalStorage directories directly)
     backup: (fileName: string, destinationPath: string, skipBackupFile: boolean) =>
@@ -912,6 +919,8 @@ const api = {
   },
   skill: {
     list: (): Promise<SkillResult<InstalledSkill[]>> => ipcRenderer.invoke(IpcChannel.Skill_List),
+    inspect: (skillId: string): Promise<SkillResult<SkillCompatibilityReport>> =>
+      ipcRenderer.invoke(IpcChannel.Skill_Inspect, skillId),
     install: (options: SkillInstallOptions): Promise<SkillResult<InstalledSkill>> =>
       ipcRenderer.invoke(IpcChannel.Skill_Install, options),
     uninstall: (skillId: string): Promise<SkillResult<void>> => ipcRenderer.invoke(IpcChannel.Skill_Uninstall, skillId),

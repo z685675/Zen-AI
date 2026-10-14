@@ -2,6 +2,7 @@ import { loggerService } from '@logger'
 import ContextMenu from '@renderer/components/ContextMenu'
 import { LoadingIcon } from '@renderer/components/Icons'
 import { LOAD_MORE_COUNT } from '@renderer/config/constant'
+import { useAgentWorkspace } from '@renderer/context/AgentWorkspaceProvider'
 import db from '@renderer/databases'
 import { useAssistant } from '@renderer/hooks/useAssistant'
 import { useChatContext } from '@renderer/hooks/useChatContext'
@@ -54,6 +55,7 @@ interface MessagesProps {
 const logger = loggerService.withContext('Messages')
 
 const Messages: React.FC<MessagesProps> = ({ assistant, topic, setActiveTopic, onComponentUpdate, onFirstUpdate }) => {
+  const nativeMemory = useAgentWorkspace() === 'opencode'
   const {
     containerRef: scrollContainerRef,
     handleScroll: handleScrollPosition,
@@ -143,7 +145,7 @@ const Messages: React.FC<MessagesProps> = ({ assistant, topic, setActiveTopic, o
         return
       }
 
-      await clearTopicMessages()
+      if (!(await clearTopicMessages())) return
       setDisplayMessages([])
     },
     [clearTopicMessages, topic.id]
@@ -174,6 +176,10 @@ const Messages: React.FC<MessagesProps> = ({ assistant, topic, setActiveTopic, o
         }
       }),
       EventEmitter.on(EVENT_NAMES.NEW_CONTEXT, async () => {
+        if (nativeMemory) {
+          window.toast.info(t('new_assistant.memory_notice'))
+          return
+        }
         if (isProcessingContext) return
         setIsProcessingContext(true)
 
@@ -202,6 +208,7 @@ const Messages: React.FC<MessagesProps> = ({ assistant, topic, setActiveTopic, o
         }
       }),
       EventEmitter.on(EVENT_NAMES.NEW_BRANCH, async (index: number) => {
+        if (nativeMemory) return
         const currentMessages = messagesRef.current
 
         if (!Number.isInteger(index) || index < 0 || index >= currentMessages.length) {
@@ -285,7 +292,7 @@ const Messages: React.FC<MessagesProps> = ({ assistant, topic, setActiveTopic, o
 
     return () => unsubscribes.forEach((unsub) => unsub())
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [assistant, dispatch, scrollToBottom, topic, isProcessingContext])
+  }, [assistant, dispatch, scrollToBottom, topic, isProcessingContext, nativeMemory])
 
   useEffect(() => {
     let cancelled = false

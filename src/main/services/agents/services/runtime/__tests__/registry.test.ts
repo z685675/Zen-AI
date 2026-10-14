@@ -1,4 +1,7 @@
+import { DEFAULT_OPENCODE_AGENT_ID } from '@shared/config/agents'
 import { describe, expect, it, vi } from 'vitest'
+
+vi.mock('../../opencode', () => ({ default: vi.fn().mockImplementation(() => ({ id: 'opencode-service' })) }))
 
 vi.mock('@main/apiServer/utils', () => ({
   validateModelId: vi.fn()
@@ -29,6 +32,19 @@ const validModel = (provider: Record<string, unknown>, modelId: string) => async
 })
 
 describe('runtime registry', () => {
+  it('pins the new workspace to OpenCode even when legacy overrides are enabled', async () => {
+    const session = {
+      agent_id: DEFAULT_OPENCODE_AGENT_ID,
+      agent_type: 'claude-code' as const,
+      model: 'gateway:gemini-3-pro',
+      configuration: { agent_runtime: 'codex' }
+    }
+    const resolution = await resolveAgentRuntime(session, {
+      env: { ZEN_AGENT_RUNTIME_OVERRIDE: 'claude-code', ZEN_ENABLE_AGENT_RUNTIME_CONFIG_OVERRIDE: 'true' }
+    })
+    expect(resolution).toMatchObject({ runtimeId: 'opencode', candidates: ['opencode'], source: 'workspace' })
+    await expect(getAgentRuntimeService(session)).resolves.toMatchObject({ id: 'opencode-service' })
+  })
   it('keeps Claude Code as the legacy fallback when the model cannot be resolved', async () => {
     const session = { agent_type: 'claude-code' as const }
 

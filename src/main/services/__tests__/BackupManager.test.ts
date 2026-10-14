@@ -38,12 +38,30 @@ vi.mock('path', async () => {
 })
 
 // Use vi.hoisted to define mocks that are available during hoisting
-const { mockBackupPathMigrationService, mockLogger } = vi.hoisted(() => ({
+const {
+  mockBackupPathMigrationService,
+  mockLogger,
+  mockDataGuard,
+  mockCommitted,
+  mockStage,
+  mockExtract,
+  mockZipClose,
+  mockRelaunch,
+  mockExit
+} = vi.hoisted(() => ({
+  mockDataGuard: vi.fn(async (_kind: string, work: () => Promise<unknown>) => work()),
+  mockCommitted: vi.fn(),
+  mockStage: vi.fn(),
+  mockExtract: vi.fn(),
+  mockZipClose: vi.fn(),
+  mockRelaunch: vi.fn(),
+  mockExit: vi.fn(),
   mockBackupPathMigrationService: {
     hasMigrationMarker: vi.fn(),
     migrateRestoredInternalPaths: vi.fn()
   },
   mockLogger: {
+    debug: vi.fn(),
     info: vi.fn(),
     warn: vi.fn(),
     error: vi.fn()
@@ -58,6 +76,8 @@ vi.mock('@logger', () => ({
 
 vi.mock('electron', () => ({
   app: {
+    relaunch: mockRelaunch,
+    exit: mockExit,
     getPath: vi.fn((key: string) => {
       if (key === 'temp') return '/tmp'
       if (key === 'userData') return '/mock/userData'
@@ -91,6 +111,7 @@ vi.mock('fs-extra', () => ({
   readdir: vi.fn(),
   stat: vi.fn(),
   readFile: vi.fn(),
+  readJson: vi.fn(),
   writeFile: vi.fn(),
   createWriteStream: vi.fn(),
   createReadStream: vi.fn()
@@ -123,11 +144,22 @@ vi.mock('archiver', () => ({
 }))
 
 vi.mock('node-stream-zip', () => ({
-  default: vi.fn()
+  default: {
+    async: vi.fn(function () {
+      return { extract: mockExtract, close: mockZipClose }
+    })
+  }
 }))
+vi.mock('../AssistantDataOperationService', () => ({
+  withAssistantDataOperation: mockDataGuard,
+  markRendererDataCommitted: mockCommitted,
+  registerRendererDataStage: vi.fn()
+}))
+vi.mock('../AssistantBackupSnapshot', () => ({ copyAssistantBackupData: vi.fn(), stageAssistantBackupData: mockStage }))
+vi.mock('../SelectionService', () => ({ default: { quit: vi.fn() } }))
 
 // Import after mocks
-import { APP_TEMP_DIR_NAME } from '@shared/config/constant'
+import { APP_NAME, APP_TEMP_DIR_NAME } from '@shared/config/constant'
 import * as fs from 'fs-extra'
 
 import BackupManager from '../BackupManager'
@@ -360,15 +392,93 @@ describe('BackupManager.handleStartupRestore', () => {
 
     await BackupManager.handleStartupRestore()
 
-    expect(fs.remove).toHaveBeenCalledWith('/mock/userData/IndexedDB')
+    expect(fs.remove).not.toHaveBeenCalledWith('/mock/userData/IndexedDB')
     expect(fs.rename).toHaveBeenCalledWith('/mock/userData/IndexedDB.restore', '/mock/userData/IndexedDB')
-    expect(fs.remove).toHaveBeenCalledWith('/mock/userData/Local Storage')
+    expect(fs.remove).not.toHaveBeenCalledWith('/mock/userData/Local Storage')
     expect(fs.rename).toHaveBeenCalledWith('/mock/userData/Local Storage.restore', '/mock/userData/Local Storage')
-    expect(fs.remove).toHaveBeenCalledWith('/mock/data')
+    expect(fs.remove).not.toHaveBeenCalledWith('/mock/data')
     expect(fs.rename).toHaveBeenCalledWith('/mock/data.restore', '/mock/data')
     expect(mockBackupPathMigrationService.hasMigrationMarker).not.toHaveBeenCalled()
     expect(mockBackupPathMigrationService.migrateRestoredInternalPaths).toHaveBeenCalledWith({
       removeWeChatCredentials: true
     })
+  })
+  it('returns a saved original directory after a failed startup swap instead of deleting history', async () => {
+    vi.mocked(fs.pathExists).mockResolvedValue(true as never)
+    vi.mocked(fs.rename).mockImplementation(async (source) => {
+      if (String(source) === '/mock/userData/IndexedDB.restore') throw new Error('locked')
+    })
+    await BackupManager.handleStartupRestore()
+    expect(fs.rename).toHaveBeenCalledWith(
+      '/mock/userData/IndexedDB',
+      expect.stringContaining('/mock/userData/IndexedDB.before-restore-')
+    )
+    expect(fs.rename).toHaveBeenCalledWith(
+      expect.stringContaining('/mock/userData/IndexedDB.before-restore-'),
+      '/mock/userData/IndexedDB'
+    )
+    expect(fs.remove).not.toHaveBeenCalled()
+    expect(mockBackupPathMigrationService.migrateRestoredInternalPaths).not.toHaveBeenCalled()
+  })
+})
+
+describe('BackupManager protected restore staging', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockDataGuard.mockImplementation(async (_kind, work) => work())
+    mockStage.mockResolvedValue(undefined)
+    mockExtract.mockResolvedValue(undefined)
+    mockZipClose.mockResolvedValue(undefined)
+    mockRelaunch.mockReset()
+    vi.mocked(fs.pathExists).mockResolvedValue(true as never)
+    vi.mocked(fs.remove).mockResolvedValue(undefined as never)
+    vi.mocked(fs.ensureDir).mockResolvedValue(undefined as never)
+    vi.mocked(fs.copy).mockResolvedValue(undefined as never)
+    vi.mocked(fs.readdir).mockResolvedValue(['agents.db'] as never)
+    vi.mocked(fs.readJson).mockResolvedValue({ appName: APP_NAME, version: 6, dataMode: 'slim' })
+  })
+  it('blocks restore and reset before touching files if data admission is refused', async () => {
+    mockDataGuard.mockRejectedValueOnce(new Error('busy'))
+    await expect(new BackupManager().restore({} as any, '/backup.zip')).rejects.toThrow('busy')
+    expect(mockExtract).not.toHaveBeenCalled()
+    expect(fs.remove).not.toHaveBeenCalled()
+    mockDataGuard.mockRejectedValueOnce(new Error('busy'))
+    await expect(new BackupManager().resetData()).rejects.toThrow('busy')
+    expect(fs.ensureDir).not.toHaveBeenCalled()
+  })
+  it.each(['slim', 'full'])('stages %s native history and never replaces live data before restart', async (mode) => {
+    vi.mocked(fs.readJson).mockResolvedValue({ appName: APP_NAME, version: 6, dataMode: mode })
+    await new BackupManager().restore({ sender: { id: 4 } } as any, '/backup.zip')
+    expect(mockStage).toHaveBeenCalledWith(
+      expect.stringContaining('/Data'),
+      '/mock/userData/Data',
+      '/mock/userData/Data.restore',
+      mode === 'slim'
+    )
+    expect(fs.remove).not.toHaveBeenCalledWith('/mock/userData/Data')
+    expect(mockZipClose).toHaveBeenCalledOnce()
+    expect(mockRelaunch.mock.invocationCallOrder[0]).toBeLessThan(mockCommitted.mock.invocationCallOrder[0])
+    expect(mockExit).toHaveBeenCalledExactlyOnceWith(0)
+  })
+  it('clears only staged paths and does not commit when relaunch fails', async () => {
+    mockRelaunch.mockImplementationOnce(() => {
+      throw new Error('relaunch failed')
+    })
+    await expect(new BackupManager().restore({ sender: { id: 4 } } as any, '/backup.zip')).rejects.toThrow(
+      'relaunch failed'
+    )
+    for (const folder of ['IndexedDB', 'Local Storage', 'Data'])
+      expect(fs.remove).toHaveBeenCalledWith(`/mock/userData/${folder}.restore`)
+    expect(fs.remove).not.toHaveBeenCalledWith('/mock/userData/Data')
+    expect(mockCommitted).not.toHaveBeenCalled()
+    expect(mockExit).not.toHaveBeenCalled()
+  })
+  it('closes the zip on extraction failure without preparing restore markers', async () => {
+    mockExtract.mockRejectedValueOnce(new Error('invalid zip'))
+    await expect(new BackupManager().restore({} as any, '/backup.zip')).rejects.toThrow('invalid zip')
+    expect(mockZipClose).toHaveBeenCalledOnce()
+    expect(mockStage).not.toHaveBeenCalled()
+    expect(mockRelaunch).not.toHaveBeenCalled()
+    expect(fs.remove).not.toHaveBeenCalledWith('/mock/userData/Data.restore')
   })
 })

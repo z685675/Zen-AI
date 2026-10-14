@@ -9,9 +9,11 @@ import { ocrService } from '@main/services/ocr/OcrService'
 import { managedPythonService } from '@main/services/python/ManagedPythonService'
 import { toAsarUnpackedPath } from '@main/utils'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
-import type { Tool } from '@modelcontextprotocol/sdk/types.js'
+import type { CallToolResult, Tool } from '@modelcontextprotocol/sdk/types.js'
 import { CallToolRequestSchema, ErrorCode, ListToolsRequestSchema, McpError } from '@modelcontextprotocol/sdk/types.js'
 import fontkit from '@pdf-lib/fontkit'
+import { createAssistantToolFailure } from '@shared/agents/toolFailure'
+import { diagnosticText } from '@shared/diagnostics'
 import { BuiltinOcrProviderIds, FILE_TYPE, type ImageFileMetadata, type OcrProvider, type OcrResult } from '@types'
 import AdmZip from 'adm-zip'
 import { app } from 'electron'
@@ -28,6 +30,7 @@ import {
   loadImageAssets,
   validateImageAssetUsage
 } from './assistantAssets'
+import { type PresentedOutputVerification, verifyPresentedOutput } from './assistantDeliveryValidation'
 import {
   type BrandThemeInput,
   DOCUMENT_STYLE_MODES,
@@ -38,6 +41,8 @@ import {
   VISUAL_STYLE_IDS
 } from './assistantDocumentStyles'
 import { createDocxBuffer } from './assistantDocx'
+import { writeAssistantFile } from './assistantFileSafety'
+import { validatePptxVisibleContent } from './assistantOfficeQuality'
 import { verifyGeneratedOutput } from './assistantOutputValidation'
 import {
   analyzePptxBuffer,
@@ -60,6 +65,11 @@ import {
   pptxTemplateSummary,
   profilePptxTemplateSlides
 } from './assistantPptxTemplate'
+import {
+  ASSISTANT_PRODUCT_TOOLS,
+  type AssistantProductOptions,
+  callAssistantProductTool
+} from './assistantProductTools'
 import { createXlsxBuffer, type WorkbookInput } from './assistantXlsx'
 
 const logger = loggerService.withContext('MCPServer:Assistant')
@@ -278,7 +288,7 @@ The output path must be inside an allowed user/workspace location. The tool crea
       workbook: {
         type: 'object',
         description:
-          'Advanced XLSX definition. Use { creator?, sheets: [{ name, rows, header_rows?, freeze_rows?, freeze_columns?, auto_filter?, column_widths?, merges?, conditional_formats?, charts? }] }. Formula cells use { formula, result, style? }; chart series must include cached categories and numeric values.',
+          'Advanced XLSX definition. Use { creator?, sheets: [{ name, rows, header_rows?, freeze_rows?, freeze_columns?, auto_filter?, column_widths?, merges?, conditional_formats?, charts? }] }. Formula cells require explicitly calculated { formula, result, style? }, including real zero results; never substitute zero for missing calculations. Styles include decimal (2 decimals), currency (grouped 2 decimals, specify currency in header), date (numeric Excel 1900-system serial), percent, integer and wrap. Chart series must include cached categories and numeric values; max 4 charts per sheet.',
         additionalProperties: true
       },
       assets: {
@@ -372,7 +382,8 @@ const PRESENT_FILES_TOOL: Tool = {
   description: `Register final user-facing files that were created by a script, shell command, browser download, or advanced Skill workflow so Zen AI can show quick-open file cards.
 Do not call this after create_file because create_file already returns file-card metadata.
 Only include final deliverables requested by the user. Do not include source attachments, temporary files, caches, validation artifacts, or internal working files.
-Every path must point to an existing file inside an allowed workspace/user location.`,
+Every path must point to an existing file inside an allowed workspace/user location. Supported Office/PDF/text files receive bounded format/content checks; malformed or empty supported files are rejected. Other formats and oversized files are existence-only, not content-verified. Inspect verification_scope and warnings before claiming success; these checks do not guarantee factual accuracy, formula recalculation or visual quality. Run applicable Skill feature validators first.
+When the user needs to open a project or output folder, include that existing directory too; it will become a persistent folder shortcut. Do not register unrelated directories.`,
   inputSchema: {
     type: 'object',
     properties: {
@@ -513,17 +524,19 @@ interface CreateFileArgs {
   slides?: SlideInput[]
   assets?: ImageAssetInput[]
   render_validation?: 'auto' | 'required' | 'skip'
+  overwrite?: boolean
 }
 
 interface PresentFilesArgs {
   file_paths?: string[]
 }
 
-interface PresentedFileResult {
+interface PresentedFileResult extends Omit<PresentedOutputVerification, 'verification_scope'> {
   path: string
+  kind?: 'directory'
   format: string
   size: number
-  verified: boolean
+  verification_scope: PresentedOutputVerification['verification_scope'] | 'directory-exists'
 }
 
 interface PythonExecuteArgs {
@@ -541,6 +554,7 @@ interface OcrFileArgs {
   pages?: number[]
   max_pages?: number
   output_path?: string
+  overwrite?: boolean
 }
 
 type OcrLanguage = NonNullable<OcrFileArgs['languages']>[number]
@@ -808,6 +822,7 @@ interface OutputBufferOptions {
   assets: Map<string, LoadedImageAsset>
   style?: ResolvedDocumentStyle
   referenceProfile?: PptxStyleReferenceProfile
+  productQuality?: boolean
 }
 
 interface NormalizedSlide {
@@ -851,7 +866,10 @@ class AssistantServer {
   public mcpServer: McpServer
   private allowedRoots: string[]
 
-  constructor(allowedRoots: string[] = []) {
+  constructor(
+    allowedRoots: string[] = [],
+    private readonly product?: AssistantProductOptions
+  ) {
     this.allowedRoots = normalizeAllowedRoots(allowedRoots)
     this.mcpServer = new McpServer(
       {
@@ -873,42 +891,113 @@ class AssistantServer {
         NAVIGATE_TOOL,
         DIAGNOSE_TOOL,
         INSPECT_PPTX_TEMPLATE_TOOL,
-        CREATE_FILE_TOOL,
+        this.product
+          ? {
+              ...CREATE_FILE_TOOL,
+              inputSchema: {
+                ...CREATE_FILE_TOOL.inputSchema,
+                properties: {
+                  ...CREATE_FILE_TOOL.inputSchema.properties,
+                  overwrite: {
+                    type: 'boolean',
+                    default: false,
+                    description:
+                      'Default false: never replace an existing file. True only for explicitly authorized replacement; approval and a retained backup are required.'
+                  }
+                }
+              }
+            }
+          : CREATE_FILE_TOOL,
         PRESENT_FILES_TOOL,
         PYTHON_EXECUTE_TOOL,
-        OCR_FILE_TOOL
+        this.product
+          ? {
+              ...OCR_FILE_TOOL,
+              inputSchema: {
+                ...OCR_FILE_TOOL.inputSchema,
+                properties: {
+                  ...OCR_FILE_TOOL.inputSchema.properties,
+                  overwrite: {
+                    type: 'boolean',
+                    default: false,
+                    description:
+                      'Explicitly authorized overwrite of an existing text output, with approval and a retained backup.'
+                  }
+                }
+              }
+            }
+          : OCR_FILE_TOOL,
+        ...(this.product ? ASSISTANT_PRODUCT_TOOLS : [])
       ]
     }))
 
-    this.mcpServer.server.setRequestHandler(CallToolRequestSchema, async (request) => {
+    this.mcpServer.server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
       const toolName = request.params.name
       const args = request.params.arguments ?? {}
+      const started = performance.now()
+      let failed = false
 
       try {
+        if (
+          this.product?.readOnly &&
+          ['create_file', 'ocr_file', 'python_execute', 'backup_file', 'navigate'].includes(toolName)
+        )
+          throw new Error('Plan mode does not permit mutating tools')
+        if (this.product && ASSISTANT_PRODUCT_TOOLS.some((tool) => tool.name === toolName)) {
+          const result = await callAssistantProductTool(toolName, args, this.allowedRoots, this.product, extra.signal)
+          return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] }
+        }
+        let result: CallToolResult
         switch (toolName) {
           case 'navigate':
-            return await this.navigate(args as Record<string, string | Record<string, string> | undefined>)
+            result = await this.navigate(args as Record<string, string | Record<string, string> | undefined>)
+            break
           case 'diagnose':
-            return await this.diagnose(args)
+            result = await this.diagnose(args)
+            break
           case 'inspect_pptx_template':
-            return await this.inspectPptxTemplate(args)
+            result = await this.inspectPptxTemplate(args)
+            break
           case 'create_file':
-            return await this.createFile(args as CreateFileArgs)
+            result = await this.createFile(args as CreateFileArgs)
+            break
           case 'present_files':
-            return await this.presentFiles(args as PresentFilesArgs)
+            result = await this.presentFiles(args as PresentFilesArgs)
+            break
           case 'python_execute':
-            return await this.executePython(args as PythonExecuteArgs)
+            result = await this.executePython(args as PythonExecuteArgs)
+            break
           case 'ocr_file':
-            return await this.ocrFile(args as OcrFileArgs)
+            result = await this.ocrFile(args as OcrFileArgs)
+            break
           default:
             throw new McpError(ErrorCode.MethodNotFound, `Unknown tool: ${toolName}`)
         }
+        failed = result.isError === true
+        return result
       } catch (error) {
+        failed = true
         const message = error instanceof Error ? error.message : String(error)
-        logger.error(`Tool error: ${toolName}`, { error: message })
+        logger.error(`Tool error: ${toolName}`, { error: diagnosticText(message) })
         return {
-          content: [{ type: 'text' as const, text: `Error: ${message}` }],
+          content: [
+            {
+              type: 'text' as const,
+              text: this.product
+                ? JSON.stringify({
+                    status: 'failed',
+                    failure: createAssistantToolFailure(toolName, error, this.product.signal?.aborted)
+                  })
+                : `Error: ${message}`
+            }
+          ],
           isError: true
+        }
+      } finally {
+        try {
+          this.product?.onTool?.(toolName, Math.round(performance.now() - started), failed)
+        } catch {
+          /* Observation must not fail a tool. */
         }
       }
     })
@@ -1095,7 +1184,10 @@ class AssistantServer {
     if (assets.size > 0 && !['docx', 'pptx', 'pdf'].includes(format)) {
       throw new McpError(ErrorCode.InvalidParams, `Image assets are not supported for ${format.toUpperCase()} output`)
     }
-    const slides = templateInput && !Array.isArray(args.slides) ? [] : normalizeSlides(args.slides, title, content)
+    const slides =
+      templateInput && !Array.isArray(args.slides)
+        ? []
+        : normalizeSlides(args.slides, title, content, Boolean(this.product))
     if (templateInput && templateProfile && !adaptiveTemplate) {
       validateNativeTemplateImageReplacements(templateInput, templateProfile, slides)
     }
@@ -1134,7 +1226,8 @@ class AssistantServer {
         slides,
         assets: usedAssets,
         style: documentStyle,
-        referenceProfile
+        referenceProfile,
+        productQuality: Boolean(this.product)
       })
     }
     const verification = await verifyGeneratedOutput({
@@ -1144,6 +1237,12 @@ class AssistantServer {
       expectedMediaAssets: usedAssets.size,
       renderValidation: args.render_validation
     })
+    if (this.product) {
+      if (format === 'xlsx') verification.checks.push('explicit-formula-results-and-numeric-formats')
+      if (format === 'docx') verification.checks.push('word-pagination-policy')
+      if (format === 'pptx' && (!templateInput || adaptiveTemplate))
+        verification.checks.push('pptx-visible-content-coverage')
+    }
     if (referenceProfile?.kind === 'pptx') {
       const outputProfile = analyzePptxBuffer(buffer, path.basename(outputPath))
       const similarity = comparePptxReferenceComposition(
@@ -1217,8 +1316,17 @@ class AssistantServer {
       verification.details.pptx_template_media_preserved = templateSummary.mediaPreserved
       verification.details.pptx_template_exact_package_reuse = templateSummary.exactPackageReuse
     }
-    await fsp.mkdir(path.dirname(outputPath), { recursive: true })
-    await fsp.writeFile(outputPath, buffer)
+    const writeResult = this.product
+      ? await writeAssistantFile(outputPath, buffer, this.allowedRoots, {
+          overwrite: args.overwrite,
+          signal: this.product.signal,
+          approve: this.product.approveOverwrite
+        })
+      : undefined
+    if (!this.product) {
+      await fsp.mkdir(path.dirname(outputPath), { recursive: true })
+      await fsp.writeFile(outputPath, buffer)
+    }
 
     const stat = await fsp.stat(outputPath)
     logger.info('Assistant create_file generated output', {
@@ -1234,6 +1342,7 @@ class AssistantServer {
           text: JSON.stringify(
             {
               status: 'created',
+              ...writeResult,
               path: outputPath,
               format,
               size: stat.size,
@@ -1279,15 +1388,29 @@ class AssistantServer {
       const stat = await fsp.stat(resolvedPath).catch(() => {
         throw new McpError(ErrorCode.InvalidParams, `Final output file does not exist: ${resolvedPath}`)
       })
-      if (!stat.isFile()) {
-        throw new McpError(ErrorCode.InvalidParams, `Final output path is not a file: ${resolvedPath}`)
+      if (!stat.isFile() && !stat.isDirectory()) {
+        throw new McpError(ErrorCode.InvalidParams, `Final output path is not a file or directory: ${resolvedPath}`)
       }
 
+      let validation:
+        | PresentedOutputVerification
+        | { verified: true; verification_scope: 'directory-exists'; warnings: string[] }
+      try {
+        validation = stat.isDirectory()
+          ? { verified: true, verification_scope: 'directory-exists', warnings: [] }
+          : await verifyPresentedOutput(resolvedPath, stat.size)
+      } catch (error) {
+        throw new McpError(
+          ErrorCode.InvalidParams,
+          `Final output failed validation: ${resolvedPath}: ${error instanceof Error ? error.message : String(error)}`
+        )
+      }
       files.push({
         path: resolvedPath,
+        ...(stat.isDirectory() ? { kind: 'directory' as const } : {}),
         format: path.extname(resolvedPath).slice(1).toLowerCase() || 'file',
         size: stat.size,
-        verified: true
+        ...validation
       })
     }
 
@@ -1418,12 +1541,21 @@ class AssistantServer {
     const payload = {
       status: result.exitCode === 0 ? 'completed' : 'failed',
       exit_code: result.exitCode,
-      stdout: result.stdout,
-      stderr: result.stderr,
+      stdout: this.product && result.exitCode !== 0 ? diagnosticText(result.stdout) : result.stdout,
+      stderr: this.product && result.exitCode !== 0 ? diagnosticText(result.stderr) : result.stderr,
       duration_ms: result.durationMs,
       working_directory: cwd,
       mode: scriptPath ? 'script' : 'inline',
-      script_path: scriptPath
+      script_path: scriptPath,
+      ...(this.product && result.exitCode !== 0
+        ? {
+            failure: createAssistantToolFailure(
+              'python_execute',
+              result.stderr || result.stdout || `Python exited with code ${result.exitCode}`,
+              this.product.signal?.aborted
+            )
+          }
+        : {})
     }
 
     return {
@@ -1478,6 +1610,7 @@ class AssistantServer {
 
     const responseFullText = formatOcrPages(pages, totalPages, 'markdown')
     let outputPath: string | undefined
+    let writeResult: Awaited<ReturnType<typeof writeAssistantFile>> | undefined
 
     if (args.output_path) {
       outputPath = this.resolveOutputPath(args.output_path)
@@ -1485,9 +1618,17 @@ class AssistantServer {
       if (!['.txt', '.md'].includes(outputExtension)) {
         throw new McpError(ErrorCode.InvalidParams, "'output_path' must end with .txt or .md")
       }
-      await fsp.mkdir(path.dirname(outputPath), { recursive: true })
       const outputText = formatOcrPages(pages, totalPages, outputExtension === '.md' ? 'markdown' : 'text')
-      await fsp.writeFile(outputPath, outputText, 'utf8')
+      if (this.product) {
+        writeResult = await writeAssistantFile(outputPath, outputText, this.allowedRoots, {
+          overwrite: args.overwrite,
+          signal: this.product.signal,
+          approve: this.product.approveOverwrite
+        })
+      } else {
+        await fsp.mkdir(path.dirname(outputPath), { recursive: true })
+        await fsp.writeFile(outputPath, outputText, 'utf8')
+      }
     }
 
     const responseText =
@@ -1504,6 +1645,7 @@ class AssistantServer {
               status: lowConfidencePages.length > 0 ? 'completed_with_warnings' : 'completed',
               input_path: inputPath,
               output_path: outputPath,
+              ...writeResult,
               total_pages: totalPages,
               processed_pages: pages.map((entry) => entry.page),
               providers: [...new Set(pages.map((entry) => entry.provider))],
@@ -2343,7 +2485,12 @@ function normalizeRows(rows: CellValue[][] | undefined, content: string): string
   })
 }
 
-function normalizeSlides(slides: SlideInput[] | undefined, title: string, content: string): NormalizedSlide[] {
+function normalizeSlides(
+  slides: SlideInput[] | undefined,
+  title: string,
+  content: string,
+  productQuality = false
+): NormalizedSlide[] {
   if (Array.isArray(slides) && slides.length > 0) {
     return slides.map((slide, index) => {
       const normalizedTitle = slide.title?.trim() || `${title} ${index + 1}`
@@ -2404,6 +2551,11 @@ function normalizeSlides(slides: SlideInput[] | undefined, title: string, conten
     slidesFromHeadings.push(current)
   }
 
+  if (productQuality && slidesFromHeadings.length > 30) {
+    throw new Error(
+      'Office quality validation: Markdown contains more than 30 slides. Provide an explicit slides array or split the deck; content will not be silently discarded.'
+    )
+  }
   const cappedSlides = slidesFromHeadings.slice(0, 30)
   return cappedSlides.map((slide, index) => ({
     ...slide,
@@ -2483,11 +2635,24 @@ async function createOutputBuffer(options: OutputBufferOptions): Promise<Buffer>
     case 'csv':
       return Buffer.from('\uFEFF' + toCsv(options.rows), 'utf-8')
     case 'docx':
-      return await createDocxBuffer(options.title, options.content, options.rows, options.assets, options.style)
+      return await createDocxBuffer(
+        options.title,
+        options.content,
+        options.rows,
+        options.assets,
+        options.style,
+        options.productQuality
+      )
     case 'xlsx':
-      return createXlsxBuffer(options.workbook, options.rows, options.title)
+      return createXlsxBuffer(options.workbook, options.rows, options.title, options.productQuality)
     case 'pptx':
-      return await createPptxBuffer(options.slides, options.assets, options.style, options.referenceProfile)
+      return await createPptxBuffer(
+        options.slides,
+        options.assets,
+        options.style,
+        options.referenceProfile,
+        options.productQuality
+      )
     case 'pdf':
       return await createPdfBuffer(options.title, options.content, options.assets, options.style)
   }
@@ -2524,7 +2689,8 @@ export async function createPptxBuffer(
   slides: NormalizedSlide[],
   assets: Map<string, LoadedImageAsset> = new Map(),
   style?: ResolvedDocumentStyle,
-  referenceProfile?: PptxStyleReferenceProfile
+  referenceProfile?: PptxStyleReferenceProfile,
+  productQuality = false
 ) {
   const baseSlides = slides.length
     ? slides.map((slide) => ({
@@ -2608,7 +2774,9 @@ export async function createPptxBuffer(
     )
   })
 
-  return zip.toBuffer()
+  const buffer = zip.toBuffer()
+  if (productQuality) validatePptxVisibleContent(buffer, normalizedSlides)
+  return buffer
 }
 
 function fitPptxImage(
@@ -4400,6 +4568,13 @@ function createCoverSlideXml(slide: NormalizedSlide, index: number, total: numbe
       createTextBox(9, 'Bold cover number', 7300000, 2520000, 1000000, 900000, [
         { text: String(index + 1).padStart(2, '0'), size: 48, color: theme.coverMuted, bold: true }
       ]),
+      ...slide.bullets
+        .slice(0, 3)
+        .map((bullet, i) =>
+          createTextBox(20 + i, `Bold cover context ${i + 1}`, 700000 + i * 1750000, 4200000, 1600000, 300000, [
+            { text: bullet, size: 11.5, color: fieldInk, bold: true }
+          ])
+        ),
       createFooter(index, total, theme.coverMuted)
     ].join('')
   }
@@ -5674,7 +5849,7 @@ function createTypographicSequenceSlideXml(
           y + 50000,
           3550000,
           rowHeight - 100000,
-          [{ text: parsed.detail || parsed.period, size: 11.5, color: theme.muted }],
+          [{ text: formatStepDetail(parsed, kind), size: 11.5, color: theme.muted }],
           { anchor: 'ctr' }
         ),
         createRect(
@@ -5757,7 +5932,7 @@ function createColorFieldSequenceSlideXml(
           y + 1370000,
           width - 360000,
           height - 1550000,
-          [{ text: parsed.detail || parsed.period, size: 10.5, color: tone.onBase }]
+          [{ text: formatStepDetail(parsed, kind), size: 10.5, color: tone.onBase }]
         )
       ].join('')
     })
@@ -5822,7 +5997,7 @@ function createOrbitalSequenceSlideXml(
           itemIndex % 2 === 0 ? y - 500000 : y + 770000,
           1360000,
           300000,
-          [{ text: parsed.detail || parsed.period, size: 10.5, color: theme.muted }]
+          [{ text: formatStepDetail(parsed, kind), size: 10.5, color: theme.muted }]
         )
       ].join('')
     })
@@ -5896,7 +6071,7 @@ function createProductSequenceSlideXml(
           y + 70000,
           3440000,
           rowHeight - 140000,
-          [{ text: parsed.detail || parsed.period, size: 11, color: theme.muted }],
+          [{ text: formatStepDetail(parsed, kind), size: 11, color: theme.muted }],
           { anchor: 'ctr' }
         ),
         createRect(
@@ -6332,7 +6507,7 @@ function createRouteSlideXml(slide: NormalizedSlide, index: number, total: numbe
           position.y + 105000,
           1310000,
           260000,
-          [{ text: item.heading, size: 12.5, color, bold: true }]
+          [{ text: `${item.period} · ${item.heading}`, size: 12.5, color, bold: true }]
         ),
         item.detail
           ? createTextBox(
@@ -7247,6 +7422,12 @@ function createTechnicalMetricSlideXml(
 
 function createSummarySlideXml(slide: NormalizedSlide, index: number, total: number, theme: PptxTheme) {
   const bullets = (slide.bullets.length ? slide.bullets : ['明确优先级', '推进关键动作', '定期复盘结果']).slice(0, 5)
+  const statement =
+    slide.subtitle || slide.takeaway
+      ? createTextBox(12, 'Summary statement', 820000, 1090000, 7200000, 300000, [
+          { text: slide.subtitle || slide.takeaway || '', size: 13, color: theme.muted }
+        ])
+      : ''
   if (
     ['classic', 'executive', 'consulting', 'formal', 'product', 'editorial', 'minimal', 'premium'].includes(
       theme.language
@@ -7266,15 +7447,7 @@ function createSummarySlideXml(slide: NormalizedSlide, index: number, total: num
         ].join('')
       })
       .join('')
-    return [
-      createBaseSlideChrome(slide, index, total, theme),
-      slide.subtitle || slide.takeaway
-        ? createTextBox(12, 'Summary statement', 820000, 1090000, 7200000, 300000, [
-            { text: slide.subtitle || slide.takeaway || '', size: 13, color: theme.muted }
-          ])
-        : '',
-      rows
-    ].join('')
+    return [createBaseSlideChrome(slide, index, total, theme), statement, rows].join('')
   }
   if (theme.language === 'bold' || theme.language === 'brand') {
     const rows = bullets
@@ -7292,7 +7465,7 @@ function createSummarySlideXml(slide: NormalizedSlide, index: number, total: num
         ].join('')
       })
       .join('')
-    return [createBaseSlideChrome(slide, index, total, theme), rows].join('')
+    return [createBaseSlideChrome(slide, index, total, theme), statement, rows].join('')
   }
   if (theme.language === 'playful' || theme.language === 'organic') {
     const rows = bullets
@@ -7310,7 +7483,7 @@ function createSummarySlideXml(slide: NormalizedSlide, index: number, total: num
         ].join('')
       })
       .join('')
-    return [createBaseSlideChrome(slide, index, total, theme), rows].join('')
+    return [createBaseSlideChrome(slide, index, total, theme), statement, rows].join('')
   }
   const rowsXml = bullets
     .map((bullet, i) => {
@@ -7754,6 +7927,12 @@ function parseStepBullet(value: string, index: number, kind: 'process' | 'timeli
     heading: headingDetail?.[0] || body,
     detail: headingDetail?.[1] || ''
   }
+}
+
+function formatStepDetail(parsed: ReturnType<typeof parseStepBullet>, kind: 'process' | 'timeline') {
+  return kind === 'timeline'
+    ? [parsed.period, parsed.detail].filter(Boolean).join(' | ')
+    : parsed.detail || parsed.period
 }
 
 function parseMetricBullet(value: string) {

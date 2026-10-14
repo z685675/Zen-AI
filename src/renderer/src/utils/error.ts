@@ -10,6 +10,7 @@ import type {
   SerializedError
 } from '@renderer/types/error'
 import { isSerializedAiSdkAPICallError } from '@renderer/types/error'
+import { AGENT_TASK_LIMIT_CODE, getAgentTaskLimitDetails } from '@shared/agents/taskConcurrency'
 import { safeSerialize } from '@shared/utils/serialize'
 import type { NoSuchToolError } from 'ai'
 import { AISDKError } from 'ai'
@@ -20,6 +21,7 @@ import { t } from 'i18next'
 import type * as z from 'zod'
 import { ZodError } from 'zod'
 
+import { getAgentTaskDeadlineKind } from './agentTaskDeadline'
 import { ZEN_TRACE_HEADER } from './clientErrorDiagnosis'
 import { parseJSON } from './json'
 
@@ -232,7 +234,14 @@ export const serializeError = (error: AiSdkErrorUnion): SerializedError => {
   if ('zenTraceId' in error && typeof error.zenTraceId === 'string') {
     serializedError.zenTraceId = error.zenTraceId
   }
-  for (const key of ['zenDiagnosticId', 'zenFailureStage', 'zenRuntimeStderr'] as const) {
+  for (const key of [
+    'zenDiagnosticId',
+    'zenFailureStage',
+    'zenRuntimeStderr',
+    'zenTransportFailure',
+    'code',
+    'zenTaskLimit'
+  ] as const) {
     if (key in error) Object.assign(serializedError, { [key]: error[key] })
   }
   if ('zenRequestUrl' in error && typeof error.zenRequestUrl === 'string') {
@@ -253,6 +262,20 @@ export const serializeError = (error: AiSdkErrorUnion): SerializedError => {
     serializedError.zenTraceId = headers[ZEN_TRACE_HEADER] || headers[ZEN_TRACE_HEADER.toLowerCase()]
   }
 
+  const taskLimit = getAgentTaskLimitDetails(error)
+  if (taskLimit) {
+    Object.assign(serializedError, {
+      code: AGENT_TASK_LIMIT_CODE,
+      zenTaskLimit: taskLimit,
+      zenFailureStage: 'local-task-admission'
+    })
+  }
+  const deadline = getAgentTaskDeadlineKind(error)
+  if (deadline)
+    Object.assign(serializedError, {
+      code: deadline === 'execution' ? 'agent_execution_timeout' : 'agent_human_wait_timeout',
+      zenFailureStage: 'local-task-deadline'
+    })
   return serializedError
 }
 /**

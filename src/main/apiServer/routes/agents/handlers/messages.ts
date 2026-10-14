@@ -7,6 +7,13 @@ import {
 } from '@main/apiServer/utils/createStreamAbortController'
 import { agentService, sessionMessageService, sessionService } from '@main/services/agents'
 import { recordMainDiagnostic } from '@main/services/DiagnosticEvidenceService'
+import {
+  isAssistantExecutionAllowed,
+  LEGACY_ASSISTANT_READ_ONLY_CODE,
+  LEGACY_ASSISTANT_READ_ONLY_MESSAGE
+} from '@shared/agents/assistantAvailability'
+import { getAgentTaskLimitDetails } from '@shared/agents/taskConcurrency'
+import { DEFAULT_OPENCODE_AGENT_ID } from '@shared/config/agents'
 import { sanitizeDiagnostic } from '@shared/diagnostics'
 import type { Request, Response } from 'express'
 
@@ -71,6 +78,17 @@ export const createMessage = async (req: Request, res: Response): Promise<void> 
 
     const session = await verifyAgentAndSession(agentId, sessionId)
     sessionVerified = true
+
+    if (!isAssistantExecutionAllowed(session.agent_id)) {
+      res.status(410).json({
+        error: {
+          code: LEGACY_ASSISTANT_READ_ONLY_CODE,
+          type: 'read_only',
+          message: LEGACY_ASSISTANT_READ_ONLY_MESSAGE
+        }
+      })
+      return
+    }
 
     const messageData = req.body
 
@@ -279,17 +297,32 @@ export const createMessage = async (req: Request, res: Response): Promise<void> 
     res.on('finish', cleanup)
   } catch (error: any) {
     streamController?.dispose()
+    const taskLimit = getAgentTaskLimitDetails(error)
+    if (taskLimit) {
+      recordMainDiagnostic(diagnosticId, 'preparation', 'blocked', {
+        phase: 'local-task-admission',
+        ...taskLimit
+      })
+    }
     if (!sessionVerified) {
       recordMainDiagnostic(diagnosticId, 'preparation', 'failed', {
         phase: 'local-api-session-validation',
         error
       })
     }
-    logger.error('Error in streaming message handler', {
-      error,
-      agentId: req.params.agentId,
-      sessionId: req.params.sessionId
-    })
+    if (taskLimit) {
+      logger.info('Assistant task rejected by shared capacity', {
+        agentId: req.params.agentId,
+        sessionId: req.params.sessionId,
+        ...taskLimit
+      })
+    } else {
+      logger.error('Error in streaming message handler', {
+        error,
+        agentId: req.params.agentId,
+        sessionId: req.params.sessionId
+      })
+    }
 
     // Send error as SSE if possible
     if (!res.headersSent) {
@@ -302,8 +335,9 @@ export const createMessage = async (req: Request, res: Response): Promise<void> 
       const errorResponse = {
         type: 'error',
         error: {
+          ...(taskLimit ? (sanitizeDiagnostic(error) as Record<string, unknown>) : {}),
           message: error.status ? error.message : 'Failed to create streaming message',
-          type: error.status ? 'not_found' : 'internal_error',
+          type: taskLimit ? 'task_limit' : error.status ? 'not_found' : 'internal_error',
           code: error.status ? error.code : 'stream_creation_failed'
         }
       }
@@ -323,6 +357,15 @@ export const deleteMessage = async (req: Request, res: Response): Promise<Respon
     const messageId = Number(messageIdParam)
 
     await verifyAgentAndSession(agentId, sessionId)
+    if (agentId === DEFAULT_OPENCODE_AGENT_ID) {
+      return res.status(409).json({
+        error: {
+          code: 'native_history_required',
+          type: 'conflict',
+          message: 'Use native-history to delete new assistant messages; display-only deletion is not allowed'
+        }
+      })
+    }
 
     const deleted = await sessionMessageService.deleteSessionMessage(sessionId, messageId)
 

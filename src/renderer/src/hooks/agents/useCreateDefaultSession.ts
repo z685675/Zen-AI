@@ -4,9 +4,10 @@ import {
   getAgentModelProviderId,
   getAppliedAgentDefaultPolicyTarget,
   getAppliedAgentDefaultPolicyVersion,
-  isAssistantModelIdentifierAllowed,
+  isAssistantModelAllowed,
   markAgentDefaultPolicyApplied,
-  normalizeAgentModelIdentifier
+  normalizeAgentModelIdentifier,
+  resolveAssistantFallbackModel
 } from '@renderer/config/agentModelPolicy'
 import { useAgent } from '@renderer/hooks/agents/useAgent'
 import { useAgentClient } from '@renderer/hooks/agents/useAgentClient'
@@ -60,6 +61,7 @@ export const useCreateDefaultSession = (agentId: string | null) => {
   const { updateSession } = useUpdateSession(agentId)
   const dispatch = useAppDispatch()
   const modelPolicy = useAppSelector((state) => state.llm.modelPolicy)
+  const enableDeveloperMode = useAppSelector((state) => state.settings.enableDeveloperMode)
   const { t } = useTranslation()
   const [creatingSession, setCreatingSession] = useState(false)
   const canCreateSession = canCreateAgentSession(agentId)
@@ -70,13 +72,15 @@ export const useCreateDefaultSession = (agentId: string | null) => {
       const appliedPolicyVersion = getAppliedAgentDefaultPolicyVersion(defaults.configuration)
       const hasNewRemotePolicy =
         Boolean(modelPolicy && modelPolicy.source !== 'builtin') && (modelPolicy?.version ?? 0) > appliedPolicyVersion
-      const currentModelAllowed = isAssistantModelIdentifierAllowed(defaults.model, false, policy)
 
       try {
-        const { data } = await client.getModels({ limit: 1000 })
+        // The local endpoint can return all imported models without pagination.
+        // A picker-visible model must not disappear behind an arbitrary limit.
+        const { data } = await client.getModels()
+        const allowedModels = data.filter((model) => isAssistantModelAllowed(model, enableDeveloperMode, policy))
         const preferredProviderId = getAgentModelProviderId(defaults.model)
-        const currentModelExists = data.some((model) => model.id === defaults.model)
-        if (!hasNewRemotePolicy && currentModelAllowed && currentModelExists) {
+        const currentModelExists = allowedModels.some((model) => model.id === defaults.model)
+        if (!hasNewRemotePolicy && currentModelExists) {
           return defaults
         }
 
@@ -89,37 +93,23 @@ export const useCreateDefaultSession = (agentId: string | null) => {
           nextConfiguration = markAgentDefaultPolicyApplied(defaults.configuration, modelPolicy)
           shouldPersistDefaults = true
 
-          const shouldApplyRemoteDefault = policy?.rules.applyToNewSessions !== false
+          const shouldApplyRemoteDefault = !enableDeveloperMode && policy?.rules.applyToNewSessions !== false
           const configuredDefault = policy?.defaults.assistantNewSession
           const resolvedDefault = configuredDefault
-            ? findAgentModelId(data, configuredDefault, preferredProviderId)
+            ? findAgentModelId(allowedModels, configuredDefault, preferredProviderId)
             : undefined
           if (
             shouldApplyRemoteDefault &&
             resolvedDefault &&
-            isAssistantModelIdentifierAllowed(resolvedDefault, false, policy) &&
             canReplaceAgentDefault(defaults.model, previousTarget, policy?.rules.overwriteUserChoice ?? false)
           ) {
             nextModel = resolvedDefault
           }
         }
 
-        const nextModelExists = data.some((model) => model.id === nextModel)
-        if (!nextModelExists || !isAssistantModelIdentifierAllowed(nextModel, false, policy)) {
-          const fallbackCandidates = [
-            ...(policy?.assistant.fallbackModels ?? []),
-            ...(policy?.rules.applyToNewSessions === false ? [] : [policy?.defaults.assistantNewSession])
-          ].filter((candidate): candidate is string => Boolean(candidate))
-          const policyFallback = fallbackCandidates
-            .map((candidate) => findAgentModelId(data, candidate, preferredProviderId))
-            .find(
-              (candidate): candidate is string =>
-                Boolean(candidate) && isAssistantModelIdentifierAllowed(candidate, false, policy)
-            )
-
-          if (!policyFallback) return null
-          nextModel = policyFallback
-        }
+        const usableModel = resolveAssistantFallbackModel(data, nextModel, policy, enableDeveloperMode)
+        if (!usableModel) return null
+        nextModel = usableModel.id
 
         shouldPersistDefaults ||= nextModel !== defaults.model
         if (!shouldPersistDefaults) return defaults
@@ -139,7 +129,7 @@ export const useCreateDefaultSession = (agentId: string | null) => {
         return defaults
       }
     },
-    [client, modelPolicy, updateAgent]
+    [client, enableDeveloperMode, modelPolicy, updateAgent]
   )
 
   const resolveExistingEmptySession = useCallback(

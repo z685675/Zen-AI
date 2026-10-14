@@ -1,6 +1,8 @@
 import { loggerService } from '@logger'
 import { AgentModelValidationError, sessionService } from '@main/services/agents'
 import { broadcastSessionChanged } from '@main/services/agents/services/channels/sessionStreamIpc'
+import { legacyContinuationService } from '@main/services/agents/services/LegacyContinuationService'
+import { DEFAULT_OPENCODE_AGENT_ID } from '@shared/config/agents'
 import type { ListAgentSessionsResponse, SearchAgentSessionsResponse, UpdateSessionResponse } from '@types'
 import { type ReplaceSessionRequest } from '@types'
 import type { Request, Response } from 'express'
@@ -8,6 +10,99 @@ import type { Request, Response } from 'express'
 import type { ValidationRequest } from '../validators/zodValidator'
 
 const logger = loggerService.withContext('ApiServerSessionsHandlers')
+
+export const inspectSessionSkills = async (req: Request, res: Response): Promise<Response> => {
+  const { agentId, sessionId } = req.params
+  if (agentId !== DEFAULT_OPENCODE_AGENT_ID) return res.sendStatus(404)
+  try {
+    const session = await sessionService.getSession(agentId, sessionId)
+    if (!session) return res.sendStatus(404)
+    const { getSessionSkillInventory } = await import('@main/services/agents/services/opencode/skillInventory')
+    return res.json(await getSessionSkillInventory(session))
+  } catch {
+    return res.status(503).json({ error: { code: 'inventory_unavailable', message: 'Inventory unavailable' } })
+  }
+}
+
+export const continueInNewAssistant = async (req: Request, res: Response): Promise<Response> => {
+  const controller = new AbortController()
+  const onClose = () => {
+    if (!res.writableEnded) controller.abort()
+  }
+  res.on('close', onClose)
+  try {
+    const result = await legacyContinuationService.continueSession(
+      req.params.agentId,
+      req.params.sessionId,
+      AbortSignal.any([controller.signal, AbortSignal.timeout(120_000)])
+    )
+    broadcastSessionChanged(DEFAULT_OPENCODE_AGENT_ID, result.session.id, false, 'created')
+    return res.json(result)
+  } catch (error) {
+    const code = (error as { code?: string }).code
+    const known = typeof code === 'string' && code.startsWith('continuation_') ? code : 'continuation_prepare_failed'
+    logger.warn('Legacy continuation failed; source retained', { code: known, error })
+    return res
+      .status(
+        known === 'continuation_source_missing'
+          ? 404
+          : known === 'continuation_busy' || known === 'continuation_source_changed'
+            ? 409
+            : 422
+      )
+      .json({ error: { code: known, message: known, type: 'continuation_error' } })
+  } finally {
+    res.off('close', onClose)
+  }
+}
+
+export const changeNativeHistory = async (req: Request, res: Response): Promise<Response> => {
+  const { agentId, sessionId } = req.params
+  const { action, messageId } = req.body ?? {}
+  if (agentId !== DEFAULT_OPENCODE_AGENT_ID || !(await sessionService.sessionExists(agentId, sessionId)))
+    return res.status(404).json({ error: { code: 'session_not_found', message: 'New assistant session not found' } })
+  if (
+    !['retry', 'delete', 'fork'].includes(action) ||
+    typeof messageId !== 'string' ||
+    !messageId ||
+    messageId.length > 256
+  )
+    return res.status(400).json({ error: { code: 'invalid_history_operation', message: 'Invalid history operation' } })
+  try {
+    const session = await sessionService.changeOpenCodeHistory(agentId, sessionId, messageId, action)
+    broadcastSessionChanged(agentId, session.id, false, action === 'fork' ? 'created' : 'completed')
+    return res.json(session)
+  } catch (error) {
+    logger.warn('Native history operation failed; original history retained', { action, error })
+    return res.status(409).json({
+      error: {
+        code: 'native_history_change_failed',
+        message: 'History was not changed; stop any active task and retry'
+      }
+    })
+  }
+}
+
+export const resetNativeMemory = async (req: Request, res: Response): Promise<Response> => {
+  const { agentId, sessionId } = req.params
+  if (agentId !== DEFAULT_OPENCODE_AGENT_ID || !(await sessionService.sessionExists(agentId, sessionId))) {
+    return res
+      .status(404)
+      .json({ error: { message: 'New assistant session not found', type: 'not_found', code: 'session_not_found' } })
+  }
+  try {
+    await sessionService.resetOpenCodeMemory(agentId, sessionId)
+    return res.status(204).send()
+  } catch {
+    return res.status(409).json({
+      error: {
+        message: 'Stop the task before clearing native memory, then retry',
+        type: 'conflict',
+        code: 'native_memory_reset_failed'
+      }
+    })
+  }
+}
 
 const modelValidationErrorBody = (error: AgentModelValidationError) => ({
   error: {
@@ -349,6 +444,7 @@ export const listAllSessions = async (req: Request, res: Response): Promise<Resp
     logger.debug('Listing all sessions', { limit, offset, status, archived })
 
     const result = await sessionService.listSessions(undefined, {
+      workspace: res.locals.agentWorkspace ?? 'legacy',
       limit,
       offset,
       sortBy: 'updated_at',
@@ -391,6 +487,7 @@ export const searchAllSessions = async (req: Request, res: Response): Promise<Re
     logger.debug('Searching all sessions', { query, limit, offset, archived })
 
     const result = await sessionService.searchSessions(query, {
+      workspace: res.locals.agentWorkspace ?? 'legacy',
       limit,
       offset,
       archived

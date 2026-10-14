@@ -8,9 +8,11 @@ import { getProviderById } from '@renderer/services/ProviderService'
 import { useAppDispatch, useAppSelector } from '@renderer/store'
 import { removeBlocksThunk } from '@renderer/store/thunk/messageThunk'
 import type { ErrorMessageBlock, Message } from '@renderer/types/newMessage'
+import { isUserStoppedMessage } from '@renderer/utils/agentCancellation'
 import { isAgentSessionTopicId } from '@renderer/utils/agentSession'
 import { diagnoseClientError } from '@renderer/utils/clientErrorDiagnosis'
 import { classifyError } from '@renderer/utils/errorClassifier'
+import { getAgentTaskLimitDetails } from '@shared/agents/taskConcurrency'
 import { Button } from 'antd'
 import { AlertTriangle, ChevronRight, Download, X } from 'lucide-react'
 import React, { useCallback, useMemo, useState } from 'react'
@@ -18,6 +20,8 @@ import { Trans, useTranslation } from 'react-i18next'
 import { Link, useNavigate } from 'react-router-dom'
 
 import AgentErrorFallbackCard from './AgentErrorFallbackCard'
+import AgentStoppedNotice from './AgentStoppedNotice'
+import AgentTaskLimitNotice from './AgentTaskLimitNotice'
 
 const HTTP_ERROR_CODES = [400, 401, 403, 404, 429, 500, 502, 503, 504]
 
@@ -28,6 +32,9 @@ interface Props {
 
 const ErrorBlock: React.FC<Props> = ({ block, message }) => {
   if (isAgentSessionTopicId(message.topicId)) {
+    if (isUserStoppedMessage(message, block)) return <AgentStoppedNotice />
+    const taskLimit = getAgentTaskLimitDetails(block.error)
+    if (taskLimit) return <AgentTaskLimitNotice limit={taskLimit.limit} />
     return <AgentErrorFallbackCard block={block} message={message} />
   }
 

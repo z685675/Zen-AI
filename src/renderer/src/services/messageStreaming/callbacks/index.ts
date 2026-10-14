@@ -1,4 +1,5 @@
 import type { Assistant } from '@renderer/types'
+import { createMessageResponseTimer } from '@renderer/utils/messageTiming'
 
 import type { BlockManager } from '../BlockManager'
 import { createBaseCallbacks } from './baseCallbacks'
@@ -22,6 +23,7 @@ interface CallbacksDependencies {
 
 export const createCallbacks = (deps: CallbacksDependencies) => {
   const { blockManager, dispatch, getState, topicId, assistantMsgId, saveUpdatesToDB, assistant } = deps
+  const responseTimer = createMessageResponseTimer()
 
   // 首先创建 thinkingCallbacks ，以便传递 getCurrentThinkingInfo 给 baseCallbacks
   const thinkingCallbacks = createThinkingCallbacks({
@@ -38,7 +40,8 @@ export const createCallbacks = (deps: CallbacksDependencies) => {
     assistantMsgId,
     saveUpdatesToDB,
     assistant,
-    getCurrentThinkingInfo: thinkingCallbacks.getCurrentThinkingInfo
+    getCurrentThinkingInfo: thinkingCallbacks.getCurrentThinkingInfo,
+    getResponseTiming: responseTimer.finish
   })
 
   const toolCallbacks = createToolCallbacks({
@@ -89,6 +92,22 @@ export const createCallbacks = (deps: CallbacksDependencies) => {
     ...citationCallbacks,
     ...videoCallbacks,
     ...compactCallbacks,
+    onTextChunk: (...args: Parameters<typeof textCallbacks.onTextChunk>) => {
+      responseTimer.markFirstToken(args[0])
+      return textCallbacks.onTextChunk(...args)
+    },
+    onTextComplete: (...args: Parameters<typeof textCallbacks.onTextComplete>) => {
+      responseTimer.markFirstToken(args[0])
+      return textCallbacks.onTextComplete(...args)
+    },
+    onThinkingChunk: (...args: Parameters<typeof thinkingCallbacks.onThinkingChunk>) => {
+      responseTimer.markFirstToken(args[0])
+      return thinkingCallbacks.onThinkingChunk(...args)
+    },
+    onThinkingComplete: (...args: Parameters<typeof thinkingCallbacks.onThinkingComplete>) => {
+      responseTimer.markFirstToken(args[0])
+      return thinkingCallbacks.onThinkingComplete(...args)
+    },
     // 清理资源的方法
     cleanup: () => {
       // 清理由 messageThunk 中的节流函数管理，这里不需要特别处理

@@ -3,6 +3,7 @@ import { DeleteIcon, EditIcon } from '@renderer/components/Icons'
 import MarqueeText from '@renderer/components/MarqueeText'
 import PromptPopup from '@renderer/components/Popups/PromptPopup'
 import { isMac } from '@renderer/config/constant'
+import { useLegacyContinuation } from '@renderer/hooks/agents/useLegacyContinuation'
 import { useUpdateSession } from '@renderer/hooks/agents/useUpdateSession'
 import { useInPlaceEdit } from '@renderer/hooks/useInPlaceEdit'
 import { useNotesSettings } from '@renderer/hooks/useNotesSettings'
@@ -22,6 +23,7 @@ import { getChannelTypeIcon } from '@renderer/utils/agentSession'
 import { buildAgentSessionTopicId } from '@renderer/utils/agentSession'
 import { exportMessagesAsMarkdown, exportMessageToNotes, messagesToMarkdown } from '@renderer/utils/export'
 import { removeSpecialCharactersForFileName } from '@renderer/utils/file'
+import { DEFAULT_OPENCODE_AGENT_ID } from '@shared/config/agents'
 import type { MenuProps } from 'antd'
 import { Dropdown, Tooltip } from 'antd'
 import dayjs from 'dayjs'
@@ -29,6 +31,8 @@ import { Archive, ArchiveRestore, MenuIcon, NotebookPen, Pin, PinOff, Sparkles, 
 import React, { memo, startTransition, useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import styled from 'styled-components'
+
+import SessionMigrationLabel from './SessionMigrationLabel'
 
 const logger = loggerService.withContext('SessionItem')
 
@@ -61,6 +65,7 @@ const SessionItem = ({
   const { t } = useTranslation()
   const { chat } = useRuntime()
   const { updateSession } = useUpdateSession(agentId)
+  const { busy: continuing, continueInNew } = useLegacyContinuation(agentId, session.id)
   const activeSessionId = chat.activeSessionIdMap[agentId]
   const [isConfirmingDeletion, setIsConfirmingDeletion] = useState(false)
   const { setTimeoutTimer } = useTimer()
@@ -247,6 +252,17 @@ const SessionItem = ({
 
   const menuItems: MenuProps['items'] = useMemo(
     () => [
+      ...(agentId !== DEFAULT_OPENCODE_AGENT_ID
+        ? [
+            {
+              label: t('assistant_transition.continue'),
+              key: 'continue-new',
+              icon: <Sparkles size={14} />,
+              disabled: isPending || continuing,
+              onClick: continueInNew
+            }
+          ]
+        : []),
       {
         label: t('chat.topics.edit.title'),
         key: 'rename',
@@ -333,6 +349,9 @@ const SessionItem = ({
     ],
     [
       agentId,
+      continuing,
+      continueInNew,
+      isPending,
       dispatch,
       exportItems,
       handleRename,
@@ -397,6 +416,7 @@ const SessionItem = ({
             </>
           )}
         </SessionNameContainer>
+        <SessionMigrationLabel session={session} />
         {agent && (
           <SessionMeta>
             <MetaAgentName title={agent.name}>{agent.name}</MetaAgentName>

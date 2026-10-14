@@ -18,6 +18,7 @@ import { useEnableDeveloperMode } from '@renderer/hooks/useSettings'
 import { useSettings } from '@renderer/hooks/useSettings'
 import { getSidebarIconLabel } from '@renderer/i18n/label'
 import { isEmoji } from '@renderer/utils'
+import { DEFAULT_OPENCODE_AGENT_AVATAR } from '@shared/config/agents'
 import { Avatar, Tooltip } from 'antd'
 import {
   Code,
@@ -49,13 +50,22 @@ interface SidebarMenuItemProps {
   onClick: () => void
   theme: string
   tooltip?: string
+  deprecated?: boolean
   children: ReactNode
 }
 
-const SidebarMenuItem: FC<SidebarMenuItemProps> = ({ active = false, label, onClick, theme, tooltip, children }) => (
+const SidebarMenuItem: FC<SidebarMenuItemProps> = ({
+  active = false,
+  label,
+  onClick,
+  theme,
+  tooltip,
+  deprecated,
+  children
+}) => (
   <Tooltip title={tooltip || label} mouseEnterDelay={0.8} placement="right">
     <StyledLink onClick={onClick}>
-      <MenuButton theme={theme} className={active ? 'active' : ''}>
+      <MenuButton theme={theme} $deprecated={deprecated} className={active ? 'active' : ''}>
         <MenuIconWrapper>{children}</MenuIconWrapper>
         <MenuLabel>{label}</MenuLabel>
       </MenuButton>
@@ -186,6 +196,11 @@ const MainMenus: FC = () => {
     agents: <MousePointerClick size={18} className="icon" />,
     store: <Sparkle size={18} className="icon" />,
     paintings: <Palette size={18} className="icon" />,
+    new_assistant: (
+      <span aria-hidden="true" className="text-lg leading-none">
+        {DEFAULT_OPENCODE_AGENT_AVATAR}
+      </span>
+    ),
     translate: <Languages size={18} className="icon" />,
     minapp: <LayoutGrid size={18} className="icon" />,
     knowledge: <FileSearch size={18} className="icon" />,
@@ -200,6 +215,7 @@ const MainMenus: FC = () => {
     agents: '/agents',
     store: '/store',
     paintings: defaultPaintingProvider ? `/paintings/${defaultPaintingProvider}` : '/paintings',
+    new_assistant: '/new-assistant',
     translate: '/translate',
     minapp: '/apps',
     knowledge: '/knowledge',
@@ -216,6 +232,7 @@ const MainMenus: FC = () => {
     return (
       <SidebarMenuItem
         key={icon}
+        deprecated={icon === 'agents'}
         active={!!isActive}
         label={getSidebarIconLabel(icon)}
         onClick={async () => {
@@ -301,7 +318,7 @@ const MenuIconWrapper = styled.div`
   border: none;
 `
 
-const MenuButton = styled.div<{ theme: string }>`
+const MenuButton = styled.div<{ theme: string; $deprecated?: boolean }>`
   position: relative;
   width: 100%;
   min-height: 40px;
@@ -364,6 +381,14 @@ const MenuButton = styled.div<{ theme: string }>`
       font-weight: 600;
     }
   }
+
+  ${({ $deprecated }) =>
+    $deprecated &&
+    `
+      &, &:hover, &.active {
+        ${MenuLabel} { color: var(--color-deprecated-assistant); }
+      }
+    `}
 `
 
 const StyledLink = styled.div`

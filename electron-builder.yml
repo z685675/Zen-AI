@@ -64,6 +64,10 @@ files:
   - "!**/{LICENSE,license,LICENSE.*,*.LICENSE.txt,NOTICE.txt,README.md,readme.md,CHANGELOG.md}"
   - "!node_modules/rollup-plugin-visualizer"
   - "!node_modules/js-tiktoken"
+  - "!node_modules/opencode-ai/bin/**"
+  - "!node_modules/opencode-{darwin,windows,linux}-*/**"
+  - "!node_modules/.pnpm/opencode-{darwin,windows,linux}-*/**"
+  - "!node_modules/.pnpm/opencode-ai@*/node_modules/opencode-ai/bin/**"
   - "!node_modules/@tavily/core/node_modules/js-tiktoken"
   - "!node_modules/pdf-parse/lib/pdf.js/{v1.9.426,v1.10.88,v2.0.550}"
   - "!node_modules/mammoth/{mammoth.browser.js,mammoth.browser.min.js}"
@@ -75,6 +79,9 @@ files:
   - "!node_modules/tesseract.js-core/{tesseract-core-simd-lstm.js,tesseract-core-simd-lstm.wasm,tesseract-core-simd-lstm.wasm.js}"
   - "!**/*.{h,iobj,ipdb,tlog,recipe,vcxproj,vcxproj.filters,Makefile,*.Makefile}"
   - "resources/**/*"
+  - "resources/licenses/opencode-LICENSE.txt"
+  - "!resources/opencode-runtime/**"
+  - "!resources/licenses/opencode*"
 asarUnpack:
   - out/proxy/**
   - resources/**
@@ -82,6 +89,8 @@ asarUnpack:
   - "node_modules/.pnpm/@openai+codex*/**"
   - "node_modules/@anthropic-ai/claude-agent-sdk*/**"
   - "node_modules/.pnpm/@anthropic-ai+claude-agent-sdk*/**"
+  - "node_modules/opencode-*/**"
+  - "node_modules/.pnpm/opencode-*/**"
   - "**/*.{metal,exp,lib}"
   - "node_modules/@img/sharp-libvips-*/**"
 

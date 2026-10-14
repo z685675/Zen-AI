@@ -64,6 +64,7 @@ export type ChannelStatusEvent = {
 }
 
 export type AgentActionRequiredPayload = {
+  requestId?: string
   agentId: string
   sessionId: string
   taskId?: string

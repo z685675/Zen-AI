@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   sessions: [] as any[],
   createSession: vi.fn(),
   dispatch: vi.fn(),
+  enableDeveloperMode: false,
   fetchMessages: vi.fn(),
   getAgent: vi.fn(),
   getModels: vi.fn(),
@@ -44,7 +45,8 @@ vi.mock('@renderer/services/db/DbService', () => ({
 
 vi.mock('@renderer/store', () => ({
   useAppDispatch: () => mocks.dispatch,
-  useAppSelector: (selector: (state: any) => unknown) => selector({ llm: { modelPolicy: mocks.modelPolicy } })
+  useAppSelector: (selector: (state: any) => unknown) =>
+    selector({ llm: { modelPolicy: mocks.modelPolicy }, settings: { enableDeveloperMode: mocks.enableDeveloperMode } })
 }))
 
 vi.mock('@renderer/store/runtime', () => ({
@@ -88,6 +90,45 @@ const makeSession = (overrides: Record<string, unknown> = {}) => ({
   ...overrides
 })
 
+const makePolicy = (overrides: Record<string, unknown> = {}) => ({
+  version: 2,
+  source: 'remote',
+  policy: {
+    schemaVersion: 1,
+    version: 2,
+    defaults: {
+      chat: 'gpt-6-luna',
+      quick: 'gpt-6-luna',
+      translate: 'gpt-6-luna',
+      assistant: 'gpt-6-luna',
+      assistantNewSession: 'gpt-6-luna'
+    },
+    assistant: {
+      nonDeveloperAllowlist: ['gpt-6-luna', 'gemini-3.8-flash-high'],
+      developerAllowlist: ['gpt-6-luna'],
+      blockedModels: [],
+      fallbackModels: ['gpt-6-luna']
+    },
+    rules: {
+      applyToNewSessions: true,
+      overwriteUserChoice: true,
+      preserveExistingSessions: true,
+      developerModeBypassAllowlist: false
+    },
+    ...overrides
+  }
+})
+
+const makeModel = (id: string) => ({
+  id,
+  object: 'model',
+  created: 0,
+  name: id.slice(id.indexOf(':') + 1),
+  provider: id.slice(0, id.indexOf(':')),
+  owned_by: 'provider',
+  provider_model_id: id.slice(id.indexOf(':') + 1)
+})
+
 describe('useCreateDefaultSession', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -95,6 +136,7 @@ describe('useCreateDefaultSession', () => {
     CacheService.clear()
     mocks.agent = makeAgent({ model: 'provider:claude-opus-4-6' })
     mocks.modelPolicy = null
+    mocks.enableDeveloperMode = false
     mocks.sessions = [makeSession()]
     mocks.fetchMessages.mockResolvedValue({ messages: [], blocks: [] })
     mocks.getAgent.mockResolvedValue(makeAgent())
@@ -156,8 +198,9 @@ describe('useCreateDefaultSession', () => {
     expect(mocks.setActiveSessionIdAction).toHaveBeenCalledWith({ agentId: 'agent-1', sessionId: 'session-2' })
   })
 
-  it('does not invent a replacement when no remote policy target is available', async () => {
+  it('does not invent a replacement when no imported model is available', async () => {
     mocks.getAgent.mockResolvedValue(makeAgent({ model: 'provider:gpt-5.4-mini' }))
+    mocks.getModels.mockResolvedValue({ data: [] })
     const { result } = renderHook(() => useCreateDefaultSession('agent-1'))
 
     let session: any
@@ -165,11 +208,159 @@ describe('useCreateDefaultSession', () => {
       session = await result.current.createDefaultSession()
     })
 
-    expect(mocks.getModels).toHaveBeenCalledWith({ limit: 1000 })
+    expect(mocks.getModels).toHaveBeenCalledWith()
     expect(mocks.updateSession).not.toHaveBeenCalled()
     expect(mocks.createSession).not.toHaveBeenCalled()
     expect(window.toast.warning).toHaveBeenCalledWith('model_setup.no_matching_model')
     expect(session).toBeNull()
+  })
+
+  it('keeps a developer-selected model when the remote default is not imported', async () => {
+    mocks.enableDeveloperMode = true
+    mocks.modelPolicy = makePolicy()
+    mocks.getAgent.mockResolvedValue(makeAgent({ model: 'vip:claude-opus-5' }))
+    mocks.getModels.mockResolvedValue({ data: [makeModel('vip:claude-opus-5')] })
+    const { result } = renderHook(() => useCreateDefaultSession('agent-1'))
+
+    await act(async () => {
+      await result.current.createDefaultSession()
+    })
+
+    expect(mocks.updateSession).toHaveBeenCalledWith(expect.objectContaining({ model: 'vip:claude-opus-5' }), {
+      showSuccessToast: false
+    })
+    expect(window.toast.warning).not.toHaveBeenCalled()
+  })
+
+  it('does not force a newly published default onto a developer-selected model', async () => {
+    mocks.enableDeveloperMode = true
+    mocks.modelPolicy = makePolicy()
+    mocks.getAgent.mockResolvedValue(makeAgent({ model: 'vip:claude-opus-5' }))
+    mocks.getModels.mockResolvedValue({ data: [makeModel('provider:gpt-6-luna'), makeModel('vip:claude-opus-5')] })
+    const { result } = renderHook(() => useCreateDefaultSession('agent-1'))
+
+    await act(async () => {
+      await result.current.createDefaultSession()
+    })
+
+    expect(mocks.updateAgent).toHaveBeenCalledWith(expect.objectContaining({ model: 'vip:claude-opus-5' }), {
+      showSuccessToast: false
+    })
+    expect(window.toast.warning).not.toHaveBeenCalled()
+  })
+
+  it('keeps an ordinary allowed model when the panel default is missing locally', async () => {
+    mocks.modelPolicy = makePolicy()
+    mocks.getAgent.mockResolvedValue(makeAgent({ model: 'provider:gemini-3.8-flash-high' }))
+    mocks.getModels.mockResolvedValue({ data: [makeModel('provider:gemini-3.8-flash-high')] })
+    const { result } = renderHook(() => useCreateDefaultSession('agent-1'))
+
+    await act(async () => {
+      await result.current.createDefaultSession()
+    })
+
+    expect(mocks.updateSession).toHaveBeenCalledWith(
+      expect.objectContaining({ model: 'provider:gemini-3.8-flash-high' }),
+      { showSuccessToast: false }
+    )
+    expect(window.toast.warning).not.toHaveBeenCalled()
+  })
+
+  it('uses an imported allowed model if the previous default and panel fallback are missing', async () => {
+    mocks.modelPolicy = makePolicy()
+    mocks.getAgent.mockResolvedValue(makeAgent({ model: 'removed:claude-opus-5' }))
+    mocks.getModels.mockResolvedValue({ data: [makeModel('provider:gemini-3.8-flash-high')] })
+    const { result } = renderHook(() => useCreateDefaultSession('agent-1'))
+
+    await act(async () => {
+      await result.current.createDefaultSession()
+    })
+
+    expect(mocks.updateSession).toHaveBeenCalledWith(
+      expect.objectContaining({ model: 'provider:gemini-3.8-flash-high' }),
+      { showSuccessToast: false }
+    )
+    expect(window.toast.warning).not.toHaveBeenCalled()
+  })
+
+  it('still rejects models outside the panel list when developer mode is off', async () => {
+    mocks.modelPolicy = makePolicy()
+    mocks.getAgent.mockResolvedValue(makeAgent({ model: 'vip:claude-opus-5' }))
+    mocks.getModels.mockResolvedValue({ data: [makeModel('vip:claude-opus-5')] })
+    const { result } = renderHook(() => useCreateDefaultSession('agent-1'))
+
+    await act(async () => {
+      await result.current.createDefaultSession()
+    })
+
+    expect(mocks.updateSession).not.toHaveBeenCalled()
+    expect(mocks.createSession).not.toHaveBeenCalled()
+    expect(window.toast.warning).toHaveBeenCalledWith('model_setup.no_matching_model')
+  })
+
+  it('uses any imported usable model for a developer if the old Provider was removed', async () => {
+    mocks.enableDeveloperMode = true
+    mocks.modelPolicy = makePolicy()
+    mocks.getAgent.mockResolvedValue(makeAgent({ model: 'removed:old-model' }))
+    mocks.getModels.mockResolvedValue({ data: [makeModel('personal:claude-opus-5')] })
+    const { result } = renderHook(() => useCreateDefaultSession('agent-1'))
+
+    await act(async () => {
+      await result.current.createDefaultSession()
+    })
+
+    expect(mocks.updateSession).toHaveBeenCalledWith(expect.objectContaining({ model: 'personal:claude-opus-5' }), {
+      showSuccessToast: false
+    })
+    expect(window.toast.warning).not.toHaveBeenCalled()
+  })
+
+  it.each([false, true])(
+    'forces the remote default if the current model was removed (developer=%s)',
+    async (developerMode) => {
+      mocks.enableDeveloperMode = developerMode
+      mocks.modelPolicy = makePolicy()
+      mocks.modelPolicy.policy.rules.applyToNewSessions = false
+      mocks.modelPolicy.policy.assistant.fallbackModels = ['gemini-3.8-flash-high']
+      mocks.getAgent.mockResolvedValue(makeAgent({ model: 'provider:removed-model' }))
+      mocks.getModels.mockResolvedValue({
+        data: [makeModel('provider:gemini-3.8-flash-high'), makeModel('provider:gpt-6-luna')]
+      })
+      const { result } = renderHook(() => useCreateDefaultSession('agent-1'))
+
+      await act(async () => {
+        await result.current.createDefaultSession()
+      })
+
+      expect(mocks.updateSession).toHaveBeenCalledWith(expect.objectContaining({ model: 'provider:gpt-6-luna' }), {
+        showSuccessToast: false
+      })
+      expect(window.toast.warning).not.toHaveBeenCalled()
+    }
+  )
+
+  it('rechecks the normal allowlist after developer mode is switched off', async () => {
+    mocks.enableDeveloperMode = true
+    mocks.modelPolicy = makePolicy()
+    mocks.getAgent.mockResolvedValue(makeAgent({ model: 'vip:claude-opus-5' }))
+    mocks.getModels.mockResolvedValue({ data: [makeModel('vip:claude-opus-5'), makeModel('provider:gpt-6-luna')] })
+    const { result, rerender } = renderHook(() => useCreateDefaultSession('agent-1'))
+
+    await act(async () => {
+      await result.current.createDefaultSession()
+    })
+    expect(mocks.updateSession).toHaveBeenLastCalledWith(expect.objectContaining({ model: 'vip:claude-opus-5' }), {
+      showSuccessToast: false
+    })
+
+    mocks.enableDeveloperMode = false
+    rerender()
+    await act(async () => {
+      await result.current.createDefaultSession()
+    })
+    expect(mocks.updateSession).toHaveBeenLastCalledWith(expect.objectContaining({ model: 'provider:gpt-6-luna' }), {
+      showSuccessToast: false
+    })
   })
 
   it('applies a changed remote default once when the panel enables default overwriting', async () => {

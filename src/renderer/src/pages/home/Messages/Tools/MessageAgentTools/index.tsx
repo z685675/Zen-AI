@@ -38,6 +38,7 @@ import { ReadTool } from './ReadTool'
 import { SearchTool } from './SearchTool'
 import { SkillTool } from './SkillTool'
 import { TaskTool } from './TaskTool'
+import { ToolFailureNotice } from './ToolFailureNotice'
 import { ToolSearchTool } from './ToolSearchTool'
 import type { ToolInput, ToolOutput } from './types'
 import { AgentToolsType } from './types'
@@ -197,13 +198,16 @@ export function MessageAgentTools({ toolResponse }: { toolResponse: NormalToolRe
   }
 
   return (
-    <ToolContent
-      toolName={tool?.name}
-      input={args ?? parsedPartialArgs}
-      output={isLoading ? undefined : response}
-      isStreaming={isLoading}
-      status={effectiveStatus}
-      hasError={hasError}
-    />
+    <div className="flex max-w-full flex-col gap-1">
+      {!isLoading && <ToolFailureNotice response={response} />}
+      <ToolContent
+        toolName={tool?.name}
+        input={args ?? parsedPartialArgs}
+        output={isLoading ? undefined : response}
+        isStreaming={isLoading}
+        status={effectiveStatus}
+        hasError={hasError}
+      />
+    </div>
   )
 }

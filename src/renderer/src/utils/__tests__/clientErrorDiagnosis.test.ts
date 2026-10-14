@@ -1,6 +1,13 @@
-import { describe, expect, it } from 'vitest'
+import zh from '@renderer/i18n/locales/zh-cn.json'
+import i18next from 'i18next'
+import { beforeAll, describe, expect, it } from 'vitest'
 
 import { diagnoseClientError, formatClientErrorDiagnosis, runClientConnectivityCheck } from '../clientErrorDiagnosis'
+import { classifyError } from '../errorClassifier'
+
+beforeAll(async () => {
+  await i18next.init({ lng: 'zh-CN', resources: { 'zh-CN': { translation: zh } } })
+})
 
 const baseOptions = {
   blockId: 'block-abcdef',
@@ -18,6 +25,23 @@ function makeError(message: string, statusCode?: number) {
 }
 
 describe('clientErrorDiagnosis', () => {
+  it.each(['agent_human_wait_timeout', 'agent_execution_timeout'])(
+    'identifies %s as a local guard, not a failed network or startup',
+    (code) => {
+      const error = { ...makeError('saved task state was preserved'), code }
+      const diagnosis = diagnoseClientError(error, baseOptions)
+      expect(diagnosis.category).toBe('runtime')
+      expect(diagnosis.title).toContain('任务已暂停')
+      expect(diagnosis.summary).toContain(code === 'agent_human_wait_timeout' ? '30分钟' : '15分钟')
+      expect(diagnosis.stage).toBe(code === 'agent_human_wait_timeout' ? '等待用户操作' : '本地任务执行')
+      expect(diagnosis.serviceReceived).toBe('未确认')
+      expect(diagnosis.suggestion).not.toContain('网络')
+      expect(classifyError(error).navTarget).toBeNull()
+      const nested = { ...makeError('wrapped'), cause: JSON.stringify({ code }) }
+      expect(diagnoseClientError(nested).title).toBe(diagnosis.title)
+      expect(classifyError(makeError('provider timeout')).category).toBe('network')
+    }
+  )
   it('recognizes the reported Mac native CLI failure before generic stream_error metadata', () => {
     const diagnosis = diagnoseClientError(
       {
@@ -141,14 +165,14 @@ describe('clientErrorDiagnosis', () => {
     const diagnosis = diagnoseClientError(makeError('Failed to fetch'), baseOptions)
 
     expect(diagnosis).toMatchObject({
-      title: '生成失败：连接异常',
-      summary: '暂时无法连接到模型服务。请重试一次；如果连续失败，请检查网络、代理或 VPN 设置。',
+      title: '暂时无法连接模型服务',
+      summary: '软件未收到可用响应，现有信息还不能确认服务是否已收到本次请求。',
       stage: '建立连接',
-      errorType: '连接异常',
+      errorType: '暂时无法连接模型服务',
       serviceConnectivity: '未确认',
       serviceReceived: '未确认',
       startedGenerating: '未确认',
-      suggestion: '请先重试；如果仍失败，请检查当前设备网络、代理、VPN 或安全软件拦截。'
+      suggestion: '请先重试；持续失败时请导出诊断包，排查 DNS、证书和软件使用的网络线路。仅在当前网络需要时使用代理。'
     })
   })
 
@@ -249,7 +273,7 @@ describe('clientErrorDiagnosis', () => {
     const text = `${formatClientErrorDiagnosis(diagnosis)}\n\n【技术详情】\nAI_ProviderSpecificError: Failed to fetch`
 
     expect(text).toContain('【诊断摘要】')
-    expect(text).toContain('结论：生成失败：连接异常')
+    expect(text).toContain('结论：暂时无法连接模型服务')
     expect(text).toContain('服务地址检测：未确认')
     expect(text).toContain('模型接口检测：未确认')
     expect(text).toContain('【技术详情】')

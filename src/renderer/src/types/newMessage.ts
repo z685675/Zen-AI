@@ -1,4 +1,5 @@
 import type { CompletionUsage } from '@cherrystudio/openai/resources'
+import type { OpenCodeTurnDiagnostics } from '@shared/agents/opencodeDiagnostics'
 import type { ProviderMetadata } from 'ai'
 
 import type {
@@ -253,8 +254,19 @@ export type DeepResearchTaskMetadata = {
 }
 
 export type MessageProviderMetadata = ProviderMetadata & {
+  legacyContinuation?: { source_session_id: string; source_message_id: string }
   agentSessionSync?: AgentSessionSyncMetadata
   deepResearch?: DeepResearchTaskMetadata
+  responseTiming?: MessageResponseTiming
+  opencodeDiagnostics?: OpenCodeTurnDiagnostics
+}
+
+export type MessageResponseTiming = {
+  startedAt: string
+  finishedAt: string
+  firstTokenMs?: number
+  elapsedMs: number
+  outcome: 'completed' | 'cancelled' | 'failed'
 }
 
 export interface Response {

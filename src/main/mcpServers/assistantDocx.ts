@@ -91,15 +91,16 @@ export async function createDocxBuffer(
   content: string,
   rows: string[][],
   assets: Map<string, LoadedImageAsset> = new Map(),
-  style?: ResolvedDocumentStyle
+  style?: ResolvedDocumentStyle,
+  productQuality = false
 ): Promise<Buffer> {
   const documentStyle = style ?? defaultDocumentStyle('docx')
   const displayTitle = title.replace(/\.docx$/i, '').trim() || 'Document'
   const tokens = markdown.parse(content || '', {})
-  const children = renderMarkdownBlocks(tokens, displayTitle, assets, documentStyle)
+  const children = renderMarkdownBlocks(tokens, displayTitle, assets, documentStyle, productQuality)
 
   if (rows.length > 0) {
-    children.push(createDataTable(rows, documentStyle))
+    children.push(createDataTable(rows, documentStyle, productQuality))
   }
 
   const document = new Document({
@@ -121,7 +122,8 @@ export async function createDocxBuffer(
             language: { value: 'en-US', eastAsia: 'zh-CN' }
           },
           paragraph: {
-            spacing: { line: 340, after: 120 }
+            spacing: { line: 340, after: 120 },
+            ...(productQuality ? { widowControl: true } : {})
           }
         }
       },
@@ -155,7 +157,8 @@ function renderMarkdownBlocks(
   tokens: Token[],
   title: string,
   assets: Map<string, LoadedImageAsset>,
-  style: ResolvedDocumentStyle
+  style: ResolvedDocumentStyle,
+  productQuality: boolean
 ): Array<Paragraph | Table> {
   const blocks: Array<Paragraph | Table> = []
   const listStack: ListState[] = []
@@ -209,7 +212,7 @@ function renderMarkdownBlocks(
         blockquoteDepth = Math.max(0, blockquoteDepth - 1)
         break
       case 'table_open': {
-        const table = parseMarkdownTable(tokens, index, assets, style)
+        const table = parseMarkdownTable(tokens, index, assets, style, productQuality)
         blocks.push(table.value)
         index = table.endIndex
         break
@@ -390,7 +393,8 @@ function parseMarkdownTable(
   tokens: Token[],
   startIndex: number,
   assets: Map<string, LoadedImageAsset>,
-  style: ResolvedDocumentStyle
+  style: ResolvedDocumentStyle,
+  productQuality: boolean
 ): { value: Table; endIndex: number } {
   const rows: TableRow[] = []
   let cells: TableCell[] = []
@@ -418,21 +422,21 @@ function parseMarkdownTable(
       endIndex = index
     }
     if (token.type === 'tr_close') {
-      rows.push(new TableRow({ children: cells, tableHeader: rowIsHeader, cantSplit: true }))
+      rows.push(new TableRow({ children: cells, tableHeader: rowIsHeader, cantSplit: !productQuality || rowIsHeader }))
     }
   }
 
   return { value: createTable(rows, style), endIndex }
 }
 
-function createDataTable(rows: string[][], style: ResolvedDocumentStyle): Table {
+function createDataTable(rows: string[][], style: ResolvedDocumentStyle, productQuality: boolean): Table {
   const normalizedRows = rows.map((row) => (row.length > 0 ? row : ['']))
   return createTable(
     normalizedRows.map(
       (row, rowIndex) =>
         new TableRow({
           tableHeader: rowIndex === 0,
-          cantSplit: true,
+          cantSplit: !productQuality || rowIndex === 0,
           children: row.map((cell) =>
             createTableCell(
               [new TextRun({ text: cell, bold: rowIndex === 0, color: rowIndex === 0 ? style.onPrimary : undefined })],

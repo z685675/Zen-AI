@@ -1,4 +1,5 @@
 import { TopView } from '@renderer/components/TopView'
+import { AgentWorkspaceContext } from '@renderer/context/AgentWorkspaceProvider'
 import AgentSearchPage from '@renderer/pages/agents/AgentSearchPage'
 import { Modal } from 'antd'
 import { useState } from 'react'
@@ -54,15 +55,17 @@ export default class AgentSearchPopup {
     TopView.hide('AgentSearchPopup')
   }
 
-  static show() {
+  static show(workspace: 'legacy' | 'opencode' = 'legacy') {
     return new Promise<any>((resolve) => {
       TopView.show(
-        <PopupContainer
-          resolve={(value) => {
-            resolve(value)
-            TopView.hide('AgentSearchPopup')
-          }}
-        />,
+        <AgentWorkspaceContext value={workspace}>
+          <PopupContainer
+            resolve={(value) => {
+              resolve(value)
+              TopView.hide('AgentSearchPopup')
+            }}
+          />
+        </AgentWorkspaceContext>,
         'AgentSearchPopup'
       )
     })

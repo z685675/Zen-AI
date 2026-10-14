@@ -1,5 +1,6 @@
 import { loggerService } from '@logger'
 import { windowService } from '@main/services/WindowService'
+import { assertLegacyAutomationEnabled, isLegacyAutomationEnabled } from '@shared/agents/legacyAutomation'
 import { DEFAULT_FUSION_AGENT_ID } from '@shared/config/agents'
 import type { ChannelLogEntry, ChannelStatusEvent } from '@shared/config/types'
 import { IpcChannel } from '@shared/IpcChannel'
@@ -47,7 +48,7 @@ class ChannelManager {
   private readonly adapters = new Map<string, ChannelAdapter>() // key: `${agentId}:${channelId}`
   private readonly qrWaiters = new Map<
     string,
-    { resolve: (url: string) => void; timer: ReturnType<typeof setTimeout> }
+    { resolve: (url: string) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> }
   >()
   private readonly channelLogs = new ChannelLogBuffer()
   private readonly channelStatuses = new Map<string, ChannelStatusEvent>()
@@ -60,6 +61,12 @@ class ChannelManager {
   }
 
   async start(): Promise<void> {
+    if (!isLegacyAutomationEnabled()) {
+      await this.stop()
+      await channelService.deactivateAllChannels()
+      logger.info('Legacy external integrations disabled; configuration and credentials preserved')
+      return
+    }
     try {
       const channels = await channelService.listChannels()
       const deletedChannelIds = await this.deleteLegacyWechatChannels(channels)
@@ -82,6 +89,12 @@ class ChannelManager {
 
   async stop(): Promise<void> {
     logger.info('Stopping channel manager')
+    const pendingMessages = channelMessageHandler.stopAll()
+    for (const waiter of this.qrWaiters.values()) {
+      clearTimeout(waiter.timer)
+      waiter.reject(new Error('Channel manager stopped'))
+    }
+    this.qrWaiters.clear()
     const disconnects = Array.from(this.adapters.values()).map((adapter) =>
       adapter.disconnect().catch((err) => {
         logger.warn('Error disconnecting adapter', {
@@ -93,10 +106,13 @@ class ChannelManager {
     )
     await Promise.all(disconnects)
     this.adapters.clear()
+    this.channelStatuses.clear()
+    await pendingMessages
     logger.info('Channel manager stopped')
   }
 
   async deleteLegacyWechatChannels(existingChannels?: ChannelRow[]): Promise<Set<string>> {
+    if (!isLegacyAutomationEnabled()) return new Set()
     const channels = existingChannels ?? (await channelService.listChannels({ type: 'wechat' }))
     const legacyChannels = channels.filter(
       (channel) => channel.type === 'wechat' && channel.agentId && channel.agentId !== DEFAULT_FUSION_AGENT_ID
@@ -121,13 +137,14 @@ class ChannelManager {
    * Resolves when the adapter emits 'qr', or rejects on timeout.
    */
   waitForQrUrl(agentId: string, channelId: string, timeoutMs = 30_000): Promise<string> {
+    assertLegacyAutomationEnabled()
     const key = `${agentId}:${channelId}`
     return new Promise<string>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.qrWaiters.delete(key)
         reject(new Error('Timed out waiting for QR code'))
       }, timeoutMs)
-      this.qrWaiters.set(key, { resolve, timer })
+      this.qrWaiters.set(key, { resolve, reject, timer })
     })
   }
 
@@ -207,6 +224,10 @@ class ChannelManager {
    */
   async syncChannel(channelId: string): Promise<void> {
     await this.disconnectChannel(channelId)
+    if (!isLegacyAutomationEnabled()) {
+      await channelService.updateChannel(channelId, { isActive: false })
+      return
+    }
 
     // Re-read from DB and reconnect if active
     const channel = await channelService.getChannel(channelId)
@@ -263,6 +284,7 @@ class ChannelManager {
   }
 
   private async connectChannelFromRow(row: ChannelRow): Promise<void> {
+    assertLegacyAutomationEnabled()
     const agentId = row.agentId
     if (!agentId) return
 

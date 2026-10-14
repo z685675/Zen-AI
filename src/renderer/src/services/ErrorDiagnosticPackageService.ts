@@ -1,14 +1,18 @@
+import i18n from '@renderer/i18n'
 import type { AppInfo, Model } from '@renderer/types'
 import type { SerializedError } from '@renderer/types/error'
 import type { ErrorMessageBlock, Message, MessageBlock } from '@renderer/types/newMessage'
 import type { ClientErrorDiagnosis } from '@renderer/utils/clientErrorDiagnosis'
 import { formatClientErrorDiagnosis } from '@renderer/utils/clientErrorDiagnosis'
+import { createZenTraceId } from '@renderer/utils/clientErrorDiagnosis'
 import type { ErrorClassification } from '@renderer/utils/errorClassifier'
 import { attributeDiagnostic, type DiagnosticEvent, diagnosticText, sanitizeDiagnostic } from '@shared/diagnostics'
 
 import { getContextTelemetry } from './context/ContextTelemetryService'
 import { collectBackendDiagnostic } from './DiagnosticBackendService'
 import { getDiagnosticEvidence } from './DiagnosticEvidenceService'
+
+const t = i18n.t
 
 export type ErrorDiagnosticSource = 'chat' | 'agent'
 
@@ -30,9 +34,10 @@ export interface ErrorDiagnosticPackageInput {
   source: ErrorDiagnosticSource
   title: string
   description: string
-  classification: ErrorClassification
+  classification?: ErrorClassification
   dependencyIssue?: boolean
-  diagnosis: ClientErrorDiagnosis
+  diagnosis?: ClientErrorDiagnosis
+  snapshotHasMessage?: boolean
   error?: SerializedError
   block?: ErrorMessageBlock
   message: Message
@@ -132,6 +137,7 @@ export const exportErrorDiagnosticPackage = async ({
   classification,
   dependencyIssue = false,
   diagnosis,
+  snapshotHasMessage = true,
   error,
   block,
   message,
@@ -144,8 +150,14 @@ export const exportErrorDiagnosticPackage = async ({
   aiDiagnosis,
   privacyNotice
 }: ErrorDiagnosticPackageInput): Promise<string> => {
+  const mode = diagnosis ? 'error' : 'snapshot'
+  const observedStatus = snapshotHasMessage
+    ? message.status
+    : relatedUserMessage
+      ? 'no-assistant-record-yet'
+      : 'no-recorded-turn'
   const exportedAt = new Date().toISOString()
-  const packageId = diagnosis.diagnosticId
+  const packageId = diagnosis?.diagnosticId ?? createZenTraceId()
   const fileName = `zen-ai-${source}-diagnostics-${packageId}-${formatTimestampForFileName()}.zip`
   const assistantBlocks = collectMessageBlocks(message, blockEntities)
   const userBlocks = collectMessageBlocks(relatedUserMessage, blockEntities)
@@ -176,11 +188,25 @@ export const exportErrorDiagnosticPackage = async ({
   const provider = store.getState().llm.providers.find((candidate) => candidate.id === message.model?.provider)
   const backend = await collectBackendDiagnostic(operationId, provider, events)
   const attribution = attributeDiagnostic(events, backend.evidence)
+  const opencodeEvents = events.filter((event) => event.stage === 'runtime' && event.details?.runtime === 'opencode')
+  const processEvents = opencodeEvents.filter((event) =>
+    [
+      'startup-stage',
+      'process-spawned',
+      'process-health',
+      'process-error',
+      'process-exit',
+      'process-close',
+      'process-snapshot'
+    ].includes(event.event)
+  )
+  const opencodeStatus = opencodeEvents.length ? 'observed-current-operation' : 'no-operation-runtime-evidence'
   const collections = {
     renderer: rendererEvidence ? 'collected' : 'unavailable-old-request-or-expired',
     main: mainStatus,
     logs: mainEvidence?.logStatus ?? 'unavailable',
     zenApi: backend.status,
+    opencode: source === 'agent' ? opencodeStatus : 'not-applicable',
     session:
       sessionContextStatus ??
       (sessionContext !== undefined
@@ -215,15 +241,22 @@ export const exportErrorDiagnosticPackage = async ({
     packageId,
     source,
     exportedAt,
-    occurredAt: diagnosis.occurredAt,
+    mode,
+    occurredAt: diagnosis?.occurredAt,
+    observation: {
+      messageStatus: observedStatus,
+      responseOutcome: message.providerMetadata?.responseTiming?.outcome,
+      observedAt: exportedAt,
+      automaticReplay: false
+    },
     attribution,
     collections,
     issue: {
       title,
       description,
-      category: classification.category,
+      category: classification?.category,
       dependencyIssue,
-      navTarget: classification.navTarget
+      navTarget: classification?.navTarget
     },
     request: requestContext,
     app: appInfo,
@@ -234,7 +267,7 @@ export const exportErrorDiagnosticPackage = async ({
     topicId: message.topicId,
     messageId: message.id,
     blockId: block?.id ?? message.blocks.find((blockId) => blockEntities[blockId]?.type === 'error'),
-    assistantMessage: message,
+    assistantMessage: snapshotHasMessage ? message : undefined,
     userMessage: relatedUserMessage,
     assistantBlocks,
     userBlocks
@@ -244,14 +277,19 @@ export const exportErrorDiagnosticPackage = async ({
     {
       path: 'README.txt',
       content: [
-        'Zen AI 错误诊断包',
+        mode === 'error' ? 'Zen AI 错误诊断包' : 'Zen AI 当前会话诊断快照（不代表任务失败）',
         '',
         'summary.json：问题摘要、应用版本、运行环境和请求概要。',
-        'diagnosis.json / diagnosis.txt：应用生成的结构化诊断结果。',
+        ...(diagnosis
+          ? ['diagnosis.json / diagnosis.txt：应用生成的结构化错误诊断结果。']
+          : ['task-status.json：导出时的任务状态观察，不代表任务失败。']),
         'error.json：经过脱敏处理的原始错误信息。',
         'request.json：模型、服务地址、状态码和连通性信息。',
         'message-context.json：出错消息及相关上下文，可能包含用户输入内容。',
         'environment.json：导出时的环境信息。',
+        ...(source === 'agent'
+          ? ['opencode-runtime.json：本轮新版内核启动/退出、限量脱敏标准错误和导出时执行文件检查；没有采到时明确标注。']
+          : []),
         '链路结论.txt / attribution.json：基于实测事件的故障位置及证据，不足时明确标注未确认。',
         'timeline.json：本地处理、底座、HTTP 请求和响应全过程，包含自动重试。',
         'zen-api-evidence.json：Zen API 接收、渠道尝试和返回证据（只读查询，不会调用模型）。',
@@ -264,13 +302,28 @@ export const exportErrorDiagnosticPackage = async ({
     },
     { path: 'summary.json', content: safeDiagnosticJson(summary) },
     { path: 'privacy.txt', content: privacyNotice },
-    {
-      path: 'diagnosis.txt',
-      content: diagnosticText(
-        `说明：以下是按错误信息生成的初步分类，实际链路定位以“链路结论.txt”为准。\n\n${formatClientErrorDiagnosis(diagnosis)}`
-      )
-    },
-    { path: 'diagnosis.json', content: safeDiagnosticJson(diagnosis) },
+    ...(diagnosis
+      ? [
+          {
+            path: 'diagnosis.txt',
+            content: diagnosticText(
+              `说明：以下是按错误信息生成的初步分类，实际链路定位以“链路结论.txt”为准。\n\n${formatClientErrorDiagnosis(diagnosis)}`
+            )
+          },
+          { path: 'diagnosis.json', content: safeDiagnosticJson(diagnosis) }
+        ]
+      : [
+          {
+            path: 'task-status.json',
+            content: safeDiagnosticJson({
+              mode,
+              status: observedStatus,
+              responseOutcome: message.providerMetadata?.responseTiming?.outcome,
+              observedAt: exportedAt,
+              automaticReplay: false
+            })
+          }
+        ]),
     { path: 'error.json', content: safeDiagnosticJson(error ?? {}) },
     { path: 'request.json', content: safeDiagnosticJson(requestContext) },
     { path: 'message-context.json', content: safeDiagnosticJson(messageContext) },
@@ -282,7 +335,14 @@ export const exportErrorDiagnosticPackage = async ({
       path: '链路结论.txt',
       content: diagnosticText(
         [
-          `故障位置：${{ 'zen-ai': 'Zen AI 客户端', 'zen-api': 'Zen API 网关或上游渠道', 'network-or-proxy': '连接链路（责任端未确认）', undetermined: '未确认' }[attribution.owner]}`,
+          t(mode === 'error' ? 'error.diagnosis.chain_error_line' : 'error.diagnosis.chain_observation_line', {
+            owner: {
+              'zen-ai': 'Zen AI 客户端',
+              'zen-api': 'Zen API 网关或上游渠道',
+              'network-or-proxy': '连接链路（责任端未确认）',
+              undetermined: '未确认'
+            }[attribution.owner]
+          }),
           `判断程度：${{ confirmed: '已确认发生位置，不等于已经确定根因', suspected: '疑似', insufficient: '证据不足' }[attribution.confidence]}`,
           `环节：${attribution.stage}`,
           `说明：${attribution.explanation}`,
@@ -332,6 +392,29 @@ export const exportErrorDiagnosticPackage = async ({
       })
     }
   ]
+
+  if (source === 'agent') {
+    files.push({
+      path: 'opencode-runtime.json',
+      content: safeDiagnosticJson({
+        schemaVersion: 1,
+        operationId,
+        status: opencodeStatus,
+        events: processEvents,
+        failureEvents: opencodeEvents.filter((event) => event.event === 'failed'),
+        environmentAtExportTime: {
+          executable: mainEvidence?.environment?.executables?.opencode,
+          packageVersion: mainEvidence?.environment?.componentVersions?.['opencode-ai'],
+          snapshotTime: 'export-time'
+        },
+        notes: [
+          '本轮观测与导出时文件状态分开；expectedVersion不是实际运行版本，以process-health为准。',
+          '标准错误按本轮观察窗口采集，有界脱敏；无输出不代表无故障，未包含完整配置、环境变量或标准输出。',
+          '用户停止、超时终止与空闲回收不等于内核异常退出。旧请求或软件直接崩溃可能缺失进程证据。'
+        ]
+      })
+    })
+  }
 
   if (sessionContext !== undefined) {
     files.push({ path: 'session-context.json', content: safeDiagnosticJson(sessionContext) })

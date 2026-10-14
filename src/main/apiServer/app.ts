@@ -1,4 +1,6 @@
+import { ensureOpenCodeAgent } from '@main/services/agents/services/opencode/builtin'
 import { loggerService } from '@main/services/LoggerService'
+import { DEFAULT_OPENCODE_AGENT_ID } from '@shared/config/agents'
 import cors from 'cors'
 import express from 'express'
 import { v4 as uuidv4 } from 'uuid'
@@ -161,6 +163,36 @@ apiRouter.use('/chat', chatRoutes)
 apiRouter.use('/mcps', mcpRoutes)
 apiRouter.use('/messages', extendMessagesTimeout, messagesRoutes)
 apiRouter.use('/models', modelsRoutes)
+apiRouter.use(
+  '/new-assistant/agents',
+  async (req, res, next) => {
+    res.locals.agentWorkspace = 'opencode'
+    const resource = req.path.split('/')[1]
+    if (resource && !['sessions', 'reorder', DEFAULT_OPENCODE_AGENT_ID].includes(resource)) {
+      res.status(404).json({
+        error: {
+          message: 'Session belongs to another assistant workspace',
+          type: 'not_found',
+          code: 'workspace_mismatch'
+        }
+      })
+      return
+    }
+    if ((req.method === 'POST' && req.path === '/') || resource === 'reorder') {
+      res.status(403).json({
+        error: { message: 'The new assistant uses a managed agent', type: 'forbidden', code: 'managed_agent' }
+      })
+      return
+    }
+    try {
+      if (req.method === 'GET' && req.path === '/') await ensureOpenCodeAgent()
+      next()
+    } catch (error) {
+      next(error)
+    }
+  },
+  agentsRoutes
+)
 apiRouter.use('/agents', agentsRoutes)
 apiRouter.use('/channels', channelsRouter)
 apiRouter.use('/tasks', tasksRouter)

@@ -18,6 +18,8 @@ Use this reference for spreadsheet deliverables that need to be usable in Excel.
 - Preserve original data when the user may need auditability.
 - Use the structured `workbook.sheets` contract for multi-sheet output; do not simulate sheets with section rows.
 - Store formulas as formula cells with explicit cached results.
+- In the new assistant, missing/null/non-finite formula results fail before writing. The generator checks simple supported aggregates, not every Excel formula; calculate other caches from source data and do not describe structural validation as full recalculation.
+- Keep amounts as numbers with `style: "currency"` (grouped, two decimals, no assumed currency symbol) or `"decimal"` (two decimals); label the actual currency in the column header. Keep percentages as ratios with `"percent"`. For `"date"`, provide a numeric serial in Excel's 1900 date system, not a formatted date string. Preserve date-only semantics when converting, avoiding timezone shifts; never guess ambiguous dates.
 - Keep source keys (`朝阳店`) distinct from presentation labels (`朝阳店收入`), and make aggregate criteria reference the source key.
 - Use frozen panes, filters, conditional formats, and charts only when they support the workflow.
 

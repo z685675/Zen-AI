@@ -653,7 +653,8 @@
         }
       }
     },
-    "sidebar_title": "智能助手",
+    "sidebar_title": "旧助手",
+    "task_limit": "任务名额已满：新版和弃用助手合计最多同时运行 {{limit}} 个任务。请先完成或停止其他任务，再发送。",
     "todo": {
       "panel": {
         "title": "已完成 {{completed}}/{{total}} 个任务"
@@ -880,6 +881,214 @@
     "zoom": "缩放",
     "zoomIn": "放大",
     "zoomOut": "缩小"
+  },
+  "assistantDataSafety": {
+    "busy": "智能助手任务或数据操作尚未结束，请先停止任务，或等待数据操作完成后再进行备份、恢复或清空。"
+  },
+  "assistantDeliverables": {
+    "empty": "本会话暂无已登记成果。",
+    "entry": "成果 · {{count}}",
+    "folder": "文件夹",
+    "locate": "查看对应回答",
+    "no_match": "没有匹配的成果。",
+    "notice": "仅汇总本会话中成功文件工具登记的成果。这些是快捷入口，不是文件副本；文件被移动或删除后可能无法打开。",
+    "open": "打开",
+    "reveal": "定位文件",
+    "search": "搜索文件名称或路径",
+    "source": "最近来源：第 {{turn}} 轮 · 共 {{count}} 条回答登记",
+    "title": "会话成果"
+  },
+  "assistantPeripheral": {
+    "callDone": "调用成功",
+    "callFailed": "调用失败",
+    "callStarted": "已发起",
+    "callStopped": "已停止",
+    "calledThisTurn": "最新一轮用户任务的原生技能调用",
+    "discovered": "OpenCode 已发现",
+    "enabled": "已启用",
+    "exportFailed": "诊断包导出失败，请稍后重试。",
+    "exportSaved": "诊断包已导出",
+    "exportTitle": "导出当前会话诊断",
+    "installed": "已安装 / 文件存在",
+    "interrupted": "任务因软件关闭或重启而中断。已保存的内容仍然保留，没有自动重跑；继续前请检查已有文件。",
+    "inventoryFailed": "暂时无法读取技能清单，没有启动内核或影响任务。",
+    "keepRunning": "继续运行",
+    "more": "会话选项",
+    "name": "技能",
+    "native_not-running": "当前没有运行中的内核，是否已发现尚未确认；不会为查看清单而启动内核。",
+    "native_observed": "已读取查看时内核实际发现的清单。",
+    "native_starting": "内核正在启动，尚未读取到实际发现的清单。",
+    "native_unavailable": "无法读取内核清单，是否已发现保持未确认。",
+    "no": "否",
+    "noCallEvidence": "已加载的本轮记录中没有观测到原生技能调用。技能也可能通过直接读取参与任务，没有调用证据不代表完全没用到。",
+    "notificationTitle": "Zen AI 智能助手",
+    "notify_error": "任务未能完成，点击查看对应对话和详情。",
+    "notify_handoff": "任务需要登录、验证或确认，点击进入对应对话处理。",
+    "notify_permission": "任务需要你授权，点击进入对应对话确认。",
+    "notify_success": "任务已完成，点击查看对应对话。",
+    "quitAnyway": "停止任务并退出",
+    "quitDetail": "关闭到托盘会继续运行任务；真正退出或重启会停止任务。重启后不会自动重跑未完成任务，已经生成的文件和历史记录会保留。",
+    "quitMessage": "真正退出会停止当前任务，是否仍要退出？",
+    "quitTitle": "仍有助手任务正在运行",
+    "sessionUnavailable": "该对话暂时无法打开或已被删除，没有重新执行任务。",
+    "skillsHint": "只在点击时读取，不请求模型。已安装、已启用、内核已发现是不同状态，不等于实际使用。本轮调用按技能名称单独展示，同名技能仅凭名称无法判断具体用了哪个定义。",
+    "skillsTitle": "当前会话技能清单",
+    "snapshotHint": "这是导出时的只读状态快照，不代表任务已经失败；导出不会停止或重新执行任务。",
+    "source": "来源",
+    "source_installed": "已安装技能库",
+    "source_native": "内核清单",
+    "source_workspace": "工作目录",
+    "staleSkills": "技能在本次内核启动后发生了变化。下一次用户主动发送任务时刷新清单，不会中断当前任务。",
+    "unobserved": "未确认",
+    "yes": "是"
+  },
+  "assistantProduct": {
+    "alternatives": "可替代命令（至少一个可用）",
+    "commands": "声明需要的命令",
+    "compatibility": "技能声明的兼容要求",
+    "conflictHint": "存在同名定义。OpenCode 根据发现顺序选择，不按技能质量判断。可让助手查询当前技能清单，查看实际采用的定义路径；必要时停用或重命名重复技能。",
+    "conflicts": "同名技能候选",
+    "declaredTools": "声明需要的工具（不会自动接入）",
+    "definition": "技能定义",
+    "definitionInvalid": "无法读取或格式不符合要求",
+    "definitionValid": "可读取，符合原生定义格式",
+    "disabledHint": "已停用，不通过已启用全局技能清单提供。",
+    "enabled": "启用状态",
+    "enabledHint": "已启用，可在下一次任务中被发现，不代表本轮已实际使用。",
+    "environment": "声明需要的环境变量名称",
+    "inspectFailed": "兼容检查失败，不影响普通对话，可稍后重试。",
+    "inspectSkill": "兼容检查",
+    "missingCommands": "系统 PATH 中未找到的命令",
+    "missingEnvironment": "未设置的环境变量",
+    "noneFound": "本次检查范围内未发现",
+    "notDeclared": "未声明／未验证",
+    "pathFound": "系统 PATH 中已找到",
+    "pathMissing": "系统 PATH 中未找到",
+    "searchDisclosure": "联网研究可能将搜索词发送到 Exa 公共 MCP。该第三方服务有使用限额，可能保存查询或用于训练，请勿提交个人信息、密钥或私密文件。仅在需要研究时调用，搜索失败不影响普通对话。",
+    "skillLimit": "此检查只读，不执行脚本、不安装依赖、不扩大权限；只检查已声明的命令和环境变量要求。Python 包、外部服务、脚本安全及任务效果仍未验证。已启用或已发现不等于已经成功应用。"
+  },
+  "assistantTaskDeadline": {
+    "stageExecution": "本地任务执行",
+    "stageHumanWait": "等待用户操作",
+    "suggestion": "先检查已完成的内容，再主动发送指令继续未完成部分；不要盲目重复提交或生成。",
+    "summaryExecution": "实际执行累计达到15分钟上限，任务已暂停。已保存的记录和成果保留，不会自动重新执行。",
+    "summaryHumanWait": "等待用户操作累计达到30分钟上限，任务已暂停。已保存的记录和成果保留，不会自动重新执行。",
+    "titleExecution": "任务已暂停：执行时间达到上限",
+    "titleHumanWait": "任务已暂停：等待时间达到上限"
+  },
+  "assistantToolFailure": {
+    "cancelled": {
+      "next": "继续任务前，请先检查是否已经产生文件或其他结果，不要盲目重复已停止的操作。",
+      "summary": "这项工具操作已停止。"
+    },
+    "dependency": {
+      "next": "优先使用现有内置工具完成。需要安装或更改依赖时，须先征得你的同意。",
+      "summary": "这项 Python 操作缺少依赖，或依赖不兼容。"
+    },
+    "details": "技术详情",
+    "file_busy": {
+      "next": "可以另存为新文件；如需替换，请先关闭占用文件，并确认保留备份后替换。不会强制覆盖。",
+      "summary": "目标文件已存在、被占用，或在操作期间发生了变化。"
+    },
+    "invalid_input": {
+      "next": "请调整参数或改用支持的格式，不要原样反复重试。",
+      "summary": "这项工具不支持当前参数或文件格式。"
+    },
+    "missing_file": {
+      "next": "请检查路径，或重新上传文件。不会擅自创建或覆盖其他文件来代替。",
+      "summary": "没有找到需要的文件或目录。"
+    },
+    "network": {
+      "next": "请检查网络和代理设置，或稍后再试。这并不直接说明模型服务不可用。",
+      "summary": "这项工具暂时无法连接到它使用的外部服务。"
+    },
+    "permission": {
+      "next": "请使用已授权目录，或确认所需权限。不要换另一个工具绕过拒绝授权。",
+      "summary": "当前模式或目录权限不允许这项操作。"
+    },
+    "rate_limit": {
+      "next": "请等待提示的冷却时间，或使用已有替代方式，不要连续发送相同请求。",
+      "summary": "这项工具使用的外部服务暂时限制了请求。"
+    },
+    "runtime": {
+      "next": "普通对话仍可继续。请在设置中检查托管运行环境，不会自动安装或切换系统环境。",
+      "summary": "这项操作需要的本地运行环境或 Office 渲染器不可用。"
+    },
+    "timeout": {
+      "next": "继续前请先检查是否已有结果，不要盲目重放下载、写入或提交操作。",
+      "summary": "这项工具在规定时间内未能完成。"
+    },
+    "unknown": {
+      "next": "可以展开技术详情；如果持续发生，请导出诊断包。不要重复已完成的操作。",
+      "summary": "这项工具操作失败，原因尚未确认。"
+    },
+    "validation": {
+      "next": "请根据详情修正相关内容或文件定义。检查失败不代表文件已经成功交付。",
+      "summary": "文件未通过本次输出检查。"
+    }
+  },
+  "assistantUsage": {
+    "billing_notice": "Token 用量不等于账单。这里不假设模型价格；实际收费（包括失败请求是否收费）以服务商账单为准。",
+    "cache_read": "缓存读取 Token",
+    "cache_write": "缓存写入 Token",
+    "cancelled": "已停止",
+    "completed": "已完成",
+    "coverage": "报告用量的请求",
+    "coverage_value": "{{reported}} / {{total}}",
+    "entry": "详情",
+    "failed": "失败",
+    "first": "首字用时",
+    "headers": "上游响应头等待",
+    "inconsistent": "上游报告的缓存读取量大于输入量，或缺少对应输入量，因此不计算命中率。",
+    "input": "已报告输入合计",
+    "model": "模型",
+    "outcome": "任务状态",
+    "output": "已报告输出合计",
+    "partial": "部分请求缺少或未完整报告用量。合计仅包含已报告数字，缺失不是零；不据此推算整轮缓存命中率。",
+    "preparation": "本地内核准备",
+    "provider": "Provider 标识",
+    "rate": "整轮缓存读取率",
+    "rate_notice": "读取率 = 已报告缓存读取量 / 已报告输入量，仅在整轮请求都有完整对应数据时计算。OpenAI 兼容格式是通信协议，不代表模型厂商；这里无法确认上游路由渠道及其缓存策略。",
+    "reasoning": "推理 Token（已计入输出）",
+    "requests": "上游请求数",
+    "retries": "原生重试事件",
+    "scope": "只读查看本轮观测。上游用量可能包含原生压缩或子任务，与简洁状态栏的原生回答用量分开统计，两者不能相加。",
+    "timing_notice": "首字和整轮用时沿用消息计时。本地内核准备不含此前的附件保存；响应头等待不是首字用时。请求与工具耗时可能重叠，不能相加；未完成操作可能未计入。",
+    "title": "缓存与用量诊断",
+    "tool_time": "已完成工具耗时",
+    "tools": "工具调用数",
+    "total": "整轮用时",
+    "transport": "已结束上游请求耗时",
+    "unfinished_tools": "未完成工具",
+    "unknown": "未知"
+  },
+  "assistant_transition": {
+    "attachments_unavailable": "这些附件未能复制，请在需要时重新上传：{{files}}",
+    "confirm_content": "将创建独立的历史副本，原会话保留，仅供查看历史记录。新版沿用已授权的工作目录，目录里的实际文件仍是共享的，并非文件回滚；可用上传附件会另存副本。旧工具不会重新执行，微信、定时任务和历史授权不会继承。长对话仅注入有界背景，完整文字记录可按需查阅。完成后请发送新的指令，迁移本身不会调用模型。",
+    "confirm_title": "在新版助手中继续这段对话？",
+    "continuation_busy": "请先停止或等待原会话中的任务，再在新版继续。",
+    "continuation_empty": "这段会话还没有消息，请直接在新版创建新对话。",
+    "continuation_invalid_history": "历史记录不完整，未进行迁移，原会话已保留。",
+    "continuation_no_model": "目前没有允许使用的可用模型，请先检查 Provider 和模型配置。",
+    "continuation_prepare_failed": "暂时无法创建新版副本，原会话未改变。请重试；若持续失败，请导出诊断信息。",
+    "continuation_source_changed": "复制期间原会话发生变化，请稍后重试。",
+    "continuation_source_missing": "原会话不存在，无法复制。",
+    "continuation_too_large": "历史记录过大，请先导出备份，再在新版提供必要的背景。",
+    "continuation_workspace_missing": "原工作目录不存在或不可访问，请检查目录权限后重试。",
+    "continue": "在新版继续",
+    "historical_copy": "历史副本",
+    "legacy_automation_disabled": "弃用助手已停止维护，微信等外部接入和定时任务已关闭。已有配置与历史记录保留，待新版助手支持后再开放；开发者模式也无法启用。",
+    "legacy_read_only": "旧助手已停止使用，请切换新智能助手进行使用。",
+    "migrated_conversation": "迁移对话",
+    "model_changed": "原模型已不可选，已按当前模型规则选择可用模型。",
+    "open_new": "打开新版助手",
+    "recommendation": "推荐用新版助手处理新任务；原版入口和历史记录继续保留。",
+    "reused": "已打开这段历史对应的新版会话。",
+    "snapshot": "这段对话包含来自原版助手的历史副本",
+    "snapshot_description": "旧记录只读，新指令由新版助手执行。背景是本地摘录，不保证保留所有细节；完整文字档案可按需查阅。工作目录的实际文件仍共享，不能视为历史文件快照。",
+    "source_unavailable": "原会话已删除或暂时无法打开，当前副本仍可继续使用。",
+    "success": "历史已复制，请发送新指令继续。",
+    "view_source": "查看原会话"
   },
   "assistants": {
     "abbr": "对话",
@@ -1917,6 +2126,38 @@
       "quota_exceeded": "您今日免费配额已用尽，请前往 <provider>{{provider}}</provider> 获取API密钥，配置API密钥后继续使用",
       "response": "出错了，如果没有配置 API 密钥，请前往设置 > 模型提供商中配置密钥"
     },
+    "connection": {
+      "certificate": {
+        "suggestion": "请重试；若仍失败，请检查服务地址、网络及安全软件。不要关闭证书校验。",
+        "summary": "服务证书校验未通过，未能建立安全连接。这不代表模型本身不可用。",
+        "title": "无法验证服务证书"
+      },
+      "connect": {
+        "suggestion": "请重试，再检查服务地址、本地网络及防火墙。浏览器可上网不代表软件使用的网络线路也正常。",
+        "summary": "连接被拒绝，或在建立安全连接前中断，尚未收到模型响应。",
+        "title": "连接模型服务失败"
+      },
+      "dns": {
+        "suggestion": "请重试；若仍失败，请检查服务地址、DNS 和网络设置。这不代表模型已停用。",
+        "summary": "当前网络未能通过 DNS 解析模型服务地址，请求尚未到达模型接口。",
+        "title": "服务地址解析失败"
+      },
+      "stream": {
+        "suggestion": "请检查网络稳定性后重试。服务可能已处理本次请求，已生成的文件不会回滚。",
+        "summary": "服务已返回响应头，但回复内容未能完整传回软件。",
+        "title": "回复传输中断"
+      },
+      "timeout": {
+        "suggestion": "请重试；若仍失败，请检查 DNS 及软件当前使用的直连或代理线路。浏览器可能使用了不同线路。",
+        "summary": "未能在规定时间内建立连接，尚未收到模型响应，不能据此认定模型故障。",
+        "title": "连接模型服务超时"
+      },
+      "unknown": {
+        "suggestion": "请先重试；持续失败时请导出诊断包，排查 DNS、证书和软件使用的网络线路。仅在当前网络需要时使用代理。",
+        "summary": "软件未收到可用响应，现有信息还不能确认服务是否已收到本次请求。",
+        "title": "暂时无法连接模型服务"
+      }
+    },
     "content": "内容",
     "data": "数据",
     "detail": "错误详情",
@@ -1927,6 +2168,8 @@
       "ai_loading": "正在诊断",
       "ai_result": "AI 诊断结果",
       "auth": "API Key 无效，请检查并重新配置",
+      "chain_error_line": "故障位置：{{owner}}",
+      "chain_observation_line": "链路观察（不等于发生故障）：{{owner}}",
       "content": "消息内容被安全系统拦截，请修改后重试",
       "context_length": "对话上下文过长，请清理历史消息或开启新对话",
       "deprecated": "该模型已下线或弃用，请更换其他模型",
@@ -2843,7 +3086,7 @@
   "model_setup": {
     "description": "Zen AI 尚未发现可用模型。请先导入 Provider 配置，或前往模型设置完成配置。",
     "import": "导入 Provider 配置",
-    "no_matching_model": "当前 Provider 中没有远端配置指定的可用模型，请导入配置或手动选择模型。",
+    "no_matching_model": "已启用的 Provider 中没有符合当前模式要求的可用模型，请检查模型列表或手动选择模型。",
     "open_settings": "前往模型设置",
     "title": "尚未配置可用模型"
   },
@@ -2920,6 +3163,34 @@
   },
   "navigate": {
     "provider_settings": "跳转到服务商设置界面"
+  },
+  "new_assistant": {
+    "clear_failed": "未能清空原生会话记忆，请先停止任务后重试",
+    "compacting": "正在整理会话上下文",
+    "connecting": "正在连接新版助手",
+    "deliverables": "文件与文件夹",
+    "elapsed": "已用时 {{seconds}} 秒",
+    "history": {
+      "busy": "请先停止当前任务，再操作会话记录。",
+      "failed": "未能完成操作，请先停止当前任务后重试；若记录没有刷新，请重新进入当前会话。",
+      "retry_notice": "将从这条问题重新执行任务，并移除原回答及之后的对话记录。已有文件和外部操作不会回滚，重试时可能再次执行这些操作。"
+    },
+    "memory_notice": "使用独立的原生会话记忆，换模型仍保留历史。支持重试、分支和单条删除；暂不支持直接编辑或批量删除。",
+    "outputting": "模型正在输出",
+    "preparing": "请求已收到，正在准备任务",
+    "responding": "正在处理回复",
+    "restoring": "正在恢复当前会话",
+    "retrying": "服务暂时异常，正在重试",
+    "starting": "正在启动本地助手",
+    "stop": "停止",
+    "stopped": "已停止",
+    "stopping": "正在停止…",
+    "title": "新版助手",
+    "trying_alternative": "工具执行遇到问题，正在等待助手处理",
+    "wait_hint": "等待比平时稍长，目前还没有新的输出，无需重复发送；你可以随时停止任务。",
+    "waiting_model": "请求已发出，正在等待模型响应",
+    "waiting_permission": "等待你确认工具操作",
+    "waiting_response": "任务已提交，正在等待助手响应"
   },
   "notes": {
     "auto_rename": {
@@ -4311,7 +4582,7 @@
         "label": "应用日志"
       },
       "backup": {
-        "skip_file_data_help": "备份时跳过备份图片、知识库等数据文件，仅备份聊天记录和设置。减少空间占用，加快备份速度",
+        "skip_file_data_help": "保留聊天记录、设置、助手原生记忆和技能，省略图片、附件、工作区成果等大文件。恢复时保留本机已有文件；换电脑恢复后，未备份的文件可能无法打开。",
         "skip_file_data_title": "精简备份"
       },
       "clear_cache": {
@@ -4751,7 +5022,7 @@
           "placeholder": "Secret Access Key"
         },
         "skipBackupFile": {
-          "help": "开启后备份时将跳过文件数据，仅备份配置信息，显著减小备份文件体积",
+          "help": "保留聊天记录、设置、助手原生记忆和技能，省略图片、附件、工作区成果等大文件。恢复时保留本机已有文件；换电脑恢复后，未备份的文件可能无法打开。",
           "label": "精简备份"
         },
         "syncStatus": {
@@ -5337,6 +5608,9 @@
       },
       "prompt": "显示提示词",
       "show_message_outline": "显示消息大纲",
+      "stats_time": "首字 {{first}} · 用时 {{total}}",
+      "stats_tip": "输入、输出、缓存的单位均为 Token。首字：本轮开始处理到首次可见文字（含显示的思考文字）。用时：到整轮任务结束，包含工具执行和等待时间。缓存只统计读取命中的 Token；— 表示未提供该项统计。",
+      "stats_tokens": "输入 {{input}} · 输出 {{output}} · 缓存 {{cached}}",
       "title": "消息设置",
       "use_serif_font": "使用衬线字体"
     },

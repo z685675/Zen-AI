@@ -1,8 +1,10 @@
 import express, { type Router } from 'express'
 
+import { guardLegacyAutomationWrites } from '../legacyAutomation'
 import * as channelHandlers from './handlers'
 
 const channelsRouter: Router = express.Router()
+channelsRouter.use(guardLegacyAutomationWrites)
 
 channelsRouter.post('/', channelHandlers.createChannel)
 channelsRouter.get('/', channelHandlers.listChannels)

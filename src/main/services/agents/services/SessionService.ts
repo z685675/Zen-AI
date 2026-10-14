@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 
@@ -5,7 +6,8 @@ import { loggerService } from '@logger'
 import { configManager } from '@main/services/ConfigManager'
 import { toAsarUnpackedPath } from '@main/utils'
 import { parsePluginMetadata, parseSkillMetadata } from '@main/utils/markdownParser'
-import type { SlashCommand, UpdateSessionResponse } from '@types'
+import { DEFAULT_OPENCODE_AGENT_ID } from '@shared/config/agents'
+import type { AgentPersistedMessage, SlashCommand, UpdateSessionResponse } from '@types'
 import {
   AgentBaseSchema,
   type AgentEntity,
@@ -29,6 +31,7 @@ import {
 } from '../database/schema'
 import type { AgentModelField } from '../errors'
 import { builtinSlashCommands } from './claudecode/commands'
+import { assertSessionNotContinuing } from './sessionActivity'
 import { haveSameAccessiblePaths } from './sessionWorkspace'
 
 const logger = loggerService.withContext('SessionService')
@@ -296,6 +299,10 @@ export class SessionService extends BaseService {
   }
 
   private appendArchivedFilter(whereConditions: SQL[], archived: ListOptions['archived'] = 'exclude') {
+    // Crash-interrupted preparation is not a user-facing archived conversation.
+    whereConditions.push(
+      sql`coalesce(json_extract(case when json_valid(${sessionsTable.configuration}) then ${sessionsTable.configuration} else '{}' end, '$.legacy_continuation.state'), '') <> 'preparing'`
+    )
     if (archived === 'only') {
       whereConditions.push(eq(sessionsTable.is_archived, true))
       return
@@ -431,6 +438,7 @@ export class SessionService extends BaseService {
    * Override BaseService.listSlashCommands to merge builtin and plugin commands
    */
   async listSlashCommands(agentType: string, agentId?: string): Promise<SlashCommand[]> {
+    if (agentId === DEFAULT_OPENCODE_AGENT_ID) return []
     const commandMap = new Map<string, SlashCommand>()
     const knownDescriptions = this.getKnownSlashCommandDescriptions()
 
@@ -507,7 +515,8 @@ export class SessionService extends BaseService {
 
   async createSession(
     agentId: string,
-    req: Partial<CreateSessionRequest> = {}
+    req: Partial<CreateSessionRequest> = {},
+    options?: { archived?: boolean }
   ): Promise<GetAgentSessionResponse | null> {
     // Validate agent exists - we'll need to import AgentService for this check
     // For now, we'll skip this validation to avoid circular dependencies
@@ -558,7 +567,7 @@ export class SessionService extends BaseService {
       configuration: serializedData.configuration || null,
       sort_order: 0,
       is_pinned: false,
-      is_archived: false,
+      is_archived: options?.archived ?? false,
       created_at: now,
       updated_at: now
     }
@@ -634,6 +643,11 @@ export class SessionService extends BaseService {
     const whereConditions: SQL[] = []
     if (agentId) {
       whereConditions.push(eq(sessionsTable.agent_id, agentId))
+    }
+    if (options.workspace === 'opencode') {
+      whereConditions.push(eq(sessionsTable.agent_id, DEFAULT_OPENCODE_AGENT_ID))
+    } else if (options.workspace === 'legacy') {
+      whereConditions.push(sql`${sessionsTable.agent_id} <> ${DEFAULT_OPENCODE_AGENT_ID}`)
     }
     this.appendArchivedFilter(whereConditions, options.archived)
 
@@ -745,6 +759,7 @@ export class SessionService extends BaseService {
     id: string,
     updates: UpdateSessionRequest
   ): Promise<UpdateSessionResponse | null> {
+    assertSessionNotContinuing(id)
     // Check if session exists
     const existing = await this.getSession(agentId, id)
     if (!existing) {
@@ -880,13 +895,109 @@ export class SessionService extends BaseService {
     return result.rowsAffected
   }
 
-  async deleteSession(agentId: string, id: string): Promise<boolean> {
+  async resetOpenCodeMemory(agentId: string, id: string): Promise<void> {
+    if (agentId !== DEFAULT_OPENCODE_AGENT_ID || !(await this.sessionExists(agentId, id)))
+      throw new Error('New assistant session not found')
     const database = await this.getDatabase()
-    const result = await database
-      .delete(sessionsTable)
-      .where(and(eq(sessionsTable.id, id), eq(sessionsTable.agent_id, agentId)))
+    const { archiveOpenCodeSession } = await import('./opencode/process')
+    await archiveOpenCodeSession(id, async () => {
+      await database.delete(sessionMessagesTable).where(eq(sessionMessagesTable.session_id, id))
+    })
+  }
 
-    return result.rowsAffected > 0
+  async changeOpenCodeHistory(
+    agentId: string,
+    id: string,
+    messageId: string,
+    action: 'retry' | 'delete' | 'fork'
+  ): Promise<GetAgentSessionResponse> {
+    if (agentId !== DEFAULT_OPENCODE_AGENT_ID) throw new Error('Not a new assistant session')
+    const session = await this.getSession(agentId, id)
+    if (!session) throw new Error('Session not found')
+    const database = await this.getDatabase()
+    const rows = await database
+      .select()
+      .from(sessionMessagesTable)
+      .where(eq(sessionMessagesTable.session_id, id))
+      .orderBy(asc(sessionMessagesTable.created_at), asc(sessionMessagesTable.id))
+    const display = rows.map((row) => JSON.parse(row.content) as AgentPersistedMessage)
+    if (display.some((item) => !item.message?.id || !Array.isArray(item.blocks)))
+      throw new Error('Display history is invalid')
+    if (!display.some((item) => item.message.id === messageId)) throw new Error('Message not found')
+    const { editNativeHistory } = await import('./opencode/history')
+    const { copyOpenCodeHistory } = await import('./opencode/process')
+    let target = session
+    if (action === 'fork') {
+      const created = await this.createSession(agentId, {
+        ...session,
+        name: session.name,
+        accessible_paths: session.accessible_paths
+      })
+      if (!created) throw new Error('Could not create branch')
+      target = created
+    }
+    try {
+      if (action === 'fork') await copyOpenCodeHistory(id, target.id)
+      await editNativeHistory(target, display, messageId, action, async (items, nativeId) => {
+        const idMap = new Map<string, string>()
+        if (action === 'fork') {
+          for (const item of items) {
+            idMap.set(item.message.id, randomUUID())
+            for (const block of item.blocks) idMap.set(block.id, randomUUID())
+          }
+        }
+        const now = new Date().toISOString()
+        await database.transaction(async (tx) => {
+          await tx.delete(sessionMessagesTable).where(eq(sessionMessagesTable.session_id, target.id))
+          for (const item of items) {
+            const message = item.message
+            if (action === 'fork') {
+              message.id = idMap.get(message.id)!
+              message.topicId = `agent-session:${target.id}`
+              message.askId = message.askId ? idMap.get(message.askId) : undefined
+              message.blocks = message.blocks.map((blockId) => idMap.get(blockId)!)
+              for (const block of item.blocks) {
+                block.id = idMap.get(block.id)!
+                block.messageId = message.id
+              }
+            }
+            await tx.insert(sessionMessagesTable).values({
+              session_id: target.id,
+              role: message.role,
+              content: JSON.stringify(item),
+              agent_session_id: nativeId,
+              created_at: message.createdAt,
+              updated_at: now
+            })
+          }
+          await tx.update(sessionsTable).set({ updated_at: now }).where(eq(sessionsTable.id, target.id))
+        })
+      })
+      return (await this.getSession(agentId, target.id))!
+    } catch (error) {
+      if (action === 'fork') await this.deleteSession(agentId, target.id)
+      throw error
+    }
+  }
+
+  async deleteSession(agentId: string, id: string): Promise<boolean> {
+    assertSessionNotContinuing(id)
+    const database = await this.getDatabase()
+    const remove = async () => {
+      const result = await database
+        .delete(sessionsTable)
+        .where(and(eq(sessionsTable.id, id), eq(sessionsTable.agent_id, agentId)))
+      return result.rowsAffected > 0
+    }
+    if (agentId === DEFAULT_OPENCODE_AGENT_ID && (await this.sessionExists(agentId, id))) {
+      const { archiveOpenCodeSession } = await import('./opencode/process')
+      let removed = false
+      await archiveOpenCodeSession(id, async () => {
+        removed = await remove()
+      })
+      return removed
+    }
+    return remove()
   }
 
   async deleteEmptySessionsForAgents(agentIds: string[]): Promise<number> {

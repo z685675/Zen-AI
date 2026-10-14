@@ -1,11 +1,14 @@
-// import { useRuntime } from '@renderer/hooks/useRuntime'
 import { EVENT_NAMES, EventEmitter } from '@renderer/services/EventService'
 import type { Message } from '@renderer/types/newMessage'
-import { getModelCachePathLabel } from '@renderer/utils/provider'
+import { formatMessageDuration, getMessageTimingStats } from '@renderer/utils/messageTiming'
 import { formatTokenCount, getUsageCacheStats, normalizeUsage } from '@renderer/utils/usage'
-import { Popover } from 'antd'
-import { t } from 'i18next'
+import { readOpenCodeTurnDiagnostics } from '@shared/agents/opencodeDiagnostics'
+import { Tooltip } from 'antd'
+import { useTranslation } from 'react-i18next'
 import styled from 'styled-components'
+
+import MessageUsageDetails from './MessageUsageDetails'
+import { getReportedCacheCoverage } from './usageDiagnostics'
 
 interface MessageTokensProps {
   message: Message
@@ -13,134 +16,79 @@ interface MessageTokensProps {
 }
 
 const MessageTokens: React.FC<MessageTokensProps> = ({ message }) => {
-  // const { generating } = useRuntime()
+  const { t } = useTranslation()
   const usage = normalizeUsage(message.usage)
-
   const locateMessage = () => {
     void EventEmitter.emit(EVENT_NAMES.LOCATE_MESSAGE + ':' + message.id, false)
   }
 
-  const getPrice = () => {
-    const inputTokens = usage?.prompt_tokens ?? 0
-    const outputTokens = usage?.completion_tokens ?? 0
-    const model = message.model
-
-    // For OpenRouter, use the cost directly from usage if available
-    if (model?.provider === 'openrouter' && usage?.cost !== undefined) {
-      return usage.cost
-    }
-
-    if (!model || model.pricing?.input_per_million_tokens === 0 || model.pricing?.output_per_million_tokens === 0) {
-      return 0
-    }
-
-    return (
-      (inputTokens * (model.pricing?.input_per_million_tokens ?? 0) +
-        outputTokens * (model.pricing?.output_per_million_tokens ?? 0)) /
-      1000000
-    )
-  }
-
-  const getPriceString = () => {
-    const price = getPrice()
-    if (price === 0) {
-      return ''
-    }
-
-    const shouldShowCost = message.model?.provider === 'openrouter' || price > 0
-    if (!shouldShowCost) {
-      return ''
-    }
-
-    const currencySymbol = message.model?.pricing?.currencySymbol || '$'
-    return ` | ${t('models.price.cost')}: ${currencySymbol}${price.toFixed(6)}`
-  }
-
-  if (!usage) {
-    return null
-  }
-
   if (message.role === 'user') {
-    return (
+    return usage ? (
       <MessageMetadata className="message-tokens" onClick={locateMessage}>
         {`Tokens: ${usage.total_tokens ?? 0}`}
       </MessageMetadata>
-    )
+    ) : null
   }
 
-  if (message.role === 'assistant') {
-    const cacheStats = getUsageCacheStats(usage)
-    const cachePath = getModelCachePathLabel(message.model)
-    const cachePathText = cachePath ? ` | Path: ${cachePath}` : ''
-    const cacheText = cacheStats.hasCache
-      ? ` | Cache: ${formatTokenCount(cacheStats.hitTokens)} hit${
-          cacheStats.cacheWriteTokens > 0 ? ` / ${formatTokenCount(cacheStats.cacheWriteTokens)} write` : ''
-        }${cacheStats.hitRate !== undefined ? ` (${Math.round(cacheStats.hitRate * 100)}%)` : ''}`
-      : ''
+  if (message.role !== 'assistant' || (!usage && !message.providerMetadata?.responseTiming && !message.metrics))
+    return null
 
-    let metricsText = ''
-    let hasMetrics = false
+  const cache = getUsageCacheStats(usage)
+  const diagnostics = readOpenCodeTurnDiagnostics(message.providerMetadata?.opencodeDiagnostics)
+  const cacheReported =
+    !diagnostics ||
+    (getReportedCacheCoverage(diagnostics).readsComplete && cache.hitTokens === diagnostics.usage.cacheRead)
+  const timing = getMessageTimingStats(message)
+  const count = (value?: number) =>
+    typeof value === 'number' && Number.isFinite(value) && value >= 0 ? formatTokenCount(value) : '—'
 
-    if (message?.metrics?.completion_tokens && message?.metrics?.time_completion_millsec) {
-      hasMetrics = true
-      metricsText = t('settings.messages.metrics', {
-        time_first_token_millsec: message?.metrics?.time_first_token_millsec,
-        token_speed: (message?.metrics?.completion_tokens / (message?.metrics?.time_completion_millsec / 1000)).toFixed(
-          0
-        )
-      })
-      if (cachePathText) {
-        metricsText += cachePathText
-      }
-      if (cacheText) {
-        metricsText += cacheText
-      }
-    } else if (cachePathText) {
-      hasMetrics = true
-      metricsText = cachePathText.replace(/^ \| /, '')
-    } else if (cacheText) {
-      hasMetrics = true
-      metricsText = cacheText.replace(/^ \| /, '')
-    }
-
-    const tokensInfo = (
-      <span className="tokens">
-        Tokens:
-        <span>{usage.total_tokens ?? 0}</span>
-        <span>{`in ${usage.prompt_tokens ?? 0}`}</span>
-        <span>{`out ${usage.completion_tokens ?? 0}`}</span>
-        <span>{cachePathText}</span>
-        <span>{cacheText}</span>
-        <span>{getPriceString()}</span>
-      </span>
-    )
-
-    return (
+  return (
+    <Tooltip title={t('settings.messages.stats_tip')}>
       <MessageMetadata className="message-tokens" onClick={locateMessage}>
-        {hasMetrics ? (
-          <Popover content={metricsText} placement="top" trigger="hover" styles={{ root: { fontSize: 11 } }}>
-            {tokensInfo}
-          </Popover>
-        ) : (
-          tokensInfo
-        )}
+        <span>
+          {t('settings.messages.stats_tokens', {
+            input: count(
+              diagnostics && diagnostics.inputReports === 0 && !usage?.prompt_tokens ? undefined : usage?.prompt_tokens
+            ),
+            output: count(
+              diagnostics && diagnostics.outputReports === 0 && !usage?.completion_tokens
+                ? undefined
+                : usage?.completion_tokens
+            ),
+            cached: count(cacheReported && cache.hasCache ? cache.hitTokens : undefined)
+          })}
+        </span>
+        <TimeStats>
+          {t('settings.messages.stats_time', {
+            first: formatMessageDuration(timing.firstTokenMs),
+            total: formatMessageDuration(timing.elapsedMs)
+          })}
+        </TimeStats>
+        {diagnostics && <MessageUsageDetails key={message.id} message={message} diagnostics={diagnostics} />}
       </MessageMetadata>
-    )
-  }
-
-  return null
+    </Tooltip>
+  )
 }
 
 const MessageMetadata = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 8px;
   font-size: 10px;
+  font-variant-numeric: tabular-nums;
   color: var(--color-text-3);
   user-select: text;
   cursor: pointer;
-  text-align: right;
 
-  .tokens span {
-    padding: 0 2px;
+  > span {
+    white-space: normal;
   }
+`
+
+const TimeStats = styled.span`
+  border-inline-start: 1px solid var(--color-border);
+  padding-inline-start: 8px;
 `
 
 export default MessageTokens

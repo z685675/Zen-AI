@@ -8,6 +8,7 @@ import { SelectChatModelPopup } from '@renderer/components/Popups/SelectModelPop
 import { chatModelFilter, isVisionModel } from '@renderer/config/models'
 import type { MessageMenubarButtonId, MessageMenubarScope } from '@renderer/config/registry/messageMenubar'
 import { DEFAULT_MESSAGE_MENUBAR_SCOPE, getMessageMenubarConfig } from '@renderer/config/registry/messageMenubar'
+import { useAgentWorkspace } from '@renderer/context/AgentWorkspaceProvider'
 import { useMessageEditing } from '@renderer/context/MessageEditingContext'
 import { useChatContext } from '@renderer/hooks/useChatContext'
 import { useMessageOperations } from '@renderer/hooks/useMessageOperations'
@@ -22,7 +23,8 @@ import type { RootState } from '@renderer/store'
 import store, { useAppDispatch } from '@renderer/store'
 import { messageBlocksSelectors } from '@renderer/store/messageBlock'
 import { selectMessagesForTopic } from '@renderer/store/newMessage'
-import { removeBlocksThunk } from '@renderer/store/thunk/messageThunk'
+import { setActiveSessionIdAction } from '@renderer/store/runtime'
+import { changeOpenCodeHistoryThunk, removeBlocksThunk } from '@renderer/store/thunk/messageThunk'
 import { TraceIcon } from '@renderer/trace/pages/Component'
 import type { Assistant, Model, Topic, TranslateLanguage } from '@renderer/types'
 import { type Message, MessageBlockStatus, MessageBlockType } from '@renderer/types/newMessage'
@@ -39,6 +41,7 @@ import {
   exportMessageToNotion,
   messageToMarkdown
 } from '@renderer/utils/export'
+import { canUseLegacyMessageAction, isReadOnlyLegacySession } from '@renderer/utils/legacyMessageActions'
 // import { withMessageThought } from '@renderer/utils/formats'
 import { removeTrailingDoubleSpaces } from '@renderer/utils/markdown'
 import {
@@ -47,6 +50,7 @@ import {
   findTranslationBlocksById,
   getMainTextContent
 } from '@renderer/utils/messageUtils/find'
+import { DEFAULT_OPENCODE_AGENT_ID } from '@shared/config/agents'
 import type { MenuProps } from 'antd'
 import { Dropdown, Popconfirm, Tooltip } from 'antd'
 import dayjs from 'dayjs'
@@ -73,6 +77,7 @@ import { useSelector } from 'react-redux'
 import styled from 'styled-components'
 
 import MessageTokens from './MessageTokens'
+import NativeMessageActions from './NativeMessageActions'
 
 const createTranslationAbortKey = (messageId: string) => `translation-abort-key:${messageId}`
 
@@ -149,6 +154,9 @@ const MessageMenubar: FC<Props> = (props) => {
     onUpdateUseful
   } = props
   const { t } = useTranslation()
+  const nativeMemory = useAgentWorkspace() === 'opencode'
+  const legacyReadOnly = isReadOnlyLegacySession(topic.id, message.assistantId)
+  const nativeBusy = useSelector((state: RootState) => Boolean(state.messages.loadingByTopic[topic.id]))
   const { notesPath } = useNotesSettings()
   const { toggleMultiSelectMode } = useChatContext(props.topic)
   const [copied, setCopied] = useTemporaryValue(false, 2000)
@@ -216,9 +224,18 @@ const MessageMenubar: FC<Props> = (props) => {
   const onNewBranch = useCallback(
     async (e?: React.MouseEvent) => {
       e?.stopPropagation?.()
+      if (nativeMemory) {
+        try {
+          const session = await dispatch(changeOpenCodeHistoryThunk(topic.id, message.id, 'fork'))
+          dispatch(setActiveSessionIdAction({ agentId: DEFAULT_OPENCODE_AGENT_ID, sessionId: session.id }))
+        } catch (error) {
+          logger.warn('Could not create native conversation branch', error as Error)
+        }
+        return
+      }
       void EventEmitter.emit(EVENT_NAMES.NEW_BRANCH, index)
     },
-    [index]
+    [index, nativeMemory, dispatch, topic.id, message.id]
   )
 
   const handleResendUserMessage = useCallback(
@@ -303,7 +320,7 @@ const MessageMenubar: FC<Props> = (props) => {
 
   const dropdownItems = useMemo(() => {
     const items: MenuProps['items'] = [
-      ...(isEditable
+      ...(isEditable && !legacyReadOnly && !message.providerMetadata?.legacyContinuation
         ? [
             {
               label: t('common.edit'),
@@ -487,6 +504,7 @@ const MessageMenubar: FC<Props> = (props) => {
     exportMenuOptions.yuque,
     isEditable,
     isAssistantMessage,
+    legacyReadOnly,
     mainTextContent,
     message,
     messageContainerRef,
@@ -499,6 +517,15 @@ const MessageMenubar: FC<Props> = (props) => {
 
   const onRegenerate = async (e: React.MouseEvent | undefined) => {
     e?.stopPropagation?.()
+    if (nativeMemory) {
+      window.modal.confirm({
+        title: t('common.regenerate'),
+        content: t('new_assistant.history.retry_notice'),
+        centered: true,
+        onOk: () => regenerateAssistantMessage(message, assistant)
+      })
+      return
+    }
     // No need to reset or edit the message anymore
     // const selectedModel = isGrouped ? model : assistantModel
     // const _message = resetAssistantMessage(message, selectedModel)
@@ -572,7 +599,7 @@ const MessageMenubar: FC<Props> = (props) => {
     assistant,
     blockEntities,
     confirmDeleteMessage,
-    confirmRegenerateMessage,
+    confirmRegenerateMessage: nativeMemory ? false : confirmRegenerateMessage,
     copied,
     deleteMessage,
     dropdownItems,
@@ -609,6 +636,34 @@ const MessageMenubar: FC<Props> = (props) => {
       <MenusBar
         className={classNames({ menubar: true, show: isLastMessage, 'user-bubble-style': isUserBubbleStyleMessage })}>
         {buttonIds.map((buttonId) => {
+          if ((legacyReadOnly || message.providerMetadata?.legacyContinuation) && !canUseLegacyMessageAction(buttonId))
+            return null
+          // Native tool history cannot be rewritten by changing display blocks.
+          if (
+            nativeMemory &&
+            (['user-edit', 'user-regenerate'].includes(buttonId) ||
+              (isAssistantMessage && ['new-branch', 'delete'].includes(buttonId)))
+          )
+            return null
+          if (nativeMemory && isAssistantMessage && buttonId === 'assistant-regenerate') {
+            return (
+              <NativeMessageActions
+                key={buttonId}
+                busy={nativeBusy}
+                onRetry={() => onRegenerate(undefined)}
+                onFork={() => onNewBranch()}
+                onDelete={() => {
+                  window.modal.confirm({
+                    title: t('common.delete'),
+                    content: t('message.message.delete.content'),
+                    centered: true,
+                    okButtonProps: { danger: true },
+                    onOk: () => deleteMessage(message.id, message.traceId, message.model?.name)
+                  })
+                }}
+              />
+            )
+          }
           const renderFn = buttonRenderers[buttonId]
           if (!renderFn) {
             logger.warn(`No renderer registered for MessageMenubar button id: ${buttonId}`)

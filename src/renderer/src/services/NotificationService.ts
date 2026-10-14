@@ -28,7 +28,8 @@ export class NotificationService {
     const notificationSettings = store.getState().settings.notification || defaultSettings.notification
 
     if (notificationSettings[notification.source]) {
-      void this.queue.add(notification)
+      // Notification delivery is auxiliary and must never reject a task callback.
+      void this.queue.add(notification).catch(() => undefined)
     }
   }
 

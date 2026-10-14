@@ -1,6 +1,8 @@
+import LegacyAutomationNotice from '@renderer/components/LegacyAutomationNotice'
 import ListItem from '@renderer/components/ListItem'
 import Scrollbar from '@renderer/components/Scrollbar'
 import { getChannelTypeIcon } from '@renderer/utils/agentSession'
+import { isLegacyAutomationEnabled } from '@shared/agents/legacyAutomation'
 import type { FC } from 'react'
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -11,7 +13,7 @@ import { AVAILABLE_CHANNELS, type AvailableChannel } from './channelTypes'
 
 const TITLE_STYLE = { fontWeight: 500 } as const
 
-const ChannelsSettings: FC = () => {
+const LegacyChannelsSettings: FC = () => {
   const { t } = useTranslation()
   const [searchParams, setSearchParams] = useSearchParams()
   const requestedType = searchParams.get('type')
@@ -67,5 +69,8 @@ const ChannelsSettings: FC = () => {
     </div>
   )
 }
+
+const ChannelsSettings: FC = () =>
+  isLegacyAutomationEnabled() ? <LegacyChannelsSettings /> : <LegacyAutomationNotice />
 
 export default ChannelsSettings

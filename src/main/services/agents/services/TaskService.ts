@@ -1,4 +1,5 @@
 import { loggerService } from '@logger'
+import { assertLegacyAutomationEnabled } from '@shared/agents/legacyAutomation'
 import type { CreateTaskRequest, ListOptions, ScheduledTaskEntity, TaskRunLogEntity, UpdateTaskRequest } from '@types'
 import { and, asc, count, desc, eq, inArray, isNotNull, lte, ne } from 'drizzle-orm'
 
@@ -27,6 +28,7 @@ export class TaskService extends BaseService {
   }
 
   async createTask(agentId: string, req: CreateTaskRequest): Promise<ScheduledTaskEntity> {
+    assertLegacyAutomationEnabled()
     await this.assertAutonomous(agentId)
     validateTaskSchedule(req.schedule_type, req.schedule_value)
 
@@ -126,6 +128,7 @@ export class TaskService extends BaseService {
   }
 
   async updateTaskById(taskId: string, updates: UpdateTaskRequest): Promise<ScheduledTaskEntity | null> {
+    if (updates.status === 'active') assertLegacyAutomationEnabled()
     const existing = await this.getTaskById(taskId)
     if (!existing) return null
 
@@ -204,6 +207,7 @@ export class TaskService extends BaseService {
   }
 
   async updateTask(agentId: string, taskId: string, updates: UpdateTaskRequest): Promise<ScheduledTaskEntity | null> {
+    if (updates.status === 'active') assertLegacyAutomationEnabled()
     const existing = await this.getTask(agentId, taskId)
     if (!existing) return null
 
@@ -305,6 +309,15 @@ export class TaskService extends BaseService {
 
   // --- Due tasks (used by SchedulerService poll loop) ---
 
+  /** Preserve schedules, subscriptions and history, including hidden heartbeat tasks. */
+  async pauseAllActiveTasks(): Promise<void> {
+    const database = await this.getDatabase()
+    await database
+      .update(scheduledTasksTable)
+      .set({ status: 'paused', updated_at: new Date().toISOString() })
+      .where(eq(scheduledTasksTable.status, 'active'))
+  }
+
   async hasActiveTasks(): Promise<boolean> {
     const database = await this.getDatabase()
     const [result] = await database
@@ -402,7 +415,7 @@ export class TaskService extends BaseService {
   }
 
   /** Mark executions left in an in-flight state by a previous app process as interrupted. */
-  async recoverInterruptedTaskRuns(): Promise<number> {
+  async recoverInterruptedTaskRuns(options?: { status: 'paused'; message: string }): Promise<number> {
     const database = await this.getDatabase()
     const interrupted = await database
       .select({ id: taskRunLogsTable.id, run_at: taskRunLogsTable.run_at })
@@ -414,8 +427,8 @@ export class TaskService extends BaseService {
         database
           .update(taskRunLogsTable)
           .set({
-            status: 'error',
-            error: '应用在任务执行过程中关闭，任务未完成',
+            status: options?.status ?? 'error',
+            error: options?.message ?? '应用在任务执行过程中关闭，任务未完成',
             duration_ms: Math.max(0, Date.now() - new Date(log.run_at).getTime())
           })
           .where(eq(taskRunLogsTable.id, log.id))

@@ -1,4 +1,5 @@
 import { loggerService } from '@logger'
+import { assertLegacyAutomationEnabled } from '@shared/agents/legacyAutomation'
 import { and, eq, inArray } from 'drizzle-orm'
 
 import { BaseService } from '../BaseService'
@@ -30,6 +31,7 @@ export class ChannelService extends BaseService {
     isActive?: boolean
     permissionMode?: string
   }): Promise<ChannelRow> {
+    assertLegacyAutomationEnabled()
     const database = await this.getDatabase()
 
     const insertData: InsertChannelRow = {
@@ -97,6 +99,7 @@ export class ChannelService extends BaseService {
       Pick<ChannelRow, 'name' | 'agentId' | 'sessionId' | 'config' | 'isActive' | 'activeChatIds' | 'permissionMode'>
     >
   ): Promise<ChannelRow | null> {
+    if (updates.isActive === true) assertLegacyAutomationEnabled()
     const database = await this.getDatabase()
     const result = await database.update(channelsTable).set(updates).where(eq(channelsTable.id, id)).returning()
 
@@ -118,6 +121,12 @@ export class ChannelService extends BaseService {
   }
 
   // ---- Task subscription methods ----
+
+  /** Disable connections without deleting credentials, bindings or subscriptions. */
+  async deactivateAllChannels(): Promise<void> {
+    const database = await this.getDatabase()
+    await database.update(channelsTable).set({ isActive: false }).where(eq(channelsTable.isActive, true))
+  }
 
   async subscribeToTask(channelId: string, taskId: string): Promise<void> {
     const database = await this.getDatabase()

@@ -29,6 +29,10 @@ vi.mock('../handlers', async () => {
       deleteAgent: vi.fn((_req, res) => res.status(204).send())
     },
     sessionHandlers: {
+      inspectSessionSkills: vi.fn((_req, res) => res.status(200).json({ skills: [] })),
+      continueInNewAssistant: vi.fn((_req, res) => res.status(200).json({})),
+      resetNativeMemory: vi.fn((_req, res) => res.status(204).send()),
+      changeNativeHistory: vi.fn((_req, res) => res.status(200).json({})),
       searchAllSessions: vi.fn((_req, res) => res.status(200).json({ data: [] })),
       listAllSessions: vi.fn((_req, res) => res.status(200).json({ data: [] })),
       reorderSessions: vi.fn((_req, res) => res.status(200).json({ success: true })),

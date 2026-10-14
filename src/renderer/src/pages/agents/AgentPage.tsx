@@ -2,6 +2,7 @@ import { DEFAULT_SESSION_PAGE_SIZE } from '@renderer/api/agent'
 import { Navbar, NavbarCenter } from '@renderer/components/app/Navbar'
 import { ErrorBoundary } from '@renderer/components/ErrorBoundary'
 import ModelSetupGuide from '@renderer/components/ModelSetupGuide'
+import { useAgentWorkspace } from '@renderer/context/AgentWorkspaceProvider'
 import { useActiveAgent } from '@renderer/hooks/agents/useActiveAgent'
 import { useAgentClient } from '@renderer/hooks/agents/useAgentClient'
 import { useAgents } from '@renderer/hooks/agents/useAgents'
@@ -16,6 +17,7 @@ import store, { useAppDispatch, useAppSelector } from '@renderer/store'
 import { selectMessagesForTopic } from '@renderer/store/newMessage'
 import { setActiveAgentId as setActiveAgentIdAction, setActiveSessionIdAction } from '@renderer/store/runtime'
 import { cn } from '@renderer/utils'
+import { consumeAgentEntrySelection } from '@renderer/utils/agentEntrySelection'
 import { buildAgentSessionTopicId } from '@renderer/utils/agentSession'
 import { getAgentSessionDraftCacheKey } from '@renderer/utils/agentSessionDraft'
 import { isUnnamedAgentSessionName } from '@renderer/utils/agentSessionTitle'
@@ -36,6 +38,7 @@ import { AgentEmpty, AgentServerDisabled, AgentServerStopped } from './component
 const dbService = DbService.getInstance()
 
 const AgentPage = () => {
+  const workspace = useAgentWorkspace()
   const { isLeftNavbar } = useNavbarPosition()
   const { showAssistants, toggleShowAssistants } = useShowAssistants()
   const { chat } = useRuntime()
@@ -82,6 +85,17 @@ const AgentPage = () => {
 
       if (
         currentAgentId &&
+        currentSessionId &&
+        agents.some((agent) => agent.id === currentAgentId) &&
+        consumeAgentEntrySelection(workspace, { agentId: currentAgentId, sessionId: currentSessionId })
+      ) {
+        if (!cancelled) setEntrySessionRestored(true)
+        return
+      }
+
+      if (
+        currentAgentId &&
+        agents.some((agent) => agent.id === currentAgentId) &&
         currentSessionId &&
         hasUnsentConversationDraft(CacheService.get(getAgentSessionDraftCacheKey(currentAgentId, currentSessionId)))
       ) {
@@ -140,7 +154,7 @@ const AgentPage = () => {
     return () => {
       cancelled = true
     }
-  }, [agents, apiServerRunning, client, dispatch, entrySessionRestored, t])
+  }, [agents, apiServerRunning, client, dispatch, entrySessionRestored, t, workspace])
 
   useEffect(() => {
     const canMinimize = !showAssistants
@@ -172,7 +186,7 @@ const AgentPage = () => {
     )
   }
 
-  if (!hasAvailableModels) {
+  if (workspace === 'opencode' && !hasAvailableModels) {
     return (
       <Container>
         <Navbar>
@@ -196,7 +210,7 @@ const AgentPage = () => {
 
   return (
     <Container>
-      <AgentNavbar />
+      <AgentNavbar key={workspace} />
       <div
         id={isLeftNavbar ? 'content-container' : undefined}
         className="flex min-w-0 flex-1 shrink flex-row overflow-hidden">
@@ -215,7 +229,7 @@ const AgentPage = () => {
           )}
         </AnimatePresence>
         <ErrorBoundary>
-          <AgentChat />
+          {activeAgentId && agents?.some((agent) => agent.id === activeAgentId) && <AgentChat key={workspace} />}
         </ErrorBoundary>
       </div>
     </Container>

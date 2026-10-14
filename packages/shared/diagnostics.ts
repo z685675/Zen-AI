@@ -229,6 +229,35 @@ export function attributeDiagnostic(
       evidence: [JSON.stringify(startupFailure)]
     }
   }
+  const processExit = [...events]
+    .reverse()
+    .find(
+      (item) =>
+        item.stage === 'runtime' &&
+        item.event === 'process-exit' &&
+        item.details?.runtime === 'opencode' &&
+        item.details?.unexpected === true &&
+        item.details?.active === true
+    )
+  if (
+    processExit &&
+    !events
+      .slice(events.indexOf(processExit) + 1)
+      .some(
+        (item) =>
+          item.stage === 'runtime' &&
+          ['process-spawned', 'process-health', 'started', 'visible-output', 'complete'].includes(item.event)
+      )
+  ) {
+    return {
+      owner: 'zen-ai',
+      stage: 'runtime-process',
+      confidence: 'confirmed',
+      explanation:
+        'OpenCode 本地进程在任务进行期间意外退出；退出位置已确认，根因需结合标准错误、退出码和系统崩溃报告判断。',
+      evidence: [JSON.stringify(processExit)]
+    }
+  }
   if (apiFailure?.failureStage === 'downstream-delivery')
     return {
       owner: 'network-or-proxy',

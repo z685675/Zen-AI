@@ -2,14 +2,16 @@ import { Navbar, NavbarCenter, NavbarRight } from '@renderer/components/app/Navb
 import { HStack } from '@renderer/components/Layout'
 import NavbarIcon from '@renderer/components/NavbarIcon'
 import AgentSearchPopup from '@renderer/components/Popups/AgentSearchPopup'
+import { useAgentWorkspace } from '@renderer/context/AgentWorkspaceProvider'
 import { useShortcut } from '@renderer/hooks/useShortcuts'
 import { Tooltip } from 'antd'
 import { t } from 'i18next'
 import { Search } from 'lucide-react'
 
 const AgentNavbar = () => {
+  const workspace = useAgentWorkspace()
   useShortcut('search_message', () => {
-    void AgentSearchPopup.show()
+    void AgentSearchPopup.show(workspace)
   })
 
   return (
@@ -26,7 +28,7 @@ const AgentNavbar = () => {
         className="agent-navbar-right">
         <HStack alignItems="center" gap={6}>
           <Tooltip title={t('agent.session.search.placeholder')} mouseEnterDelay={0.8}>
-            <NavbarIcon className="max-[1000px]:hidden" onClick={() => AgentSearchPopup.show()}>
+            <NavbarIcon className="max-[1000px]:hidden" onClick={() => AgentSearchPopup.show(workspace)}>
               <Search size={18} />
             </NavbarIcon>
           </Tooltip>

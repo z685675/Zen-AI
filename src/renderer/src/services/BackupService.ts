@@ -9,6 +9,7 @@ import { uuid } from '@renderer/utils'
 import { APP_BACKUP_PREFIX, APP_PERSIST_KEY } from '@shared/config/constant'
 import dayjs from 'dayjs'
 
+import { runAssistantDataMutation } from './AssistantDataMutation'
 import { NotificationService } from './NotificationService'
 
 const logger = loggerService.withContext('BackupService')
@@ -93,55 +94,58 @@ export async function restore() {
   const file = await window.api.file.open({ filters: [{ name: '备份文件', extensions: ['bak', 'zip'] }] })
 
   if (file) {
-    try {
-      // zip backup file
-      if (file?.fileName.endsWith('.zip')) {
-        const restoreData = await window.api.backup.restore(file.filePath)
+    return runAssistantDataMutation('restore', async () => {
+      try {
+        // zip backup file
+        if (file?.fileName.endsWith('.zip')) {
+          const restoreData = await window.api.backup.restore(file.filePath)
 
-        // Direct backup format returns void (app needs to relaunch)
-        // Legacy format returns JSON string that needs to be processed
-        if (restoreData !== undefined && restoreData !== null) {
-          const data = JSON.parse(restoreData)
-          await handleData(data)
+          // Direct backup format returns void (app needs to relaunch)
+          // Legacy format returns JSON string that needs to be processed
+          if (restoreData !== undefined && restoreData !== null) {
+            const data = JSON.parse(restoreData)
+            await applyBackupData(data)
+          } else {
+            // Direct backup was restored, app will relaunch
+            void notificationService.send({
+              id: uuid(),
+              type: 'success',
+              title: i18n.t('common.success'),
+              message: i18n.t('message.restore.success'),
+              silent: false,
+              timestamp: Date.now(),
+              source: 'backup',
+              channel: 'system'
+            })
+            // App will relaunch automatically
+            return
+          }
         } else {
-          // Direct backup was restored, app will relaunch
-          void notificationService.send({
-            id: uuid(),
-            type: 'success',
-            title: i18n.t('common.success'),
-            message: i18n.t('message.restore.success'),
-            silent: false,
-            timestamp: Date.now(),
-            source: 'backup',
-            channel: 'system'
-          })
-          // App will relaunch automatically
-          return
+          // Legacy .bak format
+          const data = JSON.parse(await window.api.zip.decompress(file.content))
+          await applyBackupData(data)
         }
-      } else {
-        // Legacy .bak format
-        const data = JSON.parse(await window.api.zip.decompress(file.content))
-        await handleData(data)
-      }
 
-      void notificationService.send({
-        id: uuid(),
-        type: 'success',
-        title: i18n.t('common.success'),
-        message: i18n.t('message.restore.success'),
-        silent: false,
-        timestamp: Date.now(),
-        source: 'backup',
-        channel: 'system'
-      })
-    } catch (error) {
-      logger.error('restore: Error restoring backup file:', error as Error)
-      window.modal.error({
-        title: i18n.t('error.backup.file_format'),
-        content: (error as Error).message,
-        centered: true
-      })
-    }
+        void notificationService.send({
+          id: uuid(),
+          type: 'success',
+          title: i18n.t('common.success'),
+          message: i18n.t('message.restore.success'),
+          silent: false,
+          timestamp: Date.now(),
+          source: 'backup',
+          channel: 'system'
+        })
+      } catch (error) {
+        logger.error('restore: Error restoring backup file:', error as Error)
+        window.modal.error({
+          title: i18n.t('error.backup.file_format'),
+          content: (error as Error).message,
+          centered: true
+        })
+        throw error
+      }
+    })
   }
 }
 
@@ -159,11 +163,13 @@ export async function reset() {
         content: i18n.t('message.reset.double.confirm.content'),
         centered: true,
         onOk: async () => {
-          localStorage.clear()
-          await clearDatabase()
-          await window.api.resetData()
-          window.toast.success(i18n.t('message.reset.success'))
-          setTimeout(() => window.api.relaunchApp(), 1000)
+          await runAssistantDataMutation('reset', async () => {
+            await window.api.resetData()
+            await clearDatabase()
+            localStorage.clear()
+            window.toast.success(i18n.t('message.reset.success'))
+            await window.api.relaunchApp()
+          })
         }
       })
     }
@@ -337,6 +343,9 @@ export async function backupToWebdav({
 
 // 从 webdav 恢复
 export async function restoreFromWebdav(fileName?: string) {
+  return runAssistantDataMutation('restore', () => restoreFromWebdavProtected(fileName))
+}
+async function restoreFromWebdavProtected(fileName?: string) {
   const { webdavHost, webdavUser, webdavPass, webdavPath } = store.getState().settings
   let data = ''
 
@@ -348,7 +357,7 @@ export async function restoreFromWebdav(fileName?: string) {
       title: i18n.t('message.restore.failed'),
       content: error.message
     })
-    return
+    throw error
   }
 
   // Direct backup format (version 6+) returns undefined - app needs to relaunch
@@ -359,10 +368,11 @@ export async function restoreFromWebdav(fileName?: string) {
 
   // Legacy backup format (version <= 5) returns JSON string
   try {
-    await handleData(JSON.parse(data))
+    await applyBackupData(JSON.parse(data))
   } catch (error) {
     logger.error('[Backup] Error downloading file from WebDAV:', error as Error)
     window.toast.error(i18n.t('error.backup.file_format'))
+    throw error
   }
 }
 
@@ -500,6 +510,9 @@ export async function backupToS3({
 
 // 从 S3 恢复
 export async function restoreFromS3(fileName?: string) {
+  return runAssistantDataMutation('restore', () => restoreFromS3Protected(fileName))
+}
+async function restoreFromS3Protected(fileName?: string) {
   const s3Config = store.getState().settings.s3
 
   if (!fileName) {
@@ -523,7 +536,7 @@ export async function restoreFromS3(fileName?: string) {
 
     // Legacy backup format (version <= 5) returns JSON string
     const data = JSON.parse(restoreData)
-    await handleData(data)
+    await applyBackupData(data)
   }
 }
 
@@ -895,6 +908,9 @@ export async function getBackupData() {
 
 /************************************* Backup Utils ************************************** */
 export async function handleData(data: Record<string, any>) {
+  return runAssistantDataMutation('restore', () => applyBackupData(data))
+}
+async function applyBackupData(data: Record<string, any>) {
   if (data.version === 1) {
     await clearDatabase()
 
@@ -912,7 +928,7 @@ export async function handleData(data: Record<string, any>) {
       localStorage.setItem(`persist:${APP_PERSIST_KEY}`, persistedState)
     }
     window.toast.success(i18n.t('message.restore.success'))
-    setTimeout(() => window.api.relaunchApp(), 1000)
+    await window.api.relaunchApp()
     return
   }
 
@@ -943,11 +959,12 @@ export async function handleData(data: Record<string, any>) {
     }
 
     window.toast.success(i18n.t('message.restore.success'))
-    setTimeout(() => window.api.relaunchApp(), 1000)
+    await window.api.relaunchApp()
     return
   }
 
   window.toast.error(i18n.t('error.backup.file_format'))
+  throw new Error(i18n.t('error.backup.file_format'))
 }
 
 async function backupDatabase() {
@@ -1133,6 +1150,9 @@ export async function backupToLocal({
 }
 
 export async function restoreFromLocal(fileName: string) {
+  return runAssistantDataMutation('restore', () => restoreFromLocalProtected(fileName))
+}
+async function restoreFromLocalProtected(fileName: string) {
   try {
     const { localBackupDir: localBackupDirSetting } = store.getState().settings
     const localBackupDir = await window.api.resolvePath(localBackupDirSetting)
@@ -1146,7 +1166,7 @@ export async function restoreFromLocal(fileName: string) {
 
     // Legacy backup format (version <= 5) returns JSON string
     const data = JSON.parse(restoreData)
-    await handleData(data)
+    await applyBackupData(data)
 
     return true
   } catch (error) {

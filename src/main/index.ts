@@ -17,6 +17,8 @@ import process from 'node:process'
 
 import { registerIpc } from './ipc'
 import { agentService } from './services/agents'
+import { stopOpenCodeProcesses } from './services/agents/services/opencode/process'
+import { allowAssistantExit, hasAssistantTasks } from './services/AssistantExitGuard'
 import { schedulerService } from './services/agents/services/SchedulerService'
 import { bootstrapBuiltinAgents } from './services/agents/services/builtin/BuiltinAgentBootstrap'
 import { channelManager } from './services/agents/services/channels'
@@ -241,13 +243,13 @@ if (!app.requestSingleInstanceLock()) {
           await apiServerService.start({ ensureBuiltinAgents: false })
         }
 
-        // Restore CherryClaw schedulers after services are ready
+        // Pause legacy schedules/heartbeats. No automatic runs while integrations are retired.
         await schedulerService.restoreSchedulers()
 
         // Register IPC handlers for session stream before starting channels
         registerSessionStreamIpc()
 
-        // Start CherryClaw channel adapters (Telegram, etc.)
+        // Disconnect/disable legacy adapters, preserving settings, credentials and history.
         await channelManager.start()
       } catch (error: any) {
         logger.error('Failed to check/start API server:', error)
@@ -301,7 +303,23 @@ if (!app.requestSingleInstanceLock()) {
     optimizer.watchWindowShortcuts(window)
   })
 
-  app.on('before-quit', () => {
+  let assistantQuitPending = false
+  app.on('before-quit', (event) => {
+    if (!app.isQuitting && hasAssistantTasks()) {
+      event.preventDefault()
+      if (!assistantQuitPending) {
+        assistantQuitPending = true
+        void allowAssistantExit().then((confirmed) => {
+          assistantQuitPending = false
+          if (confirmed) {
+            app.isQuitting = true
+            app.quit()
+          }
+        })
+      }
+      return
+    }
+    stopOpenCodeProcesses()
     app.isQuitting = true
     app.isInstallingUpdate = app.isInstallingUpdate ?? false
 

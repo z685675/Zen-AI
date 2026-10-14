@@ -163,7 +163,7 @@ describe('agent model selection policy', () => {
     expect(isAssistantModelIdentifierAllowed('provider-id:gpt-5.4-mini', true, policy)).toBe(true)
   })
 
-  it('treats an empty developer allowlist as unrestricted except for blocked models', () => {
+  it('treats developer mode as unrestricted even when the legacy bypass flag is off', () => {
     const policy = createPolicy({ developerAllowlist: [] }, { developerModeBypassAllowlist: false })
     const unrestrictedModel = createApiModel({
       id: 'provider-id:claude-opus-4-6',
@@ -173,6 +173,55 @@ describe('agent model selection policy', () => {
 
     expect(isAssistantModelAllowed(unrestrictedModel, true, policy)).toBe(true)
   })
+
+  it('always bypasses remote selection restrictions in developer mode, including legacy rules', () => {
+    const policy = createPolicy(
+      { developerAllowlist: ['gpt-5.4-mini'], blockedModels: ['claude-opus-5'] },
+      { developerModeBypassAllowlist: false }
+    )
+    const model = createApiModel({
+      id: 'other-provider:claude-opus-5',
+      name: 'claude-opus-5',
+      provider: 'other-provider',
+      provider_model_id: 'claude-opus-5'
+    })
+
+    expect(isAssistantModelAllowed(model, true, policy)).toBe(true)
+    expect(isAssistantModelIdentifierAllowed(model.id, true, policy)).toBe(true)
+    expect(isAssistantModelAllowed(model, false, policy)).toBe(false)
+    expect(isAssistantModelIdentifierAllowed(model.id, false, policy)).toBe(false)
+    expect(isAssistantModelIdentifierAllowed('', true, policy)).toBe(false)
+    expect(resolveAssistantFallbackModel([model], model.id, policy, true)?.id).toBe(model.id)
+  })
+
+  it('does not apply the developer allowlist to ordinary users', () => {
+    const policy = createPolicy()
+    expect(isAssistantModelIdentifierAllowed('provider:gpt-5.4-mini', false, policy)).toBe(false)
+    expect(isAssistantModelIdentifierAllowed('provider:gpt-5.4-mini', true, policy)).toBe(true)
+  })
+
+  it.each([false, true])(
+    'uses the remote default before other fallbacks after delisting (developer=%s)',
+    (developerMode) => {
+      const policy = createPolicy(
+        {
+          nonDeveloperAllowlist: ['gpt-5.6-luna', 'gpt-5.4-mini'],
+          fallbackModels: ['gpt-5.4-mini']
+        },
+        { applyToNewSessions: false }
+      )
+      const remoteDefault = createApiModel()
+      const backup = createApiModel({
+        id: 'provider-id:gpt-5.4-mini',
+        name: 'gpt-5.4-mini',
+        provider_model_id: 'gpt-5.4-mini'
+      })
+
+      expect(
+        resolveAssistantFallbackModel([backup, remoteDefault], 'provider-id:removed-model', policy, developerMode)?.id
+      ).toBe(remoteDefault.id)
+    }
+  )
 
   it('resolves a fallback when an existing session model disappeared', () => {
     const policy = createPolicy({

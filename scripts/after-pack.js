@@ -4,6 +4,7 @@ const { execFileSync } = require('child_process')
 const { createRequire } = require('node:module')
 const { Arch } = require('electron-builder')
 const { AGENT_TARGETS, getPackagedAgentPaths, verifyPackagedAgentRuntimes } = require('./agent-runtime-packaging')
+const { copyOpenCodeRuntime, copyOpenCodeOfflineRuntime } = require('./opencode-runtime-packaging')
 
 function findCodexVendorSource(target, rootDir) {
   const packageName = `codex-${target.packageSuffix}`
@@ -156,6 +157,8 @@ function patchWindowsIcon(appOutDir) {
 exports.default = async function (context) {
   const platform = context.packager.platform.name
   copyAgentRuntimes(context)
+  copyOpenCodeRuntime(context)
+  copyOpenCodeOfflineRuntime(context)
   if (platform === 'windows') {
     fs.rmSync(path.join(context.appOutDir, 'LICENSE.electron.txt'), { force: true })
     fs.rmSync(path.join(context.appOutDir, 'LICENSES.chromium.html'), { force: true })

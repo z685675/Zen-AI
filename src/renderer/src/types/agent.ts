@@ -203,6 +203,7 @@ export const isAgentEntity = (value: unknown): value is AgentEntity => {
 }
 
 export interface ListOptions {
+  workspace?: 'legacy' | 'opencode'
   limit?: number
   offset?: number
   sortBy?: 'created_at' | 'updated_at' | 'name' | 'sort_order'
@@ -225,6 +226,8 @@ export const AgentSessionEntitySchema = AgentBaseSchema.extend({
 })
 
 export type AgentSessionEntity = z.infer<typeof AgentSessionEntitySchema>
+
+export type LegacyContinuationResponse = { session: GetAgentSessionResponse; reused: boolean }
 
 export const isAgentSessionEntity = (value: unknown): value is AgentSessionEntity => {
   return AgentSessionEntitySchema.safeParse(value).success

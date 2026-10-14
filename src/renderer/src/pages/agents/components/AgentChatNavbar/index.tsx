@@ -1,6 +1,7 @@
 import { NavbarHeader } from '@renderer/components/app/Navbar'
 import NavbarIcon from '@renderer/components/NavbarIcon'
 import AgentSearchPopup from '@renderer/components/Popups/AgentSearchPopup'
+import { useAgentWorkspace } from '@renderer/context/AgentWorkspaceProvider'
 import { useShortcut } from '@renderer/hooks/useShortcuts'
 import { useShowAssistants } from '@renderer/hooks/useStore'
 import type { AgentEntity } from '@renderer/types'
@@ -17,11 +18,12 @@ interface Props {
 }
 
 const AgentChatNavbar = ({ activeAgent, className }: Props) => {
+  const workspace = useAgentWorkspace()
   const { showAssistants, setShowAssistants } = useShowAssistants()
   const { t } = useTranslation()
 
   useShortcut('search_message', () => {
-    void AgentSearchPopup.show()
+    void AgentSearchPopup.show(workspace)
   })
 
   return (
@@ -35,6 +37,11 @@ const AgentChatNavbar = ({ activeAgent, className }: Props) => {
           </Tooltip>
         )}
         <AgentContent activeAgent={activeAgent} />
+        {workspace === 'opencode' && (
+          <Tooltip title={t('new_assistant.memory_notice')}>
+            <span className="mx-2 shrink-0 text-xs opacity-60">OpenCode</span>
+          </Tooltip>
+        )}
       </div>
     </NavbarHeader>
   )

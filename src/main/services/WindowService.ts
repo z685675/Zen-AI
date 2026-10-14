@@ -380,7 +380,7 @@ export class WindowService {
 
       // 如果已经触发退出，直接退出
       if (app.isQuitting) {
-        return app.quit()
+        return
       }
 
       // 托盘及关闭行为设置
@@ -392,6 +392,8 @@ export class WindowService {
         // 如果是Windows或Linux，直接退出
         // mac按照系统默认行为，不退出
         if (isWin || isLinux) {
+          // Keep the window alive if before-quit confirmation is cancelled.
+          event.preventDefault()
           return app.quit()
         }
       }
@@ -402,14 +404,14 @@ export class WindowService {
        * mac: 任何情况都会到这里，因此需要单独处理mac
        */
 
-      if (!mainWindow.isFullScreen()) {
-        event.preventDefault()
-      }
+      // Hiding (including from fullscreen) must not destroy the renderer that
+      // owns the live stream. A true quit is handled above / in before-quit.
+      event.preventDefault()
 
       mainWindow.hide()
 
       //for mac users, should hide dock icon if close to tray
-      if (isMac && isTrayOnClose) {
+      if (isMac && isShowTray && isTrayOnClose) {
         app.dock?.hide()
 
         mainWindow.once('show', () => {

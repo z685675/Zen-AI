@@ -42,7 +42,8 @@ import {
   recordContextResourceCount,
   recordContextRetrieval,
   recordContextRetry,
-  setContextProcessingStatus
+  setContextProcessingStatus,
+  updateContextTelemetry
 } from '@renderer/services/context/ContextTelemetryService'
 import { dbService } from '@renderer/services/db'
 import { DbService } from '@renderer/services/db/DbService'
@@ -103,6 +104,7 @@ import {
   normalizeAgentSessionTitle
 } from '@renderer/utils/agentSessionTitle'
 import { isAbortError } from '@renderer/utils/error'
+import { isReadOnlyLegacySession } from '@renderer/utils/legacyMessageActions'
 import { resolveAgentRetryModelSelection, resolveRetryModelSelection } from '@renderer/utils/messageRetryModel'
 import {
   createAssistantMessage,
@@ -119,6 +121,8 @@ import {
   toAgentEffort
 } from '@renderer/utils/reasoningEffort'
 import { createRequestLifecycle } from '@renderer/utils/requestLifecycle'
+import { assertAssistantExecutionAllowed, isAssistantExecutionAllowed } from '@shared/agents/assistantAvailability'
+import { DEFAULT_OPENCODE_AGENT_ID } from '@shared/config/agents'
 import { DIAGNOSTIC_OPERATION_HEADER } from '@shared/diagnostics'
 import { IpcChannel } from '@shared/IpcChannel'
 import { defaultAppHeaders } from '@shared/utils'
@@ -355,6 +359,7 @@ const isWechatBoundAgentSession = async (
         Authorization: `Bearer ${apiServer.apiKey}`
       }
     })
+    if (agentSession.agentId === DEFAULT_OPENCODE_AGENT_ID) return false
     const channels = await client.listChannels({ agent_id: agentSession.agentId, type: 'wechat' })
     return channels.data.some((channel) => {
       const sessionId = channel?.sessionId ?? channel?.session_id
@@ -495,10 +500,14 @@ const cleanupAgentMessageAttachments = async (
   if (!agentId || !sessionId || !apiServer?.enabled || !apiServer.apiKey) return
 
   try {
-    const client = new AgentApiClient({
-      baseURL: buildAgentBaseURL(apiServer),
-      headers: { Authorization: `Bearer ${apiServer.apiKey}` }
-    })
+    const client = new AgentApiClient(
+      {
+        baseURL: buildAgentBaseURL(apiServer),
+        headers: { Authorization: `Bearer ${apiServer.apiKey}` }
+      },
+      undefined,
+      agentId === DEFAULT_OPENCODE_AGENT_ID ? 'opencode' : 'legacy'
+    )
     const session = await client.getSession(agentId, sessionId)
     const workspace = session.accessible_paths?.[0]
     if (!workspace) return
@@ -542,10 +551,14 @@ const persistAgentSessionAttachments = async (
   }
 
   try {
-    const client = new AgentApiClient({
-      baseURL: buildAgentBaseURL(apiServer),
-      headers: { Authorization: `Bearer ${apiServer.apiKey}` }
-    })
+    const client = new AgentApiClient(
+      {
+        baseURL: buildAgentBaseURL(apiServer),
+        headers: { Authorization: `Bearer ${apiServer.apiKey}` }
+      },
+      undefined,
+      agentSession.agentId === DEFAULT_OPENCODE_AGENT_ID ? 'opencode' : 'legacy'
+    )
     const session = await client.getSession(agentSession.agentId, agentSession.sessionId)
     const workspace = session.accessible_paths?.[0]
     if (!workspace) {
@@ -789,9 +802,18 @@ const runAgentSessionResend = async (
   userMessageToResend: Message,
   assistant: Assistant
 ) => {
+  if (isReadOnlyLegacySession(topicId, assistant.id)) {
+    window.toast.info(t('assistant_transition.legacy_read_only'))
+    return
+  }
   let agentSession = findExistingAgentSessionContext(getState(), topicId, assistant.id)
   if (!agentSession) {
     throw new Error(`Agent session context not found for topic: ${topicId}`)
+  }
+  if (agentSession.agentId === DEFAULT_OPENCODE_AGENT_ID) {
+    await dispatch(changeOpenCodeHistoryThunk(topicId, userMessageToResend.id, 'retry'))
+    agentSession = findExistingAgentSessionContext(getState(), topicId, assistant.id) ?? agentSession
+    userMessageToResend = getState().messages.entities[userMessageToResend.id] ?? userMessageToResend
   }
 
   const state = getState()
@@ -943,12 +965,16 @@ const resolveAgentSessionEffortForResend = async (
   }
 
   try {
-    const client = new AgentApiClient({
-      baseURL: buildAgentBaseURL(apiServer),
-      headers: {
-        Authorization: `Bearer ${apiServer.apiKey}`
-      }
-    })
+    const client = new AgentApiClient(
+      {
+        baseURL: buildAgentBaseURL(apiServer),
+        headers: {
+          Authorization: `Bearer ${apiServer.apiKey}`
+        }
+      },
+      undefined,
+      agentSession.agentId === DEFAULT_OPENCODE_AGENT_ID ? 'opencode' : 'legacy'
+    )
     const session = await client.getSession(agentSession.agentId, agentSession.sessionId)
     const reasoningEffort = normalizeAgentReasoningEffort(session.configuration?.reasoning_effort)
     CacheService.set(cacheKey, reasoningEffort, AGENT_SESSION_REASONING_EFFORT_CACHE_TTL)
@@ -983,12 +1009,16 @@ export const renameAgentSessionIfNeeded = async (
     }
 
     const baseURL = buildAgentBaseURL(apiServer)
-    const client = new AgentApiClient({
-      baseURL,
-      headers: {
-        Authorization: `Bearer ${apiServer.apiKey}`
-      }
-    })
+    const client = new AgentApiClient(
+      {
+        baseURL,
+        headers: {
+          Authorization: `Bearer ${apiServer.apiKey}`
+        }
+      },
+      undefined,
+      agentSession.agentId === DEFAULT_OPENCODE_AGENT_ID ? 'opencode' : 'legacy'
+    )
 
     let session: GetAgentSessionResponse
     try {
@@ -1328,12 +1358,14 @@ const createAgentMessageStream = async (
   signal: AbortSignal,
   diagnosticId?: string
 ): Promise<ReadableStream<TextStreamPart<Record<string, any>>>> => {
+  assertAssistantExecutionAllowed(agentSession.agentId)
   if (!apiServer.enabled) {
     throw new Error('Agent API server is disabled')
   }
 
   const baseURL = buildAgentBaseURL(apiServer)
-  const url = `${baseURL}/v1/agents/${agentSession.agentId}/sessions/${agentSession.sessionId}/messages`
+  const workspacePrefix = agentSession.agentId === DEFAULT_OPENCODE_AGENT_ID ? 'new-assistant/' : ''
+  const url = `${baseURL}/v1/${workspacePrefix}agents/${agentSession.agentId}/sessions/${agentSession.sessionId}/messages`
   const normalizedContent = typeof content === 'string' ? content.trim() : String(content ?? '').trim()
 
   if (!normalizedContent) {
@@ -1755,7 +1787,36 @@ const fetchAndProcessAgentResponseImpl = async (
       if (typeof content !== 'object' || content === null) return
 
       const rawType = (content as { type?: string }).type
-      if (rawType === 'context_recovery') {
+      if (rawType === 'opencode_turn') {
+        const turn = content as { user_message_id: string; session_id: string }
+        for (const id of [userMessageId, assistantMessage.id]) {
+          const current = getState().messages.entities[id]
+          if (!current) continue
+          const providerMetadata = {
+            ...current.providerMetadata,
+            opencode: { user_message_id: turn.user_message_id, session_id: turn.session_id }
+          }
+          dispatch(newMessagesActions.updateMessage({ topicId, messageId: id, updates: { providerMetadata } }))
+          await saveUpdatesToDB(id, topicId, { providerMetadata }, [])
+        }
+      } else if (rawType === 'opencode_status') {
+        const status = (content as { status: string }).status
+        const labels: Record<string, string> = {
+          connecting: t('new_assistant.connecting'),
+          starting: t('new_assistant.starting'),
+          restoring: t('new_assistant.restoring'),
+          submitting: t('new_assistant.waiting_response'),
+          waiting_model: t('new_assistant.waiting_model'),
+          retrying: t('new_assistant.retrying'),
+          compacting: t('new_assistant.compacting'),
+          waiting_permission: t('new_assistant.waiting_permission')
+        }
+        updateContextTelemetry(topicId, {
+          status: status === 'idle' ? 'complete' : status === 'retrying' ? 'retrying' : 'analyzing',
+          detail: labels[status],
+          lastAction: `opencode-status:${assistantMessage.id}:${status}`
+        })
+      } else if (rawType === 'context_recovery') {
         recordContextRetry(topicId, 'agent-session-recovery')
         setContextProcessingStatus(topicId, 'retrying', '运行会话已失效，正在从本地上下文恢复')
       } else if (rawType === 'agent_stream_recovery') {
@@ -1823,7 +1884,7 @@ const fetchAndProcessAgentResponseImpl = async (
       }
 
       // Only mark as cleared if there was a previous session ID (not initial assignment)
-      sessionWasCleared = !!latestAgentSessionId
+      sessionWasCleared = agentSession.agentId !== DEFAULT_OPENCODE_AGENT_ID && !!latestAgentSessionId
 
       latestAgentSessionId = sessionId
       agentSession.agentSessionId = sessionId
@@ -1883,12 +1944,16 @@ const fetchAndProcessAgentResponseImpl = async (
         const apiServer = stateAfterUpdate.settings.apiServer
         if (apiServer?.apiKey) {
           const baseURL = buildAgentBaseURL(apiServer)
-          const client = new AgentApiClient({
-            baseURL,
-            headers: {
-              Authorization: `Bearer ${apiServer.apiKey}`
-            }
-          })
+          const client = new AgentApiClient(
+            {
+              baseURL,
+              headers: {
+                Authorization: `Bearer ${apiServer.apiKey}`
+              }
+            },
+            undefined,
+            agentSession.agentId === DEFAULT_OPENCODE_AGENT_ID ? 'opencode' : 'legacy'
+          )
           const paths = client.getSessionPaths(agentSession.agentId)
           await mutate(paths.withId(agentSession.sessionId))
           logger.info('Refreshed session data after sessionId update', {
@@ -2163,12 +2228,16 @@ const fetchAndProcessAssistantResponseImpl = async (
     if (activeAgentId && apiServer?.apiKey) {
       try {
         const baseURL = buildAgentBaseURL(apiServer)
-        const agentClient = new AgentApiClient({
-          baseURL,
-          headers: {
-            Authorization: `Bearer ${apiServer.apiKey}`
-          }
-        })
+        const agentClient = new AgentApiClient(
+          {
+            baseURL,
+            headers: {
+              Authorization: `Bearer ${apiServer.apiKey}`
+            }
+          },
+          undefined,
+          activeAgentId === DEFAULT_OPENCODE_AGENT_ID ? 'opencode' : 'legacy'
+        )
         const agentData = await agentClient.getAgent(activeAgentId)
         allowedTools = agentData?.allowed_tools
       } catch {
@@ -2254,6 +2323,13 @@ export const sendMessage =
 
       const stateBeforeSend = getState()
       let activeAgentSession = agentSession ?? findExistingAgentSessionContext(stateBeforeSend, topicId, assistant.id)
+      if (
+        isReadOnlyLegacySession(topicId, assistant.id) ||
+        (activeAgentSession && !isAssistantExecutionAllowed(activeAgentSession.agentId))
+      ) {
+        window.toast.info(t('assistant_transition.legacy_read_only'))
+        return
+      }
       if (activeAgentSession) {
         const derivedSession = findExistingAgentSessionContext(stateBeforeSend, topicId, assistant.id)
         if (derivedSession?.agentSessionId && derivedSession.agentSessionId !== activeAgentSession.agentSessionId) {
@@ -2403,12 +2479,69 @@ export const loadAgentSessionMessagesThunk =
 /**
  * Thunk to delete a single message and its associated blocks.
  */
+const nativeHistoryOperations = new Set<string>()
+
+export const changeOpenCodeHistoryThunk =
+  (topicId: string, messageId: string, action: 'retry' | 'delete' | 'fork') =>
+  async (dispatch: AppDispatch, getState: () => RootState) => {
+    if (nativeHistoryOperations.has(topicId) || getState().messages.loadingByTopic[topicId])
+      throw new Error(t('new_assistant.history.busy'))
+    const api = getState().settings.apiServer
+    const client = new AgentApiClient(
+      { baseURL: buildAgentBaseURL(api), headers: { Authorization: `Bearer ${api.apiKey}` } },
+      undefined,
+      'opencode'
+    )
+    nativeHistoryOperations.add(topicId)
+    dispatch(newMessagesActions.setTopicLoading({ topicId, loading: true }))
+    try {
+      const previousMessages = selectMessagesForTopic(getState(), topicId)
+      const session = await client.changeNativeHistory(
+        DEFAULT_OPENCODE_AGENT_ID,
+        extractAgentSessionIdFromTopicId(topicId),
+        messageId,
+        action
+      )
+      // Reload explicitly so read failures are reported and background history
+      // changes do not change the currently selected conversation.
+      const updatedTopicId = buildAgentSessionTopicId(session.id)
+      const { messages, blocks } = await dbService.fetchMessages(updatedTopicId, true)
+      if (blocks.length) dispatch(upsertManyBlocks(blocks))
+      dispatch(newMessagesActions.messagesReceived({ topicId: updatedTopicId, messages }))
+      dispatch(newMessagesActions.setTopicFulfilled({ topicId: updatedTopicId, fulfilled: true }))
+      if (action !== 'fork') {
+        const keptIds = new Set(selectMessagesForTopic(getState(), topicId).map((message) => message.id))
+        const removedIds = previousMessages.filter((message) => !keptIds.has(message.id)).map((message) => message.id)
+        cleanupMultipleBlocks(
+          dispatch,
+          previousMessages.filter((message) => removedIds.includes(message.id)).flatMap((message) => message.blocks)
+        )
+        clearContextCheckpoint(topicId)
+        clearContextTelemetry(topicId)
+        await deleteContextResourcesForMessages(topicId, removedIds).catch((error) =>
+          logger.warn('Could not clean removed native-history resources', error as Error)
+        )
+      }
+      return session
+    } catch (error) {
+      window.toast.error(t('new_assistant.history.failed'))
+      throw error
+    } finally {
+      nativeHistoryOperations.delete(topicId)
+      dispatch(newMessagesActions.setTopicLoading({ topicId, loading: false }))
+    }
+  }
+
 export const deleteSingleMessageThunk =
   (topicId: string, messageId: string) => async (dispatch: AppDispatch, getState: () => RootState) => {
     const currentState = getState()
     const messageToDelete = currentState.messages.entities[messageId]
     if (!messageToDelete || messageToDelete.topicId !== topicId) {
       logger.error(`[deleteSingleMessage] Message ${messageId} not found in topic ${topicId}.`)
+      return
+    }
+    if (isAgentSessionTopicId(topicId) && messageToDelete.assistantId === DEFAULT_OPENCODE_AGENT_ID) {
+      await dispatch(changeOpenCodeHistoryThunk(topicId, messageId, 'delete'))
       return
     }
 
@@ -2453,6 +2586,10 @@ export const deleteMessageGroupThunk =
       logger.warn(`[deleteMessageGroup] No messages found with askId ${askId} in topic ${topicId}.`)
       return
     }
+    if (isAgentSessionTopicId(topicId) && messagesToDelete.some((m) => m.assistantId === DEFAULT_OPENCODE_AGENT_ID)) {
+      window.toast.info(t('new_assistant.memory_notice'))
+      return
+    }
 
     const blockIdsToDelete = messagesToDelete.flatMap((m) => m.blocks || [])
     const messageIdsToDelete = messagesToDelete.map((m) => m.id)
@@ -2474,10 +2611,25 @@ export const deleteMessageGroupThunk =
  * Thunk to clear all messages and associated blocks for a topic.
  */
 export const clearTopicMessagesThunk =
-  (topicId: string) => async (dispatch: AppDispatch, getState: () => RootState) => {
+  (topicId: string, ownerAgentId?: string) => async (dispatch: AppDispatch, getState: () => RootState) => {
     try {
       const state = getState()
       const messageIdsToClear = state.messages.messageIdsByTopic[topicId] || []
+      const topicOwner =
+        messageIdsToClear.map((id) => state.messages.entities[id]).find((message) => message?.topicId === topicId)
+          ?.assistantId ?? ownerAgentId
+      if (isAgentSessionTopicId(topicId) && topicOwner === DEFAULT_OPENCODE_AGENT_ID) {
+        const apiServer = state.settings.apiServer
+        const sessionId = extractAgentSessionIdFromTopicId(topicId)
+        if (!sessionId || !apiServer?.enabled || !apiServer.apiKey)
+          throw new Error('Assistant API server is unavailable')
+        const client = new AgentApiClient(
+          { baseURL: buildAgentBaseURL(apiServer), headers: { Authorization: `Bearer ${apiServer.apiKey}` } },
+          undefined,
+          'opencode'
+        )
+        await client.resetNativeMemory(DEFAULT_OPENCODE_AGENT_ID, sessionId)
+      }
       const blockIdsToDeleteSet = new Set<string>()
 
       messageIdsToClear.forEach((messageId) => {
@@ -2495,8 +2647,11 @@ export const clearTopicMessagesThunk =
       clearContextUserMemory(topicId)
       await deleteContextResources(topicId)
       clearContextTelemetry(topicId)
+      return true
     } catch (error) {
       logger.error(`[clearTopicMessagesThunk] Failed to clear messages for topic ${topicId}:`, error as Error)
+      window.toast.error(t('new_assistant.clear_failed'))
+      return false
     }
   }
 
@@ -2877,6 +3032,10 @@ export const appendAssistantResponseThunk =
     traceId?: string
   ) =>
   async (dispatch: AppDispatch, getState: () => RootState) => {
+    if (isReadOnlyLegacySession(topicId, assistant.id)) {
+      window.toast.info(t('assistant_transition.legacy_read_only'))
+      return
+    }
     try {
       const state = getState()
 

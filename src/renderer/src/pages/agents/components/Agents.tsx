@@ -1,12 +1,8 @@
-import AddButton from '@renderer/components/AddButton'
 import DraggableVirtualList from '@renderer/components/DraggableList/virtual-list'
-import AgentModalPopup from '@renderer/components/Popups/agent/AgentModal'
+import { useAgentWorkspace } from '@renderer/context/AgentWorkspaceProvider'
 import { useActiveAgent } from '@renderer/hooks/agents/useActiveAgent'
 import { useAgents } from '@renderer/hooks/agents/useAgents'
-import { useApiServer } from '@renderer/hooks/useApiServer'
 import { useRuntime } from '@renderer/hooks/useRuntime'
-import { useEnableDeveloperMode } from '@renderer/hooks/useSettings'
-import type { AgentEntity } from '@renderer/types'
 import { DEFAULT_FUSION_AGENT_ID } from '@shared/config/agents'
 import { memo, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -19,12 +15,11 @@ interface AgentsProps {
 
 const Agents = ({ onSelectItem }: AgentsProps) => {
   const { t } = useTranslation()
+  const workspace = useAgentWorkspace()
   const { agents, deleteAgent, isLoading, error, reorderAgents } = useAgents()
-  const { apiServerRunning, startApiServer } = useApiServer()
   const { chat } = useRuntime()
   const { activeAgentId } = chat
   const { setActiveAgentId } = useActiveAgent()
-  const { enableDeveloperMode } = useEnableDeveloperMode()
 
   const handleAgentPress = useCallback(
     (agentId: string) => {
@@ -34,15 +29,6 @@ const Agents = ({ onSelectItem }: AgentsProps) => {
     [setActiveAgentId, onSelectItem]
   )
 
-  const handleAddAgent = useCallback(() => {
-    void (!apiServerRunning && startApiServer())
-    void AgentModalPopup.show({
-      afterSubmit: (agent: AgentEntity) => {
-        void setActiveAgentId(agent.id)
-      }
-    })
-  }, [apiServerRunning, startApiServer, setActiveAgentId])
-
   if (isLoading) {
     return <div className="p-5 text-center text-(--color-text-secondary) text-[13px]">{t('common.loading')}</div>
   }
@@ -51,10 +37,13 @@ const Agents = ({ onSelectItem }: AgentsProps) => {
     return <div className="p-5 text-center text-(--color-error) text-[13px]">{error.message}</div>
   }
 
-  const hasNonOfficialAgent = agents?.some((agent) => agent.id !== DEFAULT_FUSION_AGENT_ID) ?? false
+  const hasNonOfficialAgent =
+    workspace !== 'opencode' && (agents?.some((agent) => agent.id !== DEFAULT_FUSION_AGENT_ID) ?? false)
   const sidebarTitle = (
     <span className="min-w-0">
-      <span>{t('agent.sidebar_title')}</span>
+      <span style={workspace === 'opencode' ? undefined : { color: 'var(--color-deprecated-assistant)' }}>
+        {t(workspace === 'opencode' ? 'new_assistant.title' : 'agent.sidebar_title')}
+      </span>
       {hasNonOfficialAgent && (
         <span className="ml-1 font-normal text-(--color-text-secondary)">（建议删除其他非官方助手）</span>
       )}
@@ -73,11 +62,7 @@ const Agents = ({ onSelectItem }: AgentsProps) => {
         itemKey={(index) => (agents ?? [])[index]?.id ?? index}
         header={
           <div className="-mt-0.5 mb-1.5">
-            {enableDeveloperMode ? (
-              <AddButton onClick={handleAddAgent}>{sidebarTitle}</AddButton>
-            ) : (
-              <div className="px-2 py-1 font-medium text-(--color-text) text-xs">{sidebarTitle}</div>
-            )}
+            <div className="px-2 py-1 font-medium text-(--color-text) text-xs">{sidebarTitle}</div>
           </div>
         }>
         {(agent) => (

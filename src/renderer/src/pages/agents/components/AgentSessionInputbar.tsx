@@ -2,11 +2,11 @@ import { loggerService } from '@logger'
 import { getAnthropicReasoningParams } from '@renderer/aiCore/utils/reasoning'
 import type { QuickPanelTriggerInfo } from '@renderer/components/QuickPanel'
 import { QuickPanelReservedSymbol, useQuickPanel } from '@renderer/components/QuickPanel'
+import { isAssistantModelAllowed } from '@renderer/config/agentModelPolicy'
 import { isGenerateImageModel, isVisionModel } from '@renderer/config/models'
 import { useSession } from '@renderer/hooks/agents/useSession'
 import { useInputText } from '@renderer/hooks/useInputText'
 import { selectNewTopicLoading } from '@renderer/hooks/useMessageOperations'
-import { getModel } from '@renderer/hooks/useModel'
 import { useSettings } from '@renderer/hooks/useSettings'
 import { useTextareaResize } from '@renderer/hooks/useTextareaResize'
 import { useTimer } from '@renderer/hooks/useTimer'
@@ -58,12 +58,15 @@ import {
   normalizeAgentReasoningEffort,
   toAgentEffort
 } from '@renderer/utils/reasoningEffort'
+import { isAssistantExecutionAllowed } from '@shared/agents/assistantAvailability'
 import { documentExts, imageExts, textExts } from '@shared/config/constant'
 import type { FC } from 'react'
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import styled from 'styled-components'
 import { v4 as uuid } from 'uuid'
+
+import LegacyAssistantInputbar from './LegacyAssistantInputbar'
 
 const logger = loggerService.withContext('AgentSessionInputbar')
 
@@ -76,7 +79,13 @@ type Props = {
 }
 
 const AgentSessionInputbar = ({ agentId, sessionId, variant = 'default' }: Props) => {
+  if (!isAssistantExecutionAllowed(agentId)) return <LegacyAssistantInputbar />
+  return <ActiveAgentSessionInputbar agentId={agentId} sessionId={sessionId} variant={variant} />
+}
+
+const ActiveAgentSessionInputbar = ({ agentId, sessionId, variant = 'default' }: Props) => {
   const { session, updateSession } = useSession(agentId, sessionId)
+  const providers = useAppSelector((state) => state.llm.providers)
   // FIXME: 不应该使用ref将action传到context提供给tool，权宜之计
   const actionsRef = useRef({
     resizeTextArea: () => {},
@@ -90,8 +99,11 @@ const AgentSessionInputbar = ({ agentId, sessionId, variant = 'default' }: Props
     if (!session) return null
 
     // Extract model info
-    const [providerId, actualModelId] = session.model?.split(':') ?? [undefined, undefined]
-    const actualModel = actualModelId ? getModel(actualModelId, providerId) : undefined
+    const separatorIndex = session.model?.indexOf(':') ?? -1
+    const providerId = separatorIndex > 0 ? session.model.slice(0, separatorIndex) : undefined
+    const actualModelId = separatorIndex > 0 ? session.model.slice(separatorIndex + 1) : undefined
+    const provider = providers.find((candidate) => candidate.enabled && candidate.id === providerId)
+    const actualModel = provider?.models.find((candidate) => candidate.id === actualModelId)
 
     return {
       id: session.agent_id ?? agentId,
@@ -104,7 +116,7 @@ const AgentSessionInputbar = ({ agentId, sessionId, variant = 'default' }: Props
       tags: [],
       enableWebSearch: false
     } satisfies Assistant
-  }, [session, agentId])
+  }, [session, agentId, providers])
 
   // Prepare session data for tools
   const sessionData = useMemo(() => {
@@ -273,6 +285,8 @@ const AgentSessionInputbarInner: FC<InnerProps> = ({
   const sessionTopicId = buildAgentSessionTopicId(sessionId)
   const topicMessages = useAppSelector((state) => selectMessagesForTopic(state, sessionTopicId))
   const loading = useAppSelector((state) => selectNewTopicLoading(state, sessionTopicId))
+  const modelPolicy = useAppSelector((state) => state.llm.modelPolicy?.policy)
+  const enableDeveloperMode = useAppSelector((state) => state.settings.enableDeveloperMode)
 
   // Calculate vision and image generation support
   const isVisionAssistant = useMemo(() => (assistant.model ? isVisionModel(assistant.model) : false), [assistant.model])
@@ -459,12 +473,7 @@ const AgentSessionInputbarInner: FC<InnerProps> = ({
       abortCompletion(askId)
     }
 
-    window.toast.info(
-      t(
-        'agent.session.abort_notice',
-        '当前任务已中断，不会在后台继续执行。已完成的结果会保留，你可以点击重新生成或继续追问来补全剩余部分。'
-      )
-    )
+    window.toast.info(t('new_assistant.stopped'))
     void pauseTrace(sessionTopicId)
     dispatch(newMessagesActions.setTopicLoading({ topicId: sessionTopicId, loading: false }))
   }, [dispatch, sessionTopicId, streamingAskIds, t])
@@ -477,7 +486,18 @@ const AgentSessionInputbarInner: FC<InnerProps> = ({
     // The session repair runs asynchronously after the current Provider model
     // list is loaded. Keep a final guard here so a stale or empty model can
     // never be submitted while that repair is still in progress.
-    if (!assistant.model) {
+    if (
+      !assistant.model ||
+      !isAssistantModelAllowed(
+        {
+          id: `${assistant.model.provider}:${assistant.model.id}`,
+          provider_model_id: assistant.model.id,
+          name: assistant.model.name
+        },
+        enableDeveloperMode,
+        modelPolicy
+      )
+    ) {
       window.toast.warning(
         t('agent.modelPolicy.noFallback', '当前会话没有可用模型，请先配置模型或等待系统完成模型切换。')
       )
@@ -599,6 +619,8 @@ const AgentSessionInputbarInner: FC<InnerProps> = ({
     agentId,
     dispatch,
     assistant,
+    enableDeveloperMode,
+    modelPolicy,
     sessionId,
     sessionTopicId,
     setText,

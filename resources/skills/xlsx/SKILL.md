@@ -15,6 +15,7 @@ Work with spreadsheets as real structured data, not prose.
 - Use `rows` for tabular output instead of embedding tables in prose.
 - For multiple sheets, formulas, filters, frozen panes, conditional formatting, or charts, pass the tool's structured `workbook` object. Do not flatten an advanced workbook into one `rows` table.
 - For formulas or analysis, explain assumptions and include check totals when useful.
+- Every formula cell must include an explicitly calculated `result`; zero, false and an empty string are valid results, but a missing result must never be replaced with zero. For numeric/date formatting, read the workbook patterns below.
 - Build formula references from the actual output row and column coordinates. Before generation, verify that copied formulas did not shift criteria headers or data rows by one position.
 - Keep display labels separate from formula criteria. A series label such as `朝阳店收入` must not be used as a `SUMIF`/`SUMIFS` criterion when the source key is `朝阳店`.
 - Never create direct or indirect circular references. A formula must not reference its own cell, a range containing its own cell, or a dependency chain that returns to it.

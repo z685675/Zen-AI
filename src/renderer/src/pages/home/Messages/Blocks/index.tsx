@@ -1,5 +1,6 @@
 import { loggerService } from '@logger'
 import { ErrorBoundary } from '@renderer/components/ErrorBoundary'
+import { useAgentWorkspace } from '@renderer/context/AgentWorkspaceProvider'
 import type { RootState } from '@renderer/store'
 import { messageBlocksSelectors } from '@renderer/store/messageBlock'
 import type { ImageMessageBlock, Message, MessageBlock } from '@renderer/types/newMessage'
@@ -114,6 +115,7 @@ const groupSimilarBlocks = (blocks: MessageBlock[]): (MessageBlock[] | MessageBl
 }
 
 const MessageBlockRenderer: React.FC<Props> = ({ blocks, message, isStreaming }) => {
+  const nativeProgress = useAgentWorkspace() === 'opencode'
   // 始终调用useSelector，避免条件调用Hook
   const renderedBlocks = useSelector(
     (state: RootState) =>
@@ -255,7 +257,7 @@ const MessageBlockRenderer: React.FC<Props> = ({ blocks, message, isStreaming })
           </AnimatedBlockWrapper>
         )
       })}
-      {isProcessing && (
+      {isProcessing && !nativeProgress && (
         <AnimatedBlockWrapper key="message-loading-placeholder" enableAnimation={true}>
           <PlaceholderBlock
             block={{

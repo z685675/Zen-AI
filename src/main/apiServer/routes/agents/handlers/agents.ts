@@ -269,7 +269,13 @@ export const listAgents = async (req: Request, res: Response): Promise<Response>
 
     logger.debug('Listing agents', { limit, offset, sortBy, orderBy })
 
-    const result = await agentService.listAgents({ limit, offset, sortBy, orderBy })
+    const result = await agentService.listAgents({
+      limit,
+      offset,
+      sortBy,
+      orderBy,
+      workspace: res.locals.agentWorkspace ?? 'legacy'
+    })
 
     logger.info('Agents listed', {
       returned: result.agents.length,

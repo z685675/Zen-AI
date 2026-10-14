@@ -39,6 +39,8 @@ import { type FC, memo, useCallback, useEffect, useMemo, useRef, useState } from
 import { useTranslation } from 'react-i18next'
 import styled from 'styled-components'
 
+import SkillCompatibility from './SkillCompatibility'
+
 const { Dragger } = Upload
 
 const TITLE_STYLE = { fontWeight: 500 } as const
@@ -687,6 +689,7 @@ const SkillsSettings: FC<SkillsSettingsProps> = ({ embedded = false }) => {
             <TopBarRight ref={searchContainerRef}>
               {selectedSkill ? (
                 <DetailMeta>
+                  <SkillCompatibility skill={selectedSkill} />
                   {selectedSkill.author ? <Tag color="blue">{selectedSkill.author}</Tag> : null}
                   <Tag>{selectedSkill.source === 'builtin' ? t('settings.skills.builtin') : selectedSkill.source}</Tag>
                   {selectedSkill.source !== 'builtin' ? (

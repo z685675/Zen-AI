@@ -142,6 +142,26 @@ describe('observed transport', () => {
 })
 
 describe('evidence-based attribution', () => {
+  it('attributes an observed unexpected active OpenCode exit but not a requested, idle or recovered exit', () => {
+    const r = new DiagnosticRecorder()
+    r.record('op', 'runtime', 'process-exit', { runtime: 'opencode', unexpected: true, active: true, code: 7 })
+    expect(attributeDiagnostic(r.get('op')!.events)).toMatchObject({
+      owner: 'zen-ai',
+      stage: 'runtime-process',
+      confidence: 'confirmed'
+    })
+    r.record('op', 'runtime', 'process-health', { runtime: 'opencode', healthy: true })
+    expect(attributeDiagnostic(r.get('op')!.events).owner).toBe('undetermined')
+    for (const details of [
+      { unexpected: false, active: true, stopReason: 'user-cancelled' },
+      { unexpected: true, active: false },
+      { unexpected: false, active: false, stopReason: 'idle-timeout' }
+    ]) {
+      const normal = new DiagnosticRecorder()
+      normal.record('op', 'runtime', 'process-exit', { runtime: 'opencode', ...details })
+      expect(attributeDiagnostic(normal.get('op')!.events).owner).toBe('undetermined')
+    }
+  })
   const recorder = () => new DiagnosticRecorder()
   it('confirms local preparation, startup, rendering and persistence errors', () => {
     for (const stage of ['preparation', 'ui', 'storage'] as const) {

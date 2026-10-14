@@ -2,11 +2,12 @@ import { CloseOutlined } from '@ant-design/icons'
 import type { DraggableProvided, DroppableProvided, DropResult } from '@hello-pangea/dnd'
 import { DragDropContext, Draggable, Droppable } from '@hello-pangea/dnd'
 import { OpenClawSidebarIcon } from '@renderer/components/Icons/SVGIcon'
-import { getAvailableSidebarIcons } from '@renderer/config/sidebar'
+import { ALL_SIDEBAR_ICONS, getAvailableSidebarIcons } from '@renderer/config/sidebar'
 import { getSidebarIconLabel } from '@renderer/i18n/label'
 import { useAppDispatch } from '@renderer/store'
 import { setSidebarIcons } from '@renderer/store/settings'
 import type { SidebarIcon } from '@renderer/types'
+import { DEFAULT_OPENCODE_AGENT_AVATAR } from '@shared/config/agents'
 import { message } from 'antd'
 import {
   Code,
@@ -33,15 +34,33 @@ interface SidebarIconsManagerProps {
 }
 
 const SidebarIconsManager: FC<SidebarIconsManagerProps> = ({
-  visibleIcons,
-  disabledIcons,
+  visibleIcons: storedVisibleIcons,
+  disabledIcons: storedDisabledIcons,
   setVisibleIcons,
   setDisabledIcons
 }) => {
   const { t } = useTranslation()
 
   const dispatch = useAppDispatch()
-  const availableDisabledIcons = getAvailableSidebarIcons(disabledIcons)
+  // Display and drag indices must use the same layout. Hidden entries must not
+  // go through the visible-layout helper, which automatically adds the new assistant.
+  const disabledIcons = useMemo(
+    () => [...new Set(storedDisabledIcons)].filter((icon) => icon !== 'assistants' && ALL_SIDEBAR_ICONS.includes(icon)),
+    [storedDisabledIcons]
+  )
+  const visibleIcons = useMemo(
+    () => getAvailableSidebarIcons(storedVisibleIcons, disabledIcons),
+    [storedVisibleIcons, disabledIcons]
+  )
+  const saveIcons = useCallback(
+    (visible: SidebarIcon[], disabled: SidebarIcon[]) => {
+      const orderedVisible = getAvailableSidebarIcons(visible, disabled)
+      setVisibleIcons(orderedVisible)
+      setDisabledIcons(disabled)
+      dispatch(setSidebarIcons({ visible: orderedVisible, disabled }))
+    },
+    [dispatch, setVisibleIcons, setDisabledIcons]
+  )
 
   const onDragEnd = useCallback(
     (result: DropResult) => {
@@ -51,6 +70,7 @@ const SidebarIconsManager: FC<SidebarIconsManagerProps> = ({
 
       // 如果是chat图标且目标是disabled区域,则不允许移动并提示
       const draggedItem = source.droppableId === 'visible' ? visibleIcons[source.index] : disabledIcons[source.index]
+      if (!draggedItem) return
       if (draggedItem === 'assistants' && destination.droppableId === 'disabled') {
         message.warning(t('settings.display.sidebar.chat.hiddenMessage'))
         return
@@ -62,11 +82,9 @@ const SidebarIconsManager: FC<SidebarIconsManagerProps> = ({
         list.splice(destination.index, 0, removed)
 
         if (source.droppableId === 'visible') {
-          setVisibleIcons(list)
-          dispatch(setSidebarIcons({ visible: list, disabled: disabledIcons }))
+          saveIcons(list, disabledIcons)
         } else {
-          setDisabledIcons(list)
-          dispatch(setSidebarIcons({ visible: visibleIcons, disabled: list }))
+          saveIcons(visibleIcons, list)
         }
         return
       }
@@ -81,11 +99,9 @@ const SidebarIconsManager: FC<SidebarIconsManagerProps> = ({
       const newVisibleIcons = destination.droppableId === 'visible' ? targetList : sourceList
       const newDisabledIcons = destination.droppableId === 'disabled' ? targetList : sourceList
 
-      setVisibleIcons(newVisibleIcons)
-      setDisabledIcons(newDisabledIcons)
-      dispatch(setSidebarIcons({ visible: newVisibleIcons, disabled: newDisabledIcons }))
+      saveIcons(newVisibleIcons, newDisabledIcons)
     },
-    [visibleIcons, disabledIcons, dispatch, setVisibleIcons, setDisabledIcons, t]
+    [visibleIcons, disabledIcons, saveIcons, t]
   )
 
   const onMoveIcon = useCallback(
@@ -100,19 +116,15 @@ const SidebarIconsManager: FC<SidebarIconsManagerProps> = ({
         const newVisibleIcons = visibleIcons.filter((i) => i !== icon)
         const newDisabledIcons = disabledIcons.some((i) => i === icon) ? disabledIcons : [...disabledIcons, icon]
 
-        setVisibleIcons(newVisibleIcons)
-        setDisabledIcons(newDisabledIcons)
-        dispatch(setSidebarIcons({ visible: newVisibleIcons, disabled: newDisabledIcons }))
+        saveIcons(newVisibleIcons, newDisabledIcons)
       } else {
         const newDisabledIcons = disabledIcons.filter((i) => i !== icon)
         const newVisibleIcons = visibleIcons.some((i) => i === icon) ? visibleIcons : [...visibleIcons, icon]
 
-        setDisabledIcons(newDisabledIcons)
-        setVisibleIcons(newVisibleIcons)
-        dispatch(setSidebarIcons({ visible: newVisibleIcons, disabled: newDisabledIcons }))
+        saveIcons(newVisibleIcons, newDisabledIcons)
       }
     },
-    [t, visibleIcons, disabledIcons, setVisibleIcons, setDisabledIcons, dispatch]
+    [t, visibleIcons, disabledIcons, saveIcons]
   )
 
   // 使用useMemo缓存图标映射
@@ -123,6 +135,11 @@ const SidebarIconsManager: FC<SidebarIconsManagerProps> = ({
         agents: <MousePointerClick size={16} />,
         store: <Sparkle size={16} />,
         paintings: <Palette size={16} />,
+        new_assistant: (
+          <span aria-hidden="true" className="text-base leading-none">
+            {DEFAULT_OPENCODE_AGENT_AVATAR}
+          </span>
+        ),
         translate: <Languages size={16} />,
         minapp: <LayoutGrid size={16} />,
         knowledge: <FileSearch size={16} />,
@@ -144,11 +161,11 @@ const SidebarIconsManager: FC<SidebarIconsManagerProps> = ({
           <Droppable droppableId="visible">
             {(provided: DroppableProvided) => (
               <IconList ref={provided.innerRef} {...provided.droppableProps}>
-                {getAvailableSidebarIcons(visibleIcons, disabledIcons).map((icon, index) => (
+                {visibleIcons.map((icon, index) => (
                   <Draggable key={icon} draggableId={icon} index={index}>
                     {(provided: DraggableProvided) => (
                       <IconItem ref={provided.innerRef} {...provided.draggableProps} {...provided.dragHandleProps}>
-                        <IconContent>
+                        <IconContent $deprecated={icon === 'agents'}>
                           {renderIcon(icon)}
                           <span>{getSidebarIconLabel(icon)}</span>
                         </IconContent>
@@ -171,14 +188,14 @@ const SidebarIconsManager: FC<SidebarIconsManagerProps> = ({
           <Droppable droppableId="disabled">
             {(provided: DroppableProvided) => (
               <IconList ref={provided.innerRef} {...provided.droppableProps}>
-                {availableDisabledIcons.length === 0 ? (
+                {disabledIcons.length === 0 ? (
                   <EmptyPlaceholder>{t('settings.display.sidebar.empty')}</EmptyPlaceholder>
                 ) : (
-                  availableDisabledIcons.map((icon, index) => (
+                  disabledIcons.map((icon, index) => (
                     <Draggable key={icon} draggableId={icon} index={index}>
                       {(provided: DraggableProvided) => (
                         <IconItem ref={provided.innerRef} {...provided.draggableProps} {...provided.dragHandleProps}>
-                          <IconContent>
+                          <IconContent $deprecated={icon === 'agents'}>
                             {renderIcon(icon)}
                             <span>{getSidebarIconLabel(icon)}</span>
                           </IconContent>
@@ -242,7 +259,7 @@ const IconItem = styled.div`
   cursor: move;
 `
 
-const IconContent = styled.div`
+const IconContent = styled.div<{ $deprecated?: boolean }>`
   display: flex;
   align-items: center;
   gap: 10px;
@@ -253,7 +270,7 @@ const IconContent = styled.div`
   }
 
   span {
-    color: var(--color-text);
+    color: ${({ $deprecated }) => ($deprecated ? 'var(--color-deprecated-assistant)' : 'var(--color-text)')};
   }
 `
 
