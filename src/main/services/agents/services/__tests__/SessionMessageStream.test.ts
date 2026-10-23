@@ -27,6 +27,10 @@ vi.mock('@main/services/ConfigManager', () => ({
 }))
 
 const { recordMainDiagnosticMock } = vi.hoisted(() => ({ recordMainDiagnosticMock: vi.fn() }))
+const { persistExchangeMock } = vi.hoisted(() => ({ persistExchangeMock: vi.fn(async (payload: unknown) => payload) }))
+vi.mock('../../database/sessionMessageRepository', () => ({
+  agentMessageRepository: { persistExchange: persistExchangeMock }
+}))
 vi.mock('@main/services/DiagnosticEvidenceService', () => ({
   beginMainDiagnostic: vi.fn(),
   recordMainDiagnostic: recordMainDiagnosticMock
@@ -51,6 +55,11 @@ vi.mock('../channels/ChannelManager', () => ({
 
 vi.mock('../ChannelService', () => ({
   channelService: {}
+}))
+
+vi.mock('../managedModelRecovery', () => ({
+  getManagedRecoveryInventory: async () => ({ models: [], providers: [] }),
+  resolveManagedSessionModel: (_slot: string, current: string) => ({ managed: false, selected: current })
 }))
 
 import { SessionMessageService } from '../SessionMessageService'
@@ -88,6 +97,54 @@ async function collect(stream: ReadableStream<unknown>) {
 }
 
 describe('SessionMessageService runtime stream lifecycle', () => {
+  it('persists stable headless identities, native token details, final text and failed tool state', async () => {
+    const service = new SessionMessageService()
+    await (service as any).persistHeadlessExchange(
+      session(),
+      'question',
+      'answer',
+      'native-session',
+      undefined,
+      'run-123',
+      {
+        finalText: 'final answer',
+        usage: { inputTokens: 130000, outputTokens: 200, inputTokenDetails: { cacheReadTokens: 120000 } },
+        tools: [
+          { id: 'tool-1', toolName: 'create_file', failed: true, output: { status: 'created', path: 'bad.docx' } }
+        ]
+      },
+      'paused',
+      [
+        {
+          id: 'owned-copy',
+          name: 'copy.txt',
+          origin_name: 'copy.txt',
+          path: '/workspace/inputs/copy.txt',
+          size: 5,
+          ext: '.txt',
+          type: 'text',
+          created_at: 'now',
+          count: 1
+        }
+      ]
+    )
+    const value = persistExchangeMock.mock.calls.at(-1)![0] as any
+    expect(value.user.payload.message.id).toBe('run-123:user')
+    expect(value.user.payload.blocks).toContainEqual(
+      expect.objectContaining({ type: 'file', file: expect.objectContaining({ path: '/workspace/inputs/copy.txt' }) })
+    )
+    expect(value.assistant.payload.message).toMatchObject({
+      id: 'run-123:assistant',
+      askId: 'run-123:user',
+      status: 'paused',
+      usage: { prompt_tokens: 130000, completion_tokens: 200, prompt_tokens_details: { cached_tokens: 120000 } }
+    })
+    expect(value.assistant.payload.blocks.at(-1)).toMatchObject({
+      type: 'tool',
+      status: 'error',
+      metadata: { rawMcpToolResponse: { status: 'error' } }
+    })
+  })
   it.each([DEFAULT_OPENCODE_AGENT_ID, 'legacy-agent'])(
     'protects native history at service-level deletion for %s',
     async (agentId) => {
@@ -124,6 +181,114 @@ describe('SessionMessageService runtime stream lifecycle', () => {
 
   afterEach(() => {
     vi.useRealTimers()
+  })
+
+  it.each(['startup', 'continuation', 'deep-research'])(
+    'delivers a %s timeout without synchronously cancelling its HTTP reader',
+    async (phase) => {
+      const agentStream = createAgentStream()
+      resolveAgentRuntimeMock.mockResolvedValue({
+        runtimeId: 'opencode',
+        candidates: ['opencode'],
+        source: 'workspace'
+      })
+      invokeMock.mockResolvedValue(agentStream)
+      const service = new SessionMessageService()
+      const http = createStreamAbortController({ timeoutMs: 0 })
+      const result = await service.createSessionMessage(
+        session(),
+        { content: 'task', ...(phase === 'deep-research' ? { deep_research: true } : {}) } as any,
+        http.abortController
+      )
+      const reader = result.stream.getReader()
+      // This is what the SSE route does synchronously on parent abort. Before
+      // the fix it consumes the failure as cancellation and returns normal EOF.
+      const disconnect = vi.fn((reason) => void reader.cancel(reason))
+      http.registerAbortHandler(disconnect)
+      const readOutcome = (async () => {
+        while (!(await reader.read()).done) {
+          /* drain */
+        }
+      })().catch((error) => error)
+      const completionOutcome = result.completion.catch((error) => error)
+      if (phase !== 'startup') {
+        agentStream.emit('data', { type: 'chunk', chunk: { type: 'text-delta', id: 'text', text: 'partial' } })
+      }
+      await vi.advanceTimersByTimeAsync(phase === 'startup' ? 45_001 : phase === 'continuation' ? 180_001 : 480_001)
+      const name = phase === 'deep-research' ? 'AgentDeepResearchTimeoutError' : 'AgentRuntimeNoOutputTimeoutError'
+      expect(disconnect).not.toHaveBeenCalled()
+      expect(http.abortController.signal.aborted).toBe(false)
+      expect(invokeMock.mock.calls[0][2].signal.reason).toMatchObject({ name })
+      await expect(readOutcome).resolves.toMatchObject({ name })
+      await expect(completionOutcome).resolves.toMatchObject({ name })
+      http.dispose()
+    }
+  )
+
+  it.each(['event', 'chunk', 'failed-finish'])(
+    'rejects terminal %s errors even with observed tools and a queued complete',
+    async (kind) => {
+      const agentStream = createAgentStream()
+      resolveAgentRuntimeMock.mockResolvedValue({
+        runtimeId: 'opencode',
+        candidates: ['opencode'],
+        source: 'workspace'
+      })
+      invokeMock.mockResolvedValue(agentStream)
+      const result = await new SessionMessageService().createSessionMessage(
+        session(),
+        { content: 'task' } as any,
+        new AbortController()
+      )
+      const readOutcome = consume(result.stream).catch((error) => error)
+      const completionOutcome = result.completion.catch((error) => error)
+      const error = Object.assign(new Error('socket closed Bearer fixture-secret'), {
+        name: 'ProviderHeaderTimeoutError',
+        code: 'ECONNRESET',
+        cause: { message: 'native timeout', apiKey: 'fixture-secret' },
+        zenFailureStage: 'provider-stream'
+      })
+      agentStream.emit('data', {
+        type: 'chunk',
+        chunk: { type: 'tool-call', toolName: 'read', toolCallId: 'tool', input: {} }
+      })
+      agentStream.emit(
+        'data',
+        kind === 'event'
+          ? { type: 'error', error }
+          : {
+              type: 'chunk',
+              chunk: kind === 'chunk' ? { type: 'error', error } : { type: 'finish', finishReason: 'error' }
+            }
+      )
+      agentStream.emit('data', { type: 'complete' })
+      await vi.advanceTimersByTimeAsync(0)
+      if (kind === 'failed-finish') {
+        await expect(readOutcome).resolves.toMatchObject({ message: 'Agent runtime reported a failed response' })
+        await expect(completionOutcome).resolves.toMatchObject({ message: 'Agent runtime reported a failed response' })
+      } else {
+        expect(await readOutcome).toBe(error)
+        const serialized = await completionOutcome
+        expect(serialized).toMatchObject({ name: error.name, code: error.code, zenFailureStage: 'provider-stream' })
+        expect(JSON.stringify(serialized)).not.toContain('fixture-secret')
+      }
+      expect(invokeMock).toHaveBeenCalledOnce()
+    }
+  )
+
+  it('emits an abort part for explicit runtime cancellation rather than a bare EOF', async () => {
+    const agentStream = createAgentStream()
+    resolveAgentRuntimeMock.mockResolvedValue({ runtimeId: 'opencode', candidates: ['opencode'], source: 'workspace' })
+    invokeMock.mockResolvedValue(agentStream)
+    const result = await new SessionMessageService().createSessionMessage(
+      session(),
+      { content: 'task' } as any,
+      new AbortController()
+    )
+    const chunks = collect(result.stream)
+    agentStream.emit('data', { type: 'cancelled' })
+    await expect(chunks).resolves.toEqual([{ type: 'abort' }])
+    await expect(result.completion).resolves.toEqual({})
   })
 
   it.each([false, true])('rejects deprecated assistant execution before startup (developer=%s)', async (developer) => {

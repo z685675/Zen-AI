@@ -1,0 +1,88 @@
+name: Manual offline quality checks
+
+permissions:
+  contents: read
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Checks to run (no paid model requests)
+        required: true
+        default: offline
+        type: choice
+        options:
+          - offline
+          - release
+          - ui
+          - acceptance
+          - package
+      platform:
+        description: Runner for this manual batch
+        required: true
+        default: windows-2022
+        type: choice
+        options:
+          - windows-2022
+          - macos-latest
+
+jobs:
+  quality:
+    runs-on: ${{ inputs.platform }}
+    timeout-minutes: 75
+    env:
+      CI: true
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: '.node-version'
+      - uses: pnpm/action-setup@v5
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Build for isolated interface check
+        if: inputs.mode == 'ui' || inputs.mode == 'acceptance' || inputs.mode == 'package'
+        run: pnpm validate:release
+      - name: Offline checks
+        if: inputs.mode == 'offline'
+        run: pnpm quality:offline --project ai
+      - name: Full code checks
+        if: inputs.mode == 'release'
+        run: pnpm quality:release --project ai
+      - name: Isolated actual interface, local mock only
+        if: inputs.mode == 'ui'
+        run: pnpm quality:smoke
+      - name: Combined offline acceptance (preview, then same digest)
+        if: inputs.mode == 'acceptance'
+        run: pnpm quality:ci
+      - name: Build unpacked Windows artifact without publishing
+        if: inputs.mode == 'package' && runner.os == 'Windows'
+        run: pnpm exec electron-builder --win --x64 --dir --publish never --config.win.signAndEditExecutable=false
+      - name: Build unpacked Mac artifact without publishing
+        if: inputs.mode == 'package' && runner.os == 'macOS'
+        run: pnpm exec electron-builder --mac --dir --publish never --config.mac.identity=null
+      - name: Audit actual packaged resources
+        if: inputs.mode == 'package'
+        run: pnpm exec tsx scripts/quality/ci-package.ts
+      - name: Upload bounded reports, never browser/userData directories
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: quality-${{ inputs.platform }}-${{ inputs.mode }}
+          retention-days: 14
+          if-no-files-found: warn
+          path: |
+            local/quality-reports/*/report.json
+            local/quality-reports/*/report.md
+            local/quality-reports/*/manual-checks.md
+            local/quality-reports/*/budget.json
+            local/quality-reports/*/cost-summary.json
+            local/quality-reports/*/cost-summary.md
+            local/quality-reports/*/failure-evidence.zip
+            local/quality-reports/*/ui-results.json
+            local/quality-reports/*/local-smoke.json
+            local/quality-reports/*/release-gate.md
+            local/quality-reports/*/child-reports.json
+            local/quality-reports/*/file-validation.json
+            local/quality-reports/*/manual-results.template.json
+            local/quality-reports/*/package-audit.json

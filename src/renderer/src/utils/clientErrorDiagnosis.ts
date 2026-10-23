@@ -1,5 +1,6 @@
 import type { Model } from '@renderer/types'
-import type { SerializedError } from '@renderer/types/error'
+import { ERROR_I18N_KEY_STREAM_PAUSED, type SerializedError } from '@renderer/types/error'
+import { CONNECTIVITY_CHECK_REQUEST_HEADERS } from '@shared/diagnostics'
 import i18next from 'i18next'
 
 import { isAgentRuntimeStartupError } from './agentRuntimeError'
@@ -12,6 +13,7 @@ type DiagnosisCategory =
   | 'service'
   | 'network'
   | 'stream'
+  | 'cancelled'
   | 'timeout'
   | 'payload'
   | 'context'
@@ -203,7 +205,7 @@ function buildConnectivityUrl(sourceUrl: string, path: string): string | undefin
 
 function getAuthHeaders(init?: RequestInit): Headers {
   const source = new Headers(init?.headers)
-  const headers = new Headers()
+  const headers = new Headers(CONNECTIVITY_CHECK_REQUEST_HEADERS)
   const authorization = source.get('authorization')
   const apiKey = source.get('api-key') || source.get('x-api-key')
 
@@ -318,6 +320,21 @@ export function diagnoseClientError(error?: SerializedError, options: DiagnoseOp
       typeof (error as Record<string, unknown> | undefined)?.zenTraceId === 'string'
         ? String((error as Record<string, unknown>).zenTraceId)
         : buildDiagnosticId(options.blockId, options.messageId, options.createdAt)
+  }
+
+  if (error?.i18nKey === ERROR_I18N_KEY_STREAM_PAUSED) {
+    return {
+      ...base,
+      category: 'cancelled',
+      title: i18next.t('error.cancelled.title'),
+      summary: i18next.t('error.cancelled.summary'),
+      stage: i18next.t('error.cancelled.stage'),
+      errorType: i18next.t('error.cancelled.errorType'),
+      serviceConnectivity: serviceConnectivityFromCheck(connectivityCheck, UNKNOWN),
+      serviceReceived: hasStatus ? '是' : UNKNOWN,
+      startedGenerating: UNKNOWN,
+      suggestion: i18next.t('error.cancelled.suggestion')
+    }
   }
 
   const deadlineKind = getAgentTaskDeadlineKind(error)

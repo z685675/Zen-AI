@@ -4,6 +4,35 @@ import { describe, expect, it, vi } from 'vitest'
 import { createStreamProcessor } from '../StreamProcessingService'
 
 describe('createStreamProcessor request lifecycle', () => {
+  it('drains buffered callbacks before the owner disposes its request', async () => {
+    let active = true
+    let release!: () => void
+    const blocked = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const onTextChunk = vi.fn()
+    const onComplete = vi.fn()
+    const process = createStreamProcessor(
+      { onRawData: () => blocked, onTextChunk, onComplete },
+      { isActive: () => active }
+    )
+    void process({ type: ChunkType.RAW, content: { type: 'opencode_status' } })
+    void process({ type: ChunkType.TEXT_DELTA, text: '完整正文' })
+    void process({ type: ChunkType.LLM_RESPONSE_COMPLETE })
+    let drained = false
+    const finished = process.drain().then(() => {
+      drained = true
+      active = false
+    })
+    await Promise.resolve()
+    expect(drained).toBe(false)
+    expect(onTextChunk).not.toHaveBeenCalled()
+    release()
+    await finished
+    expect(onTextChunk).toHaveBeenCalledWith('完整正文', undefined)
+    expect(onComplete).toHaveBeenCalledTimes(1)
+    expect(active).toBe(false)
+  })
   it('ignores chunks from a superseded request', async () => {
     let active = true
     const onTextChunk = vi.fn()

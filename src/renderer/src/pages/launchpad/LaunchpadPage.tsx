@@ -3,7 +3,7 @@ import App from '@renderer/components/MinApp/MinApp'
 import { useMinapps } from '@renderer/hooks/useMinapps'
 import { useRuntime } from '@renderer/hooks/useRuntime'
 import { useSettings } from '@renderer/hooks/useSettings'
-import { Code, FileSearch, Folder, Languages, LayoutGrid, NotepadText, Palette, Sparkle } from 'lucide-react'
+import { BarChart3, Code, FileSearch, Folder, Languages, LayoutGrid, NotepadText, Palette, Sparkle } from 'lucide-react'
 import type { FC } from 'react'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -18,6 +18,12 @@ const LaunchpadPage: FC = () => {
   const { openedKeepAliveMinapps } = useRuntime()
 
   const appMenuItems = [
+    {
+      icon: <BarChart3 size={32} className="icon" />,
+      text: t('usage_statistics.title'),
+      path: '/usage',
+      bgColor: 'linear-gradient(135deg, #6374E9, #26AC93)'
+    },
     {
       icon: <LayoutGrid size={32} className="icon" />,
       text: t('title.apps'),

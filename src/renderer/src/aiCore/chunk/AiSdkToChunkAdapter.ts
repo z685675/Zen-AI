@@ -13,6 +13,7 @@ import type { IdleTimeoutHandle } from '@renderer/utils/IdleTimeoutController'
 import { convertLinks, flushLinkConverterBuffer } from '@renderer/utils/linkConverter'
 import { normalizeUsage } from '@renderer/utils/usage'
 import type { ClaudeCodeRawValue } from '@shared/agents/claudecode/types'
+import { serializeAgentStreamError } from '@shared/agents/streamError'
 import { AISDKError, type TextStreamPart, type ToolSet } from 'ai'
 
 import { ToolCallChunkHandler } from './handleToolCallChunk'
@@ -31,6 +32,9 @@ export class AiSdkToChunkAdapter {
   private responseStartTimestamp: number | null = null
   private firstTokenTimestamp: number | null = null
   private hasTextContent = false
+  private hasResponseContent = false
+  private terminalState: 'open' | 'error' | 'complete' = 'open'
+  private terminalError?: Error
   private getSessionWasCleared?: () => boolean
   private providerId?: string
   private idleTimeout?: IdleTimeoutHandle
@@ -69,14 +73,16 @@ export class AiSdkToChunkAdapter {
    * 澶勭悊 AI SDK 娴佺粨鏋?   * @param aiSdkResult AI SDK 鐨勬祦缁撴灉瀵硅薄
    * @returns 鏈€缁堢殑鏂囨湰鍐呭
    */
-  async processStream(aiSdkResult: any): Promise<string> {
+  async processStream(aiSdkResult: any, options?: { throwOnError?: boolean }): Promise<string> {
     // The stream is the single source of truth for abort handling.
     // Both AI SDK (resilient stream) and the agent pipeline (withAbortStreamPart)
     // guarantee: abort 鈫?enqueue { type: 'abort' } 鈫?close gracefully.
     // convertAndEmitChunk processes the abort part and emits ChunkType.ERROR 鈫?onError.
     if (aiSdkResult.fullStream) {
-      await this.readFullStream(aiSdkResult.fullStream)
+      await this.readFullStream(aiSdkResult.fullStream, options?.throwOnError)
     }
+    // Agent callers also need the outcome, not just a rendered error card.
+    if (options?.throwOnError && this.terminalError) throw this.terminalError
 
     try {
       return await aiSdkResult.text
@@ -94,8 +100,9 @@ export class AiSdkToChunkAdapter {
    * 璇诲彇 fullStream 骞惰浆鎹负 Zen AI chunks
    * @param fullStream AI SDK 鐨?fullStream (ReadableStream)
    */
-  private async readFullStream(fullStream: ReadableStream<TextStreamPart<ToolSet>>) {
+  private async readFullStream(fullStream: ReadableStream<TextStreamPart<ToolSet>>, agentMode = false) {
     const reader = fullStream.getReader()
+    let pendingFinish: Extract<TextStreamPart<ToolSet>, { type: 'finish' }> | undefined
     const final = {
       text: '',
       reasoningContent: '',
@@ -108,6 +115,9 @@ export class AiSdkToChunkAdapter {
     // Reset state at the start of stream
     this.isFirstChunk = true
     this.hasTextContent = false
+    this.hasResponseContent = false
+    this.terminalState = 'open'
+    this.terminalError = undefined
 
     try {
       while (true) {
@@ -117,6 +127,9 @@ export class AiSdkToChunkAdapter {
         this.idleTimeout?.reset()
 
         if (done) {
+          // Agent SSE also waits for completion/persistence after the SDK finish.
+          // Do not publish success until those later errors can no longer arrive.
+          if (pendingFinish && this.terminalState === 'open') this.convertAndEmitChunk(pendingFinish, final)
           // Flush any remaining content from link converter buffer if web search is enabled
           if (this.enableWebSearch) {
             const remainingText = flushLinkConverterBuffer()
@@ -128,18 +141,54 @@ export class AiSdkToChunkAdapter {
               })
             }
           }
+          if (this.terminalState === 'open') {
+            this.emitError(
+              new Error('The model response ended without a completion signal. Please check the Provider logs.')
+            )
+          }
           break
         }
 
         // 杞崲骞跺彂閫?chunk
-        this.convertAndEmitChunk(value, final)
+        if (agentMode && value.type === 'finish' && value.finishReason !== 'error') pendingFinish = value
+        else this.convertAndEmitChunk(value, final)
       }
+    } catch (error) {
+      // A rejected reader carries the real transport failure (for example
+      // socket closed); it is not a normal EOF or a successful partial answer.
+      // In agent mode, user cancellation arrives as an explicit abort part.
+      this.emitError(error, !agentMode && isAbortError(error))
     } finally {
       reader.releaseLock()
       this.resetTimingState()
       // Clean up the idle timeout timer when the stream ends
       this.idleTimeout?.cleanup()
     }
+  }
+
+  private emitError(error: unknown, cancelled = false) {
+    if (this.terminalState === 'error') return
+    const details = serializeAgentStreamError(error)
+    this.terminalError = cancelled
+      ? new DOMException(details.message, 'AbortError')
+      : AISDKError.isInstance(error)
+        ? error
+        : new ProviderSpecificError({
+            message: formatErrorMessage(details),
+            provider: 'unknown',
+            cause: details
+          })
+    // Keep diagnostic routing fields available to history/clipboard consumers;
+    // the complete native name, stack and cause remain in the sanitized cause.
+    if (!AISDKError.isInstance(error) && !isAbortError(this.terminalError)) {
+      for (const [key, value] of Object.entries(details)) {
+        if (key.startsWith('zen') || key === 'code' || key === 'status' || key === 'statusCode') {
+          Object.assign(this.terminalError, { [key]: value })
+        }
+      }
+    }
+    this.terminalState = 'error'
+    this.onChunk({ type: ChunkType.ERROR, error: this.terminalError })
   }
 
   /**
@@ -168,7 +217,12 @@ export class AiSdkToChunkAdapter {
       providerMetadata: ProviderMetadata | undefined
     }
   ) {
-    logger.silly(`AI SDK chunk type: ${chunk.type}`, chunk)
+    if (this.terminalState === 'error') return
+    if (this.terminalState === 'complete' && chunk.type !== 'error' && chunk.type !== 'abort') return
+    logger.silly(
+      `AI SDK chunk type: ${chunk.type}`,
+      chunk.type === 'error' ? { type: chunk.type, error: serializeAgentStreamError(chunk.error) } : chunk
+    )
     switch (chunk.type) {
       case 'raw': {
         const agentRawMessage = chunk.rawValue as ClaudeCodeRawValue
@@ -192,7 +246,8 @@ export class AiSdkToChunkAdapter {
         })
         break
       case 'text-delta': {
-        this.hasTextContent = true
+        this.hasTextContent ||= Boolean(chunk.text?.trim())
+        this.hasResponseContent ||= Boolean(chunk.text?.trim())
         const processedText = chunk.text || ''
         let finalText: string
 
@@ -244,16 +299,20 @@ export class AiSdkToChunkAdapter {
         }
         break
       }
-      case 'text-end':
+      case 'text-end': {
+        const text = (chunk.providerMetadata?.text?.value as string) ?? final.text ?? ''
+        this.hasTextContent ||= Boolean(text.trim())
+        this.hasResponseContent ||= Boolean(text.trim())
         this.onChunk({
           type: ChunkType.TEXT_COMPLETE,
-          text: (chunk.providerMetadata?.text?.value as string) ?? final.text ?? '',
+          text,
           providerMetadata: final.providerMetadata
         })
         final.text = ''
         // Clear providerMetadata for next text block
         final.providerMetadata = undefined
         break
+      }
       case 'reasoning-start':
         // if (final.reasoningId !== chunk.id) {
         final.reasoningId = chunk.id
@@ -289,6 +348,7 @@ export class AiSdkToChunkAdapter {
         break
 
       case 'tool-call':
+        this.hasResponseContent = true
         this.toolCallHandler.handleToolCall(chunk)
         break
 
@@ -297,6 +357,7 @@ export class AiSdkToChunkAdapter {
         break
 
       case 'tool-result':
+        this.hasResponseContent = true
         this.toolCallHandler.handleToolResult(chunk)
         break
 
@@ -363,7 +424,20 @@ export class AiSdkToChunkAdapter {
             text: clearMessage
           })
           final.text = clearMessage
+          this.hasResponseContent = true
         }
+
+        if (chunk.finishReason === 'error' || !this.hasResponseContent) {
+          this.emitError(
+            new Error(
+              chunk.finishReason === 'error'
+                ? 'The model reported a failed response. Please check the Provider logs.'
+                : 'The model returned an empty response without text, files or tool results. Please check the Provider logs.'
+            )
+          )
+          break
+        }
+        this.terminalState = 'complete'
 
         const usage = normalizeUsage(chunk.totalUsage)
         const metrics = this.buildMetrics(chunk.totalUsage)
@@ -401,6 +475,7 @@ export class AiSdkToChunkAdapter {
         }
         break
       case 'file':
+        this.hasResponseContent = true
         // 鏂囦欢鐩稿叧浜嬩欢锛屽彲鑳芥槸鍥剧墖鐢熸垚
         this.onChunk({
           type: ChunkType.IMAGE_COMPLETE,
@@ -411,22 +486,10 @@ export class AiSdkToChunkAdapter {
         })
         break
       case 'abort':
-        this.onChunk({
-          type: ChunkType.ERROR,
-          error: new DOMException('Request was aborted', 'AbortError')
-        })
+        this.emitError(new DOMException('Request was aborted', 'AbortError'), true)
         break
       case 'error':
-        this.onChunk({
-          type: ChunkType.ERROR,
-          error: AISDKError.isInstance(chunk.error)
-            ? chunk.error
-            : new ProviderSpecificError({
-                message: formatErrorMessage(chunk.error),
-                provider: 'unknown',
-                cause: chunk.error
-              })
-        })
+        this.emitError(chunk.error)
         break
 
       default:

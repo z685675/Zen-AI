@@ -145,27 +145,25 @@ export class OpenCodeProcess {
     )
     this.turnSignal = signal
     const productConfig = config as { permission?: Record<string, unknown> }
+    const lightweight =
+      productConfig.permission?.mcp__assistant__python_execute === 'deny' ||
+      (productConfig.permission?.['*'] === 'deny' && productConfig.permission?.bash === 'deny')
     const getTurnSignal = () => this.turnSignal
     registerAssistantMcpContext(this.key, allowedRoots, {
       workspace: this.directory,
       get signal() {
         return getTurnSignal()
       },
-      readOnly: productConfig.permission?.edit === 'deny',
+      readOnly: !lightweight && productConfig.permission?.edit === 'deny',
+      allowedTools: lightweight
+        ? ['create_file', 'read_document', 'present_files', 'ocr_file', 'web_search']
+        : undefined,
       readNativeSkills: (requestSignal) => this.client.request('/skill', 'GET', undefined, requestSignal),
       approveOverwrite: async (file) => {
         if (productConfig.permission?.edit === 'deny') return false
-        if (productConfig.permission?.['*'] === 'allow') return true
-        const { promptForToolApproval } = await import('../claudecode/tool-permissions')
-        const result = await promptForToolApproval(
-          'Write',
-          { file_path: file, operation: 'replace-existing-file-with-backup' },
-          {
-            signal: this.turnSignal ?? signal,
-            toolCallId: `${this.key}:overwrite-${randomUUID()}`
-          }
-        )
-        return result.behavior === 'allow'
+        // Automatic execution is not consent to replace an existing user file.
+        const { confirmAssistantFileOverwrite } = await import('./fileApproval')
+        return confirmAssistantFileOverwrite(file, this.turnSignal ?? signal)
       },
       onTool: (name, durationMs, failed) =>
         recordMainDiagnostic(this.diagnosticId, 'runtime', 'product-tool-complete', {
@@ -175,7 +173,7 @@ export class OpenCodeProcess {
           failed
         })
     })
-    registerBrowserMcpContext(this.key)
+    if (!lightweight) registerBrowserMcpContext(this.key)
     const password = randomBytes(32).toString('hex')
     const env = buildOpenCodeEnvironment(process.env, this.root, password, await getBinaryPath())
     const expected = JSON.parse(JSON.stringify(config)) as Record<string, any>

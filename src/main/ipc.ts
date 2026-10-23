@@ -41,7 +41,9 @@ import fontList from 'font-list'
 
 import { agentMessageRepository } from './services/agents/database'
 import { bootstrapBuiltinAgents } from './services/agents/services/builtin/BuiltinAgentBootstrap'
+import { getSessionModelRecoveryIntent } from './services/agents/services/managedModelRecovery'
 import { stopOpenCodeProcesses } from './services/agents/services/opencode/process'
+import { sessionService } from './services/agents/services/SessionService'
 import { skillService } from './services/agents/skills/SkillService'
 import { analyticsService } from './services/AnalyticsService'
 import { apiServerService } from './services/ApiServerService'
@@ -74,6 +76,7 @@ import { lanTransferClientService } from './services/lanTransfer'
 import { localTransferService } from './services/LocalTransferService'
 import mcpService from './services/MCPService'
 import MemoryService from './services/memory/MemoryService'
+import { refreshModelAvailability } from './services/ModelAvailabilityService'
 import { openTraceWindow, setTraceWindowTitle } from './services/NodeTraceService'
 import NotificationService from './services/NotificationService'
 import * as NutstoreService from './services/NutstoreService'
@@ -151,6 +154,12 @@ function getHardwareArch() {
 }
 
 export async function registerIpc(mainWindow: BrowserWindow, app: Electron.App) {
+  ipcMain.handle(IpcChannel.AssistantAutomation_Action, async (event, request: unknown) => {
+    if (event.sender !== mainWindow.webContents || event.senderFrame !== event.sender.mainFrame)
+      return { ok: false, code: 'automation_invalid_sender' }
+    const { automationService } = await import('./services/agents/services/automation/AutomationService')
+    return automationService.request(request)
+  })
   ipcMain.handle(IpcChannel.Diagnostic_Collect, (_, operationId: unknown) => {
     if (typeof operationId !== 'string') throw new Error('Invalid diagnostic operation ID')
     return collectMainDiagnostic(operationId)
@@ -355,6 +364,18 @@ export async function registerIpc(mainWindow: BrowserWindow, app: Electron.App) 
 
   ipcMain.handle(IpcChannel.ModelPolicy_Get, () => remoteModelPolicyService.getSnapshot())
   ipcMain.handle(IpcChannel.ModelPolicy_Refresh, () => remoteModelPolicyService.refresh(true))
+  ipcMain.handle(IpcChannel.ModelAvailability_Refresh, (_, provider: Provider) =>
+    refreshModelAvailability(provider, true)
+  )
+  ipcMain.handle(IpcChannel.ModelAvailability_ReconcileSessions, () => sessionService.reconcileManagedModels())
+  ipcMain.handle(IpcChannel.ModelAvailability_RecoveryStatus, async (_, agentId: string, sessionId: string) => {
+    if (typeof agentId !== 'string' || typeof sessionId !== 'string' || agentId.length > 128 || sessionId.length > 128)
+      return undefined
+    const session = await sessionService.getSession(agentId, sessionId)
+    if (!session) return undefined
+    const intent = getSessionModelRecoveryIntent(sessionId)
+    return intent && (intent.actual || '') === (session.model || '') ? intent : undefined
+  })
   ipcMain.handle(IpcChannel.Agent_BootstrapBuiltins, () => bootstrapBuiltinAgents())
 
   // theme

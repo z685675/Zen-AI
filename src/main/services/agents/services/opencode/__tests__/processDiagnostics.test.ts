@@ -12,7 +12,8 @@ const mocks = vi.hoisted(() => ({
   record: vi.fn(),
   request: vi.fn(),
   gateway: vi.fn(),
-  gatewayStop: vi.fn()
+  gatewayStop: vi.fn(),
+  approve: vi.fn()
 }))
 vi.mock('node:child_process', () => ({ spawn: mocks.spawn }))
 vi.mock('node:fs/promises', () => ({ default: { access: mocks.access, readFile: mocks.read, mkdir: mocks.mkdir } }))
@@ -37,6 +38,7 @@ vi.mock('@main/apiServer/routes/browser-mcp', () => ({
 vi.mock('../offline', () => ({ prepareOpenCodeOfflineConfig: vi.fn() }))
 vi.mock('../executable', () => ({ resolveOpenCodeExecutable: mocks.resolve }))
 vi.mock('../gateway', () => ({ createOpenCodeGateway: mocks.gateway }))
+vi.mock('../fileApproval', () => ({ confirmAssistantFileOverwrite: mocks.approve }))
 vi.mock('../client', () => ({
   OpenCodeClient: class {
     request = mocks.request
@@ -75,6 +77,7 @@ beforeEach(() => {
   mocks.mkdir.mockResolvedValue(undefined)
   mocks.read.mockRejectedValue(Object.assign(new Error('missing binding'), { code: 'ENOENT' }))
   mocks.resolve.mockReturnValue('/owned/runtime/opencode')
+  mocks.approve.mockResolvedValue(true)
   mocks.gateway.mockResolvedValue({
     baseURL: 'http://127.0.0.1:9876/v1',
     token: 'opaque-gateway-secret',
@@ -121,6 +124,27 @@ const start = async (key = 'session', id = 'turn-1', signal = new AbortControlle
 }
 
 describe('OpenCode operation-scoped lifecycle evidence', () => {
+  it('still requires explicit overwrite confirmation in automatic mode and rejects it in plan mode', async () => {
+    const { registerAssistantMcpContext } = await import('@main/apiServer/routes/assistant-mcp')
+    const { getOpenCodeProcess } = await import('../process')
+    for (const permission of [{ '*': 'allow' }, { edit: 'deny' }]) {
+      const runtime = await getOpenCodeProcess(
+        'overwrite-boundary',
+        '/workspace',
+        { ...config(), permission },
+        ['/workspace'],
+        new AbortController().signal
+      )
+      const product = vi.mocked(registerAssistantMcpContext).mock.calls.at(-1)![2]!
+      const result = await product.approveOverwrite('/workspace/original.xlsx')
+      expect(result).toBe(permission.edit !== 'deny')
+      runtime.release()
+      runtime.stop()
+      mocks.spawn.mockClear()
+    }
+    expect(mocks.approve).toHaveBeenCalledOnce()
+    expect(mocks.approve).toHaveBeenCalledWith('/workspace/original.xlsx', expect.any(AbortSignal))
+  })
   it('starts independently of background provisioning and includes the private tool directory', async () => {
     const runtime = await start()
     const options = mocks.spawn.mock.calls.find((call) => call[0] !== 'taskkill')![2]

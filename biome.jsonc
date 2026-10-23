@@ -29,6 +29,7 @@
       "!**/.vscode/**",
       "!**/.conductor/**",
       "!resources/**",
+      "!local/**",
       "!**/dist/**",
       "!tmp/**"
     ],

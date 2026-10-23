@@ -1,6 +1,7 @@
 import { loggerService } from '@logger'
 import { assertLegacyAutomationEnabled } from '@shared/agents/legacyAutomation'
-import { and, eq, inArray } from 'drizzle-orm'
+import { DEFAULT_OPENCODE_AGENT_ID } from '@shared/config/agents'
+import { and, eq, inArray, isNull, ne, or } from 'drizzle-orm'
 
 import { BaseService } from '../BaseService'
 import {
@@ -122,10 +123,18 @@ export class ChannelService extends BaseService {
 
   // ---- Task subscription methods ----
 
-  /** Disable connections without deleting credentials, bindings or subscriptions. */
+  /** Shut down legacy connections only; never disable separately authorized OpenCode integrations. */
   async deactivateAllChannels(): Promise<void> {
     const database = await this.getDatabase()
-    await database.update(channelsTable).set({ isActive: false }).where(eq(channelsTable.isActive, true))
+    await database
+      .update(channelsTable)
+      .set({ isActive: false })
+      .where(
+        and(
+          eq(channelsTable.isActive, true),
+          or(isNull(channelsTable.agentId), ne(channelsTable.agentId, DEFAULT_OPENCODE_AGENT_ID))
+        )
+      )
   }
 
   async subscribeToTask(channelId: string, taskId: string): Promise<void> {

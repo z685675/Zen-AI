@@ -4,9 +4,11 @@ import * as path from 'node:path'
 
 import { loggerService } from '@logger'
 import { configManager } from '@main/services/ConfigManager'
+import { getCachedModelAvailability } from '@main/services/ModelAvailabilityService'
 import { toAsarUnpackedPath } from '@main/utils'
 import { parsePluginMetadata, parseSkillMetadata } from '@main/utils/markdownParser'
 import { DEFAULT_OPENCODE_AGENT_ID } from '@shared/config/agents'
+import { isZenManagedApiHost } from '@shared/config/zenProvider'
 import type { AgentPersistedMessage, SlashCommand, UpdateSessionResponse } from '@types'
 import {
   AgentBaseSchema,
@@ -20,6 +22,13 @@ import {
 import { and, asc, count, desc, eq, inArray, like, or, type SQL, sql } from 'drizzle-orm'
 import { app } from 'electron'
 
+import {
+  getAppliedAgentDefaultPolicyTarget,
+  getAppliedAgentDefaultPolicyVersion,
+  markAgentDefaultPolicyApplied,
+  normalizeAgentModelIdentifier
+} from '../../../../renderer/src/config/agentModelPolicy'
+import { remoteModelPolicyService } from '../../RemoteModelPolicyService'
 import { BaseService } from '../BaseService'
 import {
   agentsTable,
@@ -30,8 +39,18 @@ import {
   sessionsTable
 } from '../database/schema'
 import type { AgentModelField } from '../errors'
+import { invalidateAutomationSession } from './automation/bridge'
 import { builtinSlashCommands } from './claudecode/commands'
+import {
+  forgetSessionModelIntent,
+  getManagedRecoveryInventory,
+  getPreferredModelIdentifier,
+  inheritModelPreference,
+  rememberPreferredModel,
+  resolveManagedSessionModel
+} from './managedModelRecovery'
 import { assertSessionNotContinuing } from './sessionActivity'
+import { hasSessionActivity } from './sessionActivity'
 import { haveSameAccessiblePaths } from './sessionWorkspace'
 
 const logger = loggerService.withContext('SessionService')
@@ -589,6 +608,15 @@ export class SessionService extends BaseService {
     }
 
     const session = this.deserializeJsonFields(result[0])
+    if (agentId === DEFAULT_OPENCODE_AGENT_ID) {
+      for (const field of this.modelFields) {
+        const actual = session[field]
+        if (actual && actual === agent[field]) {
+          const suffix = field === 'model' ? '' : `:${field}`
+          inheritModelPreference(`${session.id}${suffix}`, `agent:${agentId}${suffix}`, actual)
+        }
+      }
+    }
     return await this.getSession(agentId, session.id)
   }
 
@@ -757,7 +785,8 @@ export class SessionService extends BaseService {
   async updateSession(
     agentId: string,
     id: string,
-    updates: UpdateSessionRequest
+    updates: UpdateSessionRequest,
+    options?: { automaticModelRepair?: boolean }
   ): Promise<UpdateSessionResponse | null> {
     assertSessionNotContinuing(id)
     // Check if session exists
@@ -813,8 +842,113 @@ export class SessionService extends BaseService {
 
     const database = await this.getDatabase()
     await database.update(sessionsTable).set(updateData).where(eq(sessionsTable.id, id))
+    if (!options?.automaticModelRepair) {
+      for (const field of this.modelFields)
+        if (Object.hasOwn(updates, field)) forgetSessionModelIntent(field === 'model' ? id : `${id}:${field}`)
+    }
 
     return await this.getSession(agentId, id)
+  }
+
+  async reconcileManagedModels(): Promise<void> {
+    if (this.managedReconciliation) return this.managedReconciliation
+    this.managedReconciliation = this.reconcileManagedModelsOnce().finally(() => {
+      this.managedReconciliation = undefined
+    })
+    return this.managedReconciliation
+  }
+
+  private managedReconciliation?: Promise<void>
+
+  private async reconcileManagedModelsOnce(): Promise<void> {
+    const database = await this.getDatabase()
+    const inventory = await getManagedRecoveryInventory()
+    const [agentRow] = await database.select().from(agentsTable).where(eq(agentsTable.id, DEFAULT_OPENCODE_AGENT_ID))
+    if (agentRow) {
+      const agent = this.deserializeJsonFields(agentRow) as AgentEntity
+      const snapshot = remoteModelPolicyService.getSnapshot()
+      const policy = snapshot.policy
+      let configuration = agent.configuration
+      if (snapshot.source !== 'builtin' && snapshot.version > getAppliedAgentDefaultPolicyVersion(configuration)) {
+        const previousTarget = getAppliedAgentDefaultPolicyTarget(configuration)
+        if (
+          !configManager.getEnableDeveloperMode() &&
+          policy.rules.applyToNewSessions !== false &&
+          (policy.rules.overwriteUserChoice ||
+            (previousTarget &&
+              normalizeAgentModelIdentifier(getPreferredModelIdentifier(`agent:${agent.id}`, agent.model)) ===
+                normalizeAgentModelIdentifier(previousTarget)))
+        ) {
+          const providerId = getPreferredModelIdentifier(`agent:${agent.id}`, agent.model).split(':')[0]
+          const provider = inventory.providers.find((provider) => provider.id === providerId)
+          if (
+            provider &&
+            getCachedModelAvailability(provider) &&
+            isZenManagedApiHost(provider.apiHost) &&
+            policy.defaults.assistantNewSession
+          ) {
+            rememberPreferredModel(
+              `agent:${agent.id}`,
+              `${providerId}:${policy.defaults.assistantNewSession}`,
+              agent.model || null
+            )
+          }
+        }
+        configuration = markAgentDefaultPolicyApplied(configuration, snapshot)
+      }
+      const resolution = resolveManagedSessionModel(`agent:${agent.id}`, agent.model, inventory)
+      const plan = resolveManagedSessionModel(`agent:${agent.id}:plan_model`, agent.plan_model, inventory)
+      const small = resolveManagedSessionModel(`agent:${agent.id}:small_model`, agent.small_model, inventory)
+      if (
+        resolution.managed &&
+        ((resolution.selected || '') !== agent.model ||
+          configuration !== agent.configuration ||
+          plan.selected !== agent.plan_model ||
+          small.selected !== agent.small_model)
+      ) {
+        await database
+          .update(agentsTable)
+          .set({
+            model: resolution.selected || '',
+            plan_model: plan.selected ?? null,
+            small_model: small.selected ?? null,
+            configuration: this.serializeJsonFields({ configuration }).configuration,
+            updated_at: new Date().toISOString()
+          })
+          .where(and(eq(agentsTable.id, agent.id), eq(agentsTable.model, agent.model)))
+      }
+    }
+    // Read after the asynchronous inventory request, so an intervening user
+    // selection cannot be mistaken for the old temporary model.
+    const sessions = await database
+      .select()
+      .from(sessionsTable)
+      .where(eq(sessionsTable.agent_id, DEFAULT_OPENCODE_AGENT_ID))
+    for (const row of sessions) {
+      if (hasSessionActivity(row.id)) continue
+      const resolution = resolveManagedSessionModel(row.id, row.model || undefined, inventory)
+      const plan = resolveManagedSessionModel(`${row.id}:plan_model`, row.plan_model || undefined, inventory)
+      const small = resolveManagedSessionModel(`${row.id}:small_model`, row.small_model || undefined, inventory)
+      if (
+        !resolution.managed ||
+        ((resolution.selected || '') === row.model &&
+          (plan.selected ?? null) === row.plan_model &&
+          (small.selected ?? null) === row.small_model)
+      )
+        continue
+      const patch: Partial<SessionRow> = { model: resolution.selected || '', updated_at: new Date().toISOString() }
+      patch.plan_model = plan.selected ?? null
+      patch.small_model = small.selected ?? null
+      // Compare-and-set: a user selection made during the inventory request wins.
+      const result = await database
+        .update(sessionsTable)
+        .set(patch)
+        .where(and(eq(sessionsTable.id, row.id), eq(sessionsTable.model, row.model)))
+      if (result.rowsAffected) {
+        const { broadcastSessionChanged } = await import('./channels/sessionStreamIpc')
+        broadcastSessionChanged(DEFAULT_OPENCODE_AGENT_ID, row.id)
+      }
+    }
   }
 
   async syncAgentSessionInstructions(agentId: string, instructions: string): Promise<number> {
@@ -898,6 +1032,7 @@ export class SessionService extends BaseService {
   async resetOpenCodeMemory(agentId: string, id: string): Promise<void> {
     if (agentId !== DEFAULT_OPENCODE_AGENT_ID || !(await this.sessionExists(agentId, id)))
       throw new Error('New assistant session not found')
+    await invalidateAutomationSession(id)
     const database = await this.getDatabase()
     const { archiveOpenCodeSession } = await import('./opencode/process')
     await archiveOpenCodeSession(id, async () => {
@@ -982,6 +1117,7 @@ export class SessionService extends BaseService {
 
   async deleteSession(agentId: string, id: string): Promise<boolean> {
     assertSessionNotContinuing(id)
+    await invalidateAutomationSession(id)
     const database = await this.getDatabase()
     const remove = async () => {
       const result = await database

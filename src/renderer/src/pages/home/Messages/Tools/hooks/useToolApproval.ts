@@ -1,5 +1,6 @@
 import type { ToolMessageBlock } from '@renderer/types/newMessage'
 
+import { isNativeAgentTool } from '../nativeAgentTools'
 import { useAgentToolApproval } from './useAgentToolApproval'
 import { useMcpToolApproval } from './useMcpToolApproval'
 
@@ -51,11 +52,17 @@ export function useToolApproval(
   const toolResponse = block.metadata?.rawMcpToolResponse
   const tool = toolResponse?.tool
 
-  const isMcpTool =
-    forceType === 'mcp' ||
-    (forceType !== 'agent' && (tool?.type === 'mcp' || tool?.type === 'builtin' || tool?.type === 'provider'))
   const mcpApproval = useMcpToolApproval(block)
   const agentApproval = useAgentToolApproval(block)
+  // A provider tool can be OpenCode-native. Sending it to confirmToolAction would
+  // resolve an unrelated MCP queue and leave the native permission pending forever.
+  const hasAgentRequest = agentApproval.isWaiting || agentApproval.isExecuting || agentApproval.isSubmitting
+  const isMcpTool =
+    forceType === 'mcp' ||
+    (forceType !== 'agent' &&
+      !isNativeAgentTool(toolResponse) &&
+      !hasAgentRequest &&
+      (tool?.type === 'mcp' || tool?.type === 'builtin' || tool?.type === 'provider'))
 
   return isMcpTool ? mcpApproval : agentApproval
 }

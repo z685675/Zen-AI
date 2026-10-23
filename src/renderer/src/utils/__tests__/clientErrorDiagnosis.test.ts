@@ -1,4 +1,5 @@
 import zh from '@renderer/i18n/locales/zh-cn.json'
+import { ERROR_I18N_KEY_STREAM_PAUSED } from '@renderer/types/error'
 import i18next from 'i18next'
 import { beforeAll, describe, expect, it } from 'vitest'
 
@@ -25,6 +26,35 @@ function makeError(message: string, statusCode?: number) {
 }
 
 describe('clientErrorDiagnosis', () => {
+  it('reports an explicitly stopped response without blaming the connection', () => {
+    const diagnosis = diagnoseClientError(
+      {
+        ...makeError('Request was aborted'),
+        name: 'AbortError',
+        i18nKey: ERROR_I18N_KEY_STREAM_PAUSED
+      },
+      baseOptions
+    )
+
+    expect(diagnosis).toMatchObject({
+      category: 'cancelled',
+      title: '已停止',
+      serviceConnectivity: '未确认',
+      serviceReceived: '未确认',
+      startedGenerating: '未确认'
+    })
+    expect(diagnosis.summary).not.toContain('连接')
+    expect(diagnosis.suggestion).not.toMatch(/网络|代理|VPN/)
+    expect(formatClientErrorDiagnosis(diagnosis)).toContain('结论：已停止')
+  })
+
+  it('does not treat an unmarked AbortError as a user stop', () => {
+    const diagnosis = diagnoseClientError({ ...makeError('Request was aborted'), name: 'AbortError' }, baseOptions)
+
+    expect(diagnosis.category).toBe('stream')
+    expect(diagnosis.title).toBe('生成中断：连接不稳定')
+  })
+
   it.each(['agent_human_wait_timeout', 'agent_execution_timeout'])(
     'identifies %s as a local guard, not a failed network or startup',
     (code) => {
@@ -300,8 +330,13 @@ describe('clientErrorDiagnosis', () => {
 
   it('checks service status and models API from the failed request origin', async () => {
     const calls: string[] = []
-    const fakeFetch = async (input: RequestInfo | URL): Promise<Response> => {
+    const fakeFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
       calls.push(typeof input === 'string' ? input : input.toString())
+      expect(init?.method).toBe('GET')
+      const headers = new Headers(init?.headers)
+      expect(headers.get('authorization')).toBe('Bearer test')
+      expect(headers.get('x-zen-request-purpose')).toBe('connectivity-check')
+      expect(headers.has('cookie')).toBe(false)
       return new Response('{}', { status: calls.length === 1 ? 200 : 401 })
     }
 
@@ -309,7 +344,9 @@ describe('clientErrorDiagnosis', () => {
       'https://example.com/v1/chat/completions',
       {
         headers: {
-          Authorization: 'Bearer test'
+          Authorization: 'Bearer test',
+          'X-Zen-Request-Purpose': 'topic-naming',
+          Cookie: 'private-cookie'
         }
       },
       fakeFetch as typeof fetch

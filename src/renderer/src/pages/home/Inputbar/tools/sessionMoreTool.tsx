@@ -1,9 +1,8 @@
-import { QuickPanelReservedSymbol } from '@renderer/components/QuickPanel'
 import { useResourcePanel } from '@renderer/pages/home/Inputbar/tools/components/useResourcePanel'
 import { defineTool, registerTool, TopicType } from '@renderer/pages/home/Inputbar/types'
 import { filterSupportedFiles } from '@renderer/utils/file'
 import { Popover } from 'antd'
-import { ChevronDown, FolderOpen, Paperclip, Terminal, Zap } from 'lucide-react'
+import { ChevronDown, FolderOpen, Paperclip } from 'lucide-react'
 import type React from 'react'
 import { useCallback, useMemo, useState } from 'react'
 import styled from 'styled-components'
@@ -40,34 +39,6 @@ const sessionMoreTool = defineTool({
         action()
       }, 0)
     }, [])
-
-    const openSlashCommands = useCallback(() => {
-      const slashCommands = session?.slashCommands || []
-      quickPanelController.open({
-        title: t('chat.input.slash_commands.title'),
-        symbol: QuickPanelReservedSymbol.SlashCommands,
-        list:
-          slashCommands.length > 0
-            ? slashCommands.map((cmd) => ({
-                label: cmd.command,
-                description: cmd.description || '',
-                icon: <Terminal size={16} />,
-                filterText: `${cmd.command} ${cmd.description || ''}`,
-                action: () => {
-                  actions.onTextChange((prev: string) => `${prev}${prev ? ' ' : ''}${cmd.command} `)
-                }
-              }))
-            : [
-                {
-                  label: t('chat.input.slash_commands.empty', 'No slash commands available'),
-                  description: '',
-                  icon: <Terminal size={16} />,
-                  disabled: true,
-                  action: () => {}
-                }
-              ]
-      })
-    }, [actions, quickPanelController, session, t])
 
     const openAttachmentPicker = useCallback(() => {
       const run = async () => {
@@ -119,33 +90,14 @@ const sessionMoreTool = defineTool({
       void run()
     }, [actions, selecting, state.extensions, state.files, t])
 
-    const openQuickPhrases = useCallback(() => {
-      const quickPhrasesButton = document.querySelector('[data-key="quick_phrases"] button') as HTMLButtonElement | null
-      quickPhrasesButton?.click()
-    }, [])
-
     const moreItems = useMemo(
       () => [
-        {
-          key: 'quick-phrases',
-          label: t('settings.quickPhrase.title'),
-          description: t('chat.input.more.quick_phrases', 'Insert a commonly used phrase or preset content'),
-          icon: <Zap size={16} />,
-          onClick: () => runAfterClose(openQuickPhrases)
-        },
         {
           key: 'attachment',
           label: t('chat.input.upload.attachment'),
           description: t('chat.input.more.attachment', 'Upload images or documents'),
           icon: <Paperclip size={16} />,
           onClick: openAttachmentPicker
-        },
-        {
-          key: 'slash-commands',
-          label: t('chat.input.slash_commands.title'),
-          description: t('chat.input.more.slash_commands', 'View quick commands provided by this assistant'),
-          icon: <Terminal size={16} />,
-          onClick: () => runAfterClose(openSlashCommands)
         },
         {
           key: 'resource-panel',
@@ -156,15 +108,7 @@ const sessionMoreTool = defineTool({
           onClick: () => runAfterClose(openResourcePanel)
         }
       ],
-      [
-        accessiblePaths.length,
-        openAttachmentPicker,
-        openQuickPhrases,
-        openResourcePanel,
-        openSlashCommands,
-        runAfterClose,
-        t
-      ]
+      [accessiblePaths.length, openAttachmentPicker, openResourcePanel, runAfterClose, t]
     )
 
     const popoverContent = (

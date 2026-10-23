@@ -80,6 +80,43 @@ afterEach(async () => {
 })
 
 describe('AssistantServer runtime tools', () => {
+  it('enforces the actual background tool allowlist even for direct hidden-tool calls', async () => {
+    const root = await fs.mkdtemp(path.join(tmpdir(), 'zen-lightweight-tools-'))
+    tempDirs.push(root)
+    const approve = vi.fn(async () => true)
+    const { assistant, client } = await createClient(root, {
+      workspace: root,
+      readNativeSkills: async () => [],
+      approveOverwrite: approve,
+      allowedTools: ['create_file', 'read_document', 'present_files']
+    })
+    try {
+      expect((await client.listTools()).tools.map((tool) => tool.name).sort()).toEqual([
+        'create_file',
+        'present_files',
+        'read_document'
+      ])
+      expect((await client.callTool({ name: 'python_execute', arguments: { code: 'print(1)' } })).isError).toBe(true)
+      expect(mocks.executePython).not.toHaveBeenCalled()
+      const original = path.join(root, 'original.txt')
+      await fs.writeFile(original, 'unchanged')
+      const denied = await client.callTool({
+        name: 'create_file',
+        arguments: { file_path: original, format: 'txt', content: 'replacement', overwrite: true }
+      })
+      expect(denied.isError).toBe(true)
+      expect(approve).not.toHaveBeenCalled()
+      expect(await fs.readFile(original, 'utf8')).toBe('unchanged')
+      const outside = await client.callTool({
+        name: 'read_document',
+        arguments: { file_path: path.join(root, '..', 'outside.txt') }
+      })
+      expect(outside.isError).toBe(true)
+    } finally {
+      await client.close()
+      await assistant.mcpServer.close()
+    }
+  })
   it('returns actionable new-assistant failures and marks nonzero Python exits as failed observations', async () => {
     const root = await fs.mkdtemp(path.join(tmpdir(), 'zen-tool-failure-'))
     tempDirs.push(root)
@@ -177,6 +214,7 @@ describe('AssistantServer runtime tools', () => {
       try {
         const names = (await client.listTools()).tools.map((tool) => tool.name)
         expect(names.includes('web_search')).toBe(Boolean(options))
+        expect(names.includes('prepare_file_copy')).toBe(Boolean(options))
         expect(readNativeSkills).not.toHaveBeenCalled()
         if (options) {
           const status = await client.callTool({ name: 'skill_status', arguments: {} })
@@ -204,11 +242,14 @@ describe('AssistantServer runtime tools', () => {
       approveOverwrite: approve
     })
     try {
-      const denied = await client.callTool({
+      const savedCopy = await client.callTool({
         name: 'create_file',
         arguments: { file_path: file, format: 'txt', content: 'New content' }
       })
-      expect(denied.isError).toBe(true)
+      expect(savedCopy.isError).not.toBe(true)
+      const copied = JSON.parse((savedCopy.content[0] as any).text)
+      expect(copied.path).toBe(path.join(root, 'report (1).txt'))
+      expect(await fs.readFile(copied.path, 'utf8')).toBe('New content')
       expect(approve).not.toHaveBeenCalled()
       expect(await fs.readFile(file, 'utf8')).toBe('Original report')
       const result = await client.callTool({
@@ -220,6 +261,61 @@ describe('AssistantServer runtime tools', () => {
       expect(await fs.readFile(payload.backup_path, 'utf8')).toBe('Original report')
       expect(approve).toHaveBeenCalledOnce()
       expect(payload.write_mode).toBe('replaced-with-backup')
+    } finally {
+      await client.close()
+      await assistant.mcpServer.close()
+    }
+  })
+  it('prepares a real Excel working copy and delivers an edited result without changing the source', async () => {
+    const root = await fs.mkdtemp(path.join(tmpdir(), 'zen-office-copy-'))
+    tempDirs.push(root)
+    const approve = vi.fn(async () => false)
+    const { assistant, client } = await createClient(root, {
+      workspace: root,
+      readNativeSkills: async () => [],
+      approveOverwrite: approve
+    })
+    try {
+      const created = await client.callTool({
+        name: 'create_file',
+        arguments: {
+          file_path: '原始.xlsx',
+          format: 'xlsx',
+          rows: [
+            ['Item', 'Total'],
+            ['A', 10]
+          ],
+          render_validation: 'skip'
+        }
+      })
+      expect(created.isError).not.toBe(true)
+      const original = path.join(root, '原始.xlsx')
+      const originalBytes = await fs.readFile(original)
+      const copied = await client.callTool({ name: 'prepare_file_copy', arguments: { file_path: original } })
+      expect(copied.isError).not.toBe(true)
+      const payload = JSON.parse((copied.content[0] as any).text)
+      expect(payload.status).toBe('working-copy-created')
+      expect(payload.working_path).toBe(path.join(root, 'outputs', '原始-edited.xlsx'))
+      expect(await fs.readFile(payload.working_path)).toEqual(originalBytes)
+      // A Skill can modify the independent package in place without touching the source.
+      const zip = new AdmZip(await fs.readFile(payload.working_path))
+      zip.addFile('zen-edit.txt', Buffer.from('test modification'))
+      await fs.writeFile(payload.working_path, zip.toBuffer())
+      const presented = await client.callTool({
+        name: 'present_files',
+        arguments: { file_paths: [payload.working_path] }
+      })
+      expect(presented.isError).not.toBe(true)
+      expect(await fs.readFile(original)).toEqual(originalBytes)
+      const repeated = await client.callTool({ name: 'prepare_file_copy', arguments: { file_path: original } })
+      const another = JSON.parse((repeated.content[0] as any).text)
+      expect(another.working_path).toBe(path.join(root, 'outputs', '原始-edited (1).xlsx'))
+      expect(approve).not.toHaveBeenCalled()
+      const escaped = await client.callTool({
+        name: 'prepare_file_copy',
+        arguments: { file_path: original, output_path: path.join(root, '..', 'escape.xlsx') }
+      })
+      expect(escaped.isError).toBe(true)
     } finally {
       await client.close()
       await assistant.mcpServer.close()
@@ -240,6 +336,9 @@ describe('AssistantServer runtime tools', () => {
         arguments: { file_path: 'no.txt', format: 'txt', content: 'No' }
       })
       expect(result.isError).toBe(true)
+      const copied = await client.callTool({ name: 'prepare_file_copy', arguments: { file_path: 'no.txt' } })
+      expect(copied.isError).toBe(true)
+      expect(JSON.stringify(copied)).toContain('Plan mode')
       expect(await fs.readdir(root)).toEqual([])
     } finally {
       await client.close()
@@ -1177,6 +1276,57 @@ describe('AssistantServer runtime tools', () => {
       expect(result.content).toEqual(
         expect.arrayContaining([expect.objectContaining({ type: 'text', text: expect.stringContaining('42') })])
       )
+    } finally {
+      await client.close()
+      await assistant.mcpServer.close()
+    }
+  })
+
+  it('rejects a parent project cwd, then safely recovers when the model omits working_directory', async () => {
+    const project = await fs.mkdtemp(path.join(tmpdir(), 'zen-python-cwd-'))
+    tempDirs.push(project)
+    const root = path.join(project, 'authorized-workspace')
+    await fs.mkdir(root)
+    mocks.executePython.mockResolvedValue({ exitCode: 0, stdout: '42', stderr: '', durationMs: 1 })
+    const { assistant, client } = await createClient(root, { workspace: root, readNativeSkills: async () => [] })
+    try {
+      const rejected = await client.callTool({
+        name: 'python_execute',
+        arguments: { code: 'print(42)', working_directory: project }
+      })
+      expect(rejected.isError).toBe(true)
+      expect(mocks.executePython).not.toHaveBeenCalled()
+      const errorText = JSON.stringify(rejected)
+      expect(errorText).toContain('Invalid working_directory')
+      expect(errorText).toContain('Omit working_directory')
+      expect(errorText).toContain('No Python was executed')
+      const recovered = await client.callTool({ name: 'python_execute', arguments: { code: 'print(42)' } })
+      expect(recovered.isError).not.toBe(true)
+      expect(mocks.executePython).toHaveBeenCalledExactlyOnceWith('print(42)', { cwd: root, timeoutMs: undefined })
+      const deniedAgain = await client.callTool({
+        name: 'python_execute',
+        arguments: { code: 'print(42)', working_directory: project }
+      })
+      expect(deniedAgain.isError).toBe(true)
+      expect(mocks.executePython).toHaveBeenCalledTimes(1)
+    } finally {
+      await client.close()
+      await assistant.mcpServer.close()
+    }
+  })
+
+  it('does not silently replace a missing cwd with the default workspace', async () => {
+    const root = await fs.mkdtemp(path.join(tmpdir(), 'zen-python-cwd-missing-'))
+    tempDirs.push(root)
+    const { assistant, client } = await createClient(root)
+    try {
+      const result = await client.callTool({
+        name: 'python_execute',
+        arguments: { code: 'print(42)', working_directory: path.join(root, 'absent') }
+      })
+      expect(result.isError).toBe(true)
+      expect(JSON.stringify(result)).toContain('Omit working_directory')
+      expect(mocks.executePython).not.toHaveBeenCalled()
     } finally {
       await client.close()
       await assistant.mcpServer.close()

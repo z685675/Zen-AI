@@ -898,6 +898,10 @@
     "source": "最近来源：第 {{turn}} 轮 · 共 {{count}} 条回答登记",
     "title": "会话成果"
   },
+  "assistantFileSafety": {
+    "message": "即将覆盖以下原文件。确认后会先保存并校验备份，再替换内容；取消则保留原文件不变。",
+    "title": "确认覆盖原文件"
+  },
   "assistantPeripheral": {
     "callDone": "调用成功",
     "callFailed": "调用失败",
@@ -1306,6 +1310,124 @@
     "get_key_success": "自动获取密钥成功",
     "login": "登录",
     "oauth_button": "使用 {{provider}} 登录"
+  },
+  "automation": {
+    "actions": "操作",
+    "addTask": "新建定时任务",
+    "cancel": "取消",
+    "cancelDelivery": "取消发送",
+    "confirm": "确认",
+    "confirmOwner": "确认是本人账号",
+    "confirmTitle": "确认授权",
+    "confirmation": "仅授权你本人的微信私聊。该会话在电脑上发出的新问题、最终回答和已验证的成果文件会同步到这个微信账号；不会发送其他会话。",
+    "conversations": "微信会话",
+    "copyLegacyTask": "复制旧任务，重新确认",
+    "cron": "每天／每周／Cron",
+    "cronHelp": "每天早上 9 点：0 9 * * *；每周一早上 9 点：0 9 * * 1。按电脑本地时区执行。",
+    "cronRule": "Cron 时间规则",
+    "daily": "每天",
+    "defaultModel": "使用当前推荐模型",
+    "delete": "删除",
+    "deliveries": "消息投递状态",
+    "deliveryFailed": "请检查微信连接、回复窗口或成果文件是否变化。",
+    "deliveryHint": "投递与模型执行分开记录。补发只发送已有结果，不再次调用模型；平台接受不代表用户已读。",
+    "desktopMessage": "电脑端消息",
+    "disableSync": "暂停同步",
+    "disconnect": "断开连接",
+    "disconnectHint": "断开连接并取消待发内容。已发送的消息无法撤回，本地记录和文件保留。",
+    "edit": "编辑",
+    "editTask": "编辑定时任务",
+    "error": "操作未完成",
+    "errors": {
+      "automation_binding_busy": "请先完成或停止当前任务，再切换同步会话。",
+      "automation_delivery_expired": "该投递已过期或授权身份发生变化，不会改投其他账号。",
+      "automation_no_model": "当前没有允许使用的模型，请先导入或检查模型配置。",
+      "automation_notification_not_bound": "请先连接微信并启用会话同步，再设置微信通知。",
+      "automation_schedule_in_past": "请选择未来的执行时间。",
+      "automation_task_busy": "请先停止正在运行的任务，再更改此设置。",
+      "automation_wechat_login_failed": "微信登录失败，请重新连接并扫码。"
+    },
+    "genericError": "请检查连接和当前任务状态后重试。已保存的记录和文件不会因此删除。",
+    "interval": "每隔若干分钟",
+    "localOnly": "需要电脑和 Zen AI 保持运行并联网",
+    "loginConsent": "仅连接你本人的微信。扫码登录后还需在此确认身份才会启用；不会恢复旧版连接。",
+    "minutes": "间隔分钟数",
+    "model": "使用模型",
+    "mustAuthorize": "请确认任务执行授权",
+    "name": "名称",
+    "newChat": "新建微信对话",
+    "nextRun": "下次执行",
+    "notice": {
+      "attachment": "请阅读附件并帮我处理。",
+      "attachmentFailed": "附件没有完整接收成功，请减少文件数量后，将支持的文件与要求一起重新发送；本次未按残缺附件执行。",
+      "empty": "本次任务没有返回最终文字，请在电脑上查看结果。",
+      "failed": "本次任务未能完成，请在电脑端查看对应会话，或稍后再试。",
+      "fileDeliveryLimited": "部分文件因不可用、已变化、格式或数量／大小限制，无法在此发送。任务结果已保存，请在电脑端取回文件。",
+      "newChatStarted": "已开始新的对话，之前的记录仍保留。请发送你的问题。",
+      "processing": "正在处理，请稍等。完成后会把结果发给你，无需重复发送。",
+      "queueExpired": "这条消息排队时间过长，尚未执行，请在需要时重新发送。",
+      "stopped": "已停止，已保存的文件和会话记录保留。",
+      "unsupported": "当前入口暂不支持这种文件，请在电脑上继续处理。"
+    },
+    "notificationNeedsConfirmation": "微信同步已变更，请编辑并保存任务以重新确认通知。",
+    "notifyWechat": "将结果发送到我当前授权的微信",
+    "once": "仅执行一次",
+    "openConversation": "打开对话",
+    "ownerConfirm": "请确认尾号 {{owner}} 的账号是你本人，再开启连接。",
+    "pause": "暂停",
+    "reason": "说明",
+    "refresh": "刷新",
+    "resend": "补发",
+    "restoreSync": "恢复此会话同步",
+    "result": "结果",
+    "resume": "恢复",
+    "retryWarning": "“结果未知”表示消息可能已送达，请先在手机确认再补发。补发不会重新运行模型。",
+    "run": "立即执行",
+    "runHistory": "执行记录",
+    "scan": "扫码连接微信",
+    "schedule": "定时任务",
+    "scheduleHint": "按本机时区 {{timezone}} 执行，约每 5 秒检查一次；忙碌时排队，错过的计划不集中补跑。",
+    "scheduleRule": "执行规则",
+    "scope": "支持本人私聊、简单文件制作和处理。后台任务只使用专用工作目录和受控文件工具，不是远程桌面，不开放任意脚本。旧版连接和旧任务仍保持停用。",
+    "states": {
+      "accepted": "平台已接受",
+      "active": "已启用",
+      "awaiting_confirmation": "等待本人确认",
+      "cancelled": "已取消",
+      "completed": "已完成",
+      "connected": "已连接",
+      "disconnected": "未连接",
+      "error": "失败",
+      "expired": "登录已过期",
+      "failed": "失败",
+      "interrupted": "已中断",
+      "logging_in": "等待扫码",
+      "missed": "已错过",
+      "paused": "已暂停",
+      "pending": "待发送",
+      "queued": "排队中",
+      "reconnecting": "正在重连",
+      "retry_wait": "等待重试",
+      "running": "执行中",
+      "sending": "发送中",
+      "stopped": "已停止",
+      "success": "已完成",
+      "unknown": "结果未知",
+      "waiting_user": "需要处理"
+    },
+    "status": "状态",
+    "stop": "停止当前任务",
+    "syncing": "正在同步",
+    "taskConsent": "我授权此任务在专用工作目录中使用受控工具自动执行，不包含覆盖原件、删除、付款或任意操作电脑的权限。",
+    "taskFailed": "任务失败或已中断，请打开对应对话查看；已生成文件保留。",
+    "taskPrompt": "希望助手做什么？",
+    "time": "时间",
+    "title": "微信与定时任务",
+    "wechat": "微信助手",
+    "wechatConversation": "微信会话",
+    "wechatHelp": "发消息即可开始。发送“新对话”或 /new 新建会话，发送“停止”或 /stop 停止当前任务。每条消息最多 6 个支持的附件，单文件 20 MiB、合计 40 MiB。请随附件一起发送要求，分开发送的消息按不同轮次处理。成果文件和电脑续聊会同步回微信；如果回复窗口过期，请先在微信发送一条新消息。",
+    "weekday": "星期",
+    "weekly": "每周"
   },
   "backup": {
     "confirm": {
@@ -2115,6 +2237,13 @@
       "mcp": {
         "invalid": "无效的MCP服务器"
       }
+    },
+    "cancelled": {
+      "errorType": "主动停止",
+      "stage": "停止生成",
+      "suggestion": "如需继续，请确认已有结果后再发送后续要求。",
+      "summary": "本次生成已停止。",
+      "title": "已停止"
     },
     "cause": "错误原因",
     "chat": {
@@ -3082,6 +3211,13 @@
     "tooltip": {
       "pin": "窗口置顶"
     }
+  },
+  "model_recovery": {
+    "empty": "原模型 {{preferred}} 及备用模型暂不可用。",
+    "fallback": "原模型 {{preferred}} 暂不可用，已临时使用 {{actual}}。",
+    "idle": "原模型已通过稳定观察，等待空闲时回切。",
+    "observing": "原模型已恢复，继续观察约 {{minutes}} 分钟后在空闲时回切。",
+    "unavailable": "恢复后将自动观察，并在空闲时回切；手动选型会取消回切。"
   },
   "model_setup": {
     "description": "Zen AI 尚未发现可用模型。请先导入 Provider 配置，或前往模型设置完成配置。",
@@ -6620,6 +6756,62 @@
     "saveDataError": "保存数据失败，请重试",
     "title": "更新提示",
     "version": "版本"
+  },
+  "usage_statistics": {
+    "cache": "缓存 Token",
+    "cache_hint": "缓存包含读取和写入，已包含在输入中，不重复累计。",
+    "cache_partial": "部分历史记录缺少缓存数据，当前显示已记录的部分。",
+    "cache_rate": "缓存命中率",
+    "cache_read": "缓存读取占输入的比例",
+    "cache_subset": "已包含在输入中",
+    "cache_unknown": "这部分历史记录没有缓存数据。",
+    "custom_range": "自选日期",
+    "empty": "这段时间还没有用量记录",
+    "errors": {
+      "invalid_response": "用量数据暂时无法读取，请稍后重试。",
+      "range_too_large": "这段时间的记录较多，请缩短日期范围后重试。",
+      "timeout": "加载用量超时，请稍后重试或缩短日期范围。",
+      "unauthorized": "暂时无法查看用量，请检查服务密钥是否有效。",
+      "unavailable": "暂时无法加载用量，请稍后重试。",
+      "unsupported": "当前服务暂不支持用量查询"
+    },
+    "input": "输入 Token",
+    "intervals": {
+      "day": "按日",
+      "month": "按月",
+      "week": "按周"
+    },
+    "loading": "正在加载用量…",
+    "model": "模型",
+    "model_details": "模型用量",
+    "no_provider": "请先在模型服务中添加配置",
+    "output": "输出 Token",
+    "period": "统计时间",
+    "periods": {
+      "custom": "自选时间",
+      "last30": "近 30 天",
+      "last7": "近 7 天",
+      "month": "本月",
+      "today": "今日",
+      "week": "本周"
+    },
+    "provider": "选择服务",
+    "range_limit": "一次最多查看 366 天，请缩短日期范围。",
+    "rate_hint": "缓存读取 Token ÷ 输入 Token；缓存写入不计为命中。历史数据不完整时不显示比例。",
+    "refresh": "刷新",
+    "retry": "重试",
+    "scene": "使用场景",
+    "scenes": {
+      "all": "全部",
+      "assistant": "智能助手",
+      "chat": "AI 对话"
+    },
+    "search": "搜索模型",
+    "subtitle": "了解你的 AI 使用情况",
+    "title": "我的用量",
+    "trend": "用量趋势",
+    "unknown_model": "未记录模型",
+    "updated": "更新于 {{time}}"
   },
   "warning": {
     "missing_provider": "供应商不存在，已回退到默认供应商 {{provider}}。这可能导致问题。"

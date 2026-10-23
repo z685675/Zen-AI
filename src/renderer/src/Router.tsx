@@ -27,6 +27,7 @@ import PaintingsRoutePage from './pages/paintings/PaintingsRoutePage'
 import SettingsPage from './pages/settings/SettingsPage'
 import AssistantPresetsPage from './pages/store/assistants/presets/AssistantPresetsPage'
 import TranslatePage from './pages/translate/TranslatePage'
+import UsagePage from './pages/usage/UsagePage'
 
 const Router: FC = () => {
   const { onboardingCompleted, completeOnboarding } = useOnboardingState()
@@ -47,6 +48,7 @@ const Router: FC = () => {
             }
           />
           <Route path="/announcements" element={<AnnouncementsPage />} />
+          <Route path="/usage" element={<UsagePage />} />
           <Route path="/store" element={<AssistantPresetsPage />} />
           <Route path="/paintings/*" element={<PaintingsRoutePage />} />
           <Route path="/translate" element={<TranslatePage />} />

@@ -1,7 +1,6 @@
 // Local, cost-free smoke test. No user Provider, credential or upstream is used.
 import { spawn } from 'node:child_process'
 import { randomBytes, randomUUID } from 'node:crypto'
-import { once } from 'node:events'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { createRequire } from 'node:module'
@@ -13,6 +12,8 @@ import { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js'
 
+import { listenOnLoopback } from '../packages/shared/utils/loopbackServer'
+import { applyAutomationProfile, LIGHTWEIGHT_TOOLS } from '../src/main/services/agents/services/automation/profile'
 import { OpenCodeClient } from '../src/main/services/agents/services/opencode/client'
 import {
   buildOpenCodeConfig,
@@ -23,7 +24,9 @@ import { createOpenCodeGateway } from '../src/main/services/agents/services/open
 import { prepareOpenCodeOfflineConfig } from '../src/main/services/agents/services/opencode/offline'
 
 async function main() {
-  const packagedResources = process.argv[2] ? path.resolve(process.argv[2]) : undefined
+  const lightweight = process.argv[2] === '--lightweight'
+  const permissions = process.argv[2] === '--permissions'
+  const packagedResources = process.argv[2] && !lightweight && !permissions ? path.resolve(process.argv[2]) : undefined
   if (process.argv.length > 3) throw new Error('Usage: pnpm smoke:opencode [packaged-resources-directory]')
   const require = createRequire(__filename)
   const wrapperRequire = createRequire(require.resolve('opencode-ai/package.json'))
@@ -47,6 +50,8 @@ async function main() {
   let auditTurn = 0
   const requestAudits: Array<{ source: string | string[] | undefined; task: string | string[] | undefined }> = []
   let sawLegacyBackground = false
+  const lightweightInventories: string[][] = []
+  let lightweightToolCalls = 0
   const mcpEntries: Array<{ server: Server; transport: StreamableHTTPServerTransport }> = []
   const mcpSessions = new Map<string, (typeof mcpEntries)[number]>()
   const mcpInitialized = new Set<string>()
@@ -63,17 +68,27 @@ async function main() {
       if (!entry) {
         const server = new Server({ name: `zen-smoke-${mcpRoute}`, version: '1.0.0' }, { capabilities: { tools: {} } })
         server.setRequestHandler(ListToolsRequestSchema, async () => ({
-          tools: [
-            {
-              name: 'ping',
-              description: 'Local cost-free MCP fixture',
-              inputSchema: { type: 'object', properties: {} }
-            }
-          ]
+          tools: lightweight
+            ? LIGHTWEIGHT_TOOLS.map((name) => ({
+                name,
+                description: 'Controlled local fixture',
+                inputSchema: { type: 'object', properties: {} }
+              }))
+            : [
+                {
+                  name: 'ping',
+                  description: 'Local cost-free MCP fixture',
+                  inputSchema: { type: 'object', properties: {} }
+                }
+              ]
         }))
-        server.setRequestHandler(CallToolRequestSchema, async () => ({
-          content: [{ type: 'text', text: 'local MCP fixture' }]
-        }))
+        server.setRequestHandler(CallToolRequestSchema, async () => {
+          if (lightweight) {
+            lightweightToolCalls++
+            await writeFile(path.join(root, 'workspace', 'lightweight.txt'), 'controlled local output')
+          }
+          return { content: [{ type: 'text', text: 'local MCP fixture' }] }
+        })
         const transport = new StreamableHTTPServerTransport({
           sessionIdGenerator: randomUUID,
           onsessioninitialized: (id) => {
@@ -105,6 +120,8 @@ async function main() {
     requestAudits.push({ source: req.headers.originator, task: req.headers['x-zen-task-id'] })
     sawLegacyBackground ||= JSON.stringify(body.messages).includes('ZEN_LEGACY_BACKGROUND purple')
     usedModels.add(body.model)
+    if (lightweight)
+      lightweightInventories.push((body.tools || []).map((tool: any) => tool.function?.name || tool.name))
     const latestUser = body.messages.findLast((message: any) => message.role === 'user')
     if (JSON.stringify(latestUser).includes('WAIT_FOR_CANCEL')) {
       res.writeHead(200, { 'Content-Type': 'text/event-stream' })
@@ -114,7 +131,8 @@ async function main() {
     const compaction = JSON.stringify(body.messages).includes('context summarization agent')
     const hasToolResult = body.messages.some((message: any) => message.role === 'tool')
     const toolsRequested = body.messages.some(
-      (message: any) => typeof message.content === 'string' && message.content.includes('CREATE_SMOKE_FILE')
+      (message: any) =>
+        typeof message.content === 'string' && /CREATE_SMOKE_FILE|CREATE_LIGHTWEIGHT_OUTPUT/.test(message.content)
     )
     res.writeHead(200, { 'Content-Type': 'text/event-stream' })
     const delta =
@@ -126,7 +144,9 @@ async function main() {
                 id: 'call_smoke',
                 type: 'function',
                 function: {
-                  name: 'write',
+                  name: lightweight
+                    ? body.tools.find((tool: any) => tool.function?.name?.endsWith('__create_file')).function.name
+                    : 'write',
                   arguments: JSON.stringify({
                     filePath: path.join(root, 'workspace', 'result.txt'),
                     content: 'verified local tool execution'
@@ -144,21 +164,22 @@ async function main() {
     )
     res.end('data: [DONE]\n\n')
   })
-  gateway.listen(0, '127.0.0.1')
-  await once(gateway, 'listening')
-  const gatewayPort = (gateway.address() as { port: number }).port
+  const gatewayPort = await listenOnLoopback(gateway)
   await mkdir(path.join(root, 'workspace'), { recursive: true })
   await mkdir(path.join(root, 'skill'), { recursive: true })
   await writeFile(
     path.join(root, 'skill', 'SKILL.md'),
     '---\nname: zen-smoke\ndescription: Cost-free integration test skill\n---\nUse the local mock transport only.\n'
   )
+  const smokeSession = {
+    id: 'zen-local-smoke',
+    accessible_paths: [path.join(root, 'workspace')],
+    configuration: { permission_mode: permissions ? 'default' : 'bypassPermissions' }
+  } as any
   const config = buildOpenCodeConfig({
-    session: {
-      id: 'zen-local-smoke',
-      accessible_paths: [path.join(root, 'workspace')],
-      configuration: { permission_mode: 'bypassPermissions' }
-    } as any,
+    session: lightweight
+      ? applyAutomationProfile(smokeSession, { kind: 'wechat', workspace: path.join(root, 'workspace') })
+      : smokeSession,
     provider: {
       id: 'local',
       type: 'new-api',
@@ -236,6 +257,40 @@ async function main() {
       }
     }
     const skills = await client.request<any[]>('/skill', 'GET', undefined, controller.signal)
+    if (lightweight) {
+      if (skills.some((skill) => skill.location !== '<built-in>'))
+        throw new Error('Lightweight native runtime discovered external skills')
+      const session = await client.request<{ id: string }>(
+        '/session',
+        'POST',
+        { title: 'Lightweight mock' },
+        controller.signal
+      )
+      await client.request(
+        `/session/${session.id}/message`,
+        'POST',
+        {
+          model: { providerID: 'zen-selected', modelID: 'zen-smoke' },
+          parts: [{ type: 'text', text: 'CREATE_LIGHTWEIGHT_OUTPUT' }]
+        },
+        controller.signal
+      )
+      if (
+        !lightweightToolCalls ||
+        (await readFile(path.join(root, 'workspace', 'lightweight.txt'), 'utf8')) !== 'controlled local output'
+      )
+        throw new Error('Controlled tool was not executed by native runtime')
+      const allowed = new Set(LIGHTWEIGHT_TOOLS.map((name) => `mcp__assistant__${name}`))
+      if (
+        !lightweightInventories.length ||
+        lightweightInventories.some((tools) => !tools.length || tools.some((tool) => !allowed.has(tool as any)))
+      )
+        throw new Error(`Unexpected native lightweight tool inventory: ${JSON.stringify(lightweightInventories)}`)
+      process.stdout.write(
+        `PASS lightweight native profile: controlled MCP execution, no terminal/browser/skills exposed; ${requests} local mock requests, zero paid requests.\n`
+      )
+      return
+    }
     const smokeSkill = skills.find((skill) => skill.name === 'zen-smoke')
     if (!smokeSkill) throw new Error('Explicit enabled Skill folder not discovered')
     if (
@@ -244,6 +299,66 @@ async function main() {
     )
       throw new Error('Native Skill inventory did not report its actual definition path')
     if (requests !== 0) throw new Error('Read-only native Skill inventory unexpectedly called a model')
+    if (permissions) {
+      const session = await client.request<{ id: string }>(
+        '/session',
+        'POST',
+        { title: 'Native approval' },
+        controller.signal
+      )
+      const events = client.events(controller.signal)
+      await events.next()
+      const submit = client.request(
+        `/session/${session.id}/prompt_async`,
+        'POST',
+        {
+          agent: 'build',
+          model: { providerID: 'zen-selected', modelID: 'zen-smoke' },
+          parts: [{ type: 'text', text: 'CREATE_SMOKE_FILE' }]
+        },
+        controller.signal
+      )
+      let approved = false
+      let output = false
+      for await (const event of events) {
+        const props = event.properties
+        if (
+          props.sessionID !== session.id &&
+          props.info?.sessionID !== session.id &&
+          props.part?.sessionID !== session.id
+        )
+          continue
+        if (event.type === 'session.error') throw new Error('Native approval fixture failed')
+        if (event.type === 'permission.asked') {
+          if (
+            props.permission !== 'edit' ||
+            path.resolve(props.metadata.filepath) !== path.join(root, 'workspace', 'result.txt') ||
+            !props.tool?.callID
+          )
+            throw new Error('Unexpected native approval request')
+          await client.request(`/permission/${props.id}/reply`, 'POST', { reply: 'once' }, controller.signal)
+          approved = true
+        }
+        if (
+          event.type === 'message.part.updated' &&
+          props.part.type === 'text' &&
+          props.part.text?.includes('local mock reply')
+        )
+          output = true
+        if (approved && output && event.type === 'session.status' && props.status.type === 'idle') break
+      }
+      await submit
+      if (
+        !approved ||
+        !output ||
+        (await readFile(path.join(root, 'workspace', 'result.txt'), 'utf8')) !== 'verified local tool execution'
+      )
+        throw new Error('Native one-time write approval did not complete')
+      process.stdout.write(
+        'PASS native edit approval: linked tool ID, one-time reply and actual file output; zero paid requests.\n'
+      )
+      return
+    }
     // Simulate background installation completing after the native process
     // has started. No system installation, Git or model request is involved.
     await mkdir(toolBinDir, { recursive: true })

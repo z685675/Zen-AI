@@ -63,6 +63,20 @@
       "tag": "0008_task_run_metadata",
       "version": "7",
       "when": 1780000100000
+    },
+    {
+      "breakpoints": true,
+      "idx": 9,
+      "tag": "0009_assistant_automation",
+      "version": "7",
+      "when": 1792022400000
+    },
+    {
+      "breakpoints": true,
+      "idx": 10,
+      "tag": "0010_assistant_automation_settings",
+      "version": "7",
+      "when": 1792022401000
     }
   ],
   "version": "8"

@@ -1,0 +1,372 @@
+{
+  "checks": [
+    {
+      "executor": "script",
+      "id": "AI-LINT",
+      "modes": ["release"],
+      "project": "ai",
+      "tags": ["static"],
+      "target": ["test:lint"],
+      "timeoutMs": 300000,
+      "title": "客户端只读 lint"
+    },
+    {
+      "executor": "script",
+      "id": "AI-TYPES",
+      "modes": ["release"],
+      "project": "ai",
+      "tags": ["static"],
+      "target": ["typecheck"],
+      "timeoutMs": 300000,
+      "title": "客户端类型检查"
+    },
+    {
+      "executor": "script",
+      "id": "AI-I18N",
+      "modes": ["release"],
+      "project": "ai",
+      "tags": ["static"],
+      "target": ["i18n:check"],
+      "timeoutMs": 120000,
+      "title": "客户端翻译完整性"
+    },
+    {
+      "executor": "script",
+      "id": "AI-FORMAT",
+      "modes": ["release"],
+      "project": "ai",
+      "tags": ["static"],
+      "target": ["format:check"],
+      "timeoutMs": 120000,
+      "title": "客户端只读格式检查"
+    },
+    {
+      "executor": "script",
+      "id": "AI-OPENAPI",
+      "modes": ["release"],
+      "project": "ai",
+      "tags": ["static"],
+      "target": ["openapi:check"],
+      "timeoutMs": 120000,
+      "title": "客户端 OpenAPI 契约"
+    },
+    {
+      "executor": "script",
+      "id": "AI-SKILLS",
+      "modes": ["release"],
+      "project": "ai",
+      "tags": ["static", "opencode", "files"],
+      "target": ["skills:check"],
+      "timeoutMs": 120000,
+      "title": "内置技能资源校验"
+    },
+    {
+      "executor": "vitest",
+      "id": "AI-UNIT",
+      "modes": ["release"],
+      "project": "ai",
+      "tags": ["full"],
+      "target": [],
+      "timeoutMs": 2700000,
+      "title": "客户端全量单元测试"
+    },
+    {
+      "executor": "vitest",
+      "id": "AI-QUALITY",
+      "modes": ["offline"],
+      "project": "ai",
+      "tags": ["quality"],
+      "target": ["scripts/quality/__tests__"],
+      "timeoutMs": 180000,
+      "title": "质检工具自测"
+    },
+    {
+      "executor": "vitest",
+      "id": "AI-POLICY",
+      "modes": ["offline"],
+      "project": "ai",
+      "tags": ["policy"],
+      "target": [
+        "packages/shared/config/modelPolicy.test.ts",
+        "packages/shared/config/modelRecovery.test.ts",
+        "packages/shared/config/modelAvailability.test.ts",
+        "src/main/services/__tests__/ModelAvailabilityService.test.ts",
+        "src/main/services/agents/services/__tests__/managedModelRecovery.test.ts",
+        "src/renderer/src/services/__tests__/ModelAvailabilitySyncService.test.ts",
+        "src/renderer/src/services/__tests__/ModelRequestRecovery.test.ts",
+        "src/renderer/src/services/__tests__/modelRecoveryIntents.test.ts"
+      ],
+      "timeoutMs": 180000,
+      "title": "模型策略与恢复回归"
+    },
+    {
+      "executor": "vitest",
+      "id": "AI-OPENCODE",
+      "modes": ["offline"],
+      "project": "ai",
+      "tags": ["opencode"],
+      "target": [
+        "src/main/services/agents/services/opencode/__tests__",
+        "packages/shared/utils/loopbackServer.test.ts",
+        "src/renderer/src/services/__tests__/StreamProcessingService.test.ts",
+        "src/main/services/__tests__/AsyncQuitGuard.test.ts",
+        "src/main/services/__tests__/LoggerShutdown.test.ts",
+        "src/main/services/__tests__/OvmsShutdown.test.ts",
+        "src/main/services/agents/database/__tests__/DatabaseManager.test.ts",
+        "src/main/mcpServers/__tests__/browserShutdown.test.ts",
+        "src/main/mcpServers/__tests__/browser.test.ts",
+        "src/main/apiServer/__tests__/server.test.ts"
+      ],
+      "timeoutMs": 300000,
+      "title": "OpenCode 服务与流式故障回归"
+    },
+    {
+      "executor": "vitest",
+      "id": "AI-CONTEXT",
+      "modes": ["offline"],
+      "project": "ai",
+      "tags": ["context"],
+      "target": ["src/renderer/src/services/context/__tests__"],
+      "timeoutMs": 300000,
+      "title": "AI 对话增量整理与兜底"
+    },
+    {
+      "executor": "vitest",
+      "id": "AI-FILES",
+      "modes": ["offline"],
+      "project": "ai",
+      "tags": ["files"],
+      "target": [
+        "src/main/mcpServers/__tests__/assistantReadDocument.test.ts",
+        "src/main/mcpServers/__tests__/assistantDocumentWorkers.test.ts",
+        "src/main/mcpServers/__tests__/assistantDocumentProcess.test.ts",
+        "src/main/mcpServers/__tests__/assistantFileSafety.test.ts",
+        "scripts/__tests__/opencode-attachment-smoke.test.ts"
+      ],
+      "timeoutMs": 300000,
+      "title": "附件读取、文件安全与大事件"
+    },
+    {
+      "executor": "vitest",
+      "id": "AI-USAGE",
+      "modes": ["offline"],
+      "project": "ai",
+      "tags": ["usage"],
+      "target": [
+        "src/renderer/src/pages/usage/__tests__",
+        "src/renderer/src/services/__tests__/UsageStatisticsService.test.ts",
+        "src/main/services/agents/services/opencode/__tests__/usageObservation.test.ts"
+      ],
+      "timeoutMs": 180000,
+      "title": "客户端用量与缓存展示"
+    },
+    {
+      "executor": "vitest",
+      "id": "AI-AUTOMATION",
+      "modes": ["offline"],
+      "project": "ai",
+      "tags": ["automation"],
+      "target": [
+        "src/main/services/agents/services/automation/__tests__",
+        "src/main/services/agents/services/__tests__/LegacyAutomationShutdown.test.ts",
+        "src/main/services/agents/services/channels/adapters/wechat/__tests__"
+      ],
+      "timeoutMs": 300000,
+      "title": "新版微信与定时任务隔离回归"
+    },
+    {
+      "executor": "script",
+      "id": "AI-NATIVE",
+      "modes": ["offline", "release"],
+      "project": "ai",
+      "tags": ["opencode"],
+      "target": ["smoke:opencode"],
+      "timeoutMs": 180000,
+      "title": "原生 OpenCode 离线工具链"
+    },
+    {
+      "executor": "script",
+      "id": "AI-NATIVE-FILES",
+      "modes": ["offline", "release"],
+      "project": "ai",
+      "tags": ["opencode", "files"],
+      "target": ["smoke:opencode:attachments"],
+      "timeoutMs": 300000,
+      "title": "原生 OpenCode 大附件与压缩"
+    },
+    {
+      "executor": "script",
+      "id": "AI-BUILD",
+      "modes": ["release"],
+      "project": "ai",
+      "tags": ["build"],
+      "target": ["validate:release"],
+      "timeoutMs": 600000,
+      "title": "客户端生产构建"
+    },
+    {
+      "executor": "go-test",
+      "id": "API-POLICY",
+      "modes": ["offline"],
+      "project": "api",
+      "tags": ["policy"],
+      "target": ["./model", "./service", "./controller"],
+      "timeoutMs": 300000,
+      "title": "面板供应、路由、恢复、预检"
+    },
+    {
+      "executor": "go-test",
+      "id": "API-UNIT",
+      "modes": ["release"],
+      "project": "api",
+      "tags": ["full"],
+      "target": ["./..."],
+      "timeoutMs": 900000,
+      "title": "面板全量 Go 测试"
+    },
+    {
+      "executor": "go-vet",
+      "id": "API-VET",
+      "modes": ["release"],
+      "project": "api",
+      "tags": ["static"],
+      "target": ["./model", "./service", "./controller"],
+      "timeoutMs": 300000,
+      "title": "面板 Go 静态检查"
+    },
+    {
+      "executor": "api-web",
+      "id": "API-WEB",
+      "modes": ["release"],
+      "project": "api",
+      "tags": ["static", "usage", "policy"],
+      "target": ["build:check"],
+      "timeoutMs": 300000,
+      "title": "面板前端类型与生产构建"
+    }
+  ],
+  "manual": [
+    {
+      "expected": "正常启动，记录未丢失，回答可见且结束状态正确。",
+      "id": "MAN-PACKAGE",
+      "prompt": "你好，简单介绍一下你能帮我做什么。",
+      "reason": "本批未自动安装或升级真实安装包。",
+      "steps": ["安装本次对应版本的安装包。", "打开旧会话，确认 Provider、记录和附件仍在。"],
+      "tags": ["always"],
+      "title": "实际安装与升级"
+    },
+    {
+      "expected": "不闪退、原件保留，生成新文件且数值正确。",
+      "id": "MAN-MAC",
+      "prompt": "请看看这个表格，找出销售额最高的三项，再帮我整理成一个新表格，原文件不要改。",
+      "reason": "当前机器上的单测和原生 smoke 不能代替 Mac 实机验收。",
+      "steps": ["在实际 Mac 安装包中上传一份合成 Excel。", "执行提示词，检查结果可打开且应用没有退出。"],
+      "tags": ["opencode", "files", "build"],
+      "title": "Mac 实机附件与复杂任务"
+    },
+    {
+      "expected": "续接新版助手的原会话，不误跳旧入口。",
+      "id": "MAN-WEB",
+      "prompt": "请打开这个网页并总结，遇到登录时等我处理。",
+      "reason": "不能自动替用户完成真实登录/验证码。",
+      "steps": ["提供一个需要自己登录的网页。", "手动完成登录或验证码后，点击继续。"],
+      "tags": ["opencode"],
+      "title": "真实登录与验证码"
+    },
+    {
+      "expected": "文件可以在实际办公软件打开；内容不溢出、数字清晰，Excel数据与公式正确，原件保留。",
+      "id": "MAN-OFFICE",
+      "prompt": "请根据我上传的资料整理成一个清楚易读的新文件，保留原文件，项目编号和金额不要改。",
+      "reason": "独立解析能核对结构、数据与公式，不能代替实际办公软件的版式与专业内容抽检。",
+      "steps": [
+        "在实际模型文件验收完成后，抽查生成的Word、Excel、PPT和PDF。没有执行文件生成时标记未测。",
+        "使用本机办公软件打开，查看中文字体、分页、表格和幻灯片；核对合成资料编号ZX7319、金额120/230/350、合计700。"
+      ],
+      "tags": ["files", "build"],
+      "title": "Office实际打开与版式抽检"
+    },
+    {
+      "expected": "同一会话双端关联，定时只执行一次；旧版集成不被重新启用。",
+      "id": "MAN-AUTOMATION",
+      "prompt": "请用一句话告诉我今天可以怎样安排工作。",
+      "reason": "离线测试只用模拟传输，不实际扫码或发送微信。",
+      "steps": ["只连接自己的测试微信，发一句问候。", "在电脑续聊，确认手机收到，再创建一条测试计划并删除计划。"],
+      "tags": ["automation"],
+      "title": "微信与定时真实投递"
+    },
+    {
+      "expected": "回答最多400元，流式展示、首字与完成时间正常。",
+      "id": "MAN-LIVE",
+      "prompt": "我们原定预算800元，现在改为600元，其中留200元备用。请告诉我最多能花多少钱。",
+      "reason": "离线/本地模拟不能证明真实上游可用；付费批次仅覆盖明确批准的模型和范围。",
+      "steps": [
+        "运行pnpm quality:check，隐藏输入测试Key、填写Provider并选择任意数量模型；自动预检、测试和清理凭据，无需填写单价。",
+        "复核本次报告中的实际执行范围、回答和流式展示；无报价时费用标为未核算，不能把模拟通过当作真实渠道通过。"
+      ],
+      "tags": ["always"],
+      "title": "已配置真实模型验收"
+    }
+  ],
+  "rules": [
+    { "prefixes": ["scripts/quality/", "tests/quality/"], "project": "ai", "tags": ["quality"] },
+    {
+      "prefixes": [
+        "packages/shared/config/model",
+        "src/main/services/ModelAvailability",
+        "src/main/services/agents/services/managedModelRecovery",
+        "src/renderer/src/services/Model",
+        "src/renderer/src/services/modelRecovery",
+        "src/renderer/src/services/RemoteModelPolicy",
+        "src/renderer/src/services/ProviderModel",
+        "src/renderer/src/components/ModelRecoveryNotice/"
+      ],
+      "project": "ai",
+      "tags": ["policy"]
+    },
+    {
+      "prefixes": [
+        "src/main/services/agents/services/opencode/",
+        "scripts/opencode-runtime-smoke",
+        "resources/opencode-runtime/"
+      ],
+      "project": "ai",
+      "tags": ["opencode"]
+    },
+    {
+      "prefixes": [
+        "src/main/mcpServers/assistant",
+        "src/renderer/src/services/AgentAttachment",
+        "scripts/opencode-attachment-smoke"
+      ],
+      "project": "ai",
+      "tags": ["files", "opencode"]
+    },
+    { "prefixes": ["src/renderer/src/services/context/"], "project": "ai", "tags": ["context"] },
+    {
+      "prefixes": ["src/renderer/src/pages/usage/", "src/renderer/src/services/UsageStatistics"],
+      "project": "ai",
+      "tags": ["usage"]
+    },
+    {
+      "prefixes": [
+        "src/main/services/agents/services/automation/",
+        "src/main/services/agents/services/channels/",
+        "src/renderer/src/pages/settings/AutomationSettings"
+      ],
+      "project": "ai",
+      "tags": ["automation"]
+    },
+    {
+      "prefixes": [
+        "controller/",
+        "model/",
+        "service/",
+        "web/default/src/features/system-settings/",
+        "web/default/src/features/usage-logs/"
+      ],
+      "project": "api",
+      "tags": ["policy", "usage"]
+    }
+  ],
+  "schemaVersion": 1
+}

@@ -1,7 +1,9 @@
+import { modelRecoveryIntents } from '@renderer/services/modelRecoveryIntents'
 import type { Assistant, Model, Topic } from '@renderer/types'
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
 
 import {
+  getAssistantConversationModel,
   getNewConversationModel,
   getTopicConversationAssistant,
   getTopicConversationModel,
@@ -39,6 +41,10 @@ const createTopic = (model?: Model): Topic => ({
 })
 
 describe('conversation model policy', () => {
+  beforeEach(() => {
+    for (const slot of ['global:chat', 'assistant:default:model', 'assistant:default:defaultModel', 'topic:topic-1'])
+      modelRecoveryIntents.set(slot, undefined)
+  })
   it('uses the current global default for a new default-assistant conversation', () => {
     expect(getNewConversationModel(createAssistant(), lunaModel)).toBe(lunaModel)
   })
@@ -58,6 +64,16 @@ describe('conversation model policy', () => {
 
   it('falls back to the historical assistant model for topics created before model snapshots existed', () => {
     expect(getTopicConversationModel(createTopic(), createAssistant(), lunaModel)).toBe(oldModel)
+  })
+
+  it('does not escape exhausted configured fallbacks into an unrelated global model', () => {
+    const thirdParty = { ...customModel, provider: 'third-party' }
+    modelRecoveryIntents.set('topic:topic-1', { preferred: 'zen:A', actual: null })
+    expect(getTopicConversationModel(createTopic(), createAssistant(), thirdParty)).toBeUndefined()
+    modelRecoveryIntents.set('assistant:default:model', { preferred: 'zen:A', actual: null })
+    expect(getAssistantConversationModel(createAssistant({ model: undefined }), thirdParty)).toBeUndefined()
+    modelRecoveryIntents.set('global:chat', { preferred: 'zen:A', actual: null })
+    expect(getNewConversationModel(createAssistant(), undefined)).toBeUndefined()
   })
 
   it('compares both provider and model id', () => {

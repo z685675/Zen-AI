@@ -35,6 +35,16 @@ export class CdpBrowserController {
   private readonly operationLimiter: BrowserOperationLimiter
   private readonly downloadManager: BrowserDownloadManager
   private privateStorageClearPromise: Promise<void> | undefined
+  private privateStorageUsed = false
+  private disposed = false
+  private readonly updateTheme = () => {
+    const isDark = nativeTheme.shouldUseDarkColors
+    for (const windowInfo of this.windows.values()) {
+      if (windowInfo.tabBarView && !windowInfo.tabBarView.webContents.isDestroyed()) {
+        windowInfo.tabBarView.webContents.executeJavaScript(`window.setTheme(${isDark})`).catch(() => {})
+      }
+    }
+  }
 
   constructor(options?: {
     maxWindows?: number
@@ -52,16 +62,7 @@ export class CdpBrowserController {
     this.downloadManager = new BrowserDownloadManager((webContentsId) => this.findTabByWebContentsId(webContentsId))
 
     // Listen for theme changes and update all tab bars
-    nativeTheme.on('updated', () => {
-      const isDark = nativeTheme.shouldUseDarkColors
-      for (const windowInfo of this.windows.values()) {
-        if (windowInfo.tabBarView && !windowInfo.tabBarView.webContents.isDestroyed()) {
-          windowInfo.tabBarView.webContents.executeJavaScript(`window.setTheme(${isDark})`).catch(() => {
-            // Ignore errors if tab bar is not ready
-          })
-        }
-      }
-    })
+    nativeTheme.on('updated', this.updateTheme)
   }
 
   private getWindowKey(privateMode: boolean): string {
@@ -73,9 +74,18 @@ export class CdpBrowserController {
   }
 
   private async ensureAppReady() {
+    if (this.disposed) throw new Error('Browser controller is closed')
     if (!app.isReady()) {
       await app.whenReady()
     }
+    if (this.disposed) throw new Error('Browser controller is closed')
+  }
+
+  public async dispose(): Promise<void> {
+    this.disposed = true
+    nativeTheme.removeListener('updated', this.updateTheme)
+    await Promise.allSettled([...this.windowCreation.values()])
+    await this.reset()
   }
 
   /**
@@ -88,6 +98,7 @@ export class CdpBrowserController {
     if (this.privateStorageClearPromise) {
       return this.privateStorageClearPromise
     }
+    if (!this.privateStorageUsed) return Promise.resolve()
 
     const clearPromise = (async () => {
       try {
@@ -99,6 +110,7 @@ export class CdpBrowserController {
         const browserSession = fromPartition.call(session, this.getPartition(true))
         await browserSession.clearStorageData()
         await browserSession.clearCache()
+        this.privateStorageUsed = false
         logger.info('Private browser storage cleared')
       } catch (error) {
         // Cleanup is best effort during window shutdown. Never let an
@@ -599,6 +611,7 @@ export class CdpBrowserController {
     await this.ensureAppReady()
 
     const partition = this.getPartition(privateMode)
+    if (privateMode) this.privateStorageUsed = true
 
     const win = new BrowserWindow({
       show: showWindow,
@@ -644,6 +657,7 @@ export class CdpBrowserController {
     await this.ensureAppReady()
     if (privateMode && this.privateStorageClearPromise) {
       await this.privateStorageClearPromise
+      await this.ensureAppReady()
     }
     this.sweepIdle()
 
@@ -736,6 +750,7 @@ export class CdpBrowserController {
    */
   public async createTab(privateMode = false, showWindow = false): Promise<{ tabId: string; view: BrowserView }> {
     const windowInfo = await this.getOrCreateWindow(privateMode, showWindow)
+    if (this.disposed) throw new Error('Browser controller is closed')
     const tabId = randomUUID()
     const partition = this.getPartition(privateMode)
 

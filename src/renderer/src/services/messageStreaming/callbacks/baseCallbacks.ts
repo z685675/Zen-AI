@@ -31,7 +31,6 @@ import { isFocused, isOnHomePage } from '@renderer/utils/window'
 import { getAgentTaskLimitDetails } from '@shared/agents/taskConcurrency'
 import { DEFAULT_OPENCODE_AGENT_ID } from '@shared/config/agents'
 import type { AISDKError } from 'ai'
-import { NoOutputGeneratedError } from 'ai'
 
 import type { BlockManager } from '../BlockManager'
 
@@ -150,10 +149,6 @@ export const createBaseCallbacks = (deps: BaseCallbacksDependencies) => {
       }
 
       logger.debug('onError', error)
-      if (NoOutputGeneratedError.isInstance(error)) {
-        void autoRenameTopic(assistant, topicId)
-        return
-      }
       const isErrorTypeAbort = isAbortError(error)
       const responseTiming = getResponseTiming(isErrorTypeAbort ? 'cancelled' : 'failed')
       terminalStatus = isErrorTypeAbort ? AssistantMessageStatus.SUCCESS : AssistantMessageStatus.ERROR

@@ -2,6 +2,7 @@ import { loggerService } from '@logger'
 import type { ContentSearchRef } from '@renderer/components/ContentSearch'
 import { ContentSearch } from '@renderer/components/ContentSearch'
 import { HStack } from '@renderer/components/Layout'
+import { TopicModelRecoveryNotice } from '@renderer/components/ModelRecoveryNotice'
 import ModelSetupGuide from '@renderer/components/ModelSetupGuide'
 import MultiSelectActionPopup from '@renderer/components/Popups/MultiSelectionPopup'
 import PromptPopup from '@renderer/components/Popups/PromptPopup'
@@ -16,6 +17,7 @@ import { useShortcut } from '@renderer/hooks/useShortcuts'
 import { useShowTopics } from '@renderer/hooks/useStore'
 import { useTimer } from '@renderer/hooks/useTimer'
 import { EVENT_NAMES, EventEmitter } from '@renderer/services/EventService'
+import { modelRecoveryIntents } from '@renderer/services/modelRecoveryIntents'
 import { useAppSelector } from '@renderer/store'
 import type { Assistant, Topic } from '@renderer/types'
 import { classNames } from '@renderer/utils'
@@ -165,6 +167,7 @@ const Chat: FC<Props> = ({
     })
 
     if (selectedModel) {
+      modelRecoveryIntents.set(`topic:${activeTopic.id}`, undefined)
       const nextTopic = { ...activeTopic, model: selectedModel }
       updateTopic(nextTopic)
       setActiveTopic(nextTopic)
@@ -339,6 +342,7 @@ const Chat: FC<Props> = ({
                   />
                   {messageNavigation === 'buttons' && <ChatNavigation containerId="messages" />}
                   {!hasAvailableChatModels && <ModelSetupGuide compact />}
+                  <TopicModelRecoveryNotice topicId={activeTopic.id} />
                   <Inputbar
                     assistant={assistant}
                     topic={activeTopic}

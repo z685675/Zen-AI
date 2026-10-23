@@ -30,20 +30,6 @@ function normalizeUrl(value: string): string | undefined {
   }
 }
 
-function getTextFromModelMessage(message: ModelMessage): string {
-  if (typeof message.content === 'string') return message.content
-  if (!Array.isArray(message.content)) return ''
-
-  return message.content
-    .map((part) => {
-      if (!part || typeof part !== 'object') return ''
-      const text = (part as { type?: string; text?: unknown }).text
-      return typeof text === 'string' ? text : ''
-    })
-    .filter(Boolean)
-    .join('\n')
-}
-
 function extractUrls(text: string): string[] {
   const urls: string[] = []
   for (const match of text.matchAll(URL_PATTERN)) {
@@ -145,13 +131,18 @@ export function injectWebPageContext(messages: ModelMessage[], context: WebPageC
   return messages.map((message, index) => (index === lastUserIndex ? nextMessage : message))
 }
 
-export async function prepareWebPageMessages(messages: ModelMessage[]): Promise<{
+export async function prepareWebPageMessages(
+  messages: ModelMessage[],
+  userText: string
+): Promise<{
   messages: ModelMessage[]
   context?: WebPageContext
 }> {
   const lastUserIndex = getLastUserMessageIndex(messages)
   if (lastUserIndex < 0) return { messages }
 
-  const context = await loadWebPageContext(getTextFromModelMessage(messages[lastUserIndex]))
+  // Converted messages also contain untrusted attachment text. Only the user's
+  // direct input can request browsing, even when the attachment contains URLs.
+  const context = await loadWebPageContext(userText)
   return context ? { messages: injectWebPageContext(messages, context), context } : { messages }
 }

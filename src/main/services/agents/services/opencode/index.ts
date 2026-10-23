@@ -12,12 +12,15 @@ import type { GetAgentSessionResponse } from '@types'
 import type { TextStreamPart } from 'ai'
 
 import type { AgentServiceInterface, AgentStream, AgentThinkingOptions } from '../../interfaces/AgentStreamInterface'
+import { automationInstructions, getAutomationProfile } from '../automation/profile'
 import { failAgentStreamBeforeStart } from '../claudecode/preflight'
 import { promptForToolApproval } from '../claudecode/tool-permissions'
 import type { OpenCodeEvent } from './client'
+import { type CompactionEntry, discardEmptyNativeCompaction } from './compactionGuard'
 import { OPENCODE_PROVIDER_ID, OPENCODE_VERSION } from './config'
 import { OPENCODE_SYSTEM_INSTRUCTIONS } from './instructions'
 import { OpenCodePerformance } from './performance'
+import { watchOpenCodePermissions } from './permissions'
 import { prepareOpenCodeRuntime } from './prepare'
 import { type OpenCodeProcess } from './process'
 import { createTaskDeadline } from './taskDeadline'
@@ -66,6 +69,7 @@ export default class OpenCodeService implements AgentServiceInterface {
   ) {
     const signal = abortController.signal
     const eventController = new AbortController()
+    const permissionSignal = AbortSignal.any([signal, eventController.signal])
     let runtime: OpenCodeProcess | undefined
     let nativeId: string | undefined
     let completed = false
@@ -79,6 +83,8 @@ export default class OpenCodeService implements AgentServiceInterface {
     const timing = new OpenCodePerformance()
     const usageTotals = new OpenCodeUsageTotals()
     let firstOutputRecorded = false
+    let stopPermissionWatcher: (() => void) | undefined
+    const unfinishedTools = new Set<string>()
     let currentStatus: string | undefined
     const pendingPermissions = new Set<string>()
     const deadline = createTaskDeadline((kind) =>
@@ -98,6 +104,8 @@ export default class OpenCodeService implements AgentServiceInterface {
     )
     const browserWaits = new Set<string>()
     const emit = (chunk: Chunk) => {
+      if (chunk.type === 'tool-call') unfinishedTools.add(chunk.toolCallId)
+      else if (chunk.type === 'tool-result' || chunk.type === 'tool-error') unfinishedTools.delete(chunk.toolCallId)
       if (
         chunk.type === 'tool-call' &&
         chunk.toolName.includes('browser') &&
@@ -176,14 +184,31 @@ export default class OpenCodeService implements AgentServiceInterface {
       stream.sdkSessionId = nativeId
       emit({ type: 'start' })
       emit({ type: 'raw', rawValue: { type: 'init', session_id: nativeId, runtime_id: 'opencode' } })
-      const existing = await runtime.client.request<Array<{ info: NativeMessage }>>(
+      const verifyCompaction = async (history: CompactionEntry[], phase: string, running = false) => {
+        if (!(await discardEmptyNativeCompaction(runtime!.client, nativeId!, history, signal, running))) return
+        recordMainDiagnostic(options?.diagnosticId, 'runtime', 'empty-native-summary-discarded', {
+          runtime: 'opencode',
+          phase
+        })
+        if (running)
+          throw Object.assign(
+            new Error('OpenCode returned an empty context summary. Original conversation was preserved; please retry.'),
+            {
+              name: 'OpenCodeEmptyCompactionError',
+              zenFailureStage: 'agent-runtime',
+              zenRuntimeId: 'opencode'
+            }
+          )
+      }
+      const existing = await runtime.client.request<Array<CompactionEntry & { info: NativeMessage }>>(
         `/session/${nativeId}/message`,
         'GET',
         undefined,
         signal
       )
+      await verifyCompaction(existing, 'before-submission')
       const state = new OpenCodeStreamState(nativeId, session.id, new Set(existing.map((item) => item.info.id)))
-      const iterator = runtime.client.events(AbortSignal.any([signal, eventController.signal]))
+      let iterator = runtime.client.events(AbortSignal.any([signal, eventController.signal]))
       // Do not submit a task until the event channel is ready.
       const first = await iterator.next()
       if (first.done || first.value.type !== 'server.connected')
@@ -194,7 +219,9 @@ export default class OpenCodeService implements AgentServiceInterface {
         messageID: messageId,
         agent: session.configuration?.permission_mode === 'plan' ? 'plan' : 'build',
         model: { providerID: OPENCODE_PROVIDER_ID, modelID: modelId },
-        system: [OPENCODE_SYSTEM_INSTRUCTIONS, session.instructions || ''].join('\n\n'),
+        system: getAutomationProfile(session)
+          ? automationInstructions(getAutomationProfile(session)!)
+          : [OPENCODE_SYSTEM_INSTRUCTIONS, session.instructions || ''].join('\n\n'),
         parts: [
           { type: 'text', text: prompt },
           ...(images || []).map((img) => ({
@@ -214,12 +241,13 @@ export default class OpenCodeService implements AgentServiceInterface {
           eventController.abort('submission status uncertain')
         })
       const reconcile = async () => {
-        const messages = await runtime!.client.request<Array<{ info: NativeMessage; parts: any[] }>>(
+        const messages = await runtime!.client.request<Array<CompactionEntry & { info: NativeMessage }>>(
           `/session/${nativeId}/message`,
           'GET',
           undefined,
           signal
         )
+        await verifyCompaction(messages, 'reconciliation', true)
         if (messages.some((item) => item.info.id === messageId)) admitted = true
         for (const message of messages) {
           for (const chunk of state.consume({ type: 'message.updated', properties: { info: message.info } }))
@@ -236,14 +264,25 @@ export default class OpenCodeService implements AgentServiceInterface {
         return admitted && Boolean(latest?.time?.completed) && state.hasVisibleOutput
       }
       const permission = async (props: OpenCodeEvent['properties']) => {
-        if (pendingPermissions.has(props.id)) return
+        if (permissionSignal.aborted || completed || pendingPermissions.has(props.id)) return
         pendingPermissions.add(props.id)
+        if (getAutomationProfile(session)) {
+          await runtime!.client.request(
+            `/permission/${encodeURIComponent(props.id)}/reply`,
+            'POST',
+            { reply: 'reject', message: 'Background entry requires desktop authorization' },
+            signal
+          )
+          throw Object.assign(new Error('Background task requires desktop authorization'), {
+            code: 'automation_needs_desktop'
+          })
+        }
         permissions++
         deadline.wait(`permission:${props.id}`)
         status('waiting_permission')
         try {
           const result = await promptForToolApproval(props.permission, props.metadata || { patterns: props.patterns }, {
-            signal,
+            signal: permissionSignal,
             toolCallId: `${session.id}:${props.tool?.callID || props.id}`
           })
           await runtime!.client.request(
@@ -253,13 +292,20 @@ export default class OpenCodeService implements AgentServiceInterface {
               reply: result.behavior === 'allow' ? 'once' : 'reject',
               ...(result.behavior === 'deny' ? { message: result.message } : {})
             },
-            signal
+            permissionSignal
           )
         } finally {
           permissions--
           deadline.continue(`permission:${props.id}`)
-          if (!signal.aborted) status(permissions > 0 ? 'waiting_permission' : 'busy')
+          if (!permissionSignal.aborted) status(permissions > 0 ? 'waiting_permission' : 'busy')
         }
+      }
+      const requestPermission = (props: OpenCodeEvent['properties']) => {
+        void permission(props).catch((error) => {
+          if (permissionSignal.aborted) return
+          permissionError = error
+          eventController.abort('permission reply failed')
+        })
       }
       const handle = async (event: OpenCodeEvent) => {
         const props = event.properties
@@ -271,12 +317,15 @@ export default class OpenCodeService implements AgentServiceInterface {
         if (event.type === 'session.error') throw this.nativeError(props.error)
         if (event.type === 'server.instance.disposed')
           throw new Error('OpenCode local instance was disposed during the task')
-        if (event.type === 'permission.asked')
-          void permission(props).catch((error) => {
-            permissionError = error
-            eventController.abort('permission reply failed')
-          })
+        if (event.type === 'permission.asked') requestPermission(props)
         if (event.type === 'session.compacted') {
+          const history = await runtime!.client.request<CompactionEntry[]>(
+            `/session/${nativeId}/message`,
+            'GET',
+            undefined,
+            signal
+          )
+          await verifyCompaction(history, 'during-task', true)
           status('busy')
           recordMainDiagnostic(options?.diagnosticId, 'runtime', 'native-compacted', { runtime: 'opencode' })
         }
@@ -329,29 +378,100 @@ export default class OpenCodeService implements AgentServiceInterface {
         }
         for (const chunk of chunks) emit(chunk)
       }
-      let semanticFailure = false
-      try {
-        for await (const event of iterator) {
-          try {
-            await handle(event)
-          } catch (error) {
-            semanticFailure = true
-            throw error
-          }
-          if (completed) break
+      stopPermissionWatcher = watchOpenCodePermissions({
+        client: runtime.client,
+        sessionId: nativeId,
+        signal: permissionSignal,
+        hasUnfinishedTools: () => unfinishedTools.size > 0 && permissions === 0,
+        onPermission: (pending) => {
+          if (!pendingPermissions.has(pending.id))
+            recordMainDiagnostic(options?.diagnosticId, 'runtime', 'permission-event-recovered', {
+              runtime: 'opencode',
+              permission: pending.permission
+            })
+          requestPermission(pending)
+        },
+        onError: (error) => {
+          // A transient local inspection failure does not replay or stop the
+          // task. Keep it visible in diagnostics; the task deadline is bounded.
+          recordMainDiagnostic(options?.diagnosticId, 'runtime', 'permission-sync-failed', {
+            runtime: 'opencode',
+            error
+          })
         }
-      } catch (error) {
-        if (permissionError) throw permissionError
-        if (signal.aborted || semanticFailure) throw error
-        // Durable state is the source of truth if the final idle frame was lost.
-        const nativeStatus = await runtime.client.request<Record<string, { type: string }>>(
-          '/session/status',
-          'GET',
-          undefined,
-          signal
-        )
-        if (nativeStatus[nativeId]?.type === 'idle' || !nativeStatus[nativeId]) completed = await reconcile()
-        if (!completed) throw admissionError || error
+      })
+      let eventReconnects = 0
+      while (!completed) {
+        let semanticFailure = false
+        try {
+          for await (const event of iterator) {
+            try {
+              await handle(event)
+            } catch (error) {
+              semanticFailure = true
+              throw error
+            }
+            if (completed) break
+          }
+          if (!completed) throw new Error('OpenCode event stream ended before task completion')
+        } catch (error) {
+          if (permissionError) throw permissionError
+          if (signal.aborted || semanticFailure || eventController.signal.aborted) throw admissionError || error
+          // A broken local event connection is not a failed upstream task.
+          // Reattach to that SAME task; never submit prompt_async a second time.
+          const nativeStatus = await runtime.client.request<Record<string, { type: string }>>(
+            '/session/status',
+            'GET',
+            undefined,
+            signal
+          )
+          if (nativeStatus[nativeId]?.type === 'idle' || !nativeStatus[nativeId]) {
+            completed = await reconcile()
+            if (!completed) throw admissionError || error
+            break
+          }
+          if (eventReconnects >= 2) throw error
+          eventReconnects++
+          iterator = runtime.client.events(AbortSignal.any([signal, eventController.signal]))
+          let resumeEvents = false
+          try {
+            const connected = await iterator.next()
+            if (connected.done || connected.value.type !== 'server.connected')
+              throw new Error('OpenCode event stream reconnection failed')
+            // Subscribe BEFORE reading durable state so updates in the recovery
+            // window are queued. State translation deduplicates the overlap.
+            await reconcile()
+            const waiting = await runtime.client.request<OpenCodeEvent['properties'][]>(
+              '/permission',
+              'GET',
+              undefined,
+              signal
+            )
+            for (const pending of waiting) {
+              if (pending.sessionID === nativeId) await handle({ type: 'permission.asked', properties: pending })
+            }
+            const after = await runtime.client.request<Record<string, { type: string }>>(
+              '/session/status',
+              'GET',
+              undefined,
+              signal
+            )
+            observedBusy = true
+            if (!after[nativeId] || after[nativeId].type === 'idle') {
+              completed = await reconcile()
+              if (!completed) throw new Error('The new assistant returned an empty or incomplete result')
+            }
+            recordMainDiagnostic(options?.diagnosticId, 'runtime', 'event-stream-reconnected', {
+              runtime: 'opencode',
+              attempt: eventReconnects
+            })
+            resumeEvents = !completed
+          } finally {
+            // A completed reconciliation may leave a newly subscribed generator
+            // suspended at its handshake rather than inside a for-await loop.
+            if (!resumeEvents) await iterator.return(undefined)
+          }
+        }
       }
       await submission
       if (!completed || !state.hasVisibleOutput)
@@ -409,6 +529,7 @@ export default class OpenCodeService implements AgentServiceInterface {
         stream.emit('data', { type: 'error', error: failure })
       }
     } finally {
+      stopPermissionWatcher?.()
       deadline.dispose()
       clearTimeout(retryTimeout)
       clearInterval(heartbeat)

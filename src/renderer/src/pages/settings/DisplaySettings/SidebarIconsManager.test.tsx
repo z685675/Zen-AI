@@ -62,7 +62,7 @@ describe('sidebar settings use the displayed layout for drag operations', () => 
         destination: { droppableId: 'disabled', index: 1 }
       })
     )
-    expect(setVisibleIcons).toHaveBeenCalledWith(['assistants', 'files', 'agents'])
+    expect(setVisibleIcons).toHaveBeenCalledWith(['assistants', 'files', 'agents', 'usage'])
     expect(setDisabledIcons).toHaveBeenCalledWith(['notes', 'new_assistant'])
   })
 
@@ -83,7 +83,7 @@ describe('sidebar settings use the displayed layout for drag operations', () => 
         destination: { droppableId: 'visible', index: 2 }
       })
     )
-    expect(setVisibleIcons).toHaveBeenCalledWith(['assistants', 'new_assistant', 'files'])
+    expect(setVisibleIcons).toHaveBeenCalledWith(['assistants', 'new_assistant', 'files', 'usage'])
     expect(setDisabledIcons).toHaveBeenCalledWith(['agents'])
   })
 })

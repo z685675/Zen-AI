@@ -6,6 +6,7 @@ import { AgentToolsType } from './MessageAgentTools/types'
 import { MessageKnowledgeSearchToolTitle } from './MessageKnowledgeSearch'
 import { MessageMemorySearchToolTitle } from './MessageMemorySearch'
 import { MessageWebSearchToolTitle } from './MessageWebSearch'
+import { isNativeAgentTool } from './nativeAgentTools'
 
 interface Props {
   block: ToolMessageBlock
@@ -37,7 +38,7 @@ const ChooseTool = (toolResponse: NormalToolResponse): React.ReactNode | null =>
       default:
         return null
     }
-  } else if (isAgentTool(toolName as AgentToolsType)) {
+  } else if (isAgentTool(toolName as AgentToolsType) || isNativeAgentTool(toolResponse)) {
     return <MessageAgentTools toolResponse={toolResponse} />
   }
   return null

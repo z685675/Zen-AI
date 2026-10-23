@@ -25,7 +25,7 @@ export function ensureOpenCodeAgent(): Promise<string | null> {
           // The OpenCode service supplies its own connected-tool contract.
           description: 'Zen AI 智能助手，使用 OpenCode 执行任务、处理文件和操作浏览器。',
           instructions:
-            'You are Zen AI New Assistant. Help the user finish tasks using the tools actually available in this session. Answer simple greetings directly. Do not claim access to disconnected search services, schedulers, IM or cross-conversation memory.',
+            'You are Zen AI New Assistant. Help the user finish tasks using the tools actually available in this session. Answer simple greetings directly. Never claim to have configured background tasks, messaging or cross-conversation memory without an actual connected tool and authorization.',
           configuration: {
             ...original?.configuration,
             avatar: DEFAULT_OPENCODE_AGENT_AVATAR,

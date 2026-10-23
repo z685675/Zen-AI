@@ -151,7 +151,7 @@ const MCPToolsButton: FC<Props> = ({ quickPanel, setInputValue, resizeTextArea, 
 
       let enableWebSearch = assistant.enableWebSearch
 
-      if (nextMcpServers.length > 0 && isGeminiModel(model) && isToolUseModeFunction(assistant)) {
+      if (model && nextMcpServers.length > 0 && isGeminiModel(model) && isToolUseModeFunction(assistant)) {
         const provider = getProviderByModel(model)
         // Gemini 3+ supports combining built-in tools with function calling
         if (isGeminiWebSearchProvider(provider) && assistant.enableWebSearch && !isGemini3Model(model)) {

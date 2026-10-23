@@ -4,6 +4,7 @@ import { isLocalAi } from '@renderer/config/env'
 import { chatModelFilter } from '@renderer/config/models'
 import { useAssistant, useDefaultModel } from '@renderer/hooks/useAssistant'
 import { useProvider } from '@renderer/hooks/useProvider'
+import { modelRecoveryIntents } from '@renderer/services/modelRecoveryIntents'
 import { getProviderName } from '@renderer/services/ProviderService'
 import type { Assistant, Topic } from '@renderer/types'
 import { Button, Tag } from 'antd'
@@ -39,6 +40,7 @@ const SelectModelButton: FC<Props> = ({ assistant, topic, onTopicChange, persist
           setDefaultModel(selectedModel)
         }
         if (topic) {
+          modelRecoveryIntents.set(`topic:${topic.id}`, undefined)
           const nextTopic = { ...topic, model: selectedModel }
           updateTopic(nextTopic)
           onTopicChange?.(nextTopic)

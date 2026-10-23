@@ -19,6 +19,7 @@ import { classNames } from '@renderer/utils'
 import { Tooltip } from 'antd'
 import type { LRUCache } from 'lru-cache'
 import {
+  BarChart3,
   FileSearch,
   Folder,
   Home,
@@ -85,6 +86,8 @@ const getTabIcon = (
 
   // TODO: Add TabId as type instead of string
   switch (tabId) {
+    case 'usage':
+      return <BarChart3 size={14} />
     case 'home':
       return <Home size={14} />
     case 'agents':

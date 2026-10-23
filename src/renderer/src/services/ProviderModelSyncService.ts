@@ -10,6 +10,12 @@ import { setDefaultModel, setQuickModel, setTranslateModel, updateProviders } fr
 import type { Assistant, Message, Model, Provider, Topic } from '@renderer/types'
 
 import {
+  hasAuthoritativeModelAvailability,
+  reconcileManagedModelReferences,
+  startManagedModelAvailabilitySync,
+  stopManagedModelAvailabilitySync
+} from './ModelAvailabilitySyncService'
+import {
   getProviderModelSyncFingerprint,
   markProviderModelSyncFailed,
   mergeSyncedProviderModels,
@@ -67,6 +73,7 @@ const isProviderInFailureCooldown = (provider: Provider): boolean => {
 }
 
 const shouldSyncProvider = (provider: Provider, options?: SyncProviderModelsOptions): boolean => {
+  if (hasAuthoritativeModelAvailability(provider.id)) return false
   if (!isProviderSyncEligible(provider) || isProviderInFailureCooldown(provider)) {
     return false
   }
@@ -189,6 +196,7 @@ const repairAssistantModelReferences = (
     if (!model) {
       return undefined
     }
+    if (hasAuthoritativeModelAvailability(model.provider)) return model
 
     const availableModel = getAvailableModel(model, availableModels)
     if (availableModel) {
@@ -204,6 +212,7 @@ const repairAssistantModelReferences = (
     if (!topic.model) {
       return topic
     }
+    if (hasAuthoritativeModelAvailability(topic.model.provider)) return topic
 
     const availableModel = getAvailableModel(topic.model, availableModels)
     if (availableModel) {
@@ -236,6 +245,7 @@ const repairAssistantModelReferences = (
  * Provider model; the UI then presents the safe model-setup state.
  */
 export const reconcileProviderModelReferences = (): void => {
+  reconcileManagedModelReferences()
   // A cached remote policy gets the first opportunity to resolve newly
   // imported models. Never choose the first Provider model implicitly.
   reconcileRemoteModelPolicyDefaults()
@@ -246,13 +256,21 @@ export const reconcileProviderModelReferences = (): void => {
   const nextQuickModel = getAvailableModel(state.llm.quickModel, availableModels)
   const nextTranslateModel = getAvailableModel(state.llm.translateModel, availableModels)
 
-  if (state.llm.defaultModel && !nextDefaultModel) {
+  if (
+    state.llm.defaultModel &&
+    !nextDefaultModel &&
+    !hasAuthoritativeModelAvailability(state.llm.defaultModel.provider)
+  ) {
     store.dispatch(setDefaultModel({ model: undefined }))
   }
-  if (state.llm.quickModel && !nextQuickModel) {
+  if (state.llm.quickModel && !nextQuickModel && !hasAuthoritativeModelAvailability(state.llm.quickModel.provider)) {
     store.dispatch(setQuickModel({ model: undefined }))
   }
-  if (state.llm.translateModel && !nextTranslateModel) {
+  if (
+    state.llm.translateModel &&
+    !nextTranslateModel &&
+    !hasAuthoritativeModelAvailability(state.llm.translateModel.provider)
+  ) {
     store.dispatch(setTranslateModel({ model: undefined }))
   }
 
@@ -388,6 +406,9 @@ export const syncProviderModelsOnce = async (options?: SyncProviderModelsOptions
         latestProviders.map((provider) => {
           const syncResult = fetchedModelsByProvider.get(provider.id)
           if (syncResult) {
+            // The authoritative live snapshot owns removals, including []. A
+            // slower legacy /models response must not resurrect old entries.
+            if (hasAuthoritativeModelAvailability(provider.id)) return provider
             if (getProviderModelSyncFingerprint(provider) !== syncResult.sourceFingerprint) {
               return provider
             }
@@ -436,6 +457,7 @@ export const syncProviderModelsOnce = async (options?: SyncProviderModelsOptions
 }
 
 export const startProviderModelSyncScheduler = (): void => {
+  startManagedModelAvailabilitySync()
   if (schedulerStarted) {
     return
   }
@@ -454,6 +476,7 @@ export const startProviderModelSyncScheduler = (): void => {
 }
 
 export const stopProviderModelSyncScheduler = (): void => {
+  stopManagedModelAvailabilitySync()
   if (startupTimer) {
     clearTimeout(startupTimer)
     startupTimer = undefined

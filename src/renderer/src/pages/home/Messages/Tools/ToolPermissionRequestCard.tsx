@@ -74,7 +74,7 @@ export function ToolPermissionRequestCard({ toolResponse }: Props) {
   }, [toolResponse.tool?.name, approval.input, toolResponse.arguments, statusInfo])
 
   return (
-    <Container>
+    <Container data-tool-permission-card data-tool-call-id={toolResponse.toolCallId}>
       {/* Tool content area with status in header */}
       {renderToolContent()}
 

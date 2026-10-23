@@ -28,6 +28,7 @@ import { BaseService } from '../BaseService'
 import { type AgentRow, agentsTable, type InsertAgentRow } from '../database/schema'
 import type { AgentModelField } from '../errors'
 import { seedWorkspaceTemplates } from './cherryclaw/seedWorkspace'
+import { forgetSessionModelIntent, rememberPreferredModel } from './managedModelRecovery'
 
 const logger = loggerService.withContext('AgentService')
 
@@ -42,6 +43,7 @@ export class AgentService extends BaseService {
 
   private static instance: AgentService | null = null
   private readonly modelFields: AgentModelField[] = ['model', 'plan_model', 'small_model']
+  private preferredBuiltinTarget?: string
 
   static getInstance(): AgentService {
     if (!AgentService.instance) {
@@ -247,10 +249,18 @@ export class AgentService extends BaseService {
         ? undefined
         : policySnapshot.policy.defaults.assistantNewSession || policySnapshot.policy.defaults.assistant
     const modelsRes = await modelsService.getModels({})
+    this.preferredBuiltinTarget = configuredModelId
     const availableTextModels = (modelsRes.data ?? []).filter(
       (model) => !AgentService.NON_TEXT_MODEL_ID_PATTERN.test(model.provider_model_id ?? model.id)
     )
-    const modelId = this.findConfiguredBuiltinModelId(availableTextModels, configuredModelId)
+    let modelId = this.findConfiguredBuiltinModelId(availableTextModels, configuredModelId)
+    if (!modelId && configuredModelId) {
+      const official = availableTextModels.filter((model) => model.is_official_provider)
+      for (const fallback of policySnapshot.policy.assistant.fallbackModels) {
+        modelId = this.findConfiguredBuiltinModelId(official, fallback)
+        if (modelId) break
+      }
+    }
 
     if (modelId) {
       logger.info('Resolved preferred built-in agent model', { modelId })
@@ -446,13 +456,19 @@ export class AgentService extends BaseService {
       if (!preferredModel && opts.fallbackToAvailableModel) {
         const models = await modelsService.getModels({})
         const candidate = models.data.find(
-          (model) => !AgentService.NON_TEXT_MODEL_ID_PATTERN.test(model.provider_model_id ?? model.id)
+          (model) =>
+            !model.is_official_provider &&
+            !AgentService.NON_TEXT_MODEL_ID_PATTERN.test(model.provider_model_id ?? model.id)
         )
         if (candidate) preferredModel = { modelId: candidate.id }
       }
       if (!preferredModel) {
         logger.info(`No available text models yet, skipping ${builtinRole} creation`)
         return null
+      }
+      if (id === DEFAULT_OPENCODE_AGENT_ID && this.preferredBuiltinTarget && preferredModel.modelId.includes(':')) {
+        const providerId = preferredModel.modelId.split(':')[0]
+        rememberPreferredModel(`agent:${id}`, `${providerId}:${this.preferredBuiltinTarget}`, preferredModel.modelId)
       }
 
       // Resolve workspace path first so provisioner can copy template files
@@ -652,6 +668,9 @@ export class AgentService extends BaseService {
 
     const database = await this.getDatabase()
     await database.update(agentsTable).set(updateData).where(eq(agentsTable.id, id))
+    for (const field of this.modelFields)
+      if (Object.hasOwn(updates, field))
+        forgetSessionModelIntent(field === 'model' ? `agent:${id}` : `agent:${id}:${field}`)
     return await this.getAgent(id)
   }
 

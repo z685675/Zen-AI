@@ -28,6 +28,7 @@ import styled from 'styled-components'
 
 import AboutSettings from './AboutSettings'
 import AssistantEnvironmentSettings from './AssistantEnvironmentSettings'
+import AutomationSettings from './AutomationSettings'
 import ChannelsSettings from './ChannelsSettings'
 import DataSettings from './DataSettings/DataSettings'
 import DisplaySettings from './DisplaySettings/DisplaySettings'
@@ -114,6 +115,12 @@ const SettingsPage: FC = () => {
               {t('settings.tool.websearch.title')}
             </MenuItem>
           </MenuItemLink>
+          <MenuItemLink to="/settings/assistant-automation">
+            <MenuItem className={isRoute('/settings/assistant-automation')}>
+              <ShieldCheck size={18} />
+              {t('automation.title')}
+            </MenuItem>
+          </MenuItemLink>
           <MenuItemLink to="/settings/memory">
             <MenuItem className={isRoute('/settings/memory')}>
               <Brain size={18} />
@@ -173,6 +180,7 @@ const SettingsPage: FC = () => {
             <Route path="api-server" element={<ApiServerSettings />} />
             <Route path="channels" element={<ChannelsSettings />} />
             <Route path="scheduled-tasks" element={<TasksSettings />} />
+            <Route path="assistant-automation" element={<AutomationSettings />} />
             <Route path="docprocess" element={<DocProcessSettings />} />
             <Route path="quickphrase" element={<QuickPhraseSettings />} />
             <Route path="mcp/*" element={<MCPSettings />} />

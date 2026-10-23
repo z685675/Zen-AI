@@ -1,6 +1,6 @@
-import { once } from 'node:events'
 import { createServer } from 'node:http'
 
+import { listenOnLoopback } from '@shared/utils/loopbackServer'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { createOpenCodeGateway } from '../gateway'
@@ -12,8 +12,7 @@ afterEach(() => {
 })
 async function upstream(handler: Parameters<typeof createServer>[0]) {
   const server = createServer(handler)
-  server.listen(0, '127.0.0.1')
-  await once(server, 'listening')
+  await listenOnLoopback(server)
   cleanup.push(() => {
     server.closeAllConnections()
     server.close()

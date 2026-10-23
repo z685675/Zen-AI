@@ -101,6 +101,7 @@ vi.mock('electron', () => {
 
   const nativeTheme = {
     on: vi.fn(),
+    removeListener: vi.fn(),
     shouldUseDarkColors: false
   }
 
@@ -140,6 +141,34 @@ describe('CdpBrowserController', () => {
     const controller = new CdpBrowserController()
     const result = await controller.execute('1+1')
     expect(result).toBe('ok')
+  })
+
+  it('does not instantiate or clear an unused private session on close', async () => {
+    const controller = new CdpBrowserController()
+    await controller.dispose()
+    const electronMock = await import('electron')
+    expect(electronMock.session.fromPartition).not.toHaveBeenCalled()
+    expect((electronMock as any).__mockPrivateBrowserSession.clearStorageData).not.toHaveBeenCalled()
+    expect(electronMock.nativeTheme.removeListener).toHaveBeenCalledWith('updated', expect.any(Function))
+    await expect(controller.open('https://example.com/')).rejects.toThrow('Browser controller is closed')
+  })
+
+  it('waits for native storage clearing of a used private window before disposal completes', async () => {
+    const controller = new CdpBrowserController()
+    await controller.open('https://example.com/', 5000, true)
+    const electronMock = await import('electron')
+    const privateSession = (electronMock as any).__mockPrivateBrowserSession
+    let release!: () => void
+    privateSession.clearStorageData.mockImplementationOnce(() => new Promise<void>((resolve) => (release = resolve)))
+    let complete = false
+    const closing = controller.dispose().then(() => (complete = true))
+    await vi.waitFor(() => expect(privateSession.clearStorageData).toHaveBeenCalledOnce())
+    expect(complete).toBe(false)
+    release()
+    await closing
+    expect(complete).toBe(true)
+    await controller.dispose()
+    expect(privateSession.clearStorageData).toHaveBeenCalledOnce()
   })
 
   it('opens a URL in normal mode and returns current page info', async () => {

@@ -1,6 +1,7 @@
 import { loggerService } from '@logger'
 import { DEFAULT_SESSION_PAGE_SIZE } from '@renderer/api/agent'
 import EmojiIcon from '@renderer/components/EmojiIcon'
+import { SessionModelRecoveryNotice } from '@renderer/components/ModelRecoveryNotice'
 import { QuickPanelProvider } from '@renderer/components/QuickPanel'
 import { isAssistantModelAllowed, resolveAssistantFallbackModel } from '@renderer/config/agentModelPolicy'
 import { useAgentWorkspace } from '@renderer/context/AgentWorkspaceProvider'
@@ -29,6 +30,7 @@ import { getAgentSessionDraftCacheKey } from '@renderer/utils/agentSessionDraft'
 import { isUnnamedAgentSessionName } from '@renderer/utils/agentSessionTitle'
 import { shouldDiscardEmptyConversation } from '@renderer/utils/conversationDraft'
 import { DEFAULT_FUSION_AGENT_ID, getAgentAvatar } from '@shared/config/agents'
+import { isZenManagedApiHost } from '@shared/config/zenProvider'
 import { Alert, Spin, Tooltip } from 'antd'
 import { FolderOpen, ListTodo, PanelLeftOpen, Puzzle, ScrollText, Search } from 'lucide-react'
 import type { PropsWithChildren, ReactNode } from 'react'
@@ -276,6 +278,12 @@ const AgentChat = () => {
     let cancelled = false
     const repairUnavailableModel = async () => {
       try {
+        const selectedProviderId = activeSession.model?.split(':')[0]
+        const selectedProvider = providers.find((provider) => provider.id === selectedProviderId)
+        if (!activeSession.model || (selectedProvider && isZenManagedApiHost(selectedProvider.apiHost))) {
+          await window.api.modelPolicy.reconcileSessions()
+          return
+        }
         const { data } = await client.getModels()
         if (cancelled) return
         const currentModel = data.find((model) => model.id === activeSession.model)
@@ -571,6 +579,13 @@ const AgentChat = () => {
             )}
           </div>
 
+          {!isWelcomeState && workspace !== 'legacy' && (
+            <SessionModelRecoveryNotice
+              agentId={activeAgentId}
+              sessionId={activeSessionId}
+              model={activeSession?.model}
+            />
+          )}
           {!isWelcomeState && <AgentSessionInputbar agentId={activeAgentId} sessionId={activeSessionId} />}
         </div>
       </QuickPanelProvider>

@@ -3,6 +3,8 @@
  */
 
 export * from './agents.schema'
+export * from './automation.schema'
+export * from './automationSettings.schema'
 export * from './channels.schema'
 export * from './messages.schema'
 export * from './migrations.schema'

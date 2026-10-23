@@ -12,12 +12,18 @@ import {
   LEGACY_ASSISTANT_READ_ONLY_CODE,
   LEGACY_ASSISTANT_READ_ONLY_MESSAGE
 } from '@shared/agents/assistantAvailability'
+import { serializeAgentStreamError } from '@shared/agents/streamError'
 import { getAgentTaskLimitDetails } from '@shared/agents/taskConcurrency'
 import { DEFAULT_OPENCODE_AGENT_ID } from '@shared/config/agents'
 import { sanitizeDiagnostic } from '@shared/diagnostics'
 import type { Request, Response } from 'express'
 
 const logger = loggerService.withContext('ApiServerMessagesHandlers')
+
+const errorEvent = (error: unknown, type = 'stream_error', code = 'stream_processing_failed') => {
+  const details = serializeAgentStreamError(error, 'Stream processing error')
+  return { type: 'error', error: { ...details, type, code: details.code ?? code } }
+}
 
 const isResponseWritable = (res: Response): boolean => !res.destroyed && !res.writableEnded && !res.writableFinished
 
@@ -193,8 +199,11 @@ export const createMessage = async (req: Request, res: Response): Promise<void> 
         }
       } else if (abortReason === 'Client disconnected') {
         logger.info('Streaming client disconnected', { agentId, sessionId })
+      } else if (abortReason instanceof Error && abortReason.name !== 'AbortError') {
+        writeSse(res, `data: ${JSON.stringify(errorEvent(abortReason))}\n\n`)
       } else {
-        logger.warn('Streaming aborted', { agentId, sessionId, reason: abortReason })
+        writeSse(res, `data: ${JSON.stringify({ type: 'abort' })}\n\n`)
+        logger.warn('Streaming aborted', { agentId, sessionId, reason: sanitizeDiagnostic(abortReason) })
       }
 
       reader.cancel(abortReason ?? 'stream aborted').catch(() => {})
@@ -237,20 +246,9 @@ export const createMessage = async (req: Request, res: Response): Promise<void> 
         finalizeResponse()
       } catch (error) {
         if (responseEnded) return
-        logger.error('Error reading agent stream', { error })
+        logger.error('Error reading agent stream', { error: sanitizeDiagnostic(error) })
         try {
-          writeSse(
-            res,
-            `data: ${JSON.stringify({
-              type: 'error',
-              error: {
-                ...(sanitizeDiagnostic(error) as Record<string, unknown>),
-                message: (error as Error).message || 'Stream processing error',
-                type: 'stream_error',
-                code: 'stream_processing_failed'
-              }
-            })}\n\n`
-          )
+          writeSse(res, `data: ${JSON.stringify(errorEvent(error))}\n\n`)
         } catch (writeError) {
           logger.error('Error writing stream error to SSE', { error: writeError })
         }
@@ -271,20 +269,9 @@ export const createMessage = async (req: Request, res: Response): Promise<void> 
       })
       .catch((error) => {
         if (responseEnded) return
-        logger.error('Streaming message error', { agentId, sessionId, error })
+        logger.error('Streaming message error', { agentId, sessionId, error: sanitizeDiagnostic(error) })
         try {
-          writeSse(
-            res,
-            `data: ${JSON.stringify({
-              type: 'error',
-              error: {
-                ...(sanitizeDiagnostic(error) as Record<string, unknown>),
-                message: (error as { message?: string })?.message || 'Stream processing error',
-                type: 'stream_error',
-                code: 'stream_processing_failed'
-              }
-            })}\n\n`
-          )
+          writeSse(res, `data: ${JSON.stringify(errorEvent(error))}\n\n`)
         } catch (writeError) {
           logger.error('Error writing completion error to SSE stream', { error: writeError })
         }
@@ -318,7 +305,7 @@ export const createMessage = async (req: Request, res: Response): Promise<void> 
       })
     } else {
       logger.error('Error in streaming message handler', {
-        error,
+        error: sanitizeDiagnostic(error),
         agentId: req.params.agentId,
         sessionId: req.params.sessionId
       })
@@ -332,15 +319,11 @@ export const createMessage = async (req: Request, res: Response): Promise<void> 
     }
 
     try {
-      const errorResponse = {
-        type: 'error',
-        error: {
-          ...(taskLimit ? (sanitizeDiagnostic(error) as Record<string, unknown>) : {}),
-          message: error.status ? error.message : 'Failed to create streaming message',
-          type: taskLimit ? 'task_limit' : error.status ? 'not_found' : 'internal_error',
-          code: error.status ? error.code : 'stream_creation_failed'
-        }
-      }
+      const errorResponse = errorEvent(
+        error,
+        taskLimit ? 'task_limit' : error?.status ? 'not_found' : 'internal_error',
+        error?.status ? error.code : 'stream_creation_failed'
+      )
 
       writeSse(res, `data: ${JSON.stringify(errorResponse)}\n\n`)
     } catch (writeError) {

@@ -33,7 +33,10 @@ export function registerSessionStreamIpc(): void {
 
   ipcMain.handle(IpcChannel.AgentSessionStream_Abort, (_event, { sessionId }: { sessionId: string }) => {
     const aborted = channelMessageHandler.abortSession(sessionId)
-    return { success: aborted }
+    if (aborted) return { success: true }
+    return import('../automation/AutomationService').then(async ({ automationService }) => ({
+      success: await automationService.abort(sessionId)
+    }))
   })
 }
 

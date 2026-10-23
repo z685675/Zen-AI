@@ -85,6 +85,7 @@ export const mergeSyncedProviderModels = (
     syncedAt?: number
     sourceFingerprint?: string
     attemptedAt?: number
+    authoritativeEmpty?: boolean
   }
 ): Provider => {
   const remoteModels = uniqBy(
@@ -94,7 +95,7 @@ export const mergeSyncedProviderModels = (
     'id'
   )
 
-  if (remoteModels.length === 0) {
+  if (remoteModels.length === 0 && !options?.authoritativeEmpty) {
     return provider
   }
 

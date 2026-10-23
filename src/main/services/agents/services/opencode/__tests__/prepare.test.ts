@@ -21,6 +21,7 @@ vi.mock('@main/apiServer/utils', () => ({
 vi.mock('../../../skills/SkillRepository', () => ({ SkillRepository: { getInstance: () => ({ list: mocks.list }) } }))
 vi.mock('../process', () => ({ getOpenCodeProcess: mocks.process }))
 
+import { applyAutomationProfile } from '../../automation/profile'
 import { prepareOpenCodeRuntime } from '../prepare'
 
 beforeEach(() => {
@@ -33,6 +34,16 @@ beforeEach(() => {
   mocks.stat.mockResolvedValue({ isFile: () => true })
 })
 describe('continuation workspace skills', () => {
+  it('does not scan global or user workspace skills for trusted lightweight entries', async () => {
+    const session = applyAutomationProfile(
+      { id: 'wechat', model: 'p:chat', accessible_paths: ['/wechat-work'], configuration: {} } as any,
+      { kind: 'wechat', workspace: '/wechat-work' }
+    )
+    await prepareOpenCodeRuntime(session, new AbortController().signal)
+    expect(mocks.list).not.toHaveBeenCalled()
+    expect(mocks.read).not.toHaveBeenCalled()
+    expect(mocks.process.mock.calls[0][3]).toEqual(['/wechat-work'])
+  })
   it('forwards the operation ID before starting the native process', async () => {
     const signal = new AbortController().signal
     const onStarting = vi.fn()

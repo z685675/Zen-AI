@@ -4,6 +4,7 @@ import { loggerService } from '@logger'
 import { configManager } from '@main/services/ConfigManager'
 import { beginMainDiagnostic, recordMainDiagnostic } from '@main/services/DiagnosticEvidenceService'
 import { assertAssistantExecutionAllowed } from '@shared/agents/assistantAvailability'
+import { serializeAgentStreamError } from '@shared/agents/streamError'
 import { getAgentTaskLimit } from '@shared/agents/taskConcurrency'
 import { DEFAULT_OPENCODE_AGENT_ID } from '@shared/config/agents'
 import { sanitizeDiagnostic } from '@shared/diagnostics'
@@ -11,19 +12,22 @@ import type {
   AgentPersistedMessage,
   AgentSessionMessageEntity,
   CreateSessionMessageRequest,
+  FileMetadata,
   GetAgentSessionResponse,
   ListOptions
 } from '@types'
 import type { TextStreamPart } from 'ai'
 import { and, desc, eq, not } from 'drizzle-orm'
+import { t } from 'i18next'
 
 import { BaseService } from '../BaseService'
 import { sessionMessagesTable, sessionsTable } from '../database/schema'
 import { agentMessageRepository } from '../database/sessionMessageRepository'
 import type { AgentStream, AgentStreamEvent } from '../interfaces/AgentStreamInterface'
 import { broadcastAgentActionRequired } from './agentIpc'
-import { channelManager } from './channels/ChannelManager'
-import { channelService } from './ChannelService'
+import { mirrorAutomationExchange, prepareAutomationSession } from './automation/bridge'
+import { automationOutputPaths, headlessAttachmentBlocks } from './automation/files'
+import { getManagedRecoveryInventory, resolveManagedSessionModel } from './managedModelRecovery'
 import { isRecoverableAgentContextError, withAgentRecoveryContext } from './runtime/contextRecovery'
 import { withDeepResearchProtocol } from './runtime/deepResearch'
 import {
@@ -79,29 +83,20 @@ export type CreateMessageOptions = {
   displayContent?: string
   /** Images to persist in the user message for UI display (not sent to AI model). */
   images?: Array<{ data: string; media_type: string }>
+  /** Verified main-process-owned attachment copies for history display only. */
+  files?: FileMetadata[]
   /** Mirror desktop-side user/assistant text back to a bound external channel when applicable. */
   mirrorToBoundChannel?: boolean
+  /** Trusted main-process admission hook; invoked under the existing shared lease. */
+  onAdmitted?: (model: string) => Promise<void>
+  persistenceId?: string
+  strictPersistence?: boolean
+  /** Actual current-turn image inputs from the trusted headless attachment inventory. */
+  runtimeImages?: Array<{ data: string; media_type: string }>
 }
 
 // Ensure errors emitted through SSE are serializable
-function serializeError(error: unknown): { message: string; name?: string; stack?: string } {
-  if (error instanceof Error) {
-    return {
-      ...(sanitizeDiagnostic(error) as Record<string, unknown>),
-      message: error.message,
-      name: error.name,
-      stack: error.stack
-    }
-  }
-
-  if (typeof error === 'string') {
-    return { message: error }
-  }
-
-  return {
-    message: 'Unknown error'
-  }
-}
+const serializeError = serializeAgentStreamError
 
 function toStreamError(error: unknown): Error {
   if (error instanceof Error) {
@@ -122,8 +117,13 @@ function toStreamError(error: unknown): Error {
 class TextStreamAccumulator {
   private textBuffer = ''
   private totalText = ''
+  private finalText = ''
+  private usage: unknown
+  private diagnostics: unknown
+  private turn: unknown
   private readonly toolCalls = new Map<string, { toolName?: string; input?: unknown }>()
   private readonly toolResults = new Map<string, unknown>()
+  private readonly toolErrors = new Set<string>()
 
   add(part: TextStreamPart<Record<string, any>>): void {
     switch (part.type) {
@@ -139,11 +139,13 @@ class TextStreamAccumulator {
         const blockText = (part.providerMetadata?.text?.value as string | undefined) ?? this.textBuffer
         if (blockText) {
           this.totalText += blockText
+          this.finalText += blockText
         }
         this.textBuffer = ''
         break
       }
       case 'tool-call':
+        this.finalText = ''
         if (part.toolCallId) {
           const legacyPart = part as typeof part & {
             args?: unknown
@@ -166,6 +168,7 @@ class TextStreamAccumulator {
         break
       case 'tool-error':
         if (part.toolCallId) {
+          this.toolErrors.add(part.toolCallId)
           const legacyPart = part as typeof part & {
             error?: unknown
             output?: unknown
@@ -178,12 +181,33 @@ class TextStreamAccumulator {
         }
         break
       default:
+        if (part.type === 'finish') this.usage = part.totalUsage
+        if (part.type === 'raw') {
+          const raw = part.rawValue as { type?: string; diagnostics?: unknown } | undefined
+          if (raw?.type === 'opencode_diagnostics') this.diagnostics = raw.diagnostics
+          if (raw?.type === 'opencode_turn') this.turn = part.rawValue
+        }
         break
     }
   }
 
   getText(): string {
     return (this.totalText + this.textBuffer).replace(/\n+$/, '')
+  }
+
+  snapshot() {
+    return {
+      finalText: this.finalText + this.textBuffer,
+      usage: this.usage,
+      diagnostics: this.diagnostics,
+      turn: this.turn,
+      tools: [...this.toolCalls].map(([id, call]) => ({
+        id,
+        ...call,
+        failed: this.toolErrors.has(id),
+        output: this.toolResults.get(id)
+      }))
+    }
   }
 
   hasToolActivity(): boolean {
@@ -288,6 +312,40 @@ export class SessionMessageService extends BaseService {
     assertAssistantExecutionAllowed(session.agent_id)
     const release = acquireSessionActivity(session.id, 'run', getAgentTaskLimit(configManager.getEnableDeveloperMode()))
     try {
+      session = await prepareAutomationSession(session)
+      if (session.agent_id === DEFAULT_OPENCODE_AGENT_ID) {
+        const inventory = await getManagedRecoveryInventory()
+        const resolution = resolveManagedSessionModel(session.id, session.model, inventory)
+        if (resolution.managed) {
+          if (!resolution.selected) throw new Error(t('agent.modelPolicy.noFallback'))
+          const plan = resolveManagedSessionModel(`${session.id}:plan_model`, session.plan_model, inventory)
+          const small = resolveManagedSessionModel(`${session.id}:small_model`, session.small_model, inventory)
+          if (
+            resolution.selected !== session.model ||
+            plan.selected !== session.plan_model ||
+            small.selected !== session.small_model
+          ) {
+            session = {
+              ...session,
+              model: resolution.selected,
+              plan_model: plan.selected,
+              small_model: small.selected
+            }
+            const database = await this.getDatabase()
+            await database
+              .update(sessionsTable)
+              .set({
+                model: session.model,
+                plan_model: session.plan_model ?? null,
+                small_model: session.small_model ?? null
+              })
+              .where(eq(sessionsTable.id, session.id))
+            const { broadcastSessionChanged } = await import('./channels/sessionStreamIpc')
+            broadcastSessionChanged(session.agent_id, session.id)
+          }
+        }
+      }
+      await options?.onAdmitted?.(session.model)
       const result = await this.startSessionMessageStream(session, messageData, abortController, options)
       void result.completion.then(release, release)
       return result
@@ -368,7 +426,7 @@ export class SessionMessageService extends BaseService {
           thinking: req.thinking,
           recoveryContext: req.recovery_context
         },
-        undefined
+        options?.runtimeImages
       )
     } catch (error) {
       recordMainDiagnostic(diagnosticId, 'runtime', 'failed', { error, startup: true })
@@ -401,14 +459,37 @@ export class SessionMessageService extends BaseService {
       rejectCompletion = (reason) => {
         // A terminal UI failure must also stop the SDK; otherwise its internal
         // retries can keep hitting the provider after this turn has ended.
-        activeRuntimeAbortController.abort('agent stream failed')
+        activeRuntimeAbortController.abort(toStreamError(reason))
         const serialized = reason as Record<string, unknown> | undefined
         recordMainDiagnostic(diagnosticId, 'runtime', 'failed', {
           error: reason,
           runtime: activeRuntimeId,
           startup: serialized?.zenFailureStage === 'runtime-startup'
         })
-        reject(reason)
+        // Headless failures retain observed text/tools and native diagnostics before final state is saved.
+        const finalize = async () => {
+          if (options?.persist && options.persistenceId)
+            await this.persistHeadlessExchange(
+              session,
+              options.displayContent ?? req.content,
+              accumulator.getText(),
+              agentStream.sdkSessionId || agentSessionId,
+              options.images,
+              options.persistenceId,
+              accumulator.snapshot(),
+              'error',
+              options.files
+            )
+          if (options?.mirrorToBoundChannel)
+            await this.mirrorSessionExchangeToBoundChannel(
+              session,
+              options.displayContent ?? req.content,
+              t('automation.notice.failed')
+            )
+        }
+        void finalize()
+          .catch(() => logger.warn('Could not save terminal automation evidence'))
+          .finally(() => reject(reason))
       }
     })
 
@@ -492,8 +573,9 @@ export class SessionMessageService extends BaseService {
             }
 
             cleanup()
-            activeRuntimeAbortController.abort(`agent runtime ${phase} timeout`)
-            abortController.abort(`agent runtime ${phase} timeout`)
+            // Stop the runtime, not the HTTP transport: aborting the parent here
+            // synchronously closes SSE before it can deliver this failure.
+            activeRuntimeAbortController.abort(timeoutError)
             controller.error(timeoutError)
             rejectCompletion(serializeError(timeoutError))
           }, timeoutMs)
@@ -518,8 +600,7 @@ export class SessionMessageService extends BaseService {
               timeoutMs: DEEP_RESEARCH_TASK_TIMEOUT_MS
             })
             cleanup()
-            activeRuntimeAbortController.abort('deep research task timeout')
-            abortController.abort('deep research task timeout')
+            activeRuntimeAbortController.abort(timeoutError)
             controller.error(timeoutError)
             rejectCompletion(serializeError(timeoutError))
           }
@@ -778,8 +859,11 @@ export class SessionMessageService extends BaseService {
                 // AI SDK error parts are terminal. Converting them into a single
                 // stream rejection prevents repeated error chunks from creating
                 // multiple UI cards before the runtime emits its final event.
-                if (chunk.type === 'error') {
-                  const streamError = toStreamError(chunk.error)
+                if (chunk.type === 'error' || (chunk.type === 'finish' && chunk.finishReason === 'error')) {
+                  const streamError =
+                    chunk.type === 'error'
+                      ? toStreamError(chunk.error)
+                      : new Error('Agent runtime reported a failed response')
                   if (await tryContextRecovery(streamError)) return
                   if (await tryStreamRecovery(streamError)) return
                   if (await tryFallback(streamError)) return
@@ -878,7 +962,7 @@ export class SessionMessageService extends BaseService {
                 clearFirstRuntimeEventTimer()
                 const stderrMessage = (event as any)?.data?.stderr as string | undefined
                 const underlyingError = event.error ?? (stderrMessage ? new Error(stderrMessage) : undefined)
-                const streamError = underlyingError ?? new Error('Stream error')
+                const streamError = toStreamError(underlyingError)
                 if (await tryContextRecovery(streamError)) return
                 if (await tryStreamRecovery(streamError)) return
                 if (await tryFallback(streamError)) return
@@ -923,7 +1007,20 @@ export class SessionMessageService extends BaseService {
                   this.mirrorSessionExchangeToBoundChannel(
                     session,
                     options?.displayContent ?? req.content,
-                    assistantText
+                    accumulator.snapshot().finalText || assistantText,
+                    false,
+                    automationOutputPaths(
+                      accumulator.snapshot().tools.map((tool) => ({
+                        type: 'tool',
+                        metadata: {
+                          rawMcpToolResponse: {
+                            status: tool.failed ? 'error' : 'done',
+                            tool: { name: tool.toolName },
+                            response: tool.output
+                          }
+                        }
+                      }))
+                    )
                   )
                     .then((result) => {
                       controller.enqueue({
@@ -971,12 +1068,17 @@ export class SessionMessageService extends BaseService {
                     options?.displayContent ?? req.content,
                     accumulator.getText(),
                     resolvedSessionId,
-                    options?.images
+                    options?.images,
+                    options?.persistenceId,
+                    accumulator.snapshot(),
+                    'success',
+                    options.files
                   )
                     .then(resolveCompletion)
                     .catch((err) => {
                       logger.error('Failed to persist headless exchange', err as Error)
-                      resolveCompletion({})
+                      if (options.strictPersistence) rejectCompletion(err)
+                      else resolveCompletion({})
                     })
                 } else {
                   resolveCompletion({})
@@ -987,9 +1089,15 @@ export class SessionMessageService extends BaseService {
               case 'cancelled': {
                 clearFirstRuntimeEventTimer()
                 cleanup()
+                controller.enqueue({ type: 'abort' })
                 const partialText = accumulator.getText()
-                if (options?.mirrorToBoundChannel && partialText) {
-                  this.mirrorSessionExchangeToBoundChannel(session, options?.displayContent ?? req.content, partialText)
+                if (options?.mirrorToBoundChannel) {
+                  this.mirrorSessionExchangeToBoundChannel(
+                    session,
+                    options?.displayContent ?? req.content,
+                    partialText,
+                    true
+                  )
                     .then((result) => {
                       controller.enqueue({
                         type: 'raw',
@@ -1024,18 +1132,23 @@ export class SessionMessageService extends BaseService {
                 }
                 if (options?.persist) {
                   const resolvedSessionId = agentStream.sdkSessionId || agentSessionId
-                  if (partialText) {
+                  if (partialText || options.persistenceId) {
                     this.persistHeadlessExchange(
                       session,
                       options?.displayContent ?? req.content,
                       partialText,
                       resolvedSessionId,
-                      options?.images
+                      options?.images,
+                      options?.persistenceId,
+                      accumulator.snapshot(),
+                      'paused',
+                      options.files
                     )
                       .then(resolveCompletion)
                       .catch((err) => {
                         logger.error('Failed to persist cancelled exchange', err as Error)
-                        resolveCompletion({})
+                        if (options.strictPersistence) rejectCompletion(err)
+                        else resolveCompletion({})
                       })
                   } else {
                     resolveCompletion({})
@@ -1106,11 +1219,15 @@ export class SessionMessageService extends BaseService {
     userContent: string,
     assistantContent: string,
     agentSessionId: string,
-    images?: Array<{ data: string; media_type: string }>
+    images?: Array<{ data: string; media_type: string }>,
+    persistenceId?: string,
+    snapshot?: ReturnType<TextStreamAccumulator['snapshot']>,
+    status: 'success' | 'paused' | 'error' = 'success',
+    files: FileMetadata[] = []
   ): Promise<{ userMessage?: AgentSessionMessageEntity; assistantMessage?: AgentSessionMessageEntity }> {
     const now = new Date().toISOString()
-    const userMsgId = randomUUID()
-    const assistantMsgId = randomUUID()
+    const userMsgId = persistenceId ? `${persistenceId}:user` : randomUUID()
+    const assistantMsgId = persistenceId ? `${persistenceId}:assistant` : randomUUID()
     const userBlockId = randomUUID()
     const assistantBlockId = randomUUID()
     const topicId = `agent-session:${session.id}`
@@ -1137,6 +1254,7 @@ export class SessionMessageService extends BaseService {
       }
     }
 
+    const fileBlocks = headlessAttachmentBlocks(files, userMsgId, now)
     const userPayload = {
       message: {
         id: userMsgId,
@@ -1145,7 +1263,7 @@ export class SessionMessageService extends BaseService {
         topicId,
         createdAt: now,
         status: 'success',
-        blocks: [userBlockId, ...imageBlocks.map((b) => b.id)]
+        blocks: [userBlockId, ...imageBlocks.map((b) => b.id), ...fileBlocks.map((b) => b.id)]
       },
       blocks: [
         {
@@ -1156,7 +1274,8 @@ export class SessionMessageService extends BaseService {
           status: 'success',
           content: userContent
         },
-        ...imageBlocks
+        ...imageBlocks,
+        ...fileBlocks
       ]
     } as AgentPersistedMessage
 
@@ -1183,6 +1302,54 @@ export class SessionMessageService extends BaseService {
       ]
     } as AgentPersistedMessage
 
+    assistantPayload.message.status = status as typeof assistantPayload.message.status
+    if (snapshot) {
+      const turn = snapshot.turn as { user_message_id?: string; session_id?: string } | undefined
+      userPayload.message.providerMetadata = { opencode: turn } as any
+      assistantPayload.message.askId = userMsgId
+      assistantPayload.message.agentSessionId = agentSessionId
+      userPayload.message.agentSessionId = agentSessionId
+      assistantPayload.message.providerMetadata = {
+        zenAutomation: {
+          persistenceId,
+          finalText: snapshot.finalText,
+          diagnosticId: persistenceId ? `automation-${persistenceId}` : undefined
+        },
+        opencodeDiagnostics: snapshot.diagnostics
+      } as any
+      if (snapshot.usage) {
+        const usage = snapshot.usage as {
+          inputTokens?: number
+          outputTokens?: number
+          inputTokenDetails?: { cacheReadTokens?: number }
+        }
+        assistantPayload.message.usage = {
+          prompt_tokens: usage.inputTokens || 0,
+          completion_tokens: usage.outputTokens || 0,
+          total_tokens: (usage.inputTokens || 0) + (usage.outputTokens || 0),
+          prompt_tokens_details: { cached_tokens: usage.inputTokenDetails?.cacheReadTokens || 0 }
+        }
+      }
+      for (const tool of snapshot.tools) {
+        const id = `${assistantMsgId}:tool:${tool.id}`
+        assistantPayload.message.blocks.push(id)
+        assistantPayload.blocks.push({
+          id,
+          messageId: assistantMsgId,
+          type: 'tool',
+          createdAt: now,
+          status: tool.failed ? 'error' : 'success',
+          metadata: {
+            rawMcpToolResponse: {
+              status: tool.failed ? 'error' : 'done',
+              tool: { id: tool.toolName, name: tool.toolName },
+              response: tool.output
+            }
+          }
+        } as any)
+      }
+    }
+
     const result = await agentMessageRepository.persistExchange({
       sessionId: session.id,
       agentSessionId,
@@ -1202,34 +1369,11 @@ export class SessionMessageService extends BaseService {
   private async mirrorSessionExchangeToBoundChannel(
     session: GetAgentSessionResponse,
     userContent: string,
-    assistantContent: string
+    assistantContent: string,
+    stopped = false,
+    files: string[] = []
   ): Promise<SessionMirrorResult> {
-    const boundChannel = await channelService.findBySessionId(session.id)
-    if (!boundChannel || !boundChannel.isActive || boundChannel.type !== 'wechat') {
-      return { target: 'wechat', status: 'skipped', reason: 'not_bound' }
-    }
-
-    const adapter = channelManager.getAdapter(boundChannel.id)
-    if (!adapter) {
-      return { target: 'wechat', status: 'failed', reason: 'adapter_unavailable' }
-    }
-
-    const targetChatId = boundChannel.activeChatIds?.[0] ?? adapter.notifyChatIds?.[0]
-    if (!targetChatId) {
-      return { target: 'wechat', status: 'failed', reason: 'chat_unavailable' }
-    }
-
-    const normalizedUserContent = userContent.trim()
-    const normalizedAssistantContent = assistantContent.trim()
-
-    if (normalizedUserContent) {
-      await adapter.sendMessage(targetChatId, `桌面端消息：\n${normalizedUserContent}`)
-    }
-
-    if (normalizedAssistantContent) {
-      await adapter.sendMessage(targetChatId, normalizedAssistantContent)
-    }
-
+    await mirrorAutomationExchange(session.id, userContent, assistantContent, stopped, files)
     return { target: 'wechat', status: 'synced' }
   }
 

@@ -77,6 +77,9 @@ export enum IpcChannel {
   Config_Get = 'config:get',
   ModelPolicy_Get = 'model-policy:get',
   ModelPolicy_Refresh = 'model-policy:refresh',
+  ModelAvailability_Refresh = 'model-availability:refresh',
+  ModelAvailability_ReconcileSessions = 'model-availability:reconcile-sessions',
+  ModelAvailability_RecoveryStatus = 'model-availability:recovery-status',
 
   MiniWindow_Show = 'miniwindow:show',
   MiniWindow_Hide = 'miniwindow:hide',
@@ -474,5 +477,6 @@ export enum IpcChannel {
   OpenClaw_PerformUpdate = 'openclaw:perform-update',
 
   // Analytics
+  AssistantAutomation_Action = 'assistant-automation:action',
   Analytics_TrackTokenUsage = 'analytics:track-token-usage'
 }

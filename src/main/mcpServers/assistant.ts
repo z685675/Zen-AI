@@ -41,7 +41,7 @@ import {
   VISUAL_STYLE_IDS
 } from './assistantDocumentStyles'
 import { createDocxBuffer } from './assistantDocx'
-import { writeAssistantFile } from './assistantFileSafety'
+import { writeAssistantOutput } from './assistantFileSafety'
 import { validatePptxVisibleContent } from './assistantOfficeQuality'
 import { verifyGeneratedOutput } from './assistantOutputValidation'
 import {
@@ -70,6 +70,7 @@ import {
   type AssistantProductOptions,
   callAssistantProductTool
 } from './assistantProductTools'
+import { READ_DOCUMENT_TOOL, readAssistantDocument } from './assistantReadDocument'
 import { createXlsxBuffer, type WorkbookInput } from './assistantXlsx'
 
 const logger = loggerService.withContext('MCPServer:Assistant')
@@ -404,7 +405,7 @@ const PYTHON_EXECUTE_TOOL: Tool = {
   description: `Execute Python with Zen AI's private managed CPython runtime.
 Use it for data cleaning, analysis, chart preparation, complex transformations, and bundled Skill scripts. The runtime is isolated from the user's system Python and includes the standard productivity package set.
 Do not run pip, uv, conda, package installers, shell commands, desktop automation, or destructive file operations from this tool. Use create_file for ordinary Office generation and ocr_file for OCR.
-The working directory must be inside an allowed workspace/user folder.`,
+The working directory must be inside an allowed workspace/user folder. Omit working_directory to use the authorized workspace automatically. Use supplied absolute input/output paths unchanged; do not switch to the application's install directory or a parent project directory to shorten paths. If a directory is rejected, correct it or omit working_directory, never widen permissions.`,
   inputSchema: {
     type: 'object',
     properties: {
@@ -424,7 +425,8 @@ The working directory must be inside an allowed workspace/user folder.`,
       },
       working_directory: {
         type: 'string',
-        description: 'Optional absolute or workspace-relative working directory. It must be inside an allowed root.'
+        description:
+          'Optional existing absolute or workspace-relative directory inside an allowed root. Omit to use the authorized workspace (or the authorized script directory for script_path). Do not use the application/install directory or an ancestor of the workspace.'
       },
       timeout_ms: {
         type: 'number',
@@ -894,6 +896,9 @@ class AssistantServer {
         this.product
           ? {
               ...CREATE_FILE_TOOL,
+              description:
+                CREATE_FILE_TOOL.description +
+                '\nExisting inputs and previous results are preserved by default: conflicting output names are numbered. Use the returned path. Editing an existing file via scripts instead requires prepare_file_copy first.',
               inputSchema: {
                 ...CREATE_FILE_TOOL.inputSchema,
                 properties: {
@@ -902,14 +907,21 @@ class AssistantServer {
                     type: 'boolean',
                     default: false,
                     description:
-                      'Default false: never replace an existing file. True only for explicitly authorized replacement; approval and a retained backup are required.'
+                      'Default false: save a new file, automatically numbering a conflicting name. Use the returned path, which may differ from file_path. True only for explicitly requested replacement; user confirmation and a verified retained backup are required, including in automatic mode.'
                   }
                 }
               }
             }
           : CREATE_FILE_TOOL,
         PRESENT_FILES_TOOL,
-        PYTHON_EXECUTE_TOOL,
+        this.product
+          ? {
+              ...PYTHON_EXECUTE_TOOL,
+              description:
+                PYTHON_EXECUTE_TOOL.description +
+                '\nFor modifications to an existing document, first use prepare_file_copy, then read/write only the returned working_path. Runtime isolation is not a filesystem sandbox; do not write to originals or delete files.'
+            }
+          : PYTHON_EXECUTE_TOOL,
         this.product
           ? {
               ...OCR_FILE_TOOL,
@@ -921,14 +933,14 @@ class AssistantServer {
                     type: 'boolean',
                     default: false,
                     description:
-                      'Explicitly authorized overwrite of an existing text output, with approval and a retained backup.'
+                      'Default false: save a new numbered output on name conflict. True requests a confirmed replacement with a verified retained backup. Use the returned output_path.'
                   }
                 }
               }
             }
           : OCR_FILE_TOOL,
-        ...(this.product ? ASSISTANT_PRODUCT_TOOLS : [])
-      ]
+        ...(this.product ? [READ_DOCUMENT_TOOL, ...ASSISTANT_PRODUCT_TOOLS] : [])
+      ].filter((tool) => !this.product?.allowedTools || this.product.allowedTools.includes(tool.name))
     }))
 
     this.mcpServer.server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
@@ -938,9 +950,15 @@ class AssistantServer {
       let failed = false
 
       try {
+        if (this.product?.allowedTools && !this.product.allowedTools.includes(toolName))
+          throw new McpError(ErrorCode.MethodNotFound, 'Tool is not available in this entry profile')
+        if (this.product?.allowedTools && args.overwrite === true)
+          throw new Error('Background tasks cannot overwrite existing files')
         if (
           this.product?.readOnly &&
-          ['create_file', 'ocr_file', 'python_execute', 'backup_file', 'navigate'].includes(toolName)
+          ['create_file', 'ocr_file', 'python_execute', 'prepare_file_copy', 'backup_file', 'navigate'].includes(
+            toolName
+          )
         )
           throw new Error('Plan mode does not permit mutating tools')
         if (this.product && ASSISTANT_PRODUCT_TOOLS.some((tool) => tool.name === toolName)) {
@@ -949,6 +967,16 @@ class AssistantServer {
         }
         let result: CallToolResult
         switch (toolName) {
+          case 'read_document': {
+            if (!this.product) throw new McpError(ErrorCode.MethodNotFound, `Unknown tool: ${toolName}`)
+            const document = await readAssistantDocument(
+              args,
+              (filePath) => this.resolveInputPath(filePath),
+              this.product.signal ? AbortSignal.any([extra.signal, this.product.signal]) : extra.signal
+            )
+            result = { content: [{ type: 'text', text: JSON.stringify(document) }] }
+            break
+          }
           case 'navigate':
             result = await this.navigate(args as Record<string, string | Record<string, string> | undefined>)
             break
@@ -1070,7 +1098,7 @@ class AssistantServer {
     if (!filePath) throw new McpError(ErrorCode.InvalidParams, "'file_path' is required for create_file")
 
     const format = normalizeFormat(args.format, filePath)
-    const outputPath = this.resolveOutputPath(filePath)
+    let outputPath = this.resolveOutputPath(filePath)
     const title =
       typeof args.title === 'string' && args.title.trim()
         ? args.title.trim()
@@ -1317,12 +1345,13 @@ class AssistantServer {
       verification.details.pptx_template_exact_package_reuse = templateSummary.exactPackageReuse
     }
     const writeResult = this.product
-      ? await writeAssistantFile(outputPath, buffer, this.allowedRoots, {
+      ? await writeAssistantOutput(outputPath, buffer, this.allowedRoots, {
           overwrite: args.overwrite,
           signal: this.product.signal,
           approve: this.product.approveOverwrite
         })
       : undefined
+    if (writeResult) outputPath = writeResult.path
     if (!this.product) {
       await fsp.mkdir(path.dirname(outputPath), { recursive: true })
       await fsp.writeFile(outputPath, buffer)
@@ -1522,11 +1551,20 @@ class AssistantServer {
       throw new McpError(ErrorCode.InvalidParams, "'script_path' must point to a .py file")
     }
 
-    const cwd = args.working_directory
-      ? this.resolveInputPath(args.working_directory, { requireDirectory: true })
-      : scriptPath
-        ? path.dirname(scriptPath)
-        : this.allowedRoots[0]
+    let cwd: string | undefined
+    try {
+      cwd = args.working_directory
+        ? this.resolveInputPath(args.working_directory, { requireDirectory: true })
+        : scriptPath
+          ? path.dirname(scriptPath)
+          : this.allowedRoots[0]
+    } catch (error) {
+      if (!(error instanceof McpError) || error.code !== ErrorCode.InvalidParams) throw error
+      throw new McpError(
+        ErrorCode.InvalidParams,
+        `Invalid working_directory: ${JSON.stringify(args.working_directory)}. It must be an existing directory inside an allowed workspace/user folder, including its resolved path. Authorized workspace: ${this.allowedRoots[0] ?? '(none)'}. Omit working_directory to use the authorized workspace (or the authorized script directory for script_path); keep the supplied input/output paths absolute. No Python was executed; permissions have not been expanded.`
+      )
+    }
     if (!cwd) throw new McpError(ErrorCode.InvalidParams, 'No allowed working directory is available')
 
     const result = scriptPath
@@ -1610,7 +1648,7 @@ class AssistantServer {
 
     const responseFullText = formatOcrPages(pages, totalPages, 'markdown')
     let outputPath: string | undefined
-    let writeResult: Awaited<ReturnType<typeof writeAssistantFile>> | undefined
+    let writeResult: Awaited<ReturnType<typeof writeAssistantOutput>> | undefined
 
     if (args.output_path) {
       outputPath = this.resolveOutputPath(args.output_path)
@@ -1620,11 +1658,12 @@ class AssistantServer {
       }
       const outputText = formatOcrPages(pages, totalPages, outputExtension === '.md' ? 'markdown' : 'text')
       if (this.product) {
-        writeResult = await writeAssistantFile(outputPath, outputText, this.allowedRoots, {
+        writeResult = await writeAssistantOutput(outputPath, outputText, this.allowedRoots, {
           overwrite: args.overwrite,
           signal: this.product.signal,
           approve: this.product.approveOverwrite
         })
+        outputPath = writeResult.path
       } else {
         await fsp.mkdir(path.dirname(outputPath), { recursive: true })
         await fsp.writeFile(outputPath, outputText, 'utf8')

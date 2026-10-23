@@ -1,4 +1,4 @@
-import { exec } from 'node:child_process'
+import { exec, execFile } from 'node:child_process'
 import { homedir } from 'node:os'
 import { promisify } from 'node:util'
 
@@ -12,6 +12,7 @@ import * as path from 'path'
 const logger = loggerService.withContext('OvmsManager')
 
 const execAsync = promisify(exec)
+const execFileAsync = promisify(execFile)
 
 export const isOvmsSupported = isWin && getCpuName().toLowerCase().includes('intel')
 
@@ -112,9 +113,25 @@ class OvmsManager {
    */
   public async stopOvms(): Promise<{ success: boolean; message?: string }> {
     try {
-      // close the OVMS process
-      await execAsync(
-        `powershell -Command "Get-WmiObject Win32_Process | Where-Object { $_.CommandLine -like 'ovms.exe*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"`
+      const executable = path.join(homedir(), HOME_CHERRY_DIR, 'ovms', 'ovms', 'ovms.exe')
+      // Most cloud-model users never install OVMS. Do not start PowerShell (or
+      // scan unrelated processes) for them every time they close the app.
+      if (!this.ovms && !(await fs.pathExists(executable))) return { success: true }
+      await execFileAsync(
+        'powershell.exe',
+        [
+          '-NoLogo',
+          '-NoProfile',
+          '-NonInteractive',
+          '-Command',
+          "$ErrorActionPreference = 'Stop'; Get-CimInstance Win32_Process -Filter \"Name='ovms.exe'\" | Where-Object { $_.ExecutablePath -eq $env:ZEN_OVMS_EXECUTABLE } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction Stop }"
+        ],
+        {
+          env: { ...process.env, ZEN_OVMS_EXECUTABLE: executable },
+          windowsHide: true,
+          timeout: 5000,
+          killSignal: 'SIGKILL'
+        }
       )
 
       // Reset the ovms instance

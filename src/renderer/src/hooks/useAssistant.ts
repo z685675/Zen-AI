@@ -27,6 +27,7 @@ import {
 import { setDefaultModel, setQuickModel, setTranslateModel } from '@renderer/store/llm'
 import type { Assistant, AssistantSettings, Model, ThinkingOption, Topic } from '@renderer/types'
 import { uuid } from '@renderer/utils'
+import { getAssistantConversationModel } from '@renderer/utils/conversationModel'
 import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -82,7 +83,7 @@ export function useAssistant(id: string) {
     [assistants, id]
   )
 
-  const model = useMemo(() => assistant?.model ?? assistant?.defaultModel ?? defaultModel, [assistant, defaultModel])
+  const model = useMemo(() => getAssistantConversationModel(assistant, defaultModel), [assistant, defaultModel])
 
   const normalizedTopics = useMemo(
     () => (Array.isArray(assistant?.topics) ? assistant.topics : []),

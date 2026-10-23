@@ -73,7 +73,13 @@ import type { AwsBedrockAuthType, Model, Provider } from '@renderer/types'
 import { COPILOT_DEFAULT_HEADERS } from '../constants'
 import type { AihubmixProviderSettings } from '../custom/aihubmix-provider'
 import type { NewApiProviderSettings } from '../custom/newapi-provider'
-import { adaptProvider, formatProviderApiHost, getActualProvider, providerToAiSdkConfig } from '../providerConfig'
+import {
+  adaptProvider,
+  formatProviderApiHost,
+  getActualProvider,
+  providerToAiSdkConfig,
+  withZenTraceFetch
+} from '../providerConfig'
 
 const { __mockGetState: mockGetState } = vi.mocked(await import('@renderer/store')) as unknown as {
   __mockGetState: ReturnType<typeof vi.fn>
@@ -181,6 +187,83 @@ const makeModel = (id: string, provider: string, overrides?: Partial<Model>): Mo
   provider,
   group: provider,
   ...overrides
+})
+
+describe('withZenTraceFetch cancellation and connectivity diagnostics', () => {
+  const url = 'https://example.com/v1/chat/completions'
+  const requestWithSignal = (signal: AbortSignal) => {
+    const request = new Request(url)
+    // jsdom's AbortSignal and Node's fetch Request belong to different realms.
+    Object.defineProperty(request, 'signal', { value: signal })
+    return request
+  }
+
+  it.each([
+    new DOMException('signal timed out', 'TimeoutError'),
+    new DOMException('operation stopped', 'AbortError'),
+    Object.assign(new Error('deadline reached in another realm'), { name: 'TimeoutError' }),
+    Object.assign(new Error('user stopped in another realm'), { name: 'AbortError' })
+  ])('does not probe the network for an intentional $name', async (error) => {
+    const baseFetch = vi.fn<typeof fetch>().mockRejectedValue(error)
+    await expect(withZenTraceFetch(baseFetch)(url)).rejects.toBe(error)
+    expect(baseFetch).toHaveBeenCalledOnce()
+    expect(error).not.toHaveProperty('zenConnectivityCheck')
+  })
+
+  it.each(['init', 'request'] as const)(
+    'recognizes a custom cancellation reason from the %s signal',
+    async (source) => {
+      const controller = new AbortController()
+      const error = new Error('custom deadline reason')
+      controller.abort(error)
+      const request = requestWithSignal(controller.signal)
+      const baseFetch = vi.fn<typeof fetch>().mockRejectedValue(error)
+      await expect(
+        withZenTraceFetch(baseFetch)(source === 'request' ? request : url, {
+          ...(source === 'init' ? { signal: controller.signal } : {})
+        })
+      ).rejects.toBe(error)
+      expect(baseFetch).toHaveBeenCalledOnce()
+    }
+  )
+
+  it('does not append network probes when an auxiliary request reaches its actual AbortSignal deadline', async () => {
+    const signal = AbortSignal.timeout(5)
+    const baseFetch = vi.fn<typeof fetch>().mockImplementation(async (_input, init) => {
+      if (init?.signal?.aborted) throw init.signal.reason
+      return await new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => reject(init.signal?.reason), { once: true })
+      })
+    })
+    await expect(
+      withZenTraceFetch(baseFetch)(url, { signal, headers: { 'X-Zen-Request-Purpose': 'topic-naming' } })
+    ).rejects.toHaveProperty('name', 'TimeoutError')
+    expect(baseFetch).toHaveBeenCalledOnce()
+  })
+
+  it.each([null, new AbortController().signal])(
+    'still probes a real network failure when init.signal=%s overrides an aborted Request',
+    async (signal) => {
+      const controller = new AbortController()
+      controller.abort()
+      const request = requestWithSignal(controller.signal)
+      const error = new TypeError('Failed to fetch')
+      const baseFetch = vi
+        .fn<typeof fetch>()
+        .mockRejectedValueOnce(error)
+        .mockImplementation(async () => new Response('{}', { status: 503 }))
+      await expect(withZenTraceFetch(baseFetch)(request, { signal })).rejects.toBe(error)
+      expect(baseFetch).toHaveBeenCalledTimes(3)
+      expect(baseFetch.mock.calls.slice(1).map(([input]) => input)).toEqual([
+        'https://example.com/api/status',
+        'https://example.com/v1/models'
+      ])
+      for (const [, init] of baseFetch.mock.calls.slice(1)) {
+        expect(new Headers(init?.headers).get('X-Zen-Request-Purpose')).toBe('connectivity-check')
+      }
+      expect(error).toHaveProperty('zenConnectivityCheck.serviceStatus.status', 503)
+    }
+  )
 })
 
 // ==================== formatProviderApiHost ====================

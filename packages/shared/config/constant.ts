@@ -26,6 +26,8 @@ export const API_SERVER_DEFAULTS = {
   PORT: 23336
 }
 
+export const APP_QUIT_CLEANUP_TIMEOUT_MS = 20_000
+
 /**
  * A flat array of all file extensions known by the linguist database.
  * This is the primary source for identifying code files.

@@ -26,6 +26,9 @@ import type {
 } from '@renderer/types'
 import { v4 as uuid } from 'uuid'
 
+import { modelRecoveryIntents } from './modelRecoveryIntents'
+import { resolveNextManagedRequestModel } from './ModelRequestRecovery'
+
 const logger = loggerService.withContext('AssistantService')
 
 /**
@@ -181,6 +184,10 @@ export function getDefaultProvider() {
 }
 
 export function getDefaultModel() {
+  const state = store.getState().llm
+  if (state.defaultModel)
+    return resolveNextManagedRequestModel('global:chat', state.defaultModel, state.providers, state.modelPolicy?.policy)
+  if (modelRecoveryIntents.get('global:chat')?.actual === null) return undefined
   return (
     store.getState().llm.defaultModel ||
     store
@@ -191,11 +198,18 @@ export function getDefaultModel() {
 }
 
 export function getQuickModel() {
-  return store.getState().llm.quickModel
+  const state = store.getState().llm
+  return resolveNextManagedRequestModel('global:quick', state.quickModel, state.providers, state.modelPolicy?.policy)
 }
 
 export function getTranslateModel() {
-  return store.getState().llm.translateModel
+  const state = store.getState().llm
+  return resolveNextManagedRequestModel(
+    'global:translate',
+    state.translateModel,
+    state.providers,
+    state.modelPolicy?.policy
+  )
 }
 
 export function getAssistantProvider(assistant: Assistant): Provider {
@@ -221,7 +235,7 @@ export function getProviderByModel(model?: Model): Provider {
 // FIXME: This function may return undefined but as Provider
 export function getProviderByModelId(modelId?: string) {
   const providers = getStoreProviders()
-  const _modelId = modelId || getDefaultModel().id
+  const _modelId = modelId || getDefaultModel()?.id
   return providers.find((p) => p.models.find((m) => m.id === _modelId)) as Provider
 }
 

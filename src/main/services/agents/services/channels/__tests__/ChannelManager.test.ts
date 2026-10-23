@@ -1,4 +1,4 @@
-import { DEFAULT_FUSION_AGENT_ID } from '@shared/config/agents'
+import { DEFAULT_FUSION_AGENT_ID, DEFAULT_OPENCODE_AGENT_ID } from '@shared/config/agents'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@shared/agents/legacyAutomation', () => ({
@@ -59,6 +59,13 @@ class MockAdapter extends ChannelAdapter {
 let createdAdapters: MockAdapter[] = []
 
 describe('ChannelManager', () => {
+  it('never classifies an OpenCode WeChat connection as a deletable legacy connection', async () => {
+    const deleted = await channelManager.deleteLegacyWechatChannels([
+      { id: 'new-wechat', type: 'wechat', agentId: DEFAULT_OPENCODE_AGENT_ID } as any
+    ])
+    expect(deleted.size).toBe(0)
+    expect(channelService.deleteChannel).not.toHaveBeenCalled()
+  })
   beforeEach(async () => {
     // Defensively stop any leftover adapters from a previous failed test
     await channelManager.stop()

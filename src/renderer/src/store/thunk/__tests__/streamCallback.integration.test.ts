@@ -16,6 +16,7 @@ import { ChunkType } from '@renderer/types/chunk'
 import { AssistantMessageStatus, MessageBlockStatus, MessageBlockType } from '@renderer/types/newMessage'
 import { AgentTaskLimitError } from '@shared/agents/taskConcurrency'
 import { DEFAULT_FUSION_AGENT_ID } from '@shared/config/agents'
+import { NoOutputGeneratedError } from 'ai'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { RootState } from '../../index'
@@ -455,6 +456,25 @@ describe('streamCallback integration', () => {
     expect(message?.status).toBe(AssistantMessageStatus.SUCCESS)
     expect(message?.usage?.total_tokens).toBe(150)
     expect(autoRenameTopic).toHaveBeenCalledWith(assistant, topicId)
+  })
+
+  it('persists an SDK no-output error and refuses a later success signal', async () => {
+    const callbacks = createMockCallbacks(assistantMsgId, topicId, assistant, dispatch, getState)
+    await processChunks(
+      [
+        { type: ChunkType.LLM_RESPONSE_CREATED },
+        { type: ChunkType.ERROR, error: new NoOutputGeneratedError() },
+        { type: ChunkType.LLM_RESPONSE_COMPLETE }
+      ],
+      callbacks
+    )
+    const message = getState().messages.entities[assistantMsgId]
+    expect(message.status).toBe(AssistantMessageStatus.ERROR)
+    expect(message.providerMetadata?.responseTiming?.outcome).toBe('failed')
+    expect(
+      Object.values(getState().messageBlocks.entities).some((block) => block.type === MessageBlockType.ERROR)
+    ).toBe(true)
+    expect(getState().messages.loadingByTopic[topicId]).toBeFalsy()
   })
 
   it('records full-round timing, preserves other metadata and uses the actual finished timestamp', async () => {

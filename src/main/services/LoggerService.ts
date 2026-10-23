@@ -1,4 +1,6 @@
 /* eslint-disable no-restricted-syntax */
+import { finished } from 'node:stream/promises'
+
 import type { LogContextData, LogLevel, LogSourceWithContext } from '@shared/config/logger'
 import { LEVEL, LEVEL_MAP } from '@shared/config/logger'
 import { IpcChannel } from '@shared/IpcChannel'
@@ -176,8 +178,12 @@ class LoggerService {
   /**
    * Finish logging and close all transports
    */
-  public finish() {
-    this.logger.end()
+  public async finish(): Promise<void> {
+    // end() only queues the final writes. Quitting immediately after it loses
+    // shutdown evidence, often including the actual stuck/closed service.
+    const flushed = finished(this.logger, { readable: false, cleanup: true })
+    if (!this.logger.writableEnded) this.logger.end()
+    await flushed
   }
 
   /**

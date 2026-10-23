@@ -1,7 +1,8 @@
 import { loggerService } from '@logger'
 import { assertLegacyAutomationEnabled } from '@shared/agents/legacyAutomation'
+import { DEFAULT_OPENCODE_AGENT_ID } from '@shared/config/agents'
 import type { CreateTaskRequest, ListOptions, ScheduledTaskEntity, TaskRunLogEntity, UpdateTaskRequest } from '@types'
-import { and, asc, count, desc, eq, inArray, isNotNull, lte, ne } from 'drizzle-orm'
+import { and, asc, count, desc, eq, inArray, isNotNull, lte, ne, notInArray } from 'drizzle-orm'
 
 import { BaseService } from '../BaseService'
 import {
@@ -309,13 +310,13 @@ export class TaskService extends BaseService {
 
   // --- Due tasks (used by SchedulerService poll loop) ---
 
-  /** Preserve schedules, subscriptions and history, including hidden heartbeat tasks. */
+  /** Pause legacy schedules, including heartbeat, without touching separately authorized OpenCode tasks. */
   async pauseAllActiveTasks(): Promise<void> {
     const database = await this.getDatabase()
     await database
       .update(scheduledTasksTable)
       .set({ status: 'paused', updated_at: new Date().toISOString() })
-      .where(eq(scheduledTasksTable.status, 'active'))
+      .where(and(eq(scheduledTasksTable.status, 'active'), ne(scheduledTasksTable.agent_id, DEFAULT_OPENCODE_AGENT_ID)))
   }
 
   async hasActiveTasks(): Promise<boolean> {
@@ -420,7 +421,20 @@ export class TaskService extends BaseService {
     const interrupted = await database
       .select({ id: taskRunLogsTable.id, run_at: taskRunLogsTable.run_at })
       .from(taskRunLogsTable)
-      .where(inArray(taskRunLogsTable.status, ['running', 'waiting_user']))
+      .where(
+        and(
+          inArray(taskRunLogsTable.status, ['running', 'waiting_user']),
+          options
+            ? notInArray(
+                taskRunLogsTable.task_id,
+                database
+                  .select({ id: scheduledTasksTable.id })
+                  .from(scheduledTasksTable)
+                  .where(eq(scheduledTasksTable.agent_id, DEFAULT_OPENCODE_AGENT_ID))
+              )
+            : undefined
+        )
+      )
 
     await Promise.all(
       interrupted.map((log) =>

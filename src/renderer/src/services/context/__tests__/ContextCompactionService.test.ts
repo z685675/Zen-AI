@@ -96,6 +96,55 @@ describe('ContextCompactionService', () => {
     expect(result.messages).toEqual(modelMessages)
   })
 
+  it.each(['remote', 'local'])(
+    'retains a user request when the latest attachment itself is compacted (%s)',
+    async (mode) => {
+      const request = '请合计两个附件中的 amounts，原件不要修改。'
+      const messagesById: Record<string, ModelMessage[]> = {
+        u1: [{ role: 'user', content: 'Earlier question.' }],
+        a1: [{ role: 'assistant', content: 'Earlier answer.' }],
+        u2: [
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: request },
+              { type: 'text', text: '归档资料。'.repeat(20000) }
+            ]
+          }
+        ]
+      }
+      const uiMessages = [uiMessage('u1', 'user'), uiMessage('a1', 'assistant'), uiMessage('u2', 'user')]
+      const convert = async (messages: Message[]) => messages.flatMap((message) => messagesById[message.id] ?? [])
+      const generate = vi.fn(async () => {
+        if (mode === 'local') throw new Error('synthetic unavailable summary model')
+        return structuredCheckpoint(
+          'The user requests the sum of amounts in two attachments without changing originals.'
+        )
+      })
+      const options = {
+        modelMessages: await convert(uiMessages),
+        uiMessages,
+        topicId: `oversized-current-${mode}`,
+        budget,
+        convert,
+        generate
+      }
+      const first = await manageConversationContext(options)
+      expect(first.checkpoint?.includedThroughMessageId).toBe('u2')
+      expect(first.messages.at(-1)).toEqual(
+        expect.objectContaining({ role: 'user', content: expect.stringContaining(request) })
+      )
+      expect(first.usageAfter.totalTokens).toBeLessThanOrEqual(budget.safeInputTokens)
+      expect(String(first.messages.at(-1)?.content).length).toBeLessThan(3000)
+
+      // Retrying the same user input must not turn the persisted checkpoint into
+      // a system-only request either (Gemini rejects that as missing contents).
+      const retry = await manageConversationContext(options)
+      expect(retry.messages.some((message) => message.role === 'user')).toBe(true)
+      expect(retry.usageAfter.totalTokens).toBeLessThanOrEqual(budget.safeInputTokens)
+    }
+  )
+
   it('persists manual memory per conversation and injects it without changing chat messages', async () => {
     saveContextUserMemory('topic-memory-one', '用户修正：项目预算为 2 万元。')
 

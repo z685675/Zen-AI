@@ -1,4 +1,5 @@
 import { LEGACY_AUTOMATION_DISABLED_CODE } from '@shared/agents/legacyAutomation'
+import { DEFAULT_OPENCODE_AGENT_ID } from '@shared/config/agents'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@logger', () => ({
@@ -111,8 +112,15 @@ describe('legacy automation shutdown with real product policy', () => {
     expect(() => channelManager.waitForQrUrl('legacy', 'wechat')).toThrow()
     await channelMessageHandler.handleIncoming({} as any, {} as any)
     await channelMessageHandler.handleCommand({} as any, {} as any)
-    expect(channelService.getChannel).not.toHaveBeenCalled()
+    expect(channelService.getChannel).toHaveBeenCalledWith('wechat')
     expect(sessionService.createSession).not.toHaveBeenCalled()
+    expect(sessionMessageService.createSessionMessage).not.toHaveBeenCalled()
+  })
+
+  it('does not turn off a new-assistant connection through the closed legacy sync endpoint', async () => {
+    vi.mocked(channelService.getChannel).mockResolvedValueOnce({ agentId: DEFAULT_OPENCODE_AGENT_ID } as any)
+    await channelManager.syncChannel('new-wechat')
+    expect(channelService.updateChannel).not.toHaveBeenCalled()
     expect(sessionMessageService.createSessionMessage).not.toHaveBeenCalled()
   })
 

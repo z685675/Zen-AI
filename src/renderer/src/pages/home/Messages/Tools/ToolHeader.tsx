@@ -131,7 +131,16 @@ const getToolDescription = (toolResponse?: MCPToolResponse | NormalToolResponse)
   if (!args || typeof args !== 'object' || Array.isArray(args)) return undefined
 
   // Common description fields
-  return (args.description || args.file_path || args.pattern || args.query || args.command || args.url)?.toString()
+  return (
+    args.description ||
+    args.filePath ||
+    args.filepath ||
+    args.file_path ||
+    args.pattern ||
+    args.query ||
+    args.command ||
+    args.url
+  )?.toString()
 }
 
 // ============ Styled Components ============
@@ -223,7 +232,8 @@ const ToolHeader: FC<ToolHeaderProps> = ({
   const hasError = getToolHasError(toolResponse, propHasError)
   const status = getEffectiveStatus(propStatus || (toolResponse?.status as ToolStatus), false, hasError)
   const displayInfo = getToolDisplayInfo(toolName, tool?.type === 'mcp' ? (tool as MCPTool) : undefined)
-  const statusLabel = getToolStatusLabel(status, displayInfo, hasError)
+  const statusLabel =
+    status === 'waiting' ? t('agent.toolPermission.pending') : getToolStatusLabel(status, displayInfo, hasError)
 
   const description = params ?? displayInfo.description ?? getToolDescription(toolResponse)
 
@@ -232,7 +242,8 @@ const ToolHeader: FC<ToolHeaderProps> = ({
   if (block && tool?.type === 'mcp') {
     const mcpTool = tool as MCPTool
     const mcpDisplayInfo = getToolDisplayInfo(mcpTool.name, mcpTool)
-    const mcpStatusLabel = getToolStatusLabel(status, mcpDisplayInfo, hasError)
+    const mcpStatusLabel =
+      status === 'waiting' ? t('agent.toolPermission.pending') : getToolStatusLabel(status, mcpDisplayInfo, hasError)
     return (
       <Container>
         <ToolName align="center" gap={6}>

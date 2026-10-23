@@ -28,6 +28,13 @@ const config = (id: string, type = 'new-api', endpoint?: string) =>
   })
 
 describe('OpenCode isolated model config', () => {
+  it('gives slow response headers time within a finite whole-request and idle-chunk budget', () => {
+    expect(config('alias').provider['zen-selected'].options).toMatchObject({
+      timeout: 180_000,
+      headerTimeout: 120_000,
+      chunkTimeout: 120_000
+    })
+  })
   it('exposes automatically prepared tools without inspecting or installing them on task startup', () => {
     const toolDir = path.resolve('owned-tools')
     const env = buildOpenCodeEnvironment(
@@ -61,6 +68,14 @@ describe('OpenCode isolated model config', () => {
     const result = config('future-model')
     expect(result.provider['zen-selected'].models['future-model'].limit.context).toBe(128_000)
     expect(result.compaction.auto).toBe(true)
+    expect(result.compaction.prune).toBe(true)
+    expect(result.attachment.image).toEqual({
+      auto_resize: true,
+      max_width: 2000,
+      max_height: 2000,
+      max_base64_bytes: 5 * 1024 * 1024
+    })
+    expect(result.provider['zen-selected'].models['future-model'].modalities.input).not.toContain('pdf')
     expect(result.agent.title.disable).toBe(true)
     expect(result.plugin).toEqual([])
     expect(result.provider['zen-selected'].options.headers.Originator).toBe('zenai_opencode')
@@ -86,6 +101,25 @@ describe('OpenCode isolated model config', () => {
     expect(result.permission['mcp__assistant__web_search']).toBe('allow')
     expect(result.permission['mcp__assistant__environment']).toBe('allow')
     expect(result.permission['mcp__assistant__skill_status']).toBe('allow')
+    expect(result.permission['mcp__assistant__read_document']).toBe('allow')
+  })
+  it('uses native permission rules to ask for common deletions even during automatic execution', () => {
+    const result = buildOpenCodeConfig({
+      session: { ...session, configuration: { permission_mode: 'bypassPermissions' } },
+      provider: provider('alias'),
+      modelId: 'alias',
+      skillPaths: [],
+      api: { host: '127.0.0.1', port: 1, apiKey: 'placeholder' }
+    })
+    expect(result.permission['*']).toBe('allow')
+    expect(result.permission.bash).toMatchObject({
+      '*': 'allow',
+      'rm *': 'ask',
+      'Remove-Item *': 'ask',
+      'del *': 'ask'
+    })
+    expect(result.permission['mcp__assistant_*']).toBe('allow')
+    expect(result.snapshot).toBe(false)
   })
   it('does not inherit personal provider credentials, accounts or unsafe runtime options', () => {
     const env = buildOpenCodeEnvironment(

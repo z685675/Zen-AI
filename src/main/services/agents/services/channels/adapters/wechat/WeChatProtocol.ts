@@ -11,7 +11,7 @@ import path from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 
 import { loggerService } from '@logger'
-import { net } from 'electron'
+import { net, safeStorage } from 'electron'
 import * as z from 'zod'
 
 const logger = loggerService.withContext('WeChatProtocol')
@@ -64,7 +64,7 @@ interface MessageItem {
   text_item?: { text: string }
   image_item?: ImageItem
   voice_item?: { text?: string }
-  file_item?: { file_name?: string; file_size?: number; media?: CDNMedia; aeskey?: string }
+  file_item?: { file_name?: string; file_size?: number; len?: string; media?: CDNMedia; aeskey?: string }
   video_item?: unknown
   ref_msg?: unknown
 }
@@ -82,6 +82,8 @@ interface WeixinMessage {
 }
 
 export interface IncomingMessage {
+  messageId?: string
+  accountId?: string
   userId: string
   text: string
   type: 'text' | 'image' | 'voice' | 'file' | 'video'
@@ -192,7 +194,7 @@ function resolveImageAesKey(item: ImageItem): Buffer | null {
 
 // --------------- CDN download ---------------
 
-async function cdnDownloadImage(item: ImageItem): Promise<Buffer | null> {
+async function cdnDownloadImage(item: ImageItem, signal?: AbortSignal): Promise<Buffer | null> {
   const encryptQueryParam = item.media?.encrypt_query_param
   if (!encryptQueryParam) return null
 
@@ -203,13 +205,16 @@ async function cdnDownloadImage(item: ImageItem): Promise<Buffer | null> {
   }
 
   const url = `${CDN_BASE_URL}/download?encrypted_query_param=${encodeURIComponent(encryptQueryParam)}`
-  const response = await net.fetch(url, { method: 'GET' })
+  const response = await net.fetch(url, {
+    method: 'GET',
+    signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(30_000)]) : AbortSignal.timeout(30_000)
+  })
 
   if (!response.ok) {
     return null
   }
 
-  const encrypted = Buffer.from(await response.arrayBuffer())
+  const encrypted = await boundedMediaBody(response)
   return aesEcbDecrypt(encrypted, aesKey)
 }
 
@@ -249,7 +254,7 @@ function resolveFileAesKey(item: FileItem): Buffer | null {
   return null
 }
 
-async function cdnDownloadFile(item: FileItem): Promise<Buffer | null> {
+async function cdnDownloadFile(item: FileItem, signal?: AbortSignal): Promise<Buffer | null> {
   const encryptQueryParam = item.media?.encrypt_query_param
   if (!encryptQueryParam) return null
 
@@ -260,14 +265,38 @@ async function cdnDownloadFile(item: FileItem): Promise<Buffer | null> {
   }
 
   const url = `${CDN_BASE_URL}/download?encrypted_query_param=${encodeURIComponent(encryptQueryParam)}`
-  const response = await net.fetch(url, { method: 'GET' })
+  const response = await net.fetch(url, {
+    method: 'GET',
+    signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(30_000)]) : AbortSignal.timeout(30_000)
+  })
 
   if (!response.ok) {
     return null
   }
 
-  const encrypted = Buffer.from(await response.arrayBuffer())
+  const encrypted = await boundedMediaBody(response)
   return aesEcbDecrypt(encrypted, aesKey)
+}
+
+const MAX_MEDIA_BYTES = 20 * 1024 * 1024
+async function boundedMediaBody(response: Response): Promise<Buffer> {
+  if (Number(response.headers.get('content-length')) > MAX_MEDIA_BYTES + 16) throw new Error('wechat_file_too_large')
+  const reader = response.body?.getReader()
+  if (!reader) throw new Error('wechat_empty_download')
+  const chunks: Uint8Array[] = []
+  let size = 0
+  try {
+    for (;;) {
+      const { value, done } = await reader.read()
+      if (done) break
+      size += value.byteLength
+      if (size > MAX_MEDIA_BYTES + 16) throw new Error('wechat_file_too_large')
+      chunks.push(value)
+    }
+    return Buffer.concat(chunks)
+  } finally {
+    await reader.cancel().catch(() => {})
+  }
 }
 
 // --------------- CDN upload ---------------
@@ -366,7 +395,11 @@ async function parseJsonResponse(response: Response, label: string): Promise<unk
   }
 
   const body = ApiErrorBodySchema.safeParse(raw)
-  if (body.success && typeof body.data.ret === 'number' && body.data.ret !== 0) {
+  if (
+    body.success &&
+    ((typeof body.data.ret === 'number' && body.data.ret !== 0) ||
+      (typeof body.data.errcode === 'number' && body.data.errcode !== 0))
+  ) {
     throw new ApiError(body.data.errmsg ?? `${label} failed`, {
       status: response.status,
       code: body.data.errcode ?? body.data.ret,
@@ -408,9 +441,18 @@ async function apiFetch(
   return parseJsonResponse(response, endpoint)
 }
 
-async function apiGet(baseUrlOrigin: string, urlPath: string, headers: Record<string, string> = {}): Promise<unknown> {
+async function apiGet(
+  baseUrlOrigin: string,
+  urlPath: string,
+  headers: Record<string, string> = {},
+  signal?: AbortSignal
+): Promise<unknown> {
   const url = `${baseUrlOrigin}${urlPath}`
-  const response = await net.fetch(url, { method: 'GET', headers })
+  const response = await net.fetch(url, {
+    method: 'GET',
+    headers,
+    signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(40_000)]) : AbortSignal.timeout(40_000)
+  })
   return parseJsonResponse(response, urlPath)
 }
 
@@ -446,9 +488,10 @@ async function apiSendMessage(
     message_state: MessageState
     context_token: string
     item_list: MessageItem[]
-  }
+  },
+  signal?: AbortSignal
 ): Promise<void> {
-  await apiFetch(baseUrl, '/ilink/bot/sendmessage', { msg, base_info: buildBaseInfo() }, token, uin, 15_000)
+  await apiFetch(baseUrl, '/ilink/bot/sendmessage', { msg, base_info: buildBaseInfo() }, token, uin, 15_000, signal)
 }
 
 async function apiGetConfig(
@@ -486,15 +529,20 @@ async function apiSendTyping(
   await apiFetch(baseUrl, '/ilink/bot/sendtyping', body, token, uin, 15_000)
 }
 
-async function fetchQrCode(baseUrl: string): Promise<QrCodeResponse> {
-  const raw = await apiGet(baseUrl, '/ilink/bot/get_bot_qrcode?bot_type=3')
+async function fetchQrCode(baseUrl: string, signal?: AbortSignal): Promise<QrCodeResponse> {
+  const raw = await apiGet(baseUrl, '/ilink/bot/get_bot_qrcode?bot_type=3', {}, signal)
   return QrCodeResponseSchema.parse(raw)
 }
 
-async function pollQrStatus(baseUrl: string, qrcode: string): Promise<QrStatusResponse> {
-  const raw = await apiGet(baseUrl, `/ilink/bot/get_qrcode_status?qrcode=${encodeURIComponent(qrcode)}`, {
-    'iLink-App-ClientVersion': '1'
-  })
+async function pollQrStatus(baseUrl: string, qrcode: string, signal?: AbortSignal): Promise<QrStatusResponse> {
+  const raw = await apiGet(
+    baseUrl,
+    `/ilink/bot/get_qrcode_status?qrcode=${encodeURIComponent(qrcode)}`,
+    {
+      'iLink-App-ClientVersion': '1'
+    },
+    signal
+  )
   return QrStatusResponseSchema.parse(raw)
 }
 
@@ -527,7 +575,10 @@ function buildTextMessage(
 async function loadCredentials(tokenPath: string): Promise<Credentials | undefined> {
   try {
     const raw = await readFile(tokenPath, 'utf8')
-    const result = CredentialsSchema.safeParse(JSON.parse(raw))
+    const envelope = JSON.parse(raw)
+    const result = CredentialsSchema.safeParse(
+      envelope.encrypted ? JSON.parse(safeStorage.decryptString(Buffer.from(envelope.encrypted, 'base64'))) : envelope
+    )
     if (!result.success) {
       throw new Error(`Invalid credentials format in ${tokenPath}`)
     }
@@ -540,9 +591,14 @@ async function loadCredentials(tokenPath: string): Promise<Credentials | undefin
   }
 }
 
-async function saveCredentials(credentials: Credentials, tokenPath: string): Promise<void> {
+async function saveCredentials(credentials: Credentials, tokenPath: string, protect = false): Promise<void> {
   await mkdir(path.dirname(tokenPath), { recursive: true, mode: 0o700 })
-  await writeFile(tokenPath, `${JSON.stringify(credentials, null, 2)}\n`, { mode: 0o600 })
+  if (protect && (!safeStorage.isEncryptionAvailable() || safeStorage.getSelectedStorageBackend?.() === 'basic_text'))
+    throw new Error('wechat_secure_storage_unavailable')
+  const saved = protect
+    ? { encrypted: safeStorage.encryptString(JSON.stringify(credentials)).toString('base64') }
+    : credentials
+  await writeFile(tokenPath, `${JSON.stringify(saved)}\n`, { mode: 0o600 })
   await chmod(tokenPath, 0o600)
 }
 
@@ -551,6 +607,7 @@ async function clearCredentials(tokenPath: string): Promise<void> {
 }
 
 interface LoginOptions {
+  protect?: boolean
   baseUrl: string
   tokenPath: string
   force?: boolean
@@ -574,7 +631,7 @@ async function loginFlow(options: LoginOptions): Promise<Credentials> {
       throw new Error('Login cancelled')
     }
 
-    const qr = await fetchQrCode(options.baseUrl)
+    const qr = await fetchQrCode(options.baseUrl, options.signal)
     options.onQrUrl?.(qr.qrcode_img_content)
     logger.info('QR code generated, waiting for scan', { attempt: qrRetries + 1, maxAttempts: MAX_QR_RETRIES })
 
@@ -585,7 +642,7 @@ async function loginFlow(options: LoginOptions): Promise<Credentials> {
         throw new Error('Login cancelled')
       }
 
-      const status = await pollQrStatus(options.baseUrl, qr.qrcode)
+      const status = await pollQrStatus(options.baseUrl, qr.qrcode, options.signal)
 
       if (status.status !== lastStatus) {
         if (status.status === 'scaned') {
@@ -609,7 +666,11 @@ async function loginFlow(options: LoginOptions): Promise<Credentials> {
           accountId: status.ilink_bot_id,
           userId: status.ilink_user_id
         }
-        await saveCredentials(credentials, options.tokenPath)
+        options.signal?.throwIfAborted()
+        const endpoint = new URL(credentials.baseUrl)
+        if (options.protect && (endpoint.protocol !== 'https:' || !/(^|\.)weixin\.qq\.com$/.test(endpoint.hostname)))
+          throw new Error('wechat_untrusted_endpoint')
+        await saveCredentials(credentials, options.tokenPath, options.protect)
         return credentials
       }
 
@@ -629,6 +690,8 @@ async function loginFlow(options: LoginOptions): Promise<Credentials> {
 type MessageHandler = (msg: IncomingMessage) => void | Promise<void>
 
 export interface WeixinBotOptions {
+  /** New integration uses secure credentials and explicit re-login, never silent account switching. */
+  strict?: boolean
   baseUrl?: string
   tokenPath?: string
   onError?: (error: unknown) => void
@@ -641,6 +704,7 @@ function normalizeBaseUrl(baseUrl: string): string {
 }
 
 export class WeixinBot {
+  private readonly strict: boolean
   private baseUrl: string
   private readonly uin: string
   private readonly tokenPath?: string
@@ -657,6 +721,7 @@ export class WeixinBot {
   private runPromise: Promise<void> | null = null
 
   constructor(options: WeixinBotOptions = {}) {
+    this.strict = Boolean(options.strict)
     this.baseUrl = normalizeBaseUrl(options.baseUrl ?? DEFAULT_BASE_URL)
     this.uin = Buffer.from(String(randomBytes(4).readUInt32BE(0)), 'utf8').toString('base64')
     this.tokenPath = options.tokenPath
@@ -673,6 +738,10 @@ export class WeixinBot {
   }
 
   async login(options: { force?: boolean; signal?: AbortSignal } = {}): Promise<Credentials> {
+    if (this.strict && options.force) {
+      this.contextTokens.clear()
+      this.clearPersistedContextTokens()
+    }
     const previousToken = this.credentials?.token
     // Use provided signal or create an internal one that stop() can cancel
     this.loginAbort = new AbortController()
@@ -682,7 +751,8 @@ export class WeixinBot {
       tokenPath: this.tokenPath!,
       force: options.force,
       signal,
-      onQrUrl: this.onQrUrlCallback
+      onQrUrl: this.onQrUrlCallback,
+      protect: this.strict
     })
     this.loginAbort = null
 
@@ -695,7 +765,7 @@ export class WeixinBot {
       this.clearPersistedContextTokens()
     }
 
-    logger.info('Logged in', { userId: credentials.userId })
+    logger.info('Logged in', this.strict ? { protected: true } : { userId: credentials.userId })
     return credentials
   }
 
@@ -742,20 +812,111 @@ export class WeixinBot {
     await this.sendText(userId, text, contextToken ?? '')
   }
 
+  /** One durable outbox part, one protocol message; acceptance does not mean read. */
+  async sendStable(userId: string, text: string, clientId: string, signal: AbortSignal): Promise<void> {
+    const context = this.contextTokens.get(userId)
+    if (!context) throw Object.assign(new Error('wechat_reply_window_required'), { definitelyNotSent: true })
+    const credentials = await this.ensureCredentials()
+    signal.throwIfAborted()
+    const msg = { ...buildTextMessage(userId, context, text), client_id: clientId }
+    await apiSendMessage(this.baseUrl, credentials.token, this.uin, msg, signal)
+  }
+
+  /** Generic FILE pipeline, per Tencent/openclaw-weixin protocol (media_type=3, file_item.len). */
+  async sendDocument(
+    userId: string,
+    data: Buffer,
+    filename: string,
+    clientId: string,
+    signal: AbortSignal,
+    onStage?: (stage: 'upload' | 'submit') => void
+  ): Promise<void> {
+    signal.throwIfAborted()
+    const context = this.contextTokens.get(userId)
+    if (!context || data.length > MAX_MEDIA_BYTES || !data.length)
+      throw Object.assign(new Error('wechat_file_or_reply_window_invalid'), { definitelyNotSent: true })
+    const credentials = await this.ensureCredentials()
+    onStage?.('upload')
+    const aeskey = randomBytes(16)
+    const ciphertext = aesEcbEncrypt(data, aeskey)
+    const filekey = randomBytes(16).toString('hex')
+    const { createHash } = await import('node:crypto')
+    const raw = await apiFetch(
+      this.baseUrl,
+      '/ilink/bot/getuploadurl',
+      {
+        filekey,
+        media_type: 3,
+        to_user_id: userId,
+        rawsize: data.length,
+        rawfilemd5: createHash('md5').update(data).digest('hex'),
+        filesize: ciphertext.length,
+        no_need_thumb: true,
+        aeskey: aeskey.toString('hex'),
+        base_info: buildBaseInfo()
+      },
+      credentials.token,
+      this.uin,
+      15_000,
+      signal
+    )
+    const { upload_param } = GetUploadUrlRespSchema.parse(raw)
+    const response = await net.fetch(
+      `${CDN_BASE_URL}/upload?encrypted_query_param=${encodeURIComponent(upload_param)}&filekey=${encodeURIComponent(filekey)}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/octet-stream' },
+        body: new Uint8Array(ciphertext),
+        signal
+      }
+    )
+    const reference = response.headers.get('x-encrypted-param')
+    if (!response.ok || !reference) throw Object.assign(new Error('wechat_upload_failed'), { definitelyNotSent: true })
+    signal.throwIfAborted()
+    onStage?.('submit')
+    await apiSendMessage(
+      this.baseUrl,
+      credentials.token,
+      this.uin,
+      {
+        ...buildTextMessage(userId, context, ''),
+        client_id: clientId,
+        item_list: [
+          {
+            type: MessageItemType.FILE,
+            file_item: {
+              file_name: filename,
+              len: String(data.length),
+              media: { encrypt_query_param: reference, aes_key: aeskey.toString('base64'), encrypt_type: 1 }
+            }
+          }
+        ]
+      },
+      signal
+    )
+  }
+
   /**
    * Download and decrypt an image from WeChat CDN.
    * Returns a data URL (data:<mime>;base64,...) or null on failure.
    * Format conversion (to PNG) is handled downstream by ClaudeCodeService.
    */
-  async downloadImage(imageItem: ImageItem): Promise<string | null> {
+  async downloadImage(imageItem: ImageItem, signal?: AbortSignal): Promise<string | null> {
     try {
-      const data = await cdnDownloadImage(imageItem)
+      const data = await cdnDownloadImage(imageItem, signal)
       if (!data) return null
 
       const mime = detectImageMime(data)
       return `data:${mime};base64,${data.toString('base64')}`
     } catch (error) {
-      logger.error('Failed to download WeChat image', error instanceof Error ? error : { error: String(error) })
+      logger.error(
+        'Failed to download WeChat image',
+        this.strict
+          ? { code: 'wechat_image_download_failed' }
+          : error instanceof Error
+            ? error
+            : { error: String(error) }
+      )
       return null
     }
   }
@@ -764,13 +925,20 @@ export class WeixinBot {
    * Download and decrypt a file from WeChat CDN.
    * Returns { data: Buffer, filename: string } or null on failure.
    */
-  async downloadFile(fileItem: FileItem): Promise<{ data: Buffer; filename: string } | null> {
+  async downloadFile(fileItem: FileItem, signal?: AbortSignal): Promise<{ data: Buffer; filename: string } | null> {
     try {
-      const data = await cdnDownloadFile(fileItem)
+      const data = await cdnDownloadFile(fileItem, signal)
       if (!data) return null
       return { data, filename: fileItem.file_name ?? 'file' }
     } catch (error) {
-      logger.error('Failed to download WeChat file', error instanceof Error ? error : { error: String(error) })
+      logger.error(
+        'Failed to download WeChat file',
+        this.strict
+          ? { code: 'wechat_file_download_failed' }
+          : error instanceof Error
+            ? error
+            : { error: String(error) }
+      )
       return null
     }
   }
@@ -853,7 +1021,6 @@ export class WeixinBot {
         )
 
         this.currentPollController = null
-        this.cursor = updates.get_updates_buf || this.cursor
         retryDelayMs = 1_000
 
         for (const raw of updates.msgs ?? []) {
@@ -863,12 +1030,18 @@ export class WeixinBot {
             await this.dispatchMessage(incoming)
           }
         }
+        this.cursor = updates.get_updates_buf || this.cursor
       } catch (error) {
         this.currentPollController = null
 
         if (this.stopped && isAbortError(error)) break
 
         if (isSessionExpired(error)) {
+          if (this.strict) {
+            this.stopped = true
+            this.onErrorCallback?.(new Error('wechat_login_expired'))
+            break
+          }
           logger.info('Session expired, re-authenticating')
           this.credentials = undefined
           this.cursor = ''
@@ -922,6 +1095,7 @@ export class WeixinBot {
     const results = await Promise.allSettled(this.handlers.map(async (handler) => handler(message)))
     for (const result of results) {
       if (result.status === 'rejected') {
+        if (this.strict) throw new Error('wechat_receive_not_committed')
         this.reportError(result.reason)
       }
     }
@@ -929,6 +1103,7 @@ export class WeixinBot {
 
   private rememberContext(message: WeixinMessage): void {
     const userId = message.message_type === MessageType.USER ? message.from_user_id : message.to_user_id
+    if (this.strict && userId !== this.credentials?.userId) return
     if (userId && message.context_token) {
       // Evict oldest entry when map exceeds max size
       if (this.contextTokens.size >= MAX_CONTEXT_TOKENS && !this.contextTokens.has(userId)) {
@@ -952,6 +1127,9 @@ export class WeixinBot {
       .map((item) => item.file_item!)
 
     return {
+      messageId:
+        message.client_id || (Number.isSafeInteger(message.message_id) ? String(message.message_id) : undefined),
+      accountId: this.credentials?.accountId,
       userId: message.from_user_id,
       text: extractText(message.item_list),
       type: detectType(message.item_list),
@@ -969,7 +1147,10 @@ export class WeixinBot {
       for (const [k, v] of this.contextTokens) {
         tokens[k] = v
       }
-      writeFile(this.contextTokenPath, JSON.stringify(tokens), { mode: 0o600 }).catch((err) => {
+      const envelope = this.strict
+        ? { encrypted: safeStorage.encryptString(JSON.stringify(tokens)).toString('base64') }
+        : tokens
+      writeFile(this.contextTokenPath, JSON.stringify(envelope), { mode: 0o600 }).catch((err) => {
         logger.warn('Failed to persist context tokens', { error: err instanceof Error ? err.message : String(err) })
       })
     } catch (err) {
@@ -982,7 +1163,14 @@ export class WeixinBot {
     try {
       if (!fs.existsSync(this.contextTokenPath)) return
       const raw = fs.readFileSync(this.contextTokenPath, 'utf8')
-      const tokens = JSON.parse(raw) as Record<string, string>
+      const envelope = JSON.parse(raw)
+      const tokens = (
+        envelope.encrypted
+          ? JSON.parse(safeStorage.decryptString(Buffer.from(envelope.encrypted, 'base64')))
+          : this.strict
+            ? {}
+            : envelope
+      ) as Record<string, string>
       let count = 0
       for (const [userId, token] of Object.entries(tokens)) {
         if (typeof token === 'string' && token) {
@@ -1004,6 +1192,10 @@ export class WeixinBot {
   }
 
   private reportError(error: unknown): void {
+    if (this.strict) {
+      this.onErrorCallback?.(new Error('wechat_transport_error'))
+      return
+    }
     logger.error('Bot error', error instanceof Error ? error : { error: String(error) })
     this.onErrorCallback?.(error)
   }

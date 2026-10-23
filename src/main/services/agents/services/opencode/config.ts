@@ -2,8 +2,14 @@ import path from 'node:path'
 
 import type { GetAgentSessionResponse, Provider } from '@types'
 
+import {
+  OPENCODE_HEADERS_TIMEOUT_MS,
+  OPENCODE_REQUEST_TIMEOUT_MS,
+  OPENCODE_STREAM_CHUNK_TIMEOUT_MS
+} from '../../../../../../packages/shared/agents/opencodeLimits'
 import { formatApiHost } from '../../../../../../packages/shared/utils/api'
 import { withoutTrailingApiVersion } from '../../../../../../packages/shared/utils/api/utils'
+import { getAutomationProfile, LIGHTWEIGHT_TOOLS } from '../automation/profile'
 import { getAgentProtocolBridgeTarget, modelDeclaresAnthropicProtocol } from '../runtime/protocol'
 
 export const OPENCODE_VERSION = '1.18.35'
@@ -18,6 +24,7 @@ export function buildOpenCodeConfig(input: {
   effort?: string
 }) {
   const { session, provider, modelId } = input
+  const lightweight = Boolean(getAutomationProfile(session))
   const host = ['0.0.0.0', '::'].includes(input.api.host) ? '127.0.0.1' : input.api.host
   const apiBase = `http://${host.includes(':') ? `[${host}]` : host}:${input.api.port}`
   const model = provider.models.find((candidate) => candidate.id === modelId)
@@ -75,7 +82,11 @@ export function buildOpenCodeConfig(input: {
     formatter: false,
     agent: { title: { disable: true } },
     instructions: [],
-    skills: { paths: input.skillPaths, urls: [] },
+    skills: { paths: lightweight ? [] : input.skillPaths, urls: [] },
+    // Use the native image normalizer, not a second lossy preprocessing chain.
+    attachment: {
+      image: { auto_resize: true, max_width: 2000, max_height: 2000, max_base64_bytes: 5 * 1024 * 1024 }
+    },
     compaction: {
       auto: true,
       prune: true,
@@ -101,9 +112,9 @@ export function buildOpenCodeConfig(input: {
             Originator: 'zenai_opencode',
             'X-Zen-Session-Id': session.id
           },
-          timeout: 180_000,
-          headerTimeout: 60_000,
-          chunkTimeout: 60_000
+          timeout: OPENCODE_REQUEST_TIMEOUT_MS,
+          headerTimeout: OPENCODE_HEADERS_TIMEOUT_MS,
+          chunkTimeout: OPENCODE_STREAM_CHUNK_TIMEOUT_MS
         },
         models: {
           [modelId]: {
@@ -120,7 +131,11 @@ export function buildOpenCodeConfig(input: {
       }
     },
     // MCP naming deliberately matches existing Skill instructions.
-    mcp: Object.fromEntries([mcp('mcp__assistant_', 'assistant'), mcp('mcp__browser_', 'browser')]),
+    mcp: Object.fromEntries(
+      lightweight
+        ? [mcp('mcp__assistant_', 'assistant')]
+        : [mcp('mcp__assistant_', 'assistant'), mcp('mcp__browser_', 'browser')]
+    ),
     permission: {
       '*': permission,
       read: 'allow',
@@ -134,8 +149,42 @@ export function buildOpenCodeConfig(input: {
       mcp__assistant__web_search: 'allow',
       mcp__assistant__environment: 'allow',
       mcp__assistant__skill_status: 'allow',
-      ...(readOnly ? { edit: 'deny', bash: 'deny' } : {}),
-      question: 'deny'
+      mcp__assistant__read_document: 'allow',
+      // Native permission patterns, not a second command parser or a sandbox.
+      // Ordinary automatic tasks remain automatic; common deletion commands still ask.
+      bash: readOnly
+        ? 'deny'
+        : {
+            '*': permission,
+            ...Object.fromEntries(
+              ['rm', 'rmdir', 'del', 'erase', 'rd', 'Remove-Item', 'remove-item', 'REMOVE-ITEM', 'DEL', 'RD'].flatMap(
+                (command) => [
+                  [command, 'ask'],
+                  [`${command} *`, 'ask'],
+                  [`* ${command} *`, 'ask'],
+                  [`*/${command} *`, 'ask'],
+                  [`*\\${command} *`, 'ask']
+                ]
+              )
+            )
+          },
+      ...(readOnly ? { edit: 'deny' } : {}),
+      question: 'deny',
+      ...(lightweight
+        ? {
+            '*': 'deny',
+            read: 'deny',
+            glob: 'deny',
+            grep: 'deny',
+            skill: 'deny',
+            external_directory: 'deny',
+            bash: 'deny',
+            edit: 'deny',
+            'mcp__assistant_*': 'deny',
+            'mcp__browser_*': 'deny',
+            ...Object.fromEntries(LIGHTWEIGHT_TOOLS.map((tool) => [`mcp__assistant__${tool}`, 'allow']))
+          }
+        : {})
     }
   }
 }

@@ -1,3 +1,5 @@
+import { OpenCodeEventParser } from './eventParser'
+
 export type OpenCodeEvent = { type: string; properties: Record<string, any> }
 
 export class OpenCodeClient {
@@ -42,28 +44,15 @@ export class OpenCodeClient {
       const response = await fetch(`${this.url}/event`, { headers: this.headers(), signal: streamSignal })
       if (!response.ok || !response.body) throw new Error(`OpenCode event stream unavailable (${response.status})`)
       reader = response.body.getReader()
-      const decoder = new TextDecoder()
-      let buffer = ''
-      while (true) {
+      const parser = new OpenCodeEventParser()
+      while (!signal.aborted) {
         const { value, done } = await reader.read()
         if (done) break
-        buffer += decoder.decode(value, { stream: true })
-        buffer = buffer.replaceAll('\r\n', '\n')
-        let boundary: number
-        while ((boundary = buffer.indexOf('\n\n')) >= 0) {
-          const frame = buffer.slice(0, boundary)
-          buffer = buffer.slice(boundary + 2)
-          const data = frame
-            .split('\n')
-            .filter((line) => line.startsWith('data:'))
-            .map((line) => line.slice(5).trimStart())
-            .join('\n')
-          if (data && data !== '[DONE]') {
-            clearTimeout(timer)
-            yield JSON.parse(data) as OpenCodeEvent
-          }
+        for (const event of parser.push(value)) {
+          if (signal.aborted) break
+          clearTimeout(timer)
+          yield event
         }
-        if (buffer.length > 8_000_000) throw new Error('OpenCode event frame exceeded the safe size limit')
       }
       if (!signal.aborted) throw new Error('OpenCode event stream disconnected before task completion')
     } finally {

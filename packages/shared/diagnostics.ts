@@ -1,6 +1,10 @@
 /** Bounded, content-free request evidence shared by main and renderer. */
 export const DIAGNOSTIC_OPERATION_HEADER = 'X-Zen-Diagnostic-Operation'
 export const DIAGNOSTIC_TRACE_HEADER = 'X-Zen-Trace-Id'
+/** Explicit auxiliary purpose, never inferred from streaming, timing or prompt text. */
+export const TOPIC_NAMING_REQUEST_HEADERS = { 'X-Zen-Request-Purpose': 'topic-naming' } as const
+/** Read-only diagnostics, not a model generation or a user turn. */
+export const CONNECTIVITY_CHECK_REQUEST_HEADERS = { 'X-Zen-Request-Purpose': 'connectivity-check' } as const
 const MAX_TEXT = 8_000
 const credentialKey =
   /^(?:.*[-_])?(?:api[-_]?key|authorization|access[-_]?token|refresh[-_]?token|secret|password|credential|cookie|set[-_]?cookie|token)$/i

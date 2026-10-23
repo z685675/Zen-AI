@@ -47,7 +47,10 @@ export class OpenCodeStreamState {
     if (event.type === 'message.part.updated') {
       const part = props.part as NativePart
       if (!this.messages.has(part.messageID)) return []
-      this.parts.set(part.id, part)
+      // Native history owns file payloads. Tool/file snapshots may contain tens
+      // of MiB of Base64 attachments which are not used by Zen's renderer. Keep
+      // only incremental text and per-step counters in this turn's state.
+      if (['text', 'reasoning', 'step-finish'].includes(part.type)) this.parts.set(part.id, part)
       return this.render(part)
     }
     if (event.type === 'message.part.delta' && props.field === 'text') {

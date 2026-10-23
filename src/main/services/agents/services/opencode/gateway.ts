@@ -3,6 +3,8 @@ import { once } from 'node:events'
 import { createServer, type IncomingMessage } from 'node:http'
 import { Readable } from 'node:stream'
 
+import { listenOnLoopback } from '@shared/utils/loopbackServer'
+
 import { OpenCodeUsageObserver } from './usageObservation'
 
 export type TransportEvent = (operationId: string | undefined, event: string, details: Record<string, unknown>) => void
@@ -141,9 +143,7 @@ export async function createOpenCodeGateway(baseURL: string, record: TransportEv
       res.off('close', abort)
     }
   })
-  server.listen(0, '127.0.0.1')
-  await once(server, 'listening')
-  const port = (server.address() as { port: number }).port
+  const port = await listenOnLoopback(server)
   return {
     baseURL: `http://127.0.0.1:${port}${target.pathname.replace(/\/$/, '')}`,
     token,

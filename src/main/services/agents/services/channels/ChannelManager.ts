@@ -1,7 +1,7 @@
 import { loggerService } from '@logger'
 import { windowService } from '@main/services/WindowService'
 import { assertLegacyAutomationEnabled, isLegacyAutomationEnabled } from '@shared/agents/legacyAutomation'
-import { DEFAULT_FUSION_AGENT_ID } from '@shared/config/agents'
+import { DEFAULT_FUSION_AGENT_ID, DEFAULT_OPENCODE_AGENT_ID } from '@shared/config/agents'
 import type { ChannelLogEntry, ChannelStatusEvent } from '@shared/config/types'
 import { IpcChannel } from '@shared/IpcChannel'
 
@@ -115,7 +115,11 @@ class ChannelManager {
     if (!isLegacyAutomationEnabled()) return new Set()
     const channels = existingChannels ?? (await channelService.listChannels({ type: 'wechat' }))
     const legacyChannels = channels.filter(
-      (channel) => channel.type === 'wechat' && channel.agentId && channel.agentId !== DEFAULT_FUSION_AGENT_ID
+      (channel) =>
+        channel.type === 'wechat' &&
+        channel.agentId &&
+        channel.agentId !== DEFAULT_FUSION_AGENT_ID &&
+        channel.agentId !== DEFAULT_OPENCODE_AGENT_ID
     )
     const deletedChannelIds = new Set<string>()
 
@@ -223,11 +227,15 @@ class ChannelManager {
    * Use this instead of disconnectAgent() when only one channel changed.
    */
   async syncChannel(channelId: string): Promise<void> {
-    await this.disconnectChannel(channelId)
     if (!isLegacyAutomationEnabled()) {
+      // New integrations have a separate lifecycle. A stale legacy UI event must not stop them.
+      const channel = await channelService.getChannel(channelId)
+      if (channel?.agentId === DEFAULT_OPENCODE_AGENT_ID) return
+      await this.disconnectChannel(channelId)
       await channelService.updateChannel(channelId, { isActive: false })
       return
     }
+    await this.disconnectChannel(channelId)
 
     // Re-read from DB and reconnect if active
     const channel = await channelService.getChannel(channelId)

@@ -1,5 +1,6 @@
 import type { AgentPersistedMessage, GetAgentSessionResponse } from '@types'
 
+import { invalidateAutomationSession, prepareAutomationSession } from '../automation/bridge'
 import { prepareOpenCodeRuntime } from './prepare'
 import type { OpenCodeProcess } from './process'
 
@@ -95,6 +96,8 @@ export async function editNativeHistory(
   let runtime: OpenCodeProcess | undefined
   const signal = AbortSignal.timeout(90_000)
   try {
+    session = await prepareAutomationSession(session)
+    if (action === 'delete') await invalidateAutomationSession(session.id)
     runtime = await prepareOpenCodeRuntime(session, signal)
     const previous = await runtime.session(signal)
     const entries = await runtime.client.request<NativeEntry[]>(

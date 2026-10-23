@@ -1,4 +1,5 @@
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
+import { createReadStream } from 'node:fs'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 
@@ -60,6 +61,37 @@ function unchanged(a: Awaited<ReturnType<typeof fs.stat>>, b: Awaited<ReturnType
   return a.dev === b.dev && a.ino === b.ino && a.size === b.size && a.mtimeMs === b.mtimeMs && a.ctimeMs === b.ctimeMs
 }
 
+async function digest(file: string, signal?: AbortSignal) {
+  const hash = createHash('sha256')
+  let bytes = 0
+  for await (const chunk of createReadStream(file, { signal })) {
+    bytes += chunk.length
+    if (bytes > MAX_BACKUP_BYTES) throw new Error('File exceeds the 128 MiB verified-copy limit')
+    hash.update(chunk)
+  }
+  return hash.digest('hex')
+}
+
+async function verifiedCopy(file: string, target: string, signal?: AbortSignal) {
+  signal?.throwIfAborted()
+  const before = await existingFile(file)
+  if (!before) throw new Error('Cannot copy a missing file')
+  if (before.size > MAX_BACKUP_BYTES) throw new Error('File exceeds the 128 MiB verified-copy limit')
+  const originalHash = await digest(file, signal)
+  let copied = false
+  try {
+    await fs.copyFile(file, target, fs.constants.COPYFILE_EXCL)
+    copied = true
+    signal?.throwIfAborted()
+    if (!unchanged(before, await fs.lstat(file)) || originalHash !== (await digest(target, signal)))
+      throw new Error('File changed during copy or copy verification failed; original was not overwritten')
+    return before
+  } catch (error) {
+    if (copied) await fs.unlink(target).catch(() => undefined)
+    throw error
+  }
+}
+
 async function backup(file: string, roots: string[], signal?: AbortSignal) {
   signal?.throwIfAborted()
   await assertSafeOutput(file, roots)
@@ -72,9 +104,11 @@ async function backup(file: string, roots: string[], signal?: AbortSignal) {
   await fs.mkdir(dir, { recursive: true })
   const target = path.join(dir, `${path.parse(file).name}-${Date.now()}-${randomUUID()}${path.extname(file)}`)
   signal?.throwIfAborted()
-  await fs.copyFile(file, target, fs.constants.COPYFILE_EXCL)
-  if (!unchanged(before, await fs.lstat(file)))
-    throw new Error(`File changed during backup; original was not overwritten. Backup: ${target}`)
+  const copied = await verifiedCopy(file, target, signal)
+  if (!unchanged(before, copied)) {
+    await fs.unlink(target).catch(() => undefined)
+    throw new Error('File changed before backup; original was not overwritten')
+  }
   return { path: target, before }
 }
 
@@ -127,4 +161,71 @@ export function writeAssistantFile(
     }
     return { backup_path: backupPath, write_mode: before ? 'replaced-with-backup' : 'new-file' }
   })
+}
+
+/** New deliverables never replace an existing file, including another task's output. */
+async function publishNewFile(
+  requested: string,
+  roots: string[],
+  stageFile: (stage: string) => Promise<unknown>,
+  signal?: AbortSignal
+) {
+  signal?.throwIfAborted()
+  await assertSafeOutput(requested, roots)
+  // A folder/symlink is an invalid target, not a filename collision to hide.
+  await existingFile(requested)
+  await fs.mkdir(path.dirname(requested), { recursive: true })
+  await assertSafeOutput(requested, roots)
+  const stage = path.join(path.dirname(requested), `.zen-write-${randomUUID()}.tmp`)
+  try {
+    await stageFile(stage)
+    const parsed = path.parse(requested)
+    for (let ordinal = 0; ordinal < 1000; ordinal++) {
+      signal?.throwIfAborted()
+      const file = ordinal === 0 ? requested : path.join(parsed.dir, `${parsed.name} (${ordinal})${parsed.ext}`)
+      await assertSafeOutput(file, roots)
+      try {
+        await fs.link(stage, file)
+        return { path: file, write_mode: 'new-file' as const, renamed: file !== requested }
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
+        await existingFile(file)
+      }
+    }
+    throw new Error('Too many files with this name; choose another output filename')
+  } finally {
+    await fs.unlink(stage).catch(() => undefined)
+  }
+}
+
+export async function writeAssistantOutput(
+  file: string,
+  data: Buffer | string,
+  roots: string[],
+  options: Parameters<typeof writeAssistantFile>[3] = {}
+) {
+  if (options.overwrite === true) return { ...(await writeAssistantFile(file, data, roots, options)), path: file }
+  return publishNewFile(file, roots, (stage) => fs.writeFile(stage, data, { flag: 'wx' }), options.signal)
+}
+
+/** Independent bytes, not a hard link to the source. Native tools may safely edit the returned working copy. */
+export async function prepareAssistantFileCopy(file: string, output: string, roots: string[], signal?: AbortSignal) {
+  signal?.throwIfAborted()
+  await assertSafeOutput(file, roots)
+  const before = await existingFile(file)
+  if (!before) throw new Error('Cannot copy a missing file')
+  if (before.size > MAX_BACKUP_BYTES) throw new Error('File exceeds the 128 MiB working-copy limit')
+  if (path.extname(file).toLowerCase() !== path.extname(output).toLowerCase())
+    throw new Error('A working copy must keep the source extension; copying is not format conversion')
+  const result = await publishNewFile(
+    output,
+    roots,
+    async (stage) => {
+      await assertSafeOutput(file, roots)
+      const copied = await verifiedCopy(file, stage, signal)
+      if (!unchanged(before, copied)) throw new Error('Source file changed before copying; retry from the current file')
+    },
+    signal
+  )
+  return { status: 'working-copy-created', source_path: file, working_path: result.path, original_preserved: true }
 }

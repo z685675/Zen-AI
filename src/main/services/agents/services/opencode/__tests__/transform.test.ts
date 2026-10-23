@@ -13,6 +13,29 @@ const part = (value: Record<string, unknown>) => ({
 })
 
 describe('OpenCode event translation', () => {
+  it('does not retain native binary tool attachments or forward them as renderer/diagnostic metadata', () => {
+    const state = new OpenCodeStreamState('native', 'zen', new Set())
+    state.consume(message({}))
+    const chunks = state.consume(
+      part({
+        type: 'tool',
+        callID: 'pdf',
+        tool: 'read',
+        state: {
+          status: 'completed',
+          input: { filePath: 'large.pdf' },
+          output: 'PDF read successfully',
+          attachments: [
+            { type: 'file', mime: 'application/pdf', url: `data:application/pdf;base64,${'A'.repeat(13_167_348)}` }
+          ]
+        }
+      })
+    )
+    expect(JSON.stringify(chunks)).not.toContain('data:application/pdf')
+    expect((state as any).parts.size).toBe(0)
+    expect(chunks.map((chunk) => chunk.type)).toEqual(['tool-call', 'tool-result'])
+    expect(state.closeParts()).toEqual([])
+  })
   it('preserves product failure envelopes through native MCP tool errors without replay', () => {
     const state = new OpenCodeStreamState('native', 'zen', new Set())
     state.consume(message({}))

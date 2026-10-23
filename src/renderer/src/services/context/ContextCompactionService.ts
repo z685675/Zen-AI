@@ -636,6 +636,27 @@ const userMemoryMessage = (content?: string): ModelMessage | undefined => {
   }
 }
 
+/** A checkpoint is context, never a replacement for the current user turn. */
+const compactedInputRequest = (messages: ModelMessage[], budget: ContextBudget): ModelMessage => {
+  const latestUser = [...messages].reverse().find((message) => message.role === 'user')
+  const text =
+    typeof latestUser?.content === 'string'
+      ? latestUser.content
+      : latestUser?.content.find((part) => part.type === 'text')?.text
+  // In normal attachment messages the first text part is the user's question,
+  // not the extracted document. Bound it too for pasted, oversized text input.
+  const request = fitTextToTokenBudget(text ?? '', Math.min(2_000, Math.floor(budget.safeInputTokens * 0.1)))
+  return {
+    role: 'user',
+    content: [
+      'Complete the latest user request using the checkpoint and available source excerpts. The oversized original remains stored locally; do not invent details absent from this context.',
+      request ? `Latest user request:\n${request}` : ''
+    ]
+      .filter(Boolean)
+      .join('\n\n')
+  }
+}
+
 async function buildGroups(
   messages: Message[],
   convert: (messages: Message[]) => Promise<ModelMessage[]>,
@@ -824,13 +845,17 @@ async function manageConversationContextUnlocked({
         checkpointMessage(previousCheckpoint),
         ...(userMemoryMessage(storedUserMemory) ? [userMemoryMessage(storedUserMemory)!] : []),
         ...additionalContextMessages,
-        ...recentModelMessages
+        ...recentModelMessages,
+        ...(!recentModelMessages.some((message) => message.role === 'user')
+          ? [compactedInputRequest(modelMessages, budget)]
+          : [])
       ]
     : [...(userMemoryMessage(storedUserMemory) ? [userMemoryMessage(storedUserMemory)!] : []), ...recentModelMessages]
   const candidateUsage = estimateModelMessagesTokens(candidateMessages)
 
   if (
-    candidateUsage.totalTokens <= budget.compactionTriggerTokens &&
+    (candidateUsage.totalTokens <= budget.compactionTriggerTokens ||
+      (previousCheckpoint && recentUiMessages.length === 0 && candidateUsage.totalTokens <= budget.safeInputTokens)) &&
     countModelMessageImages(candidateMessages) <= MAX_DIRECT_IMAGE_COUNT
   ) {
     return {
@@ -908,15 +933,10 @@ async function manageConversationContextUnlocked({
   })
   let usedLocalCheckpoint = generatedLocalCheckpoint
   const now = new Date().toISOString()
-  const finalRecentMessages = oversizedCurrentInput
-    ? [
-        {
-          role: 'user' as const,
-          content:
-            'The current oversized input was processed in full through staged checkpointing. Complete the user request using the checkpoint above. Do not claim access to details that are absent from it.'
-        }
-      ]
-    : await convert(recentUiMessages.slice(splitIndex))
+  const finalRecentMessages =
+    oversizedCurrentInput || splitIndex === groups.length
+      ? [compactedInputRequest(modelMessages, budget)]
+      : await convert(recentUiMessages.slice(splitIndex))
   throwIfAborted(signal)
   const checkpointPrefixTokens = estimateModelMessagesTokens([
     checkpointMessage({

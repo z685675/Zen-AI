@@ -54,7 +54,7 @@ import {
 import { containsSupportedVariables, replacePromptVariables } from '@renderer/utils/prompt'
 import { NOT_SUPPORT_API_KEY_PROVIDER_TYPES, NOT_SUPPORT_API_KEY_PROVIDERS } from '@renderer/utils/provider'
 import { getUsageCacheStats } from '@renderer/utils/usage'
-import { DIAGNOSTIC_OPERATION_HEADER } from '@shared/diagnostics'
+import { DIAGNOSTIC_OPERATION_HEADER, TOPIC_NAMING_REQUEST_HEADERS } from '@shared/diagnostics'
 import type { ImagePart, ModelMessage, TextPart } from 'ai'
 import { isEmpty, takeRight } from 'lodash'
 
@@ -114,6 +114,7 @@ import { ConversationService } from './ConversationService'
 import FileManager from './FileManager'
 import { injectUserMessageWithKnowledgeSearchPrompt } from './KnowledgeService'
 import type { BlockManager } from './messageStreaming'
+import { modelRecoveryIntents } from './modelRecoveryIntents'
 import { ocr } from './ocr/OcrService'
 import type { StreamProcessorCallbacks } from './StreamProcessingService'
 import { estimateTextTokens } from './TokenService'
@@ -1007,12 +1008,15 @@ export async function fetchChatCompletion({
   let webPageContext: WebPageContext | undefined
   let webPageResourceIds: string[] = []
   if (!prompt && sourceModelMessages.length > 0) {
-    const preparedWebPage = await prepareWebPageMessages(sourceModelMessages)
+    const latestUserMessage = [...(uiMessages ?? [])].reverse().find((message) => message.role === 'user')
+    const preparedWebPage = await prepareWebPageMessages(
+      sourceModelMessages,
+      latestUserMessage ? getMainTextContent(latestUserMessage) : ''
+    )
     sourceModelMessages = preparedWebPage.messages
     webPageContext = preparedWebPage.context
     if (webPageContext) {
       if (topicId) {
-        const latestUserMessage = [...(uiMessages ?? [])].reverse().find((message) => message.role === 'user')
         webPageResourceIds = await persistWebPageContextResources(topicId, latestUserMessage?.id, webPageContext)
       }
       logger.info('Injected application-level web page context', {
@@ -1355,6 +1359,7 @@ export async function fetchChatCompletion({
     let visibleOutput = false
     let contextError: unknown
     let pendingErrorChunk: ErrorChunk | undefined
+    let pendingCompleteChunk: Chunk | undefined
     const visibleChunkTypes = new Set<ChunkType>([
       ChunkType.TEXT_DELTA,
       ChunkType.THINKING_DELTA,
@@ -1379,6 +1384,12 @@ export async function fetchChatCompletion({
         // then append a second answer to the same message.
         if (chunk.type === ChunkType.ERROR) {
           pendingErrorChunk = chunk
+          return
+        }
+        // A stream may emit finish after an error, or reject its text promise
+        // after finish. Commit success only once this attempt has settled.
+        if (chunk.type === ChunkType.LLM_RESPONSE_COMPLETE) {
+          pendingCompleteChunk = chunk
           return
         }
         if (visibleChunkTypes.has(chunk.type)) {
@@ -1428,7 +1439,8 @@ export async function fetchChatCompletion({
         callType: 'chat',
         uiMessages
       })
-    } catch (error) {
+    } catch (caughtError) {
+      const error = pendingErrorChunk?.error ?? caughtError
       if (!contextError && isContextCapacityError(error)) {
         contextError = error
       } else if (!contextError) {
@@ -1476,6 +1488,7 @@ export async function fetchChatCompletion({
       } satisfies CompletionAttemptFailure
     }
 
+    if (!contextError && pendingCompleteChunk) await onChunkReceived(pendingCompleteChunk)
     return { visibleOutput, contextError }
   }
 
@@ -1796,6 +1809,8 @@ export async function fetchMessagesSummary({
   let prompt = getStoreSetting('topicNamingPrompt') || i18n.t('prompts.title')
   const model = getQuickModel()
 
+  if (!model) return { text: null, error: i18n.t('model_setup.no_matching_model') }
+
   if (prompt && containsSupportedVariables(prompt)) {
     prompt = await replacePromptVariables(prompt, model.name)
   }
@@ -1865,6 +1880,7 @@ export async function fetchMessagesSummary({
     prompt: conversation,
     providerOptions,
     ...standardParams,
+    headers: TOPIC_NAMING_REQUEST_HEADERS,
     abortSignal: AbortSignal.timeout(SUMMARY_REQUEST_TIMEOUT_MS),
     maxRetries: 0
   }
@@ -1909,7 +1925,15 @@ export async function fetchMessagesSummary({
 export async function fetchNoteSummary({ content, assistant }: { content: string; assistant?: Assistant }) {
   let prompt = getStoreSetting('topicNamingPrompt') || i18n.t('prompts.title')
   const resolvedAssistant = assistant || getDefaultAssistant()
-  const model = getQuickModel() || resolvedAssistant.model || getDefaultModel()
+  const quickModel = getQuickModel()
+  // An exhausted managed quick-model chain is not permission to use an
+  // unrelated Assistant/Provider. Legacy unconfigured quick models may still
+  // use the normal explicitly selected Assistant/default.
+  if (!quickModel && (store.getState().llm.quickModel || modelRecoveryIntents.get('global:quick')?.actual === null))
+    return null
+  const model = quickModel || resolvedAssistant.model || getDefaultModel()
+
+  if (!model) return null
 
   if (prompt && containsSupportedVariables(prompt)) {
     prompt = await replacePromptVariables(prompt, model.name)

@@ -29,12 +29,27 @@ describe('new assistant task contract', () => {
     ]) {
       expect(OPENCODE_SYSTEM_INSTRUCTIONS).toContain(rule)
     }
+    expect(OPENCODE_SYSTEM_INSTRUCTIONS).toContain('read_document')
+    expect(OPENCODE_SYSTEM_INSTRUCTIONS).toContain('continuation cursor')
+    expect(OPENCODE_SYSTEM_INSTRUCTIONS).toContain('ocr_file for scanned pages')
   })
   it('keeps safe recovery, actual sources and existing authorization boundaries', () => {
     expect(OPENCODE_SYSTEM_INSTRUCTIONS).toContain('never replay completed writes')
     expect(OPENCODE_SYSTEM_INSTRUCTIONS).toContain('Cite real source pages')
     expect(OPENCODE_SYSTEM_INSTRUCTIONS).toContain('already explicitly authorized')
-    expect(OPENCODE_SYSTEM_INSTRUCTIONS).toContain('Scheduling/IM capabilities are not connected')
+    expect(OPENCODE_SYSTEM_INSTRUCTIONS).toContain('WeChat/tasks require opt-in in Settings')
     expect(OPENCODE_SYSTEM_INSTRUCTIONS).toContain('Native memory is this conversation only')
+  })
+  it('defaults document edits to working copies and keeps deletion and overwrite consent separate', () => {
+    for (const rule of [
+      'prepare_file_copy',
+      'edit only its working_path',
+      'Preserve originals and prior results across turns',
+      'confirmation even in automatic mode',
+      'Backup alone is not authorization',
+      'Deletion needs separate exact-target consent',
+      'create_file/OCR number name conflicts'
+    ])
+      expect(OPENCODE_SYSTEM_INSTRUCTIONS).toContain(rule)
   })
 })

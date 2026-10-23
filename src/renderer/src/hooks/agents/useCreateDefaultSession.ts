@@ -22,7 +22,8 @@ import type { AgentConfiguration, AgentEntity, CreateSessionForm } from '@render
 import { buildAgentSessionTopicId } from '@renderer/utils/agentSession'
 import { isUnnamedAgentSessionName } from '@renderer/utils/agentSessionTitle'
 import { AGENT_DEFAULT_REASONING_EFFORT, getAgentSessionReasoningEffortCacheKey } from '@renderer/utils/reasoningEffort'
-import { canCreateAgentSession } from '@shared/config/agents'
+import { canCreateAgentSession, DEFAULT_OPENCODE_AGENT_ID } from '@shared/config/agents'
+import { isZenManagedApiHost } from '@shared/config/zenProvider'
 import { useCallback, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -61,6 +62,7 @@ export const useCreateDefaultSession = (agentId: string | null) => {
   const { updateSession } = useUpdateSession(agentId)
   const dispatch = useAppDispatch()
   const modelPolicy = useAppSelector((state) => state.llm.modelPolicy)
+  const providers = useAppSelector((state) => state.llm.providers ?? [])
   const enableDeveloperMode = useAppSelector((state) => state.settings.enableDeveloperMode)
   const { t } = useTranslation()
   const [creatingSession, setCreatingSession] = useState(false)
@@ -74,6 +76,19 @@ export const useCreateDefaultSession = (agentId: string | null) => {
         Boolean(modelPolicy && modelPolicy.source !== 'builtin') && (modelPolicy?.version ?? 0) > appliedPolicyVersion
 
       try {
+        const providerId = getAgentModelProviderId(defaults.model)
+        if (
+          providers.some((provider) => provider.id === providerId && isZenManagedApiHost(provider.apiHost)) ||
+          (!defaults.model &&
+            defaults.id === DEFAULT_OPENCODE_AGENT_ID &&
+            providers.some((provider) => isZenManagedApiHost(provider.apiHost)))
+        ) {
+          // Availability repair belongs to the main process so that desktop,
+          // WeChat and schedules share the same persisted preference/intent.
+          await window.api.modelPolicy.reconcileSessions()
+          const current = await client.getAgent(defaults.id)
+          return current?.model ? current : null
+        }
         // The local endpoint can return all imported models without pagination.
         // A picker-visible model must not disappear behind an arbitrary limit.
         const { data } = await client.getModels()
@@ -129,7 +144,7 @@ export const useCreateDefaultSession = (agentId: string | null) => {
         return defaults
       }
     },
-    [client, enableDeveloperMode, modelPolicy, updateAgent]
+    [client, enableDeveloperMode, modelPolicy, providers, updateAgent]
   )
 
   const resolveExistingEmptySession = useCallback(
@@ -158,7 +173,7 @@ export const useCreateDefaultSession = (agentId: string | null) => {
           const alignedSession = await updateSession(
             {
               id: candidate.id,
-              model: defaultModel,
+              ...(needsDefaultModel ? { model: defaultModel } : {}),
               configuration: withDefaultReasoningEffort(candidate.configuration)
             },
             { showSuccessToast: false }

@@ -29,6 +29,11 @@ const createModel = (id: string, overrides: Partial<Model> = {}): Model => ({
 
 describe('ProviderModelSyncUtils', () => {
   describe('mergeSyncedProviderModels', () => {
+    it('clears known models only for a verified authoritative empty snapshot', () => {
+      const provider = createProvider({ models: [createModel('A')], modelSync: { remoteModelIds: ['A'], syncedAt: 1 } })
+      expect(mergeSyncedProviderModels(provider, []).models).toHaveLength(1)
+      expect(mergeSyncedProviderModels(provider, [], { authoritativeEmpty: true }).models).toEqual([])
+    })
     it('adds fetched models and removes only previously synced missing models', () => {
       const provider = createProvider({
         models: [

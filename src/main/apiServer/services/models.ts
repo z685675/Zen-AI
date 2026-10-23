@@ -2,6 +2,7 @@ import { isEmpty } from 'lodash'
 
 import type { ApiModel, ApiModelsFilter, ApiModelsResponse } from '../../../renderer/src/types/apiModels'
 import { loggerService } from '../../services/LoggerService'
+import { refreshModelAvailability } from '../../services/ModelAvailabilityService'
 import {
   getAvailableProviders,
   getProviderAnthropicModelChecker,
@@ -16,11 +17,28 @@ const logger = loggerService.withContext('ModelsService')
 export type ModelsFilter = ApiModelsFilter
 
 export class ModelsService {
-  async getModels(filter: ModelsFilter): Promise<ApiModelsResponse> {
+  async getModels(filter: ModelsFilter, failOnError = false): Promise<ApiModelsResponse> {
     try {
       logger.debug('Getting available models from providers', { filter })
 
       let providers = await getAvailableProviders()
+      providers = await Promise.all(
+        providers.map(async (provider) => {
+          const snapshot = await refreshModelAvailability(provider)
+          if (!snapshot) return provider
+          return {
+            ...provider,
+            models: snapshot.models.map((descriptor) => ({
+              ...provider.models.find((model) => model.id === descriptor.id),
+              id: descriptor.id,
+              name: descriptor.name || descriptor.id,
+              provider: provider.id,
+              group: provider.id,
+              supported_endpoint_types: descriptor.supported_endpoint_types
+            }))
+          }
+        })
+      )
 
       if (filter.providerType === 'anthropic') {
         providers = providers.filter((p) => p.type === 'anthropic' || !isEmpty(p.anthropicApiHost?.trim()))
@@ -101,6 +119,7 @@ export class ModelsService {
       return response
     } catch (error: any) {
       logger.error('Error getting models', { error, filter })
+      if (failOnError) throw error
       return {
         object: 'list',
         data: []

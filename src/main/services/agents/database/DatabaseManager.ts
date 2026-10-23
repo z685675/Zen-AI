@@ -42,7 +42,8 @@ const logger = loggerService.withContext('DatabaseManager')
 enum InitState {
   INITIALIZING = 'initializing',
   INITIALIZED = 'initialized',
-  FAILED = 'failed'
+  FAILED = 'failed',
+  CLOSED = 'closed'
 }
 
 /**
@@ -58,6 +59,12 @@ enum InitState {
  */
 export class DatabaseManager {
   private static instance: DatabaseManager | null = null
+  private static initializing: Promise<DatabaseManager> | null = null
+  private static closing: Promise<void> | null = null
+  private static shuttingDown = false
+  // Keep a failed native handle alive and fail closed until the next app start.
+  // It is not safe to retry closing/replacing its files or open another client.
+  private static closeFailure: { error: unknown; client: Client } | null = null
 
   private client: Client | null = null
   private db: LibSQLDatabase<typeof schema> | null = null
@@ -67,16 +74,41 @@ export class DatabaseManager {
    * Get the singleton instance (database initialization starts automatically)
    */
   public static async getInstance(): Promise<DatabaseManager> {
-    assertAssistantDataAvailable()
+    DatabaseManager.assertAvailable()
     if (DatabaseManager.instance) {
       return DatabaseManager.instance
     }
 
-    const instance = new DatabaseManager()
-    await instance.initialize()
-    DatabaseManager.instance = instance
-
+    if (!DatabaseManager.initializing) {
+      const instance = new DatabaseManager()
+      // Publish the promise before migrations yield, not the partially initialized
+      // client. Concurrent services must share one native connection/migration.
+      const initializing = instance.initialize().then(() => {
+        DatabaseManager.instance = instance
+        return instance
+      })
+      DatabaseManager.initializing = initializing
+      void initializing
+        .finally(() => {
+          if (DatabaseManager.initializing === initializing) DatabaseManager.initializing = null
+        })
+        .catch(() => {})
+    }
+    const instance = await DatabaseManager.initializing
+    // A restore/quit may have started while migrations were running.
+    DatabaseManager.assertAvailable()
     return instance
+  }
+
+  private static assertAvailable(): void {
+    assertAssistantDataAvailable()
+    if (DatabaseManager.closeFailure)
+      throw Object.assign(new Error('Assistant database failed to close; restart the application before retrying'), {
+        code: 'assistant_database_close_failed',
+        cause: DatabaseManager.closeFailure.error
+      })
+    if (DatabaseManager.shuttingDown || DatabaseManager.closing)
+      throw Object.assign(new Error('Assistant database is closing'), { code: 'assistant_database_closing' })
   }
 
   /**
@@ -179,17 +211,17 @@ export class DatabaseManager {
    * Clean up after failed initialization
    */
   private cleanupFailedInit(): void {
-    if (this.client) {
+    const client = this.client
+    this.client = null
+    this.db = null
+    if (client) {
       try {
-        // On Windows, closing a partially initialized client can crash
-        // Wrap in try-catch and ignore errors during cleanup
-        this.client.close()
+        client.close()
       } catch (error) {
+        DatabaseManager.closeFailure = { error, client }
         logger.warn('Failed to close client during cleanup:', error as Error)
       }
     }
-    this.client = null
-    this.db = null
   }
 
   /**
@@ -198,7 +230,8 @@ export class DatabaseManager {
    * @throws Error if database initialization failed
    */
   public getDatabase(): LibSQLDatabase<typeof schema> {
-    return this.db!
+    if (!this.isInitialized() || !this.db) throw new Error('Assistant database is not open')
+    return this.db
   }
 
   /**
@@ -207,7 +240,8 @@ export class DatabaseManager {
    * @throws Error if database initialization failed
    */
   public async getClient(): Promise<Client> {
-    return this.client!
+    if (!this.isInitialized() || !this.client) throw new Error('Assistant database is not open')
+    return this.client
   }
 
   /**
@@ -223,21 +257,54 @@ export class DatabaseManager {
    * After calling this, getInstance() will re-initialize a fresh connection.
    */
   public static async close(): Promise<void> {
+    if (DatabaseManager.closing) return DatabaseManager.closing
+    if (DatabaseManager.closeFailure) throw DatabaseManager.closeFailure.error
+    const closing = DatabaseManager.closeCurrent()
+    DatabaseManager.closing = closing
+    try {
+      await closing
+    } finally {
+      if (DatabaseManager.closing === closing) DatabaseManager.closing = null
+    }
+  }
+
+  /** Close only an existing/in-flight connection; never initialize on quit. */
+  public static async shutdown(): Promise<void> {
+    DatabaseManager.shuttingDown = true
+    await DatabaseManager.close()
+  }
+
+  private static async closeCurrent(): Promise<void> {
+    // Do not let a late initialization publish an untracked native client after
+    // restore or shutdown has already closed the singleton.
+    if (DatabaseManager.initializing) {
+      try {
+        await DatabaseManager.initializing
+      } catch {
+        // initialize() already cleaned up its failed client and reported the error.
+        if (DatabaseManager.closeFailure) throw DatabaseManager.closeFailure.error
+        return
+      }
+    }
     const instance = DatabaseManager.instance
     if (!instance) {
       return
     }
 
-    // Detach singleton first so concurrent getInstance() creates a fresh connection
-    // instead of returning a stale instance with null client.
     DatabaseManager.instance = null
-
-    if (instance.client) {
+    const client = instance.client
+    instance.client = null
+    instance.db = null
+    instance.state = InitState.CLOSED
+    if (client) {
       try {
-        instance.client.close()
+        client.close()
         logger.info('Database connection closed')
       } catch (error) {
+        DatabaseManager.closeFailure = { error, client }
         logger.warn('Failed to close database connection:', error as Error)
+        // A restore must not replace files when the native connection failed to close.
+        throw error
       }
     }
   }

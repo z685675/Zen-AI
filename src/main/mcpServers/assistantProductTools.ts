@@ -3,13 +3,14 @@ import path from 'node:path'
 import type { Tool } from '@modelcontextprotocol/sdk/types.js'
 import { app } from 'electron'
 
-import { backupAssistantFile } from './assistantFileSafety'
+import { backupAssistantFile, prepareAssistantFileCopy } from './assistantFileSafety'
 import { searchAssistantWeb } from './assistantWebSearch'
 
 export type AssistantProductOptions = {
   workspace: string
   signal?: AbortSignal
   readOnly?: boolean
+  allowedTools?: readonly string[]
   onTool?: (name: string, durationMs: number, failed: boolean) => void
   readNativeSkills: (signal?: AbortSignal) => Promise<Array<{ name: string; description?: string; location?: string }>>
   approveOverwrite: (file: string) => Promise<boolean>
@@ -39,6 +40,19 @@ export const ASSISTANT_PRODUCT_TOOLS: Tool[] = [
     inputSchema: { type: 'object', properties: {} }
   },
   {
+    name: 'prepare_file_copy',
+    description:
+      'Prepare an independent, byte-verified working copy before editing an existing Office/PDF/image/text file with Python, a Skill or native tools. Use the returned working_path for edits, never the source. Defaults to workspace/outputs/<name>-edited.<ext>; existing names receive a number, never overwrite. Keeps the format and original unchanged. Max 128 MiB per call. This is preparation, not a completed deliverable; validate the edited result and call present_files afterward. Read-only analysis and creating a new file do not need this tool.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        file_path: { type: 'string', description: 'Authorized existing source file.' },
+        output_path: { type: 'string', description: 'Optional working-copy path, with the same extension.' }
+      },
+      required: ['file_path']
+    }
+  },
+  {
     name: 'backup_file',
     description:
       'Back up one existing authorized regular file before native edit/shell/Python modification. Returns original and backup paths. Does not change/delete the original or restore automatically. Backups are retained in .zen-backups beside the original. Max 128 MiB. Do not back up every file for ordinary read-only questions.',
@@ -58,6 +72,8 @@ export async function callAssistantProductTool(
       ? AbortSignal.any([options.signal, requestSignal])
       : (options.signal ?? requestSignal)
   signal?.throwIfAborted()
+  if (options.readOnly && ['prepare_file_copy', 'backup_file'].includes(name))
+    throw new Error('Plan mode does not permit mutating tools')
   if (name === 'web_search') return searchAssistantWeb(args.query, args.count, signal)
   if (name === 'environment')
     return {
@@ -86,6 +102,20 @@ export async function callAssistantProductTool(
     if (typeof args.file_path !== 'string' || !args.file_path.trim()) throw new Error('A file_path is required')
     const file = path.resolve(options.workspace, args.file_path)
     return { status: 'backup-created', ...(await backupAssistantFile(file, roots, signal)) }
+  }
+  if (name === 'prepare_file_copy') {
+    if (typeof args.file_path !== 'string' || !args.file_path.trim()) throw new Error('A file_path is required')
+    if (args.output_path !== undefined && (typeof args.output_path !== 'string' || !args.output_path.trim()))
+      throw new Error('output_path must be a nonempty path')
+    const file = path.resolve(options.workspace, args.file_path)
+    const parsed = path.parse(file)
+    const output = path.resolve(
+      options.workspace,
+      typeof args.output_path === 'string'
+        ? args.output_path
+        : path.join('outputs', `${parsed.name}-edited${parsed.ext}`)
+    )
+    return prepareAssistantFileCopy(file, output, roots, signal)
   }
   throw new Error(`Unknown product tool: ${name}`)
 }

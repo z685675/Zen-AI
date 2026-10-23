@@ -3,9 +3,12 @@ import type { TokenUsageData } from '@cherrystudio/analytics-client'
 import { electronAPI } from '@electron-toolkit/preload'
 import type { SpanEntity, TokenUsage } from '@mcp-trace/trace-core'
 import type { SpanContext } from '@opentelemetry/api'
+import type { AutomationRequest, AutomationResponse } from '@shared/agents/automation'
 import type { GitBashPathInfo, TerminalConfig } from '@shared/config/constant'
 import type { LogLevel, LogSourceWithContext } from '@shared/config/logger'
+import type { ModelAvailabilitySnapshot } from '@shared/config/modelAvailability'
 import type { ModelPolicySnapshot } from '@shared/config/modelPolicy'
+import type { ModelRecoveryIntent } from '@shared/config/modelRecovery'
 import type {
   CodeToolsRunResult,
   FileChangeEvent,
@@ -103,6 +106,8 @@ export function tracedInvoke(channel: string, spanContext: SpanContext | undefin
 
 // Custom APIs for renderer
 const api = {
+  assistantAutomation: (request: AutomationRequest): Promise<AutomationResponse> =>
+    ipcRenderer.invoke(IpcChannel.AssistantAutomation_Action, request),
   getAppInfo: () => ipcRenderer.invoke(IpcChannel.App_Info),
   getDiskInfo: (directoryPath: string): Promise<{ free: number; size: number } | null> =>
     ipcRenderer.invoke(IpcChannel.App_GetDiskInfo, directoryPath),
@@ -410,8 +415,13 @@ const api = {
     get: (key: string) => ipcRenderer.invoke(IpcChannel.Config_Get, key)
   },
   modelPolicy: {
+    recoveryStatus: (agentId: string, sessionId: string): Promise<ModelRecoveryIntent | undefined> =>
+      ipcRenderer.invoke(IpcChannel.ModelAvailability_RecoveryStatus, agentId, sessionId),
+    reconcileSessions: (): Promise<void> => ipcRenderer.invoke(IpcChannel.ModelAvailability_ReconcileSessions),
     get: (): Promise<ModelPolicySnapshot> => ipcRenderer.invoke(IpcChannel.ModelPolicy_Get),
-    refresh: (): Promise<ModelPolicySnapshot> => ipcRenderer.invoke(IpcChannel.ModelPolicy_Refresh)
+    refresh: (): Promise<ModelPolicySnapshot> => ipcRenderer.invoke(IpcChannel.ModelPolicy_Refresh),
+    availability: (provider: Provider): Promise<ModelAvailabilitySnapshot | undefined> =>
+      ipcRenderer.invoke(IpcChannel.ModelAvailability_Refresh, provider)
   },
   agentLifecycle: {
     bootstrapBuiltins: (): Promise<void> => ipcRenderer.invoke(IpcChannel.Agent_BootstrapBuiltins)

@@ -159,7 +159,7 @@ const WaitingToolHeader = React.memo(({ block }: WaitingToolHeaderProps) => {
   const effectiveStatus = getEffectiveStatus(toolResponse?.status, approval.isWaiting)
 
   return (
-    <HeaderWithActions>
+    <HeaderWithActions data-tool-permission-header data-tool-call-id={toolResponse?.toolCallId}>
       <ToolHeader block={block} variant="collapse-label" status={effectiveStatus} />
       {(approval.isWaiting || approval.isExecuting) && <ToolApprovalActionsComponent {...approval} compact />}
     </HeaderWithActions>

@@ -80,7 +80,8 @@ describe('sidebar icons migration', () => {
         'notes',
         'files',
         'paintings',
-        'agents'
+        'agents',
+        'usage'
       ])
       expect(migrated.settings.sidebarIcons.disabled).toEqual([
         'minapp',

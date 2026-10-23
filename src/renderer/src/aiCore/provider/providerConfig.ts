@@ -211,7 +211,7 @@ export function withZenTraceFetch(baseFetch: typeof fetch = fetch): typeof fetch
         ;(error as Record<string, unknown>).zenTraceId = traceId
         ;(error as Record<string, unknown>).zenRequestUrl =
           typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
-        if (!isAbortLikeError(error)) {
+        if (!isAbortedRequest(error, input, init)) {
           ;(error as Record<string, unknown>).zenConnectivityCheck = await runClientConnectivityCheck(
             input,
             { ...init, headers },
@@ -283,8 +283,13 @@ function toShortDiagnosticText(value: unknown): string | number | boolean | unde
   return value.slice(0, 512)
 }
 
-function isAbortLikeError(error: unknown): boolean {
-  if (error instanceof DOMException && error.name === 'AbortError') return true
+function isAbortedRequest(error: unknown, input: RequestInfo | URL, init?: RequestInit): boolean {
+  // Fetch may reject with TimeoutError, a cross-realm DOMException or a custom
+  // signal reason. An intentional deadline/stop is not a connectivity failure.
+  const signal = init?.signal !== undefined ? init.signal : input instanceof Request ? input.signal : undefined
+  if (signal?.aborted) return true
+  const name = error && typeof error === 'object' && 'name' in error ? error.name : undefined
+  if (name === 'AbortError' || name === 'TimeoutError') return true
   const message = error instanceof Error ? error.message : String(error)
   return message.toLowerCase().includes('aborted')
 }
@@ -415,7 +420,7 @@ async function buildCherryAIConfig(ctx: BuilderContext): Promise<ProviderConfig<
             ;(error as Record<string, unknown>).zenTraceId = traceId
             ;(error as Record<string, unknown>).zenRequestUrl =
               typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
-            if (!isAbortLikeError(error)) {
+            if (!isAbortedRequest(error, input, init)) {
               ;(error as Record<string, unknown>).zenConnectivityCheck = await runClientConnectivityCheck(
                 input,
                 { ...init, headers },

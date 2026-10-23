@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "code": "release",
+  "projects": ["ai", "api"],
+  "ui": true,
+  "files": true,
+  "packages": [],
+  "requiredPlatforms": ["windows/x64", "mac/arm64", "mac/x64"],
+  "requireRealModels": true
+}

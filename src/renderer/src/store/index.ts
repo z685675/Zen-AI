@@ -22,6 +22,7 @@ import { useDispatch, useSelector, useStore } from 'react-redux'
 import { FLUSH, PAUSE, PERSIST, persistReducer, persistStore, PURGE, REGISTER, REHYDRATE } from 'redux-persist'
 import storage from 'redux-persist/lib/storage'
 
+import { modelRecoverySelectionMiddleware } from '../services/modelRecoveryIntents'
 import storeSyncService from '../services/StoreSyncService'
 import assistants from './assistants'
 import backup from './backup'
@@ -117,7 +118,7 @@ const store = configureStore({
       serializableCheck: {
         ignoredActions: [FLUSH, REHYDRATE, PAUSE, PERSIST, PURGE, REGISTER]
       }
-    }).concat(storeSyncService.createMiddleware())
+    }).concat(modelRecoverySelectionMiddleware, storeSyncService.createMiddleware())
   },
   devTools: true
 })

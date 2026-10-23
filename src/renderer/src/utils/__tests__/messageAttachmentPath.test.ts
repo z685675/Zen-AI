@@ -13,4 +13,13 @@ describe('snapshot upload paths', () => {
   it('handles a missing upload', () => {
     expect(getMessageAttachmentPath({} as any)).toBe('')
   })
+  it('opens a main-process-owned automation copy without pretending it is in the upload store', () => {
+    const block = {
+      file: { path: '/workspace/inputs/file.txt' },
+      metadata: { automationAttachment: { owned_copy: true } }
+    } as any
+    expect(getMessageAttachmentPath(block)).toBe(block.file.path)
+    block.metadata.automationAttachment.owned_copy = false
+    expect(getMessageAttachmentPath(block)).toBe('/storage/original.pdf')
+  })
 })

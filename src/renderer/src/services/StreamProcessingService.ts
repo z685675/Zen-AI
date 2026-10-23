@@ -98,7 +98,7 @@ export function createStreamProcessor(callbacks: StreamProcessorCallbacks = {}, 
   }
 
   // The returned function processes a single chunk or a final signal
-  return (chunk: Chunk) => {
+  const processChunk = (chunk: Chunk) => {
     processingQueue = processingQueue
       .then(async () => {
         if (terminalState !== 'open' || options.signal?.aborted || options.isActive?.() === false) {
@@ -248,4 +248,7 @@ export function createStreamProcessor(callbacks: StreamProcessorCallbacks = {}, 
 
     return processingQueue
   }
+  // Reading the transport to EOF does not imply asynchronous block/DB callbacks
+  // have finished. Callers must drain before disposing the request lifecycle.
+  return Object.assign(processChunk, { drain: () => processingQueue })
 }

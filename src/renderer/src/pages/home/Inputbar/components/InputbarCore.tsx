@@ -72,6 +72,8 @@ export interface InputbarCoreProps {
 
   // Override the user preference for quick panel triggers
   forceEnableQuickPanelTriggers?: boolean
+  // Disable only '/' menus, keeping resource mentions and explicit buttons available.
+  enableRootMenuTrigger?: boolean
   minimal?: boolean
   layoutMaxWidth?: string
   sendDisabled?: boolean
@@ -120,6 +122,7 @@ export const InputbarCore: FC<InputbarCoreProps> = ({
   topContent,
   pinnedContent,
   forceEnableQuickPanelTriggers,
+  enableRootMenuTrigger = true,
   minimal = false,
   layoutMaxWidth,
   sendDisabled = false
@@ -252,7 +255,7 @@ export const InputbarCore: FC<InputbarCoreProps> = ({
   }, [triggers, quickPanelOpen, t, text, translate])
 
   useEffect(() => {
-    if (!config.enableQuickPanel) {
+    if (!config.enableQuickPanel || !enableRootMenuTrigger) {
       return
     }
 
@@ -266,7 +269,7 @@ export const InputbarCore: FC<InputbarCoreProps> = ({
       disposeRootTrigger()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [config.enableQuickPanel])
+  }, [config.enableQuickPanel, enableRootMenuTrigger])
 
   const handleKeyDown = useCallback(
     (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -385,7 +388,7 @@ export const InputbarCore: FC<InputbarCoreProps> = ({
       }
 
       if (quickPanelTriggersEnabled && config.enableQuickPanel) {
-        const hasRootMenuItems = triggers.getRootMenu().length > 0
+        const hasRootMenuItems = enableRootMenuTrigger && triggers.getRootMenu().length > 0
         const textBeforeCursor = newText.slice(0, cursorPosition)
         const lastRootIndex = textBeforeCursor.lastIndexOf(QuickPanelReservedSymbol.Root)
         const lastMentionIndex = textBeforeCursor.lastIndexOf(QuickPanelReservedSymbol.MentionModels)
@@ -450,7 +453,15 @@ export const InputbarCore: FC<InputbarCoreProps> = ({
         }
       }
     },
-    [setText, textareaRef, quickPanelTriggersEnabled, config.enableQuickPanel, quickPanel, triggers]
+    [
+      setText,
+      textareaRef,
+      quickPanelTriggersEnabled,
+      config.enableQuickPanel,
+      enableRootMenuTrigger,
+      quickPanel,
+      triggers
+    ]
   )
 
   const onTranslated = useCallback(

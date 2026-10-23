@@ -2,6 +2,7 @@ import { loggerService } from '@logger'
 import { QuickPanelReservedSymbol } from '@renderer/components/QuickPanel'
 import SlashCommandsButton from '@renderer/pages/home/Inputbar/tools/components/SlashCommandsButton'
 import { defineTool, registerTool, TopicType } from '@renderer/pages/home/Inputbar/types'
+import { DEFAULT_OPENCODE_AGENT_ID } from '@shared/config/agents'
 import { Terminal } from 'lucide-react'
 
 const logger = loggerService.withContext('SlashCommandsTool')
@@ -79,6 +80,7 @@ const slashCommandsTool = defineTool({
 
   // Only visible in Agent Session
   visibleInScopes: [TopicType.Session],
+  condition: ({ session, assistant }) => (session?.agentId ?? assistant.id) !== DEFAULT_OPENCODE_AGENT_ID,
 
   dependencies: {
     actions: ['onTextChange'] as const

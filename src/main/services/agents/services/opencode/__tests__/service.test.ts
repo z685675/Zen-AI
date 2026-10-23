@@ -39,8 +39,22 @@ const fixture = {
   configuration: {},
   instructions: ''
 } as any
-let mode: 'success' | 'error' | 'empty' | 'retry' | 'disconnect' | 'permission' | 'permission-wait' | 'browser-wait' =
-  'success'
+let mode:
+  | 'success'
+  | 'error'
+  | 'empty'
+  | 'retry'
+  | 'disconnect'
+  | 'permission'
+  | 'permission-wait'
+  | 'permission-lost'
+  | 'browser-wait'
+  | 'reconnect'
+  | 'reconnect-permission'
+  | 'reconnect-exhausted'
+  | 'reconnect-cancel'
+  | 'empty-compaction'
+  | 'empty-compaction-disconnect' = 'success'
 let pause: { ready: () => void; wait: Promise<void> } | undefined
 function hold(signal: AbortSignal) {
   return new Promise<void>((resolve, reject) => {
@@ -55,6 +69,7 @@ function hold(signal: AbortSignal) {
 }
 let body: any
 let historyReads = 0
+let eventConnections = 0
 let failureMessage = 'upstream unavailable'
 let transportError: Record<string, unknown> | undefined
 let recoverTransport = false
@@ -71,10 +86,27 @@ const request = vi.fn(async (route: string, _method?: string, data?: unknown) =>
     runtime.setProgressListener.mock.calls.at(-1)?.[0]?.('request-started', {})
     return
   }
-  if (route === '/session/status') return { native: { type: mode === 'retry' ? 'busy' : 'idle' } }
+  if (route === '/session/status')
+    return { native: { type: mode === 'retry' || mode.startsWith('reconnect') ? 'busy' : 'idle' } }
+  if (route === '/permission')
+    return mode === 'reconnect-permission' || mode === 'permission-lost'
+      ? [{ id: 'missed', sessionID: 'native', permission: 'edit', tool: { callID: 'write-call' } }]
+      : []
   if (route.endsWith('/message')) {
     historyReads++
     if (historyReads === 1) return [{ info: { id: 'old', role: 'assistant' }, parts: [] }]
+    if (mode.startsWith('empty-compaction'))
+      return [
+        {
+          info: { id: body.messageID, role: 'user' },
+          parts: [{ id: 'question', type: 'text', text: 'Keep my original request' }]
+        },
+        { info: { id: 'marker', role: 'user' }, parts: [{ id: 'compact-part', type: 'compaction' }] },
+        {
+          info: { id: 'summary-empty', role: 'assistant', parentID: 'marker', summary: true, finish: 'stop' },
+          parts: []
+        }
+      ]
     return [
       { info: { id: body.messageID, role: 'user' }, parts: [] },
       {
@@ -88,9 +120,21 @@ const request = vi.fn(async (route: string, _method?: string, data?: unknown) =>
   }
 })
 async function* events(signal: AbortSignal) {
+  const connection = ++eventConnections
   yield { type: 'server.connected', properties: {} }
+  if (mode === 'reconnect-cancel' && connection > 1) {
+    pause!.ready()
+    await hold(signal)
+  }
   yield { type: 'message.updated', properties: { info: { id: body.messageID, sessionID: 'native', role: 'user' } } }
   yield { type: 'session.status', properties: { sessionID: 'native', status: { type: 'busy' } } }
+  if (mode.startsWith('reconnect') && (connection === 1 || mode === 'reconnect-exhausted'))
+    throw new Error('mock local stream disconnect')
+  if (mode === 'empty-compaction-disconnect') throw new Error('lost compaction event')
+  if (mode === 'empty-compaction') {
+    yield { type: 'session.compacted', properties: { sessionID: 'native' } }
+    return
+  }
   if (transportError) runtime.setProgressListener.mock.calls.at(-1)?.[0]?.('failed', transportError)
   if (recoverTransport) runtime.setProgressListener.mock.calls.at(-1)?.[0]?.('headers-received', { status: 503 })
   if (mode === 'error') {
@@ -114,6 +158,25 @@ async function* events(signal: AbortSignal) {
     }
     if (mode === 'permission-wait') await hold(signal)
     await new Promise((resolve) => setImmediate(resolve))
+  }
+  if (mode === 'permission-lost') {
+    yield { type: 'message.updated', properties: { info: nativeInfo() } }
+    yield {
+      type: 'message.part.updated',
+      properties: {
+        part: {
+          id: 'write-part',
+          messageID: 'assistant-new',
+          sessionID: 'native',
+          type: 'tool',
+          callID: 'write-call',
+          tool: 'write',
+          state: { status: 'running', input: { filePath: '/isolated/result.txt' } }
+        }
+      }
+    }
+    pause!.ready()
+    await hold(signal)
   }
   if (mode === 'browser-wait') {
     yield { type: 'message.updated', properties: { info: nativeInfo() } }
@@ -181,6 +244,7 @@ beforeEach(() => {
   mode = 'success'
   body = undefined
   historyReads = 0
+  eventConnections = 0
   failureMessage = 'upstream unavailable'
   transportError = undefined
   recoverTransport = false
@@ -196,6 +260,38 @@ afterEach(() => {
   vi.useRealTimers()
 })
 describe('OpenCode adapter turn lifecycle', () => {
+  it('recovers a missing native permission event without replaying a tool or the task', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+    mode = 'permission-lost'
+    let entered!: () => void, resume!: () => void
+    const waiting = new Promise<void>((resolve) => {
+      entered = resolve
+    })
+    pause = {
+      ready: entered,
+      wait: new Promise<void>((resolve) => {
+        resume = resolve
+      })
+    }
+    mocks.permission.mockImplementation(async () => {
+      resume()
+      return { behavior: 'allow' }
+    })
+    const result = run()
+    await waiting
+    await vi.advanceTimersByTimeAsync(3_000)
+    expect((await result).at(-1)?.type).toBe('complete')
+    expect(mocks.permission).toHaveBeenCalledExactlyOnceWith(
+      'edit',
+      expect.any(Object),
+      expect.objectContaining({
+        toolCallId: 'zen-test:write-call'
+      })
+    )
+    expect(request).toHaveBeenCalledWith('/permission/missed/reply', 'POST', { reply: 'once' }, expect.any(AbortSignal))
+    expect(request.mock.calls.filter(([route]) => route.endsWith('/prompt_async'))).toHaveLength(1)
+    expect(vi.getTimerCount()).toBe(0)
+  })
   it.each(['permission-wait', 'browser-wait'] as const)(
     'does not charge %s to execution budget or resubmit after it',
     async (waitingMode) => {
@@ -359,6 +455,61 @@ describe('OpenCode adapter turn lifecycle', () => {
   it('reconciles a lost final stream without replaying the user request', async () => {
     mode = 'disconnect'
     expect((await run()).at(-1)?.type).toBe('complete')
+    expect(request.mock.calls.filter(([route]) => route.endsWith('/prompt_async'))).toHaveLength(1)
+  })
+  it.each(['reconnect', 'reconnect-permission'] as const)(
+    'reattaches %s to a running native task without executing it again',
+    async (value) => {
+      mode = value
+      const result = await run()
+      expect(result.at(-1)?.type).toBe('complete')
+      expect(runtime.stop).not.toHaveBeenCalled()
+      expect(eventConnections).toBe(2)
+      expect(request.mock.calls.filter(([route]) => route.endsWith('/prompt_async'))).toHaveLength(1)
+      const text = result.filter((event) => event.type === 'chunk' && event.chunk.type === 'text-delta')
+      expect(text).toHaveLength(1)
+      if (value === 'reconnect-permission')
+        expect(request).toHaveBeenCalledWith(
+          '/permission/missed/reply',
+          'POST',
+          { reply: 'once' },
+          expect.any(AbortSignal)
+        )
+    }
+  )
+  it('bounds event-only reconnections and never silently completes a still-running task', async () => {
+    mode = 'reconnect-exhausted'
+    expect((await run()).at(-1)?.type).toBe('error')
+    expect(eventConnections).toBe(3)
+    expect(runtime.stop).toHaveBeenCalledOnce()
+    expect(request.mock.calls.filter(([route]) => route.endsWith('/prompt_async'))).toHaveLength(1)
+  })
+  it.each(['empty-compaction', 'empty-compaction-disconnect'] as const)(
+    'discards %s rather than declaring an empty answer successful',
+    async (value) => {
+      mode = value
+      const result = await run()
+      expect(result.at(-1)).toMatchObject({ type: 'error', error: { name: 'OpenCodeEmptyCompactionError' } })
+      expect(request.mock.calls.filter(([route]) => route.endsWith('/prompt_async'))).toHaveLength(1)
+      expect(request.mock.calls.filter(([, method]) => method === 'DELETE').map(([route]) => route)).toEqual([
+        '/session/native/message/summary-empty',
+        '/session/native/message/marker/part/compact-part'
+      ])
+      expect(eventConnections).toBe(1)
+    }
+  )
+  it('keeps event recovery cancellable without resubmission', async () => {
+    mode = 'reconnect-cancel'
+    let ready!: () => void
+    const entered = new Promise<void>((resolve) => {
+      ready = resolve
+    })
+    pause = { ready, wait: new Promise<void>(() => {}) }
+    const controller = new AbortController()
+    const result = run(controller)
+    await entered
+    controller.abort('user cancelled')
+    expect((await result).at(-1)?.type).toBe('cancelled')
     expect(request.mock.calls.filter(([route]) => route.endsWith('/prompt_async'))).toHaveLength(1)
   })
   it.each(['error', 'empty', 'retry'] as const)('stops %s without silent success or replay', async (value) => {

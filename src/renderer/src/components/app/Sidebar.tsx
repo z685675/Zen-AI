@@ -21,6 +21,7 @@ import { isEmoji } from '@renderer/utils'
 import { DEFAULT_OPENCODE_AGENT_AVATAR } from '@shared/config/agents'
 import { Avatar, Tooltip } from 'antd'
 import {
+  BarChart3,
   Code,
   FileSearch,
   Folder,
@@ -192,6 +193,7 @@ const MainMenus: FC = () => {
   const isRoutes = (path: string): string => (pathname.startsWith(path) && path !== '/' && !minappShow ? 'active' : '')
 
   const iconMap = {
+    usage: <BarChart3 size={18} className="icon" />,
     assistants: <MessageSquare size={18} className="icon" />,
     agents: <MousePointerClick size={18} className="icon" />,
     store: <Sparkle size={18} className="icon" />,
@@ -211,6 +213,7 @@ const MainMenus: FC = () => {
   }
 
   const pathMap = {
+    usage: '/usage',
     assistants: '/',
     agents: '/agents',
     store: '/store',

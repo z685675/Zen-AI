@@ -1,7 +1,5 @@
 import { loggerService } from '@logger'
 import { getAnthropicReasoningParams } from '@renderer/aiCore/utils/reasoning'
-import type { QuickPanelTriggerInfo } from '@renderer/components/QuickPanel'
-import { QuickPanelReservedSymbol, useQuickPanel } from '@renderer/components/QuickPanel'
 import { isAssistantModelAllowed } from '@renderer/config/agentModelPolicy'
 import { isGenerateImageModel, isVisionModel } from '@renderer/config/models'
 import { useSession } from '@renderer/hooks/agents/useSession'
@@ -66,6 +64,7 @@ import { useTranslation } from 'react-i18next'
 import styled from 'styled-components'
 import { v4 as uuid } from 'uuid'
 
+import AutomationSessionBanner from './AutomationSessionBanner'
 import LegacyAssistantInputbar from './LegacyAssistantInputbar'
 
 const logger = loggerService.withContext('AgentSessionInputbar')
@@ -124,7 +123,6 @@ const ActiveAgentSessionInputbar = ({ agentId, sessionId, variant = 'default' }:
     return {
       agentId,
       sessionId,
-      slashCommands: session.slash_commands,
       tools: session.tools,
       accessiblePaths: session.accessible_paths ?? []
     }
@@ -181,6 +179,7 @@ const ActiveAgentSessionInputbar = ({ agentId, sessionId, variant = 'default' }:
         onNewContext: () => {},
         toggleExpanded: () => actionsRef.current.toggleExpanded()
       }}>
+      <AutomationSessionBanner sessionId={sessionId} />
       <AgentSessionInputbarInner
         assistant={assistantStub}
         agentId={agentId}
@@ -249,7 +248,6 @@ const AgentSessionInputbarInner: FC<InnerProps> = ({
   const { sendMessageShortcut, apiServer } = useSettings()
 
   const { t } = useTranslation()
-  const quickPanel = useQuickPanel()
 
   const [reasoningEffort, setReasoningEffort] = useState<AgentReasoningEffort>(
     initialReasoningEffort ?? AGENT_DEFAULT_REASONING_EFFORT
@@ -277,7 +275,7 @@ const AgentSessionInputbarInner: FC<InnerProps> = ({
   )
 
   const { files } = useInputbarToolsState()
-  const { toolsRegistry, setIsExpanded, setFiles } = useInputbarToolsDispatch()
+  const { setIsExpanded, setFiles } = useInputbarToolsDispatch()
   const { setCouldAddImageFile } = useInputbarToolsInternalDispatch()
 
   const { setTimeoutTimer } = useTimer()
@@ -333,105 +331,6 @@ const AgentSessionInputbarInner: FC<InnerProps> = ({
       toggleExpanded: handleToggleExpanded
     }
   }, [resizeTextArea, setText, actionsRef, handleToggleExpanded])
-
-  const rootTriggerHandlerRef = useRef<((payload?: unknown) => void) | undefined>(undefined)
-
-  // Update handler logic when dependencies change
-  // For Agent Session, we directly trigger SlashCommands panel instead of Root menu
-  useEffect(() => {
-    rootTriggerHandlerRef.current = (payload) => {
-      const slashCommands = sessionData?.slashCommands || []
-      const triggerInfo = (payload ?? {}) as QuickPanelTriggerInfo
-
-      if (slashCommands.length === 0) {
-        quickPanel.open({
-          title: t('chat.input.slash_commands.title'),
-          symbol: QuickPanelReservedSymbol.SlashCommands,
-          triggerInfo,
-          list: [
-            {
-              label: t('chat.input.slash_commands.empty', 'No slash commands available'),
-              description: '',
-              icon: null,
-              disabled: true,
-              action: () => {}
-            }
-          ]
-        })
-        return
-      }
-
-      quickPanel.open({
-        title: t('chat.input.slash_commands.title'),
-        symbol: QuickPanelReservedSymbol.SlashCommands,
-        triggerInfo,
-        list: slashCommands.map((cmd) => ({
-          label: cmd.command,
-          description: cmd.description || '',
-          icon: null,
-          filterText: `${cmd.command} ${cmd.description || ''}`,
-          action: () => {
-            // Insert command into textarea
-            setText((prev: string) => {
-              const textArea = document.querySelector('.inputbar textarea') as HTMLTextAreaElement | null
-              if (!textArea) {
-                return prev + ' ' + cmd.command
-              }
-
-              const cursorPosition = textArea.selectionStart || 0
-              const textBeforeCursor = prev.slice(0, cursorPosition)
-              const lastSlashIndex = textBeforeCursor.lastIndexOf('/')
-
-              if (lastSlashIndex !== -1 && cursorPosition > lastSlashIndex) {
-                // Replace from '/' to cursor with command
-                const newText = prev.slice(0, lastSlashIndex) + cmd.command + ' ' + prev.slice(cursorPosition)
-                const newCursorPos = lastSlashIndex + cmd.command.length + 1
-
-                setTimeout(() => {
-                  if (textArea) {
-                    textArea.focus()
-                    textArea.setSelectionRange(newCursorPos, newCursorPos)
-                  }
-                }, 0)
-
-                return newText
-              }
-
-              // No '/' found, just insert at cursor
-              const newText = prev.slice(0, cursorPosition) + cmd.command + ' ' + prev.slice(cursorPosition)
-              const newCursorPos = cursorPosition + cmd.command.length + 1
-
-              setTimeout(() => {
-                if (textArea) {
-                  textArea.focus()
-                  textArea.setSelectionRange(newCursorPos, newCursorPos)
-                }
-              }, 0)
-
-              return newText
-            })
-          }
-        }))
-      })
-    }
-  }, [sessionData, quickPanel, t, setText])
-
-  // Register the trigger handler (only once)
-  useEffect(() => {
-    if (!config.enableQuickPanel) {
-      return
-    }
-
-    const disposeRootTrigger = toolsRegistry.registerTrigger(
-      'agent-session-root',
-      QuickPanelReservedSymbol.Root,
-      (payload) => rootTriggerHandlerRef.current?.(payload)
-    )
-
-    return () => {
-      disposeRootTrigger()
-    }
-  }, [config.enableQuickPanel, toolsRegistry])
 
   const sendDisabled = (inputEmpty && files.length === 0) || !apiServer.enabled
 
@@ -671,7 +570,7 @@ const AgentSessionInputbarInner: FC<InnerProps> = ({
   const sessionToolOrderOverride = useMemo<ToolOrderConfig>(
     () => ({
       visible: ['permission_mode', 'thinking', 'deep_research', 'session_more'],
-      hidden: ['create_session', 'slash_commands', 'attachment', 'resource_panel', 'quick_phrases', 'toggle_expand']
+      hidden: ['create_session', 'attachment', 'resource_panel', 'toggle_expand']
     }),
     []
   )
@@ -725,6 +624,7 @@ const AgentSessionInputbarInner: FC<InnerProps> = ({
         )
       }
       forceEnableQuickPanelTriggers
+      enableRootMenuTrigger={false}
       layoutMaxWidth={isHero ? '1040px' : '960px'}
       minimal={isHero}
     />

@@ -19,6 +19,7 @@ import {
 import { ContextModelProbeScheduler } from '@renderer/services/context/ContextModelProbeScheduler'
 import { EVENT_NAMES, EventEmitter } from '@renderer/services/EventService'
 import { checkModelWithAnyKey } from '@renderer/services/HealthCheckService'
+import { modelRecoveryIntents } from '@renderer/services/modelRecoveryIntents'
 import store, { type RootState } from '@renderer/store'
 import { applyRemoteModelPolicy, setModelPolicy } from '@renderer/store/llm'
 import type { Model } from '@renderer/types'
@@ -87,6 +88,11 @@ const canReplaceDefault = (
   if (!current) return true
   const currentId = getLowerBaseModelName(current.id.trim())
   return Boolean(previousTarget && currentId === getLowerBaseModelName(previousTarget.trim()))
+}
+
+const preferredBeforeOutage = (slot: string, current: Model | undefined): Model | undefined => {
+  const preferred = modelRecoveryIntents.get(`global:${slot}`)?.preferred
+  return current && preferred ? { ...current, id: preferred.slice(preferred.indexOf(':') + 1) } : current
 }
 
 /**
@@ -215,15 +221,30 @@ const applyRemoteDefaults = (state: RootState, snapshot: ModelPolicySnapshot): v
   )
 
   const nextDefaultModel =
-    defaultModel && canReplaceDefault(state.llm.defaultModel, previous?.defaults.chat, allowReleaseOverwrite)
+    defaultModel &&
+    canReplaceDefault(
+      isNewPolicyVersion ? preferredBeforeOutage('chat', state.llm.defaultModel) : state.llm.defaultModel,
+      previous?.defaults.chat,
+      allowReleaseOverwrite
+    )
       ? defaultModel
       : undefined
   const nextQuickModel =
-    quickModel && canReplaceDefault(state.llm.quickModel, previous?.defaults.quick, allowReleaseOverwrite)
+    quickModel &&
+    canReplaceDefault(
+      isNewPolicyVersion ? preferredBeforeOutage('quick', state.llm.quickModel) : state.llm.quickModel,
+      previous?.defaults.quick,
+      allowReleaseOverwrite
+    )
       ? quickModel
       : undefined
   const nextTranslateModel =
-    translateModel && canReplaceDefault(state.llm.translateModel, previous?.defaults.translate, allowReleaseOverwrite)
+    translateModel &&
+    canReplaceDefault(
+      isNewPolicyVersion ? preferredBeforeOutage('translate', state.llm.translateModel) : state.llm.translateModel,
+      previous?.defaults.translate,
+      allowReleaseOverwrite
+    )
       ? translateModel
       : undefined
 

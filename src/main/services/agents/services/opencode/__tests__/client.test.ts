@@ -4,6 +4,72 @@ import { OpenCodeClient } from '../client'
 
 afterEach(() => vi.unstubAllGlobals())
 describe('OpenCode HTTP/SSE client', () => {
+  it('receives the reported 9,875,510-byte PDF event across network chunks and continues to the final answer', async () => {
+    const pdf = Buffer.alloc(9_875_510, 65).toString('base64')
+    const attachment = {
+      type: 'message.part.updated',
+      properties: {
+        part: {
+          type: 'tool',
+          state: { attachments: [{ mime: 'application/pdf', url: `data:application/pdf;base64,${pdf}` }] }
+        }
+      }
+    }
+    const bytes = Buffer.from(
+      `data: ${JSON.stringify(attachment)}\r\n\r\ndata: {"type":"session.idle","properties":{}}\r\n\r\n`
+    )
+    let offset = 0
+    let cancelled = false
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          new Response(
+            new ReadableStream({
+              pull(stream) {
+                if (offset >= bytes.length) return
+                stream.enqueue(bytes.subarray(offset, offset + 16_381))
+                offset += 16_381
+              },
+              cancel() {
+                cancelled = true
+              }
+            })
+          )
+      )
+    )
+    const signal = new AbortController()
+    const events = []
+    for await (const event of new OpenCodeClient('http://127.0.0.1:1', 'password', '/workspace').events(
+      signal.signal
+    )) {
+      events.push(event)
+      if (event.type === 'session.idle') break
+    }
+    expect(events).toHaveLength(2)
+    expect(events[0].properties.part.state.attachments[0].url.length).toBe(pdf.length + 28)
+    expect(cancelled).toBe(true)
+  })
+  it('stops promptly when cancelled even if buffered events are still available', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          new Response(
+            'data: {"type":"server.connected","properties":{}}\n\ndata: {"type":"later","properties":{}}\n\n'
+          )
+      )
+    )
+    const signal = new AbortController()
+    const events = []
+    for await (const event of new OpenCodeClient('http://127.0.0.1:1', 'password', '/workspace').events(
+      signal.signal
+    )) {
+      events.push(event)
+      signal.abort()
+    }
+    expect(events).toHaveLength(1)
+  })
   it('parses CRLF across byte boundaries and multibyte Chinese text', async () => {
     const encoder = new TextEncoder()
     const bytes = encoder.encode(

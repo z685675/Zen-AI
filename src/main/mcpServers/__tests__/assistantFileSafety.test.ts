@@ -4,10 +4,17 @@ import path from 'node:path'
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+vi.unmock('node:fs')
 vi.unmock('node:fs/promises')
 vi.unmock('node:os')
 vi.unmock('node:path')
-import { assertSafeOutput, backupAssistantFile, writeAssistantFile } from '../assistantFileSafety'
+import {
+  assertSafeOutput,
+  backupAssistantFile,
+  prepareAssistantFileCopy,
+  writeAssistantFile,
+  writeAssistantOutput
+} from '../assistantFileSafety'
 
 let root: string
 beforeEach(async () => {
@@ -120,5 +127,108 @@ describe('new assistant controlled writes', () => {
     vi.spyOn(fs, 'link').mockRejectedValueOnce(new Error('disk error'))
     await expect(writeAssistantFile(file, 'output', [root])).rejects.toThrow('disk error')
     expect(await fs.readdir(root)).toEqual([])
+  })
+  it('numbers conflicting deliverables, including concurrent writes, without asking or replacing', async () => {
+    const file = path.join(root, 'report.xlsx')
+    await fs.writeFile(file, 'original')
+    const approve = vi.fn(async () => true)
+    const outputs = await Promise.all(
+      ['one', 'two', 'three'].map((data) => writeAssistantOutput(file, data, [root], { approve }))
+    )
+    expect(new Set(outputs.map((output) => output.path)).size).toBe(3)
+    expect(outputs.every((output) => output.write_mode === 'new-file')).toBe(true)
+    expect(await fs.readFile(file, 'utf8')).toBe('original')
+    expect(await Promise.all(outputs.map((output) => fs.readFile(output.path, 'utf8')))).toEqual([
+      'one',
+      'two',
+      'three'
+    ])
+    expect(approve).not.toHaveBeenCalled()
+  })
+  it('keeps explicit replacements on the confirmation and verified-backup route', async () => {
+    const file = path.join(root, 'old.txt')
+    await fs.writeFile(file, 'original')
+    const denied = vi.fn(async () => false)
+    await expect(writeAssistantOutput(file, 'changed', [root], { overwrite: true, approve: denied })).rejects.toThrow(
+      'not approved'
+    )
+    expect(await fs.readdir(root)).toEqual(['old.txt'])
+    const result = await writeAssistantOutput(file, 'changed', [root], { overwrite: true, approve: async () => true })
+    expect(result.path).toBe(file)
+    expect(await fs.readFile(result.backup_path, 'utf8')).toBe('original')
+  })
+  it('makes an independent working copy, including when the requested path is the original', async () => {
+    const file = path.join(root, '预算.xlsx')
+    const source = Buffer.from([0x50, 0x4b, 0x03, 0x04, 0x00, 0xff])
+    await fs.writeFile(file, source)
+    const result = await prepareAssistantFileCopy(file, file, [root])
+    expect(result).toMatchObject({ source_path: file, original_preserved: true })
+    expect(result.working_path).toBe(path.join(root, '预算 (1).xlsx'))
+    expect(await fs.readFile(result.working_path)).toEqual(source)
+    await fs.writeFile(result.working_path, 'modified')
+    expect(await fs.readFile(file)).toEqual(source)
+  })
+  it('rejects missing, unauthorized, folder, oversized and extension-changing working copies', async () => {
+    const file = path.join(root, 'source.txt')
+    await fs.writeFile(file, 'original')
+    await expect(prepareAssistantFileCopy(file, path.join(root, 'out.pdf'), [root])).rejects.toThrow('extension')
+    await expect(prepareAssistantFileCopy(file, path.join(root, '..', 'out.txt'), [root])).rejects.toThrow('outside')
+    await expect(prepareAssistantFileCopy(path.join(root, 'absent.txt'), file, [root])).rejects.toThrow('missing')
+    await expect(prepareAssistantFileCopy(root, file, [root])).rejects.toThrow('regular file')
+    const handle = await fs.open(file, 'r+')
+    await handle.truncate(128 * 1024 * 1024 + 1)
+    await handle.close()
+    await expect(prepareAssistantFileCopy(file, path.join(root, 'large.txt'), [root])).rejects.toThrow('128 MiB')
+    expect(await fs.readdir(root)).toEqual(['source.txt'])
+  })
+  it('does not publish a corrupt copy or permit replacement after backup verification fails', async () => {
+    const file = path.join(root, 'source.txt')
+    await fs.writeFile(file, 'original')
+    const copy = vi.spyOn(fs, 'copyFile').mockImplementation(async (_source, target) => {
+      await fs.writeFile(target, 'corrupt')
+    })
+    await expect(prepareAssistantFileCopy(file, path.join(root, 'copy.txt'), [root])).rejects.toThrow('verification')
+    await expect(
+      writeAssistantOutput(file, 'changed', [root], { overwrite: true, approve: async () => true })
+    ).rejects.toThrow('verification')
+    expect(copy).toHaveBeenCalledTimes(2)
+    expect(await fs.readFile(file, 'utf8')).toBe('original')
+    expect(await fs.readdir(path.join(root, '.zen-backups'))).toEqual([])
+    expect((await fs.readdir(root)).filter((name) => name.startsWith('.zen-write'))).toEqual([])
+  })
+  it('cleans temporary copies if cancelled after copying and keeps the original', async () => {
+    const file = path.join(root, 'source.txt')
+    await fs.writeFile(file, 'original')
+    const abort = new AbortController()
+    const actualCopy = fs.copyFile.bind(fs)
+    vi.spyOn(fs, 'copyFile').mockImplementation(async (...args) => {
+      await actualCopy(...args)
+      abort.abort(new Error('stopped'))
+    })
+    await expect(prepareAssistantFileCopy(file, path.join(root, 'copy.txt'), [root], abort.signal)).rejects.toThrow(
+      'stopped'
+    )
+    expect(await fs.readdir(root)).toEqual(['source.txt'])
+    expect(await fs.readFile(file, 'utf8')).toBe('original')
+  })
+  it('refuses symlinked parents escaping the authorized directory for working copies', async () => {
+    const file = path.join(root, 'source.txt')
+    await fs.writeFile(file, 'original')
+    await fs.symlink(path.dirname(root), path.join(root, 'outside'), 'junction')
+    await expect(prepareAssistantFileCopy(file, path.join(root, 'outside', 'copy.txt'), [root])).rejects.toThrow(
+      'outside'
+    )
+  })
+  it('rejects source changes during a copy without publishing a stale working file', async () => {
+    const file = path.join(root, 'source.txt')
+    await fs.writeFile(file, 'original')
+    const copy = fs.copyFile.bind(fs)
+    vi.spyOn(fs, 'copyFile').mockImplementation(async (...args) => {
+      await copy(...args)
+      await fs.writeFile(file, 'user changed this')
+    })
+    await expect(prepareAssistantFileCopy(file, path.join(root, 'copy.txt'), [root])).rejects.toThrow('changed')
+    expect(await fs.readdir(root)).toEqual(['source.txt'])
+    expect(await fs.readFile(file, 'utf8')).toBe('user changed this')
   })
 })

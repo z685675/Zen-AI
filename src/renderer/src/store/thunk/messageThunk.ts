@@ -103,6 +103,7 @@ import {
   isUnnamedAgentSessionName,
   normalizeAgentSessionTitle
 } from '@renderer/utils/agentSessionTitle'
+import { createSSEReadableStream, withAbortStreamPart } from '@renderer/utils/agentStream'
 import { isAbortError } from '@renderer/utils/error'
 import { isReadOnlyLegacySession } from '@renderer/utils/legacyMessageActions'
 import { resolveAgentRetryModelSelection, resolveRetryModelSelection } from '@renderer/utils/messageRetryModel'
@@ -1210,146 +1211,6 @@ export const renameAgentSessionIfNeeded = async (
   }
 }
 
-const createSSEReadableStream = (
-  source: ReadableStream<Uint8Array>,
-  signal: AbortSignal
-): ReadableStream<TextStreamPart<Record<string, any>>> => {
-  return new ReadableStream<TextStreamPart<Record<string, any>>>({
-    start(controller) {
-      const reader = source.getReader()
-      const decoder = new TextDecoder()
-      let buffer = ''
-
-      const cancelReader = (reason?: any) => reader.cancel(reason).catch(() => {})
-
-      const abortHandler = () => {
-        void cancelReader(signal.reason ?? 'aborted')
-        controller.error(new DOMException('Aborted', 'AbortError'))
-      }
-
-      if (signal.aborted) {
-        abortHandler()
-        return
-      }
-
-      signal.addEventListener('abort', abortHandler, { once: true })
-
-      const emitEvent = (eventString: string): boolean => {
-        const lines = eventString.split(/\r?\n/)
-        let dataPayload = ''
-        for (const line of lines) {
-          if (line.startsWith('data:')) {
-            dataPayload += line.slice(5).trimStart()
-          }
-        }
-
-        if (!dataPayload) {
-          return false
-        }
-
-        if (dataPayload === '[DONE]') {
-          signal.removeEventListener('abort', abortHandler)
-          void cancelReader()
-          controller.close()
-          return true
-        }
-
-        try {
-          const parsed = JSON.parse(dataPayload) as TextStreamPart<Record<string, any>>
-          controller.enqueue(parsed)
-        } catch (error) {
-          logger.warn('Failed to parse agent SSE chunk', { dataPayload })
-        }
-        return false
-      }
-
-      const pump = async () => {
-        try {
-          while (true) {
-            const { value, done } = await reader.read()
-            if (done) break
-            buffer += decoder.decode(value, { stream: true })
-
-            let separatorIndex = buffer.indexOf('\n\n')
-            while (separatorIndex !== -1) {
-              const rawEvent = buffer.slice(0, separatorIndex).trim()
-              buffer = buffer.slice(separatorIndex + 2)
-              if (rawEvent) {
-                const shouldStop = emitEvent(rawEvent)
-                if (shouldStop) {
-                  return
-                }
-              }
-              separatorIndex = buffer.indexOf('\n\n')
-            }
-          }
-
-          buffer += decoder.decode()
-          if (buffer.trim()) {
-            emitEvent(buffer.trim())
-          }
-          signal.removeEventListener('abort', abortHandler)
-          controller.close()
-        } catch (error) {
-          signal.removeEventListener('abort', abortHandler)
-          controller.error(error)
-        }
-      }
-
-      pump().catch((error) => {
-        signal.removeEventListener('abort', abortHandler)
-        controller.error(error)
-      })
-    },
-    cancel(reason) {
-      return source.cancel(reason).catch(() => {})
-    }
-  })
-}
-
-/**
- * Wraps a parsed stream with abort-signal lifecycle handling.
- * In the normal chat pipeline the AI SDK runtime converts abort signals into
- * `{ type: 'abort' }` stream parts. The agent pipeline bypasses the AI SDK
- * runtime, so this middleware fills that gap — keeping the SSE parser
- * (transport) and the chunk adapter (protocol) free of lifecycle concerns.
- */
-const withAbortStreamPart = (
-  source: ReadableStream<TextStreamPart<Record<string, any>>>,
-  signal: AbortSignal
-): ReadableStream<TextStreamPart<Record<string, any>>> => {
-  const reader = source.getReader()
-
-  return new ReadableStream<TextStreamPart<Record<string, any>>>({
-    async pull(controller) {
-      try {
-        const { value, done } = await reader.read()
-        if (done) {
-          controller.close()
-          return
-        }
-        controller.enqueue(value)
-      } catch (error) {
-        // When the source errors due to abort, emit the abort stream part
-        // so downstream consumers (AiSdkToChunkAdapter) can fire onError.
-        if (signal.aborted) {
-          try {
-            controller.enqueue({ type: 'abort' } as TextStreamPart<Record<string, any>>)
-          } catch {
-            // Controller may already be closed
-          }
-          controller.close()
-        } else {
-          controller.error(error)
-        }
-      }
-    },
-    cancel(reason) {
-      return reader.cancel(reason)
-    }
-  })
-}
-
 const createAgentMessageStream = async (
   apiServer: ApiServerConfig,
   agentSession: AgentSessionContext,
@@ -1666,6 +1527,7 @@ const fetchAndProcessAgentResponseImpl = async (
   let callbacks: StreamProcessorCallbacks = {}
   let shouldShowWechatSync = false
   let completedSuccessfully = false
+  let streamErrorReported = false
   const syncMessageIds = [userMessageId, assistantMessage.id]
   const requestLifecycle = createRequestLifecycle(assistantMessage.id, userMessageId)
   const diagnosticOperationId = beginDiagnostic(assistantMessage.id, {
@@ -1967,7 +1829,10 @@ const fetchAndProcessAgentResponseImpl = async (
     }
 
     const adapter = new AiSdkToChunkAdapter(
-      streamProcessorCallbacks,
+      (chunk) => {
+        if (chunk.type === ChunkType.ERROR) streamErrorReported = true
+        void streamProcessorCallbacks(chunk)
+      },
       [],
       false,
       false,
@@ -1977,10 +1842,13 @@ const fetchAndProcessAgentResponseImpl = async (
       () => sessionWasCleared // Provide getter for session cleared flag
     )
 
-    await adapter.processStream({
-      fullStream: stream,
-      text: Promise.resolve('')
-    })
+    try {
+      await adapter.processStream({ fullStream: stream, text: Promise.resolve('') }, { throwOnError: true })
+    } finally {
+      // Fast/buffered replies can reach EOF while the serialized UI/DB queue
+      // is still handling raw events. Do not invalidate those queued chunks.
+      await streamProcessorCallbacks.drain()
+    }
     recordDiagnostic(assistantMessage.id, 'response', 'processed')
     if (requestLifecycle.isActive()) {
       await finalizeStaleAssistantBlocksAfterStream(dispatch, getState, topicId, assistantMessage.id)
@@ -2047,7 +1915,7 @@ const fetchAndProcessAgentResponseImpl = async (
     } else if (requestLifecycle.isActive()) {
       markContextProcessingError(topicId, error)
     }
-    if (requestLifecycle.isActive()) {
+    if (requestLifecycle.isActive() && !streamErrorReported) {
       try {
         await callbacks.onError?.(error)
       } catch (callbackError) {

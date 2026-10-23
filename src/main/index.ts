@@ -16,10 +16,14 @@ import { isDev, isLinux, isWin } from './constant'
 import process from 'node:process'
 
 import { registerIpc } from './ipc'
+import { shutdownBrowserServers } from './mcpServers/browser/server'
 import { agentService } from './services/agents'
+import { DatabaseManager } from './services/agents/database/DatabaseManager'
 import { stopOpenCodeProcesses } from './services/agents/services/opencode/process'
 import { allowAssistantExit, hasAssistantTasks } from './services/AssistantExitGuard'
+import { createAsyncQuitGuard, runQuitCleanup } from './services/AsyncQuitGuard'
 import { schedulerService } from './services/agents/services/SchedulerService'
+import { automationService } from './services/agents/services/automation/AutomationService'
 import { bootstrapBuiltinAgents } from './services/agents/services/builtin/BuiltinAgentBootstrap'
 import { channelManager } from './services/agents/services/channels'
 import { registerSessionStreamIpc } from './services/agents/services/channels/sessionStreamIpc'
@@ -251,6 +255,7 @@ if (!app.requestSingleInstanceLock()) {
 
         // Disconnect/disable legacy adapters, preserving settings, credentials and history.
         await channelManager.start()
+        await automationService.start()
       } catch (error: any) {
         logger.error('Failed to check/start API server:', error)
       }
@@ -304,6 +309,7 @@ if (!app.requestSingleInstanceLock()) {
   })
 
   let assistantQuitPending = false
+  let quitResourcesStopped = false
   app.on('before-quit', (event) => {
     if (!app.isQuitting && hasAssistantTasks()) {
       event.preventDefault()
@@ -319,6 +325,8 @@ if (!app.requestSingleInstanceLock()) {
       }
       return
     }
+    if (quitResourcesStopped) return
+    quitResourcesStopped = true
     stopOpenCodeProcesses()
     app.isQuitting = true
     app.isInstallingUpdate = app.isInstallingUpdate ?? false
@@ -332,31 +340,55 @@ if (!app.requestSingleInstanceLock()) {
     localTransferService.dispose()
   })
 
-  app.on('will-quit', async () => {
-    // Perform lightweight cleanup without blocking app shutdown.
-    if (isOvmsSupported) {
-      const { ovmsManager } = await import('./services/OvmsManager')
-      if (ovmsManager) {
-        await ovmsManager.stopOvms()
-      } else {
-        logger.warn('Unexpected behavior: undefined ovmsManager, but OVMS should be supported.')
+  app.on(
+    'will-quit',
+    createAsyncQuitGuard({
+      quit: (cleanupError) => {
+        // A cleanup error/deadline is not a successful graceful exit. In
+        // particular, never silently turn an unclosed native DB into exit 0.
+        if (cleanupError !== undefined) app.exit(1)
+        else app.quit()
+      },
+      onError: (error) =>
+        logger.warn('Application cleanup did not finish normally:', {
+          error:
+            error instanceof Error ? { name: error.name, message: error.message, stack: error.stack } : String(error)
+        }),
+      cleanup: async () => {
+        await runQuitCleanup(
+          [
+            {
+              name: 'ovms',
+              stop: async () => {
+                if (!isOvmsSupported) return
+                const { ovmsManager } = await import('./services/OvmsManager')
+                if (ovmsManager) {
+                  const result = await ovmsManager.stopOvms()
+                  if (!result.success) throw new Error(result.message ?? 'OVMS shutdown failed')
+                }
+              }
+            },
+            { name: 'scheduler', stop: () => schedulerService.stopAll() },
+            { name: 'automation', stop: () => automationService.stop() },
+            { name: 'channels', stop: () => channelManager.stop() },
+            { name: 'analytics', stop: () => analyticsService.destroy() },
+            { name: 'openclaw', stop: () => openClawService.stopGateway() },
+            { name: 'browser-tools', stop: () => shutdownBrowserServers() },
+            { name: 'mcp', stop: () => mcpService.cleanup() },
+            { name: 'api-server', stop: () => apiServerService.stop() },
+            // Release native libSQL while Node/Electron is still alive, not in a
+            // native finalizer after service and process teardown has begun.
+            { name: 'assistant-database', stop: () => DatabaseManager.shutdown() }
+          ],
+          (service, error) => logger.warn('Error cleaning up service:', { service, error }),
+          (service, state, durationMs) => logger.info('Application cleanup step', { service, state, durationMs })
+        )
+
+        // finish the logger
+        await logger.finish()
       }
-    }
-
-    try {
-      schedulerService.stopAll()
-      await channelManager.stop()
-      await analyticsService.destroy()
-      await openClawService.stopGateway()
-      await mcpService.cleanup()
-      await apiServerService.stop()
-    } catch (error) {
-      logger.warn('Error cleaning up services:', error as Error)
-    }
-
-    // finish the logger
-    logger.finish()
-  })
+    })
+  )
 
   // In this file you can include the rest of your app"s specific main process
   // code. You can also put them in separate files and require them here.

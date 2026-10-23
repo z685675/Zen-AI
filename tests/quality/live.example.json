@@ -1,0 +1,36 @@
+{
+  "budget": {
+    "currency": "CNY",
+    "maxAmount": 5,
+    "maxInputTokens": 2560000,
+    "maxOutputTokens": 10000,
+    "maxOutputTokensPerRequest": 1000,
+    "maxRequests": 20,
+    "timeoutMs": 600000
+  },
+  "execution": {
+    "maxInputTokensPerRequest": 128000,
+    "pauseMs": 20000,
+    "requestTimeoutMs": 120000,
+    "turnTimeoutMs": 300000
+  },
+  "prices": [],
+  "profile": "quick",
+  "providers": [
+    {
+      "baseURL": "https://your-provider.example.invalid/v1",
+      "credentialEnv": "ZEN_QUALITY_SELECTED_KEY",
+      "group": "default",
+      "providerRef": "SELECT_EXISTING_PROVIDER_ID"
+    }
+  ],
+  "schemaVersion": 1,
+  "targets": [
+    {
+      "entries": ["chat", "assistant"],
+      "family": "gpt",
+      "modelId": "SELECT_ACTUAL_MODEL_ID",
+      "providerRef": "SELECT_EXISTING_PROVIDER_ID"
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "code": "offline",
+  "projects": ["ai"],
+  "ui": true,
+  "files": true,
+  "packages": [],
+  "requiredPlatforms": [],
+  "requireRealModels": false
+}
