@@ -1,21 +1,26 @@
 import { Tooltip } from 'antd'
-import { RefreshCw, Split, Trash2 } from 'lucide-react'
+import { Play, RefreshCw, Split, Trash2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import styled from 'styled-components'
 
 export default function NativeMessageActions({
   busy,
+  onContinue,
   onRetry,
   onFork,
   onDelete
 }: {
   busy: boolean
+  onContinue?: () => void | Promise<void>
   onRetry: () => void | Promise<void>
   onFork: () => void | Promise<void>
   onDelete: () => void | Promise<void>
 }) {
   const { t } = useTranslation()
   const actions = [
+    ...(onContinue
+      ? [{ key: 'continue', label: t('assistantTaskContinuation.action'), icon: <Play size={15} />, run: onContinue }]
+      : []),
     { key: 'retry', label: t('common.regenerate'), icon: <RefreshCw size={15} />, run: onRetry },
     { key: 'fork', label: t('chat.message.new.branch.tooltip'), icon: <Split size={15} />, run: onFork },
     { key: 'delete', label: t('common.delete'), icon: <Trash2 size={15} />, run: onDelete }

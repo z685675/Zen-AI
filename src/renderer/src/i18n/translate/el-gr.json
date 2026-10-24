@@ -971,14 +971,22 @@
     "searchDisclosure": "Web research may send a search query to Exa public MCP. This third-party service may retain queries or use them for training and has usage limits. Do not submit personal information, secrets or private files. It is only called when research is needed; search failure does not block ordinary chat.",
     "skillLimit": "This read-only check does not execute scripts, install dependencies or grant permissions. It checks declared command/environment requirements only; Python packages, external services, script safety and task quality remain unverified. Enabled/discovered does not mean successfully applied."
   },
+  "assistantTaskContinuation": {
+    "action": "Συνέχιση εργασίας",
+    "failed": "Αδυναμία συνέχισης. Ελέγξτε το μοντέλο και δοκιμάστε ξανά.",
+    "prompt": "Συνέχισε την ημιτελή εργασία σε αυτή τη συνομιλία. Έλεγξε πρώτα υπάρχοντα αρχεία, αποτελέσματα και πρόοδο και ολοκλήρωσε μόνο τα βήματα που λείπουν. Μην επαναλάβεις λήψεις και μην αναδημιουργήσεις ή αντικαταστήσεις ολοκληρωμένα αποτελέσματα. Αν η πρόοδος είναι αβέβαιη, εξήγησέ το και ρώτησέ με πριν ενεργήσεις. Διατήρησε τις τρέχουσες απαιτήσεις αδειών και επιβεβαίωσης."
+  },
   "assistantTaskDeadline": {
     "stageExecution": "[to be translated]:Local task execution",
     "stageHumanWait": "[to be translated]:Waiting for user action",
+    "stageInactivity": "Παρακολούθηση προόδου",
     "suggestion": "[to be translated]:Review completed work, then explicitly ask to continue only the unfinished part. Avoid blindly repeating submissions or generation.",
     "summaryExecution": "[to be translated]:The cumulative 15-minute execution limit was reached. The task is paused; saved history and outputs are retained, with no automatic replay.",
     "summaryHumanWait": "[to be translated]:The cumulative 30-minute user-action wait limit was reached. The task is paused; saved history and outputs are retained, with no automatic replay.",
+    "summaryInactivity": "Δεν παρατηρήθηκε νέα πρόοδος για 15 λεπτά. Η εργασία τέθηκε σε παύση· το ιστορικό και τα αποτελέσματα διατηρούνται και μπορούν να ελεγχθούν πριν από τη συνέχιση.",
     "titleExecution": "[to be translated]:Task paused: execution time limit reached",
-    "titleHumanWait": "[to be translated]:Task paused: user wait limit reached"
+    "titleHumanWait": "[to be translated]:Task paused: user wait limit reached",
+    "titleInactivity": "Παύση εργασίας: χωρίς πρόσφατη πρόοδο"
   },
   "assistantToolFailure": {
     "cancelled": {
@@ -2238,6 +2246,13 @@
         "invalid": "Μη έγκυρος διακομιστής MCP"
       }
     },
+    "cancelled": {
+      "errorType": "[to be translated]:Stopped by user",
+      "stage": "[to be translated]:Stopping generation",
+      "suggestion": "[to be translated]:Review any existing results before sending a follow-up request to continue.",
+      "summary": "[to be translated]:This generation was stopped.",
+      "title": "[to be translated]:Stopped"
+    },
     "cause": "Αιτία σφάλματος",
     "chat": {
       "chunk": {
@@ -2469,6 +2484,19 @@
     "generating": "Δημιουργία",
     "preview": "Προεπισκόπηση",
     "split": "Διαχωρισμός"
+  },
+  "image_studio": {
+    "canvas": "Image canvas",
+    "canvas_unavailable": "The local image canvas could not open. Retry or check the application logs.",
+    "key": "Key {{index}}",
+    "key_label": "Workspace key",
+    "local": "[to be translated]:Local images",
+    "opening": "[to be translated]:Opening image workspace…",
+    "reconnect": "[to be translated]:Reconnect",
+    "server": "Server workspace",
+    "title": "[to be translated]:Image workspace",
+    "unavailable": "[to be translated]:The workspace could not open. Make sure your Zen API server has been updated and the selected key is valid. You can still open Local images.",
+    "workbench": "Image studio"
   },
   "import": {
     "chatgpt": {
@@ -3205,6 +3233,21 @@
       "pin": "Καρφίτσωμα παραθύρου"
     }
   },
+  "model_daily_quota": {
+    "exceeded": "Το ημερήσιο όριο αυτού του μοντέλου εξαντλήθηκε. Δοκιμάστε αύριο.",
+    "hint": "Είσοδος + έξοδος· η κρυφή μνήμη περιλαμβάνεται στην είσοδο. Επαναφορά τα μεσάνυχτα στο Πεκίνο. Η τελευταία εγκεκριμένη ερώτηση μπορεί να υπερβεί το όριο.",
+    "invalid": "Η έγκριση αυτής της ερώτησης έληξε. Στείλτε νέα ερώτηση.",
+    "limit": "Ημερήσιο όριο",
+    "pending": "Το υπόλοιπο έχει δεσμευτεί από άλλη εργασία. Περιμένετε να ολοκληρωθεί.",
+    "remaining": "Υπόλοιπο",
+    "stage": "Έλεγχος ορίου μοντέλου",
+    "status_error": "Αδυναμία ενημέρωσης των σημερινών ορίων. Το ιστορικό παραμένει διαθέσιμο.",
+    "suggestion": "Επιλέξτε άλλο μοντέλο ή περιμένετε την επαναφορά. Μην επαναλαμβάνετε συνεχώς.",
+    "title": "Σημερινά όρια · ώρα Πεκίνου",
+    "unavailable": "Η υπηρεσία ορίων δεν είναι προσωρινά διαθέσιμη.",
+    "used": "Χρησιμοποιήθηκαν",
+    "used_up": "Εξαντλήθηκε σήμερα"
+  },
   "model_recovery": {
     "empty": "Το {{preferred}} και τα εφεδρικά μοντέλα δεν είναι διαθέσιμα.",
     "fallback": "Το {{preferred}} δεν είναι διαθέσιμο· χρησιμοποιείται προσωρινά το {{actual}}.",
@@ -3278,6 +3321,12 @@
       "vision": "εικόνα",
       "websearch": "δικτύωση"
     }
+  },
+  "nativeActivity": {
+    "failures": "{{count}} προσπάθειες εργαλείων χρειάζονται έλεγχο· αναπτύξτε τις λεπτομέρειες.",
+    "finished": "Σκέψη και εκτέλεση · {{count}} κλήσεις εργαλείων",
+    "running": "Σε εξέλιξη · {{count}} κλήσεις εργαλείων",
+    "thinking": "Σκέψη"
   },
   "navbar": {
     "expand": "Επισκευή διαλόγου",
@@ -6735,6 +6784,29 @@
     "quit": "Έξοδος",
     "show_mini_window": "Σύντομη βοήθεια",
     "show_window": "Εμφάνιση παραθύρου"
+  },
+  "turnDiagnostics": {
+    "description": "Εξαγωγή κατάστασης, χρόνων και αιτημάτων αυτού του γύρου χωρίς επανάληψη εργασίας ή κλήση μοντέλου.",
+    "export": "Εξαγωγή διαγνωστικών γύρου",
+    "includeContent": "Συμπερίληψη συνομιλίας και περιεχομένου εργαλείων του γύρου (προαιρετικό)",
+    "intervalKinds": {
+      "context": "Επεξεργασία πλαισίου",
+      "preparation": "Τοπική προετοιμασία",
+      "request": "Αίτημα μοντέλου (με αναμονή δικτύου/πύλης)",
+      "runtime": "Στάδιο βοηθού",
+      "tool": "Εργαλείο"
+    },
+    "notRecorded": "Δεν καταγράφηκε ή δεν ολοκληρώθηκε",
+    "outcomes": {
+      "cancelled": "Διακόπηκε",
+      "completed": "Ολοκληρώθηκε",
+      "failed": "Απέτυχε",
+      "pending": "Σε αναμονή",
+      "processing": "Εκτελείται"
+    },
+    "privacy": "Από προεπιλογή περιλαμβάνονται μόνο διαγνωστικά μεταδεδομένα, όχι συνομιλίες, ορίσματα/αποτελέσματα εργαλείων, αρχικά συνημμένα ή πλήρες ιστορικό. Κοινοποιήστε μόνο σε έμπιστους παραλήπτες. Το προαιρετικό περιεχόμενο μπορεί να περιέχει προσωπικά δεδομένα.",
+    "reportTemplate": "# Zen AI: διαγνωστικά αυτού του γύρου\n\n- Αποτέλεσμα: {{outcome}}\n- Μοντέλο: {{model}}; Provider: {{provider}}\n- Token: είσοδος {{input}}; έξοδος {{output}}; ανάγνωση cache {{cache}} (περιλαμβάνεται ήδη στην είσοδο)\n- Έναρξη: {{start}}; τέλος: {{end}}; σύνολο: {{total}}\n- Πρώτο περιεχόμενο (ίσως συλλογισμός): {{firstContent}}; πρώτο κείμενο απάντησης: {{firstText}}; πρώτα byte δικτύου: {{firstBytes}} (όχι πρώτο token)\n- Παρατηρημένα αιτήματα: {{requests}}; εργαλεία: {{tools}}; επαναλήψεις/εναλλαγές: {{retries}}\n- Καθυστέρηση UI commit: {{render}} (React commit, όχι εγγύηση εμφάνισης στην οθόνη)\n\n## Βραδύτερα στάδια με καταγεγραμμένη αρχή και τέλος\n{{slowest}}\n\n## Χρονολόγιο αιτημάτων και εργαλείων\n{{timeline}}\n\n## Παρατηρημένη αναμονή χρήστη (ενδέχεται να επικαλύπτει εργαλεία)\n{{waits}}\n\n## Όρια και ελλείποντα στοιχεία\n- Μόνο μετρημένοι χρόνοι, όχι διάγνωση αιτίας δικτύου/πελάτη/υπηρεσίας. Τα στάδια επικαλύπτονται: μην τα αθροίζετε ή αφαιρείτε αναμονές.\n- Ελλείπον δεν σημαίνει μηδέν. Ανολοκλήρωτα διαστήματα ίσως εκτελούνται. Η ενεργή εξαγωγή είναι στιγμιότυπο· παλιές συνομιλίες δεν ανακτούν μη καταγεγραμμένα συμβάντα.\n- Η καταγραφή αρχίζει συνήθως στην προετοιμασία απάντησης· παλιότερα ανεβάσματα ίσως εξαιρούνται. Οι επαναλήψεις δεν μετρούν επανεκτελέσεις εργασιών.\n- Συσχετίστε zen-api-evidence.json και ID για στοιχεία διακομιστή. Απουσία εγγραφής δεν αποδεικνύει μη παραλαβή· αποστολή δεν εγγυάται πλήρη λήψη.\n- Απορριφθέντα συμβάντα: {{dropped}}· παλιότερα αιτήματα ίσως έληξαν. Κωδικοί ελλείψεων (performance.json): {{missing}}\n",
+    "requestTiming": " | Κεφαλίδες {{headers}} | Πρώτα byte {{bytes}} | HTTP {{status}} | ID αιτήματος {{requestId}}"
   },
   "update": {
     "available": "A new version {{version}} is available. Click Check for Updates any time to download it.",

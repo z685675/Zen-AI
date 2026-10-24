@@ -5,6 +5,8 @@ import type { SpanEntity, TokenUsage } from '@mcp-trace/trace-core'
 import type { SpanContext } from '@opentelemetry/api'
 import type { AutomationRequest, AutomationResponse } from '@shared/agents/automation'
 import type { GitBashPathInfo, TerminalConfig } from '@shared/config/constant'
+import type { ImageCanvasOpen, ImageCanvasProvider } from '@shared/config/imageCanvas'
+import type { ImageStudioBounds, ImageStudioOpen } from '@shared/config/imageStudio'
 import type { LogLevel, LogSourceWithContext } from '@shared/config/logger'
 import type { ModelAvailabilitySnapshot } from '@shared/config/modelAvailability'
 import type { ModelPolicySnapshot } from '@shared/config/modelPolicy'
@@ -106,6 +108,21 @@ export function tracedInvoke(channel: string, spanContext: SpanContext | undefin
 
 // Custom APIs for renderer
 const api = {
+  imageStudio: {
+    setVisible: (visible: boolean): Promise<void> => ipcRenderer.invoke(IpcChannel.ImageStudio_Visible, visible),
+    open: (input: ImageStudioOpen): Promise<{ ok: boolean }> => ipcRenderer.invoke(IpcChannel.ImageStudio_Open, input),
+    resize: (bounds: ImageStudioBounds): Promise<void> => ipcRenderer.invoke(IpcChannel.ImageStudio_Resize, bounds),
+    close: (): Promise<void> => ipcRenderer.invoke(IpcChannel.ImageStudio_Close)
+  },
+  imageCanvas: {
+    open: (input: ImageCanvasOpen): Promise<{ ok: boolean }> =>
+      ipcRenderer.invoke('image-canvas:control', 'open', input),
+    sync: (providers: ImageCanvasProvider[]): Promise<void> =>
+      ipcRenderer.invoke('image-canvas:control', 'sync', providers),
+    resize: (bounds: ImageStudioBounds): Promise<void> => ipcRenderer.invoke('image-canvas:control', 'resize', bounds),
+    setVisible: (visible: boolean): Promise<void> => ipcRenderer.invoke('image-canvas:control', 'visible', visible),
+    close: (): Promise<void> => ipcRenderer.invoke('image-canvas:control', 'close')
+  },
   assistantAutomation: (request: AutomationRequest): Promise<AutomationResponse> =>
     ipcRenderer.invoke(IpcChannel.AssistantAutomation_Action, request),
   getAppInfo: () => ipcRenderer.invoke(IpcChannel.App_Info),

@@ -1,4 +1,8 @@
 export enum IpcChannel {
+  ImageStudio_Open = 'image-studio:open',
+  ImageStudio_Resize = 'image-studio:resize',
+  ImageStudio_Close = 'image-studio:close',
+  ImageStudio_Visible = 'image-studio:visible',
   App_GetCacheSize = 'app:get-cache-size',
   App_ClearCache = 'app:clear-cache',
   App_SetLaunchOnBoot = 'app:set-launch-on-boot',

@@ -54,7 +54,11 @@ import {
 import { containsSupportedVariables, replacePromptVariables } from '@renderer/utils/prompt'
 import { NOT_SUPPORT_API_KEY_PROVIDER_TYPES, NOT_SUPPORT_API_KEY_PROVIDERS } from '@renderer/utils/provider'
 import { getUsageCacheStats } from '@renderer/utils/usage'
+import { isZenManagedApiHost } from '@shared/config/zenProvider'
 import { DIAGNOSTIC_OPERATION_HEADER, TOPIC_NAMING_REQUEST_HEADERS } from '@shared/diagnostics'
+import { formatApiHost } from '@shared/utils/api'
+import { getModelDailyQuotaErrorKind, MODEL_DAILY_QUOTA_MESSAGE_KEYS } from '@shared/utils/modelDailyQuota'
+import { ModelDailyQuotaTurn } from '@shared/utils/modelDailyQuotaTurn'
 import type { ImagePart, ModelMessage, TextPart } from 'ai'
 import { isEmpty, takeRight } from 'lodash'
 
@@ -1008,12 +1012,14 @@ export async function fetchChatCompletion({
   let webPageContext: WebPageContext | undefined
   let webPageResourceIds: string[] = []
   if (!prompt && sourceModelMessages.length > 0) {
+    recordDiagnostic(diagnosticId, 'preparation', 'started', { phase: 'webpage' })
     const latestUserMessage = [...(uiMessages ?? [])].reverse().find((message) => message.role === 'user')
     const preparedWebPage = await prepareWebPageMessages(
       sourceModelMessages,
       latestUserMessage ? getMainTextContent(latestUserMessage) : ''
     )
     sourceModelMessages = preparedWebPage.messages
+    recordDiagnostic(diagnosticId, 'preparation', 'ready', { phase: 'webpage' })
     webPageContext = preparedWebPage.context
     if (webPageContext) {
       if (topicId) {
@@ -1036,6 +1042,7 @@ export async function fetchChatCompletion({
       return sourceModelMessages
     }
 
+    recordDiagnostic(diagnosticId, 'context', 'started')
     setContextProcessingStatus(topicId, 'analyzing', '正在检查上下文容量')
     const fixedInputTokens =
       estimateTextTokens(assistant.prompt || '') +
@@ -1246,6 +1253,21 @@ export async function fetchChatCompletion({
     contextError?: unknown
   }
 
+  const quotaTurns = new Map<string, ModelDailyQuotaTurn>()
+  const dailyQuotaHeaders = async (): Promise<Record<string, string>> => {
+    if (!(baseProvider.type === 'new-api' || isZenManagedApiHost(baseProvider.apiHost))) return {}
+    let turn = quotaTurns.get(activeChatKey)
+    if (!turn) {
+      turn = new ModelDailyQuotaTurn(formatApiHost(baseProvider.apiHost), model.id)
+      quotaTurns.set(activeChatKey, turn)
+    }
+    const permit = await turn.getPermit(
+      new Headers({ Authorization: `Bearer ${activeChatKey}` }),
+      requestOptions?.signal ?? new AbortController().signal
+    )
+    return permit ? { 'X-Zen-Model-Turn': permit } : {}
+  }
+
   const persistStableChatApiKey = (key: string) => {
     if (!topicId || !model?.id || !key) return
     window.keyv.set(`provider:${baseProvider.id}:chat_key:${topicId}:${model.id}`, key)
@@ -1351,7 +1373,10 @@ export async function fetchChatCompletion({
       mcpTools,
       allowedTools,
       webSearchProviderId: assistant.webSearchProviderId,
-      requestOptions
+      requestOptions: {
+        ...requestOptions,
+        headers: { ...requestOptions?.headers, ...(await dailyQuotaHeaders()) }
+      }
     })
 
     const usePromptToolUse =
@@ -1568,6 +1593,7 @@ export async function fetchChatCompletion({
   }
 
   try {
+    await dailyQuotaHeaders()
     let preparedMessages = await prepareMessagesForContext()
     contextPrepared = true
     if (topicId) {
@@ -1623,11 +1649,19 @@ export async function fetchChatCompletion({
     if (topicId) {
       if (isAbortError(error)) {
         setContextProcessingStatus(topicId, 'complete', '任务已停止')
+      } else if (getModelDailyQuotaErrorKind(error)) {
+        setContextProcessingStatus(
+          topicId,
+          'complete',
+          i18n.t(MODEL_DAILY_QUOTA_MESSAGE_KEYS[getModelDailyQuotaErrorKind(error)!])
+        )
       } else if (!contextPrepared || isContextCapacityError(error)) {
         markContextProcessingError(topicId, error)
       }
     }
     throw error
+  } finally {
+    await Promise.all([...quotaTurns.values()].map((turn) => turn.finish()))
   }
 }
 

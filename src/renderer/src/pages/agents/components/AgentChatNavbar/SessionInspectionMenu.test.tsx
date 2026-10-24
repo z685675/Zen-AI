@@ -20,6 +20,7 @@ vi.mock('@renderer/services/ErrorDiagnosticPackageService', () => ({
 }))
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }))
 vi.mock('antd', () => ({
+  Checkbox: ({ children }: any) => <span>{children}</span>,
   Button: ({ children, onClick, ...props }: any) => (
     <button type="button" onClick={onClick} aria-label={props['aria-label']}>
       {children}
@@ -106,30 +107,31 @@ describe('current-session inspection menu', () => {
   })
   it('confirms privacy first, snapshots only the selected turn, and never fabricates failure', async () => {
     render(<SessionInspectionMenu session={session} />)
-    fireEvent.click(screen.getByText('agent.errorFallback.export_package'))
-    fireEvent.click(screen.getByText('agent.errorFallback.export_package'))
+    fireEvent.click(screen.getByText('turnDiagnostics.export'))
+    fireEvent.click(screen.getByText('turnDiagnostics.export'))
     expect(mocks.confirm).toHaveBeenCalledOnce()
     expect(mocks.export).not.toHaveBeenCalled()
-    expect(mocks.confirm.mock.calls[0][0].content).toBe('agent.errorFallback.privacy_notice')
+    expect(mocks.confirm.mock.calls[0][0].title).toBe('turnDiagnostics.export')
     await act(async () => mocks.confirm.mock.calls[0][0].onOk())
     expect(mocks.export).toHaveBeenCalledWith(
       expect.objectContaining({ source: 'agent', message: mocks.messages[1], relatedUserMessage: mocks.messages[0] })
     )
     expect(mocks.export.mock.calls[0][0].diagnosis).toBeUndefined()
+    expect(mocks.export.mock.calls[0][0].includeContent).toBe(false)
     expect(mocks.inspect).not.toHaveBeenCalled()
   })
   it('does not export on cancel and permits a later request', async () => {
     render(<SessionInspectionMenu session={session} />)
-    fireEvent.click(screen.getByText('agent.errorFallback.export_package'))
+    fireEvent.click(screen.getByText('turnDiagnostics.export'))
     mocks.confirm.mock.calls[0][0].onCancel()
     expect(mocks.export).not.toHaveBeenCalled()
-    fireEvent.click(screen.getByText('agent.errorFallback.export_package'))
+    fireEvent.click(screen.getByText('turnDiagnostics.export'))
     expect(mocks.confirm).toHaveBeenCalledTimes(2)
   })
   it('can export an empty conversation without inventing a recorded turn', async () => {
     mocks.messages = []
     render(<SessionInspectionMenu session={session} />)
-    fireEvent.click(screen.getByText('agent.errorFallback.export_package'))
+    fireEvent.click(screen.getByText('turnDiagnostics.export'))
     await act(async () => mocks.confirm.mock.calls[0][0].onOk())
     await waitFor(() => expect(mocks.export).toHaveBeenCalledOnce())
     expect(mocks.export.mock.calls[0][0].sessionContext.hasRecordedTurn).toBe(false)
@@ -137,7 +139,7 @@ describe('current-session inspection menu', () => {
   it('does not export an old answer as the current task when a new user turn has no assistant record yet', async () => {
     mocks.messages.push({ id: 'new-user', role: 'user', blocks: [] })
     render(<SessionInspectionMenu session={session} />)
-    fireEvent.click(screen.getByText('agent.errorFallback.export_package'))
+    fireEvent.click(screen.getByText('turnDiagnostics.export'))
     await act(async () => mocks.confirm.mock.calls[0][0].onOk())
     expect(mocks.export.mock.calls[0][0].snapshotHasMessage).toBe(false)
     expect(mocks.export.mock.calls[0][0].relatedUserMessage.id).toBe('new-user')

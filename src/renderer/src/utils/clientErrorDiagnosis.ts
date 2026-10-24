@@ -1,6 +1,7 @@
 import type { Model } from '@renderer/types'
 import { ERROR_I18N_KEY_STREAM_PAUSED, type SerializedError } from '@renderer/types/error'
 import { CONNECTIVITY_CHECK_REQUEST_HEADERS } from '@shared/diagnostics'
+import { getModelDailyQuotaErrorKind, MODEL_DAILY_QUOTA_MESSAGE_KEYS } from '@shared/utils/modelDailyQuota'
 import i18next from 'i18next'
 
 import { isAgentRuntimeStartupError } from './agentRuntimeError'
@@ -280,6 +281,7 @@ export function diagnoseClientError(error?: SerializedError, options: DiagnoseOp
   const status = transport?.receivedResponse === false ? undefined : readStatus(error)
   const connectivityCheck = readConnectivityCheck(error)
   const msg = normalizeMessage(error)
+  const dailyQuota = getModelDailyQuotaErrorKind(error)
   const hasStatus = typeof status === 'number'
   const isTimeout = msg.includes('timeout') || msg.includes('timed out') || msg.includes('etimedout')
   const isFetchFailure =
@@ -322,6 +324,20 @@ export function diagnoseClientError(error?: SerializedError, options: DiagnoseOp
         : buildDiagnosticId(options.blockId, options.messageId, options.createdAt)
   }
 
+  if (dailyQuota)
+    return {
+      ...base,
+      category: 'rate_limited',
+      title: i18next.t(MODEL_DAILY_QUOTA_MESSAGE_KEYS[dailyQuota]),
+      summary: i18next.t(MODEL_DAILY_QUOTA_MESSAGE_KEYS[dailyQuota]),
+      stage: i18next.t('model_daily_quota.stage'),
+      errorType: `model_daily_${dailyQuota}`,
+      serviceConnectivity: serviceConnectivityFromCheck(connectivityCheck, '已连接'),
+      serviceReceived: '是',
+      startedGenerating: '否',
+      suggestion: i18next.t('model_daily_quota.suggestion')
+    }
+
   if (error?.i18nKey === ERROR_I18N_KEY_STREAM_PAUSED) {
     return {
       ...base,
@@ -339,14 +355,30 @@ export function diagnoseClientError(error?: SerializedError, options: DiagnoseOp
 
   const deadlineKind = getAgentTaskDeadlineKind(error)
   if (deadlineKind) {
-    const suffix = deadlineKind === 'execution' ? 'Execution' : 'HumanWait'
+    const keys = {
+      execution: {
+        title: 'assistantTaskDeadline.titleExecution',
+        summary: 'assistantTaskDeadline.summaryExecution',
+        stage: 'assistantTaskDeadline.stageExecution'
+      },
+      inactivity: {
+        title: 'assistantTaskDeadline.titleInactivity',
+        summary: 'assistantTaskDeadline.summaryInactivity',
+        stage: 'assistantTaskDeadline.stageInactivity'
+      },
+      'human-wait': {
+        title: 'assistantTaskDeadline.titleHumanWait',
+        summary: 'assistantTaskDeadline.summaryHumanWait',
+        stage: 'assistantTaskDeadline.stageHumanWait'
+      }
+    }[deadlineKind]
     return {
       ...base,
       category: 'runtime',
-      title: i18next.t(`assistantTaskDeadline.title${suffix}`),
-      summary: i18next.t(`assistantTaskDeadline.summary${suffix}`),
-      stage: i18next.t(`assistantTaskDeadline.stage${suffix}`),
-      errorType: deadlineKind === 'execution' ? 'agent_execution_timeout' : 'agent_human_wait_timeout',
+      title: i18next.t(keys.title),
+      summary: i18next.t(keys.summary),
+      stage: i18next.t(keys.stage),
+      errorType: deadlineKind === 'human-wait' ? 'agent_human_wait_timeout' : `agent_${deadlineKind}_timeout`,
       serviceConnectivity: UNKNOWN,
       serviceReceived: UNKNOWN,
       startedGenerating: UNKNOWN,

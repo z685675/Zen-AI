@@ -971,14 +971,22 @@
     "searchDisclosure": "联网研究可能将搜索词发送到 Exa 公共 MCP。该第三方服务有使用限额，可能保存查询或用于训练，请勿提交个人信息、密钥或私密文件。仅在需要研究时调用，搜索失败不影响普通对话。",
     "skillLimit": "此检查只读，不执行脚本、不安装依赖、不扩大权限；只检查已声明的命令和环境变量要求。Python 包、外部服务、脚本安全及任务效果仍未验证。已启用或已发现不等于已经成功应用。"
   },
+  "assistantTaskContinuation": {
+    "action": "继续执行",
+    "failed": "暂时无法继续，请检查模型后重试。",
+    "prompt": "请在当前会话中继续尚未完成的任务。先检查已有文件、结果和执行进度，只补全缺失步骤；不要重复下载、重新生成或覆盖已经完成的成果。如果无法确认进度，请说明情况并先询问我。继续遵守当前的权限和确认要求。"
+  },
   "assistantTaskDeadline": {
     "stageExecution": "本地任务执行",
     "stageHumanWait": "等待用户操作",
+    "stageInactivity": "监测任务进展",
     "suggestion": "先检查已完成的内容，再主动发送指令继续未完成部分；不要盲目重复提交或生成。",
     "summaryExecution": "实际执行累计达到15分钟上限，任务已暂停。已保存的记录和成果保留，不会自动重新执行。",
     "summaryHumanWait": "等待用户操作累计达到30分钟上限，任务已暂停。已保存的记录和成果保留，不会自动重新执行。",
+    "summaryInactivity": "连续15分钟没有观察到新的有效进展，任务已暂停。已保存的记录和成果保留，检查后可点击“继续执行”。",
     "titleExecution": "任务已暂停：执行时间达到上限",
-    "titleHumanWait": "任务已暂停：等待时间达到上限"
+    "titleHumanWait": "任务已暂停：等待时间达到上限",
+    "titleInactivity": "任务已暂停：长时间没有进展"
   },
   "assistantToolFailure": {
     "cancelled": {
@@ -2477,6 +2485,19 @@
     "preview": "预览",
     "split": "分屏"
   },
+  "image_studio": {
+    "canvas": "图片画布",
+    "canvas_unavailable": "本地图片画布未能打开，请重试或查看应用日志。",
+    "key": "密钥 {{index}}",
+    "key_label": "工作台密钥",
+    "local": "本地图片",
+    "opening": "正在打开图片工作台……",
+    "reconnect": "重新连接",
+    "server": "服务端工作台",
+    "title": "图片工作台",
+    "unavailable": "工作台暂时无法打开。请确认 Zen API 服务端已更新，且所选密钥有效。原有图片仍可在“本地图片”中查看。",
+    "workbench": "图片工作台"
+  },
   "import": {
     "chatgpt": {
       "assistant_name": "ChatGPT 导入",
@@ -3212,6 +3233,21 @@
       "pin": "窗口置顶"
     }
   },
+  "model_daily_quota": {
+    "exceeded": "该模型额度今日已用完，请明日再使用。",
+    "hint": "按输入＋输出 Token 计算，输入已含缓存；北京时间零点重置。最后一次获准的提问可以超额完成。",
+    "invalid": "本轮模型授权已结束或过期，请重新发起提问。",
+    "limit": "每日上限",
+    "pending": "该模型剩余额度正在被其他任务使用，请等待任务完成后再试。",
+    "remaining": "剩余",
+    "stage": "模型额度校验",
+    "status_error": "今日模型额度暂时刷新失败，不影响历史用量查询。",
+    "suggestion": "可手动选择其他可用模型，或等待额度恢复，请勿反复重试。",
+    "title": "今日模型额度 · 北京时间",
+    "unavailable": "模型额度服务暂时不可用，请稍后重试。",
+    "used": "已用",
+    "used_up": "今日已用完"
+  },
   "model_recovery": {
     "empty": "原模型 {{preferred}} 及备用模型暂不可用。",
     "fallback": "原模型 {{preferred}} 暂不可用，已临时使用 {{actual}}。",
@@ -3285,6 +3321,12 @@
       "vision": "视觉",
       "websearch": "联网"
     }
+  },
+  "nativeActivity": {
+    "failures": "{{count}} 次工具尝试未成功，可展开查看详情。",
+    "finished": "思考与执行 · {{count}} 次工具调用",
+    "running": "正在处理 · {{count}} 次工具调用",
+    "thinking": "思考"
   },
   "navbar": {
     "expand": "伸缩对话框",
@@ -6742,6 +6784,29 @@
     "quit": "退出",
     "show_mini_window": "快捷助手",
     "show_window": "显示窗口"
+  },
+  "turnDiagnostics": {
+    "description": "导出这一轮的运行状态、耗时和链路记录，不会重新执行任务或调用模型。",
+    "export": "导出本轮诊断包",
+    "includeContent": "包含本轮对话及工具内容（可选）",
+    "intervalKinds": {
+      "context": "上下文整理",
+      "preparation": "本地准备",
+      "request": "模型请求（含网络/网关等待）",
+      "runtime": "助手阶段",
+      "tool": "工具"
+    },
+    "notRecorded": "未记录或尚未结束",
+    "outcomes": {
+      "cancelled": "已停止",
+      "completed": "已完成",
+      "failed": "失败",
+      "pending": "等待中",
+      "processing": "执行中"
+    },
+    "privacy": "默认仅包含诊断数据，不包含对话正文、工具参数和结果、附件原件或完整历史。请确认接收人可信；如勾选包含内容，本轮对话可能含个人信息。",
+    "reportTemplate": "# Zen AI 本轮运行诊断报告\n\n- 结果：{{outcome}}\n- 模型：{{model}}；Provider：{{provider}}\n- Token：输入 {{input}}；输出 {{output}}；缓存读取 {{cache}}（包含在输入内，不重复相加）\n- 记录起点：{{start}}；结束：{{end}}；完成用时：{{total}}\n- 首次内容（可能是思考）：{{firstContent}}；首次正文：{{firstText}}；首批网络数据：{{firstBytes}}（不等于首字）\n- 观察到的请求：{{requests}}；工具：{{tools}}；重试/切换事件：{{retries}}\n- 界面提交延迟：{{render}}（React 提交记录，不是屏幕绘制保证）\n\n## 最耗时的已配对阶段\n{{slowest}}\n\n## 请求与工具时间线\n{{timeline}}\n\n## 观察到的用户等待（可能与工具重叠）\n{{waits}}\n\n## 判断边界与缺失数据\n- 仅列实测时长，不直接判定网络、客户端或上游的根因；阶段可重叠，不可直接相加或扣除用户等待。\n- 未记录不等于零耗时；未配对阶段可能仍在运行。执行中导出只代表快照，旧会话不能补造历史事件。\n- 起点通常是准备模型响应；更早的附件上传不一定覆盖。重试事件数不等于重复执行任务次数。\n- 服务端内部耗时请结合 zen-api-evidence.json 与请求编号。后台无记录不证明未收到，后台写出不保证客户端完整收到。\n- 有界记录丢弃事件：{{dropped}}；更早请求可能过期。数据缺项代码（详见 performance.json）：{{missing}}\n",
+    "requestTiming": " | 等响应头 {{headers}} | 等首批数据 {{bytes}} | HTTP {{status}} | 请求编号 {{requestId}}"
   },
   "update": {
     "available": "发现新版本 {{version}}，你可以稍后在“检查更新”里手动下载安装。",

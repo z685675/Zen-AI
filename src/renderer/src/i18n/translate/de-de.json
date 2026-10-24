@@ -971,14 +971,22 @@
     "searchDisclosure": "Web research may send a search query to Exa public MCP. This third-party service may retain queries or use them for training and has usage limits. Do not submit personal information, secrets or private files. It is only called when research is needed; search failure does not block ordinary chat.",
     "skillLimit": "This read-only check does not execute scripts, install dependencies or grant permissions. It checks declared command/environment requirements only; Python packages, external services, script safety and task quality remain unverified. Enabled/discovered does not mean successfully applied."
   },
+  "assistantTaskContinuation": {
+    "action": "Aufgabe fortsetzen",
+    "failed": "Fortsetzen fehlgeschlagen. Modell prüfen und erneut versuchen.",
+    "prompt": "Setze die unerledigte Aufgabe in diesem Gespräch fort. Prüfe zuerst vorhandene Dateien, Ergebnisse und Fortschritte und ergänze nur fehlende Schritte. Keine abgeschlossenen Ergebnisse erneut erstellen, herunterladen oder überschreiben. Bei Unklarheit erläutere den Stand und frage mich vor weiteren Aktionen. Bestehende Berechtigungen und Bestätigungen bleiben erforderlich."
+  },
   "assistantTaskDeadline": {
     "stageExecution": "[to be translated]:Local task execution",
     "stageHumanWait": "[to be translated]:Waiting for user action",
+    "stageInactivity": "Aufgabenfortschritt überwachen",
     "suggestion": "[to be translated]:Review completed work, then explicitly ask to continue only the unfinished part. Avoid blindly repeating submissions or generation.",
     "summaryExecution": "[to be translated]:The cumulative 15-minute execution limit was reached. The task is paused; saved history and outputs are retained, with no automatic replay.",
     "summaryHumanWait": "[to be translated]:The cumulative 30-minute user-action wait limit was reached. The task is paused; saved history and outputs are retained, with no automatic replay.",
+    "summaryInactivity": "Seit 15 Minuten kein neuer Fortschritt. Aufgabe pausiert; gespeicherter Verlauf und Ergebnisse bleiben erhalten und können vor dem Fortsetzen geprüft werden.",
     "titleExecution": "[to be translated]:Task paused: execution time limit reached",
-    "titleHumanWait": "[to be translated]:Task paused: user wait limit reached"
+    "titleHumanWait": "[to be translated]:Task paused: user wait limit reached",
+    "titleInactivity": "Aufgabe pausiert: kein neuer Fortschritt"
   },
   "assistantToolFailure": {
     "cancelled": {
@@ -2238,6 +2246,13 @@
         "invalid": "Ungültiger MCP-Server"
       }
     },
+    "cancelled": {
+      "errorType": "[to be translated]:Stopped by user",
+      "stage": "[to be translated]:Stopping generation",
+      "suggestion": "[to be translated]:Review any existing results before sending a follow-up request to continue.",
+      "summary": "[to be translated]:This generation was stopped.",
+      "title": "[to be translated]:Stopped"
+    },
     "cause": "Fehlerursache",
     "chat": {
       "chunk": {
@@ -2469,6 +2484,19 @@
     "generating": "Wird generiert",
     "preview": "Vorschau",
     "split": "Geteilte Ansicht"
+  },
+  "image_studio": {
+    "canvas": "Image canvas",
+    "canvas_unavailable": "The local image canvas could not open. Retry or check the application logs.",
+    "key": "Key {{index}}",
+    "key_label": "Workspace key",
+    "local": "[to be translated]:Local images",
+    "opening": "[to be translated]:Opening image workspace…",
+    "reconnect": "[to be translated]:Reconnect",
+    "server": "Server workspace",
+    "title": "[to be translated]:Image workspace",
+    "unavailable": "[to be translated]:The workspace could not open. Make sure your Zen API server has been updated and the selected key is valid. You can still open Local images.",
+    "workbench": "Image studio"
   },
   "import": {
     "chatgpt": {
@@ -3205,6 +3233,21 @@
       "pin": "Fenster immer im Vordergrund"
     }
   },
+  "model_daily_quota": {
+    "exceeded": "Das Tageskontingent dieses Modells ist aufgebraucht. Bitte morgen erneut versuchen.",
+    "hint": "Eingabe + Ausgabe; Cache ist in der Eingabe enthalten. Rücksetzung um Mitternacht in Peking. Die letzte zugelassene Frage darf das Limit überschreiten.",
+    "invalid": "Die Freigabe dieser Frage ist abgelaufen. Bitte eine neue Frage senden.",
+    "limit": "Tageslimit",
+    "pending": "Das Restkontingent ist für eine andere Aufgabe reserviert. Bitte deren Abschluss abwarten.",
+    "remaining": "Verbleibend",
+    "stage": "Prüfung des Modellkontingents",
+    "status_error": "Tageskontingente konnten nicht aktualisiert werden. Der Nutzungsverlauf bleibt verfügbar.",
+    "suggestion": "Ein anderes verfügbares Modell wählen oder auf die Rücksetzung warten. Nicht wiederholt versuchen.",
+    "title": "Heutige Modellkontingente · Peking-Zeit",
+    "unavailable": "Der Kontingentdienst ist vorübergehend nicht verfügbar.",
+    "used": "Verbraucht",
+    "used_up": "Heute aufgebraucht"
+  },
   "model_recovery": {
     "empty": "{{preferred}} und die Ersatzmodelle sind derzeit nicht verfügbar.",
     "fallback": "{{preferred}} ist nicht verfügbar; vorübergehend wird {{actual}} verwendet.",
@@ -3278,6 +3321,12 @@
       "vision": "Vision",
       "websearch": "Online"
     }
+  },
+  "nativeActivity": {
+    "failures": "{{count}} Werkzeugversuche prüfen; Details aufklappen.",
+    "finished": "Denken und Ausführen · {{count}} Werkzeugaufrufe",
+    "running": "In Arbeit · {{count}} Werkzeugaufrufe",
+    "thinking": "Überlegungen"
   },
   "navbar": {
     "expand": "Dialog ein-/ausklappen",
@@ -6735,6 +6784,29 @@
     "quit": "Beenden",
     "show_mini_window": "Schnellassistent",
     "show_window": "Fenster anzeigen"
+  },
+  "turnDiagnostics": {
+    "description": "Status, Laufzeiten und Anfragen dieser Runde exportieren, ohne die Aufgabe zu wiederholen oder ein Modell aufzurufen.",
+    "export": "Diagnose dieser Runde exportieren",
+    "includeContent": "Gesprächs- und Werkzeuginhalte dieser Runde einschließen (optional)",
+    "intervalKinds": {
+      "context": "Kontextverarbeitung",
+      "preparation": "Lokale Vorbereitung",
+      "request": "Modellanfrage (mit Netzwerk-/Gateway-Wartezeit)",
+      "runtime": "Assistentenphase",
+      "tool": "Werkzeug"
+    },
+    "notRecorded": "Nicht erfasst oder nicht beendet",
+    "outcomes": {
+      "cancelled": "Gestoppt",
+      "completed": "Abgeschlossen",
+      "failed": "Fehlgeschlagen",
+      "pending": "Ausstehend",
+      "processing": "Läuft"
+    },
+    "privacy": "Standardmäßig nur Diagnosemetadaten, keine Gesprächstexte, Werkzeugargumente/-ergebnisse, Originalanhänge oder vollständigen Verläufe. Nur mit vertrauenswürdigen Empfängern teilen. Optionale Inhalte können personenbezogene Daten enthalten.",
+    "reportTemplate": "# Zen AI: Diagnose dieses Durchlaufs\n\n- Ergebnis: {{outcome}}\n- Modell: {{model}}; Provider: {{provider}}\n- Token: Eingabe {{input}}; Ausgabe {{output}}; Cache gelesen {{cache}} (bereits in der Eingabe enthalten)\n- Beginn: {{start}}; Ende: {{end}}; Gesamtzeit: {{total}}\n- Erster Inhalt (ggf. Überlegung): {{firstContent}}; erster Antworttext: {{firstText}}; erste Netzwerkbytes: {{firstBytes}} (nicht erstes Token)\n- Beobachtete Anfragen: {{requests}}; Werkzeuge: {{tools}}; Wiederholungs-/Ausweichereignisse: {{retries}}\n- UI-Commit-Verzögerung: {{render}} (React-Commit, keine Garantie der Bildschirmdarstellung)\n\n## Langsamste vollständig erfasste Phasen\n{{slowest}}\n\n## Zeitachse der Anfragen und Werkzeuge\n{{timeline}}\n\n## Beobachtete Benutzerwartezeiten (können Werkzeuge überlappen)\n{{waits}}\n\n## Grenzen und fehlende Daten\n- Nur gemessene Zeiten, keine Feststellung der Netzwerk-, Client- oder Upstream-Ursache. Phasen überlappen; nicht summieren oder Benutzerwartezeiten abziehen.\n- Fehlend bedeutet nicht null. Unvollständige Phasen können noch laufen. Laufende Exporte sind Momentaufnahmen; alte Gespräche erhalten keine nachträglich erfundenen Ereignisse.\n- Die Aufzeichnung beginnt meist mit der Antwortvorbereitung; frühere Uploads können fehlen. Wiederholungsereignisse sind keine Anzahl erneut ausgeführter Aufgaben.\n- Für Serverdetails zen-api-evidence.json und Anfrage-IDs abgleichen. Fehlende Serverdaten beweisen keinen Nichteingang; geschriebene Daten garantieren keinen vollständigen Empfang.\n- Verworfene Ereignisse: {{dropped}}; ältere Anfragen können ablaufen. Fehlende Datencodes (performance.json): {{missing}}\n",
+    "requestTiming": " | Antwortheader {{headers}} | Erste Bytes {{bytes}} | HTTP {{status}} | Anfrage-ID {{requestId}}"
   },
   "update": {
     "available": "A new version {{version}} is available. Click Check for Updates any time to download it.",

@@ -458,6 +458,33 @@ describe('streamCallback integration', () => {
     expect(autoRenameTopic).toHaveBeenCalledWith(assistant, topicId)
   })
 
+  it('records first reasoning and first answer separately, once, without capturing their content', async () => {
+    beginDiagnostic(assistantMsgId, {})
+    const callbacks = createMockCallbacks(assistantMsgId, topicId, assistant, dispatch, getState)
+    await processChunks(
+      [
+        { type: ChunkType.LLM_RESPONSE_CREATED },
+        { type: ChunkType.THINKING_START },
+        { type: ChunkType.THINKING_DELTA, text: 'PRIVATE_REASONING' },
+        { type: ChunkType.THINKING_COMPLETE, text: 'PRIVATE_REASONING' },
+        { type: ChunkType.TEXT_START },
+        { type: ChunkType.TEXT_DELTA, text: 'PRIVATE_ANSWER' },
+        { type: ChunkType.TEXT_COMPLETE, text: 'PRIVATE_ANSWER' }
+      ],
+      callbacks
+    )
+    const events = getDiagnosticEvidence(assistantMsgId)!.events.filter(
+      (event) => event.stage === 'response' && ['first-content', 'first-text'].includes(event.event)
+    )
+    expect(events.map((event) => event.event)).toEqual(['first-content', 'first-text'])
+    expect(JSON.stringify(events)).not.toContain('PRIVATE_')
+    expect(
+      Object.values(getState().messageBlocks.entities).some(
+        (block) => 'content' in block && block.content === 'PRIVATE_ANSWER'
+      )
+    ).toBe(true)
+  })
+
   it('persists an SDK no-output error and refuses a later success signal', async () => {
     const callbacks = createMockCallbacks(assistantMsgId, topicId, assistant, dispatch, getState)
     await processChunks(

@@ -1,7 +1,7 @@
 import i18n from '@renderer/i18n'
 import type { Message } from '@renderer/types/newMessage'
 import { diagnoseClientError } from '@renderer/utils/clientErrorDiagnosis'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeAll, describe, expect, it, vi } from 'vitest'
 
 import { beginDiagnostic, recordDiagnostic } from '../DiagnosticEvidenceService'
 import {
@@ -13,6 +13,101 @@ import {
 vi.mock('@renderer/store', () => ({ default: { getState: () => ({ llm: { providers: [] } }) } }))
 
 describe('ErrorDiagnosticPackageService', () => {
+  beforeAll(async () => {
+    await i18n.changeLanguage('zh-CN')
+  })
+  it.each(['chat', 'agent'] as const)(
+    'exports a successful %s turn with timings but no private content by default at the new entry',
+    async (source) => {
+      const original = window.api
+      const save = vi.fn(async () => '/success.zip')
+      Object.assign(window, {
+        api: {
+          file: {
+            collectDiagnosticEvidence: async () => ({
+              snapshotStatus: 'collected',
+              evidence: {
+                operationId: 'turn',
+                startedAt: '2026-10-24T00:00:00Z',
+                updatedAt: '2026-10-24T00:00:05Z',
+                droppedEvents: 0,
+                metadata: { prompt: 'PRIVATE_RUNTIME_PROMPT' },
+                events: [
+                  {
+                    at: '2026-10-24T00:00:01Z',
+                    stage: 'tool',
+                    event: 'tool-call',
+                    details: { toolCallId: 'tool', toolName: 'read', arguments: 'PRIVATE_ARGUMENT' }
+                  },
+                  {
+                    at: '2026-10-24T00:00:02Z',
+                    stage: 'tool',
+                    event: 'tool-result',
+                    details: { toolCallId: 'tool', result: 'PRIVATE_RESULT' }
+                  }
+                ]
+              },
+              logs: [{ message: 'PRIVATE_LOG' }]
+            }),
+            saveDiagnosticPackage: save
+          }
+        }
+      })
+      try {
+        beginDiagnostic(`successful-${source}`, {
+          prompt: 'PRIVATE_PROMPT',
+          settings: { instructions: 'PRIVATE_SETTINGS' }
+        })
+        recordDiagnostic(`successful-${source}`, 'response', 'first-text')
+        const reply = {
+          id: `successful-${source}`,
+          role: 'assistant',
+          blocks: ['a'],
+          status: 'success',
+          topicId: 'topic',
+          usage: { prompt_tokens: 130000, completion_tokens: 100, cached_tokens: 120000 },
+          providerMetadata: {
+            responseTiming: {
+              startedAt: '2026-10-24T00:00:00Z',
+              finishedAt: '2026-10-24T00:00:05Z',
+              elapsedMs: 5000,
+              outcome: 'completed'
+            },
+            private: 'PRIVATE_METADATA'
+          }
+        } as unknown as Message
+        await exportErrorDiagnosticPackage({
+          source,
+          message: reply,
+          relatedUserMessage: { id: 'u', role: 'user', blocks: ['u'] } as Message,
+          blockEntities: {
+            a: { type: 'main_text', content: 'PRIVATE_ANSWER' },
+            u: { type: 'main_text', content: 'PRIVATE_QUESTION' }
+          } as any,
+          includeContent: false,
+          title: 'snapshot',
+          description: 'success',
+          privacyNotice: 'privacy',
+          sessionContext: { secretPrompt: 'PRIVATE_SESSION' }
+        })
+        const files = save.mock.calls[0][1] as unknown as Array<{ path: string; content: string }>
+        const joined = files.map((file) => file.content).join('\n')
+        expect(joined).not.toContain('PRIVATE_')
+        expect(files.some((file) => file.path === '本轮耗时报告.md')).toBe(true)
+        expect(files.some((file) => file.path === 'performance.json')).toBe(true)
+        expect(files.some((file) => file.path === 'diagnosis.json')).toBe(false)
+        expect(files.some((file) => file.path === 'session-context.json')).toBe(false)
+        expect(joined).toContain('输入 130000；输出 100；缓存读取 120000')
+        expect(JSON.parse(files.find((file) => file.path === 'summary.json')!.content)).toMatchObject({
+          mode: 'snapshot',
+          includeContent: false,
+          observation: { messageStatus: 'success' }
+        })
+      } finally {
+        Object.assign(window, { api: original })
+      }
+    }
+  )
   it('exports an active conversation snapshot without inventing an error or diagnosis', async () => {
     const original = window.api
     const save = vi.fn(async () => '/snap.zip')
@@ -51,6 +146,41 @@ describe('ErrorDiagnosticPackageService', () => {
       expect(files.find((file) => file.path === '链路结论.txt')!.content).toContain(
         i18n.t('error.diagnosis.chain_observation_line', { owner: '未确认' })
       )
+    } finally {
+      Object.assign(window, { api: original })
+    }
+  })
+  it('does not leak raw diagnosis or connectivity content when metadata-only is explicitly requested', async () => {
+    const original = window.api
+    const save = vi.fn(async () => '/metadata.zip')
+    Object.assign(window, {
+      api: {
+        file: {
+          collectDiagnosticEvidence: async () => ({ snapshotStatus: 'unavailable' }),
+          saveDiagnosticPackage: save
+        }
+      }
+    })
+    try {
+      const error = {
+        name: 'Error',
+        message: 'PRIVATE_ERROR',
+        stack: null,
+        zenConnectivityCheck: { error: 'PRIVATE_CONNECTIVITY' }
+      }
+      await exportErrorDiagnosticPackage({
+        source: 'chat',
+        title: 'snapshot',
+        description: 'metadata',
+        privacyNotice: 'privacy',
+        message: { id: 'metadata-diagnosis', role: 'assistant', topicId: 'topic', blocks: [] } as unknown as Message,
+        error,
+        diagnosis: diagnoseClientError(error),
+        includeContent: false
+      })
+      const files = save.mock.calls[0][1] as unknown as Array<{ path: string; content: string }>
+      expect(files.some((file) => file.path === 'diagnosis.json')).toBe(false)
+      expect(files.map((file) => file.content).join('\n')).not.toContain('PRIVATE_')
     } finally {
       Object.assign(window, { api: original })
     }

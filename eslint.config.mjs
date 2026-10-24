@@ -53,6 +53,9 @@ export default defineConfig([
   },
   {
     ignores: [
+      'packages/image-canvas/**',
+      'resources/image-canvas/**',
+      'resources/image-workbench/**',
       'node_modules/**',
       'build/**',
       'dist/**',

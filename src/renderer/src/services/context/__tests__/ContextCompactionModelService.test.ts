@@ -299,6 +299,15 @@ describe('resolveContextCompactionModels', () => {
     expect(calls).toEqual(['model-1'])
   })
 
+  it('does not freeze a healthy model for a personal daily quota refusal', () => {
+    expect(
+      isContextCompactionModelFailureFreezable({
+        status: 403,
+        responseBody: '{"error":{"code":"model_daily_token_limit_exceeded"}}'
+      })
+    ).toBe(false)
+  })
+
   it('does not freeze a model for a confirmed local network failure', () => {
     expect(isContextCompactionModelFailureFreezable({ code: 'ERR_INTERNET_DISCONNECTED' })).toBe(false)
     expect(isContextCompactionModelFailureFreezable(new DOMException('cancelled', 'AbortError'))).toBe(false)

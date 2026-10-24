@@ -13,6 +13,7 @@ import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import styled from 'styled-components'
 
+import ModelDailyQuota from './ModelDailyQuota'
 import UsageTrend from './UsageTrend'
 import { getUsageRange, groupUsageDays, type UsageInterval, type UsagePeriod } from './usageUtils'
 import { useUsageStatistics } from './useUsageStatistics'
@@ -200,6 +201,7 @@ export default function UsagePage() {
             <Empty description={t('usage_statistics.no_provider')} />
           </EmptyBlock>
         ) : null}
+        <ModelDailyQuota source={source} revision={revision} />
         {loading ? (
           <EmptyBlock role="status">
             <Spin size="large" />

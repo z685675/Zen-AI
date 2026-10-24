@@ -1,14 +1,45 @@
 import type { Provider } from '@renderer/types'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
   buildUsageStatisticsUrl,
+  fetchModelDailyQuota,
   fetchUsageStatistics,
   getCacheHitRate,
   getUsageSources,
   type UsageMetrics,
   type UsageSource
 } from '../UsageStatisticsService'
+
+afterEach(() => vi.restoreAllMocks())
+
+describe('personal model daily allowances', () => {
+  it('queries the current day independently of historical ranges and tolerates old servers', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          success: true,
+          data: {
+            date: '2026-10-24',
+            timezone: 'Asia/Shanghai',
+            models: [{ model: 'premium', limit: 100, used: 140, remaining: 0, reserved: 0, exhausted: true }]
+          }
+        })
+      )
+    )
+    const result = await fetchModelDailyQuota(source, new AbortController().signal)
+    expect(String(fetchMock.mock.calls[0][0])).toBe('https://test.invalid/api/usage/token/model-daily')
+    expect(fetchMock.mock.calls[0][1]).toMatchObject({
+      headers: { Authorization: 'Bearer fake-secret' },
+      credentials: 'omit',
+      redirect: 'error',
+      cache: 'no-store'
+    })
+    expect(result?.models[0].exhausted).toBe(true)
+    fetchMock.mockResolvedValue(new Response('', { status: 404 }))
+    expect(await fetchModelDailyQuota(source, new AbortController().signal)).toBeUndefined()
+  })
+})
 
 const metrics: UsageMetrics = {
   input_tokens: 130000,

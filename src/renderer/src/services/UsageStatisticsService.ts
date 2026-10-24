@@ -167,3 +167,41 @@ export function getCacheHitRate(metrics: UsageMetrics): number | null {
     return null
   return metrics.cache_read_tokens / metrics.input_tokens
 }
+
+const modelDailyQuotaSchema = z.object({
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  timezone: z.literal('Asia/Shanghai'),
+  models: z
+    .array(
+      z.object({
+        model: z.string(),
+        limit: z.number().int().positive(),
+        used: z.number().int().nonnegative(),
+        reserved: z.number().int().nonnegative(),
+        remaining: z.number().int().nonnegative(),
+        exhausted: z.boolean()
+      })
+    )
+    .max(200)
+})
+export type ModelDailyQuotaStatus = z.infer<typeof modelDailyQuotaSchema>
+
+export async function fetchModelDailyQuota(
+  source: UsageSource,
+  signal: AbortSignal
+): Promise<ModelDailyQuotaStatus | undefined> {
+  if (!source.supported || !source.apiKey) return undefined
+  const url = buildUsageStatisticsUrl(source.apiHost, { start: 0, end: 0, timezone: 'Asia/Shanghai', scene: 'all' })
+  url.pathname = url.pathname.replace(/\/statistics$/, '/model-daily')
+  url.search = ''
+  const response = await fetch(url, {
+    signal: AbortSignal.any([signal, AbortSignal.timeout(15_000)]),
+    headers: { Authorization: `Bearer ${source.apiKey}` },
+    credentials: 'omit',
+    redirect: 'error',
+    cache: 'no-store'
+  })
+  if ([404, 405].includes(response.status)) return undefined
+  if (!response.ok) throw new UsageStatisticsError('unavailable')
+  return z.object({ success: z.literal(true), data: modelDailyQuotaSchema }).parse(await readResponse(response)).data
+}

@@ -16,6 +16,18 @@ const baseOptions = {
   createdAt: '2026-05-09T12:34:56+08:00'
 }
 
+it('explains the daily quota without blaming channel connectivity or credentials', () => {
+  const diagnosis = diagnoseClientError({
+    name: 'APIError',
+    message: 'rejected',
+    statusCode: 403,
+    responseBody: '{"error":{"code":"model_daily_token_limit_exceeded"}}'
+  })
+  expect(diagnosis.summary).toBe('该模型额度今日已用完，请明日再使用。')
+  expect(diagnosis.category).toBe('rate_limited')
+  expect(diagnosis.serviceReceived).toBe('是')
+})
+
 function makeError(message: string, statusCode?: number) {
   return {
     name: 'TestError',
@@ -55,7 +67,7 @@ describe('clientErrorDiagnosis', () => {
     expect(diagnosis.title).toBe('生成中断：连接不稳定')
   })
 
-  it.each(['agent_human_wait_timeout', 'agent_execution_timeout'])(
+  it.each(['agent_human_wait_timeout', 'agent_execution_timeout', 'agent_inactivity_timeout'])(
     'identifies %s as a local guard, not a failed network or startup',
     (code) => {
       const error = { ...makeError('saved task state was preserved'), code }
@@ -63,7 +75,17 @@ describe('clientErrorDiagnosis', () => {
       expect(diagnosis.category).toBe('runtime')
       expect(diagnosis.title).toContain('任务已暂停')
       expect(diagnosis.summary).toContain(code === 'agent_human_wait_timeout' ? '30分钟' : '15分钟')
-      expect(diagnosis.stage).toBe(code === 'agent_human_wait_timeout' ? '等待用户操作' : '本地任务执行')
+      expect(diagnosis.stage).toBe(
+        code === 'agent_human_wait_timeout'
+          ? '等待用户操作'
+          : code === 'agent_inactivity_timeout'
+            ? '监测任务进展'
+            : '本地任务执行'
+      )
+      if (code === 'agent_inactivity_timeout') {
+        expect(diagnosis.summary).toContain('连续15分钟')
+        expect(diagnosis.summary).not.toContain('累计')
+      }
       expect(diagnosis.serviceReceived).toBe('未确认')
       expect(diagnosis.suggestion).not.toContain('网络')
       expect(classifyError(error).navTarget).toBeNull()

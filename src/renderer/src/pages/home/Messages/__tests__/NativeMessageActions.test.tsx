@@ -5,6 +5,22 @@ vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => k
 import NativeMessageActions from '../NativeMessageActions'
 
 describe('new assistant answer actions', () => {
+  it('offers continuation separately from regeneration', () => {
+    const onContinue = vi.fn(),
+      onRetry = vi.fn()
+    render(
+      <NativeMessageActions
+        busy={false}
+        onContinue={onContinue}
+        onRetry={onRetry}
+        onFork={vi.fn()}
+        onDelete={vi.fn()}
+      />
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'assistantTaskContinuation.action' }))
+    expect(onContinue).toHaveBeenCalledOnce()
+    expect(onRetry).not.toHaveBeenCalled()
+  })
   it('renders all three real buttons and invokes their corresponding operations', () => {
     const onRetry = vi.fn(),
       onFork = vi.fn(),

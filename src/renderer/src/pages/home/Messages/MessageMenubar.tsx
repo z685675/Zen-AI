@@ -12,10 +12,12 @@ import { useAgentWorkspace } from '@renderer/context/AgentWorkspaceProvider'
 import { useMessageEditing } from '@renderer/context/MessageEditingContext'
 import { useChatContext } from '@renderer/hooks/useChatContext'
 import { useMessageOperations } from '@renderer/hooks/useMessageOperations'
+import { useNativeTaskContinuation } from '@renderer/hooks/useNativeTaskContinuation'
 import { useNotesSettings } from '@renderer/hooks/useNotesSettings'
 import { useEnableDeveloperMode, useMessageStyle, useSettings } from '@renderer/hooks/useSettings'
 import { useTemporaryValue } from '@renderer/hooks/useTemporaryValue'
 import useTranslate from '@renderer/hooks/useTranslate'
+import { useTurnDiagnosticExport } from '@renderer/hooks/useTurnDiagnosticExport'
 import { EVENT_NAMES, EventEmitter } from '@renderer/services/EventService'
 import { getMessageTitle } from '@renderer/services/MessagesService'
 import { translateText } from '@renderer/services/TranslateService'
@@ -141,6 +143,7 @@ type MessageMenubarButtonContext = {
 type MessageMenubarButtonRenderer = (ctx: MessageMenubarButtonContext) => ReactNode | null
 
 const MessageMenubar: FC<Props> = (props) => {
+  const continuation = useNativeTaskContinuation(props.message)
   const {
     message,
     index,
@@ -154,6 +157,7 @@ const MessageMenubar: FC<Props> = (props) => {
     onUpdateUseful
   } = props
   const { t } = useTranslation()
+  const { exportTurn, exporting } = useTurnDiagnosticExport()
   const nativeMemory = useAgentWorkspace() === 'opencode'
   const legacyReadOnly = isReadOnlyLegacySession(topic.id, message.assistantId)
   const nativeBusy = useSelector((state: RootState) => Boolean(state.messages.loadingByTopic[topic.id]))
@@ -320,6 +324,23 @@ const MessageMenubar: FC<Props> = (props) => {
 
   const dropdownItems = useMemo(() => {
     const items: MenuProps['items'] = [
+      ...(isAssistantMessage && !legacyReadOnly && !message.providerMetadata?.legacyContinuation
+        ? [
+            {
+              label: t('turnDiagnostics.export'),
+              key: 'turn-diagnostics',
+              icon: <Bug size={15} />,
+              disabled: exporting,
+              onClick: () => {
+                const state = store.getState()
+                const relatedUserMessage = selectMessagesForTopic(state, topic.id).find(
+                  (item) => item.id === message.askId
+                )
+                exportTurn({ source: nativeMemory ? 'agent' : 'chat', message, relatedUserMessage, blockEntities })
+              }
+            }
+          ]
+        : []),
       ...(isEditable && !legacyReadOnly && !message.providerMetadata?.legacyContinuation
         ? [
             {
@@ -491,6 +512,10 @@ const MessageMenubar: FC<Props> = (props) => {
       return false
     })
   }, [
+    exportTurn,
+    exporting,
+    nativeMemory,
+    blockEntities,
     dropdownRootAllowKeys,
     exportMenuOptions.docx,
     exportMenuOptions.image,
@@ -512,7 +537,8 @@ const MessageMenubar: FC<Props> = (props) => {
     onEdit,
     t,
     toggleMultiSelectMode,
-    topic.name
+    topic.name,
+    topic.id
   ])
 
   const onRegenerate = async (e: React.MouseEvent | undefined) => {
@@ -649,7 +675,8 @@ const MessageMenubar: FC<Props> = (props) => {
             return (
               <NativeMessageActions
                 key={buttonId}
-                busy={nativeBusy}
+                busy={nativeBusy || continuation.submitting}
+                onContinue={continuation.canContinue || continuation.submitting ? continuation.continueTask : undefined}
                 onRetry={() => onRegenerate(undefined)}
                 onFork={() => onNewBranch()}
                 onDelete={() => {

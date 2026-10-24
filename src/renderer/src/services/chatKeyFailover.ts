@@ -1,4 +1,5 @@
 import type { Provider } from '@renderer/types'
+import { getModelDailyQuotaErrorKind } from '@shared/utils/modelDailyQuota'
 
 type ErrorRecord = Record<string, unknown>
 
@@ -63,6 +64,7 @@ function getErrorText(error: unknown): string {
  * would fragment the prompt cache without fixing the root cause.
  */
 export function shouldRotateChatApiKey(error: unknown): boolean {
+  if (getModelDailyQuotaErrorKind(error)) return false
   const statusCode = getErrorStatusCode(error)
   if (statusCode !== 401 && statusCode !== 403 && statusCode !== 429) {
     return false

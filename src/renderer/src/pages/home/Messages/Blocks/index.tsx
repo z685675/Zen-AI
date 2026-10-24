@@ -18,6 +18,7 @@ import ErrorBlock from './ErrorBlock'
 import FileBlock from './FileBlock'
 import ImageBlock from './ImageBlock'
 import MainTextBlock from './MainTextBlock'
+import NativeActivity, { collectNativeActivity } from './NativeActivity'
 import PlaceholderBlock from './PlaceholderBlock'
 import ThinkingBlock from './ThinkingBlock'
 import ToolBlock from './ToolBlock'
@@ -125,13 +126,30 @@ const MessageBlockRenderer: React.FC<Props> = ({ blocks, message, isStreaming })
     shallowEqual
   )
   // 根据blocks类型处理渲染数据
-  const groupedBlocks = useMemo(() => groupSimilarBlocks(renderedBlocks), [renderedBlocks])
+  const compactNative = nativeProgress && message.role === 'assistant'
+  const activityBlocks = collectNativeActivity(renderedBlocks)
+  const groupedBlocks = useMemo(
+    () =>
+      groupSimilarBlocks(
+        compactNative
+          ? renderedBlocks.filter(
+              (block) => block.type !== MessageBlockType.TOOL && block.type !== MessageBlockType.THINKING
+            )
+          : renderedBlocks
+      ),
+    [renderedBlocks, compactNative]
+  )
 
   // Check if message is still processing
   const isProcessing = isStreaming ?? isMessageProcessing(message)
 
   return (
     <AnimatePresence mode="sync">
+      {compactNative && activityBlocks.length > 0 && (
+        <AnimatedBlockWrapper key="native-activity" enableAnimation={false}>
+          <NativeActivity blocks={activityBlocks} processing={isProcessing} />
+        </AnimatedBlockWrapper>
+      )}
       {groupedBlocks.map((block) => {
         if (Array.isArray(block)) {
           const groupKey = block.map((b) => b.id).join('-')

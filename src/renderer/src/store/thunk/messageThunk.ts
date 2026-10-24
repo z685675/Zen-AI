@@ -1575,6 +1575,7 @@ const fetchAndProcessAgentResponseImpl = async (
     await streamProcessorCallbacks({ type: ChunkType.LLM_RESPONSE_CREATED })
 
     const userMessage = getState().messages.entities[userMessageId]
+    recordDiagnostic(assistantMessage.id, 'preparation', 'started', { phase: 'attachments' })
     const userContent = await resolveAgentSessionUserContent(topicId, userMessageId, getState)
     const channelAttachments = userMessage
       ? await resolveAgentSessionChannelAttachments(topicId, userMessage, getState)
@@ -1607,6 +1608,7 @@ const fetchAndProcessAgentResponseImpl = async (
     const failedImageOcrContext = userMessage
       ? await buildAgentFailedImageOcrContext(topicId, userMessage.id, uiAttachments.failedFiles, getState)
       : ''
+    recordDiagnostic(assistantMessage.id, 'preparation', 'ready', { phase: 'attachments' })
     const contentWithChannelAttachments = withAgentAttachmentInstruction(
       userContent,
       [...channelAttachments.imagePaths, ...uiAttachments.imagePaths],
@@ -1828,6 +1830,7 @@ const fetchAndProcessAgentResponseImpl = async (
       }
     }
 
+    recordDiagnostic(assistantMessage.id, 'preparation', 'ready')
     const adapter = new AiSdkToChunkAdapter(
       (chunk) => {
         if (chunk.type === ChunkType.ERROR) streamErrorReported = true

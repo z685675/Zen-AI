@@ -7,8 +7,8 @@ export const TOPIC_NAMING_REQUEST_HEADERS = { 'X-Zen-Request-Purpose': 'topic-na
 export const CONNECTIVITY_CHECK_REQUEST_HEADERS = { 'X-Zen-Request-Purpose': 'connectivity-check' } as const
 const MAX_TEXT = 8_000
 const credentialKey =
-  /^(?:.*[-_])?(?:api[-_]?key|authorization|access[-_]?token|refresh[-_]?token|secret|password|credential|cookie|set[-_]?cookie|token)$/i
-const credentialSuffix = /(?:apiKey|accessToken|refreshToken|password|secret|credential|authorization|cookie)$/i
+  /^(?:(?:.*[-_])?(?:api[-_]?key|authorization|access[-_]?token|refresh[-_]?token|secret|password|credential|cookie|set[-_]?cookie|token|permit)|x-zen-model-turn)$/i
+const credentialSuffix = /(?:apiKey|accessToken|refreshToken|password|secret|credential|authorization|cookie|permit)$/i
 
 export function diagnosticText(value: string): string {
   let text = value.replace(/\b(?:https?|wss?|socks(?:4a?|5h?)?):\/\/[^\s"'<>\\]+/gi, (raw) => {
@@ -23,7 +23,7 @@ export function diagnosticText(value: string): string {
     .replace(/\bdata:[^,\s]*,[^\s"'<>\\]+/gi, '[REDACTED_DATA_URL]')
     .replace(/(Bearer\s+)[\w.~+/=-]+/gi, '$1[REDACTED]')
     .replace(
-      /((?:["']?(?:api[-_]?key|access[-_]?token|refresh[-_]?token|authorization|token|secret|password|credential|cookie)["']?)\s*[:=]\s*)(?:"[^"\n]*"|'[^'\n]*'|[^\s,;}]+)/gi,
+      /((?:["']?(?:api[-_]?key|access[-_]?token|refresh[-_]?token|authorization|token|secret|password|credential|cookie|permit|x-zen-model-turn)["']?)\s*[:=]\s*)(?:"[^"\n]*"|'[^'\n]*'|[^\s,;}]+)/gi,
       '$1[REDACTED]'
     )
     .replace(/\bsk-[A-Za-z0-9_-]{8,}\b/g, '[REDACTED]')

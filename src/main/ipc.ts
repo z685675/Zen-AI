@@ -21,6 +21,7 @@ import { handleZoomFactor } from '@main/utils/zoom'
 import type { SpanEntity, TokenUsage } from '@mcp-trace/trace-core'
 import type { UpgradeChannel } from '@shared/config/constant'
 import { MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH } from '@shared/config/constant'
+import { imageCanvasChannels } from '@shared/config/imageCanvas'
 import type { LocalTransferConnectPayload } from '@shared/config/types'
 import { IpcChannel } from '@shared/IpcChannel'
 import { extractPdfText } from '@shared/utils/pdf'
@@ -71,6 +72,8 @@ import { ExportService } from './services/ExportService'
 import { externalAppsService } from './services/ExternalAppsService'
 import { fileStorage as fileManager } from './services/FileStorage'
 import FileService from './services/FileSystemService'
+import { ImageCanvasService } from './services/ImageCanvasService'
+import { ImageStudioService } from './services/ImageStudioService'
 import KnowledgeService from './services/KnowledgeService'
 import { lanTransferClientService } from './services/lanTransfer'
 import { localTransferService } from './services/LocalTransferService'
@@ -154,6 +157,41 @@ function getHardwareArch() {
 }
 
 export async function registerIpc(mainWindow: BrowserWindow, app: Electron.App) {
+  const imageStudio = new ImageStudioService(mainWindow)
+  const imageCanvas = new ImageCanvasService(mainWindow)
+  let canvasControl = Promise.resolve<unknown>(undefined)
+  const studioSender = (event: Electron.IpcMainInvokeEvent) =>
+    event.sender === mainWindow.webContents && event.senderFrame === event.sender.mainFrame
+  ipcMain.handle(imageCanvasChannels.control, (event, action, input) => {
+    if (!studioSender(event)) throw new Error('invalid_canvas_control_sender')
+    const operation = canvasControl
+      .catch(() => undefined)
+      .then(async () => {
+        if (action === 'open') {
+          imageStudio.close()
+          return imageCanvas.open(input)
+        }
+        if (action === 'sync') return imageCanvas.sync(input)
+        if (action === 'resize') return imageCanvas.resize(input)
+        if (action === 'visible') return imageCanvas.setVisible(input)
+        if (action === 'close') return imageCanvas.close()
+        throw new Error('invalid_canvas_action')
+      })
+    canvasControl = operation
+    return operation
+  })
+  ipcMain.handle(IpcChannel.ImageStudio_Open, (event, input) =>
+    studioSender(event) ? imageStudio.open(input) : { ok: false }
+  )
+  ipcMain.handle(IpcChannel.ImageStudio_Resize, (event, bounds) => {
+    if (studioSender(event)) imageStudio.resize(bounds)
+  })
+  ipcMain.handle(IpcChannel.ImageStudio_Close, (event) => {
+    if (studioSender(event)) imageStudio.close()
+  })
+  ipcMain.handle(IpcChannel.ImageStudio_Visible, (event, visible) => {
+    if (studioSender(event)) imageStudio.setVisible(visible)
+  })
   ipcMain.handle(IpcChannel.AssistantAutomation_Action, async (event, request: unknown) => {
     if (event.sender !== mainWindow.webContents || event.senderFrame !== event.sender.mainFrame)
       return { ok: false, code: 'automation_invalid_sender' }

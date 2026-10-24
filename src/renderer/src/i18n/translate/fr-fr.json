@@ -971,14 +971,22 @@
     "searchDisclosure": "Web research may send a search query to Exa public MCP. This third-party service may retain queries or use them for training and has usage limits. Do not submit personal information, secrets or private files. It is only called when research is needed; search failure does not block ordinary chat.",
     "skillLimit": "This read-only check does not execute scripts, install dependencies or grant permissions. It checks declared command/environment requirements only; Python packages, external services, script safety and task quality remain unverified. Enabled/discovered does not mean successfully applied."
   },
+  "assistantTaskContinuation": {
+    "action": "Continuer la tâche",
+    "failed": "Impossible de continuer. Vérifiez le modèle et réessayez.",
+    "prompt": "Poursuis la tâche inachevée dans cette conversation. Vérifie d’abord les fichiers, résultats et progrès existants et ne complète que les étapes manquantes. Ne répète pas les téléchargements et ne recrée ni n’écrase les résultats terminés. En cas d’incertitude, explique la situation et demande-moi avant d’agir. Respecte les autorisations et confirmations actuelles."
+  },
   "assistantTaskDeadline": {
     "stageExecution": "[to be translated]:Local task execution",
     "stageHumanWait": "[to be translated]:Waiting for user action",
+    "stageInactivity": "Suivi de la progression",
     "suggestion": "[to be translated]:Review completed work, then explicitly ask to continue only the unfinished part. Avoid blindly repeating submissions or generation.",
     "summaryExecution": "[to be translated]:The cumulative 15-minute execution limit was reached. The task is paused; saved history and outputs are retained, with no automatic replay.",
     "summaryHumanWait": "[to be translated]:The cumulative 30-minute user-action wait limit was reached. The task is paused; saved history and outputs are retained, with no automatic replay.",
+    "summaryInactivity": "Aucun nouveau progrès observé depuis 15 minutes. La tâche est en pause ; l’historique et les résultats restent disponibles pour vérification avant de continuer.",
     "titleExecution": "[to be translated]:Task paused: execution time limit reached",
-    "titleHumanWait": "[to be translated]:Task paused: user wait limit reached"
+    "titleHumanWait": "[to be translated]:Task paused: user wait limit reached",
+    "titleInactivity": "Tâche en pause : aucun progrès récent"
   },
   "assistantToolFailure": {
     "cancelled": {
@@ -2238,6 +2246,13 @@
         "invalid": "Serveur MCP invalide"
       }
     },
+    "cancelled": {
+      "errorType": "[to be translated]:Stopped by user",
+      "stage": "[to be translated]:Stopping generation",
+      "suggestion": "[to be translated]:Review any existing results before sending a follow-up request to continue.",
+      "summary": "[to be translated]:This generation was stopped.",
+      "title": "[to be translated]:Stopped"
+    },
     "cause": "Erreur causée par",
     "chat": {
       "chunk": {
@@ -2469,6 +2484,19 @@
     "generating": "Génération",
     "preview": "Aperçu",
     "split": "Diviser"
+  },
+  "image_studio": {
+    "canvas": "Image canvas",
+    "canvas_unavailable": "The local image canvas could not open. Retry or check the application logs.",
+    "key": "Key {{index}}",
+    "key_label": "Workspace key",
+    "local": "[to be translated]:Local images",
+    "opening": "[to be translated]:Opening image workspace…",
+    "reconnect": "[to be translated]:Reconnect",
+    "server": "Server workspace",
+    "title": "[to be translated]:Image workspace",
+    "unavailable": "[to be translated]:The workspace could not open. Make sure your Zen API server has been updated and the selected key is valid. You can still open Local images.",
+    "workbench": "Image studio"
   },
   "import": {
     "chatgpt": {
@@ -3205,6 +3233,21 @@
       "pin": "Закрепить окно"
     }
   },
+  "model_daily_quota": {
+    "exceeded": "Le quota quotidien de ce modèle est épuisé. Réessayez demain.",
+    "hint": "Entrée + sortie ; le cache est inclus dans l’entrée. Réinitialisation à minuit à Pékin. La dernière question admise peut dépasser le plafond.",
+    "invalid": "L’autorisation de cette question a expiré. Envoyez une nouvelle question.",
+    "limit": "Plafond quotidien",
+    "pending": "Le quota restant est réservé par une autre tâche. Attendez sa fin.",
+    "remaining": "Restant",
+    "stage": "Vérification du quota du modèle",
+    "status_error": "Impossible d’actualiser les quotas du jour. L’historique reste disponible.",
+    "suggestion": "Choisissez un autre modèle disponible ou attendez la réinitialisation. Évitez les tentatives répétées.",
+    "title": "Quotas du jour · heure de Pékin",
+    "unavailable": "Le service des quotas est temporairement indisponible.",
+    "used": "Utilisé",
+    "used_up": "Épuisé aujourd’hui"
+  },
   "model_recovery": {
     "empty": "{{preferred}} et ses modèles de secours sont indisponibles.",
     "fallback": "{{preferred}} est indisponible ; utilisation temporaire de {{actual}}.",
@@ -3278,6 +3321,12 @@
       "vision": "Image",
       "websearch": "Recherche web"
     }
+  },
+  "nativeActivity": {
+    "failures": "{{count}} tentatives d’outils à examiner ; développez les détails.",
+    "finished": "Réflexion et exécution · {{count}} appels d’outils",
+    "running": "En cours · {{count}} appels d’outils",
+    "thinking": "Réflexion"
   },
   "navbar": {
     "expand": "Agrandir la boîte de dialogue",
@@ -6735,6 +6784,29 @@
     "quit": "Quitter",
     "show_mini_window": "Assistant Rapide",
     "show_window": "Afficher la fenêtre"
+  },
+  "turnDiagnostics": {
+    "description": "Exporte l’état, les durées et les requêtes de ce tour sans relancer la tâche ni appeler de modèle.",
+    "export": "Exporter le diagnostic du tour",
+    "includeContent": "Inclure la conversation et le contenu des outils de ce tour (facultatif)",
+    "intervalKinds": {
+      "context": "Traitement du contexte",
+      "preparation": "Préparation locale",
+      "request": "Requête au modèle (attente réseau/passerelle incluse)",
+      "runtime": "Étape de l’assistant",
+      "tool": "Outil"
+    },
+    "notRecorded": "Non enregistré ou inachevé",
+    "outcomes": {
+      "cancelled": "Arrêté",
+      "completed": "Terminé",
+      "failed": "Échec",
+      "pending": "En attente",
+      "processing": "En cours"
+    },
+    "privacy": "Par défaut, seules les métadonnées de diagnostic sont incluses, sans texte de conversation, arguments/résultats des outils, pièces jointes originales ni historique complet. Partagez uniquement avec des destinataires de confiance. Le contenu facultatif peut contenir des données personnelles.",
+    "reportTemplate": "# Zen AI : diagnostic de ce tour\n\n- Résultat : {{outcome}}\n- Modèle : {{model}} ; Provider : {{provider}}\n- Tokens : entrée {{input}} ; sortie {{output}} ; cache lu {{cache}} (déjà inclus dans l’entrée)\n- Début : {{start}} ; fin : {{end}} ; durée totale : {{total}}\n- Premier contenu (raisonnement possible) : {{firstContent}} ; premier texte de réponse : {{firstText}} ; premiers octets réseau : {{firstBytes}} (pas le premier token)\n- Requêtes observées : {{requests}} ; outils : {{tools}} ; nouvelles tentatives/bascules : {{retries}}\n- Délai de commit de l’interface : {{render}} (React, sans garantie d’affichage à l’écran)\n\n## Étapes complètes les plus lentes\n{{slowest}}\n\n## Chronologie des requêtes et outils\n{{timeline}}\n\n## Attentes utilisateur observées (chevauchement possible avec les outils)\n{{waits}}\n\n## Limites et données manquantes\n- Durées mesurées uniquement, pas de verdict sur la cause réseau/client/amont. Les étapes se chevauchent : ne pas les additionner ni soustraire les attentes.\n- Une absence n’est pas un zéro. Les intervalles ouverts peuvent être actifs. Un export actif est un instantané ; les anciens échanges ne récupèrent pas les événements non enregistrés.\n- L’enregistrement commence généralement à la préparation de réponse ; les uploads antérieurs peuvent manquer. Les nouvelles tentatives ne comptent pas les tâches rejouées.\n- Corréler zen-api-evidence.json et les ID pour les détails serveur. L’absence de trace ne prouve pas l’absence de réception ; une écriture ne garantit pas une réception complète.\n- Événements supprimés par la limite : {{dropped}} ; les anciennes requêtes peuvent expirer. Codes des données manquantes (performance.json) : {{missing}}\n",
+    "requestTiming": " | En-têtes {{headers}} | Premiers octets {{bytes}} | HTTP {{status}} | ID de requête {{requestId}}"
   },
   "update": {
     "available": "A new version {{version}} is available. Click Check for Updates any time to download it.",

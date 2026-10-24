@@ -1,11 +1,13 @@
-/** Product time budget only: never submits, retries or replays a task. */
+/** Meaningful-progress watchdog only: never submits, retries or replays a task.
+ * Busy/status heartbeats and reconnects must NOT call progress().
+ */
 export function createTaskDeadline(
-  onTimeout: (kind: 'execution' | 'human-wait') => void,
-  executionMs = 15 * 60_000,
+  onTimeout: (kind: 'inactivity' | 'human-wait') => void,
+  inactivityMs = 15 * 60_000,
   humanWaitMs = 30 * 60_000
 ) {
   const waiting = new Set<string>()
-  let remainingExecution = executionMs
+  let remainingInactivity = inactivityMs
   let remainingWait = humanWaitMs
   let started = performance.now()
   let timer: ReturnType<typeof setTimeout> | undefined
@@ -16,9 +18,9 @@ export function createTaskDeadline(
       () => {
         if (closed) return
         closed = true
-        onTimeout(waitingPhase ? 'human-wait' : 'execution')
+        onTimeout(waitingPhase ? 'human-wait' : 'inactivity')
       },
-      Math.max(0, waitingPhase ? remainingWait : remainingExecution)
+      Math.max(0, waitingPhase ? remainingWait : remainingInactivity)
     )
   }
   const change = () => {
@@ -27,18 +29,27 @@ export function createTaskDeadline(
     clearTimeout(timer)
     const elapsed = Math.max(0, performance.now() - started)
     if (waitingPhase) remainingWait -= elapsed
-    else remainingExecution -= elapsed
-    if ((waitingPhase ? remainingWait : remainingExecution) <= 0) {
+    else remainingInactivity -= elapsed
+    if ((waitingPhase ? remainingWait : remainingInactivity) <= 0) {
       closed = true
-      onTimeout(waitingPhase ? 'human-wait' : 'execution')
+      onTimeout(waitingPhase ? 'human-wait' : 'inactivity')
       return
     }
     started = performance.now()
     waitingPhase = next
+    // A user returning from login/approval gets a fresh inactivity window.
+    if (!next) remainingInactivity = inactivityMs
     schedule()
   }
   schedule()
   return {
+    progress() {
+      if (closed || waitingPhase) return
+      clearTimeout(timer)
+      remainingInactivity = inactivityMs
+      started = performance.now()
+      schedule()
+    },
     wait(id: string) {
       if (!closed) {
         waiting.add(id)

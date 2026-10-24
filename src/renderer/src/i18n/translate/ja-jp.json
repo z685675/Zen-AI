@@ -971,14 +971,22 @@
     "searchDisclosure": "Web research may send a search query to Exa public MCP. This third-party service may retain queries or use them for training and has usage limits. Do not submit personal information, secrets or private files. It is only called when research is needed; search failure does not block ordinary chat.",
     "skillLimit": "This read-only check does not execute scripts, install dependencies or grant permissions. It checks declared command/environment requirements only; Python packages, external services, script safety and task quality remain unverified. Enabled/discovered does not mean successfully applied."
   },
+  "assistantTaskContinuation": {
+    "action": "タスクを続行",
+    "failed": "続行できませんでした。モデルを確認して再試行してください。",
+    "prompt": "この会話で未完了のタスクを続けてください。最初に既存のファイル、結果、進捗を確認し、不足している手順だけを完了してください。完了済みの結果を再ダウンロード、再作成、上書きしないでください。進捗が不明な場合は状況を説明し、操作する前に私に確認してください。現在の権限と確認要件を維持してください。"
+  },
   "assistantTaskDeadline": {
     "stageExecution": "[to be translated]:Local task execution",
     "stageHumanWait": "[to be translated]:Waiting for user action",
+    "stageInactivity": "タスクの進捗監視",
     "suggestion": "[to be translated]:Review completed work, then explicitly ask to continue only the unfinished part. Avoid blindly repeating submissions or generation.",
     "summaryExecution": "[to be translated]:The cumulative 15-minute execution limit was reached. The task is paused; saved history and outputs are retained, with no automatic replay.",
     "summaryHumanWait": "[to be translated]:The cumulative 30-minute user-action wait limit was reached. The task is paused; saved history and outputs are retained, with no automatic replay.",
+    "summaryInactivity": "15分間、新たな進捗が確認できなかったためタスクを一時停止しました。保存済みの履歴と成果は保持され、確認後に続行できます。",
     "titleExecution": "[to be translated]:Task paused: execution time limit reached",
-    "titleHumanWait": "[to be translated]:Task paused: user wait limit reached"
+    "titleHumanWait": "[to be translated]:Task paused: user wait limit reached",
+    "titleInactivity": "タスクを一時停止：進捗がありません"
   },
   "assistantToolFailure": {
     "cancelled": {
@@ -2238,6 +2246,13 @@
         "invalid": "無効なMCPサーバー"
       }
     },
+    "cancelled": {
+      "errorType": "[to be translated]:Stopped by user",
+      "stage": "[to be translated]:Stopping generation",
+      "suggestion": "[to be translated]:Review any existing results before sending a follow-up request to continue.",
+      "summary": "[to be translated]:This generation was stopped.",
+      "title": "[to be translated]:Stopped"
+    },
     "cause": "エラーの原因",
     "chat": {
       "chunk": {
@@ -2469,6 +2484,19 @@
     "generating": "生成中",
     "preview": "プレビュー",
     "split": "分割"
+  },
+  "image_studio": {
+    "canvas": "Image canvas",
+    "canvas_unavailable": "The local image canvas could not open. Retry or check the application logs.",
+    "key": "Key {{index}}",
+    "key_label": "Workspace key",
+    "local": "[to be translated]:Local images",
+    "opening": "[to be translated]:Opening image workspace…",
+    "reconnect": "[to be translated]:Reconnect",
+    "server": "Server workspace",
+    "title": "[to be translated]:Image workspace",
+    "unavailable": "[to be translated]:The workspace could not open. Make sure your Zen API server has been updated and the selected key is valid. You can still open Local images.",
+    "workbench": "Image studio"
   },
   "import": {
     "chatgpt": {
@@ -3205,6 +3233,21 @@
       "pin": "上部ウィンドウ"
     }
   },
+  "model_daily_quota": {
+    "exceeded": "このモデルの本日の利用枠を使い切りました。明日ご利用ください。",
+    "hint": "入力＋出力。キャッシュは入力に含まれます。北京時間の午前0時にリセット。最後に許可された質問は上限を超えて完了できます。",
+    "invalid": "この質問の承認が終了しました。新しい質問を送信してください。",
+    "limit": "1日の上限",
+    "pending": "残りの利用枠は別のタスクで予約されています。完了をお待ちください。",
+    "remaining": "残り",
+    "stage": "モデル利用枠の確認",
+    "status_error": "本日の利用枠を更新できません。過去の使用量には影響しません。",
+    "suggestion": "別のモデルを選ぶか、利用枠のリセットをお待ちください。繰り返し再試行しないでください。",
+    "title": "本日のモデル利用枠 · 北京時間",
+    "unavailable": "モデル利用枠サービスを一時的に利用できません。",
+    "used": "使用済み",
+    "used_up": "本日分を消費済み"
+  },
   "model_recovery": {
     "empty": "{{preferred}} と代替モデルは現在利用できません。",
     "fallback": "{{preferred}} が利用できないため、一時的に {{actual}} を使用しています。",
@@ -3278,6 +3321,12 @@
       "vision": "画像",
       "websearch": "ウェブ検索"
     }
+  },
+  "nativeActivity": {
+    "failures": "{{count}} 件のツール試行を確認してください。詳細を展開できます。",
+    "finished": "思考と実行 · ツール呼び出し {{count}} 回",
+    "running": "処理中 · ツール呼び出し {{count}} 回",
+    "thinking": "思考"
   },
   "navbar": {
     "expand": "ダイアログを展開",
@@ -6735,6 +6784,29 @@
     "quit": "終了",
     "show_mini_window": "クイックアシスタント",
     "show_window": "ウィンドウを表示"
+  },
+  "turnDiagnostics": {
+    "description": "タスクの再実行やモデルの呼び出しをせず、このターンの状態、所要時間、リクエスト記録を出力します。",
+    "export": "このターンの診断をエクスポート",
+    "includeContent": "このターンの会話とツールの内容を含める（任意）",
+    "intervalKinds": {
+      "context": "コンテキスト処理",
+      "preparation": "ローカル準備",
+      "request": "モデル要求（ネットワーク・ゲートウェイ待機を含む）",
+      "runtime": "アシスタント段階",
+      "tool": "ツール"
+    },
+    "notRecorded": "未記録または未完了",
+    "outcomes": {
+      "cancelled": "停止済み",
+      "completed": "完了",
+      "failed": "失敗",
+      "pending": "待機中",
+      "processing": "実行中"
+    },
+    "privacy": "既定では診断メタデータのみを含み、会話本文、ツールの引数や結果、元の添付ファイル、全履歴は含みません。信頼できる相手にのみ共有してください。任意で含める内容には個人情報がある場合があります。",
+    "reportTemplate": "# Zen AI このターンの診断\n\n- 結果：{{outcome}}\n- モデル：{{model}}；Provider：{{provider}}\n- Token：入力 {{input}}；出力 {{output}}；キャッシュ読取 {{cache}}（入力に含まれるため重複加算しません）\n- 開始：{{start}}；終了：{{end}}；合計：{{total}}\n- 最初の内容（思考の場合あり）：{{firstContent}}；最初の回答本文：{{firstText}}；最初のネットワークデータ：{{firstBytes}}（最初のトークンではありません）\n- 観測した要求：{{requests}}；ツール：{{tools}}；再試行・切替イベント：{{retries}}\n- UI コミット遅延：{{render}}（React の記録であり画面描画の保証ではありません）\n\n## 開始・終了を対応付けられた最も遅い段階\n{{slowest}}\n\n## 要求とツールの時系列\n{{timeline}}\n\n## 観測したユーザー待機（ツールと重複する場合あり）\n{{waits}}\n\n## 制約と欠落データ\n- 実測時間のみであり、ネットワーク・クライアント・上流の根本原因を断定しません。段階は重複するため単純加算や待機時間の減算はできません。\n- 未記録はゼロではありません。未完了区間は実行中かもしれません。実行中の出力はスナップショットであり、過去の未記録イベントは復元できません。\n- 通常は回答準備から記録するため、それ以前の添付アップロードは含まれない場合があります。再試行イベント数はタスク再実行数ではありません。\n- サーバー内部は zen-api-evidence.json と要求 ID を照合してください。記録がなくても未着とは限らず、書出成功も完全受信の保証ではありません。\n- 上限により破棄したイベント：{{dropped}}。古い要求は期限切れの場合があります。欠落コード（performance.json 参照）：{{missing}}\n",
+    "requestTiming": " | ヘッダー待機 {{headers}} | 最初のバイト {{bytes}} | HTTP {{status}} | 要求 ID {{requestId}}"
   },
   "update": {
     "available": "A new version {{version}} is available. Click Check for Updates any time to download it.",

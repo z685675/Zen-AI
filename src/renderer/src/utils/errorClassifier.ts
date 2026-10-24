@@ -1,4 +1,5 @@
 import type { SerializedError } from '@renderer/types/error'
+import { getModelDailyQuotaErrorKind } from '@shared/utils/modelDailyQuota'
 
 import { isAgentRuntimeStartupError } from './agentRuntimeError'
 import { getAgentTaskDeadlineKind } from './agentTaskDeadline'
@@ -35,12 +36,14 @@ export function classifyError(error?: SerializedError, providerId?: string): Err
   const status = (error as Record<string, unknown>).statusCode ?? (error as Record<string, unknown>).status
   const numStatus = typeof status === 'number' ? status : typeof status === 'string' ? parseInt(status, 10) : undefined
   const msg = connectionErrorText(error)
+  const dailyQuota = getModelDailyQuotaErrorKind(error)
+  if (dailyQuota) return { category: 'quota', i18nKey: `model_daily_quota.${dailyQuota}`, navTarget: null }
   const providerSuffix = providerId ? `?id=${providerId}` : ''
   const deadlineKind = getAgentTaskDeadlineKind(error)
   if (deadlineKind)
     return {
       category: 'runtime',
-      i18nKey: `assistantTaskDeadline.${deadlineKind === 'execution' ? 'summaryExecution' : 'summaryHumanWait'}`,
+      i18nKey: `assistantTaskDeadline.${deadlineKind === 'execution' ? 'summaryExecution' : deadlineKind === 'inactivity' ? 'summaryInactivity' : 'summaryHumanWait'}`,
       navTarget: null
     }
 

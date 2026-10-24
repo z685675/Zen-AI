@@ -8,6 +8,12 @@ function makeError(overrides: Partial<SerializedError> = {}): SerializedError {
 }
 
 describe('classifyError', () => {
+  it('treats daily model refusal as a personal allowance, not credentials or model health', () => {
+    const result = classifyError(
+      makeError({ statusCode: 403, responseBody: '{"error":{"code":"model_daily_token_limit_exceeded"}}' })
+    )
+    expect(result).toEqual({ category: 'quota', i18nKey: 'model_daily_quota.exceeded', navTarget: null })
+  })
   it('classifies native agent startup errors as runtime issues without directing users to provider or network settings', () => {
     const result = classifyError(
       makeError({

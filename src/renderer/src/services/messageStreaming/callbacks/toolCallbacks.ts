@@ -1,4 +1,5 @@
 import { loggerService } from '@logger'
+import { recordDiagnostic } from '@renderer/services/DiagnosticEvidenceService'
 import type { AppDispatch } from '@renderer/store'
 import store from '@renderer/store'
 import { toolPermissionsActions } from '@renderer/store/toolPermissions'
@@ -80,6 +81,10 @@ export const createToolCallbacks = (deps: ToolCallbacksDependencies) => {
 
   return {
     onToolCallPending: (toolResponse: ToolResponse) => {
+      recordDiagnostic(assistantMsgId, 'tool', 'tool-call', {
+        toolCallId: toolResponse.id,
+        toolName: toolResponse.tool.name
+      })
       logger.debug('onToolCallPending', toolResponse)
 
       if (blockManager.hasInitialPlaceholder) {
@@ -148,6 +153,18 @@ export const createToolCallbacks = (deps: ToolCallbacksDependencies) => {
     },
 
     onToolCallComplete: (toolResponse: ToolResponse) => {
+      if (['done', 'error', 'cancelled'].includes(toolResponse.status)) {
+        recordDiagnostic(
+          assistantMsgId,
+          'tool',
+          toolResponse.status === 'error'
+            ? 'tool-error'
+            : toolResponse.status === 'cancelled'
+              ? 'tool-cancelled'
+              : 'tool-result',
+          { toolCallId: toolResponse.id, toolName: toolResponse.tool.name }
+        )
+      }
       // Read resolvedInput BEFORE removing from store (removeByToolCallId deletes it)
       const state = store.getState()
       const resolvedInput = toolResponse?.id ? state.toolPermissions.resolvedInputs[toolResponse.id] : undefined

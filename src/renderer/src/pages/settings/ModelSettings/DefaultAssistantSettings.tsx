@@ -67,13 +67,13 @@ const AssistantSettings: FC = () => {
   const onTopPChange = handleChange(setTopP, (value) => onUpdateAssistantSettings({ topP: value }))
 
   const onReset = () => {
-    setTemperature(DEFAULT_TEMPERATURE)
-    setEnableTemperature(true)
-    setEnableMaxTokens(false)
-    setMaxTokens(0)
-    setTopP(1)
-    setEnableTopP(false)
-    setToolUseMode('function')
+    setTemperature(DEFAULT_ASSISTANT_SETTINGS.temperature)
+    setEnableTemperature(DEFAULT_ASSISTANT_SETTINGS.enableTemperature)
+    setEnableMaxTokens(DEFAULT_ASSISTANT_SETTINGS.enableMaxTokens)
+    setMaxTokens(DEFAULT_ASSISTANT_SETTINGS.maxTokens)
+    setTopP(DEFAULT_ASSISTANT_SETTINGS.topP)
+    setEnableTopP(DEFAULT_ASSISTANT_SETTINGS.enableTopP)
+    setToolUseMode(DEFAULT_ASSISTANT_SETTINGS.toolUseMode)
     updateDefaultAssistant({
       ...defaultAssistant,
       settings: { ...DEFAULT_ASSISTANT_SETTINGS }

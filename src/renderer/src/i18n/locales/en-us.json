@@ -971,14 +971,22 @@
     "searchDisclosure": "Web research may send a search query to Exa public MCP. This third-party service may retain queries or use them for training and has usage limits. Do not submit personal information, secrets or private files. It is only called when research is needed; search failure does not block ordinary chat.",
     "skillLimit": "This read-only check does not execute scripts, install dependencies or grant permissions. It checks declared command/environment requirements only; Python packages, external services, script safety and task quality remain unverified. Enabled/discovered does not mean successfully applied."
   },
+  "assistantTaskContinuation": {
+    "action": "Continue task",
+    "failed": "Could not continue. Check the model and try again.",
+    "prompt": "Continue the unfinished task in this conversation. First inspect existing files, results and progress; complete only the missing steps. Do not repeat downloads, recreate or overwrite completed results. If progress is uncertain, explain it and ask me before taking action. Keep the current permission and confirmation requirements."
+  },
   "assistantTaskDeadline": {
     "stageExecution": "Local task execution",
     "stageHumanWait": "Waiting for user action",
+    "stageInactivity": "Monitoring task progress",
     "suggestion": "Review completed work, then explicitly ask to continue only the unfinished part. Avoid blindly repeating submissions or generation.",
     "summaryExecution": "The cumulative 15-minute execution limit was reached. The task is paused; saved history and outputs are retained, with no automatic replay.",
     "summaryHumanWait": "The cumulative 30-minute user-action wait limit was reached. The task is paused; saved history and outputs are retained, with no automatic replay.",
+    "summaryInactivity": "No meaningful progress has been observed for 15 minutes. The task was paused; saved history and results are preserved. You can continue after checking them.",
     "titleExecution": "Task paused: execution time limit reached",
-    "titleHumanWait": "Task paused: user wait limit reached"
+    "titleHumanWait": "Task paused: user wait limit reached",
+    "titleInactivity": "Task paused: no recent progress"
   },
   "assistantToolFailure": {
     "cancelled": {
@@ -2477,6 +2485,19 @@
     "preview": "Preview",
     "split": "Split"
   },
+  "image_studio": {
+    "canvas": "Image canvas",
+    "canvas_unavailable": "The local image canvas could not open. Retry or check the application logs.",
+    "key": "Key {{index}}",
+    "key_label": "Workspace key",
+    "local": "Local images",
+    "opening": "Opening image workspace…",
+    "reconnect": "Reconnect",
+    "server": "Server workspace",
+    "title": "Image workspace",
+    "unavailable": "The workspace could not open. Make sure your Zen API server has been updated and the selected key is valid. You can still open Local images.",
+    "workbench": "Image studio"
+  },
   "import": {
     "chatgpt": {
       "assistant_name": "ChatGPT Import",
@@ -3212,6 +3233,21 @@
       "pin": "Keep Window on Top"
     }
   },
+  "model_daily_quota": {
+    "exceeded": "This model’s daily allowance is used up. Please try again tomorrow.",
+    "hint": "Input + output tokens; cache is included in input. Resets at midnight Beijing time. The last admitted question can finish over the limit.",
+    "invalid": "This question’s authorization has ended. Please send a new question.",
+    "limit": "Daily limit",
+    "pending": "The remaining allowance is reserved by another task. Please wait for it to finish.",
+    "remaining": "Remaining",
+    "stage": "Model allowance check",
+    "status_error": "Unable to refresh today’s model allowances. Your historical usage is unaffected.",
+    "suggestion": "Choose another available model, or wait for this allowance to reset. Do not repeatedly retry.",
+    "title": "Today’s model allowances · Beijing time",
+    "unavailable": "Model allowance service is temporarily unavailable. Please try again later.",
+    "used": "Used",
+    "used_up": "Used up today"
+  },
   "model_recovery": {
     "empty": "{{preferred}} and its fallbacks are currently unavailable.",
     "fallback": "{{preferred}} is unavailable; temporarily using {{actual}}.",
@@ -3285,6 +3321,12 @@
       "vision": "Vision",
       "websearch": "WebSearch"
     }
+  },
+  "nativeActivity": {
+    "failures": "{{count}} tool attempts need review; expand for details.",
+    "finished": "Thinking and execution · {{count}} tool calls",
+    "running": "Working · {{count}} tool calls",
+    "thinking": "Thinking"
   },
   "navbar": {
     "expand": "Expand Dialog",
@@ -6742,6 +6784,29 @@
     "quit": "Quit",
     "show_mini_window": "Quick Assistant",
     "show_window": "Show Window"
+  },
+  "turnDiagnostics": {
+    "description": "Export this turn’s status, timings and request evidence without replaying the task or calling a model.",
+    "export": "Export turn diagnostics",
+    "includeContent": "Include this turn’s conversation and tool content (optional)",
+    "intervalKinds": {
+      "context": "Context processing",
+      "preparation": "Local preparation",
+      "request": "Model request (including network/gateway wait)",
+      "runtime": "Assistant stage",
+      "tool": "Tool"
+    },
+    "notRecorded": "Not recorded or unfinished",
+    "outcomes": {
+      "cancelled": "Stopped",
+      "completed": "Completed",
+      "failed": "Failed",
+      "pending": "Pending",
+      "processing": "Running"
+    },
+    "privacy": "By default, only diagnostic metadata is included, not conversation text, tool arguments/results, original attachments or full history. Share with trusted recipients only. Optional content may contain personal information.",
+    "reportTemplate": "# Zen AI turn diagnostics\n\n- Outcome: {{outcome}}\n- Model: {{model}}; Provider: {{provider}}\n- Tokens: input {{input}}; output {{output}}; cache read {{cache}} (already included in input)\n- Start: {{start}}; end: {{end}}; total: {{total}}\n- First content (possibly reasoning): {{firstContent}}; first answer text: {{firstText}}; first network bytes: {{firstBytes}} (not first token)\n- Observed requests: {{requests}}; tools: {{tools}}; retry/fallback events: {{retries}}\n- UI commit delay: {{render}} (React commit, not a screen-paint guarantee)\n\n## Slowest paired stages\n{{slowest}}\n\n## Request and tool timeline\n{{timeline}}\n\n## Observed user waits (may overlap tools)\n{{waits}}\n\n## Limits and missing evidence\n- Measured durations only, not a network/client/upstream root-cause verdict. Stages overlap: do not sum them or subtract user waits.\n- Missing is not zero. Unpaired spans may still be running. Active exports are snapshots; old conversations cannot recover unrecorded events.\n- Recording usually starts at response preparation; earlier attachment upload may be excluded. Retry events are not counts of replayed tasks.\n- Correlate zen-api-evidence.json with request IDs for server internals. Missing server records do not prove non-arrival; server writes do not guarantee complete client receipt.\n- Dropped bounded events: {{dropped}}; older requests may expire. Missing-data codes (see performance.json): {{missing}}\n",
+    "requestTiming": " | Headers {{headers}} | First bytes {{bytes}} | HTTP {{status}} | Request ID {{requestId}}"
   },
   "update": {
     "available": "A new version {{version}} is available. Click Check for Updates any time to download it.",

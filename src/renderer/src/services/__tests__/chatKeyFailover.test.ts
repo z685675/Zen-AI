@@ -6,6 +6,15 @@ import { getErrorStatusCode, orderChatApiKeys, shouldRotateChatApiKey } from '..
 const provider = (apiKey: string) => ({ id: 'newapi', apiKey }) as Provider
 
 describe('chat API key failover', () => {
+  it('never rotates credentials to bypass a personal model daily limit', () => {
+    for (const code of [
+      'model_daily_token_limit_exceeded',
+      'model_daily_token_limit_pending',
+      'model_daily_turn_invalid'
+    ]) {
+      expect(shouldRotateChatApiKey({ statusCode: 403, responseBody: JSON.stringify({ error: { code } }) })).toBe(false)
+    }
+  })
   it('rotates for authentication failures', () => {
     expect(shouldRotateChatApiKey({ statusCode: 401, message: 'invalid credentials' })).toBe(true)
     expect(shouldRotateChatApiKey({ statusCode: 403, message: 'API key is not allowed' })).toBe(true)

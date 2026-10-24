@@ -14,7 +14,7 @@ import {
 } from '../error'
 
 describe('error', () => {
-  it.each(['agent_human_wait_timeout', 'agent_execution_timeout'])(
+  it.each(['agent_human_wait_timeout', 'agent_execution_timeout', 'agent_inactivity_timeout'])(
     'preserves %s through stream conversion and saved history',
     async (code) => {
       const chunks: Chunk[] = []
@@ -39,7 +39,14 @@ describe('error', () => {
       const chunk = chunks.find((part) => part.type === ChunkType.ERROR)
       if (chunk?.type !== ChunkType.ERROR) throw new Error('Expected error chunk')
       const saved = JSON.parse(JSON.stringify(serializeError(chunk.error)))
-      expect(getAgentTaskDeadlineKind(saved)).toBe(code === 'agent_human_wait_timeout' ? 'human-wait' : 'execution')
+      expect(getAgentTaskDeadlineKind(saved)).toBe(
+        code === 'agent_human_wait_timeout'
+          ? 'human-wait'
+          : code === 'agent_inactivity_timeout'
+            ? 'inactivity'
+            : 'execution'
+      )
+      expect(saved.code).toBe(code)
       expect(saved.zenFailureStage).toBe('local-task-deadline')
       expect(isAbortError(chunk.error)).toBe(false)
     }

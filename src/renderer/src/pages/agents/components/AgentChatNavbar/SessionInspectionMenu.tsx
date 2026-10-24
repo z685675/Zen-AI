@@ -1,6 +1,6 @@
 import { useAgentClient } from '@renderer/hooks/agents/useAgentClient'
 import { useTopicMessages } from '@renderer/hooks/useMessageOperations'
-import { exportErrorDiagnosticPackage, getDiagnosticAppInfo } from '@renderer/services/ErrorDiagnosticPackageService'
+import { useTurnDiagnosticExport } from '@renderer/hooks/useTurnDiagnosticExport'
 import { useAppSelector } from '@renderer/store'
 import type { GetAgentSessionResponse } from '@renderer/types'
 import { AssistantMessageStatus, type Message } from '@renderer/types/newMessage'
@@ -20,11 +20,10 @@ export default function SessionInspectionMenu({ session }: { session: GetAgentSe
   const blocks = useAppSelector((state) => state.messageBlocks.entities)
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
-  const [exporting, setExporting] = useState(false)
+  const { exportTurn, exporting } = useTurnDiagnosticExport()
   const [inventory, setInventory] = useState<SessionSkillInventory>()
   const [failed, setFailed] = useState(false)
   const generation = useRef(0)
-  const exportLock = useRef(false)
   useEffect(() => {
     setOpen(false)
     setInventory(undefined)
@@ -50,8 +49,6 @@ export default function SessionInspectionMenu({ session }: { session: GetAgentSe
     }
   }
   const exportSnapshot = () => {
-    if (exportLock.current) return
-    exportLock.current = true
     // Keep the chosen session/turn stable even if the user switches conversations.
     const lastUserIndex = messages.findLastIndex((item) => item.role === 'user')
     const message =
@@ -68,40 +65,19 @@ export default function SessionInspectionMenu({ session }: { session: GetAgentSe
     const relatedUserMessage = message.askId
       ? messages.find((item) => item.id === message.askId)
       : messages[lastUserIndex]
-    const privacyNotice = t('agent.errorFallback.privacy_notice')
-    window.modal.confirm({
-      title: t('assistantPeripheral.exportTitle'),
-      content: privacyNotice,
-      okText: t('agent.errorFallback.export_package'),
-      onCancel: () => {
-        exportLock.current = false
+    exportTurn({
+      source: 'agent',
+      message,
+      snapshotHasMessage: messages.some((item) => item.id === message.id),
+      relatedUserMessage,
+      blockEntities: blocks,
+      sessionContext: {
+        sessionId: session.id,
+        agentId: session.agent_id,
+        hasRecordedTurn: messages.length > 0,
+        snapshotAt: new Date().toISOString()
       },
-      onOk: async () => {
-        setExporting(true)
-        try {
-          const saved = await exportErrorDiagnosticPackage({
-            source: 'agent',
-            title: t('assistantPeripheral.exportTitle'),
-            description: t('assistantPeripheral.snapshotHint'),
-            message,
-            snapshotHasMessage: messages.some((item) => item.id === message.id),
-            block: message.blocks.map((id) => blocks[id]).find((block) => block?.type === 'error'),
-            error: message.blocks.map((id) => blocks[id]).find((block) => block?.type === 'error')?.error,
-            relatedUserMessage,
-            blockEntities: blocks,
-            appInfo: await getDiagnosticAppInfo(),
-            privacyNotice,
-            sessionContext: { session, hasRecordedTurn: messages.length > 0, snapshotAt: new Date().toISOString() },
-            sessionContextStatus: 'loaded-current-session-at-export-time'
-          })
-          if (saved) window.toast.success(t('assistantPeripheral.exportSaved'))
-        } catch {
-          window.toast.error(t('assistantPeripheral.exportFailed'))
-        } finally {
-          setExporting(false)
-          exportLock.current = false
-        }
-      }
+      sessionContextStatus: 'loaded-current-session-at-export-time'
     })
   }
   const usage = currentTurnSkillUsage(messages, blocks)
@@ -113,7 +89,7 @@ export default function SessionInspectionMenu({ session }: { session: GetAgentSe
         trigger={['click']}
         menu={{
           items: [
-            { key: 'diagnostics', label: t('agent.errorFallback.export_package'), disabled: exporting },
+            { key: 'diagnostics', label: t('turnDiagnostics.export'), disabled: exporting },
             { key: 'skills', label: t('assistantPeripheral.skillsTitle') }
           ],
           onClick: ({ key }) => {

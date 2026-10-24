@@ -1,3 +1,4 @@
+import { recordDiagnostic } from '@renderer/services/DiagnosticEvidenceService'
 import type { Assistant } from '@renderer/types'
 import { createMessageResponseTimer } from '@renderer/utils/messageTiming'
 
@@ -24,6 +25,19 @@ interface CallbacksDependencies {
 export const createCallbacks = (deps: CallbacksDependencies) => {
   const { blockManager, dispatch, getState, topicId, assistantMsgId, saveUpdatesToDB, assistant } = deps
   const responseTimer = createMessageResponseTimer()
+  let firstTextRecorded = false
+  let firstContentRecorded = false
+  const observeContent = (text: string, body: boolean) => {
+    if (!text.trim()) return
+    if (!firstContentRecorded) {
+      firstContentRecorded = true
+      recordDiagnostic(assistantMsgId, 'response', 'first-content')
+    }
+    if (body && !firstTextRecorded) {
+      firstTextRecorded = true
+      recordDiagnostic(assistantMsgId, 'response', 'first-text')
+    }
+  }
 
   // 首先创建 thinkingCallbacks ，以便传递 getCurrentThinkingInfo 给 baseCallbacks
   const thinkingCallbacks = createThinkingCallbacks({
@@ -93,18 +107,22 @@ export const createCallbacks = (deps: CallbacksDependencies) => {
     ...videoCallbacks,
     ...compactCallbacks,
     onTextChunk: (...args: Parameters<typeof textCallbacks.onTextChunk>) => {
+      observeContent(args[0], true)
       responseTimer.markFirstToken(args[0])
       return textCallbacks.onTextChunk(...args)
     },
     onTextComplete: (...args: Parameters<typeof textCallbacks.onTextComplete>) => {
+      observeContent(args[0], true)
       responseTimer.markFirstToken(args[0])
       return textCallbacks.onTextComplete(...args)
     },
     onThinkingChunk: (...args: Parameters<typeof thinkingCallbacks.onThinkingChunk>) => {
+      observeContent(args[0], false)
       responseTimer.markFirstToken(args[0])
       return thinkingCallbacks.onThinkingChunk(...args)
     },
     onThinkingComplete: (...args: Parameters<typeof thinkingCallbacks.onThinkingComplete>) => {
+      observeContent(args[0], false)
       responseTimer.markFirstToken(args[0])
       return thinkingCallbacks.onThinkingComplete(...args)
     },

@@ -11,6 +11,7 @@ import type {
 } from '@renderer/types/error'
 import { isSerializedAiSdkAPICallError } from '@renderer/types/error'
 import { AGENT_TASK_LIMIT_CODE, getAgentTaskLimitDetails } from '@shared/agents/taskConcurrency'
+import { getModelDailyQuotaErrorKind, MODEL_DAILY_QUOTA_MESSAGE_KEYS } from '@shared/utils/modelDailyQuota'
 import { safeSerialize } from '@shared/utils/serialize'
 import type { NoSuchToolError } from 'ai'
 import { AISDKError } from 'ai'
@@ -83,6 +84,8 @@ export function formatErrorMessage(error: unknown): string {
 }
 
 export function getErrorMessage(error: unknown): string {
+  const dailyQuota = getModelDailyQuotaErrorKind(error)
+  if (dailyQuota) return t(MODEL_DAILY_QUOTA_MESSAGE_KEYS[dailyQuota])
   if (error instanceof Error && error.message) {
     return error.message
   } else {
@@ -273,7 +276,7 @@ export const serializeError = (error: AiSdkErrorUnion): SerializedError => {
   const deadline = getAgentTaskDeadlineKind(error)
   if (deadline)
     Object.assign(serializedError, {
-      code: deadline === 'execution' ? 'agent_execution_timeout' : 'agent_human_wait_timeout',
+      code: deadline === 'human-wait' ? 'agent_human_wait_timeout' : `agent_${deadline}_timeout`,
       zenFailureStage: 'local-task-deadline'
     })
   return serializedError

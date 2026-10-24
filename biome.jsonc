@@ -25,6 +25,7 @@
     "ignoreUnknown": false,
     "includes": [
       "**",
+      "!packages/image-canvas/**",
       "!**/.claude/**",
       "!**/.vscode/**",
       "!**/.conductor/**",

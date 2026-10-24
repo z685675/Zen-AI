@@ -6,6 +6,9 @@
   },
   "globals": {},
   "ignorePatterns": [
+    "packages/image-canvas/**",
+    "resources/image-canvas/**",
+    "resources/image-workbench/**",
     "node_modules/**",
     "build/**",
     "dist/**",

@@ -4,8 +4,8 @@ import { createTaskDeadline } from '../taskDeadline'
 
 beforeEach(() => vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] }))
 afterEach(() => vi.useRealTimers())
-describe('execution and bounded human wait budgets', () => {
-  it('retains remaining execution budget across a long permission wait', () => {
+describe('progress watchdog and bounded human wait budgets', () => {
+  it('does not count a long permission wait as model inactivity', () => {
     const timeout = vi.fn()
     const deadline = createTaskDeadline(timeout, 1000, 3000)
     vi.advanceTimersByTime(700)
@@ -13,10 +13,36 @@ describe('execution and bounded human wait budgets', () => {
     vi.advanceTimersByTime(2500)
     expect(timeout).not.toHaveBeenCalled()
     deadline.continue('permission:1')
-    vi.advanceTimersByTime(299)
+    vi.advanceTimersByTime(999)
     expect(timeout).not.toHaveBeenCalled()
     vi.advanceTimersByTime(1)
-    expect(timeout).toHaveBeenCalledExactlyOnceWith('execution')
+    expect(timeout).toHaveBeenCalledExactlyOnceWith('inactivity')
+    deadline.dispose()
+  })
+  it('allows an actively progressing task to run far beyond the old total execution cap', () => {
+    const timeout = vi.fn()
+    const deadline = createTaskDeadline(timeout, 1000, 3000)
+    for (let step = 0; step < 100; step++) {
+      vi.advanceTimersByTime(900)
+      deadline.progress()
+    }
+    expect(timeout).not.toHaveBeenCalled()
+    vi.advanceTimersByTime(1000)
+    expect(timeout).toHaveBeenCalledExactlyOnceWith('inactivity')
+    deadline.progress()
+    vi.advanceTimersByTime(5000)
+    expect(timeout).toHaveBeenCalledOnce()
+    deadline.dispose()
+  })
+  it('does not extend a cumulative user wait just because progress events are received', () => {
+    const timeout = vi.fn()
+    const deadline = createTaskDeadline(timeout, 1000, 3000)
+    deadline.wait('permission')
+    for (let step = 0; step < 3; step++) {
+      vi.advanceTimersByTime(1000)
+      deadline.progress()
+    }
+    expect(timeout).toHaveBeenCalledExactlyOnceWith('human-wait')
     deadline.dispose()
   })
   it('counts overlapping browser and permission waits once and waits for both', () => {

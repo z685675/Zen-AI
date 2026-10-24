@@ -2,6 +2,7 @@ import { isDedicatedImageGenerationModel, isEmbeddingModel, isRerankModel } from
 import { resolveIndependentModel } from '@renderer/config/remoteModelPolicy'
 import type { Model, Provider } from '@renderer/types'
 import { isAbortError } from '@renderer/utils/error'
+import { getModelDailyQuotaErrorKind } from '@shared/utils/modelDailyQuota'
 
 import { getErrorStatusCode } from '../chatKeyFailover'
 import {
@@ -161,6 +162,7 @@ export const createContextCompactionGenerator = ({
  * failures and are frozen for the local five-minute recovery cycle.
  */
 export const isContextCompactionModelFailureFreezable = (error: unknown): boolean => {
+  if (getModelDailyQuotaErrorKind(error)) return false
   if (isAbortError(error)) return false
   if (typeof navigator !== 'undefined' && navigator.onLine === false) return false
 

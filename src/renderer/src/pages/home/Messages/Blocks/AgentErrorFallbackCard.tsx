@@ -1,9 +1,10 @@
 import { showErrorDetailPopup } from '@renderer/components/ErrorDetailModal'
 import { useAgentClient } from '@renderer/hooks/agents/useAgentClient'
+import { useNativeTaskContinuation } from '@renderer/hooks/useNativeTaskContinuation'
 import { useTimer } from '@renderer/hooks/useTimer'
 import type { DiagnosisResult } from '@renderer/services/ErrorDiagnosisService'
 import { exportErrorDiagnosticPackage, getDiagnosticAppInfo } from '@renderer/services/ErrorDiagnosticPackageService'
-import { useAppDispatch, useAppSelector } from '@renderer/store'
+import store, { useAppDispatch, useAppSelector } from '@renderer/store'
 import { removeBlocksThunk, resendMessageThunk } from '@renderer/store/thunk/messageThunk'
 import type { Assistant } from '@renderer/types'
 import type { ErrorMessageBlock, Message } from '@renderer/types/newMessage'
@@ -11,8 +12,9 @@ import { extractAgentSessionIdFromTopicId } from '@renderer/utils/agentSession'
 import { diagnoseClientError } from '@renderer/utils/clientErrorDiagnosis'
 import { classifyError } from '@renderer/utils/errorClassifier'
 import { isReadOnlyLegacySession } from '@renderer/utils/legacyMessageActions'
+import { DEFAULT_OPENCODE_AGENT_ID } from '@shared/config/agents'
 import { Button } from 'antd'
-import { AlertTriangle, ChevronRight, Download, RefreshCw, Wrench, X } from 'lucide-react'
+import { AlertTriangle, ChevronRight, Download, Play, RefreshCw, Wrench, X } from 'lucide-react'
 import React, { useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
@@ -53,12 +55,14 @@ const isDependencyError = (error: unknown): boolean => {
 }
 
 const AgentErrorFallbackCard: React.FC<Props> = ({ block, message }) => {
+  const continuation = useNativeTaskContinuation(message)
   const dispatch = useAppDispatch()
   const client = useAgentClient()
   const { setTimeoutTimer } = useTimer()
   const { t } = useTranslation()
   const navigate = useNavigate()
   const [exporting, setExporting] = useState(false)
+  const taskBusy = useAppSelector((state) => Boolean(state.messages.loadingByTopic[message.topicId]))
   const legacyReadOnly = isReadOnlyLegacySession(message.topicId, message.assistantId)
 
   const relatedUserMessage = useAppSelector((state) =>
@@ -156,9 +160,20 @@ const AgentErrorFallbackCard: React.FC<Props> = ({ block, message }) => {
         return
       }
 
-      await dispatch(resendMessageThunk(message.topicId, relatedUserMessage, assistantForRetry))
+      const retry = () => {
+        if (store.getState().messages.loadingByTopic[message.topicId] || continuation.submitting) return
+        return dispatch(resendMessageThunk(message.topicId, relatedUserMessage, assistantForRetry))
+      }
+      if (message.assistantId === DEFAULT_OPENCODE_AGENT_ID) {
+        window.modal.confirm({
+          title: t('agent.errorFallback.retry'),
+          content: t('new_assistant.history.retry_notice'),
+          centered: true,
+          onOk: retry
+        })
+      } else await retry()
     },
-    [assistantForRetry, dispatch, message.topicId, relatedUserMessage, t]
+    [assistantForRetry, continuation.submitting, dispatch, message.assistantId, message.topicId, relatedUserMessage, t]
   )
 
   const openEnvironmentSettings = useCallback((e: React.MouseEvent) => {
@@ -261,6 +276,19 @@ const AgentErrorFallbackCard: React.FC<Props> = ({ block, message }) => {
       <Description>{description}</Description>
 
       <Actions>
+        {(continuation.canContinue || continuation.submitting) && (
+          <Button
+            size="small"
+            type="primary"
+            loading={continuation.submitting}
+            icon={<Play size={14} />}
+            onClick={(event) => {
+              event.stopPropagation()
+              void continuation.continueTask()
+            }}>
+            {t('assistantTaskContinuation.action')}
+          </Button>
+        )}
         {!legacyReadOnly && dependencyIssue && (
           <Button size="small" type="primary" icon={<Wrench size={14} />} onClick={openEnvironmentSettings}>
             {t('agent.errorFallback.fix_environment')}
@@ -272,7 +300,11 @@ const AgentErrorFallbackCard: React.FC<Props> = ({ block, message }) => {
           </Button>
         )}
         {!legacyReadOnly && (
-          <Button size="small" icon={<RefreshCw size={14} />} onClick={retryTask} disabled={!relatedUserMessage}>
+          <Button
+            size="small"
+            icon={<RefreshCw size={14} />}
+            onClick={retryTask}
+            disabled={!relatedUserMessage || taskBusy || continuation.submitting}>
             {t('agent.errorFallback.retry')}
           </Button>
         )}

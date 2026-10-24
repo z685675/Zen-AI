@@ -67,6 +67,7 @@ import type { RootState } from '.'
 import { DEFAULT_TOOL_ORDER, DEFAULT_TOOL_ORDER_BY_SCOPE } from './inputTools'
 import { initialState as llmInitialState, moveProvider } from './llm'
 import { mcpSlice } from './mcp'
+import { resetDefaultAssistantRequestOverrides } from './migrations/defaultAssistantRequestOverrides'
 import { initialState as notesInitialState } from './note'
 import { defaultActionItems } from './selectionStore'
 import { initialState as settingsInitialState } from './settings'
@@ -3835,6 +3836,17 @@ const migrateConfig = {
       return state
     } catch (error) {
       logger.error('migrate 227 error', error as Error)
+      return state
+    }
+  },
+  '228': (state: RootState) => {
+    try {
+      // Fresh defaults alone do not repair switches already persisted by older
+      // installations. Reset only the default template and built-in chat role.
+      // Subsequent user opt-ins survive because this runs once per upgrade.
+      return resetDefaultAssistantRequestOverrides(state)
+    } catch (error) {
+      logger.error('migrate 228 error', error as Error)
       return state
     }
   }

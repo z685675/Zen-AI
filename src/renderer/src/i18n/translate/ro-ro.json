@@ -971,14 +971,22 @@
     "searchDisclosure": "Web research may send a search query to Exa public MCP. This third-party service may retain queries or use them for training and has usage limits. Do not submit personal information, secrets or private files. It is only called when research is needed; search failure does not block ordinary chat.",
     "skillLimit": "This read-only check does not execute scripts, install dependencies or grant permissions. It checks declared command/environment requirements only; Python packages, external services, script safety and task quality remain unverified. Enabled/discovered does not mean successfully applied."
   },
+  "assistantTaskContinuation": {
+    "action": "Continuă sarcina",
+    "failed": "Continuarea a eșuat. Verifică modelul și încearcă din nou.",
+    "prompt": "Continuă sarcina neterminată în această conversație. Verifică mai întâi fișierele, rezultatele și progresul existente și completează numai pașii lipsă. Nu repeta descărcările și nu recrea sau suprascrie rezultatele finalizate. Dacă progresul este incert, explică și întreabă-mă înainte de a acționa. Păstrează permisiunile și confirmările actuale."
+  },
   "assistantTaskDeadline": {
     "stageExecution": "[to be translated]:Local task execution",
     "stageHumanWait": "[to be translated]:Waiting for user action",
+    "stageInactivity": "Monitorizarea progresului",
     "suggestion": "[to be translated]:Review completed work, then explicitly ask to continue only the unfinished part. Avoid blindly repeating submissions or generation.",
     "summaryExecution": "[to be translated]:The cumulative 15-minute execution limit was reached. The task is paused; saved history and outputs are retained, with no automatic replay.",
     "summaryHumanWait": "[to be translated]:The cumulative 30-minute user-action wait limit was reached. The task is paused; saved history and outputs are retained, with no automatic replay.",
+    "summaryInactivity": "Nu s-a observat progres nou timp de 15 minute. Sarcina a fost pusă pe pauză; istoricul și rezultatele salvate sunt păstrate pentru verificare înainte de continuare.",
     "titleExecution": "[to be translated]:Task paused: execution time limit reached",
-    "titleHumanWait": "[to be translated]:Task paused: user wait limit reached"
+    "titleHumanWait": "[to be translated]:Task paused: user wait limit reached",
+    "titleInactivity": "Sarcină în pauză: fără progres recent"
   },
   "assistantToolFailure": {
     "cancelled": {
@@ -2238,6 +2246,13 @@
         "invalid": "Server MCP invalid"
       }
     },
+    "cancelled": {
+      "errorType": "[to be translated]:Stopped by user",
+      "stage": "[to be translated]:Stopping generation",
+      "suggestion": "[to be translated]:Review any existing results before sending a follow-up request to continue.",
+      "summary": "[to be translated]:This generation was stopped.",
+      "title": "[to be translated]:Stopped"
+    },
     "cause": "Cauză eroare",
     "chat": {
       "chunk": {
@@ -2469,6 +2484,19 @@
     "generating": "Se generează",
     "preview": "Previzualizare",
     "split": "Divizat"
+  },
+  "image_studio": {
+    "canvas": "Image canvas",
+    "canvas_unavailable": "The local image canvas could not open. Retry or check the application logs.",
+    "key": "Key {{index}}",
+    "key_label": "Workspace key",
+    "local": "[to be translated]:Local images",
+    "opening": "[to be translated]:Opening image workspace…",
+    "reconnect": "[to be translated]:Reconnect",
+    "server": "Server workspace",
+    "title": "[to be translated]:Image workspace",
+    "unavailable": "[to be translated]:The workspace could not open. Make sure your Zen API server has been updated and the selected key is valid. You can still open Local images.",
+    "workbench": "Image studio"
   },
   "import": {
     "chatgpt": {
@@ -3205,6 +3233,21 @@
       "pin": "Menține fereastra deasupra"
     }
   },
+  "model_daily_quota": {
+    "exceeded": "Limita zilnică a acestui model a fost epuizată. Încercați mâine.",
+    "hint": "Intrare + ieșire; memoria cache este inclusă în intrare. Resetare la miezul nopții în Beijing. Ultima întrebare admisă poate depăși limita.",
+    "invalid": "Autorizarea acestei întrebări a expirat. Trimiteți o întrebare nouă.",
+    "limit": "Limită zilnică",
+    "pending": "Limita rămasă este rezervată de altă sarcină. Așteptați finalizarea ei.",
+    "remaining": "Rămas",
+    "stage": "Verificarea limitei modelului",
+    "status_error": "Limitele de azi nu pot fi actualizate. Istoricul rămâne disponibil.",
+    "suggestion": "Alegeți alt model disponibil sau așteptați resetarea. Nu reîncercați repetat.",
+    "title": "Limitele de azi · ora Beijingului",
+    "unavailable": "Serviciul de limite este temporar indisponibil.",
+    "used": "Utilizat",
+    "used_up": "Epuizat azi"
+  },
   "model_recovery": {
     "empty": "{{preferred}} și modelele de rezervă nu sunt disponibile.",
     "fallback": "{{preferred}} nu este disponibil; se folosește temporar {{actual}}.",
@@ -3278,6 +3321,12 @@
       "vision": "Vizual",
       "websearch": "Căutare Web"
     }
+  },
+  "nativeActivity": {
+    "failures": "{{count}} încercări de instrumente necesită verificare; extinde detaliile.",
+    "finished": "Raționament și execuție · {{count}} apeluri de instrumente",
+    "running": "În lucru · {{count}} apeluri de instrumente",
+    "thinking": "Raționament"
   },
   "navbar": {
     "expand": "Extinde dialogul",
@@ -6735,6 +6784,29 @@
     "quit": "Ieșire",
     "show_mini_window": "Asistent rapid",
     "show_window": "Afișează fereastra"
+  },
+  "turnDiagnostics": {
+    "description": "Exportă starea, duratele și cererile acestei runde fără a repeta sarcina sau a apela un model.",
+    "export": "Exportă diagnosticul rundei",
+    "includeContent": "Include conversația și conținutul instrumentelor din această rundă (opțional)",
+    "intervalKinds": {
+      "context": "Procesare context",
+      "preparation": "Pregătire locală",
+      "request": "Cerere model (include așteptarea rețelei/gateway-ului)",
+      "runtime": "Etapa asistentului",
+      "tool": "Instrument"
+    },
+    "notRecorded": "Neînregistrat sau neterminat",
+    "outcomes": {
+      "cancelled": "Oprit",
+      "completed": "Finalizat",
+      "failed": "Eșuat",
+      "pending": "În așteptare",
+      "processing": "În desfășurare"
+    },
+    "privacy": "Implicit sunt incluse doar metadate de diagnostic, nu textul conversației, argumentele/rezultatele instrumentelor, atașamentele originale sau istoricul complet. Distribuiți doar destinatarilor de încredere. Conținutul opțional poate include date personale.",
+    "reportTemplate": "# Zen AI: diagnosticarea acestei runde\n\n- Rezultat: {{outcome}}\n- Model: {{model}}; Provider: {{provider}}\n- Tokenuri: intrare {{input}}; ieșire {{output}}; cache citit {{cache}} (deja inclus în intrare)\n- Început: {{start}}; sfârșit: {{end}}; total: {{total}}\n- Primul conținut (posibil raționament): {{firstContent}}; primul text de răspuns: {{firstText}}; primii octeți de rețea: {{firstBytes}} (nu primul token)\n- Cereri observate: {{requests}}; instrumente: {{tools}}; reîncercări/comutări: {{retries}}\n- Întârziere commit UI: {{render}} (React, nu garantează afișarea pe ecran)\n\n## Cele mai lente etape cu început și sfârșit\n{{slowest}}\n\n## Cronologia cererilor și instrumentelor\n{{timeline}}\n\n## Așteptări observate ale utilizatorului (pot suprapune instrumentele)\n{{waits}}\n\n## Limite și date lipsă\n- Numai durate măsurate, nu un verdict privind cauza rețelei/clientului/serviciului. Etapele se suprapun: nu însumați și nu scădeți așteptările.\n- Lipsă nu înseamnă zero. Intervalele deschise pot fi active. Exportul activ este o captură; conversațiile vechi nu recuperează evenimente neînregistrate.\n- Înregistrarea începe de obicei la pregătirea răspunsului; încărcările anterioare pot lipsi. Reîncercările nu numără sarcini executate din nou.\n- Corelați zen-api-evidence.json și ID-urile pentru detalii server. Absența înregistrării nu dovedește neprimirea; scrierea nu garantează primirea completă.\n- Evenimente eliminate din cauza limitei: {{dropped}}; cererile vechi pot expira. Coduri de date lipsă (performance.json): {{missing}}\n",
+    "requestTiming": " | Antete {{headers}} | Primii octeți {{bytes}} | HTTP {{status}} | ID cerere {{requestId}}"
   },
   "update": {
     "available": "A new version {{version}} is available. Click Check for Updates any time to download it.",

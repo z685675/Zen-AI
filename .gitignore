@@ -83,3 +83,7 @@ test-results
 YOUR_MEMORY_FILE_PATH
 
 .sessions/
+# Generated from the pinned source in packages/image-canvas on every desktop build.
+resources/image-canvas/
+packages/image-canvas/*.tsbuildinfo
+resources/image-workbench/

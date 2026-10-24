@@ -67,6 +67,7 @@ export async function prepareOpenCodeRuntime(
     [...session.accessible_paths, ...skillPaths],
     signal,
     options?.onStarting,
-    options?.diagnosticId
+    options?.diagnosticId,
+    model.provider.type === 'new-api' ? model.modelId : undefined
   )
 }

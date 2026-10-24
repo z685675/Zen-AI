@@ -5,6 +5,7 @@ import { Readable } from 'node:stream'
 
 import { listenOnLoopback } from '@shared/utils/loopbackServer'
 
+import { ModelDailyQuotaRefusal, OpenCodeDailyQuota } from './dailyQuota'
 import { OpenCodeUsageObserver } from './usageObservation'
 
 export type TransportEvent = (operationId: string | undefined, event: string, details: Record<string, unknown>) => void
@@ -13,12 +14,13 @@ export type TransportEvent = (operationId: string | undefined, event: string, de
  * Reuses Zen's proxy-aware fetch and attaches per-turn diagnostics without
  * restarting OpenCode or writing provider credentials into project files.
  */
-export async function createOpenCodeGateway(baseURL: string, record: TransportEvent) {
+export async function createOpenCodeGateway(baseURL: string, record: TransportEvent, dailyModel?: string) {
   const target = new URL(baseURL)
   if (!['http:', 'https:'].includes(target.protocol) || target.username || target.password)
     throw new Error('Unsupported new assistant Provider address')
   const token = randomBytes(32).toString('hex')
   const active = new Set<AbortController>()
+  const quota = dailyModel ? new OpenCodeDailyQuota(baseURL, dailyModel) : undefined
   let operationId: string | undefined
   let taskId = `task_${randomUUID()}`
   const emit = (id: string | undefined, event: string, details: Record<string, unknown>) => {
@@ -36,6 +38,9 @@ export async function createOpenCodeGateway(baseURL: string, record: TransportEv
     const controller = new AbortController()
     active.add(controller)
     const id = operationId
+    const transportRequestId = randomUUID()
+    const transport = (event: string, details: Record<string, unknown>) =>
+      emit(id, event, { transportRequestId, ...details })
     const requestTaskId = taskId
     const started = Date.now()
     let upstreamStatus: number | undefined
@@ -62,6 +67,7 @@ export async function createOpenCodeGateway(baseURL: string, record: TransportEv
             'content-length',
             'transfer-encoding',
             'x-zen-runtime-token',
+            'x-zen-model-turn',
             'x-zen-task-id',
             'x-zen-diagnostic-operation'
           ].includes(name) ||
@@ -72,7 +78,9 @@ export async function createOpenCodeGateway(baseURL: string, record: TransportEv
       }
       if (id) headers.set('X-Zen-Diagnostic-Operation', id)
       headers.set('X-Zen-Task-Id', requestTaskId)
-      emit(id, 'request-started', { runtime: 'opencode', url: upstream.href, method: req.method })
+      const permit = await quota?.getPermit(headers, controller.signal)
+      if (permit) headers.set('X-Zen-Model-Turn', permit)
+      transport('request-started', { runtime: 'opencode', url: upstream.href, method: req.method })
       const response = await fetch(upstream, {
         method: req.method,
         headers,
@@ -85,7 +93,7 @@ export async function createOpenCodeGateway(baseURL: string, record: TransportEv
       const requestId = response.headers.get('x-oneapi-request-id') || response.headers.get('x-request-id')
       upstreamStatus = response.status
       usageObserver = new OpenCodeUsageObserver(response.headers.get('content-type') ?? '')
-      emit(id, 'headers-received', {
+      transport('headers-received', {
         runtime: 'opencode',
         url: upstream.href,
         status: response.status,
@@ -105,7 +113,12 @@ export async function createOpenCodeGateway(baseURL: string, record: TransportEv
       })
       res.flushHeaders()
       if (response.body) {
+        let firstBytes = true
         for await (const chunk of Readable.fromWeb(response.body as any)) {
+          if (firstBytes) {
+            firstBytes = false
+            transport('first-bytes', { runtime: 'opencode', requestId, durationMs: Date.now() - started })
+          }
           try {
             usageObserver.push(chunk)
           } catch {
@@ -116,9 +129,14 @@ export async function createOpenCodeGateway(baseURL: string, record: TransportEv
       }
       res.end()
       bodyComplete = true
-      emit(id, 'body-complete', { runtime: 'opencode', status: response.status, durationMs: Date.now() - started })
+      transport('body-complete', { runtime: 'opencode', status: response.status, durationMs: Date.now() - started })
     } catch (error) {
-      emit(id, controller.signal.aborted ? 'cancelled' : 'failed', {
+      if (error instanceof ModelDailyQuotaRefusal) {
+        transport('quota-refused', { runtime: 'opencode', status: error.status })
+        res.writeHead(error.status, { 'Content-Type': 'application/json' }).end(error.body)
+        return
+      }
+      transport(controller.signal.aborted ? 'cancelled' : 'failed', {
         runtime: 'opencode',
         error,
         url: `${upstream.origin}${upstream.pathname}`,
@@ -147,11 +165,13 @@ export async function createOpenCodeGateway(baseURL: string, record: TransportEv
   return {
     baseURL: `http://127.0.0.1:${port}${target.pathname.replace(/\/$/, '')}`,
     token,
+    finishTurn: () => quota?.finish() ?? Promise.resolve(),
     setOperation: (value: string | undefined) => {
       operationId = value
       taskId = value || `task_${randomUUID()}`
     },
     stop: () => {
+      void quota?.finish()
       for (const controller of active) controller.abort('Runtime stopped')
       server.closeAllConnections()
       server.close()

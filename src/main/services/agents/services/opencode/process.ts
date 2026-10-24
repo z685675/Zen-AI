@@ -19,6 +19,7 @@ import { configManager } from '@main/services/ConfigManager'
 import { recordMainDiagnostic } from '@main/services/DiagnosticEvidenceService'
 import { getDataPath, getResourcePath, toAsarUnpackedPath } from '@main/utils'
 import { getBinaryPath } from '@main/utils/process'
+import { isZenManagedApiHost } from '@shared/config/zenProvider'
 import { app } from 'electron'
 
 import { assertAssistantDataAvailable } from '../dataOperationGate'
@@ -75,9 +76,9 @@ export class OpenCodeProcess {
     return path.join(this.root, 'binding.json')
   }
 
-  async start(config: unknown, allowedRoots: string[], signal: AbortSignal): Promise<void> {
+  async start(config: unknown, allowedRoots: string[], signal: AbortSignal, dailyModel?: string): Promise<void> {
     try {
-      await this.startNative(config, allowedRoots, signal)
+      await this.startNative(config, allowedRoots, signal, dailyModel)
     } catch (error) {
       this.flushDiagnostic()
       this.recordDiagnostic('failed', {
@@ -126,7 +127,12 @@ export class OpenCodeProcess {
     if (this.diagnosticId === id) this.flushDiagnostic()
   }
 
-  private async startNative(config: unknown, allowedRoots: string[], signal: AbortSignal): Promise<void> {
+  private async startNative(
+    config: unknown,
+    allowedRoots: string[],
+    signal: AbortSignal,
+    dailyModel?: string
+  ): Promise<void> {
     this.stage('workspace')
     signal.throwIfAborted()
     await fs.access(this.directory)
@@ -180,11 +186,18 @@ export class OpenCodeProcess {
     const providerOptions = expected.provider[OPENCODE_PROVIDER_ID].options
     const providerHost = providerOptions.baseURL as string
     this.stage('local-gateway')
-    this.gateway = await createOpenCodeGateway(providerOptions.baseURL, (id, event, details) => {
-      recordMainDiagnostic(id, 'transport', event, details)
-      // Status callbacks are scoped to the active turn and cannot alter bytes.
-      this.progressListener?.(event, details)
-    })
+    this.gateway = await createOpenCodeGateway(
+      providerOptions.baseURL,
+      (id, event, details) => {
+        recordMainDiagnostic(id, 'transport', event, details)
+        // Status callbacks are scoped to the active turn and cannot alter bytes.
+        this.progressListener?.(event, details)
+      },
+      dailyModel ??
+        (isZenManagedApiHost(providerHost)
+          ? String(expected.model).slice(`${OPENCODE_PROVIDER_ID}/`.length)
+          : undefined)
+    )
     providerOptions.baseURL = this.gateway.baseURL
     let auditClientId = ''
     try {
@@ -397,6 +410,10 @@ export class OpenCodeProcess {
     touchBrowserMcpContext(this.key)
   }
 
+  async finishTurn() {
+    await this.gateway?.finishTurn()
+  }
+
   activate() {
     clearTimeout(this.idleTimer)
     this.active = true
@@ -453,7 +470,8 @@ export async function getOpenCodeProcess(
   roots: string[],
   signal: AbortSignal,
   onStarting?: () => void,
-  diagnosticId?: string
+  diagnosticId?: string,
+  dailyModel?: string
 ): Promise<OpenCodeProcess> {
   assertAssistantDataAvailable()
   if (shuttingDown) throw new Error('Zen AI is shutting down')
@@ -491,7 +509,7 @@ export async function getOpenCodeProcess(
       processes.set(key, runtime)
       try {
         onStarting?.()
-        await runtime.start(config, roots, signal)
+        await runtime.start(config, roots, signal, dailyModel)
       } catch (error) {
         runtime.stop()
         throw error

@@ -55,6 +55,7 @@ let mode:
   | 'reconnect-cancel'
   | 'empty-compaction'
   | 'empty-compaction-disconnect' = 'success'
+let longTaskMode: 'progress' | 'busy-only' | undefined
 let pause: { ready: () => void; wait: Promise<void> } | undefined
 function hold(signal: AbortSignal) {
   return new Promise<void>((resolve, reject) => {
@@ -128,6 +129,39 @@ async function* events(signal: AbortSignal) {
   }
   yield { type: 'message.updated', properties: { info: { id: body.messageID, sessionID: 'native', role: 'user' } } }
   yield { type: 'session.status', properties: { sessionID: 'native', status: { type: 'busy' } } }
+  if (longTaskMode) {
+    yield { type: 'message.updated', properties: { info: nativeInfo() } }
+    pause!.ready()
+    for (let step = 0; step < 4; step++) {
+      await new Promise<void>((resolve, reject) => {
+        const abort = () => {
+          clearTimeout(timer)
+          reject(signal.reason)
+        }
+        const timer = setTimeout(() => {
+          signal.removeEventListener('abort', abort)
+          resolve()
+        }, 10 * 60_000)
+        signal.addEventListener('abort', abort, { once: true })
+      })
+      if (longTaskMode === 'progress')
+        yield {
+          type: 'message.part.updated',
+          properties: {
+            part: {
+              id: `work-${step}`,
+              messageID: 'assistant-new',
+              sessionID: 'native',
+              type: 'tool',
+              callID: `call-${step}`,
+              tool: 'read',
+              state: { status: 'completed', input: {}, output: 'actual result' }
+            }
+          }
+        }
+      else yield { type: 'session.status', properties: { sessionID: 'native', status: { type: 'busy' } } }
+    }
+  }
   if (mode.startsWith('reconnect') && (connection === 1 || mode === 'reconnect-exhausted'))
     throw new Error('mock local stream disconnect')
   if (mode === 'empty-compaction-disconnect') throw new Error('lost compaction event')
@@ -249,6 +283,7 @@ beforeEach(() => {
   transportError = undefined
   recoverTransport = false
   pause = undefined
+  longTaskMode = undefined
   mocks.getProcess.mockImplementation(async (...args) => {
     args[5]?.()
     return runtime
@@ -260,6 +295,30 @@ afterEach(() => {
   vi.useRealTimers()
 })
 describe('OpenCode adapter turn lifecycle', () => {
+  it.each(['progress', 'busy-only'] as const)(
+    'uses real tool progress, not busy heartbeats, for a long %s task',
+    async (value) => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'performance'] })
+      longTaskMode = value
+      let ready!: () => void
+      const entered = new Promise<void>((resolve) => {
+        ready = resolve
+      })
+      pause = { ready, wait: new Promise<void>(() => {}) }
+      const controller = new AbortController()
+      const result = run(controller)
+      await entered
+      await vi.advanceTimersByTimeAsync(40 * 60_000)
+      if (value === 'progress') {
+        expect(controller.signal.aborted).toBe(false)
+        expect((await result).at(-1)?.type).toBe('complete')
+      } else {
+        expect((await result).at(-1)).toMatchObject({ type: 'error', error: { code: 'agent_inactivity_timeout' } })
+      }
+      expect(request.mock.calls.filter(([route]) => route.endsWith('/prompt_async'))).toHaveLength(1)
+      expect(vi.getTimerCount()).toBe(0)
+    }
+  )
   it('recovers a missing native permission event without replaying a tool or the task', async () => {
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
     mode = 'permission-lost'

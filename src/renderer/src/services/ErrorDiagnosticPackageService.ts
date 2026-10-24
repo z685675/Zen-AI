@@ -11,6 +11,14 @@ import { attributeDiagnostic, type DiagnosticEvent, diagnosticText, sanitizeDiag
 import { getContextTelemetry } from './context/ContextTelemetryService'
 import { collectBackendDiagnostic } from './DiagnosticBackendService'
 import { getDiagnosticEvidence } from './DiagnosticEvidenceService'
+import {
+  createTurnReport,
+  metadataBackend,
+  metadataBlock,
+  metadataEvent,
+  metadataEvidence,
+  metadataMessage
+} from './TurnDiagnosticReport'
 
 const t = i18n.t
 
@@ -49,6 +57,8 @@ export interface ErrorDiagnosticPackageInput {
   sessionContextStatus?: string
   aiDiagnosis?: unknown
   privacyNotice: string
+  /** Existing error exports retain their explicit consent; normal turn exports default to metadata only at the entry. */
+  includeContent?: boolean
 }
 
 const sanitizeUrl = (value: string): string => {
@@ -148,7 +158,8 @@ export const exportErrorDiagnosticPackage = async ({
   sessionContext,
   sessionContextStatus,
   aiDiagnosis,
-  privacyNotice
+  privacyNotice,
+  includeContent = true
 }: ErrorDiagnosticPackageInput): Promise<string> => {
   const mode = diagnosis ? 'error' : 'snapshot'
   const observedStatus = snapshotHasMessage
@@ -180,14 +191,23 @@ export const exportErrorDiagnosticPackage = async ({
   } finally {
     clearTimeout(collectionTimer)
   }
-  const events: DiagnosticEvent[] = [
+  const observedEvents: DiagnosticEvent[] = [
     ...(rendererEvidence?.events ?? []),
     ...(mainEvidence?.evidence?.events ?? [])
-  ].sort((a, b) => a.at.localeCompare(b.at))
+  ].sort((a, b) => Date.parse(a.at) - Date.parse(b.at))
+  const events = includeContent ? observedEvents : observedEvents.map(metadataEvent)
   const { default: store } = await import('@renderer/store')
   const provider = store.getState().llm.providers.find((candidate) => candidate.id === message.model?.provider)
-  const backend = await collectBackendDiagnostic(operationId, provider, events)
+  const collectedBackend = await collectBackendDiagnostic(operationId, provider, observedEvents)
+  const backend = includeContent
+    ? collectedBackend
+    : {
+        status: collectedBackend.status,
+        evidence: collectedBackend.evidence.map(metadataBackend)
+      }
   const attribution = attributeDiagnostic(events, backend.evidence)
+  const droppedEvents = (rendererEvidence?.droppedEvents ?? 0) + (mainEvidence?.evidence?.droppedEvents ?? 0)
+  const report = createTurnReport(message, events, rendererEvidence?.startedAt, droppedEvents)
   const opencodeEvents = events.filter((event) => event.stage === 'runtime' && event.details?.runtime === 'opencode')
   const processEvents = opencodeEvents.filter((event) =>
     [
@@ -204,16 +224,17 @@ export const exportErrorDiagnosticPackage = async ({
   const collections = {
     renderer: rendererEvidence ? 'collected' : 'unavailable-old-request-or-expired',
     main: mainStatus,
-    logs: mainEvidence?.logStatus ?? 'unavailable',
+    logs: includeContent ? (mainEvidence?.logStatus ?? 'unavailable') : 'omitted-in-metadata-only-export',
     zenApi: backend.status,
     opencode: source === 'agent' ? opencodeStatus : 'not-applicable',
-    session:
-      sessionContextStatus ??
-      (sessionContext !== undefined
-        ? 'collected-at-export-time'
-        : source === 'agent'
-          ? 'unavailable-or-timed-out'
-          : 'not-applicable'),
+    session: !includeContent
+      ? 'omitted-in-metadata-only-export'
+      : (sessionContextStatus ??
+        (sessionContext !== undefined
+          ? 'collected-at-export-time'
+          : source === 'agent'
+            ? 'unavailable-or-timed-out'
+            : 'not-applicable')),
     appInfo: appInfo ? 'collected' : 'unavailable',
     userMessage: relatedUserMessage ? 'collected' : 'not-loaded-or-unavailable',
     blocks: [
@@ -233,7 +254,7 @@ export const exportErrorDiagnosticPackage = async ({
     model: serializeModel(model ?? message.model),
     requestUrl: getErrorUrl(error),
     status: getErrorStatus(error),
-    connectivityCheck: errorRecord.zenConnectivityCheck
+    connectivityCheck: includeContent ? errorRecord.zenConnectivityCheck : undefined
   }
 
   const summary = {
@@ -242,6 +263,8 @@ export const exportErrorDiagnosticPackage = async ({
     source,
     exportedAt,
     mode,
+    includeContent,
+    performance: report.performance,
     occurredAt: diagnosis?.occurredAt,
     observation: {
       messageStatus: observedStatus,
@@ -267,10 +290,10 @@ export const exportErrorDiagnosticPackage = async ({
     topicId: message.topicId,
     messageId: message.id,
     blockId: block?.id ?? message.blocks.find((blockId) => blockEntities[blockId]?.type === 'error'),
-    assistantMessage: snapshotHasMessage ? message : undefined,
-    userMessage: relatedUserMessage,
-    assistantBlocks,
-    userBlocks
+    assistantMessage: snapshotHasMessage ? (includeContent ? message : metadataMessage(message)) : undefined,
+    userMessage: includeContent ? relatedUserMessage : metadataMessage(relatedUserMessage),
+    assistantBlocks: includeContent ? assistantBlocks : assistantBlocks.map(metadataBlock),
+    userBlocks: includeContent ? userBlocks : userBlocks.map(metadataBlock)
   }
 
   const files: Array<{ path: string; content: string }> = [
@@ -280,29 +303,41 @@ export const exportErrorDiagnosticPackage = async ({
         mode === 'error' ? 'Zen AI 错误诊断包' : 'Zen AI 当前会话诊断快照（不代表任务失败）',
         '',
         'summary.json：问题摘要、应用版本、运行环境和请求概要。',
-        ...(diagnosis
+        '本轮耗时报告.md / performance.json：本轮阶段耗时、请求及工具时间线；缺失不按零处理，并行时长不可直接相加。',
+        includeContent
+          ? '已选择包含本轮对话内容（仍不包含原附件和完整历史）。'
+          : '本包仅含诊断元数据，不包含本轮对话正文、工具参数/结果、原附件或完整历史。',
+        ...(diagnosis && includeContent
           ? ['diagnosis.json / diagnosis.txt：应用生成的结构化错误诊断结果。']
           : ['task-status.json：导出时的任务状态观察，不代表任务失败。']),
         'error.json：经过脱敏处理的原始错误信息。',
         'request.json：模型、服务地址、状态码和连通性信息。',
-        'message-context.json：出错消息及相关上下文，可能包含用户输入内容。',
+        includeContent
+          ? 'message-context.json：本轮消息及相关用户消息，可能包含个人信息。'
+          : 'message-context.json：仅本轮消息及附件的类型、大小等元数据。',
         'environment.json：导出时的环境信息。',
         ...(source === 'agent'
-          ? ['opencode-runtime.json：本轮新版内核启动/退出、限量脱敏标准错误和导出时执行文件检查；没有采到时明确标注。']
+          ? [
+              includeContent
+                ? 'opencode-runtime.json：本轮新版内核启动/退出、限量脱敏标准错误和导出时执行文件检查；没有采到时明确标注。'
+                : 'opencode-runtime.json：本轮新版内核启动/退出元数据，不含标准错误正文；没有采到时明确标注。'
+            ]
           : []),
         '链路结论.txt / attribution.json：基于实测事件的故障位置及证据，不足时明确标注未确认。',
         'timeline.json：本地处理、底座、HTTP 请求和响应全过程，包含自动重试。',
         'zen-api-evidence.json：Zen API 接收、渠道尝试和返回证据（只读查询，不会调用模型）。',
         'collection-manifest.json：缺失、超时及有界截断说明；integrity.json：ZIP 文件校验。',
-        ...(sessionContext !== undefined ? ['session-context.json：智能助手会话配置。'] : []),
-        ...(aiDiagnosis !== undefined ? ['ai-diagnosis.json：已生成的 AI 诊断结果。'] : []),
+        ...(sessionContext !== undefined && includeContent ? ['session-context.json：智能助手会话配置。'] : []),
+        ...(aiDiagnosis !== undefined && includeContent ? ['ai-diagnosis.json：已生成的 AI 诊断结果。'] : []),
         '',
         privacyNotice
       ].join('\n')
     },
     { path: 'summary.json', content: safeDiagnosticJson(summary) },
+    { path: '本轮耗时报告.md', content: diagnosticText(report.summary) },
+    { path: 'performance.json', content: safeDiagnosticJson(report.performance) },
     { path: 'privacy.txt', content: privacyNotice },
-    ...(diagnosis
+    ...(diagnosis && includeContent
       ? [
           {
             path: 'diagnosis.txt',
@@ -324,7 +359,10 @@ export const exportErrorDiagnosticPackage = async ({
             })
           }
         ]),
-    { path: 'error.json', content: safeDiagnosticJson(error ?? {}) },
+    {
+      path: 'error.json',
+      content: safeDiagnosticJson(includeContent ? (error ?? {}) : { name: error?.name, status: getErrorStatus(error) })
+    },
     { path: 'request.json', content: safeDiagnosticJson(requestContext) },
     { path: 'message-context.json', content: safeDiagnosticJson(messageContext) },
     {
@@ -347,7 +385,9 @@ export const exportErrorDiagnosticPackage = async ({
           `环节：${attribution.stage}`,
           `说明：${attribution.explanation}`,
           `后台证据：${backend.status}`,
-          '注意：未查到后台记录不能证明请求未到达；诊断包仍可能包含本次用户输入。',
+          includeContent
+            ? '注意：未查到后台记录不能证明请求未到达；诊断包仍可能包含本次用户输入。'
+            : '注意：未查到后台记录不能证明请求未到达；本包不含对话正文。',
           ...attribution.evidence
         ].join('\n')
       )
@@ -358,8 +398,8 @@ export const exportErrorDiagnosticPackage = async ({
       content: safeDiagnosticJson({
         operationId,
         messageId: message.id,
-        renderer: rendererEvidence,
-        main: mainEvidence?.evidence,
+        renderer: includeContent ? rendererEvidence : metadataEvidence(rendererEvidence),
+        main: includeContent ? mainEvidence?.evidence : metadataEvidence(mainEvidence?.evidence),
         events
       })
     },
@@ -368,12 +408,19 @@ export const exportErrorDiagnosticPackage = async ({
       path: 'runtime-environment.json',
       content: safeDiagnosticJson(mainEvidence?.environment ?? { unavailable: true })
     },
-    { path: 'operation-logs.json', content: safeDiagnosticJson(mainEvidence?.logs ?? []) },
+    {
+      path: 'operation-logs.json',
+      content: safeDiagnosticJson(
+        includeContent ? (mainEvidence?.logs ?? []) : { status: 'omitted-in-metadata-only-export' }
+      )
+    },
     {
       path: 'context-processing.json',
       content: safeDiagnosticJson({
         failureTimeEvidence: events.filter((event) => event.stage === 'context'),
-        currentAtExportTime: getContextTelemetry(message.topicId)
+        currentAtExportTime: includeContent
+          ? getContextTelemetry(message.topicId)
+          : 'omitted-topic-wide-export-time-state'
       })
     },
     {
@@ -387,8 +434,11 @@ export const exportErrorDiagnosticPackage = async ({
           longText: 'head-and-tail',
           logs: 'operation-matched-last-80'
         },
-        droppedEvents: (rendererEvidence?.droppedEvents ?? 0) + (mainEvidence?.evidence?.droppedEvents ?? 0),
-        contentPolicy: '不包含附件原件和完整历史；出错消息及相关用户消息可能包含个人信息。'
+        droppedEvents,
+        includeContent,
+        contentPolicy: includeContent
+          ? '不包含附件原件和完整历史；本轮消息及相关用户消息可能包含个人信息。'
+          : '仅含诊断元数据；省略对话正文、工具参数/结果、日志正文、会话配置、原附件及完整历史。'
       })
     }
   ]
@@ -409,18 +459,20 @@ export const exportErrorDiagnosticPackage = async ({
         },
         notes: [
           '本轮观测与导出时文件状态分开；expectedVersion不是实际运行版本，以process-health为准。',
-          '标准错误按本轮观察窗口采集，有界脱敏；无输出不代表无故障，未包含完整配置、环境变量或标准输出。',
+          includeContent
+            ? '标准错误按本轮观察窗口采集，有界脱敏；无输出不代表无故障，未包含完整配置、环境变量或标准输出。'
+            : '元数据模式省略标准错误正文、完整配置、环境变量及标准输出。',
           '用户停止、超时终止与空闲回收不等于内核异常退出。旧请求或软件直接崩溃可能缺失进程证据。'
         ]
       })
     })
   }
 
-  if (sessionContext !== undefined) {
+  if (sessionContext !== undefined && includeContent) {
     files.push({ path: 'session-context.json', content: safeDiagnosticJson(sessionContext) })
   }
 
-  if (aiDiagnosis !== undefined) {
+  if (aiDiagnosis !== undefined && includeContent) {
     files.push({ path: 'ai-diagnosis.json', content: safeDiagnosticJson(aiDiagnosis) })
   }
 

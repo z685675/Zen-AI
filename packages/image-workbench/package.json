@@ -1,0 +1,17 @@
+{
+  "name": "@zen-ai/image-workbench",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vite build",
+    "dev": "vite --host 127.0.0.1 --port 4191 --strictPort",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "i18next": "^23.11.5",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "react-i18next": "^14.1.2"
+  }
+}

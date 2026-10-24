@@ -971,14 +971,22 @@
     "searchDisclosure": "Web research may send a search query to Exa public MCP. This third-party service may retain queries or use them for training and has usage limits. Do not submit personal information, secrets or private files. It is only called when research is needed; search failure does not block ordinary chat.",
     "skillLimit": "This read-only check does not execute scripts, install dependencies or grant permissions. It checks declared command/environment requirements only; Python packages, external services, script safety and task quality remain unverified. Enabled/discovered does not mean successfully applied."
   },
+  "assistantTaskContinuation": {
+    "action": "Продолжить задачу",
+    "failed": "Не удалось продолжить. Проверьте модель и повторите попытку.",
+    "prompt": "Продолжи незавершённую задачу в этом разговоре. Сначала проверь существующие файлы, результаты и ход работы; выполни только недостающие шаги. Не повторяй загрузки, не создавай заново и не перезаписывай готовые результаты. Если прогресс неясен, объясни ситуацию и спроси меня перед действиями. Сохрани текущие требования разрешений и подтверждений."
+  },
   "assistantTaskDeadline": {
     "stageExecution": "[to be translated]:Local task execution",
     "stageHumanWait": "[to be translated]:Waiting for user action",
+    "stageInactivity": "Контроль хода задачи",
     "suggestion": "[to be translated]:Review completed work, then explicitly ask to continue only the unfinished part. Avoid blindly repeating submissions or generation.",
     "summaryExecution": "[to be translated]:The cumulative 15-minute execution limit was reached. The task is paused; saved history and outputs are retained, with no automatic replay.",
     "summaryHumanWait": "[to be translated]:The cumulative 30-minute user-action wait limit was reached. The task is paused; saved history and outputs are retained, with no automatic replay.",
+    "summaryInactivity": "Новых результатов не наблюдалось 15 минут. Задача приостановлена; история и результаты сохранены для проверки перед продолжением.",
     "titleExecution": "[to be translated]:Task paused: execution time limit reached",
-    "titleHumanWait": "[to be translated]:Task paused: user wait limit reached"
+    "titleHumanWait": "[to be translated]:Task paused: user wait limit reached",
+    "titleInactivity": "Задача приостановлена: нет прогресса"
   },
   "assistantToolFailure": {
     "cancelled": {
@@ -2238,6 +2246,13 @@
         "invalid": "Недействительный сервер MCP"
       }
     },
+    "cancelled": {
+      "errorType": "[to be translated]:Stopped by user",
+      "stage": "[to be translated]:Stopping generation",
+      "suggestion": "[to be translated]:Review any existing results before sending a follow-up request to continue.",
+      "summary": "[to be translated]:This generation was stopped.",
+      "title": "[to be translated]:Stopped"
+    },
     "cause": "Ошибка произошла по следующей причине",
     "chat": {
       "chunk": {
@@ -2469,6 +2484,19 @@
     "generating": "Генерация",
     "preview": "Предпросмотр",
     "split": "Разделить"
+  },
+  "image_studio": {
+    "canvas": "Image canvas",
+    "canvas_unavailable": "The local image canvas could not open. Retry or check the application logs.",
+    "key": "Key {{index}}",
+    "key_label": "Workspace key",
+    "local": "[to be translated]:Local images",
+    "opening": "[to be translated]:Opening image workspace…",
+    "reconnect": "[to be translated]:Reconnect",
+    "server": "Server workspace",
+    "title": "[to be translated]:Image workspace",
+    "unavailable": "[to be translated]:The workspace could not open. Make sure your Zen API server has been updated and the selected key is valid. You can still open Local images.",
+    "workbench": "Image studio"
   },
   "import": {
     "chatgpt": {
@@ -3205,6 +3233,21 @@
       "pin": "Верхнее окно"
     }
   },
+  "model_daily_quota": {
+    "exceeded": "Дневной лимит этой модели исчерпан. Попробуйте завтра.",
+    "hint": "Вход + выход; кэш включён во вход. Сброс в полночь по Пекину. Последний допущенный вопрос может завершиться сверх лимита.",
+    "invalid": "Разрешение для этого вопроса истекло. Отправьте новый вопрос.",
+    "limit": "Дневной лимит",
+    "pending": "Остаток лимита зарезервирован другой задачей. Дождитесь её завершения.",
+    "remaining": "Осталось",
+    "stage": "Проверка лимита модели",
+    "status_error": "Не удалось обновить дневные лимиты. История использования доступна.",
+    "suggestion": "Выберите другую доступную модель или дождитесь сброса. Не повторяйте запрос многократно.",
+    "title": "Лимиты моделей на сегодня · время Пекина",
+    "unavailable": "Служба лимитов моделей временно недоступна.",
+    "used": "Использовано",
+    "used_up": "Сегодня исчерпано"
+  },
   "model_recovery": {
     "empty": "{{preferred}} и резервные модели сейчас недоступны.",
     "fallback": "{{preferred}} недоступна; временно используется {{actual}}.",
@@ -3278,6 +3321,12 @@
       "vision": "Визуальные",
       "websearch": "Веб-поисковые"
     }
+  },
+  "nativeActivity": {
+    "failures": "Проверьте {{count}} попыток инструментов; раскройте подробности.",
+    "finished": "Размышление и выполнение · вызовов: {{count}}",
+    "running": "В работе · вызовов инструментов: {{count}}",
+    "thinking": "Размышление"
   },
   "navbar": {
     "expand": "Развернуть диалоговое окно",
@@ -6735,6 +6784,29 @@
     "quit": "Выйти",
     "show_mini_window": "Быстрый помощник",
     "show_window": "Показать окно"
+  },
+  "turnDiagnostics": {
+    "description": "Экспорт состояния, времени и запросов этого хода без повторного выполнения задачи или вызова модели.",
+    "export": "Экспорт диагностики хода",
+    "includeContent": "Включить диалог и содержимое инструментов этого хода (необязательно)",
+    "intervalKinds": {
+      "context": "Обработка контекста",
+      "preparation": "Локальная подготовка",
+      "request": "Запрос модели (включая ожидание сети/шлюза)",
+      "runtime": "Этап помощника",
+      "tool": "Инструмент"
+    },
+    "notRecorded": "Не записано или не завершено",
+    "outcomes": {
+      "cancelled": "Остановлено",
+      "completed": "Завершено",
+      "failed": "Ошибка",
+      "pending": "В ожидании",
+      "processing": "Выполняется"
+    },
+    "privacy": "По умолчанию включены только диагностические метаданные, без текста диалога, аргументов/результатов инструментов, исходных вложений и полной истории. Передавайте только доверенным получателям. Дополнительное содержимое может включать персональные данные.",
+    "reportTemplate": "# Zen AI: диагностика этого хода\n\n- Результат: {{outcome}}\n- Модель: {{model}}; Provider: {{provider}}\n- Токены: вход {{input}}; выход {{output}}; чтение кэша {{cache}} (уже включено во вход)\n- Начало: {{start}}; конец: {{end}}; всего: {{total}}\n- Первое содержимое (возможно рассуждение): {{firstContent}}; первый текст ответа: {{firstText}}; первые сетевые байты: {{firstBytes}} (не первый токен)\n- Наблюдавшиеся запросы: {{requests}}; инструменты: {{tools}}; повторы/переключения: {{retries}}\n- Задержка UI commit: {{render}} (React, не гарантия отрисовки экрана)\n\n## Самые долгие этапы с известными началом и концом\n{{slowest}}\n\n## Хронология запросов и инструментов\n{{timeline}}\n\n## Наблюдавшееся ожидание пользователя (может перекрывать инструменты)\n{{waits}}\n\n## Ограничения и отсутствующие данные\n- Только измеренные интервалы, не заключение о причине в сети/клиенте/сервисе. Этапы перекрываются: нельзя просто складывать их или вычитать ожидания.\n- Отсутствие не означает ноль. Незавершённые интервалы могут выполняться. Активный экспорт — снимок; старые диалоги не восстанавливают незаписанные события.\n- Запись обычно начинается с подготовки ответа; ранние загрузки могут не учитываться. События повторов не равны числу повторно выполненных задач.\n- Для данных сервера сопоставьте zen-api-evidence.json и ID. Отсутствие записи не доказывает неполучение; запись в сокет не гарантирует полный приём клиентом.\n- Отброшенные события из-за лимита: {{dropped}}; старые запросы могут истечь. Коды отсутствующих данных (performance.json): {{missing}}\n",
+    "requestTiming": " | Заголовки {{headers}} | Первые байты {{bytes}} | HTTP {{status}} | ID запроса {{requestId}}"
   },
   "update": {
     "available": "A new version {{version}} is available. Click Check for Updates any time to download it.",

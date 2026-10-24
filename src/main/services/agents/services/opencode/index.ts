@@ -93,10 +93,10 @@ export default class OpenCodeService implements AgentServiceInterface {
           new Error(
             kind === 'human-wait'
               ? 'Waiting for user action exceeded the 30 minute safety limit; saved task state was preserved'
-              : 'New assistant execution exceeded the 15 minute safety limit; saved task state was preserved'
+              : 'New assistant made no meaningful progress for 15 minutes; saved task state was preserved'
           ),
           {
-            code: kind === 'human-wait' ? 'agent_human_wait_timeout' : 'agent_execution_timeout',
+            code: kind === 'human-wait' ? 'agent_human_wait_timeout' : 'agent_inactivity_timeout',
             zenFailureStage: 'local-task-deadline'
           }
         )
@@ -104,6 +104,13 @@ export default class OpenCodeService implements AgentServiceInterface {
     )
     const browserWaits = new Set<string>()
     const emit = (chunk: Chunk) => {
+      if (
+        chunk.type === 'tool-call' ||
+        chunk.type === 'tool-result' ||
+        chunk.type === 'tool-error' ||
+        ((chunk.type === 'text-delta' || chunk.type === 'reasoning-delta') && chunk.text.length > 0)
+      )
+        deadline.progress()
       if (chunk.type === 'tool-call') unfinishedTools.add(chunk.toolCallId)
       else if (chunk.type === 'tool-result' || chunk.type === 'tool-error') unfinishedTools.delete(chunk.toolCallId)
       if (
@@ -167,6 +174,7 @@ export default class OpenCodeService implements AgentServiceInterface {
         onStarting: () => status('starting')
       })
       timing.preparationMs = performance.now() - startedAt
+      deadline.progress()
       runtime.setDiagnosticOperation(options?.diagnosticId, signal)
       runtime.setProgressListener((event, details) => {
         if (event === 'usage-observed') usageTotals.observe(details as unknown as OpenCodeUsageObservation)
@@ -181,6 +189,7 @@ export default class OpenCodeService implements AgentServiceInterface {
       })
       status('restoring')
       nativeId = await runtime.session(signal)
+      deadline.progress()
       stream.sdkSessionId = nativeId
       emit({ type: 'start' })
       emit({ type: 'raw', rawValue: { type: 'init', session_id: nativeId, runtime_id: 'opencode' } })
@@ -326,6 +335,7 @@ export default class OpenCodeService implements AgentServiceInterface {
             signal
           )
           await verifyCompaction(history, 'during-task', true)
+          deadline.progress()
           status('busy')
           recordMainDiagnostic(options?.diagnosticId, 'runtime', 'native-compacted', { runtime: 'opencode' })
         }
@@ -536,6 +546,7 @@ export default class OpenCodeService implements AgentServiceInterface {
       eventController.abort('turn finished')
       signal.removeEventListener('abort', cancel)
       runtime?.setProgressListener(undefined)
+      await runtime?.finishTurn?.()
       runtime?.release()
     }
   }

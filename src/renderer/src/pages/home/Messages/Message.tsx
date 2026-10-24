@@ -30,6 +30,7 @@ import { useTranslation } from 'react-i18next'
 import { useSelector } from 'react-redux'
 import styled from 'styled-components'
 
+import ActiveTurnDiagnostics from './ActiveTurnDiagnostics'
 import AgentTaskProgress from './AgentTaskProgress'
 import MessageArtifacts from './MessageArtifacts'
 import MessageContent from './MessageContent'
@@ -83,7 +84,10 @@ const MessageItem: FC<Props> = ({
     if (
       message.role === 'assistant' &&
       (message.status === 'success' || message.status === 'error') &&
-      getDiagnosticEvidence(message.id)
+      getDiagnosticEvidence(message.id) &&
+      !getDiagnosticEvidence(message.id)?.events.some(
+        (event) => event.stage === 'ui' && event.event === 'render-committed'
+      )
     ) {
       recordDiagnostic(message.id, 'ui', 'render-committed', { status: message.status })
     }
@@ -315,6 +319,9 @@ const MessageItem: FC<Props> = ({
             {isAssistantMessage && <MessageArtifacts message={message} />}
             {nativeMemory && isAssistantMessage && isProcessing && (
               <AgentTaskProgress message={message} hasRenderedContent={hasRenderedContent} />
+            )}
+            {isAssistantMessage && isProcessing && !legacyReadOnly && (
+              <ActiveTurnDiagnostics message={message} source={nativeMemory ? 'agent' : 'chat'} />
             )}
             {showMenubar && (
               <MessageFooter className="MessageFooter">
