@@ -1,8 +1,27 @@
 import { describe, expect, it } from 'vitest'
 
-import { OPENCODE_SYSTEM_INSTRUCTIONS } from '../instructions'
+import { getOpenCodeModeInstructions, OPENCODE_SYSTEM_INSTRUCTIONS } from '../instructions'
 
 describe('new assistant task contract', () => {
+  it('keeps Plan read-only and makes the user select Build before execution', () => {
+    const prompt = getOpenCodeModeInstructions('plan')
+    expect(prompt.length).toBeLessThan(700)
+    expect(prompt).toContain('Current mode: Plan')
+    expect(prompt).toContain('Do not create deliverables, modify user files or execute the task')
+    expect(prompt).toContain('never switch modes yourself')
+  })
+  it.each([undefined, 'default', 'acceptEdits', 'bypassPermissions'])(
+    'uses the same bounded Build contract for legacy mode %s',
+    (mode) => {
+      const prompt = getOpenCodeModeInstructions(mode)
+      expect(prompt.length).toBeLessThan(700)
+      expect(prompt).toContain('Current mode: Build')
+      expect(prompt).toContain('without repeated approval requests')
+      expect(prompt).toContain('offline/no-install')
+      expect(prompt).toContain('confirmed overwrites still require a verified backup')
+      expect(prompt).toContain('finish only missing steps')
+    }
+  )
   it('keeps a finite stable contract instead of copying the legacy orchestration prompt', () => {
     expect(OPENCODE_SYSTEM_INSTRUCTIONS.length).toBeLessThan(6_000)
     expect(OPENCODE_SYSTEM_INSTRUCTIONS).not.toMatch(/\b(?:Exa|checkpoint|heartbeat|codex|claude-code|soul_enabled)\b/i)

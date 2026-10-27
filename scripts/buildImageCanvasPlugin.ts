@@ -8,7 +8,6 @@ export function buildImageCanvasPlugin(root: string): Plugin {
     name: 'zen-bundled-image-canvas',
     apply: 'build',
     buildStart() {
-      execSync('pnpm --filter @zen-ai/image-canvas build', { cwd: root, stdio: 'inherit', windowsHide: true })
       execSync('pnpm --filter @zen-ai/image-workbench build', { cwd: root, stdio: 'inherit', windowsHide: true })
     }
   }

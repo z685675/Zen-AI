@@ -237,3 +237,7 @@ Use CJK-equivalent length when judging density: one Chinese character counts as 
 - Remove all placeholder copy such as `Key insight`, `Key message`, `Draft presentation`, or `Translate this number into a decision` before delivery.
 - The final response should include the file path and a short deck structure summary.
 - Never report completion when strict package validation fails, a rendered slide shows clipping/overlap, or PowerPoint requires repair on open.
+
+## Delivery contract
+
+Treat explicit page, slide, worksheet and file counts as hard requirements. Verify actual outputs using the format validator and rendered pages where applicable; do not infer a Word page count from source text. Check requested formulas and final-page text, and distinguish obsolete values from the final decision. Deliver only existing final paths, excluding temporary previews and replaced files. Reuse validation already completed by the generator; add checks only for unverified requirements.

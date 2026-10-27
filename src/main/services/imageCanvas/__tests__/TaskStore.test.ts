@@ -41,6 +41,154 @@ const input = (): ImageCanvasRequest => ({
 })
 
 describe('durable image canvas tasks', () => {
+  it('reuses a generated result as a reference after restart without uploading the normalized PNG', async () => {
+    const zen = { ...provider, apiHost: 'https://zenai.925636.xyz' }
+    const png = await sharp({ create: { width: 32, height: 32, channels: 3, background: 'blue' } })
+      .png({ compressionLevel: 0 })
+      .toBuffer()
+    const remoteId = 'a'.repeat(64)
+    const json = (data: unknown) => new Response(JSON.stringify({ success: true, data }))
+    const request = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.endsWith('/bootstrap'))
+        return json({
+          submission_lookup: true,
+          asset_reuse: true,
+          models: [
+            {
+              id: 'gpt-image-test',
+              protocol: 'images',
+              sizes: ['auto'],
+              qualities: [],
+              backgrounds: [],
+              max_references: 4,
+              max_images: 1
+            }
+          ]
+        })
+      if (init?.method === 'HEAD') return new Response(null, { status: 200 })
+      if (url.endsWith('/jobs')) return json({ job: { state: 'succeeded' }, assets: [remoteId] })
+      if (url.endsWith('/assets')) {
+        expect((init!.headers as Headers).get('Authorization')).toBe('Bearer rotated-key')
+        return json({ id: 'b'.repeat(64) })
+      }
+      return new Response(new Uint8Array(png))
+    })
+    const path = directory()
+    const first = input()
+    const store = new ImageCanvasTaskStore(path, request)
+    store.submit(zen, first)
+    await vi.waitFor(() => expect(store.task(first.id)?.status).toBe('completed'))
+    const reference = await store.asset(store.task(first.id)!.assets[0])
+    const restored = new ImageCanvasTaskStore(path, request)
+    const second = { ...input(), references: [reference] }
+    restored.submit(zen, second)
+    await vi.waitFor(() => expect(restored.task(second.id)?.status).toBe('completed'))
+    const submissions = request.mock.calls.filter(([url]) => url.endsWith('/jobs'))
+    expect(submissions).toHaveLength(2)
+    expect(JSON.parse(submissions[1][1]!.body as string).asset_ids).toEqual([remoteId])
+    expect(request.mock.calls.filter(([, init]) => init?.method === 'HEAD')).toHaveLength(1)
+    expect(request.mock.calls.filter(([url]) => url.endsWith('/assets'))).toHaveLength(0)
+    expect(readFileSync(join(path, 'studio-assets.json'), 'utf8')).not.toContain(zen.apiKey)
+    const third = { ...input(), references: [reference] }
+    restored.submit({ ...zen, apiKey: 'rotated-key' }, third)
+    await vi.waitFor(() => expect(restored.task(third.id)?.status).toBe('completed'))
+    expect(request.mock.calls.filter(([url]) => url.endsWith('/assets'))).toHaveLength(1)
+    expect(request.mock.calls.filter(([, init]) => init?.method === 'HEAD')).toHaveLength(1)
+    expect(request.mock.calls.filter(([url]) => url.endsWith('/jobs'))).toHaveLength(3)
+    expect(readFileSync(join(path, 'studio-assets.json'), 'utf8')).not.toContain('rotated-key')
+  })
+  it.each(['bootstrap', 'reference-upload'] as const)(
+    'records a %s failure as not submitted rather than possibly billed',
+    async (operation) => {
+      const zen = { ...provider, apiHost: 'https://zenai.925636.xyz' }
+      const png = await sharp({ create: { width: 2, height: 2, channels: 3, background: 'blue' } })
+        .png()
+        .toBuffer()
+      const payload = { ...input(), references: [`data:image/png;base64,${png.toString('base64')}`] }
+      const request = vi.fn(async (url: string) => {
+        if (url.endsWith('/bootstrap') && operation !== 'bootstrap')
+          return new Response(
+            JSON.stringify({
+              success: true,
+              data: {
+                submission_lookup: true,
+                models: [
+                  {
+                    id: payload.modelId,
+                    protocol: 'images',
+                    sizes: ['1024x1024'],
+                    qualities: [],
+                    backgrounds: [],
+                    max_references: 4,
+                    max_images: 1
+                  }
+                ]
+              }
+            })
+          )
+        throw new TypeError('private-key and upstream response must not be persisted')
+      })
+      const path = directory()
+      const store = new ImageCanvasTaskStore(path, request)
+      store.submit(zen, payload)
+      await vi.waitFor(() => expect(store.task(payload.id)?.status).toBe('failed'), { timeout: 5000 })
+      const task = store.task(payload.id)!
+      expect(task).toMatchObject({
+        recoverable: false,
+        error: operation === 'bootstrap' ? 'studio_bootstrap_failed' : 'studio_reference_upload_failed',
+        diagnostics: {
+          transport: 'studio',
+          generationSubmitted: false,
+          failedPhase: operation === 'bootstrap' ? 'configuring' : 'uploading',
+          requestFailure: { operation, reason: 'network', errorName: 'TypeError', attempt: 2 }
+        }
+      })
+      expect(request.mock.calls.filter(([url]) => url.endsWith('/jobs'))).toHaveLength(0)
+      expect(
+        request.mock.calls.filter(([url]) => url.endsWith(operation === 'bootstrap' ? '/bootstrap' : '/assets'))
+      ).toHaveLength(2)
+      expect(readFileSync(join(path, 'tasks.json'), 'utf8')).not.toContain('private-key')
+      const restored = new ImageCanvasTaskStore(path, request)
+      expect(JSON.parse(JSON.stringify(restored.task(payload.id)))).toEqual(JSON.parse(JSON.stringify(task)))
+      const previousCalls = request.mock.calls.length
+      restored.submit(zen, payload)
+      expect(request).toHaveBeenCalledTimes(previousCalls)
+    }
+  )
+  it('marks interrupted preparation as not submitted, without replaying it on restart', () => {
+    const path = directory()
+    const payload = input()
+    writeFileSync(
+      join(path, 'tasks.json'),
+      JSON.stringify([
+        {
+          ...payload,
+          assets: [],
+          createdAt: new Date().toISOString(),
+          status: 'running',
+          fingerprint: 'previous',
+          phase: 'uploading',
+          diagnostics: {
+            transport: 'studio',
+            generationSubmitted: false,
+            protocol: 'openai',
+            capabilityRevision: 'previous',
+            capabilitySource: 'server',
+            attempts: 1,
+            phaseDurationsMs: {}
+          }
+        }
+      ])
+    )
+    const request = vi.fn()
+    const store = new ImageCanvasTaskStore(path, request)
+    expect(store.task(payload.id)).toMatchObject({
+      status: 'failed',
+      error: 'studio_preparation_interrupted',
+      diagnostics: { failedPhase: 'uploading', generationSubmitted: false }
+    })
+    expect(request).not.toHaveBeenCalled()
+  })
   it('reads a legacy server resolution preflight rejection as failed without recovery or another submission', async () => {
     const zen: ImageCanvasProvider = { ...provider, apiHost: 'https://zenai.925636.xyz' }
     const request = vi.fn(async (url: string) => {

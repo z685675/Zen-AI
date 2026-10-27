@@ -26,6 +26,8 @@ Turn verified research into a clear, evidence-aware manuscript. Use `$academic-r
 
 ## Default Output
 
+For empirical manuscripts with repeated numbers or methods/results links, read `references/consistency-checks.md`. The bundled K-Dense check is offline and checks an explicit registry extracted from the actual draft; it does not scan DOCX/PDF or verify the evidence. Do not claim a substantive check from an empty registry or a placeholder template. Use `$academic-research` for bibliography/DOI metadata checks. Short conceptual drafts need no registry or additional tool call.
+
 1. Contribution and argument map
 2. Paper outline
 3. Draft or revised manuscript

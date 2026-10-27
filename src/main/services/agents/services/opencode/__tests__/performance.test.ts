@@ -3,6 +3,16 @@ import { describe, expect, it } from 'vitest'
 import { OpenCodePerformance } from '../performance'
 
 describe('new assistant passive performance evidence', () => {
+  it('does not count quota admission failures or checks as upstream model time', () => {
+    const timing = new OpenCodePerformance(() => 0)
+    timing.transport('quota-check-started', { phase: 'quota-admission' })
+    timing.transport('failed', { phase: 'quota-admission', durationMs: 10_018 })
+    timing.transport('quota-check-complete', { phase: 'quota-admission', durationMs: 20 })
+    expect(timing.snapshot('failed')).toMatchObject({ upstreamRequests: 0, upstreamRequestMs: 0 })
+    timing.transport('request-started', {})
+    timing.transport('body-complete', { durationMs: 50 })
+    expect(timing.snapshot('completed')).toMatchObject({ upstreamRequests: 1, upstreamRequestMs: 50 })
+  })
   it('distinguishes empty starts, visible tools and first actual text', () => {
     let now = 0
     const timing = new OpenCodePerformance(() => now)

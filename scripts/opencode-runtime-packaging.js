@@ -4,7 +4,7 @@ const { createRequire } = require('node:module')
 const { Arch } = require('electron-builder')
 const { verifyNativeAgentBinary } = require('./agent-runtime-packaging')
 
-const VERSION = '1.18.35'
+const VERSION = '1.19.4'
 
 function copyOpenCodeRuntime(context, rootDir = path.join(__dirname, '..')) {
   const platform = context.packager.platform.name
@@ -56,7 +56,7 @@ function generateOpenCodeLicenses(rootDir = path.join(__dirname, '..')) {
   }
   const target = path.join(rootDir, 'resources', 'licenses', 'opencode-dependencies.txt')
   fs.mkdirSync(path.dirname(target), { recursive: true })
-  fs.writeFileSync(target, notices.join('\n\n----------------------------------------\n\n'))
+  fs.writeFileSync(target, notices.join('\n\n----------------------------------------\n\n').replace(/[ \t]+$/gm, ''))
 }
 
 function copyOpenCodeOfflineRuntime(context, rootDir = path.join(__dirname, '..')) {

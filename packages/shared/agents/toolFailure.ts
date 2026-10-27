@@ -76,7 +76,8 @@ export function createAssistantToolFailure(tool: string, error: unknown, cancell
   )
     code = 'network'
   else if (
-    /required|must be|must provide|provide exactly|unsupported|invalid param|invalid input|invalid worksheet|at most|exceeds.*limit/i.test(
+    errorCode === '-32602' ||
+    /required|must be|must contain|must provide|provide exactly|unsupported|invalid param|invalid input|invalid worksheet|at most|exceeds.*limit/i.test(
       message
     )
   )

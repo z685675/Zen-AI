@@ -23,6 +23,7 @@ export { handleWaitForUser, WaitForUserSchema, waitForUserToolDefinition } from 
 
 import type { CdpBrowserController } from '../controller'
 import { clearBrowserDataToolDefinition, handleClearBrowserData } from './clearData'
+import { clickToolDefinition, handleClick } from './click'
 import {
   handleListDownloads,
   handleWaitForDownload,
@@ -48,6 +49,7 @@ import { handleWaitForUser, waitForUserToolDefinition } from './waitForUser'
 export const toolDefinitions = [
   openToolDefinition,
   executeToolDefinition,
+  clickToolDefinition,
   listDownloadsToolDefinition,
   waitForDownloadToolDefinition,
   clearBrowserDataToolDefinition,
@@ -66,6 +68,7 @@ export const toolHandlers: Record<
 > = {
   open: handleOpen,
   execute: handleExecute,
+  click: handleClick,
   list_downloads: handleListDownloads,
   wait_for_download: handleWaitForDownload,
   clear_browser_data: handleClearBrowserData,

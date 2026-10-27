@@ -12,7 +12,7 @@ export function buildDiagnosticArchive(files: Array<{ path: string; content: str
     if (
       typeof file.path !== 'string' ||
       typeof file.content !== 'string' ||
-      !/^[\p{L}\w.-]+\.(?:json|txt)$/u.test(file.path) ||
+      !/^[\p{L}\w.-]+\.(?:json|txt|md)$/u.test(file.path) ||
       file.path === 'integrity.json' ||
       entries.some((entry) => entry.path === file.path)
     )

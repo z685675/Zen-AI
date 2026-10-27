@@ -20,6 +20,108 @@ async function upstream(handler: Parameters<typeof createServer>[0]) {
   return `http://127.0.0.1:${(server.address() as { port: number }).port}/v1`
 }
 describe('native Provider byte-transparent diagnostic bridge', () => {
+  it('retries a timed-out quota admission instead of reusing its rejection or diagnosing a model request', async () => {
+    let modelCalls = 0
+    const url = await upstream((req, res) => {
+      if (req.url === '/api/usage/token/model-daily/turn')
+        return res.end(JSON.stringify({ success: true, data: { permit: 'a'.repeat(64) } }))
+      if (req.url === '/api/usage/token/model-daily/turn/state') return res.end('{}')
+      modelCalls++
+      res.end('{"choices":[]}')
+    })
+    const originalFetch = globalThis.fetch
+    const admissionUrl = `${new URL(url).origin}/api/usage/token/model-daily/turn`
+    const tasks: string[] = []
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
+      if (String(input) === admissionUrl) {
+        tasks.push(JSON.parse(String(init?.body)).task_id)
+        if (tasks.length === 1)
+          return Promise.reject(new DOMException('The operation was aborted due to timeout', 'TimeoutError'))
+      }
+      return originalFetch(input, init)
+    })
+    const records: Array<{ event: string; details: Record<string, unknown> }> = []
+    const gateway = await createOpenCodeGateway(
+      url,
+      (_id, event, details) => records.push({ event, details }),
+      'premium'
+    )
+    cleanup.push(gateway.stop)
+    const ask = () =>
+      fetch(`${gateway.baseURL}/chat/completions`, {
+        headers: { 'x-zen-runtime-token': gateway.token, Authorization: 'Bearer test-key' }
+      })
+    const failed = await ask()
+    expect(failed.status).toBe(502)
+    expect(await failed.json()).toMatchObject({ error: { code: 'model_daily_quota_unavailable' } })
+    expect(modelCalls).toBe(0)
+    expect(records.map((record) => record.event)).toEqual(['quota-check-started', 'failed'])
+    expect(records.at(-1)?.details).toMatchObject({
+      phase: 'quota-admission',
+      url: admissionUrl,
+      receivedResponse: false,
+      error: { code: 'model_daily_quota_unavailable', cause: { name: 'TimeoutError' } }
+    })
+    const recovered = await ask()
+    expect(recovered.status).toBe(200)
+    await recovered.text()
+    expect(tasks).toHaveLength(2)
+    expect(tasks[0]).toBe(tasks[1])
+    expect(modelCalls).toBe(1)
+    expect(records.filter((record) => record.event === 'request-started')).toHaveLength(1)
+    await gateway.finishTurn()
+  })
+  it('keeps another task streaming when admission fails on the same Provider, model and key', async () => {
+    let permits = 0
+    let modelCalls = 0
+    let finishStream: (() => void) | undefined
+    const url = await upstream((req, res) => {
+      if (req.url === '/api/usage/token/model-daily/turn') {
+        permits++
+        return res.end(JSON.stringify({ success: true, data: { permit: String(permits).repeat(64) } }))
+      }
+      if (req.url === '/api/usage/token/model-daily/turn/state') return res.end('{}')
+      expect(req.headers.authorization).toBe('Bearer same-key')
+      modelCalls++
+      res.writeHead(200, { 'Content-Type': 'text/event-stream' })
+      if (modelCalls === 1) {
+        res.write('data: first\n\n')
+        finishStream = () => res.end('data: [DONE]\n\n')
+      } else res.end('data: second\n\ndata: [DONE]\n\n')
+    })
+    const originalFetch = globalThis.fetch
+    const admissionUrl = `${new URL(url).origin}/api/usage/token/model-daily/turn`
+    let admissions = 0
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
+      if (String(input) === admissionUrl && ++admissions === 2)
+        return Promise.reject(new DOMException('The operation was aborted due to timeout', 'TimeoutError'))
+      return originalFetch(input, init)
+    })
+    const runningEvents: string[] = []
+    const running = await createOpenCodeGateway(url, (_id, event) => runningEvents.push(event), 'premium')
+    const starting = await createOpenCodeGateway(url, () => {}, 'premium')
+    cleanup.push(running.stop, starting.stop)
+    const ask = (gateway: typeof running) =>
+      fetch(`${gateway.baseURL}/chat/completions`, {
+        headers: { 'x-zen-runtime-token': gateway.token, Authorization: 'Bearer same-key' }
+      })
+    const active = await ask(running)
+    const reader = active.body!.getReader()
+    expect(new TextDecoder().decode((await reader.read()).value)).toContain('first')
+    const failed = await ask(starting)
+    expect(failed.status).toBe(502)
+    await failed.text()
+    const recovered = await ask(starting)
+    expect(await recovered.text()).toContain('second')
+    expect(modelCalls).toBe(2)
+    expect(permits).toBe(2)
+    finishStream!()
+    expect(new TextDecoder().decode((await reader.read()).value)).toContain('[DONE]')
+    expect((await reader.read()).done).toBe(true)
+    expect(runningEvents).not.toContain('failed')
+    expect(runningEvents).not.toContain('cancelled')
+    await Promise.all([running.finishTurn(), starting.finishTurn()])
+  })
   it('shares one server permit within a question, closes it, and obtains a fresh permit for the next question', async () => {
     let begins = 0
     let closes = 0

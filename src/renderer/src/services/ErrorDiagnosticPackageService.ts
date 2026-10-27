@@ -15,6 +15,7 @@ import {
   createTurnReport,
   metadataBackend,
   metadataBlock,
+  metadataError,
   metadataEvent,
   metadataEvidence,
   metadataMessage
@@ -205,7 +206,11 @@ export const exportErrorDiagnosticPackage = async ({
         status: collectedBackend.status,
         evidence: collectedBackend.evidence.map(metadataBackend)
       }
-  const attribution = attributeDiagnostic(events, backend.evidence)
+  const attribution = attributeDiagnostic(
+    events,
+    backend.evidence,
+    mode === 'error' ? metadataError(errorRecord) : undefined
+  )
   const droppedEvents = (rendererEvidence?.droppedEvents ?? 0) + (mainEvidence?.evidence?.droppedEvents ?? 0)
   const report = createTurnReport(message, events, rendererEvidence?.startedAt, droppedEvents)
   const opencodeEvents = events.filter((event) => event.stage === 'runtime' && event.details?.runtime === 'opencode')
@@ -220,7 +225,11 @@ export const exportErrorDiagnosticPackage = async ({
       'process-snapshot'
     ].includes(event.event)
   )
-  const opencodeStatus = opencodeEvents.length ? 'observed-current-operation' : 'no-operation-runtime-evidence'
+  const opencodeStatus = opencodeEvents.length
+    ? 'observed-current-operation'
+    : report.performance.aggregate
+      ? 'persisted-operation-statistics-only'
+      : 'no-operation-runtime-evidence'
   const collections = {
     renderer: rendererEvidence ? 'collected' : 'unavailable-old-request-or-expired',
     main: mainStatus,

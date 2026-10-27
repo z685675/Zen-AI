@@ -2,7 +2,7 @@ import { permissionModeCards } from '@renderer/config/agent'
 import SessionSettingsPopup from '@renderer/pages/settings/AgentSettings/SessionSettingsPopup'
 import type { GetAgentSessionResponse, PermissionMode } from '@renderer/types'
 import { normalizePermissionMode } from '@renderer/types'
-import { FileEdit, Lightbulb, ShieldOff } from 'lucide-react'
+import { FileEdit, Lightbulb } from 'lucide-react'
 import type { FC } from 'react'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -21,10 +21,6 @@ const getPermissionModeConfig = (mode: PermissionMode) => {
     case 'acceptEdits':
       return {
         icon: <FileEdit size={18} color="#52c41a" />
-      }
-    case 'bypassPermissions':
-      return {
-        icon: <ShieldOff size={18} color="var(--color-error)" />
       }
     default:
       return {

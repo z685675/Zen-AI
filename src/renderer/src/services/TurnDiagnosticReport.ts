@@ -1,5 +1,6 @@
 import i18n from '@renderer/i18n'
 import type { Message, MessageBlock } from '@renderer/types/newMessage'
+import { readOpenCodeTurnDiagnostics } from '@shared/agents/opencodeDiagnostics'
 import type { DiagnosticEvent, DiagnosticEvidence } from '@shared/diagnostics'
 import { buildTurnPerformance } from '@shared/turnPerformance'
 
@@ -47,7 +48,11 @@ const fields = new Set([
   'chunks',
   'bodyBytes',
   'messageCount',
-  'toolCount'
+  'toolCount',
+  'permission',
+  'linkedTool',
+  'behavior',
+  'zenFailureStage'
 ])
 export function metadataEvent(event: DiagnosticEvent): DiagnosticEvent {
   return {
@@ -58,9 +63,16 @@ export function metadataEvent(event: DiagnosticEvent): DiagnosticEvent {
       ...scalarFields(event.details, [...fields]),
       // Retain only the error class for attribution, never its message or stack.
       ...(event.details?.error && typeof event.details.error === 'object'
-        ? { error: scalarFields(event.details.error, ['name', 'status', 'statusCode', 'code']) }
+        ? { error: metadataError(event.details.error) }
         : {})
     }
+  }
+}
+export function metadataError(value: unknown, depth = 0): Record<string, unknown> | undefined {
+  if (!value || typeof value !== 'object' || depth >= 4) return undefined
+  return {
+    ...scalarFields(value, ['name', 'status', 'statusCode', 'code', 'zenFailureStage']),
+    ...('cause' in value ? { cause: metadataError(value.cause, depth + 1) } : {})
   }
 }
 function scalarFields(value: unknown, keys: string[]) {
@@ -162,6 +174,7 @@ export function metadataMessage(message?: Message) {
       'time_first_token_millsec',
       'time_thinking_millsec'
     ]),
+    opencodeDiagnostics: readOpenCodeTurnDiagnostics(message.providerMetadata?.opencodeDiagnostics),
     responseTiming: scalarFields(message.providerMetadata?.responseTiming, [
       'startedAt',
       'finishedAt',
@@ -196,7 +209,8 @@ export function createTurnReport(message: Message, events: DiagnosticEvent[], st
     outcome: timing?.outcome ?? message.status,
     elapsedMs: useResponseTimer ? timing?.elapsedMs : undefined,
     firstTokenMs: useResponseTimer ? timing?.firstTokenMs : undefined,
-    droppedEvents
+    droppedEvents,
+    persistedDiagnostics: message.providerMetadata?.opencodeDiagnostics
   })
   const t = i18n.t
   const unavailable = t('turnDiagnostics.notRecorded')
@@ -221,46 +235,56 @@ export function createTurnReport(message: Message, events: DiagnosticEvent[], st
     processing: t('turnDiagnostics.outcomes.processing'),
     pending: t('turnDiagnostics.outcomes.pending')
   }
-  const summary = t('turnDiagnostics.reportTemplate', {
-    outcome: outcomes[performance.outcome] ?? performance.outcome,
-    model: message.model?.id ?? unavailable,
-    provider: message.model?.provider ?? unavailable,
-    input: count(usage?.prompt_tokens),
-    output: count(usage?.completion_tokens),
-    cache: count(cache),
-    start: performance.startedAt ?? unavailable,
-    end: performance.finishedAt ?? unavailable,
-    total: ms(performance.totalMs),
-    firstContent: ms(performance.firstContentMs),
-    firstText: ms(performance.firstTextMs),
-    firstBytes: ms(performance.firstBytesMs),
-    requests: performance.observedRequests,
-    tools: performance.toolCalls,
-    retries: performance.retryEvents,
-    render: ms(performance.renderCommitDelayMs),
-    slowest:
-      performance.slowestObserved
-        .map((span) => `- ${kinds[span.kind]} / ${span.label}: ${ms(span.durationMs)}`)
-        .join('\n') || unavailable,
-    timeline:
-      performance.intervals
-        .map((span) => {
-          const request =
-            span.kind === 'request'
-              ? t('turnDiagnostics.requestTiming', {
-                  headers: ms(span.headersMs),
-                  bytes: ms(span.firstBytesMs),
-                  status: span.httpStatus ?? unavailable,
-                  requestId: span.requestId ?? unavailable
-                })
-              : ''
-          return `- ${span.startedAt} → ${span.finishedAt ?? unavailable} | ${kinds[span.kind]} / ${span.label} | ${ms(span.durationMs)}${request}`
+  const summary =
+    t('turnDiagnostics.reportTemplate', {
+      outcome: outcomes[performance.outcome] ?? performance.outcome,
+      model: message.model?.id ?? unavailable,
+      provider: message.model?.provider ?? unavailable,
+      input: count(usage?.prompt_tokens),
+      output: count(usage?.completion_tokens),
+      cache: count(cache),
+      start: performance.startedAt ?? unavailable,
+      end: performance.finishedAt ?? unavailable,
+      total: ms(performance.totalMs),
+      firstContent: ms(performance.firstContentMs),
+      firstText: ms(performance.firstTextMs),
+      firstBytes: ms(performance.firstBytesMs),
+      requests: performance.observedRequests ?? unavailable,
+      tools: performance.toolCalls ?? unavailable,
+      retries: performance.retryEvents ?? unavailable,
+      render: ms(performance.renderCommitDelayMs),
+      slowest:
+        performance.slowestObserved
+          .map((span) => `- ${kinds[span.kind]} / ${span.label}: ${ms(span.durationMs)}`)
+          .join('\n') || unavailable,
+      timeline:
+        performance.intervals
+          .map((span) => {
+            const request =
+              span.kind === 'request'
+                ? t('turnDiagnostics.requestTiming', {
+                    headers: ms(span.headersMs),
+                    bytes: ms(span.firstBytesMs),
+                    status: span.httpStatus ?? unavailable,
+                    requestId: span.requestId ?? unavailable
+                  })
+                : ''
+            return `- ${span.startedAt} → ${span.finishedAt ?? unavailable} | ${kinds[span.kind]} / ${span.label} | ${ms(span.durationMs)}${request}`
+          })
+          .join('\n') || unavailable,
+      waits:
+        performance.userWaitIntervals.map((span) => `- ${span.label}: ${ms(span.durationMs)}`).join('\n') ||
+        unavailable,
+      dropped: droppedEvents,
+      missing: performance.coverage.missing.join(', ')
+    }) +
+    (performance.aggregate
+      ? '\n\n' +
+        t('turnDiagnostics.aggregate', {
+          requests: ms(performance.aggregate.upstreamRequestMs),
+          headers: ms(performance.aggregate.upstreamHeaderWaitMs),
+          tools: ms(performance.aggregate.completedToolObservedMs)
         })
-        .join('\n') || unavailable,
-    waits:
-      performance.userWaitIntervals.map((span) => `- ${span.label}: ${ms(span.durationMs)}`).join('\n') || unavailable,
-    dropped: droppedEvents,
-    missing: performance.coverage.missing.join(', ')
-  })
+      : '')
   return { performance, summary }
 }

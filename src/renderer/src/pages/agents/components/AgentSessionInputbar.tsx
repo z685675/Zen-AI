@@ -7,7 +7,6 @@ import { useInputText } from '@renderer/hooks/useInputText'
 import { selectNewTopicLoading } from '@renderer/hooks/useMessageOperations'
 import { useSettings } from '@renderer/hooks/useSettings'
 import { useTextareaResize } from '@renderer/hooks/useTextareaResize'
-import { useTimer } from '@renderer/hooks/useTimer'
 import { InputbarCore } from '@renderer/pages/home/Inputbar/components/InputbarCore'
 import ScrollToBottomButton from '@renderer/pages/home/Inputbar/components/ScrollToBottomButton'
 import {
@@ -41,7 +40,7 @@ import {
   shouldStartDeepResearchImmediately
 } from '@renderer/utils/agentDeepResearch'
 import { buildAgentSessionTopicId } from '@renderer/utils/agentSession'
-import { getAgentSessionDraftCacheKey } from '@renderer/utils/agentSessionDraft'
+import { getAgentSessionDraft, saveAgentSessionDraft } from '@renderer/utils/agentSessionDraft'
 import { getSendMessageShortcutLabel } from '@renderer/utils/input'
 import {
   createFileBlock,
@@ -227,14 +226,13 @@ const AgentSessionInputbarInner: FC<InnerProps> = ({
   const isHero = variant === 'hero'
 
   // Use shared hooks for text and textarea management with draft persistence
-  const draftCacheKey = getAgentSessionDraftCacheKey(agentId, sessionId)
   const {
     text,
     setText,
     isEmpty: inputEmpty
   } = useInputText({
-    initialValue: CacheService.get<string>(draftCacheKey) ?? '',
-    onChange: (value) => CacheService.set(draftCacheKey, value, DRAFT_CACHE_TTL)
+    initialValue: getAgentSessionDraft(agentId, sessionId),
+    onChange: (value) => saveAgentSessionDraft(agentId, sessionId, value)
   })
   const {
     textareaRef,
@@ -278,7 +276,6 @@ const AgentSessionInputbarInner: FC<InnerProps> = ({
   const { setIsExpanded, setFiles } = useInputbarToolsDispatch()
   const { setCouldAddImageFile } = useInputbarToolsInternalDispatch()
 
-  const { setTimeoutTimer } = useTimer()
   const dispatch = useAppDispatch()
   const sessionTopicId = buildAgentSessionTopicId(sessionId)
   const topicMessages = useAppSelector((state) => selectMessagesForTopic(state, sessionTopicId))
@@ -507,7 +504,6 @@ const AgentSessionInputbarInner: FC<InnerProps> = ({
       setFiles([])
       setDeepResearchEnabled(false)
       CacheService.remove(deepResearchCacheKey)
-      setTimeoutTimer('agentSession_sendMessage', () => setText(''), 500)
       // Restore focus to textarea after sending to maintain IME state (fcitx5 issue)
       focusTextarea()
     } catch (error) {
@@ -524,7 +520,6 @@ const AgentSessionInputbarInner: FC<InnerProps> = ({
     sessionTopicId,
     setText,
     setFiles,
-    setTimeoutTimer,
     text,
     files,
     focusTextarea,

@@ -16,6 +16,11 @@ on:
           - all
           - windows
           - mac
+      publish:
+        description: "Publish after all platforms and Python runtimes pass (requires platform=all)"
+        type: boolean
+        required: false
+        default: false
   push:
     tags:
       - v*.*.*
@@ -44,6 +49,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
 
       - name: Get release tag
         id: get-tag
@@ -227,6 +233,12 @@ jobs:
             fi
           done
 
+      - name: Preserve exact hotpatch base descriptor
+        shell: bash
+        env:
+          PATCH_PLATFORM: ${{ runner.os == 'Windows' && 'win32' || 'darwin' }}
+        run: cp out/main/hotpatch-base.json "dist/hotpatch-base-$PATCH_PLATFORM.json"
+
       - name: Release Windows
         if: matrix.os == 'windows-2022'
         uses: ncipollo/release-action@v1
@@ -236,7 +248,7 @@ jobs:
           makeLatest: false
           tag: ${{ steps.get-tag.outputs.tag }}
           bodyFile: .release-body.md
-          artifacts: "dist/*.exe,dist/latest*.yml,dist/*.blockmap"
+          artifacts: "dist/*.exe,dist/latest*.yml,dist/*.blockmap,dist/hotpatch-base-*.json"
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Release Mac
@@ -248,7 +260,7 @@ jobs:
           makeLatest: false
           tag: ${{ steps.get-tag.outputs.tag }}
           bodyFile: .release-body.md
-          artifacts: "dist/*.zip,dist/*.dmg,dist/latest*.yml,dist/*.blockmap"
+          artifacts: "dist/*.zip,dist/*.dmg,dist/latest*.yml,dist/*.blockmap,dist/hotpatch-base-*.json"
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload macOS legacy DMG aliases
@@ -275,4 +287,44 @@ jobs:
     uses: ./.github/workflows/build-python-runtime.yml
     with:
       tag: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref_name }}
+    secrets: inherit
+
+  publish:
+    needs: [release, python-runtime]
+    if: github.event_name == 'push' || (inputs.publish && inputs.platform == 'all')
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.publish.outputs.tag }}
+      published: ${{ steps.publish.outputs.published }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: '.node-version'
+      - name: Verify complete stable release before publishing
+        id: publish
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Non-stable tags remain drafts for explicit review."
+            exit 0
+          fi
+          gh release view "$RELEASE_TAG" --json tagName,body,assets > release-assets.json
+          node scripts/verify-release-assets.js release-assets.json "$RELEASE_TAG"
+          gh release edit "$RELEASE_TAG" --draft=false --latest --title "Zen AI $RELEASE_TAG"
+          echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+          echo "published=true" >> "$GITHUB_OUTPUT"
+
+  sync-downloads:
+    needs: publish
+    if: needs.publish.outputs.published == 'true'
+    uses: ./.github/workflows/sync-release-to-nas.yml
+    with:
+      tag: ${{ needs.publish.outputs.tag }}
     secrets: inherit

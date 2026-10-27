@@ -3,6 +3,7 @@ import type { Message } from '@renderer/types/newMessage'
 import { diagnoseClientError } from '@renderer/utils/clientErrorDiagnosis'
 import { beforeAll, describe, expect, it, vi } from 'vitest'
 
+import { buildDiagnosticArchive } from '../../../../main/utils/diagnosticArchive'
 import { beginDiagnostic, recordDiagnostic } from '../DiagnosticEvidenceService'
 import {
   exportErrorDiagnosticPackage,
@@ -15,6 +16,41 @@ vi.mock('@renderer/store', () => ({ default: { getState: () => ({ llm: { provide
 describe('ErrorDiagnosticPackageService', () => {
   beforeAll(async () => {
     await i18n.changeLanguage('zh-CN')
+  })
+  it.each(
+    (['chat', 'agent'] as const).flatMap((source) =>
+      (['success', 'processing', 'error'] as const).map((status) => ({ source, status }))
+    )
+  )('builds the actual ZIP at the main-process boundary for $source / $status', async ({ source, status }) => {
+    const original = window.api
+    let archive: Buffer | undefined
+    const save = vi.fn(async (_name: string, files: Array<{ path: string; content: string }>) => {
+      archive = buildDiagnosticArchive(files)
+      return '/diagnostic.zip'
+    })
+    Object.assign(window, {
+      api: {
+        file: {
+          collectDiagnosticEvidence: async () => ({ snapshotStatus: 'unavailable' }),
+          saveDiagnosticPackage: save
+        }
+      }
+    })
+    try {
+      const error = { name: 'Error', message: 'test failure', stack: null }
+      await exportErrorDiagnosticPackage({
+        source,
+        title: 'test',
+        description: 'test',
+        privacyNotice: 'test privacy',
+        message: { id: `archive-${status}`, topicId: 'session', role: 'assistant', blocks: [], status } as Message,
+        ...(status === 'error' ? { error, diagnosis: diagnoseClientError(error) } : {})
+      })
+      expect(save).toHaveBeenCalledOnce()
+      expect(archive?.subarray(0, 2).toString()).toBe('PK')
+    } finally {
+      Object.assign(window, { api: original })
+    }
   })
   it.each(['chat', 'agent'] as const)(
     'exports a successful %s turn with timings but no private content by default at the new entry',

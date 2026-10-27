@@ -112,7 +112,6 @@ describe('bundled canvas isolation', () => {
     const service = new ImageCanvasService(host as unknown as BrowserWindow)
     const fontFamily = 'A "Rounded" 字体'
     await service.open({
-      surface: 'workbench',
       providers: [],
       bounds: { x: 0, y: 0, width: 900, height: 700 },
       userFontFamily: fontFamily

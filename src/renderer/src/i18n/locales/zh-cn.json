@@ -601,8 +601,8 @@
         },
         "permissionMode": {
           "acceptEdits": {
-            "description": "可以直接帮你改内容、执行任务，但遇到关键操作时会先确认。",
-            "title": "执行"
+            "description": "连续完成已授权的任务，普通操作无需逐项批准。覆盖原文件、删除文件或超出授权范围时，仍需确认。",
+            "title": "Build"
           },
           "bypassPermissions": {
             "description": "会尽量自己把任务连续做完，修改文件和执行命令通常不再逐项确认。",
@@ -616,8 +616,8 @@
           "helper": "指定智能体如何处理工具使用授权",
           "placeholder": "选择权限模式",
           "plan": {
-            "description": "先帮你分析问题、整理思路和列步骤，不会直接改文件，也不会执行命令。",
-            "title": "计划"
+            "description": "分析问题、读取已授权资料并制定计划，不修改用户文件或执行任务。需要实际操作时，请切换到 Build。",
+            "title": "Plan"
           },
           "simpleTitle": "模式选择",
           "title": "权限模式"
@@ -886,17 +886,20 @@
     "busy": "智能助手任务或数据操作尚未结束，请先停止任务，或等待数据操作完成后再进行备份、恢复或清空。"
   },
   "assistantDeliverables": {
+    "checking": "正在检查文件",
     "empty": "本会话暂无已登记成果。",
     "entry": "成果 · {{count}}",
     "folder": "文件夹",
     "locate": "查看对应回答",
+    "missing": "文件已移动或删除",
     "no_match": "没有匹配的成果。",
     "notice": "仅汇总本会话中成功文件工具登记的成果。这些是快捷入口，不是文件副本；文件被移动或删除后可能无法打开。",
     "open": "打开",
     "reveal": "定位文件",
     "search": "搜索文件名称或路径",
     "source": "最近来源：第 {{turn}} 轮 · 共 {{count}} 条回答登记",
-    "title": "会话成果"
+    "title": "会话成果",
+    "unavailable": "无法检查文件状态"
   },
   "assistantFileSafety": {
     "message": "即将覆盖以下原文件。确认后会先保存并校验备份，再替换内容；取消则保留原文件不变。",
@@ -908,7 +911,7 @@
     "callStarted": "已发起",
     "callStopped": "已停止",
     "calledThisTurn": "最新一轮用户任务的原生技能调用",
-    "discovered": "OpenCode 已发现",
+    "discovered": "智能助手已发现",
     "enabled": "已启用",
     "exportFailed": "诊断包导出失败，请稍后重试。",
     "exportSaved": "诊断包已导出",
@@ -2473,6 +2476,34 @@
     },
     "title": "话题搜索"
   },
+  "hotpatch": {
+    "check": "检查补丁",
+    "description": "后台检查并在下次正常启动时应用，不会打断正在运行的任务。",
+    "disable": "暂停补丁",
+    "disableConfirm": "下次启动使用内置界面，并暂停下载补丁？",
+    "enable": "恢复补丁更新",
+    "nextStartup": "下次启动应用：{{patch}}",
+    "requestFailed": "暂时无法获取补丁状态。",
+    "rescue": {
+      "description": "界面补丁未能完成启动。你的对话、文件和设置均已保留，可重新启动并使用内置界面继续。",
+      "export": "导出启动诊断包",
+      "exportFailed": "无法保存启动诊断包，请选择一个新的保存位置。",
+      "restart": "使用内置界面重新启动",
+      "title": "界面恢复"
+    },
+    "safeFallback": "已保留当前可用界面。",
+    "status": {
+      "active": "补丁已应用",
+      "builtin": "内置界面",
+      "checking": "正在检查",
+      "disabled": "已暂停",
+      "pending": "等待下次启动",
+      "recovering": "正在恢复",
+      "unavailable": "未启用"
+    },
+    "testCode": "测试投放码（选填）",
+    "title": "界面补丁"
+  },
   "html_artifacts": {
     "capture": {
       "label": "捕获页面",
@@ -2486,17 +2517,11 @@
     "split": "分屏"
   },
   "image_studio": {
-    "canvas": "图片画布",
-    "canvas_unavailable": "本地图片画布未能打开，请重试或查看应用日志。",
-    "key": "密钥 {{index}}",
-    "key_label": "工作台密钥",
     "local": "本地图片",
     "opening": "正在打开图片工作台……",
     "reconnect": "重新连接",
-    "server": "服务端工作台",
-    "title": "图片工作台",
-    "unavailable": "工作台暂时无法打开。请确认 Zen API 服务端已更新，且所选密钥有效。原有图片仍可在“本地图片”中查看。",
-    "workbench": "图片工作台"
+    "workbench": "图片工作台",
+    "workbench_unavailable": "图片工作台未能打开，请重试或查看应用日志。"
   },
   "import": {
     "chatgpt": {
@@ -3355,6 +3380,13 @@
     },
     "memory_notice": "使用独立的原生会话记忆，换模型仍保留历史。支持重试、分支和单条删除；暂不支持直接编辑或批量删除。",
     "outputting": "模型正在输出",
+    "permission": {
+      "description": "请检查本次操作及目标，确认后任务将继续。",
+      "details": "查看操作详情",
+      "loopDescription": "助手连续尝试了相同操作。你可以允许继续一次，或取消本次操作。",
+      "loopTitle": "检测到重复操作，任务已暂停",
+      "title": "任务需要你的确认"
+    },
     "preparing": "请求已收到，正在准备任务",
     "responding": "正在处理回复",
     "restoring": "正在恢复当前会话",
@@ -5783,7 +5815,7 @@
       "prompt": "显示提示词",
       "show_message_outline": "显示消息大纲",
       "stats_time": "首字 {{first}} · 用时 {{total}}",
-      "stats_tip": "输入、输出、缓存的单位均为 Token。首字：本轮开始处理到首次可见文字（含显示的思考文字）。用时：到整轮任务结束，包含工具执行和等待时间。缓存只统计读取命中的 Token；— 表示未提供该项统计。",
+      "stats_tip": "输入、输出、缓存的单位均为 Token。首字：本轮开始处理到首次可见文字或思考；智能助手也计入首次工具调用。用时：到整轮任务结束，包含工具执行和等待时间。缓存只统计读取命中的 Token；— 表示未提供该项统计。",
       "stats_tokens": "输入 {{input}} · 输出 {{output}} · 缓存 {{cached}}",
       "title": "消息设置",
       "use_serif_font": "使用衬线字体"
@@ -6786,6 +6818,7 @@
     "show_window": "显示窗口"
   },
   "turnDiagnostics": {
+    "aggregate": "持久保存的运行统计（可能重叠，不可直接相加）：模型请求 {{requests}}，响应头等待 {{headers}}，已完成工具 {{tools}}。缺失的逐条时间线不会补造。",
     "description": "导出这一轮的运行状态、耗时和链路记录，不会重新执行任务或调用模型。",
     "export": "导出本轮诊断包",
     "includeContent": "包含本轮对话及工具内容（可选）",
@@ -6805,7 +6838,7 @@
       "processing": "执行中"
     },
     "privacy": "默认仅包含诊断数据，不包含对话正文、工具参数和结果、附件原件或完整历史。请确认接收人可信；如勾选包含内容，本轮对话可能含个人信息。",
-    "reportTemplate": "# Zen AI 本轮运行诊断报告\n\n- 结果：{{outcome}}\n- 模型：{{model}}；Provider：{{provider}}\n- Token：输入 {{input}}；输出 {{output}}；缓存读取 {{cache}}（包含在输入内，不重复相加）\n- 记录起点：{{start}}；结束：{{end}}；完成用时：{{total}}\n- 首次内容（可能是思考）：{{firstContent}}；首次正文：{{firstText}}；首批网络数据：{{firstBytes}}（不等于首字）\n- 观察到的请求：{{requests}}；工具：{{tools}}；重试/切换事件：{{retries}}\n- 界面提交延迟：{{render}}（React 提交记录，不是屏幕绘制保证）\n\n## 最耗时的已配对阶段\n{{slowest}}\n\n## 请求与工具时间线\n{{timeline}}\n\n## 观察到的用户等待（可能与工具重叠）\n{{waits}}\n\n## 判断边界与缺失数据\n- 仅列实测时长，不直接判定网络、客户端或上游的根因；阶段可重叠，不可直接相加或扣除用户等待。\n- 未记录不等于零耗时；未配对阶段可能仍在运行。执行中导出只代表快照，旧会话不能补造历史事件。\n- 起点通常是准备模型响应；更早的附件上传不一定覆盖。重试事件数不等于重复执行任务次数。\n- 服务端内部耗时请结合 zen-api-evidence.json 与请求编号。后台无记录不证明未收到，后台写出不保证客户端完整收到。\n- 有界记录丢弃事件：{{dropped}}；更早请求可能过期。数据缺项代码（详见 performance.json）：{{missing}}\n",
+    "reportTemplate": "# Zen AI 本轮运行诊断报告\n\n- 结果：{{outcome}}\n- 模型：{{model}}；Provider：{{provider}}\n- Token：输入 {{input}}；输出 {{output}}；缓存读取 {{cache}}（包含在输入内，不重复相加）\n- 记录起点：{{start}}；结束：{{end}}；完成用时：{{total}}\n- 首次响应（文字、思考或工具调用）：{{firstContent}}；首次正文：{{firstText}}；首批网络数据：{{firstBytes}}（不等于首字）\n- 观察到的请求：{{requests}}；工具：{{tools}}；重试/切换事件：{{retries}}\n- 界面提交延迟：{{render}}（React 提交记录，不是屏幕绘制保证）\n\n## 最耗时的已配对阶段\n{{slowest}}\n\n## 请求与工具时间线\n{{timeline}}\n\n## 观察到的用户等待（可能与工具重叠）\n{{waits}}\n\n## 判断边界与缺失数据\n- 仅列实测时长，不直接判定网络、客户端或上游的根因；阶段可重叠，不可直接相加或扣除用户等待。\n- 未记录不等于零耗时；未配对阶段可能仍在运行。执行中导出只代表快照，旧会话不能补造历史事件。\n- 起点通常是准备模型响应；更早的附件上传不一定覆盖。重试事件数不等于重复执行任务次数。\n- 服务端内部耗时请结合 zen-api-evidence.json 与请求编号。后台无记录不证明未收到，后台写出不保证客户端完整收到。\n- 有界记录丢弃事件：{{dropped}}；更早请求可能过期。数据缺项代码（详见 performance.json）：{{missing}}\n",
     "requestTiming": " | 等响应头 {{headers}} | 等首批数据 {{bytes}} | HTTP {{status}} | 请求编号 {{requestId}}"
   },
   "update": {

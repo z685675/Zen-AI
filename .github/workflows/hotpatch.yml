@@ -1,0 +1,156 @@
+name: Renderer Patch
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_tag:
+        description: 'Exact supported installer tag (vX.Y.Z, containing hotpatch base descriptors)'
+        required: true
+      patch_id:
+        description: 'New immutable patch ID, e.g. patch.1'
+        required: true
+      key_id:
+        description: 'Reviewed public key ID compiled into the base installer'
+        required: true
+      notes:
+        description: 'User-visible repair notes'
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: renderer-patch-publication
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.ref == 'refs/heads/main'
+    environment: hotpatch-release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2022
+            platform: win32
+          - os: macos-latest
+            platform: darwin
+    runs-on: ${{ matrix.os }}
+    env:
+      BASE_TAG: ${{ inputs.base_tag }}
+      PATCH_ID: ${{ inputs.patch_id }}
+      KEY_ID: ${{ inputs.key_id }}
+      PATCH_NOTES: ${{ inputs.notes }}
+      PATCH_PLATFORM: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: '.node-version'
+      - uses: pnpm/action-setup@v5
+      - name: Validate reviewed inputs and installer version
+        shell: bash
+        run: |
+          [[ "$BASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          [[ "$PATCH_ID" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,95}$ ]]
+          [[ "$KEY_ID" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,95}$ ]]
+          test "$(node -p 'require("./package.json").version')" = "${BASE_TAG#v}"
+      - name: Install frozen dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Fetch exact base descriptor
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p local/hotpatch-base
+          gh release download "$BASE_TAG" --repo "$GITHUB_REPOSITORY" \
+            --pattern "hotpatch-base-$PATCH_PLATFORM.json" --dir local/hotpatch-base
+      - name: Build and test without signing credentials
+        env:
+          NODE_OPTIONS: --max-old-space-size=8192
+          MAIN_VITE_CHERRYAI_CLIENT_SECRET: ${{ secrets.MAIN_VITE_CHERRYAI_CLIENT_SECRET }}
+          MAIN_VITE_MINERU_API_KEY: ${{ secrets.MAIN_VITE_MINERU_API_KEY }}
+          RENDERER_VITE_AIHUBMIX_SECRET: ${{ secrets.RENDERER_VITE_AIHUBMIX_SECRET }}
+          RENDERER_VITE_PPIO_APP_SECRET: ${{ secrets.RENDERER_VITE_PPIO_APP_SECRET }}
+        run: |
+          pnpm test:hotpatch
+          pnpm validate:release
+      - name: Package and sign eligible renderer snapshots
+        shell: bash
+        env:
+          ZEN_HOTPATCH_SIGNING_KEY_PEM: ${{ secrets.ZEN_HOTPATCH_SIGNING_KEY_PEM }}
+        run: |
+          mkdir -p local/hotpatch-publication
+          descriptor="local/hotpatch-base/hotpatch-base-$PATCH_PLATFORM.json"
+          for arch in x64 arm64; do
+            for packaging in installed portable; do
+              if [ "$PATCH_PLATFORM" != win32 ] && [ "$packaging" = portable ]; then continue; fi
+              pnpm exec tsx --tsconfig tsconfig.node.json scripts/hotpatch/artifact.ts \
+                --descriptor "$descriptor" --patch-id "$PATCH_ID" --key-id "$KEY_ID" \
+                --platform "$PATCH_PLATFORM" --arch "$arch" --packaging "$packaging" \
+                --notes "$PATCH_NOTES" --output "local/hotpatch-publication/$PATCH_PLATFORM-$arch-$packaging"
+            done
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: renderer-patch-${{ matrix.platform }}
+          path: local/hotpatch-publication/*/
+          retention-days: 14
+
+  publish:
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    environment: hotpatch-release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: '.node-version'
+      - uses: pnpm/action-setup@v5
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: renderer-patch-*
+          path: local/hotpatch-upload
+      - name: Provision restricted uploader and pinned host fingerprints
+        shell: bash
+        env:
+          UPLOAD_KEY: ${{ secrets.HOTPATCH_SSH_PRIVATE_KEY }}
+          KNOWN_HOSTS: ${{ secrets.HOTPATCH_SSH_KNOWN_HOSTS }}
+        run: |
+          test -n "$UPLOAD_KEY"; test -n "$KNOWN_HOSTS"
+          umask 077
+          credential_dir="$(mktemp -d "$RUNNER_TEMP/hotpatch-ssh.XXXXXXXX")"
+          printf '%s\n' "$UPLOAD_KEY" > "$credential_dir/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$credential_dir/known_hosts"
+          echo "HOTPATCH_SSH_KEY_FILE=$credential_dir/key" >> "$GITHUB_ENV"
+          echo "HOTPATCH_KNOWN_HOSTS_FILE=$credential_dir/known_hosts" >> "$GITHUB_ENV"
+      - name: Publish immutable directories and verify real HTTPS bytes
+        shell: bash
+        env:
+          HOTPATCH_SSH_HOST: ${{ secrets.HOTPATCH_SSH_HOST }}
+          HOTPATCH_SSH_USER: ${{ secrets.HOTPATCH_SSH_USER }}
+          HOTPATCH_SSH_PORT: ${{ secrets.HOTPATCH_SSH_PORT }}
+          HOTPATCH_DEPLOY_ROOT: ${{ vars.HOTPATCH_DEPLOY_ROOT }}
+        run: |
+          mapfile -d '' receipts < <(find local/hotpatch-upload -name publication.json -print0)
+          test "${#receipts[@]}" -eq 6
+          for receipt in "${receipts[@]}"; do
+            export HOTPATCH_SOURCE_DIR="$(dirname "$receipt")"
+            export HOTPATCH_BASE_ID="$(node -p 'JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).baseId' "$receipt")"
+            export HOTPATCH_PATCH_ID="$(node -p 'JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).patchId' "$receipt")"
+            bash scripts/hotpatch/upload.sh
+            pnpm exec tsx --tsconfig tsconfig.node.json scripts/hotpatch/verify-published.ts --publication "$receipt"
+          done
+      - name: Clear uploader credential
+        if: always()
+        shell: bash
+        run: |
+          case "${HOTPATCH_SSH_KEY_FILE:-}" in "$RUNNER_TEMP"/hotpatch-ssh.*/key) rm -f -- "$HOTPATCH_SSH_KEY_FILE" ;; esac
+          case "${HOTPATCH_KNOWN_HOSTS_FILE:-}" in "$RUNNER_TEMP"/hotpatch-ssh.*/known_hosts) rm -f -- "$HOTPATCH_KNOWN_HOSTS_FILE" ;; esac

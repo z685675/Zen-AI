@@ -163,7 +163,7 @@ const CREATE_FILE_TOOL: Tool = {
   description: `Create a valid common output file using Zen AI's built-in document generator.
 Use this for user-requested MD/TXT/CSV/DOCX/XLSX/PPTX/PDF output before improvising Python or shell scripts.
 It is designed for reliable basic documents, spreadsheets, slides, and text files without requiring pandas, python-docx, openpyxl, python-pptx, or system Python.
-For advanced spreadsheets, pass a structured workbook definition with sheets, formulas, filters, freezes, conditional formats, and charts. For PDFs, markdown-like headings, lists, and pipe tables are laid out with pagination.
+For advanced spreadsheets, pass a structured workbook definition with sheets, formulas, filters, freezes, conditional formats, and charts. For PDFs, markdown-like headings, lists, and pipe tables are laid out with pagination. For an exact page count, use pdf_pages with one nonempty Markdown string per intended page and expected_pages; headings alone do not start pages. Page-count mismatch fails before any file is saved. Do not repeatedly generate numbered PDFs with guessed pagination.
 For unsupported document features, explain the limitation or use an approved dependency only when truly required.
 The output path must be inside an allowed user/workspace location. The tool creates parent folders and returns verification metadata.`,
   inputSchema: {
@@ -187,6 +187,21 @@ The output path must be inside an allowed user/workspace location. The tool crea
         type: 'string',
         description:
           'Main text or markdown-like content. For CSV/XLSX this may be comma/tab/newline separated when rows are not provided.'
+      },
+      pdf_pages: {
+        type: 'array',
+        minItems: 1,
+        maxItems: 100,
+        items: { type: 'string', minLength: 1 },
+        description:
+          'PDF only. One nonempty Markdown string per intended physical page, e.g. ["# Overview\\nProject details", "# Final budget\\n700 yuan"]. Use instead of content. Each entry starts a new page; overflow is rejected by the page-count check, so shorten or redistribute content instead of padding or retrying unchanged.'
+      },
+      expected_pages: {
+        type: 'integer',
+        minimum: 1,
+        maximum: 100,
+        description:
+          'PDF only. Exact required physical page count, checked before saving. Defaults to pdf_pages.length when pdf_pages is provided. With content, use a standalone <!-- pagebreak --> line for an explicit break; headings and horizontal rules do not force pages.'
       },
       visual_style: {
         type: 'string',
@@ -289,7 +304,7 @@ The output path must be inside an allowed user/workspace location. The tool crea
       workbook: {
         type: 'object',
         description:
-          'Advanced XLSX definition. Use { creator?, sheets: [{ name, rows, header_rows?, freeze_rows?, freeze_columns?, auto_filter?, column_widths?, merges?, conditional_formats?, charts? }] }. Formula cells require explicitly calculated { formula, result, style? }, including real zero results; never substitute zero for missing calculations. Styles include decimal (2 decimals), currency (grouped 2 decimals, specify currency in header), date (numeric Excel 1900-system serial), percent, integer and wrap. Chart series must include cached categories and numeric values; max 4 charts per sheet.',
+          'Advanced XLSX definition. Use { creator?, sheets: [{ name, rows, header_rows?, freeze_rows?, freeze_columns?, auto_filter?, column_widths?, merges?, conditional_formats?, charts? }] }. rows is TWO-dimensional, including the header: [["Item","Amount"],["Materials",120],["Total",{formula:"SUM(B2:B2)",result:120}]]. Never use a flat header array. Formula cells require explicitly calculated { formula, result, style? }, including real zero results; never substitute zero for missing calculations. Styles include decimal (2 decimals), currency (grouped 2 decimals, specify currency in header), date (numeric Excel 1900-system serial), percent, integer and wrap. Chart series must include cached categories and numeric values; max 4 charts per sheet.',
         additionalProperties: true
       },
       assets: {
@@ -381,13 +396,18 @@ The output path must be inside an allowed user/workspace location. The tool crea
 const PRESENT_FILES_TOOL: Tool = {
   name: 'present_files',
   description: `Register final user-facing files that were created by a script, shell command, browser download, or advanced Skill workflow so Zen AI can show quick-open file cards.
-Do not call this after create_file because create_file already returns file-card metadata.
+create_file already returns file cards. Ordinary calls append other final outputs. After regenerating, renaming or selecting outputs, call with final:true and the COMPLETE final list for this user turn, including files made by create_file. This replaces the turn's intermediate shortcuts, not files on disk or earlier turns. Never delete or rename files merely to hide intermediate cards.
 Only include final deliverables requested by the user. Do not include source attachments, temporary files, caches, validation artifacts, or internal working files.
 Every path must point to an existing file inside an allowed workspace/user location. Supported Office/PDF/text files receive bounded format/content checks; malformed or empty supported files are rejected. Other formats and oversized files are existence-only, not content-verified. Inspect verification_scope and warnings before claiming success; these checks do not guarantee factual accuracy, formula recalculation or visual quality. Run applicable Skill feature validators first.
 When the user needs to open a project or output folder, include that existing directory too; it will become a persistent folder shortcut. Do not register unrelated directories.`,
   inputSchema: {
     type: 'object',
     properties: {
+      final: {
+        type: 'boolean',
+        description:
+          'Default false (append). True publishes the complete final list for this user turn, replacing intermediate shortcuts. Include every final deliverable, including create_file outputs.'
+      },
       file_paths: {
         type: 'array',
         minItems: 1,
@@ -515,6 +535,8 @@ interface CreateFileArgs {
   format?: string
   title?: string
   content?: string
+  pdf_pages?: string[]
+  expected_pages?: number
   visual_style?: string
   document_type?: string
   style_mode?: DocumentStyleMode
@@ -531,6 +553,8 @@ interface CreateFileArgs {
 
 interface PresentFilesArgs {
   file_paths?: string[]
+  paths?: string[]
+  final?: boolean
 }
 
 interface PresentedFileResult extends Omit<PresentedOutputVerification, 'verification_scope'> {
@@ -1103,7 +1127,30 @@ class AssistantServer {
       typeof args.title === 'string' && args.title.trim()
         ? args.title.trim()
         : path.basename(outputPath, path.extname(outputPath))
-    const content = typeof args.content === 'string' ? args.content : ''
+    let content = typeof args.content === 'string' ? args.content : ''
+    let expectedPages = args.expected_pages
+    if ((args.pdf_pages !== undefined || expectedPages !== undefined) && format !== 'pdf') {
+      throw new McpError(ErrorCode.InvalidParams, 'pdf_pages and expected_pages are only supported for PDF output')
+    }
+    if (expectedPages !== undefined && (!Number.isInteger(expectedPages) || expectedPages < 1 || expectedPages > 100)) {
+      throw new McpError(ErrorCode.InvalidParams, 'expected_pages must be an integer from 1 to 100')
+    }
+    if (args.pdf_pages !== undefined) {
+      if (
+        !Array.isArray(args.pdf_pages) ||
+        args.pdf_pages.length < 1 ||
+        args.pdf_pages.length > 100 ||
+        args.pdf_pages.some((page) => typeof page !== 'string' || !page.trim())
+      ) {
+        throw new McpError(ErrorCode.InvalidParams, 'pdf_pages must contain 1 to 100 nonempty Markdown strings')
+      }
+      if (content.trim()) throw new McpError(ErrorCode.InvalidParams, 'Use pdf_pages or content, not both')
+      if (expectedPages !== undefined && expectedPages !== args.pdf_pages.length) {
+        throw new McpError(ErrorCode.InvalidParams, 'expected_pages must equal pdf_pages.length')
+      }
+      expectedPages = args.pdf_pages.length
+      content = args.pdf_pages.join('\n\n<!-- pagebreak -->\n\n')
+    }
     const styleContent = [
       content,
       ...(Array.isArray(args.slides)
@@ -1261,6 +1308,7 @@ class AssistantServer {
     const verification = await verifyGeneratedOutput({
       format,
       buffer,
+      expectedPages,
       expectedSlides: format === 'pptx' ? templateSummary?.outputSlides || slides.length : undefined,
       expectedMediaAssets: usedAssets.size,
       renderValidation: args.render_validation
@@ -1397,10 +1445,16 @@ class AssistantServer {
   }
 
   private async presentFiles(args: PresentFilesArgs) {
-    const requestedPaths = Array.isArray(args.file_paths)
-      ? args.file_paths.filter(
-          (filePath): filePath is string => typeof filePath === 'string' && filePath.trim().length > 0
-        )
+    // The common alias retains the same authorization and content validation.
+    if (
+      args.file_paths !== undefined &&
+      args.paths !== undefined &&
+      JSON.stringify(args.file_paths) !== JSON.stringify(args.paths)
+    )
+      throw new McpError(ErrorCode.InvalidParams, "Provide 'file_paths' only; conflicting 'paths' was also supplied")
+    const supplied = args.file_paths ?? args.paths
+    const requestedPaths = Array.isArray(supplied)
+      ? supplied.filter((filePath): filePath is string => typeof filePath === 'string' && filePath.trim().length > 0)
       : []
     const uniquePaths = [...new Set(requestedPaths.map((filePath) => filePath.trim()))]
 
@@ -1455,6 +1509,7 @@ class AssistantServer {
           text: JSON.stringify(
             {
               status: 'ready',
+              ...(args.final === true ? { final: true } : {}),
               files
             },
             null,
@@ -3034,6 +3089,7 @@ function extractPptxPictureXml(zip: AdmZip, partName: string, firstShapeId: numb
 }
 
 type PdfContentBlock =
+  | { type: 'page-break' }
   | { type: 'heading'; level: number; text: string }
   | { type: 'paragraph'; text: string }
   | { type: 'bullet'; marker: string; text: string }
@@ -3229,6 +3285,10 @@ export async function createPdfBuffer(
   }
 
   for (const block of blocks) {
+    if (block.type === 'page-break') {
+      addPage()
+      continue
+    }
     if (block.type === 'heading') {
       const size = block.level === 1 ? 16 : block.level === 2 ? 13 : 11.5
       const lineHeight = size + 7
@@ -3360,6 +3420,11 @@ function parsePdfBlocks(content: string): PdfContentBlock[] {
       index += 1
       continue
     }
+    if (isPdfPageBreak(line)) {
+      if (blocks.length && blocks[blocks.length - 1].type !== 'page-break') blocks.push({ type: 'page-break' })
+      index += 1
+      continue
+    }
     const heading = line.match(/^(#{1,3})\s+(.+)$/)
     if (heading) {
       blocks.push({ type: 'heading', level: heading[1].length, text: heading[2] })
@@ -3429,6 +3494,7 @@ function parsePdfBlocks(content: string): PdfContentBlock[] {
       const next = lines[index].trim()
       if (
         !next ||
+        isPdfPageBreak(next) ||
         /^(#{1,3})\s+/.test(next) ||
         /^[-*+]\s+/.test(next) ||
         /^\d+[.)]\s+/.test(next) ||
@@ -3444,7 +3510,17 @@ function parsePdfBlocks(content: string): PdfContentBlock[] {
     }
     blocks.push({ type: 'paragraph', text: paragraph.join(' ') })
   }
+  if (blocks[blocks.length - 1]?.type === 'page-break') blocks.pop()
   return blocks
+}
+
+function isPdfPageBreak(line: string) {
+  // Recognize only an explicit standalone marker or the empty HTML div used
+  // by existing callers. This is not an HTML/CSS execution path.
+  return (
+    /^<!--\s*pagebreak\s*-->$/i.test(line) ||
+    /^<div\s+style=(["'])\s*page-break-(?:before|after)\s*:\s*always\s*;?\s*\1\s*>\s*<\/div>$/i.test(line)
+  )
 }
 
 function isMarkdownTableLine(value: string) {

@@ -28,6 +28,7 @@ export class OpenCodePerformance {
   }
 
   transport(event: string, details: Record<string, unknown>) {
+    if (details.phase === 'quota-admission') return
     const ms =
       typeof details.durationMs === 'number' && Number.isFinite(details.durationMs)
         ? Math.max(0, details.durationMs)

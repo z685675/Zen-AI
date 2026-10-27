@@ -17,6 +17,7 @@ describe('assistant tool failure guidance', () => {
     ['Request timed out', 'timeout'],
     ['fetch failed', 'network'],
     ['A file_path is required', 'invalid_input'],
+    ["'file_paths' must contain at least one file path", 'invalid_input'],
     ['unclassified failure', 'unknown']
   ])('classifies observed %s without executing anything', (message, code) => {
     expect(createAssistantToolFailure('create_file', new Error(message))).toMatchObject({

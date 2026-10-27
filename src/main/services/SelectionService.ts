@@ -16,6 +16,8 @@ import type {
 import iconPath from '../../../build/icon.png?asset'
 import type { ActionItem } from '../../renderer/src/types/selectionTypes'
 import { ConfigKeys, configManager } from './ConfigManager'
+import { hotpatchWindowPreferences } from './hotpatch/security'
+import { HOTPATCH_PRODUCTION_ENABLED, HOTPATCH_PRODUCTION_TRUST } from './hotpatch/trust'
 import storeSyncService from './StoreSyncService'
 
 const logger = loggerService.withContext('SelectionService')
@@ -483,6 +485,9 @@ export class SelectionService {
         contextIsolation: true,
         nodeIntegration: false,
         sandbox: false,
+        ...hotpatchWindowPreferences(
+          app.isPackaged && HOTPATCH_PRODUCTION_ENABLED && !!Object.keys(HOTPATCH_PRODUCTION_TRUST).length
+        ),
         devTools: isDev ? true : false
       }
     })
@@ -1213,6 +1218,9 @@ export class SelectionService {
         contextIsolation: true,
         nodeIntegration: false,
         sandbox: true,
+        ...hotpatchWindowPreferences(
+          app.isPackaged && HOTPATCH_PRODUCTION_ENABLED && !!Object.keys(HOTPATCH_PRODUCTION_TRUST).length
+        ),
         devTools: true
       }
     })

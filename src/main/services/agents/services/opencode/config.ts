@@ -7,12 +7,13 @@ import {
   OPENCODE_REQUEST_TIMEOUT_MS,
   OPENCODE_STREAM_CHUNK_TIMEOUT_MS
 } from '../../../../../../packages/shared/agents/opencodeLimits'
+import { getOpenCodeAgentMode } from '../../../../../../packages/shared/agents/opencodeMode'
 import { formatApiHost } from '../../../../../../packages/shared/utils/api'
 import { withoutTrailingApiVersion } from '../../../../../../packages/shared/utils/api/utils'
 import { getAutomationProfile, LIGHTWEIGHT_TOOLS } from '../automation/profile'
 import { getAgentProtocolBridgeTarget, modelDeclaresAnthropicProtocol } from '../runtime/protocol'
 
-export const OPENCODE_VERSION = '1.18.35'
+export const OPENCODE_VERSION = '1.19.4'
 export const OPENCODE_PROVIDER_ID = 'zen-selected'
 
 export function buildOpenCodeConfig(input: {
@@ -53,8 +54,7 @@ export function buildOpenCodeConfig(input: {
   const externalDirectories = Object.fromEntries(
     allowedRoots.map((root) => [path.resolve(root).replaceAll('\\', '/') + '/**', 'allow'])
   )
-  const permission = session.configuration?.permission_mode === 'bypassPermissions' ? 'allow' : 'ask'
-  const readOnly = session.configuration?.permission_mode === 'plan'
+  const readOnly = getOpenCodeAgentMode(session.configuration?.permission_mode) === 'plan'
   const mcp = (name: string, route: string) =>
     [
       name,
@@ -137,10 +137,8 @@ export function buildOpenCodeConfig(input: {
         : [mcp('mcp__assistant_', 'assistant'), mcp('mcp__browser_', 'browser')]
     ),
     permission: {
-      '*': permission,
-      read: 'allow',
-      glob: 'allow',
-      grep: 'allow',
+      // Inherit native agent defaults, including .env protection and doom-loop
+      // approval. Do not turn Build into a second ask-for-every-tool policy.
       skill: { '*': 'allow', 'customize-opencode': 'deny' },
       external_directory: { '*': 'ask', ...externalDirectories },
       websearch: 'deny',
@@ -155,7 +153,7 @@ export function buildOpenCodeConfig(input: {
       bash: readOnly
         ? 'deny'
         : {
-            '*': permission,
+            '*': 'allow',
             ...Object.fromEntries(
               ['rm', 'rmdir', 'del', 'erase', 'rd', 'Remove-Item', 'remove-item', 'REMOVE-ITEM', 'DEL', 'RD'].flatMap(
                 (command) => [

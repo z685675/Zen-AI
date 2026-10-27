@@ -1,7 +1,8 @@
 export const MANAGED_PYTHON_VERSION = '3.12'
-export const MANAGED_PYTHON_PROFILE_VERSION = '1'
+export const MANAGED_PYTHON_PROFILE_VERSION = '2'
 
 export const MANAGED_PYTHON_PACKAGES = [
+  { id: 'requests', requirement: 'requests>=2.32.4,<3', importName: 'requests' },
   { id: 'numpy', requirement: 'numpy>=2.1,<3', importName: 'numpy' },
   { id: 'pandas', requirement: 'pandas>=2.2,<3', importName: 'pandas' },
   { id: 'openpyxl', requirement: 'openpyxl>=3.1,<4', importName: 'openpyxl' },

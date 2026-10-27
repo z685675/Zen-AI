@@ -42,11 +42,13 @@ export async function createOpenCodeGateway(baseURL: string, record: TransportEv
     const transport = (event: string, details: Record<string, unknown>) =>
       emit(id, event, { transportRequestId, ...details })
     const requestTaskId = taskId
-    const started = Date.now()
+    let started = Date.now()
+    let phase: 'quota-admission' | 'provider' = quota ? 'quota-admission' : 'provider'
     let upstreamStatus: number | undefined
     let usageObserver: OpenCodeUsageObserver | undefined
     let bodyComplete = false
     const upstream = new URL(req.url || '/', target.origin)
+    let requestUrl = quota?.requestUrl ?? `${upstream.origin}${upstream.pathname}`
     if (upstream.origin !== target.origin || !upstream.pathname.startsWith(target.pathname.replace(/\/$/, '') + '/')) {
       active.delete(controller)
       res.writeHead(400).end()
@@ -78,8 +80,19 @@ export async function createOpenCodeGateway(baseURL: string, record: TransportEv
       }
       if (id) headers.set('X-Zen-Diagnostic-Operation', id)
       headers.set('X-Zen-Task-Id', requestTaskId)
+      if (quota) transport('quota-check-started', { runtime: 'opencode', phase, url: requestUrl })
       const permit = await quota?.getPermit(headers, controller.signal)
+      if (quota)
+        transport('quota-check-complete', {
+          runtime: 'opencode',
+          phase,
+          url: requestUrl,
+          durationMs: Date.now() - started
+        })
       if (permit) headers.set('X-Zen-Model-Turn', permit)
+      phase = 'provider'
+      requestUrl = `${upstream.origin}${upstream.pathname}`
+      started = Date.now()
       transport('request-started', { runtime: 'opencode', url: upstream.href, method: req.method })
       const response = await fetch(upstream, {
         method: req.method,
@@ -132,27 +145,47 @@ export async function createOpenCodeGateway(baseURL: string, record: TransportEv
       transport('body-complete', { runtime: 'opencode', status: response.status, durationMs: Date.now() - started })
     } catch (error) {
       if (error instanceof ModelDailyQuotaRefusal) {
-        transport('quota-refused', { runtime: 'opencode', status: error.status })
+        transport('quota-refused', {
+          runtime: 'opencode',
+          phase,
+          url: requestUrl,
+          status: error.status,
+          receivedResponse: true,
+          error,
+          durationMs: Date.now() - started
+        })
         res.writeHead(error.status, { 'Content-Type': 'application/json' }).end(error.body)
         return
       }
       transport(controller.signal.aborted ? 'cancelled' : 'failed', {
         runtime: 'opencode',
+        phase,
         error,
-        url: `${upstream.origin}${upstream.pathname}`,
+        url: requestUrl,
         receivedResponse: upstreamStatus !== undefined,
         ...(upstreamStatus !== undefined ? { status: upstreamStatus } : {}),
         durationMs: Date.now() - started
       })
-      if (!res.headersSent) res.writeHead(502).end('Zen AI could not connect to the model service')
+      if (!res.headersSent && phase === 'quota-admission')
+        res.writeHead(502, { 'Content-Type': 'application/json' }).end(
+          JSON.stringify({
+            error: {
+              code: 'model_daily_quota_unavailable',
+              type: 'model_daily_quota_error',
+              message: 'Model daily quota admission request failed'
+            }
+          })
+        )
+      else if (!res.headersSent) res.writeHead(502).end('Zen AI could not connect to the model service')
       else res.destroy()
     } finally {
       try {
-        emit(
-          id,
-          'usage-observed',
-          usageObserver?.finish(bodyComplete) ?? { usage: {}, format: 'unknown', complete: false }
-        )
+        if (phase === 'provider')
+          emit(
+            id,
+            'usage-observed',
+            usageObserver?.finish(bodyComplete) ?? { usage: {}, format: 'unknown', complete: false }
+          )
       } catch {
         /* Observations must not interrupt transport cleanup. */
       }

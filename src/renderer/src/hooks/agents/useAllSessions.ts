@@ -1,5 +1,6 @@
 import { DEFAULT_SESSION_PAGE_SIZE } from '@renderer/api/agent'
 import type { ListAgentSessionsResponse, ListOptions, UpdateSessionForm } from '@renderer/types'
+import { clearAgentSessionDraft } from '@renderer/utils/agentSessionDraft'
 import { formatErrorMessageWithPrefix } from '@renderer/utils/error'
 import { useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -65,6 +66,7 @@ export const useAllSessions = (options: UseAllSessionsOptions = {}, pageSize = D
     async (agentId: string, sessionId: string): Promise<boolean> => {
       try {
         await client.deleteSession(agentId, sessionId)
+        clearAgentSessionDraft(agentId, sessionId)
         void mutate(
           (prev) => {
             if (!prev || prev.length === 0) return prev

@@ -10,9 +10,9 @@ import {
   type ImageCanvasOpen,
   imageCanvasProtocols,
   type ImageCanvasProvider,
-  type ImageCanvasRequest
+  type ImageCanvasRequest,
+  imageViewBounds
 } from '@shared/config/imageCanvas'
-import { imageStudioBounds } from '@shared/config/imageStudio'
 import { isZenManagedApiHost } from '@shared/config/zenProvider'
 import {
   app,
@@ -37,7 +37,7 @@ export class ImageCanvasService {
   private view?: WebContentsView
   private providers: ImageCanvasProvider[] = []
   private closing?: Promise<void>
-  private page = join(__dirname, '../../resources/image-canvas/index.html')
+  private readonly page = join(__dirname, '../../resources/image-workbench/index.html')
   private configuration?: ImageModelConfiguration
   private readonly catalogs = new Map<string, { expires: number; value: Promise<ImageCanvasProvider> }>()
   private readonly request: typeof fetch = (input, init) => net.fetch(input instanceof URL ? input.href : input, init)
@@ -219,14 +219,6 @@ export class ImageCanvasService {
       await this.close()
       this.sync(input.providers)
       this.store()
-      if (input.surface !== undefined && !['canvas', 'workbench'].includes(input.surface))
-        throw new Error('invalid_surface')
-      this.page = join(
-        __dirname,
-        input.surface === 'workbench'
-          ? '../../resources/image-workbench/index.html'
-          : '../../resources/image-canvas/index.html'
-      )
       const isolated = session.fromPartition('persist:zen-image-canvas')
       isolated.setPermissionRequestHandler((_contents, _permission, callback) => callback(false))
       isolated.setPermissionCheckHandler(() => false)
@@ -246,6 +238,7 @@ export class ImageCanvasService {
         }
       })
       this.view = view
+      view.setVisible(false)
       view.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
       view.webContents.on('will-navigate', (event) => event.preventDefault())
       view.webContents.on('will-redirect', (event) => event.preventDefault())
@@ -272,7 +265,7 @@ export class ImageCanvasService {
   }
 
   resize(input: ImageCanvasOpen['bounds']): void {
-    const bounds = imageStudioBounds(input)
+    const bounds = imageViewBounds(input)
     const zoom = this.window.webContents.getZoomFactor()
     this.view?.setBounds({
       x: Math.round(bounds.x * zoom),

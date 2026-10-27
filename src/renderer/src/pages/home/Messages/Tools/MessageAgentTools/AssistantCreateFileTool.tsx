@@ -14,6 +14,7 @@ export type AssistantFileResult = {
   format?: string
   size?: number
   verified?: boolean
+  final?: true
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> => {
@@ -58,7 +59,8 @@ const collectJsonCandidates = (value: string) => {
 
 const parseDirectFile = (
   value: Record<string, unknown>,
-  fallbackStatus: AssistantFileResult['status']
+  fallbackStatus: AssistantFileResult['status'],
+  final: boolean
 ): AssistantFileResult | undefined => {
   const rawPath = value.path ?? value.file_path ?? value.filePath
   if (typeof rawPath !== 'string' || !rawPath.trim()) return undefined
@@ -67,6 +69,7 @@ const parseDirectFile = (
   return {
     status: normalizeStatus(value.status, fallbackStatus),
     path: rawPath.trim(),
+    ...(final ? { final: true as const } : {}),
     ...(value.kind === 'directory' ? { kind: 'directory' as const } : {}),
     format: typeof value.format === 'string' && value.format.trim() ? value.format.trim() : inferFormat(rawPath),
     size: typeof value.size === 'number' && Number.isFinite(value.size) ? value.size : undefined,
@@ -79,14 +82,15 @@ const collectAssistantFileResults = (
   results: AssistantFileResult[],
   fallbackStatus: AssistantFileResult['status'],
   depth: number,
-  seen: Set<object>
+  seen: Set<object>,
+  final = false
 ) => {
   if (depth > 6 || value === null || value === undefined) return
 
   if (typeof value === 'string') {
     for (const candidate of collectJsonCandidates(value)) {
       try {
-        collectAssistantFileResults(JSON.parse(candidate), results, fallbackStatus, depth + 1, seen)
+        collectAssistantFileResults(JSON.parse(candidate), results, fallbackStatus, depth + 1, seen, final)
       } catch {
         // Runtime wrappers may include status text around a JSON payload.
       }
@@ -96,7 +100,7 @@ const collectAssistantFileResults = (
 
   if (Array.isArray(value)) {
     for (const item of value) {
-      collectAssistantFileResults(item, results, fallbackStatus, depth + 1, seen)
+      collectAssistantFileResults(item, results, fallbackStatus, depth + 1, seen, final)
     }
     return
   }
@@ -106,7 +110,8 @@ const collectAssistantFileResults = (
   if (isFailedResult(value)) return
 
   const status = normalizeStatus(value.status, fallbackStatus)
-  const directFile = parseDirectFile(value, status)
+  const isFinal = final || (value.status === 'ready' && value.final === true && Array.isArray(value.files))
+  const directFile = parseDirectFile(value, status, isFinal)
   if (directFile) results.push(directFile)
   if (typeof value.backup_path === 'string' && value.backup_path.trim()) {
     results.push({
@@ -127,13 +132,13 @@ const collectAssistantFileResults = (
     'data',
     'value'
   ]) {
-    collectAssistantFileResults(value[key], results, status, depth + 1, seen)
+    collectAssistantFileResults(value[key], results, status, depth + 1, seen, isFinal)
   }
 
   if (Array.isArray(value.content)) {
     for (const item of value.content) {
       if (isRecord(item) && item.type === 'text' && typeof item.text === 'string') {
-        collectAssistantFileResults(item.text, results, status, depth + 1, seen)
+        collectAssistantFileResults(item.text, results, status, depth + 1, seen, isFinal)
       }
     }
   }

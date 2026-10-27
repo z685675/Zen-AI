@@ -86,6 +86,7 @@ files:
   - "!node_modules/tesseract.js-core/{tesseract-core-simd-lstm.js,tesseract-core-simd-lstm.wasm,tesseract-core-simd-lstm.wasm.js}"
   - "!**/*.{h,iobj,ipdb,tlog,recipe,vcxproj,vcxproj.filters,Makefile,*.Makefile}"
   - "resources/**/*"
+  - "!resources/image-canvas/**"
   - "resources/licenses/opencode-LICENSE.txt"
   - "!resources/opencode-runtime/**"
   - "!resources/licenses/opencode*"

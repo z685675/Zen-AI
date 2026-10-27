@@ -83,3 +83,7 @@ Before handing a plan to the PPTX workflow, enforce the layout contracts: `metri
 - The middle should prove the thesis, not just list information.
 - The final slides should make the next action obvious.
 - Avoid generic titles like "Background", "Analysis", or "Summary" unless paired with a specific conclusion.
+
+## Delivery contract
+
+Treat explicit page, slide, worksheet and file counts as hard requirements. Verify actual outputs using the format validator and rendered pages where applicable; do not infer a Word page count from source text. Check requested formulas and final-page text, and distinguish obsolete values from the final decision. Deliver only existing final paths, excluding temporary previews and replaced files. Reuse validation already completed by the generator; add checks only for unverified requirements.

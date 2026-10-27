@@ -294,7 +294,7 @@ async function main() {
     })
     client = new OpenCodeClient(address, password, workspace)
     const health = await client.request<any>('/global/health', 'GET', undefined, controller.signal)
-    assert.equal(health.version, '1.18.35')
+    assert.equal(health.version, '1.19.4')
     assert.equal(health.version, OPENCODE_VERSION)
     assert(health.healthy)
     process.stdout.write(`NATIVE ${health.version} ${binary}\n`)

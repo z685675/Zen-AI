@@ -7,6 +7,7 @@ import { touchBrowserMcpContext } from '@main/apiServer/routes/browser-mcp'
 import { validateModelId } from '@main/apiServer/utils'
 import { recordMainDiagnostic } from '@main/services/DiagnosticEvidenceService'
 import type { OpenCodeUsageObservation } from '@shared/agents/opencodeDiagnostics'
+import { getOpenCodeAgentMode } from '@shared/agents/opencodeMode'
 import { diagnosticText, sanitizeDiagnostic } from '@shared/diagnostics'
 import type { GetAgentSessionResponse } from '@types'
 import type { TextStreamPart } from 'ai'
@@ -18,7 +19,7 @@ import { promptForToolApproval } from '../claudecode/tool-permissions'
 import type { OpenCodeEvent } from './client'
 import { type CompactionEntry, discardEmptyNativeCompaction } from './compactionGuard'
 import { OPENCODE_PROVIDER_ID, OPENCODE_VERSION } from './config'
-import { OPENCODE_SYSTEM_INSTRUCTIONS } from './instructions'
+import { getOpenCodeModeInstructions, OPENCODE_SYSTEM_INSTRUCTIONS } from './instructions'
 import { OpenCodePerformance } from './performance'
 import { watchOpenCodePermissions } from './permissions'
 import { prepareOpenCodeRuntime } from './prepare'
@@ -181,9 +182,18 @@ export default class OpenCodeService implements AgentServiceInterface {
         timing.transport(event, details)
         // Only keep the latest attempt's evidence. A recovered request must not
         // turn a later tool/server failure into a stale local network diagnosis.
-        if (event === 'request-started' || event === 'headers-received' || event === 'body-complete')
+        if (
+          [
+            'quota-check-started',
+            'quota-check-complete',
+            'request-started',
+            'headers-received',
+            'body-complete'
+          ].includes(event)
+        )
           transportFailure = undefined
-        else if (event === 'failed') transportFailure = sanitizeDiagnostic(details) as Record<string, unknown>
+        else if (event === 'failed' || event === 'quota-refused')
+          transportFailure = sanitizeDiagnostic(details) as Record<string, unknown>
         if (event === 'request-started' && currentStatus !== 'compacting' && currentStatus !== 'waiting_permission')
           status('waiting_model')
       })
@@ -226,11 +236,17 @@ export default class OpenCodeService implements AgentServiceInterface {
       emit({ type: 'raw', rawValue: { type: 'opencode_turn', user_message_id: messageId, session_id: nativeId } })
       const body = {
         messageID: messageId,
-        agent: session.configuration?.permission_mode === 'plan' ? 'plan' : 'build',
+        agent: getOpenCodeAgentMode(session.configuration?.permission_mode),
         model: { providerID: OPENCODE_PROVIDER_ID, modelID: modelId },
         system: getAutomationProfile(session)
           ? automationInstructions(getAutomationProfile(session)!)
-          : [OPENCODE_SYSTEM_INSTRUCTIONS, session.instructions || ''].join('\n\n'),
+          : [
+              OPENCODE_SYSTEM_INSTRUCTIONS,
+              session.instructions || '',
+              getOpenCodeModeInstructions(session.configuration?.permission_mode)
+            ]
+              .filter(Boolean)
+              .join('\n\n'),
         parts: [
           { type: 'text', text: prompt },
           ...(images || []).map((img) => ({
@@ -289,11 +305,23 @@ export default class OpenCodeService implements AgentServiceInterface {
         permissions++
         deadline.wait(`permission:${props.id}`)
         status('waiting_permission')
+        const permissionToolCallId = `${session.id}:${props.tool?.callID || `permission:${props.id}`}`
+        recordMainDiagnostic(options?.diagnosticId, 'runtime', 'permission-requested', {
+          runtime: 'opencode',
+          permission: props.permission,
+          requestId: props.id,
+          toolCallId: permissionToolCallId,
+          linkedTool: Boolean(props.tool?.callID)
+        })
         try {
-          const result = await promptForToolApproval(props.permission, props.metadata || { patterns: props.patterns }, {
-            signal: permissionSignal,
-            toolCallId: `${session.id}:${props.tool?.callID || props.id}`
-          })
+          const result = await promptForToolApproval(
+            props.permission,
+            { ...props.metadata, patterns: props.patterns },
+            {
+              signal: permissionSignal,
+              toolCallId: permissionToolCallId
+            }
+          )
           await runtime!.client.request(
             `/permission/${encodeURIComponent(props.id)}/reply`,
             'POST',
@@ -303,6 +331,13 @@ export default class OpenCodeService implements AgentServiceInterface {
             },
             permissionSignal
           )
+          recordMainDiagnostic(options?.diagnosticId, 'runtime', 'permission-resolved', {
+            runtime: 'opencode',
+            permission: props.permission,
+            requestId: props.id,
+            toolCallId: permissionToolCallId,
+            behavior: result.behavior
+          })
         } finally {
           permissions--
           deadline.continue(`permission:${props.id}`)
@@ -525,7 +560,12 @@ export default class OpenCodeService implements AgentServiceInterface {
           Object.assign(failure, {
             zenTransportFailure: transportFailure,
             zenRequestUrl: transportFailure.url,
-            zenFailureStage: transportFailure.receivedResponse ? 'provider-stream' : 'provider-connect'
+            zenFailureStage:
+              transportFailure.phase === 'quota-admission'
+                ? 'quota-admission'
+                : transportFailure.receivedResponse
+                  ? 'provider-stream'
+                  : 'provider-connect'
           })
         }
         recordMainDiagnostic(options?.diagnosticId, 'runtime', 'failed', {

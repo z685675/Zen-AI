@@ -1,8 +1,9 @@
 import fs from 'node:fs'
 import path from 'node:path'
 
+import fontkit from '@pdf-lib/fontkit'
 import AdmZip from 'adm-zip'
-import { PDFDocument } from 'pdf-lib'
+import { decodePDFRawStream, PDFDocument, PDFName, PDFRawStream } from 'pdf-lib'
 import { PDFParse } from 'pdf-parse'
 import sharp from 'sharp'
 import { describe, expect, it, vi } from 'vitest'
@@ -35,6 +36,45 @@ import { verifyGeneratedOutput } from '../assistantOutputValidation'
 import { createXlsxBuffer, type WorkbookInput } from '../assistantXlsx'
 
 describe('assistant output generators', () => {
+  it('embeds a compact CJK font with a valid CFF header for independent PDF readers', async () => {
+    const buffer = await createPdfBuffer('预算验收', '客户青禾；负责人林悦。旧预算600元已作废，最终预算700元。')
+    const document = await PDFDocument.load(buffer)
+    const fontStreams = document.context
+      .enumerateIndirectObjects()
+      .map(([, object]) => object)
+      .filter(
+        (object): object is PDFRawStream =>
+          object instanceof PDFRawStream && object.dict.get(PDFName.of('Subtype')) === PDFName.of('CIDFontType0C')
+      )
+    expect(fontStreams).toHaveLength(1)
+    const cff = decodePDFRawStream(fontStreams[0]).decode()
+    expect(cff[0]).toBe(1)
+    expect(cff[3]).toBeGreaterThanOrEqual(1)
+    expect(cff[3]).toBeLessThanOrEqual(4)
+    expect(buffer.length).toBeLessThan(200_000)
+  })
+
+  it('keeps the original font dictionary when CJK and Latin glyphs alternate in a subset', () => {
+    const font = fontkit.create(fs.readFileSync(path.resolve('resources/fonts/NotoSansCJKsc-Regular.otf')))
+    // These internal fields let the regression inspect the encoded CFF mapping,
+    // which text extraction and the permissive built-in renderer cannot verify.
+    const subset = font.createSubset() as ReturnType<typeof font.createSubset> & {
+      glyphs: number[]
+      cff: { fdForGlyph: (id: number) => number }
+      subsetCharstrings: () => void
+      subsetFontdict: (dict: { FDArray?: unknown[]; FDSelect?: { fds: number[] } }) => void
+    }
+    for (const glyph of font.layout('预算700元，林悦230元，运输350元，合计700元。').glyphs) subset.includeGlyph(glyph)
+    subset.subsetCharstrings()
+    const dictionary: { FDArray?: unknown[]; FDSelect?: { fds: number[] } } = {}
+    subset.subsetFontdict(dictionary)
+    const originalFds = subset.glyphs.map((id) => subset.cff.fdForGlyph(id))
+    const uniqueFds = [...new Set(originalFds)]
+    expect(uniqueFds.length).toBeGreaterThan(1)
+    expect(dictionary.FDSelect?.fds).toEqual(originalFds.map((fd) => uniqueFds.indexOf(fd)))
+    expect(dictionary.FDArray).toHaveLength(uniqueFds.length)
+  })
+
   it('applies the new visible-content guard to generated layouts and rejects truncated entries', async () => {
     for (const layout of ['cards', 'insight', 'metric', 'chart', 'process', 'timeline', 'summary'] as const) {
       const bullets =
@@ -1139,6 +1179,83 @@ describe('assistant output generators', () => {
     expect(() => createXlsxBuffer(directCycle, [], 'Direct cycle')).toThrow(/Circular formula reference.*'看板'!B2/)
     expect(() => createXlsxBuffer(indirectCycle, [], 'Indirect cycle')).toThrow(
       /Circular formula reference.*'汇总'!A2.*'汇总'!B2/
+    )
+  })
+
+  it.each([
+    '<!-- pagebreak -->',
+    '<div style="page-break-after: always;"></div>',
+    "<div style='page-break-before: always'></div>"
+  ])('honors an explicit PDF boundary without printing its marker: %s', async (marker) => {
+    const content = `# ZX7319 项目说明
+
+## 项目概况与费用
+客户：青禾；负责人：林悦；交付日：2026年11月20日。
+
+### 预算口径
+旧预算600元已作废，不再作为项目执行依据。
+
+| 费用项目 | 金额（元） |
+|---|---:|
+| 材料费 | 120 |
+| 制作费 | 230 |
+| 运输费 | 350 |
+| 合计 | 700 |
+${marker}
+# 交付与最终预算
+
+项目编号ZX7319，由负责人林悦统筹，服务客户青禾，计划于2026年11月20日交付。
+
+旧预算600元已作废。材料费120元、制作费230元、运输费350元，合计700元。
+
+## 最终预算700元
+
+计算依据：120元 + 230元 + 350元 = 700元。`
+    const buffer = await createPdfBuffer('ZX7319 项目说明', content)
+    const verification = await verifyGeneratedOutput({ format: 'pdf', buffer, expectedPages: 2 })
+    if (process.env.ZEN_AI_PDF_PAGINATION_SMOKE === '1' && marker === '<!-- pagebreak -->') {
+      const preview = path.resolve('tmp/pdf-pagination-preview')
+      fs.mkdirSync(preview, { recursive: true })
+      fs.writeFileSync(path.join(preview, 'ZX7319.pdf'), buffer)
+    }
+    expect(verification.checks).toContain('pdf-page-count')
+    expect(verification.details).toMatchObject({ pages: 2, expected_pages: 2, rendered_pages: 2 })
+    const parser = new PDFParse({ data: buffer })
+    try {
+      const result = await parser.getText()
+      expect(result.pages).toHaveLength(2)
+      expect(result.pages[0].text).toContain('旧预算600元已作废')
+      expect(result.pages[0].text).not.toContain('最终预算700元')
+      expect(result.pages[1].text).toContain('最终预算700元')
+      expect(result.text).not.toContain('pagebreak')
+      expect(result.text).not.toContain('page-break')
+    } finally {
+      await parser.destroy()
+    }
+  })
+
+  it('ignores edge and repeated PDF breaks while preserving markers inside code blocks', async () => {
+    const marker = '<!-- pagebreak -->'
+    const buffer = await createPdfBuffer(
+      'Break handling',
+      `${marker}\nFirst page\n${marker}\n${marker}\nSecond page\n\n\`\`\`html\n${marker}\n\`\`\`\n${marker}`
+    )
+    expect((await PDFDocument.load(buffer)).getPageCount()).toBe(2)
+    const parser = new PDFParse({ data: buffer })
+    try {
+      const result = await parser.getText()
+      expect(result.pages[1].text).toContain('pagebreak')
+      expect(result.pages[0].text).toContain('First page')
+    } finally {
+      await parser.destroy()
+    }
+  })
+
+  it('does not treat page headings or horizontal rules as physical PDF boundaries', async () => {
+    const buffer = await createPdfBuffer('Project', '# First page\nOverview\n\n---\n\n# Second page\nFinal budget 700')
+    expect((await PDFDocument.load(buffer)).getPageCount()).toBe(1)
+    await expect(verifyGeneratedOutput({ format: 'pdf', buffer, expectedPages: 2 })).rejects.toThrow(
+      /PDF page count mismatch: expected 2, received 1/
     )
   })
 

@@ -601,8 +601,8 @@
         },
         "permissionMode": {
           "acceptEdits": {
-            "description": "ファイルの編集とファイルシステムの操作は自動的に承認されます。",
-            "title": "ファイル編集を自動承認"
+            "description": "許可されたタスクを継続して実行し、通常の操作は毎回の承認を求めません。元ファイルの上書き、削除、許可範囲外の操作には確認が必要です。",
+            "title": "Build"
           },
           "bypassPermissions": {
             "description": "すべての権限プロンプトはスキップされます — 注意して使用してください。",
@@ -616,8 +616,8 @@
           "helper": "エージェントがツール使用の承認を処理する方法を指定",
           "placeholder": "権限モードを選択",
           "plan": {
-            "description": "Claudeは読み取り専用ツールのみを使用し、実行前に計画を提示します。",
-            "title": "計画モード（近日公開）"
+            "description": "依頼を分析し、許可された情報を読んで計画を立てます。ファイルの変更やタスクの実行は行いません。実行するには Build に切り替えてください。",
+            "title": "Plan"
           },
           "simpleTitle": "[to be translated]:Mode Selection",
           "title": "権限モード"
@@ -886,17 +886,20 @@
     "busy": "[to be translated]:Stop active assistant tasks first, then back up, restore or reset data. A data operation may also still be in progress."
   },
   "assistantDeliverables": {
+    "checking": "ファイルを確認中",
     "empty": "No registered outputs in this conversation yet.",
     "entry": "Outputs · {{count}}",
     "folder": "Folder",
     "locate": "Go to response",
+    "missing": "ファイルは移動または削除されました",
     "no_match": "No matching outputs.",
     "notice": "Only outputs registered by successful file tools in this conversation are listed. These are shortcuts, not copies; moved or deleted files may no longer open.",
     "open": "Open",
     "reveal": "Show in folder",
     "search": "Search name or path",
     "source": "Latest source: turn {{turn}} · registered in {{count}} responses",
-    "title": "Conversation outputs"
+    "title": "Conversation outputs",
+    "unavailable": "ファイルの状態を確認できません"
   },
   "assistantFileSafety": {
     "message": "次の元ファイルを置き換えます。先にバックアップを保存して検証します。キャンセルすると元ファイルは変更されません。",
@@ -908,7 +911,7 @@
     "callStarted": "Started",
     "callStopped": "Stopped",
     "calledThisTurn": "Native skill calls in the latest user turn",
-    "discovered": "Discovered by OpenCode",
+    "discovered": "アシスタントが検出済み",
     "enabled": "Enabled",
     "exportFailed": "Could not export diagnostics. Please try again.",
     "exportSaved": "Diagnostic package exported",
@@ -2473,6 +2476,34 @@
     },
     "title": "トピック検索"
   },
+  "hotpatch": {
+    "check": "パッチを確認",
+    "description": "バックグラウンドで確認し、次回起動時に適用します。実行中のタスクは中断しません。",
+    "disable": "パッチを一時停止",
+    "disableConfirm": "次回起動時に内蔵画面を使い、パッチのダウンロードを停止しますか？",
+    "enable": "パッチ更新を再開",
+    "nextStartup": "次回起動時に適用：{{patch}}",
+    "requestFailed": "パッチの状態を取得できません。",
+    "rescue": {
+      "description": "画面パッチを起動できませんでした。会話、ファイル、設定は保持されています。内蔵画面で再起動してください。",
+      "export": "起動診断をエクスポート",
+      "exportFailed": "起動診断パッケージを保存できませんでした。別の保存先を選択してください。",
+      "restart": "内蔵画面で再起動",
+      "title": "画面の復旧"
+    },
+    "safeFallback": "現在の正常な画面を維持しています。",
+    "status": {
+      "active": "パッチ適用済み",
+      "builtin": "内蔵画面",
+      "checking": "確認中",
+      "disabled": "一時停止中",
+      "pending": "次回起動を待機",
+      "recovering": "復旧中",
+      "unavailable": "未有効化"
+    },
+    "testCode": "テスト配信コード（任意）",
+    "title": "画面パッチ"
+  },
   "html_artifacts": {
     "capture": {
       "label": "ページをキャプチャ",
@@ -2486,17 +2517,11 @@
     "split": "分割"
   },
   "image_studio": {
-    "canvas": "Image canvas",
-    "canvas_unavailable": "The local image canvas could not open. Retry or check the application logs.",
-    "key": "Key {{index}}",
-    "key_label": "Workspace key",
     "local": "[to be translated]:Local images",
     "opening": "[to be translated]:Opening image workspace…",
     "reconnect": "[to be translated]:Reconnect",
-    "server": "Server workspace",
-    "title": "[to be translated]:Image workspace",
-    "unavailable": "[to be translated]:The workspace could not open. Make sure your Zen API server has been updated and the selected key is valid. You can still open Local images.",
-    "workbench": "Image studio"
+    "workbench": "Image studio",
+    "workbench_unavailable": "画像スタジオを開けませんでした。再試行するか、アプリのログを確認してください。"
   },
   "import": {
     "chatgpt": {
@@ -3355,6 +3380,13 @@
     },
     "memory_notice": "Independent native memory survives model changes. Retry, branching and individual deletion are supported; direct editing and bulk deletion are not yet supported.",
     "outputting": "The model is producing output",
+    "permission": {
+      "title": "このタスクには確認が必要です",
+      "description": "操作とその対象を確認してから、タスクの続行を許可してください。",
+      "loopTitle": "同じ操作の繰り返しを検出したため、タスクを一時停止しました",
+      "loopDescription": "アシスタントが同じ操作を繰り返し試行しました。一度だけ続行を許可するか、この操作をキャンセルできます。",
+      "details": "操作の詳細"
+    },
     "preparing": "[to be translated]:Request received; preparing the task",
     "responding": "[to be translated]:Processing the response",
     "restoring": "[to be translated]:Restoring this conversation",
@@ -5783,7 +5815,7 @@
       "prompt": "プロンプト表示",
       "show_message_outline": "メッセージの概要を表示します",
       "stats_time": "最初の文字 {{first}} · 所要時間 {{total}}",
-      "stats_tip": "最初の文字：この応答の開始から最初の表示テキストまで（表示される思考を含む）。合計：ツール実行や待機を含むタスク全体の終了まで。キャッシュは読み取り分のみ。— は提供元から統計が返されていないことを示します。",
+      "stats_tip": "初回応答：最初のテキストや思考内容が表示されるまでの時間。アシスタントでは最初のツール呼び出しも含みます。合計：ツール実行や待機を含むタスク完了までの時間。キャッシュは読み取りトークンのみ。— は統計が未提供であることを示します。",
       "stats_tokens": "入力 {{input}} · 出力 {{output}} · キャッシュ {{cached}}",
       "title": "メッセージ設定",
       "use_serif_font": "セリフフォントを使用"
@@ -6786,6 +6818,7 @@
     "show_window": "ウィンドウを表示"
   },
   "turnDiagnostics": {
+    "aggregate": "保存済みの実行統計（時間は重複する場合があるため合算できません）：モデルリクエスト {{requests}}、応答ヘッダーの待機 {{headers}}、完了したツール {{tools}}。欠落した個別の時間区間は再構成しません。",
     "description": "タスクの再実行やモデルの呼び出しをせず、このターンの状態、所要時間、リクエスト記録を出力します。",
     "export": "このターンの診断をエクスポート",
     "includeContent": "このターンの会話とツールの内容を含める（任意）",

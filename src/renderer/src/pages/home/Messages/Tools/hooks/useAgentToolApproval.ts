@@ -14,6 +14,8 @@ const logger = loggerService.withContext('useAgentToolApproval')
 export interface UseAgentToolApprovalOptions {
   /** Direct toolCallId (alternative to extracting from block) */
   toolCallId?: string
+  /** Session-level lists must address the exact permission, even when a tool has multiple requests. */
+  requestId?: string
 }
 
 /**
@@ -31,8 +33,11 @@ export function useAgentToolApproval(
 
   const toolResponse = block?.metadata?.rawMcpToolResponse as NormalToolResponse | undefined
   const toolCallId = options.toolCallId ?? toolResponse?.toolCallId ?? ''
+  const requestId = options.requestId
 
-  const request = useAppSelector((state) => selectPendingPermission(state.toolPermissions, toolCallId))
+  const request = useAppSelector((state) =>
+    requestId ? state.toolPermissions.requests[requestId] : selectPendingPermission(state.toolPermissions, toolCallId)
+  )
 
   const isSubmittingAllow = request?.status === 'submitting-allow'
   const isSubmittingDeny = request?.status === 'submitting-deny'

@@ -103,24 +103,30 @@ describe('OpenCode isolated model config', () => {
     expect(result.permission['mcp__assistant__skill_status']).toBe('allow')
     expect(result.permission['mcp__assistant__read_document']).toBe('allow')
   })
-  it('uses native permission rules to ask for common deletions even during automatic execution', () => {
-    const result = buildOpenCodeConfig({
-      session: { ...session, configuration: { permission_mode: 'bypassPermissions' } },
-      provider: provider('alias'),
-      modelId: 'alias',
-      skillPaths: [],
-      api: { host: '127.0.0.1', port: 1, apiKey: 'placeholder' }
-    })
-    expect(result.permission['*']).toBe('allow')
-    expect(result.permission.bash).toMatchObject({
-      '*': 'allow',
-      'rm *': 'ask',
-      'Remove-Item *': 'ask',
-      'del *': 'ask'
-    })
-    expect(result.permission['mcp__assistant_*']).toBe('allow')
-    expect(result.snapshot).toBe(false)
-  })
+  it.each([undefined, 'default', 'acceptEdits', 'bypassPermissions'] as const)(
+    'inherits native Build defaults for %s while preserving deletion and path approval',
+    (permissionMode) => {
+      const result = buildOpenCodeConfig({
+        session: { ...session, configuration: { permission_mode: permissionMode } },
+        provider: provider('alias'),
+        modelId: 'alias',
+        skillPaths: [],
+        api: { host: '127.0.0.1', port: 1, apiKey: 'placeholder' }
+      })
+      expect(result.permission['*']).toBeUndefined()
+      expect(result.permission.read).toBeUndefined()
+      expect(result.permission.edit).toBeUndefined()
+      expect(result.permission.external_directory).toMatchObject({ '*': 'ask' })
+      expect(result.permission.bash).toMatchObject({
+        '*': 'allow',
+        'rm *': 'ask',
+        'Remove-Item *': 'ask',
+        'del *': 'ask'
+      })
+      expect(result.permission['mcp__assistant_*']).toBe('allow')
+      expect(result.snapshot).toBe(false)
+    }
+  )
   it('does not inherit personal provider credentials, accounts or unsafe runtime options', () => {
     const env = buildOpenCodeEnvironment(
       {

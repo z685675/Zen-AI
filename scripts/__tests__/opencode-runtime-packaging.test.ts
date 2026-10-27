@@ -16,7 +16,7 @@ function fixture(platform: 'mac' | 'windows', arch: 'arm64' | 'x64') {
   const pkg = `opencode-${osName}-${arch}${arch === 'x64' ? '-baseline' : ''}`
   const source = path.join(root, 'node_modules', pkg)
   fs.mkdirSync(path.join(source, 'bin'), { recursive: true })
-  fs.writeFileSync(path.join(source, 'package.json'), JSON.stringify({ name: pkg, version: '1.18.35' }))
+  fs.writeFileSync(path.join(source, 'package.json'), JSON.stringify({ name: pkg, version: '1.19.4' }))
   const bytes = Buffer.alloc(256)
   if (platform === 'mac') {
     bytes.writeUInt32LE(0xfeedfacf, 0)
@@ -73,7 +73,7 @@ describe('OpenCode native installer resources', () => {
     fs.writeFileSync(path.join(bundle, 'package-lock.json'), '{"lockfileVersion":3}')
     fs.writeFileSync(
       path.join(bundle, 'node_modules', '@opencode-ai', 'plugin', 'package.json'),
-      '{"version":"1.18.35"}'
+      '{"version":"1.19.4"}'
     )
     const licenses = path.join(data.root, 'resources', 'licenses')
     fs.mkdirSync(licenses, { recursive: true })

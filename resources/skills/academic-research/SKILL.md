@@ -29,6 +29,8 @@ Turn a research topic into a traceable literature and evidence workflow. This Sk
 
 ## Default Output
 
+For a bibliography or a submission that needs citation checks, read `references/citation-checks.md` and use the bundled K-Dense helpers. Start with offline validation; query metadata only for new or conflicting identifiers, reusing verified records within the task. A DOI resolving does not verify its title/year/authors or prove support for a claim. Report duplicate entries, unparsed entries, and network uncertainty separately from errors. Ordinary conceptual questions do not require running this workflow.
+
 1. Short answer and scope
 2. Search and inclusion method
 3. Literature landscape or evidence matrix

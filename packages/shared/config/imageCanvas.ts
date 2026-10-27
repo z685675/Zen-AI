@@ -1,4 +1,29 @@
-import type { ImageStudioBounds } from './imageStudio'
+export interface ImageViewBounds {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+export function imageViewBounds(value: ImageViewBounds): ImageViewBounds {
+  if (
+    !value ||
+    ![value.x, value.y, value.width, value.height].every(Number.isFinite) ||
+    value.width < 1 ||
+    value.height < 1 ||
+    value.x < 0 ||
+    value.y < 0 ||
+    value.width > 20000 ||
+    value.height > 20000
+  )
+    throw new Error('invalid_image_view_bounds')
+  return {
+    x: Math.round(value.x),
+    y: Math.round(value.y),
+    width: Math.round(value.width),
+    height: Math.round(value.height)
+  }
+}
 
 export const imageCanvasProtocols = [
   'openai',
@@ -57,12 +82,26 @@ export type ImageCanvasRequest = {
 }
 export type ImageCanvasTaskPhase =
   | 'preparing'
+  | 'configuring'
+  | 'uploading'
   | 'queued'
   | 'generating'
   | 'archiving'
   | 'downloading'
   | 'decoding'
   | 'saving'
+export type ImageCanvasRequestFailure = {
+  operation: 'bootstrap' | 'reference-upload' | 'job-submit' | 'job-status'
+  endpoint: string
+  method: 'GET' | 'POST'
+  reason: 'timeout' | 'network' | 'http' | 'invalid-response' | 'response-too-large'
+  errorName: string
+  transportCode?: string
+  httpStatus?: number
+  timeoutMs: number
+  durationMs: number
+  attempt: number
+}
 export type ImageCanvasTaskDiagnostics = {
   protocol: ImageCanvasProtocol
   capabilityRevision: string
@@ -72,6 +111,9 @@ export type ImageCanvasTaskDiagnostics = {
   finishedAt?: string
   failedPhase?: ImageCanvasTaskPhase
   server?: ImageCanvasServerDiagnostics
+  transport?: 'studio' | 'direct'
+  generationSubmitted?: boolean
+  requestFailure?: ImageCanvasRequestFailure
 }
 export type ImageCanvasServerDiagnostics = {
   jobId: string
@@ -134,9 +176,8 @@ export type ImageCanvasBridge = {
   flush: (callback: () => Promise<void>) => () => void
 }
 export type ImageCanvasOpen = {
-  bounds: ImageStudioBounds
+  bounds: ImageViewBounds
   providers: ImageCanvasProvider[]
-  surface?: 'canvas' | 'workbench'
   theme?: 'light' | 'dark'
   language?: string
   userFontFamily?: string

@@ -73,7 +73,6 @@ import { externalAppsService } from './services/ExternalAppsService'
 import { fileStorage as fileManager } from './services/FileStorage'
 import FileService from './services/FileSystemService'
 import { ImageCanvasService } from './services/ImageCanvasService'
-import { ImageStudioService } from './services/ImageStudioService'
 import KnowledgeService from './services/KnowledgeService'
 import { lanTransferClientService } from './services/lanTransfer'
 import { localTransferService } from './services/LocalTransferService'
@@ -157,7 +156,6 @@ function getHardwareArch() {
 }
 
 export async function registerIpc(mainWindow: BrowserWindow, app: Electron.App) {
-  const imageStudio = new ImageStudioService(mainWindow)
   const imageCanvas = new ImageCanvasService(mainWindow)
   let canvasControl = Promise.resolve<unknown>(undefined)
   const studioSender = (event: Electron.IpcMainInvokeEvent) =>
@@ -168,7 +166,6 @@ export async function registerIpc(mainWindow: BrowserWindow, app: Electron.App) 
       .catch(() => undefined)
       .then(async () => {
         if (action === 'open') {
-          imageStudio.close()
           return imageCanvas.open(input)
         }
         if (action === 'sync') return imageCanvas.sync(input)
@@ -179,18 +176,6 @@ export async function registerIpc(mainWindow: BrowserWindow, app: Electron.App) 
       })
     canvasControl = operation
     return operation
-  })
-  ipcMain.handle(IpcChannel.ImageStudio_Open, (event, input) =>
-    studioSender(event) ? imageStudio.open(input) : { ok: false }
-  )
-  ipcMain.handle(IpcChannel.ImageStudio_Resize, (event, bounds) => {
-    if (studioSender(event)) imageStudio.resize(bounds)
-  })
-  ipcMain.handle(IpcChannel.ImageStudio_Close, (event) => {
-    if (studioSender(event)) imageStudio.close()
-  })
-  ipcMain.handle(IpcChannel.ImageStudio_Visible, (event, visible) => {
-    if (studioSender(event)) imageStudio.setVisible(visible)
   })
   ipcMain.handle(IpcChannel.AssistantAutomation_Action, async (event, request: unknown) => {
     if (event.sender !== mainWindow.webContents || event.senderFrame !== event.sender.mainFrame)
@@ -710,6 +695,7 @@ export async function registerIpc(mainWindow: BrowserWindow, app: Electron.App) 
   // file
   ipcMain.handle(IpcChannel.File_Open, fileManager.open.bind(fileManager))
   ipcMain.handle(IpcChannel.File_OpenPath, fileManager.openPath.bind(fileManager))
+  ipcMain.handle(IpcChannel.File_CheckPaths, fileManager.checkPaths.bind(fileManager))
   ipcMain.handle(IpcChannel.File_Save, fileManager.save.bind(fileManager))
   ipcMain.handle(IpcChannel.File_SaveDiagnosticPackage, fileManager.saveDiagnosticPackage.bind(fileManager))
   ipcMain.handle(IpcChannel.File_Select, fileManager.selectFile.bind(fileManager))

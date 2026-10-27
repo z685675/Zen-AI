@@ -13,6 +13,8 @@ Treat PDFs as source documents or final deliverables, depending on the task.
 - Preserve source attribution: page numbers, sections, table names, or file names when available.
 - For generated output, use `mcp__assistant__create_file` with `format: "pdf"` when a simple verified PDF is sufficient.
 - For generated reports, pass markdown-like headings, ordered or unordered lists, quotes, fenced code, and pipe tables in `content`; the built-in generator performs measured wrapping, table pagination, repeated table headers, and page numbering.
+- For an exact page count, use `pdf_pages` instead of `content`: one nonempty Markdown string per physical page, plus `expected_pages` matching the user's requested count. For example, `pdf_pages: ["# Overview\nProject details", "# Final budget\n700 yuan"], expected_pages: 2`. Keep each entry short enough for one page; overflow fails before saving. Do not add filler or repeatedly generate numbered copies to guess pagination.
+- When using `content`, a standalone `<!-- pagebreak -->` line forces a page boundary. Headings such as "第二页" and horizontal rules do not. Empty HTML divs containing only `page-break-before: always` or `page-break-after: always` are also recognized; arbitrary HTML/CSS is not interpreted.
 - For a real local image, pass it in `assets` as `{ id, file_path, alt_text }` and place `![descriptive alt text](asset:id)` on its own line in `content`. The generator embeds the normalized PNG rather than linking the source file.
 - For PDF reading, use available file-reading/OCR tools first. If extraction quality is poor, say so and ask for a clearer file or image only when needed.
 - Do not invent text from unreadable pages.
@@ -70,6 +72,7 @@ Call `mcp__assistant__python_execute` with `script_path: "<skill-root>/scripts/e
 
 1. Structure the report with `#`/`##` headings, short paragraphs, lists, and Markdown pipe tables.
 2. Call `mcp__assistant__create_file` with `format: "pdf"`, a real title, and the structured content. Include `assets` for referenced images; PDF page rendering runs automatically, and high-stakes output should set `render_validation: "required"`.
+   For a fixed-length deliverable, supply `pdf_pages` and `expected_pages`, then require `pdf-page-count` in the returned checks and `verification.details.pages` equal to the requested count before delivery. Never treat "created" or "verified" alone as proof that a user-specified page count was met.
 3. Validate structure, extractable text, expected title text, and CJK coverage:
 
 Call `mcp__assistant__python_execute` with `script_path: "<skill-root>/scripts/validate_pdf.py"` and `arguments: ["output.pdf", "--require-cjk", "--expect-text", "Zen AI", "--single-title", "--no-markdown-literals"]`.
@@ -95,3 +98,7 @@ Call `mcp__assistant__python_execute` with `script_path: "<skill-root>/scripts/v
 - Numbers and dates should be checked twice.
 - Tables should be converted into structured rows when possible.
 - Generated PDFs must pass structural, text-extraction, font, page-content, and action-safety validation.
+
+## Delivery contract
+
+Treat explicit page, slide, worksheet and file counts as hard requirements. Verify actual outputs using the format validator and rendered pages where applicable; do not infer a Word page count from source text. Check requested formulas and final-page text, and distinguish obsolete values from the final decision. Deliver only existing final paths, excluding temporary previews and replaced files. Reuse validation already completed by the generator; add checks only for unverified requirements.

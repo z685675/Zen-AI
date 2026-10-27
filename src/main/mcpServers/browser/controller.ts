@@ -4,6 +4,7 @@ import { randomUUID } from 'crypto'
 import { app, BrowserView, BrowserWindow, nativeTheme, session } from 'electron'
 import TurndownService from 'turndown'
 
+import { clickTargetScript, clickVerificationScript } from './clickScripts'
 import { SESSION_KEY_DEFAULT, SESSION_KEY_PRIVATE, TAB_BAR_HEIGHT } from './constants'
 import { type BrowserDownloadInfo, BrowserDownloadManager } from './downloads'
 import { BrowserOperationLimiter } from './operationLimiter'
@@ -33,6 +34,7 @@ export class CdpBrowserController {
   private readonly idleTimeoutMs: number
   private readonly turndownService: TurndownService
   private readonly operationLimiter: BrowserOperationLimiter
+  private readonly clickedTargets = new Set<string>()
   private readonly downloadManager: BrowserDownloadManager
   private privateStorageClearPromise: Promise<void> | undefined
   private privateStorageUsed = false
@@ -1020,6 +1022,75 @@ export class CdpBrowserController {
    */
   public async execute(code: string, timeout = 5000, privateMode = false, tabId?: string) {
     return this.operationLimiter.run(() => this.executeInternal(code, timeout, privateMode, tabId), 'browser script')
+  }
+
+  /** One trusted click, followed by a bounded observation. Never retry an action on verification failure. */
+  public async click(
+    snapshotId: string,
+    ref: number,
+    expectedText?: string,
+    timeoutMs = 3000,
+    privateMode = false,
+    tabId?: string
+  ) {
+    return this.operationLimiter.run(async () => {
+      const target = await this.getTab(privateMode, tabId)
+      const point = (await this.executeInternal(
+        clickTargetScript(snapshotId, ref, expectedText),
+        5000,
+        privateMode,
+        target.tabId
+      )) as { x: number; y: number; text: string; alreadySatisfied?: boolean }
+      if (point?.alreadySatisfied) return { clicked: false, verified: true, text: point.text }
+      if (!Number.isFinite(point?.x) || !Number.isFinite(point?.y)) throw new Error('Could not locate click target')
+      const clickKey = `${privateMode}:${target.tabId}:${snapshotId}:${ref}`
+      if (this.clickedTargets.has(clickKey)) {
+        return {
+          clicked: false,
+          verified: false,
+          reason: 'snapshot-ref-already-clicked',
+          guidance: 'Inspect the current state and take a fresh snapshot before any new action.'
+        }
+      }
+      // Reserve synchronously before sending input: concurrent duplicate calls
+      // must not both act on the same stale observation.
+      this.clickedTargets.add(clickKey)
+      if (this.clickedTargets.size > 512) this.clickedTargets.delete(this.clickedTargets.values().next().value!)
+      const dbg = target.tab.view.webContents.debugger
+      try {
+        await dbg.sendCommand('Input.dispatchMouseEvent', {
+          type: 'mousePressed',
+          x: point.x,
+          y: point.y,
+          button: 'left',
+          clickCount: 1
+        })
+        await dbg.sendCommand('Input.dispatchMouseEvent', {
+          type: 'mouseReleased',
+          x: point.x,
+          y: point.y,
+          button: 'left',
+          clickCount: 1
+        })
+        const verification = expectedText
+          ? await this.executeInternal(
+              clickVerificationScript(snapshotId, ref, expectedText, timeoutMs),
+              timeoutMs + 1000,
+              privateMode,
+              target.tabId
+            )
+          : { verified: false, reason: 'no-expected-text-supplied' }
+        this.scheduleUserActionDetection(this.windows.get(this.getWindowKey(privateMode))!, target.tab)
+        return { clicked: true, beforeText: point.text, ...verification }
+      } catch {
+        return {
+          clicked: null,
+          verified: false,
+          reason: 'click-or-verification-interrupted',
+          guidance: 'Inspect the current page before any further action; the click may already have taken effect.'
+        }
+      }
+    }, 'browser click')
   }
 
   private async executeInternal(code: string, timeout = 5000, privateMode = false, tabId?: string) {

@@ -601,8 +601,8 @@
         },
         "permissionMode": {
           "acceptEdits": {
-            "description": "Can directly act on tasks and update content, but still asks before key operations.",
-            "title": "Execute"
+            "description": "Complete authorized tasks continuously without approving each routine step. Overwriting originals, deleting files or going beyond the authorized scope still requires confirmation.",
+            "title": "Build"
           },
           "bypassPermissions": {
             "description": "Tries to carry tasks through in one go, and usually skips step-by-step confirmations for edits and commands.",
@@ -616,7 +616,7 @@
           "helper": "Choose how the agent handles tool approvals.",
           "placeholder": "Select permission mode",
           "plan": {
-            "description": "Focuses on analysis, planning, and step lists. It will not edit files or run commands.",
+            "description": "Analyze the request, read authorized information and make a plan without modifying user files or executing the task. Select Build when ready to act.",
             "title": "Plan"
           },
           "simpleTitle": "Mode Selection",
@@ -886,17 +886,20 @@
     "busy": "Stop active assistant tasks first, then back up, restore or reset data. A data operation may also still be in progress."
   },
   "assistantDeliverables": {
+    "checking": "Checking file",
     "empty": "No registered outputs in this conversation yet.",
     "entry": "Outputs · {{count}}",
     "folder": "Folder",
     "locate": "Go to response",
+    "missing": "File moved or deleted",
     "no_match": "No matching outputs.",
     "notice": "Only outputs registered by successful file tools in this conversation are listed. These are shortcuts, not copies; moved or deleted files may no longer open.",
     "open": "Open",
     "reveal": "Show in folder",
     "search": "Search name or path",
     "source": "Latest source: turn {{turn}} · registered in {{count}} responses",
-    "title": "Conversation outputs"
+    "title": "Conversation outputs",
+    "unavailable": "Unable to check file status"
   },
   "assistantFileSafety": {
     "message": "This will replace the original file below. A verified backup will be saved first. Cancel to leave the original unchanged.",
@@ -908,7 +911,7 @@
     "callStarted": "Started",
     "callStopped": "Stopped",
     "calledThisTurn": "Native skill calls in the latest user turn",
-    "discovered": "Discovered by OpenCode",
+    "discovered": "Discovered by assistant",
     "enabled": "Enabled",
     "exportFailed": "Could not export diagnostics. Please try again.",
     "exportSaved": "Diagnostic package exported",
@@ -2473,6 +2476,34 @@
     },
     "title": "Topics Search"
   },
+  "hotpatch": {
+    "check": "Check patches",
+    "description": "Checked and applied on the next normal startup. Running tasks are not interrupted.",
+    "disable": "Pause patches",
+    "disableConfirm": "Use the bundled interface on the next startup and pause patch downloads?",
+    "enable": "Resume patches",
+    "nextStartup": "Next startup: {{patch}}",
+    "requestFailed": "Unable to check patch status.",
+    "rescue": {
+      "description": "The interface patch did not finish starting. Your conversations, files and settings are preserved. Restart with the bundled interface to continue.",
+      "export": "Export startup diagnostics",
+      "exportFailed": "Could not save the startup diagnostic package. Please choose a new file location.",
+      "restart": "Restart with bundled interface",
+      "title": "Interface recovery"
+    },
+    "safeFallback": "The current working interface is kept.",
+    "status": {
+      "active": "Patch active",
+      "builtin": "Bundled interface",
+      "checking": "Checking",
+      "disabled": "Paused",
+      "pending": "Ready for next startup",
+      "recovering": "Recovering",
+      "unavailable": "Not enabled"
+    },
+    "testCode": "Test rollout code (optional)",
+    "title": "Interface patches"
+  },
   "html_artifacts": {
     "capture": {
       "label": "Capture Page",
@@ -2486,17 +2517,11 @@
     "split": "Split"
   },
   "image_studio": {
-    "canvas": "Image canvas",
-    "canvas_unavailable": "The local image canvas could not open. Retry or check the application logs.",
-    "key": "Key {{index}}",
-    "key_label": "Workspace key",
     "local": "Local images",
     "opening": "Opening image workspace…",
     "reconnect": "Reconnect",
-    "server": "Server workspace",
-    "title": "Image workspace",
-    "unavailable": "The workspace could not open. Make sure your Zen API server has been updated and the selected key is valid. You can still open Local images.",
-    "workbench": "Image studio"
+    "workbench": "Image studio",
+    "workbench_unavailable": "The image studio could not open. Retry or check the application logs."
   },
   "import": {
     "chatgpt": {
@@ -3355,6 +3380,13 @@
     },
     "memory_notice": "Independent native memory survives model changes. Retry, branching and individual deletion are supported; direct editing and bulk deletion are not yet supported.",
     "outputting": "The model is producing output",
+    "permission": {
+      "description": "Review the operation and its target before allowing the task to continue.",
+      "details": "Operation details",
+      "loopDescription": "The assistant attempted the same operation repeatedly. Allow one continuation or cancel this operation.",
+      "loopTitle": "Repeated operations detected; task paused",
+      "title": "This task needs your confirmation"
+    },
     "preparing": "Request received; preparing the task",
     "responding": "Processing the response",
     "restoring": "Restoring this conversation",
@@ -5783,7 +5815,7 @@
       "prompt": "Show prompt",
       "show_message_outline": "Show message outline",
       "stats_time": "First token {{first}} · Elapsed {{total}}",
-      "stats_tip": "First token: from this response starting to the first visible text, including visible reasoning. Total: until the entire task ends, including tools and waiting. Cache counts reads only; — means the upstream did not provide the statistic.",
+      "stats_tip": "First response: from this response starting to the first visible text or reasoning; for the assistant, the first tool call also counts. Total: until the entire task ends, including tools and waiting. Cache counts read tokens only; — means the statistic was not provided.",
       "stats_tokens": "Input {{input}} · Output {{output}} · Cache {{cached}}",
       "title": "Message Settings",
       "use_serif_font": "Use serif font"
@@ -6786,6 +6818,7 @@
     "show_window": "Show Window"
   },
   "turnDiagnostics": {
+    "aggregate": "Persisted runtime totals (may overlap; do not add): model requests {{requests}}, response headers {{headers}}, completed tools {{tools}}. Missing detailed intervals are not reconstructed.",
     "description": "Export this turn’s status, timings and request evidence without replaying the task or calling a model.",
     "export": "Export turn diagnostics",
     "includeContent": "Include this turn’s conversation and tool content (optional)",
@@ -6805,7 +6838,7 @@
       "processing": "Running"
     },
     "privacy": "By default, only diagnostic metadata is included, not conversation text, tool arguments/results, original attachments or full history. Share with trusted recipients only. Optional content may contain personal information.",
-    "reportTemplate": "# Zen AI turn diagnostics\n\n- Outcome: {{outcome}}\n- Model: {{model}}; Provider: {{provider}}\n- Tokens: input {{input}}; output {{output}}; cache read {{cache}} (already included in input)\n- Start: {{start}}; end: {{end}}; total: {{total}}\n- First content (possibly reasoning): {{firstContent}}; first answer text: {{firstText}}; first network bytes: {{firstBytes}} (not first token)\n- Observed requests: {{requests}}; tools: {{tools}}; retry/fallback events: {{retries}}\n- UI commit delay: {{render}} (React commit, not a screen-paint guarantee)\n\n## Slowest paired stages\n{{slowest}}\n\n## Request and tool timeline\n{{timeline}}\n\n## Observed user waits (may overlap tools)\n{{waits}}\n\n## Limits and missing evidence\n- Measured durations only, not a network/client/upstream root-cause verdict. Stages overlap: do not sum them or subtract user waits.\n- Missing is not zero. Unpaired spans may still be running. Active exports are snapshots; old conversations cannot recover unrecorded events.\n- Recording usually starts at response preparation; earlier attachment upload may be excluded. Retry events are not counts of replayed tasks.\n- Correlate zen-api-evidence.json with request IDs for server internals. Missing server records do not prove non-arrival; server writes do not guarantee complete client receipt.\n- Dropped bounded events: {{dropped}}; older requests may expire. Missing-data codes (see performance.json): {{missing}}\n",
+    "reportTemplate": "# Zen AI turn diagnostics\n\n- Outcome: {{outcome}}\n- Model: {{model}}; Provider: {{provider}}\n- Tokens: input {{input}}; output {{output}}; cache read {{cache}} (already included in input)\n- Start: {{start}}; end: {{end}}; total: {{total}}\n- First response (text, reasoning or tool activity): {{firstContent}}; first answer text: {{firstText}}; first network bytes: {{firstBytes}} (not first token)\n- Observed requests: {{requests}}; tools: {{tools}}; retry/fallback events: {{retries}}\n- UI commit delay: {{render}} (React commit, not a screen-paint guarantee)\n\n## Slowest paired stages\n{{slowest}}\n\n## Request and tool timeline\n{{timeline}}\n\n## Observed user waits (may overlap tools)\n{{waits}}\n\n## Limits and missing evidence\n- Measured durations only, not a network/client/upstream root-cause verdict. Stages overlap: do not sum them or subtract user waits.\n- Missing is not zero. Unpaired spans may still be running. Active exports are snapshots; old conversations cannot recover unrecorded events.\n- Recording usually starts at response preparation; earlier attachment upload may be excluded. Retry events are not counts of replayed tasks.\n- Correlate zen-api-evidence.json with request IDs for server internals. Missing server records do not prove non-arrival; server writes do not guarantee complete client receipt.\n- Dropped bounded events: {{dropped}}; older requests may expire. Missing-data codes (see performance.json): {{missing}}\n",
     "requestTiming": " | Headers {{headers}} | First bytes {{bytes}} | HTTP {{status}} | Request ID {{requestId}}"
   },
   "update": {

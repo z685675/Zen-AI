@@ -85,3 +85,69 @@ describe('turn report metadata privacy', () => {
   })
 })
 import i18n from '@renderer/i18n'
+
+it('recovers historical counts and safe totals without inventing missing intervals', () => {
+  const diagnostics = {
+    version: 1,
+    providerId: 'p',
+    modelId: 'm',
+    usage: { input: 753067, output: 6958 },
+    observedRequests: 25,
+    reportedRequests: 24,
+    inputReports: 24,
+    outputReports: 24,
+    cacheReadReports: 24,
+    cacheWriteReports: 0,
+    incompleteRequests: 0,
+    performance: {
+      outcome: 'completed',
+      totalMs: 617996,
+      preparationMs: 5,
+      upstreamRequests: 25,
+      upstreamHeaderWaitMs: 537014,
+      upstreamRequestMs: 550042,
+      retryEvents: 1,
+      toolCalls: 23,
+      completedToolObservedMs: 6473,
+      unfinishedTools: 0
+    },
+    secret: 'PRIVATE_CONTENT'
+  }
+  const message = { status: 'success', providerMetadata: { opencodeDiagnostics: diagnostics } } as unknown as Message
+  const { performance, summary } = createTurnReport(message, [])
+  expect(performance).toMatchObject({
+    observedRequests: 25,
+    toolCalls: 23,
+    retryEvents: 1,
+    aggregate: { upstreamRequestMs: 550042 }
+  })
+  expect(performance.intervals).toEqual([])
+  expect(performance.coverage.missing).toContain('per-request-or-tool-timeline-unavailable-aggregate-only')
+  expect(summary).toContain('550.04s')
+  expect(JSON.stringify(metadataMessage(message))).not.toContain('PRIVATE_CONTENT')
+  expect(metadataMessage(message)?.opencodeDiagnostics?.observedRequests).toBe(25)
+})
+
+it('reports unavailable counts instead of zero when all evidence is missing', () => {
+  const { performance } = createTurnReport({ status: 'success' } as Message, [])
+  expect(performance).toMatchObject({ observedRequests: null, toolCalls: null, retryEvents: null, aggregate: null })
+})
+
+it('retains a safe local deadline cause in metadata-only exports without error text', () => {
+  const event = metadataEvent({
+    at: '2026-10-26T00:00:00Z',
+    stage: 'response',
+    event: 'failed',
+    details: {
+      error: {
+        name: 'AI_ProviderSpecificError',
+        message: 'PRIVATE_CONTENT',
+        cause: { code: 'agent_human_wait_timeout', zenFailureStage: 'local-task-deadline', message: 'PRIVATE_CONTENT' }
+      }
+    }
+  })
+  expect(event.details?.error).toMatchObject({
+    cause: { code: 'agent_human_wait_timeout', zenFailureStage: 'local-task-deadline' }
+  })
+  expect(JSON.stringify(event)).not.toContain('PRIVATE_CONTENT')
+})

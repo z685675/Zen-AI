@@ -15,7 +15,7 @@ export function getModelDailyQuotaErrorKind(error: unknown): ModelDailyQuotaErro
     if (typeof value !== 'object') return ''
     visited.add(value)
     const record = value as Record<string, unknown>
-    return ['code', 'message', 'responseBody', 'body', 'data', 'error', 'cause']
+    return ['code', 'message', 'responseBody', 'body', 'data', 'error', 'cause', 'zenTransportFailure']
       .map((key) => read(record[key], depth + 1))
       .join(' ')
   }

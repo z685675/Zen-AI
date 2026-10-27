@@ -188,7 +188,13 @@ async function* events(signal: AbortSignal) {
   if (mode === 'permission' || mode === 'permission-wait') {
     yield {
       type: 'permission.asked',
-      properties: { id: 'per1', sessionID: 'native', permission: 'bash', metadata: { command: 'safe preview' } }
+      properties: {
+        id: 'per1',
+        sessionID: 'native',
+        permission: 'bash',
+        patterns: ['safe preview'],
+        metadata: { command: 'safe preview' }
+      }
     }
     if (mode === 'permission-wait') await hold(signal)
     await new Promise((resolve) => setImmediate(resolve))
@@ -276,6 +282,8 @@ async function run(controller = new AbortController(), prompt = 'hello') {
 beforeEach(() => {
   vi.clearAllMocks()
   mode = 'success'
+  fixture.configuration = {}
+  fixture.instructions = ''
   body = undefined
   historyReads = 0
   eventConnections = 0
@@ -295,6 +303,21 @@ afterEach(() => {
   vi.useRealTimers()
 })
 describe('OpenCode adapter turn lifecycle', () => {
+  it.each([
+    ['plan', 'plan', 'Plan'],
+    ['default', 'build', 'Build'],
+    ['acceptEdits', 'build', 'Build'],
+    ['bypassPermissions', 'build', 'Build'],
+    [undefined, 'build', 'Build']
+  ])('sends native agent and a matching mode contract for %s', async (storedMode, agent, label) => {
+    fixture.configuration = { permission_mode: storedMode }
+    fixture.instructions = 'Custom user preference'
+    expect((await run()).at(-1)?.type).toBe('complete')
+    expect(body.agent).toBe(agent)
+    expect(body.system).toContain(`Current mode: ${label}`)
+    expect(body.system.indexOf('Custom user preference')).toBeLessThan(body.system.indexOf(`Current mode: ${label}`))
+    expect(request.mock.calls.filter(([route]) => route.endsWith('/prompt_async'))).toHaveLength(1)
+  })
   it.each(['progress', 'busy-only'] as const)(
     'uses real tool progress, not busy heartbeats, for a long %s task',
     async (value) => {
@@ -455,6 +478,25 @@ describe('OpenCode adapter turn lifecycle', () => {
     expect(result.at(-1)).toMatchObject({ type: 'error', error: { status: 503 } })
     expect((result.at(-1) as any).error.zenTransportFailure).toBeUndefined()
   })
+  it('preserves quota admission evidence instead of blaming the model after native retries', async () => {
+    mode = 'retry'
+    transportError = {
+      phase: 'quota-admission',
+      url: 'https://example.test/api/usage/token/model-daily/turn',
+      receivedResponse: false,
+      error: { code: 'model_daily_quota_unavailable', cause: { name: 'TimeoutError' } }
+    }
+    const result = await run()
+    expect(result.at(-1)).toMatchObject({
+      type: 'error',
+      error: {
+        zenFailureStage: 'quota-admission',
+        zenRequestUrl: transportError.url,
+        zenTransportFailure: transportError
+      }
+    })
+    expect(request.mock.calls.filter(([route]) => route.endsWith('/prompt_async'))).toHaveLength(1)
+  })
   it('keeps a transient failed connection invisible after a successful response', async () => {
     transportError = { receivedResponse: false, error: { code: 'ENOTFOUND' } }
     const result = await run()
@@ -582,6 +624,17 @@ describe('OpenCode adapter turn lifecycle', () => {
     mode = 'permission'
     expect((await run()).at(-1)?.type).toBe('complete')
     expect(request).toHaveBeenCalledWith('/permission/per1/reply', 'POST', { reply: 'once' }, expect.any(AbortSignal))
+    expect(mocks.permission).toHaveBeenCalledWith(
+      'bash',
+      { command: 'safe preview', patterns: ['safe preview'] },
+      expect.objectContaining({ toolCallId: 'zen-test:permission:per1' })
+    )
+    expect(mocks.diagnostic).toHaveBeenCalledWith(
+      undefined,
+      'runtime',
+      'permission-requested',
+      expect.objectContaining({ permission: 'bash', linkedTool: false })
+    )
   })
   it('redacts credentials in native errors before returning them to the UI', async () => {
     mode = 'error'

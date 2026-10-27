@@ -1,41 +1,29 @@
-import { DEFAULT_SESSION_PAGE_SIZE } from '@renderer/api/agent'
 import { Navbar, NavbarCenter } from '@renderer/components/app/Navbar'
 import { ErrorBoundary } from '@renderer/components/ErrorBoundary'
 import ModelSetupGuide from '@renderer/components/ModelSetupGuide'
 import { useAgentWorkspace } from '@renderer/context/AgentWorkspaceProvider'
 import { useActiveAgent } from '@renderer/hooks/agents/useActiveAgent'
-import { useAgentClient } from '@renderer/hooks/agents/useAgentClient'
 import { useAgents } from '@renderer/hooks/agents/useAgents'
+import { useRestoreAgentSession } from '@renderer/hooks/agents/useRestoreAgentSession'
 import { useApiServer } from '@renderer/hooks/useApiServer'
 import { useRuntime } from '@renderer/hooks/useRuntime'
 import { useNavbarPosition } from '@renderer/hooks/useSettings'
 import { useShortcut } from '@renderer/hooks/useShortcuts'
 import { useShowAssistants } from '@renderer/hooks/useStore'
-import { CacheService } from '@renderer/services/CacheService'
-import { DbService } from '@renderer/services/db/DbService'
-import store, { useAppDispatch, useAppSelector } from '@renderer/store'
-import { selectMessagesForTopic } from '@renderer/store/newMessage'
-import { setActiveAgentId as setActiveAgentIdAction, setActiveSessionIdAction } from '@renderer/store/runtime'
+import { useAppSelector } from '@renderer/store'
 import { cn } from '@renderer/utils'
-import { consumeAgentEntrySelection } from '@renderer/utils/agentEntrySelection'
-import { buildAgentSessionTopicId } from '@renderer/utils/agentSession'
-import { getAgentSessionDraftCacheKey } from '@renderer/utils/agentSessionDraft'
-import { isUnnamedAgentSessionName } from '@renderer/utils/agentSessionTitle'
-import { hasUnsentConversationDraft } from '@renderer/utils/conversationDraft'
 import { getAvailableChatModels } from '@renderer/utils/modelAvailability'
 import { getPreferredAgentId } from '@shared/config/agents'
 import { MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH, SECOND_MIN_WINDOW_WIDTH } from '@shared/config/constant'
 import { AnimatePresence, motion } from 'motion/react'
 import type { PropsWithChildren } from 'react'
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import AgentChat from './AgentChat'
 import AgentNavbar from './AgentNavbar'
 import AgentSidePanel from './AgentSidePanel'
 import { AgentEmpty, AgentServerDisabled, AgentServerStopped } from './components/status'
-
-const dbService = DbService.getInstance()
 
 const AgentPage = () => {
   const workspace = useAgentWorkspace()
@@ -45,13 +33,11 @@ const AgentPage = () => {
   const { activeAgentId } = chat
   const { agents } = useAgents()
   const { setActiveAgentId } = useActiveAgent()
-  const client = useAgentClient()
-  const dispatch = useAppDispatch()
   const { apiServerConfig, apiServerRunning, apiServerLoading } = useApiServer()
   const { t } = useTranslation()
-  const [entrySessionRestored, setEntrySessionRestored] = useState(false)
   const providers = useAppSelector((state) => state.llm.providers)
   const hasAvailableModels = getAvailableChatModels(providers).length > 0
+  useRestoreAgentSession(agents, apiServerRunning)
 
   useShortcut('toggle_show_assistants', () => {
     toggleShowAssistants()
@@ -70,91 +56,6 @@ const AgentPage = () => {
       void setActiveAgentId(preferredAgentId)
     }
   }, [activeAgentId, agents, setActiveAgentId])
-
-  useEffect(() => {
-    if (entrySessionRestored || !apiServerRunning || !agents || agents.length === 0) {
-      return
-    }
-
-    let cancelled = false
-
-    const restoreTopSession = async () => {
-      const runtimeChat = store.getState().runtime.chat
-      const currentAgentId = runtimeChat.activeAgentId
-      const currentSessionId = currentAgentId ? runtimeChat.activeSessionIdMap[currentAgentId] : null
-
-      if (
-        currentAgentId &&
-        currentSessionId &&
-        agents.some((agent) => agent.id === currentAgentId) &&
-        consumeAgentEntrySelection(workspace, { agentId: currentAgentId, sessionId: currentSessionId })
-      ) {
-        if (!cancelled) setEntrySessionRestored(true)
-        return
-      }
-
-      if (
-        currentAgentId &&
-        agents.some((agent) => agent.id === currentAgentId) &&
-        currentSessionId &&
-        hasUnsentConversationDraft(CacheService.get(getAgentSessionDraftCacheKey(currentAgentId, currentSessionId)))
-      ) {
-        if (!cancelled) {
-          setEntrySessionRestored(true)
-        }
-        return
-      }
-
-      const response = await client.listAllSessions({
-        archived: 'exclude',
-        limit: DEFAULT_SESSION_PAGE_SIZE,
-        offset: 0
-      })
-
-      for (const session of response.data) {
-        if (cancelled) {
-          return
-        }
-
-        const topicId = buildAgentSessionTopicId(session.id)
-        const currentState = store.getState()
-        const hasDraft = hasUnsentConversationDraft(
-          CacheService.get(getAgentSessionDraftCacheKey(session.agent_id, session.id))
-        )
-        const hasLiveMessages =
-          Boolean(currentState.messages.loadingByTopic[topicId]) ||
-          selectMessagesForTopic(currentState, topicId).length > 0
-
-        let isRestorable = !isUnnamedAgentSessionName(session.name, t('common.unnamed')) || hasDraft || hasLiveMessages
-        if (!isRestorable) {
-          const persisted = await dbService.fetchMessages(topicId, true)
-          isRestorable = persisted.messages.length > 0
-        }
-
-        if (!isRestorable) {
-          continue
-        }
-
-        dispatch(setActiveAgentIdAction(session.agent_id))
-        dispatch(setActiveSessionIdAction({ agentId: session.agent_id, sessionId: session.id }))
-        break
-      }
-
-      if (!cancelled) {
-        setEntrySessionRestored(true)
-      }
-    }
-
-    void restoreTopSession().catch(() => {
-      if (!cancelled) {
-        setEntrySessionRestored(true)
-      }
-    })
-
-    return () => {
-      cancelled = true
-    }
-  }, [agents, apiServerRunning, client, dispatch, entrySessionRestored, t, workspace])
 
   useEffect(() => {
     const canMinimize = !showAssistants

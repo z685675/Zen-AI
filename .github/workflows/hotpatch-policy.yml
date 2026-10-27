@@ -1,0 +1,47 @@
+name: Patch Policy Signature
+
+on:
+  workflow_dispatch:
+    inputs:
+      intent_id:
+        description: 'Exact reviewed pending decision ID from the API panel'
+        required: true
+  schedule:
+    - cron: '17 */6 * * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: renderer-patch-policy-signer
+  cancel-in-progress: false
+
+jobs:
+  sign:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    # Renewal may only extend the exact previous signed decision; it cannot sign a new rollout.
+    environment: ${{ github.event_name == 'schedule' && 'hotpatch-renewal' || 'hotpatch-release' }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: '.node-version'
+      - uses: pnpm/action-setup@v5
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Sign only the explicitly reviewed intent or exact-scope renewals
+        shell: bash
+        env:
+          INTENT_ID: ${{ inputs.intent_id }}
+          EVENT_KIND: ${{ github.event_name }}
+          ZEN_HOTPATCH_SIGNING_KEY_PEM: ${{ secrets.ZEN_HOTPATCH_SIGNING_KEY_PEM }}
+          ZEN_CLIENT_PATCH_SIGNER_TOKEN: ${{ secrets.ZEN_CLIENT_PATCH_SIGNER_TOKEN }}
+        run: |
+          if [ "$EVENT_KIND" = schedule ]; then
+            pnpm exec tsx --tsconfig tsconfig.node.json scripts/hotpatch/policy-signer.ts --renew
+          else
+            [[ "$INTENT_ID" =~ ^[a-f0-9]{64}$ ]]
+            pnpm exec tsx --tsconfig tsconfig.node.json scripts/hotpatch/policy-signer.ts --intent-id "$INTENT_ID"
+          fi

@@ -21,6 +21,7 @@ interface VerificationOptions {
   format: GeneratedOutputFormat
   buffer: Buffer
   expectedSlides?: number
+  expectedPages?: number
   expectedMediaAssets?: number
   renderValidation?: RenderValidationMode
 }
@@ -48,6 +49,7 @@ export async function verifyGeneratedOutput({
   format,
   buffer,
   expectedSlides,
+  expectedPages,
   expectedMediaAssets = 0,
   renderValidation = 'auto'
 }: VerificationOptions): Promise<GeneratedOutputVerification> {
@@ -61,7 +63,16 @@ export async function verifyGeneratedOutput({
   if (format === 'md' || format === 'txt' || format === 'csv') {
     validateTextOutput(format, buffer, checks, warnings, details, errors)
   } else if (format === 'pdf') {
-    await validatePdfOutput(buffer, expectedMediaAssets, renderValidation, checks, warnings, details, errors)
+    await validatePdfOutput(
+      buffer,
+      expectedMediaAssets,
+      renderValidation,
+      checks,
+      warnings,
+      details,
+      errors,
+      expectedPages
+    )
   } else {
     await validateOoxmlOutput(
       format,
@@ -193,7 +204,8 @@ async function validatePdfOutput(
   checks: string[],
   warnings: string[],
   details: Record<string, number | string | boolean>,
-  errors: string[]
+  errors: string[],
+  expectedPages?: number
 ) {
   if (buffer.subarray(0, 5).toString('ascii') !== '%PDF-') errors.push('PDF header is missing')
   if (!buffer.subarray(Math.max(0, buffer.length - 2048)).includes(Buffer.from('%%EOF'))) {
@@ -205,6 +217,16 @@ async function validatePdfOutput(
     details.pages = pages
     details.title = document.getTitle() || ''
     if (pages < 1) errors.push('PDF has no pages')
+    if (expectedPages !== undefined) {
+      details.expected_pages = expectedPages
+      if (pages !== expectedPages) {
+        errors.push(
+          `PDF page count mismatch: expected ${expectedPages}, received ${pages}. Use pdf_pages or a standalone <!-- pagebreak --> line; shorten or redistribute overflowing content.`
+        )
+        return
+      }
+      checks.push('pdf-page-count')
+    }
     const imageObjects = buffer.toString('latin1').match(/\/Subtype\s*\/Image\b/g)?.length ?? 0
     details.embedded_media_parts = imageObjects
     details.expected_image_assets = expectedMediaAssets

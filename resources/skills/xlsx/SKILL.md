@@ -100,3 +100,7 @@ Call `mcp__assistant__python_execute` with `script_path: "<skill-root>/scripts/v
 - Output should be machine-usable and easy to inspect in Excel.
 - Charts must remain readable at the default zoom: no overlapping data labels, crushed small series, long numbers floating across the plot area, or an axis that hides negative, mixed-sign, or constant values.
 - The workbook must pass package validation and every requested feature check.
+
+## Delivery contract
+
+Treat explicit page, slide, worksheet and file counts as hard requirements. Verify actual outputs using the format validator and rendered pages where applicable; do not infer a Word page count from source text. Check requested formulas and final-page text, and distinguish obsolete values from the final decision. Deliver only existing final paths, excluding temporary previews and replaced files. Reuse validation already completed by the generator; add checks only for unverified requirements.

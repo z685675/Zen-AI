@@ -28,6 +28,71 @@ it('explains the daily quota without blaming channel connectivity or credentials
   expect(diagnosis.serviceReceived).toBe('是')
 })
 
+it('explains an admission timeout without claiming the model received the request or an HTTP 502', () => {
+  const error = {
+    name: 'AI_ProviderSpecificError',
+    message: 'Upstream retry budget exhausted; native task state was preserved',
+    statusCode: 502,
+    zenFailureStage: 'quota-admission',
+    zenRequestUrl: 'https://example.test/api/usage/token/model-daily/turn',
+    zenTransportFailure: {
+      phase: 'quota-admission',
+      receivedResponse: false,
+      error: { code: 'model_daily_quota_unavailable', cause: { name: 'TimeoutError' } }
+    }
+  }
+  expect(diagnoseClientError(error)).toMatchObject({
+    category: 'service',
+    summary: zh.model_daily_quota.unavailable,
+    stage: zh.model_daily_quota.stage,
+    httpStatus: '无',
+    serviceConnectivity: '未确认',
+    serviceReceived: '未确认',
+    startedGenerating: '否',
+    serviceAddress: error.zenRequestUrl
+  })
+  expect(classifyError(error).i18nKey).toBe('model_daily_quota.unavailable')
+})
+
+it('recognizes a direct AI chat admission failure without assuming a server response', () => {
+  expect(
+    diagnoseClientError({
+      name: 'ModelDailyQuotaRequestError',
+      message: 'Model daily quota admission request failed',
+      code: 'model_daily_quota_unavailable',
+      zenFailureStage: 'quota-admission'
+    })
+  ).toMatchObject({
+    category: 'service',
+    summary: zh.model_daily_quota.unavailable,
+    serviceReceived: '未确认',
+    serviceConnectivity: '未确认'
+  })
+})
+
+it('keeps an actual quota refusal response distinct from an admission connection failure', () => {
+  expect(
+    diagnoseClientError({
+      name: 'APIError',
+      message: 'Model daily quota admission refused',
+      statusCode: 403,
+      zenFailureStage: 'quota-admission',
+      zenTransportFailure: {
+        phase: 'quota-admission',
+        receivedResponse: true,
+        status: 403,
+        error: { responseBody: '{"error":{"code":"model_daily_token_limit_exceeded"}}' }
+      }
+    })
+  ).toMatchObject({
+    category: 'rate_limited',
+    summary: zh.model_daily_quota.exceeded,
+    serviceReceived: '是',
+    serviceConnectivity: '已连接',
+    httpStatus: '403'
+  })
+})
+
 function makeError(message: string, statusCode?: number) {
   return {
     name: 'TestError',

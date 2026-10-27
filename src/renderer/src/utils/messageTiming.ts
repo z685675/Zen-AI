@@ -7,11 +7,17 @@ export function createMessageResponseTimer() {
   const startedClock = performance.now()
   let firstTokenMs: number | undefined
   let finished: MessageResponseTiming | undefined
+  const markFirstActivity = () => {
+    if (finished || firstTokenMs !== undefined) return
+    firstTokenMs = Math.max(0, performance.now() - startedClock)
+  }
 
   return {
+    // Agent responses can begin with a tool instead of visible text. Keep the
+    // stored field compatible, but do not invent a text token to mark activity.
+    markFirstActivity,
     markFirstToken(text: string) {
-      if (finished || firstTokenMs !== undefined || !text.trim()) return
-      firstTokenMs = Math.max(0, performance.now() - startedClock)
+      if (text.trim()) markFirstActivity()
     },
     finish(outcome: MessageResponseTiming['outcome']): MessageResponseTiming {
       finished ??= {

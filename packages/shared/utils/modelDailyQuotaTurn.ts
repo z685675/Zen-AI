@@ -14,6 +14,20 @@ export class ModelDailyQuotaRefusal extends Error {
   }
 }
 
+/** Admission transport/protocol failure, not a model/channel failure. */
+export class ModelDailyQuotaRequestError extends Error {
+  readonly name = 'ModelDailyQuotaRequestError'
+  readonly code = 'model_daily_quota_unavailable'
+  readonly zenFailureStage = 'quota-admission'
+  readonly isRetryable = true
+  constructor(
+    readonly zenRequestUrl: string,
+    cause: unknown
+  ) {
+    super('Model daily quota admission request failed', { cause })
+  }
+}
+
 /** An in-memory per-question capability, never persisted in native config or
  * diagnostics. All model calls/compaction in that question share this permit.
  * The server remains authoritative; an old server only falls back on 404/405.
@@ -46,14 +60,28 @@ export class ModelDailyQuotaTurn {
     this.endpoint.hash = ''
   }
 
+  get requestUrl(): string {
+    return this.endpoint.href
+  }
+
   async getPermit(headers: Headers, signal: AbortSignal): Promise<string | undefined> {
+    signal.throwIfAborted()
     if (!this.supported) return undefined
     if (!this.permit) {
       this.finishing = undefined
       const key = headers.get('x-api-key') || headers.get('x-goog-api-key')
       this.authorization = headers.get('authorization') || (key ? `Bearer ${key}` : undefined)
       if (!this.authorization) return undefined
-      this.permit = this.begin(signal)
+      const pending = this.begin(signal).catch((error) => {
+        // Share an in-flight/successful admission, never a rejected promise.
+        // Retain the task ID: a timed-out request may have succeeded server-side,
+        // and retrying that same ID must recover its permit, not reserve twice.
+        if (this.permit === pending) this.permit = undefined
+        if (signal.aborted) throw signal.reason
+        if (error instanceof ModelDailyQuotaRefusal) throw error
+        throw new ModelDailyQuotaRequestError(this.requestUrl, error)
+      })
+      this.permit = pending
     }
     return this.permit
   }

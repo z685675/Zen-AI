@@ -1,8 +1,4 @@
 export enum IpcChannel {
-  ImageStudio_Open = 'image-studio:open',
-  ImageStudio_Resize = 'image-studio:resize',
-  ImageStudio_Close = 'image-studio:close',
-  ImageStudio_Visible = 'image-studio:visible',
   App_GetCacheSize = 'app:get-cache-size',
   App_ClearCache = 'app:clear-cache',
   App_SetLaunchOnBoot = 'app:set-launch-on-boot',
@@ -210,6 +206,7 @@ export enum IpcChannel {
   //file
   File_Open = 'file:open',
   File_OpenPath = 'file:openPath',
+  File_CheckPaths = 'file:checkPaths',
   File_Save = 'file:save',
   File_SaveDiagnosticPackage = 'file:saveDiagnosticPackage',
   Diagnostic_Collect = 'diagnostic:collect',

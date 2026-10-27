@@ -6,11 +6,11 @@ import { startProviderModelSyncScheduler } from '@renderer/services/ProviderMode
 import { startRemoteModelPolicySync } from '@renderer/services/RemoteModelPolicyService'
 import store, { persistor } from '@renderer/store'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { useEffect } from 'react'
 import { Provider } from 'react-redux'
 import { PersistGate } from 'redux-persist/integration/react'
 
 import { ErrorBoundary } from './components/ErrorBoundary'
+import { HotpatchReady } from './components/HotpatchReady'
 import TopViewContainer from './components/TopView'
 import { AnnouncementProvider } from './context/AnnouncementProvider'
 import AntdProvider from './context/AntdProvider'
@@ -32,14 +32,14 @@ const queryClient = new QueryClient({
   }
 })
 
+const startBackgroundServices = () => {
+  void runStartupAssistantEnvironmentPreflight()
+  startProviderModelSyncScheduler()
+  startRemoteModelPolicySync()
+}
+
 function App(): React.ReactElement {
   logger.info('App initialized')
-
-  useEffect(() => {
-    void runStartupAssistantEnvironmentPreflight()
-    startProviderModelSyncScheduler()
-    startRemoteModelPolicySync()
-  }, [])
 
   return (
     <ErrorBoundary>
@@ -51,6 +51,7 @@ function App(): React.ReactElement {
                 <NotificationProvider>
                   <CodeStyleProvider>
                     <PersistGate loading={null} persistor={persistor}>
+                      <HotpatchReady onReady={startBackgroundServices} />
                       <AnnouncementProvider>
                         <TopViewContainer>
                           <Router />

@@ -16,6 +16,8 @@ import {
 } from '@shared/config/imageCapabilities'
 
 import { decodeImage, geminiImageConfig, imageCanvasTimeout, type ImageFetch, limitedBytes } from './protocol'
+import type { StudioAssets } from './StudioAssetCache'
+import { ImageStudioRequestError, studioJson as json } from './studioRequest'
 
 export type CanvasRemoteJob = {
   origin: string
@@ -105,6 +107,7 @@ async function downloadAsset(request: ImageFetch, root: string, id: string, auth
     let retryable = true
     let status: number | undefined
     let stage = 'request'
+    const started = performance.now()
     try {
       const response = await request(`${root}/assets/${id}`, {
         method: 'GET',
@@ -120,8 +123,17 @@ async function downloadAsset(request: ImageFetch, root: string, id: string, auth
         throw new Error('studio_download_failed')
       }
       stage = 'body'
+      const headersReceived = performance.now()
       const bytes = Buffer.from(await limitedBytes(response, 20 * 1024 * 1024))
       if (!bytes.length) throw new Error('empty_response')
+      logger.info('Image asset download completed', {
+        assetId: id,
+        attempt,
+        headersMs: Math.round(headersReceived - started),
+        bodyMs: Math.round(performance.now() - headersReceived),
+        durationMs: Math.round(performance.now() - started),
+        bytes: bytes.length
+      })
       return bytes
     } catch (error) {
       const tooLarge = error instanceof Error && error.message === 'response_too_large'
@@ -141,6 +153,22 @@ async function downloadAsset(request: ImageFetch, root: string, id: string, auth
     }
   }
   throw new Error('studio_download_failed')
+}
+
+async function reusableAsset(request: ImageFetch, root: string, id: string, auth: Headers): Promise<boolean> {
+  try {
+    const response = await request(`${root}/assets/${id}`, {
+      method: 'HEAD',
+      headers: auth,
+      redirect: 'error',
+      credentials: 'omit',
+      signal: AbortSignal.timeout(5000)
+    })
+    await response.body?.cancel().catch(() => {})
+    return response.status === 200
+  } catch {
+    return false
+  }
 }
 
 function endpoint(provider: ImageCanvasProvider, remote?: CanvasRemoteJob): string {
@@ -165,26 +193,13 @@ function headers(provider: ImageCanvasProvider): Headers {
   return result
 }
 
-async function json<T>(request: ImageFetch, url: string, headers: Headers, body?: BodyInit): Promise<T> {
-  const response = await request(url, {
-    method: body === undefined ? 'GET' : 'POST',
-    headers,
-    body,
-    redirect: 'error',
-    credentials: 'omit',
-    signal: AbortSignal.timeout(30000)
-  })
-  if (!response.ok) throw new Error(`studio_http_${response.status}`)
-  const payload = JSON.parse(new TextDecoder().decode(await limitedBytes(response, 2 * 1024 * 1024)))
-  if (payload.success !== true) throw new Error('studio_unavailable')
-  return payload.data as T
-}
-
 export async function studioModels(provider: ImageCanvasProvider, request: ImageFetch): Promise<ImageCanvasModel[]> {
   const data = await json<{ models: Capability[]; submission_lookup?: boolean }>(
     request,
     `${endpoint(provider)}/bootstrap`,
-    headers(provider)
+    headers(provider),
+    undefined,
+    { operation: 'bootstrap' }
   )
   if (data.submission_lookup !== true) throw new Error('studio_upgrade_required')
   if (!Array.isArray(data.models) || data.models.length > 3000) throw new Error('studio_invalid_result')
@@ -237,15 +252,21 @@ export async function generateStudioImages(
   input: ImageCanvasRequest,
   request: ImageFetch,
   accepted: (remote: CanvasRemoteJob) => void,
-  progress: ImageCanvasProgress = () => {}
+  progress: ImageCanvasProgress = () => {},
+  studioAssets?: StudioAssets
 ): Promise<Buffer[]> {
   const root = endpoint(provider)
   const auth = headers(provider)
-  let capabilities: { models: Capability[]; submission_lookup?: boolean }
+  let capabilities: { models: Capability[]; submission_lookup?: boolean; asset_reuse?: boolean }
+  progress('configuring')
   try {
-    capabilities = await json(request, `${root}/bootstrap`, auth)
+    capabilities = await json(request, `${root}/bootstrap`, auth, undefined, {
+      operation: 'bootstrap',
+      taskId: input.id
+    })
   } catch (error) {
-    if (error instanceof Error && error.message === 'studio_http_404') throw new Error('studio_upgrade_required')
+    if (error instanceof ImageStudioRequestError && error.message === 'studio_http_404')
+      throw new ImageStudioRequestError(error.failure, 'studio_upgrade_required')
     throw error
   }
   if (capabilities.submission_lookup !== true) throw new Error('studio_upgrade_required')
@@ -281,16 +302,30 @@ export async function generateStudioImages(
   if ((quality && !model.qualities.includes(quality)) || (background && !model.backgrounds.includes(background)))
     throw new Error('studio_parameters_unsupported')
   const assetIds: string[] = []
+  if (input.references.length || input.mask) progress('uploading')
   for (const reference of [...input.references, ...(input.mask ? [input.mask] : [])]) {
     const image = decodeImage(reference)
+    const cached = capabilities.asset_reuse === true ? studioAssets?.find(image.bytes) : undefined
+    if (cached) {
+      if (await reusableAsset(request, root, cached, auth)) {
+        assetIds.push(cached)
+        logger.info('Image studio reference reused', { taskId: input.id, assetId: cached, bytes: image.bytes.length })
+        continue
+      }
+      studioAssets?.forget(image.bytes)
+    }
     const form = new FormData()
     form.set(
       'image',
       new Blob([new Uint8Array(image.bytes)], { type: image.mime }),
       `reference.${image.mime.split('/')[1]}`
     )
-    const asset = await json<{ id: string }>(request, `${root}/assets`, auth, form)
+    const asset = await json<{ id: string }>(request, `${root}/assets`, auth, form, {
+      operation: 'reference-upload',
+      taskId: input.id
+    })
     if (!/^[a-f0-9-]{32,64}$/.test(asset.id)) throw new Error('studio_invalid_result')
+    studioAssets?.remember(image.bytes, asset.id)
     assetIds.push(asset.id)
   }
   const maskAssetId = input.mask ? assetIds.pop() : undefined
@@ -318,13 +353,14 @@ export async function generateStudioImages(
         ...(ratio ? { aspect_ratio: ratio } : {}),
         ...(quality ? { quality } : {}),
         ...(background ? { background } : {})
-      })
+      }),
+      { operation: 'job-submit', taskId: input.id }
     )
   } catch (error) {
     if (error instanceof Error && /^studio_http_4\d\d$/.test(error.message)) throw error
     // The server may already own this task. Look up the same submission key.
   }
-  return readStudioImages(provider, remote, request, initial, progress)
+  return readStudioImages(provider, remote, request, initial, progress, studioAssets)
 }
 
 export async function readStudioImages(
@@ -332,7 +368,8 @@ export async function readStudioImages(
   remote: CanvasRemoteJob,
   request: ImageFetch,
   initial?: JobView,
-  progress: ImageCanvasProgress = () => {}
+  progress: ImageCanvasProgress = () => {},
+  studioAssets?: StudioAssets
 ): Promise<Buffer[]> {
   const root = endpoint(provider, remote)
   const auth = headers(provider)
@@ -343,7 +380,10 @@ export async function readStudioImages(
   while (Date.now() < deadline) {
     if (!view) {
       try {
-        view = await json<JobView>(request, `${root}/jobs/by-submission/${remote.submissionId}`, auth)
+        view = await json<JobView>(request, `${root}/jobs/by-submission/${remote.submissionId}`, auth, undefined, {
+          operation: 'job-status',
+          taskId: remote.submissionId
+        })
       } catch (error) {
         if (error instanceof Error && /^studio_http_4\d\d$/.test(error.message)) throw error
         // Retry reads only. The generation POST above is never repeated.
@@ -375,9 +415,11 @@ export async function readStudioImages(
         throw new Error('studio_invalid_result')
       report('downloading')
       return Promise.all(
-        view.assets.map((id) => {
+        view.assets.map(async (id) => {
           if (!/^[a-f0-9-]{32,64}$/.test(id)) throw new Error('studio_invalid_result')
-          return downloadAsset(request, root, id, auth)
+          const bytes = await downloadAsset(request, root, id, auth)
+          studioAssets?.remember(bytes, id)
+          return bytes
         })
       )
     }

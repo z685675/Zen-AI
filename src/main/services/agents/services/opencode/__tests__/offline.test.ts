@@ -19,9 +19,9 @@ beforeEach(async () => {
   await fs.mkdir(path.join(bundle, 'node_modules', '@opencode-ai', 'plugin'), { recursive: true })
   await fs.writeFile(
     path.join(bundle, 'node_modules', '@opencode-ai', 'plugin', 'package.json'),
-    '{"version":"1.18.35"}'
+    '{"version":"1.19.4"}'
   )
-  await fs.writeFile(path.join(bundle, 'package.json'), '{"dependencies":{"@opencode-ai/plugin":"1.18.35"}}')
+  await fs.writeFile(path.join(bundle, 'package.json'), '{"dependencies":{"@opencode-ai/plugin":"1.19.4"}}')
   await fs.writeFile(path.join(bundle, 'package-lock.json'), '{"lockfileVersion":3}')
 })
 afterEach(async () => {

@@ -1,3 +1,4 @@
+import { readOpenCodeTurnDiagnostics } from './agents/opencodeDiagnostics'
 import type { DiagnosticEvent } from './diagnostics'
 
 export type TurnInterval = {
@@ -31,7 +32,10 @@ export function buildTurnPerformance(input: {
   elapsedMs?: number
   firstTokenMs?: number
   droppedEvents?: number
+  persistedDiagnostics?: unknown
 }) {
+  const persisted = readOpenCodeTurnDiagnostics(input.persistedDiagnostics)
+  const aggregate = persisted?.performance
   const events = input.events.filter((event) => time(event.at) !== undefined).sort((a, b) => time(a.at)! - time(b.at)!)
   const intervals: TurnInterval[] = []
   const requests = new Map<string, TurnInterval>()
@@ -135,12 +139,16 @@ export function buildTurnPerformance(input: {
       (span.kind === 'tool' && /wait_for_user|ask_user|question/i.test(span.label))
   )
   const completed = intervals.filter((span) => span.durationMs !== null)
+  const observedRequestCount = intervals.filter((span) => span.kind === 'request').length
+  const observedRetries = events.filter((event) =>
+    ['native-retry', 'key-fallback', 'model-fallback', 'fallback', 'stream-recovery'].includes(event.event)
+  ).length
   return {
     schemaVersion: 1,
     outcome: input.outcome ?? 'unrecorded',
     startedAt: startedAt ?? null,
     finishedAt: finishedAt ?? null,
-    totalMs: number(input.elapsedMs) ?? duration(startedAt, finishedAt),
+    totalMs: number(input.elapsedMs) ?? duration(startedAt, finishedAt) ?? aggregate?.totalMs ?? null,
     firstContentMs: number(input.firstTokenMs) ?? duration(startedAt, first('first-content')),
     firstTextMs: duration(startedAt, first('first-text')),
     firstBytesMs: duration(startedAt, first('first-bytes')),
@@ -149,20 +157,30 @@ export function buildTurnPerformance(input: {
     renderCommittedAt: last('ui', 'render-committed') ?? null,
     // Not all DOM paint work is measurable from a React commit.
     renderCommitDelayMs: duration(finishedAt, last('ui', 'render-committed')),
-    observedRequests: intervals.filter((span) => span.kind === 'request').length,
-    toolCalls: tools.size,
-    retryEvents: events.filter((event) =>
-      ['native-retry', 'key-fallback', 'model-fallback', 'fallback', 'stream-recovery'].includes(event.event)
-    ).length,
+    observedRequests: persisted
+      ? Math.max(persisted.observedRequests, observedRequestCount)
+      : observedRequestCount || null,
+    toolCalls: aggregate ? Math.max(aggregate.toolCalls, tools.size) : tools.size || null,
+    retryEvents: aggregate
+      ? Math.max(aggregate.retryEvents, observedRetries)
+      : observedRetries || observedRequestCount
+        ? observedRetries
+        : null,
+    aggregate: aggregate ?? null,
     droppedEvents: input.droppedEvents ?? 0,
     intervals,
     userWaitIntervals: waits,
     slowestObserved: [...completed].sort((a, b) => b.durationMs! - a.durationMs!).slice(0, 8),
     coverage: {
-      source: 'observed-events-only',
+      source: persisted ? 'persisted-opencode-aggregate-and-observed-events' : 'observed-events-only',
       durationsAreAdditive: false,
       activeWorkMs: null,
       missing: [
+        ...(persisted &&
+        (observedRequestCount < persisted.observedRequests || tools.size < persisted.performance.toolCalls)
+          ? ['per-request-or-tool-timeline-unavailable-aggregate-only']
+          : []),
+        ...(!events.length && !persisted ? ['request-tool-and-retry-counts-unavailable'] : []),
         ...(!startedAt ? ['request-start-time'] : []),
         ...(!finishedAt ? ['request-end-time-or-still-running'] : []),
         ...(!first('first-text') ? ['first-answer-text'] : []),

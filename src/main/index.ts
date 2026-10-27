@@ -51,6 +51,7 @@ import { registerShortcuts } from './services/ShortcutService'
 import { TrayService } from './services/TrayService'
 import { versionService } from './services/VersionService'
 import { windowService } from './services/WindowService'
+import { hotpatchService } from './services/hotpatch/service'
 import { initWebviewHotkeys } from './services/WebviewService'
 import { runAsyncFunction } from './utils'
 import { isOvmsSupported } from './services/OvmsManager'
@@ -168,7 +169,10 @@ if (!app.requestSingleInstanceLock()) {
     const { BackupManager } = await import('./services/BackupManager')
     await BackupManager.handleStartupRestore()
 
+    await hotpatchService.prepare()
+
     const mainWindow = windowService.createMainWindow()
+    hotpatchService.bindWindow(mainWindow)
 
     new TrayService()
 
@@ -219,6 +223,7 @@ if (!app.requestSingleInstanceLock()) {
       // Built-in model selection reads providers from the persisted renderer store.
       // Wait for rehydration so a slow startup cannot silently skip model migration.
       await reduxService.waitUntilReady()
+      if (!(await hotpatchService.startupReady)) return
 
       // Initialize built-in skills and agents (sequential to avoid SQLITE_BUSY)
       // TODO: v2 lifecycle

@@ -601,8 +601,8 @@
         },
         "permissionMode": {
           "acceptEdits": {
-            "description": "Có thể đọc và chỉnh sửa tập tin tự do. Hỏi trước khi chạy lệnh.",
-            "title": "Chế độ tự động chỉnh sửa"
+            "description": "Hoàn thành tác vụ được cho phép mà không cần duyệt từng bước thông thường. Ghi đè tệp gốc, xóa tệp hoặc vượt phạm vi cho phép vẫn cần xác nhận.",
+            "title": "Build"
           },
           "bypassPermissions": {
             "description": "Có thể làm mọi thứ mà không cần hỏi. Dùng một cách thận trọng.",
@@ -616,8 +616,8 @@
           "helper": "Chọn cách tác nhân xử lý việc phê duyệt công cụ.",
           "placeholder": "Chọn chế độ quyền",
           "plan": {
-            "description": "Chỉ có thể đọc tệp và lập kế hoạch. Không thể chỉnh sửa tệp hoặc chạy lệnh.",
-            "title": "Chế độ Kế hoạch"
+            "description": "Phân tích, đọc thông tin được cho phép và lập kế hoạch mà không sửa tệp hoặc thực hiện tác vụ. Chọn Build để thực hiện.",
+            "title": "Plan"
           },
           "simpleTitle": "[to be translated]:Mode Selection",
           "title": "Chế độ quyền"
@@ -886,17 +886,20 @@
     "busy": "[to be translated]:Stop active assistant tasks first, then back up, restore or reset data. A data operation may also still be in progress."
   },
   "assistantDeliverables": {
+    "checking": "Đang kiểm tra tệp",
     "empty": "No registered outputs in this conversation yet.",
     "entry": "Outputs · {{count}}",
     "folder": "Folder",
     "locate": "Go to response",
+    "missing": "Tệp đã di chuyển hoặc bị xóa",
     "no_match": "No matching outputs.",
     "notice": "Only outputs registered by successful file tools in this conversation are listed. These are shortcuts, not copies; moved or deleted files may no longer open.",
     "open": "Open",
     "reveal": "Show in folder",
     "search": "Search name or path",
     "source": "Latest source: turn {{turn}} · registered in {{count}} responses",
-    "title": "Conversation outputs"
+    "title": "Conversation outputs",
+    "unavailable": "Không thể kiểm tra trạng thái tệp"
   },
   "assistantFileSafety": {
     "message": "Tệp gốc bên dưới sẽ được thay thế sau khi lưu và xác minh bản sao lưu. Hủy sẽ giữ nguyên tệp gốc.",
@@ -908,7 +911,7 @@
     "callStarted": "Started",
     "callStopped": "Stopped",
     "calledThisTurn": "Native skill calls in the latest user turn",
-    "discovered": "Discovered by OpenCode",
+    "discovered": "Trợ lý đã phát hiện",
     "enabled": "Enabled",
     "exportFailed": "Could not export diagnostics. Please try again.",
     "exportSaved": "Diagnostic package exported",
@@ -2473,6 +2476,34 @@
     },
     "title": "Tìm kiếm chủ đề"
   },
+  "hotpatch": {
+    "check": "Kiểm tra bản vá",
+    "description": "Kiểm tra nền và áp dụng ở lần khởi động sau, không gián đoạn tác vụ đang chạy.",
+    "disable": "Tạm dừng bản vá",
+    "disableConfirm": "Dùng giao diện tích hợp ở lần khởi động sau và tạm dừng tải bản vá?",
+    "enable": "Tiếp tục bản vá",
+    "nextStartup": "Lần khởi động sau: {{patch}}",
+    "requestFailed": "Không thể lấy trạng thái bản vá.",
+    "rescue": {
+      "description": "Bản vá không thể khởi động. Hội thoại, tệp và cài đặt vẫn được giữ. Hãy khởi động lại với giao diện tích hợp.",
+      "export": "Xuất chẩn đoán khởi động",
+      "exportFailed": "Không thể lưu gói chẩn đoán khởi động. Vui lòng chọn vị trí lưu mới.",
+      "restart": "Khởi động lại với giao diện tích hợp",
+      "title": "Khôi phục giao diện"
+    },
+    "safeFallback": "Giao diện đang hoạt động được giữ nguyên.",
+    "status": {
+      "active": "Đã áp dụng bản vá",
+      "builtin": "Giao diện tích hợp",
+      "checking": "Đang kiểm tra",
+      "disabled": "Đã tạm dừng",
+      "pending": "Chờ khởi động lại",
+      "recovering": "Đang khôi phục",
+      "unavailable": "Chưa bật"
+    },
+    "testCode": "Mã triển khai thử nghiệm (tùy chọn)",
+    "title": "Bản vá giao diện"
+  },
   "html_artifacts": {
     "capture": {
       "label": "Trang Thu Thập",
@@ -2486,17 +2517,11 @@
     "split": "Tách"
   },
   "image_studio": {
-    "canvas": "Image canvas",
-    "canvas_unavailable": "The local image canvas could not open. Retry or check the application logs.",
-    "key": "Key {{index}}",
-    "key_label": "Workspace key",
     "local": "[to be translated]:Local images",
     "opening": "[to be translated]:Opening image workspace…",
     "reconnect": "[to be translated]:Reconnect",
-    "server": "Server workspace",
-    "title": "[to be translated]:Image workspace",
-    "unavailable": "[to be translated]:The workspace could not open. Make sure your Zen API server has been updated and the selected key is valid. You can still open Local images.",
-    "workbench": "Image studio"
+    "workbench": "Image studio",
+    "workbench_unavailable": "Không thể mở studio hình ảnh. Hãy thử lại hoặc kiểm tra nhật ký ứng dụng."
   },
   "import": {
     "chatgpt": {
@@ -3355,6 +3380,13 @@
     },
     "memory_notice": "Independent native memory survives model changes. Retry, branching and individual deletion are supported; direct editing and bulk deletion are not yet supported.",
     "outputting": "The model is producing output",
+    "permission": {
+      "title": "Tác vụ này cần bạn xác nhận",
+      "description": "Hãy kiểm tra thao tác và đối tượng trước khi cho phép tác vụ tiếp tục.",
+      "loopTitle": "Phát hiện thao tác lặp lại; tác vụ đã tạm dừng",
+      "loopDescription": "Trợ lý đã thử cùng một thao tác nhiều lần. Bạn có thể cho phép tiếp tục một lần hoặc hủy thao tác này.",
+      "details": "Chi tiết thao tác"
+    },
     "preparing": "[to be translated]:Request received; preparing the task",
     "responding": "[to be translated]:Processing the response",
     "restoring": "[to be translated]:Restoring this conversation",
@@ -5783,7 +5815,7 @@
       "prompt": "Mostrar indicación",
       "show_message_outline": "Hiển thị dàn bộ tin nhắn",
       "stats_time": "Token đầu tiên {{first}} · Thời gian {{total}}",
-      "stats_tip": "Token đầu: thời gian đến văn bản đầu tiên hiển thị, gồm cả suy luận hiển thị. Tổng: đến khi toàn bộ tác vụ kết thúc, gồm công cụ và thời gian chờ. Bộ nhớ đệm chỉ tính lượt đọc; — nghĩa là nhà cung cấp không trả về thống kê.",
+      "stats_tip": "Phản hồi đầu tiên: thời gian đến văn bản hoặc suy luận hiển thị đầu tiên; với trợ lý, lần gọi công cụ đầu tiên cũng được tính. Tổng: đến khi hoàn tất tác vụ, gồm công cụ và thời gian chờ. Bộ nhớ đệm chỉ tính token đọc; — nghĩa là chưa có thống kê.",
       "stats_tokens": "Đầu vào {{input}} · Đầu ra {{output}} · Bộ nhớ đệm {{cached}}",
       "title": "Cài đặt tin nhắn",
       "use_serif_font": "Dùng phông chữ có chân"
@@ -6786,6 +6818,7 @@
     "show_window": "Hiển thị cửa sổ"
   },
   "turnDiagnostics": {
+    "aggregate": "Thống kê thực thi đã lưu (thời gian có thể chồng lấn, không cộng trực tiếp): yêu cầu mô hình {{requests}}, chờ tiêu đề phản hồi {{headers}}, công cụ đã hoàn tất {{tools}}. Các khoảng thời gian riêng lẻ bị thiếu không được dựng lại.",
     "description": "Xuất trạng thái, thời gian và yêu cầu của lượt này mà không chạy lại tác vụ hoặc gọi mô hình.",
     "export": "Xuất chẩn đoán lượt này",
     "includeContent": "Kèm nội dung trò chuyện và công cụ của lượt này (tùy chọn)",

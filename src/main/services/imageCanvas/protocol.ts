@@ -7,6 +7,7 @@ import ipaddr from 'ipaddr.js'
 import sharp from 'sharp'
 
 import type { CanvasRemoteJob } from './studio'
+import type { StudioAssets } from './StudioAssetCache'
 
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024
 export const imageCanvasTimeout = 12 * 60 * 1000
@@ -156,14 +157,15 @@ export async function generateCanvasImages(
   input: ImageCanvasRequest,
   request: ImageFetch,
   accepted: (remote: CanvasRemoteJob) => void = () => {},
-  progress: ImageCanvasProgress = () => {}
+  progress: ImageCanvasProgress = () => {},
+  studioAssets?: StudioAssets
 ): Promise<Buffer[]> {
   validateCanvasRequest(input)
   validateCanvasModel(provider, input)
   if (input.mask || input.expansion) input = await prepareImageEdit(input)
   if (isZenManagedApiHost(provider.apiHost)) {
     const { generateStudioImages } = await import('./studio')
-    return generateStudioImages(provider, input, request, accepted, progress)
+    return generateStudioImages(provider, input, request, accepted, progress, studioAssets)
   }
   const model = provider.models.find((item) => item.id === input.modelId)
   if (!model) throw new Error('model_unavailable')

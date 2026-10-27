@@ -17,7 +17,6 @@ import { useEnableDeveloperMode, useNavbarPosition, useSettings } from '@rendere
 import { useShortcut } from '@renderer/hooks/useShortcuts'
 import { useShowAssistants } from '@renderer/hooks/useStore'
 import { cleanupAgentSessionAttachmentDirectory } from '@renderer/services/AgentAttachmentService'
-import { CacheService } from '@renderer/services/CacheService'
 import { DbService } from '@renderer/services/db/DbService'
 import store, { useAppDispatch, useAppSelector } from '@renderer/store'
 import { newMessagesActions, selectMessagesForTopic } from '@renderer/store/newMessage'
@@ -26,7 +25,7 @@ import { loadTopicMessagesThunk } from '@renderer/store/thunk/messageThunk'
 import type { GetAgentSessionResponse, ListAgentSessionsResponse } from '@renderer/types'
 import { cn } from '@renderer/utils'
 import { buildAgentSessionTopicId } from '@renderer/utils/agentSession'
-import { getAgentSessionDraftCacheKey } from '@renderer/utils/agentSessionDraft'
+import { clearAgentSessionDraft, getAgentSessionDraft } from '@renderer/utils/agentSessionDraft'
 import { isUnnamedAgentSessionName } from '@renderer/utils/agentSessionTitle'
 import { shouldDiscardEmptyConversation } from '@renderer/utils/conversationDraft'
 import { DEFAULT_FUSION_AGENT_ID, getAgentAvatar } from '@shared/config/agents'
@@ -47,6 +46,7 @@ import AgentChatNavbar from './components/AgentChatNavbar'
 import AgentQuickEntryModal, { type AgentQuickEntry } from './components/AgentQuickEntryModal'
 import AgentSessionInputbar from './components/AgentSessionInputbar'
 import AgentSessionMessages from './components/AgentSessionMessages'
+import AgentSessionPermissions from './components/AgentSessionPermissions'
 import AgentTaskStatusBar from './components/AgentTaskStatusBar'
 import AssistantTransitionBanner from './components/AssistantTransitionBanner'
 import LegacyAssistantInputbar from './components/LegacyAssistantInputbar'
@@ -125,7 +125,6 @@ const AgentChat = () => {
       }
 
       const topicId = buildAgentSessionTopicId(session.id)
-      const draftCacheKey = getAgentSessionDraftCacheKey(agentId, session.id)
       sessionsBeingDiscardedRef.current.add(sessionKey)
       try {
         let latestState = store.getState()
@@ -133,7 +132,7 @@ const AgentChat = () => {
           const messageCount = selectMessagesForTopic(latestState, topicId).length
           if (
             !shouldDiscardEmptyConversation({
-              draft: CacheService.get(draftCacheKey),
+              draft: getAgentSessionDraft(agentId, session.id),
               isLoading: false,
               messageCount
             })
@@ -151,7 +150,7 @@ const AgentChat = () => {
 
         if (
           !shouldDiscardEmptyConversation({
-            draft: CacheService.get(draftCacheKey),
+            draft: getAgentSessionDraft(agentId, session.id),
             isLoading: Boolean(latestState.messages.loadingByTopic[topicId]),
             messageCount: selectMessagesForTopic(latestState, topicId).length
           })
@@ -165,7 +164,7 @@ const AgentChat = () => {
 
         if (
           !shouldDiscardEmptyConversation({
-            draft: CacheService.get(draftCacheKey),
+            draft: getAgentSessionDraft(agentId, session.id),
             isLoading: Boolean(latestState.messages.loadingByTopic[topicId]),
             messageCount
           })
@@ -178,7 +177,7 @@ const AgentChat = () => {
         if (workspace) {
           await cleanupAgentSessionAttachmentDirectory(workspace, session.id)
         }
-        CacheService.remove(draftCacheKey)
+        clearAgentSessionDraft(agentId, session.id)
         dispatch(newMessagesActions.clearTopicMessages(topicId))
 
         if (store.getState().runtime.chat.activeSessionIdMap[agentId] === session.id) {
@@ -567,7 +566,7 @@ const AgentChat = () => {
               </WelcomeState>
             ) : (
               <>
-                <AgentSessionMessages agentId={activeAgentId} sessionId={activeSessionId} />
+                <AgentSessionMessages key={activeSessionId} agentId={activeAgentId} sessionId={activeSessionId} />
                 <div className="mt-auto px-4.5 pb-2">
                   <NarrowLayout contentMaxWidth="960px">
                     <AgentTaskStatusBar topicId={buildAgentSessionTopicId(activeSessionId)} />
@@ -579,6 +578,7 @@ const AgentChat = () => {
             )}
           </div>
 
+          {workspace === 'opencode' && <AgentSessionPermissions sessionId={activeSessionId} />}
           {!isWelcomeState && workspace !== 'legacy' && (
             <SessionModelRecoveryNotice
               agentId={activeAgentId}

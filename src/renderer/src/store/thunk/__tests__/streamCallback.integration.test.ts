@@ -504,6 +504,109 @@ describe('streamCallback integration', () => {
     expect(getState().messages.loadingByTopic[topicId]).toBeFalsy()
   })
 
+  it.each([ChunkType.MCP_TOOL_PENDING, ChunkType.MCP_TOOL_STREAMING, ChunkType.MCP_TOOL_IN_PROGRESS])(
+    'records the first assistant tool event %s, not its final answer, as first response',
+    async (type) => {
+      vi.useFakeTimers({ toFake: ['Date'] })
+      vi.setSystemTime('2026-10-25T01:30:00Z')
+      let clock = 0
+      vi.spyOn(performance, 'now').mockImplementation(() => clock)
+      beginDiagnostic(assistantMsgId, {})
+      const callbacks = createMockCallbacks(
+        assistantMsgId,
+        topicId,
+        { ...assistant, type: 'agent-session' },
+        dispatch,
+        getState
+      )
+      const processor = createStreamProcessor(callbacks)
+      await processor({ type: ChunkType.LLM_RESPONSE_CREATED })
+      await processor({ type: ChunkType.THINKING_START })
+      clock = 2000
+      vi.setSystemTime('2026-10-25T01:30:02Z')
+      const tool = {
+        id: 'tool-1',
+        tool: { name: 'create_file' },
+        arguments: { secret: 'PRIVATE_INPUT' },
+        status: 'pending'
+      } as any
+      await processor({ type, responses: [tool] })
+      clock = 10_000
+      await processor({ type, responses: [tool] })
+      clock = 900_000
+      vi.setSystemTime('2026-10-25T01:45:00Z')
+      await processor({ type: ChunkType.TEXT_START })
+      await processor({ type: ChunkType.TEXT_COMPLETE, text: 'Finished creating the files' })
+      clock = 903_000
+      vi.setSystemTime('2026-10-25T01:45:03Z')
+      await processor({ type: ChunkType.LLM_RESPONSE_COMPLETE })
+      expect(getState().messages.entities[assistantMsgId].providerMetadata?.responseTiming).toMatchObject({
+        firstTokenMs: 2000,
+        elapsedMs: 903_000,
+        finishedAt: '2026-10-25T01:45:03.000Z',
+        outcome: 'completed'
+      })
+      const events = getDiagnosticEvidence(assistantMsgId)!.events.filter(
+        (event) => event.stage === 'response' && ['first-content', 'first-text'].includes(event.event)
+      )
+      expect(events.map((event) => [event.event, event.at])).toEqual([
+        ['first-content', '2026-10-25T01:30:02.000Z'],
+        ['first-text', '2026-10-25T01:45:00.000Z']
+      ])
+      expect(JSON.stringify(events)).not.toContain('PRIVATE_INPUT')
+    }
+  )
+
+  it.each(['AbortError', 'Error'])(
+    'retains the first tool response when an assistant later stops with %s',
+    async (name) => {
+      let clock = 0
+      vi.spyOn(performance, 'now').mockImplementation(() => clock)
+      const callbacks = createMockCallbacks(
+        assistantMsgId,
+        topicId,
+        { ...assistant, type: 'agent-session' },
+        dispatch,
+        getState
+      )
+      const processor = createStreamProcessor(callbacks)
+      await processor({ type: ChunkType.LLM_RESPONSE_CREATED })
+      clock = 1500
+      await processor({
+        type: ChunkType.MCP_TOOL_PENDING,
+        responses: [{ id: 'stopped-tool', tool: { name: 'create_file' }, arguments: {}, status: 'pending' } as any]
+      })
+      clock = 5000
+      await processor({ type: ChunkType.ERROR, error: Object.assign(new Error('stopped'), { name }) })
+      expect(getState().messages.entities[assistantMsgId].providerMetadata?.responseTiming).toMatchObject({
+        firstTokenMs: 1500,
+        elapsedMs: 5000,
+        outcome: name === 'AbortError' ? 'cancelled' : 'failed'
+      })
+    }
+  )
+
+  it('keeps AI chat timing based on text instead of changing its semantics for tools', async () => {
+    let clock = 0
+    vi.spyOn(performance, 'now').mockImplementation(() => clock)
+    const callbacks = createMockCallbacks(assistantMsgId, topicId, assistant, dispatch, getState)
+    const processor = createStreamProcessor(callbacks)
+    await processor({ type: ChunkType.LLM_RESPONSE_CREATED })
+    clock = 1000
+    await processor({
+      type: ChunkType.MCP_TOOL_PENDING,
+      responses: [{ id: 'chat-tool', tool: { name: 'read_document' }, arguments: {}, status: 'pending' } as any]
+    })
+    clock = 4000
+    await processor({ type: ChunkType.TEXT_COMPLETE, text: 'Answer' })
+    clock = 5000
+    await processor({ type: ChunkType.LLM_RESPONSE_COMPLETE })
+    expect(getState().messages.entities[assistantMsgId].providerMetadata?.responseTiming).toMatchObject({
+      firstTokenMs: 4000,
+      elapsedMs: 5000
+    })
+  })
+
   it('records full-round timing, preserves other metadata and uses the actual finished timestamp', async () => {
     vi.useFakeTimers({ toFake: ['Date'] })
     vi.setSystemTime('2026-10-11T01:30:00Z')

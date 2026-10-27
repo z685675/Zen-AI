@@ -338,6 +338,10 @@ figcaption button {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px 10px;
 }
+.image-size-field {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
 .reference-header {
   display: flex;
   justify-content: space-between;
@@ -415,8 +419,21 @@ figcaption button {
   flex-direction: column;
   gap: 13px;
 }
-.more-button {
-  align-self: flex-start;
+.advanced h2,
+.advanced h3 {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+}
+.editing-settings,
+.model-comparison {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.model-comparison {
+  border-top: 1px solid var(--line);
+  padding-top: 13px;
 }
 .history {
   display: flex;
@@ -746,10 +763,4 @@ figure img {
   max-width: 100%;
   max-height: 360px;
   object-fit: contain;
-}
-.advanced details {
-  padding: 8px 0;
-}
-.advanced summary {
-  cursor: pointer;
 }

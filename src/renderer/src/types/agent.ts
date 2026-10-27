@@ -4,6 +4,7 @@
  *
  * WARNING: Any null value will be converted to undefined from api.
  */
+import { getOpenCodeAgentMode } from '@shared/agents/opencodeMode'
 import type { ModelMessage, TextStreamPart } from 'ai'
 import * as z from 'zod'
 
@@ -589,17 +590,8 @@ export type PermissionModeCard = {
   unsupported?: boolean
 }
 
-export type PermissionModeDisplayMode = 'plan' | 'acceptEdits' | 'bypassPermissions'
+export type PermissionModeDisplayMode = 'plan' | 'acceptEdits'
 
 export const normalizePermissionMode = (mode?: PermissionMode | null): PermissionModeDisplayMode => {
-  switch (mode) {
-    case 'plan':
-      return 'plan'
-    case 'bypassPermissions':
-      return 'bypassPermissions'
-    case 'default':
-    case 'acceptEdits':
-    default:
-      return 'acceptEdits'
-  }
+  return getOpenCodeAgentMode(mode) === 'plan' ? 'plan' : 'acceptEdits'
 }

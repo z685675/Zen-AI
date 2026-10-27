@@ -473,6 +473,37 @@ describe('AssistantServer runtime tools', () => {
     }
   })
 
+  it('marks only explicit complete manifests as final and preserves every file on disk', async () => {
+    const root = await fs.mkdtemp(path.join(tmpdir(), 'zen-assistant-final-manifest-'))
+    tempDirs.push(root)
+    const original = path.join(root, 'report.txt')
+    const revision = path.join(root, 'report (1).txt')
+    await fs.writeFile(original, 'Original')
+    await fs.writeFile(revision, 'Final')
+    const { assistant, client } = await createClient(root)
+    try {
+      const append = await client.callTool({ name: 'present_files', arguments: { file_paths: [original] } })
+      expect(JSON.parse((append.content[0] as { text: string }).text).final).toBeUndefined()
+      const final = await client.callTool({ name: 'present_files', arguments: { file_paths: [revision], final: true } })
+      expect(JSON.parse((final.content[0] as { text: string }).text)).toMatchObject({
+        status: 'ready',
+        final: true,
+        files: [{ path: revision }]
+      })
+      expect(await fs.readFile(original, 'utf8')).toBe('Original')
+      expect(await fs.readFile(revision, 'utf8')).toBe('Final')
+      const rejected = await client.callTool({
+        name: 'present_files',
+        arguments: { file_paths: [path.join(root, 'gone.txt')], final: true }
+      })
+      expect(rejected.isError).toBe(true)
+      expect(JSON.stringify(rejected.content)).not.toContain('"status":"ready"')
+    } finally {
+      await client.close()
+      await assistant.mcpServer.close()
+    }
+  })
+
   it('registers existing output folders for persistent shortcuts, still enforcing allowed roots', async () => {
     const root = await fs.mkdtemp(path.join(tmpdir(), 'zen-assistant-present-folder-'))
     tempDirs.push(root)
@@ -1659,4 +1690,141 @@ describe('AssistantServer runtime tools', () => {
       await assistant.mcpServer.close()
     }
   })
+})
+
+it('accepts the common delivery paths alias with the same file verification and rejects conflicting lists', async () => {
+  const root = await fs.mkdtemp(path.join(tmpdir(), 'zen-delivery-alias-'))
+  tempDirs.push(root)
+  const valid = path.join(root, 'valid.txt')
+  const invalid = path.join(root, 'invalid.pdf')
+  await fs.writeFile(valid, 'Final result')
+  await fs.writeFile(invalid, 'Not a PDF')
+  const { assistant, client } = await createClient(root)
+  try {
+    const result = await client.callTool({ name: 'present_files', arguments: { paths: [valid], final: true } })
+    expect(result.isError).not.toBe(true)
+    expect(JSON.parse((result.content[0] as { text: string }).text)).toMatchObject({
+      status: 'ready',
+      final: true,
+      files: [{ path: valid }]
+    })
+    for (const args of [
+      { paths: [invalid] },
+      { paths: ['../outside.txt'] },
+      { file_paths: [valid], paths: [invalid] }
+    ]) {
+      const rejected = await client.callTool({ name: 'present_files', arguments: args })
+      expect(rejected.isError).toBe(true)
+      expect(JSON.stringify(rejected.content)).not.toContain('"status":"ready"')
+    }
+  } finally {
+    await client.close()
+    await assistant.mcpServer.close()
+  }
+})
+
+it('creates and delivers an exact two-page PDF through the advertised MCP contract', async () => {
+  const root = await fs.mkdtemp(path.join(tmpdir(), 'zen-pdf-pages-'))
+  tempDirs.push(root)
+  const { assistant, client } = await createClient(root, {
+    workspace: root,
+    readNativeSkills: async () => [],
+    approveOverwrite: async () => false
+  })
+  try {
+    const tools = await client.listTools()
+    const schema = tools.tools.find((tool) => tool.name === 'create_file')?.inputSchema
+    expect(schema?.properties).toMatchObject({ pdf_pages: { type: 'array' }, expected_pages: { type: 'integer' } })
+    const result = await client.callTool({
+      name: 'create_file',
+      arguments: {
+        file_path: 'project.pdf',
+        title: 'ZX7319 项目说明',
+        pdf_pages: [
+          '# 项目概况\n客户青禾；负责人林悦；交付日2026年11月20日。旧预算600元已作废。',
+          '# 最终预算\n材料费120元、制作费230元、运输费350元。最终预算700元。'
+        ]
+      }
+    })
+    expect(result.isError).not.toBe(true)
+    const created = JSON.parse((result.content[0] as { text: string }).text)
+    expect(created.verification.details).toMatchObject({ pages: 2, expected_pages: 2, rendered_pages: 2 })
+    expect(created.verification.checks).toContain('pdf-page-count')
+    expect((await PDFDocument.load(await fs.readFile(created.path))).getPageCount()).toBe(2)
+    expect(await fs.readdir(root)).toEqual(['project.pdf'])
+    const delivered = await client.callTool({
+      name: 'present_files',
+      arguments: { file_paths: [created.path], final: true }
+    })
+    expect(delivered.isError).not.toBe(true)
+    expect(JSON.parse((delivered.content[0] as { text: string }).text).files).toHaveLength(1)
+  } finally {
+    await client.close()
+    await assistant.mcpServer.close()
+  }
+})
+
+it('rejects wrong PDF page counts before writing, numbering or approving overwrite', async () => {
+  const root = await fs.mkdtemp(path.join(tmpdir(), 'zen-pdf-count-'))
+  tempDirs.push(root)
+  const approve = vi.fn(async () => true)
+  const { assistant, client } = await createClient(root, {
+    workspace: root,
+    approveOverwrite: approve,
+    readNativeSkills: async () => []
+  })
+  const original = path.join(root, 'project.pdf')
+  await fs.writeFile(original, 'Original file must stay intact')
+  try {
+    for (const overwrite of [false, true]) {
+      const result = await client.callTool({
+        name: 'create_file',
+        arguments: { file_path: original, content: '# One page\nFinal budget 700', expected_pages: 2, overwrite }
+      })
+      expect(result.isError).toBe(true)
+      expect(JSON.stringify(result.content)).toContain('expected 2, received 1')
+      expect(readAssistantToolFailure(result)).toMatchObject({ code: 'validation', automatic_retry: false })
+    }
+    const overflow = await client.callTool({
+      name: 'create_file',
+      arguments: {
+        file_path: 'overflow.pdf',
+        pdf_pages: [Array(110).fill('Long body paragraph.').join('\n\n'), 'Final budget 700']
+      }
+    })
+    expect(overflow.isError).toBe(true)
+    expect(JSON.stringify(overflow.content)).toContain('PDF page count mismatch')
+    expect(await fs.readdir(root)).toEqual(['project.pdf'])
+    expect(await fs.readFile(original, 'utf8')).toBe('Original file must stay intact')
+    expect(approve).not.toHaveBeenCalled()
+  } finally {
+    await client.close()
+    await assistant.mcpServer.close()
+  }
+})
+
+it('rejects contradictory or invalid PDF pagination inputs without creating files', async () => {
+  const root = await fs.mkdtemp(path.join(tmpdir(), 'zen-pdf-input-'))
+  tempDirs.push(root)
+  const { assistant, client } = await createClient(root)
+  try {
+    for (const args of [
+      { pdf_pages: [] },
+      { pdf_pages: ['   '] },
+      { pdf_pages: ['First'], content: 'Conflicting body' },
+      { pdf_pages: ['First', 'Second'], expected_pages: 1 },
+      { expected_pages: 0 },
+      { expected_pages: 1.5 },
+      { expected_pages: '2' },
+      { pdf_pages: ['First'], format: 'txt' },
+      { content: 'Text', expected_pages: 1, format: 'txt' }
+    ]) {
+      const result = await client.callTool({ name: 'create_file', arguments: { file_path: 'invalid.pdf', ...args } })
+      expect(result.isError).toBe(true)
+    }
+    expect(await fs.readdir(root)).toEqual([])
+  } finally {
+    await client.close()
+    await assistant.mcpServer.close()
+  }
 })

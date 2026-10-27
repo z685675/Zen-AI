@@ -14,6 +14,7 @@ import { useTranslation } from 'react-i18next'
 import styled from 'styled-components'
 
 import { SettingContainer, SettingDivider, SettingGroup, SettingRow, SettingTitle } from '.'
+import HotpatchSettings from './HotpatchSettings'
 
 const AboutSettings: FC = () => {
   const [version, setVersion] = useState('')
@@ -176,6 +177,8 @@ const AboutSettings: FC = () => {
       </SettingGroup>
 
       <SettingGroup theme={theme}>
+        <HotpatchSettings />
+        <SettingDivider />
         <SettingRow>
           <SettingRowTitle>
             <Download size={18} />

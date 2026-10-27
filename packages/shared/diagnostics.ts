@@ -163,7 +163,8 @@ export type DiagnosticAttribution = {
 
 export function attributeDiagnostic(
   events: DiagnosticEvent[],
-  backend: Array<Record<string, unknown>> = []
+  backend: Array<Record<string, unknown>> = [],
+  savedError?: unknown
 ): DiagnosticAttribution {
   const facts = events.map((item) => `${item.stage}:${item.event}`)
   const finalError = [...events].reverse().find((item) => item.event === 'failed')
@@ -203,6 +204,30 @@ export function attributeDiagnostic(
     .reverse()
     .find((item) => item.stage === 'runtime' && item.event === 'failed' && item.details?.startup === true)
   const completedTransport = transportEvents.some((item) => item.event === 'body-complete')
+  // Local runtime deadlines can be wrapped in a model SDK error after HTTP
+  // succeeded. Inspect only the terminal error, never a recovered earlier one.
+  let terminalError: unknown = finalError?.details?.error ?? savedError
+  for (let depth = 0; depth < 4 && terminalError && typeof terminalError === 'object'; depth++) {
+    const error = terminalError as Record<string, unknown>
+    if (
+      error.zenFailureStage === 'local-task-deadline' ||
+      ['agent_human_wait_timeout', 'agent_execution_timeout', 'agent_inactivity_timeout'].includes(String(error.code))
+    ) {
+      return {
+        owner: 'zen-ai',
+        stage: 'local-task-deadline',
+        confidence: 'confirmed',
+        explanation:
+          error.code === 'agent_human_wait_timeout'
+            ? '任务在本地等待用户确认或操作时超过时限，应检查确认入口和等待原因；此前 HTTP 成功不代表任务仍在生成。'
+            : '智能助手本地任务计时器结束了本次任务；计时器触发位置明确，具体停滞原因仍需结合时间线判断。',
+        evidence: [
+          finalError ? JSON.stringify(finalError) : `saved-message-error:${String(error.code ?? error.zenFailureStage)}`
+        ]
+      }
+    }
+    terminalError = error.cause
+  }
   const localFailure = [...events]
     .reverse()
     .find((item) => item.event === 'failed' && ['preparation', 'context', 'ui', 'storage'].includes(item.stage))
@@ -262,6 +287,33 @@ export function attributeDiagnostic(
       evidence: [JSON.stringify(processExit)]
     }
   }
+  const quotaFailure = [...events]
+    .reverse()
+    .find(
+      (item) =>
+        item.stage === 'transport' &&
+        ['failed', 'quota-refused'].includes(item.event) &&
+        item.details?.phase === 'quota-admission'
+    )
+  if (
+    quotaFailure &&
+    !events
+      .slice(events.indexOf(quotaFailure) + 1)
+      .some(
+        (item) =>
+          (item.stage === 'transport' &&
+            ['quota-check-complete', 'request-started', 'body-complete'].includes(item.event)) ||
+          (item.stage === 'runtime' && item.event === 'complete')
+      )
+  )
+    return {
+      owner: 'undetermined',
+      stage: 'quota-admission',
+      confidence: 'confirmed',
+      explanation:
+        '请求停在模型每日额度授权环节，尚未发起本次模型调用；额度拒绝、连接超时及后台异常需结合授权接口的响应或服务器日志区分，不能认定为模型或渠道故障。',
+      evidence: [JSON.stringify(quotaFailure)]
+    }
   if (apiFailure?.failureStage === 'downstream-delivery')
     return {
       owner: 'network-or-proxy',

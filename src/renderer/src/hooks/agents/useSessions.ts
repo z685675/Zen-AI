@@ -7,6 +7,7 @@ import type {
   GetAgentSessionResponse,
   ListAgentSessionsResponse
 } from '@renderer/types'
+import { clearAgentSessionDraft } from '@renderer/utils/agentSessionDraft'
 import { formatErrorMessageWithPrefix } from '@renderer/utils/error'
 import { useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -116,6 +117,7 @@ export const useSessions = (agentId: string | null, pageSize = DEFAULT_SESSION_P
       try {
         const targetSession = sessions.find((session) => session.id === id)
         await client.deleteSession(agentId, id)
+        clearAgentSessionDraft(agentId, id)
         const workspace = targetSession?.accessible_paths?.[0]
         if (workspace) {
           // Session deletion removes the remote session; clean the local

@@ -142,6 +142,26 @@ describe('observed transport', () => {
 })
 
 describe('evidence-based attribution', () => {
+  it('identifies quota admission as a separate stage and ignores it once it recovers', () => {
+    const r = new DiagnosticRecorder()
+    r.record('op', 'transport', 'quota-check-started', { phase: 'quota-admission' })
+    r.record('op', 'transport', 'failed', {
+      phase: 'quota-admission',
+      receivedResponse: false,
+      url: 'https://example.test/api/usage/token/model-daily/turn',
+      error: { code: 'model_daily_quota_unavailable' }
+    })
+    r.record('op', 'runtime', 'failed', { error: 'native retry budget exhausted' })
+    expect(attributeDiagnostic(r.get('op')!.events)).toMatchObject({
+      owner: 'undetermined',
+      stage: 'quota-admission',
+      confidence: 'confirmed'
+    })
+    r.record('op', 'transport', 'quota-check-complete', { phase: 'quota-admission' })
+    r.record('op', 'transport', 'request-started')
+    r.record('op', 'transport', 'headers-received', { status: 503, gateway: true })
+    expect(attributeDiagnostic(r.get('op')!.events)).toMatchObject({ owner: 'zen-api', stage: 'http-response' })
+  })
   it('attributes an observed unexpected active OpenCode exit but not a requested, idle or recovered exit', () => {
     const r = new DiagnosticRecorder()
     r.record('op', 'runtime', 'process-exit', { runtime: 'opencode', unexpected: true, active: true, code: 7 })
@@ -250,4 +270,62 @@ describe('evidence-based attribution', () => {
     r.record('op', 'response', 'failed', { error: { name: 'AI_APICallError', message: 'upstream stream error' } })
     expect(attributeDiagnostic(r.get('op')!.events)).toMatchObject({ owner: 'zen-api', confidence: 'suspected' })
   })
+})
+
+describe('terminal local deadline attribution', () => {
+  it.each(['agent_human_wait_timeout', 'agent_inactivity_timeout', 'agent_execution_timeout'])(
+    'keeps wrapped %s local after a successful gateway response',
+    (code) => {
+      const result = attributeDiagnostic([
+        { at: '2026-10-26T00:00:00Z', stage: 'transport', event: 'request-started', details: { traceId: 'r1' } },
+        {
+          at: '2026-10-26T00:00:01Z',
+          stage: 'transport',
+          event: 'headers-received',
+          details: { traceId: 'r1', gateway: true, status: 200 }
+        },
+        { at: '2026-10-26T00:00:02Z', stage: 'transport', event: 'body-complete', details: { traceId: 'r1' } },
+        {
+          at: '2026-10-26T00:30:02Z',
+          stage: 'response',
+          event: 'failed',
+          details: {
+            error: { name: 'AI_ProviderSpecificError', cause: { code, zenFailureStage: 'local-task-deadline' } }
+          }
+        }
+      ])
+      expect(result).toMatchObject({ owner: 'zen-ai', stage: 'local-task-deadline', confidence: 'confirmed' })
+    }
+  )
+  it('does not attribute a later provider failure to an earlier recovered local deadline', () => {
+    const result = attributeDiagnostic([
+      {
+        at: '2026-10-26T00:00:00Z',
+        stage: 'runtime',
+        event: 'failed',
+        details: { error: { code: 'agent_human_wait_timeout' } }
+      },
+      { at: '2026-10-26T00:00:01Z', stage: 'transport', event: 'request-started', details: { traceId: 'r2' } },
+      {
+        at: '2026-10-26T00:00:02Z',
+        stage: 'transport',
+        event: 'headers-received',
+        details: { traceId: 'r2', gateway: true, status: 200 }
+      },
+      { at: '2026-10-26T00:00:03Z', stage: 'transport', event: 'body-complete', details: { traceId: 'r2' } },
+      {
+        at: '2026-10-26T00:00:04Z',
+        stage: 'response',
+        event: 'failed',
+        details: { error: { name: 'AI_ProviderSpecificError' } }
+      }
+    ])
+    expect(result.stage).toBe('gateway-or-upstream-response')
+  })
+})
+
+it('recognizes a saved local deadline when live diagnostic events have expired', () => {
+  expect(
+    attributeDiagnostic([], [], { name: 'AI_ProviderSpecificError', cause: { code: 'agent_human_wait_timeout' } })
+  ).toMatchObject({ owner: 'zen-ai', stage: 'local-task-deadline', confidence: 'confirmed' })
 })

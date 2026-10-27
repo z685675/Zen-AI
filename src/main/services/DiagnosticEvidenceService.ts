@@ -138,6 +138,9 @@ export async function collectMainDiagnostic(id: string) {
       componentVersions,
       packaged: app.isPackaged,
       appVersion: app.getVersion(),
+      hotpatch: await import('./hotpatch/service')
+        .then((module) => module.hotpatchService.status)
+        .catch(() => ({ status: 'unavailable' })),
       resourcesPath: process.resourcesPath,
       executables,
       snapshotTime: 'export-time'

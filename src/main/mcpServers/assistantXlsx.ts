@@ -478,7 +478,10 @@ function normalizeSheet(
   if (rawRows.length > MAX_ROWS) throw new Error(`${name}: at most ${MAX_ROWS} rows are supported.`)
 
   const rows = rawRows.map((row, rowIndex) => {
-    if (!Array.isArray(row)) throw new Error(`${name}: row ${rowIndex + 1} must be an array.`)
+    if (!Array.isArray(row))
+      throw new Error(
+        `${name}: row ${rowIndex + 1} must be an array. Use two-dimensional rows, e.g. [["Item","Amount"],["Materials",120]].`
+      )
     if (row.length > MAX_COLUMNS) throw new Error(`${name}: at most ${MAX_COLUMNS} columns are supported.`)
     return row.map((cell, columnIndex) =>
       normalizeCell(cell, `${name}!${columnName(columnIndex + 1)}${rowIndex + 1}`, productQuality)

@@ -46,6 +46,7 @@ resources/binaries/
 !.env.example
 
 # Local
+/.release-body.md
 local
 src/renderer/public/announcements-dev.json
 .aider*
@@ -83,7 +84,8 @@ test-results
 YOUR_MEMORY_FILE_PATH
 
 .sessions/
-# Generated from the pinned source in packages/image-canvas on every desktop build.
+# Ignore stale local artifacts of the removed canvas demo; never ship them.
 resources/image-canvas/
 packages/image-canvas/*.tsbuildinfo
+# Generated image workbench resources.
 resources/image-workbench/

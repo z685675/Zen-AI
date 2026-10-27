@@ -26,7 +26,11 @@ import { prepareOpenCodeOfflineConfig } from '../src/main/services/agents/servic
 async function main() {
   const lightweight = process.argv[2] === '--lightweight'
   const permissions = process.argv[2] === '--permissions'
-  const packagedResources = process.argv[2] && !lightweight && !permissions ? path.resolve(process.argv[2]) : undefined
+  const plan = process.argv[2] === '--plan'
+  const reasoning = process.argv[2] === '--reasoning'
+  const smokeModel = reasoning ? 'gpt-smoke' : 'zen-smoke'
+  const packagedResources =
+    process.argv[2] && !lightweight && !permissions && !plan && !reasoning ? path.resolve(process.argv[2]) : undefined
   if (process.argv.length > 3) throw new Error('Usage: pnpm smoke:opencode [packaged-resources-directory]')
   const require = createRequire(__filename)
   const wrapperRequire = createRequire(require.resolve('opencode-ai/package.json'))
@@ -56,6 +60,7 @@ async function main() {
   const mcpSessions = new Map<string, (typeof mcpEntries)[number]>()
   const mcpInitialized = new Set<string>()
   const usedModels = new Set<string>()
+  let reasoningVerified = false
   const gateway = createServer(async (req, res) => {
     const mcpRoute = req.url?.match(/^\/v1\/(assistant|browser)\/[^/]+\/mcp$/)?.[1]
     if (mcpRoute) {
@@ -120,6 +125,7 @@ async function main() {
     requestAudits.push({ source: req.headers.originator, task: req.headers['x-zen-task-id'] })
     sawLegacyBackground ||= JSON.stringify(body.messages).includes('ZEN_LEGACY_BACKGROUND purple')
     usedModels.add(body.model)
+    if (reasoning && body.model === smokeModel) reasoningVerified ||= body.reasoning_effort === 'high'
     if (lightweight)
       lightweightInventories.push((body.tools || []).map((tool: any) => tool.function?.name || tool.name))
     const latestUser = body.messages.findLast((message: any) => message.role === 'user')
@@ -146,21 +152,40 @@ async function main() {
                 function: {
                   name: lightweight
                     ? body.tools.find((tool: any) => tool.function?.name?.endsWith('__create_file')).function.name
-                    : 'write',
-                  arguments: JSON.stringify({
-                    filePath: path.join(root, 'workspace', 'result.txt'),
-                    content: 'verified local tool execution'
-                  })
+                    : reasoning
+                      ? 'apply_patch'
+                      : 'write',
+                  arguments: JSON.stringify(
+                    reasoning
+                      ? {
+                          patchText: [
+                            '*** Begin Patch',
+                            `*** Add File: ${path.join(root, 'workspace', 'result.txt')}`,
+                            '+verified local tool execution',
+                            '*** End Patch'
+                          ].join('\n')
+                        }
+                      : {
+                          filePath: path.join(
+                            root,
+                            'workspace',
+                            JSON.stringify(latestUser).includes('CREATE_SMOKE_FILE_APPROVAL')
+                              ? 'approval.txt'
+                              : 'result.txt'
+                          ),
+                          content: 'verified local tool execution'
+                        }
+                  )
                 }
               }
             ]
           }
         : { content: 'local mock reply' }
     res.write(
-      `data: ${JSON.stringify({ id: 'chatcmpl_smoke', object: 'chat.completion.chunk', created: 1, model: 'zen-smoke', choices: [{ index: 0, delta, finish_reason: null }] })}\n\n`
+      `data: ${JSON.stringify({ id: 'chatcmpl_smoke', object: 'chat.completion.chunk', created: 1, model: smokeModel, choices: [{ index: 0, delta, finish_reason: null }] })}\n\n`
     )
     res.write(
-      `data: ${JSON.stringify({ id: 'chatcmpl_smoke', object: 'chat.completion.chunk', created: 1, model: 'zen-smoke', choices: [{ index: 0, delta: {}, finish_reason: toolsRequested && !hasToolResult ? 'tool_calls' : 'stop' }], usage: { prompt_tokens: 2000, completion_tokens: 20, total_tokens: 2020 } })}\n\n`
+      `data: ${JSON.stringify({ id: 'chatcmpl_smoke', object: 'chat.completion.chunk', created: 1, model: smokeModel, choices: [{ index: 0, delta: {}, finish_reason: toolsRequested && !hasToolResult ? 'tool_calls' : 'stop' }], usage: { prompt_tokens: 2000, completion_tokens: 20, total_tokens: 2020 } })}\n\n`
     )
     res.end('data: [DONE]\n\n')
   })
@@ -174,7 +199,7 @@ async function main() {
   const smokeSession = {
     id: 'zen-local-smoke',
     accessible_paths: [path.join(root, 'workspace')],
-    configuration: { permission_mode: permissions ? 'default' : 'bypassPermissions' }
+    configuration: { permission_mode: plan ? 'plan' : permissions ? 'default' : 'bypassPermissions' }
   } as any
   const config = buildOpenCodeConfig({
     session: lightweight
@@ -185,15 +210,16 @@ async function main() {
       type: 'new-api',
       apiHost: `http://127.0.0.1:${gatewayPort}/v1`,
       apiKey: 'local-placeholder',
-      models: [{ id: 'zen-smoke', name: 'Local smoke' }]
+      models: [{ id: smokeModel, name: 'Local smoke' }]
     } as any,
-    modelId: 'zen-smoke',
+    modelId: smokeModel,
+    effort: reasoning ? 'high' : undefined,
     skillPaths: [path.join(root, 'skill')],
     api: { host: '127.0.0.1', port: gatewayPort, apiKey: 'local-placeholder' }
   })
-  config.provider['zen-selected'].models['zen-smoke-2'] = {
-    ...config.provider['zen-selected'].models['zen-smoke'],
-    id: 'zen-smoke-2',
+  config.provider['zen-selected'].models[`${smokeModel}-2`] = {
+    ...config.provider['zen-selected'].models[smokeModel],
+    id: `${smokeModel}-2`,
     name: 'Second mock model'
   }
   const toolBinDir = path.join(root, 'tools')
@@ -270,7 +296,7 @@ async function main() {
         `/session/${session.id}/message`,
         'POST',
         {
-          model: { providerID: 'zen-selected', modelID: 'zen-smoke' },
+          model: { providerID: 'zen-selected', modelID: smokeModel },
           parts: [{ type: 'text', text: 'CREATE_LIGHTWEIGHT_OUTPUT' }]
         },
         controller.signal
@@ -299,63 +325,97 @@ async function main() {
     )
       throw new Error('Native Skill inventory did not report its actual definition path')
     if (requests !== 0) throw new Error('Read-only native Skill inventory unexpectedly called a model')
-    if (permissions) {
-      const session = await client.request<{ id: string }>(
-        '/session',
-        'POST',
-        { title: 'Native approval' },
-        controller.signal
-      )
-      const events = client.events(controller.signal)
-      await events.next()
-      const submit = client.request(
-        `/session/${session.id}/prompt_async`,
-        'POST',
-        {
-          agent: 'build',
-          model: { providerID: 'zen-selected', modelID: 'zen-smoke' },
-          parts: [{ type: 'text', text: 'CREATE_SMOKE_FILE' }]
-        },
-        controller.signal
-      )
-      let approved = false
-      let output = false
-      for await (const event of events) {
-        const props = event.properties
-        if (
-          props.sessionID !== session.id &&
-          props.info?.sessionID !== session.id &&
-          props.part?.sessionID !== session.id
-        )
-          continue
-        if (event.type === 'session.error') throw new Error('Native approval fixture failed')
-        if (event.type === 'permission.asked') {
-          if (
-            props.permission !== 'edit' ||
-            path.resolve(props.metadata.filepath) !== path.join(root, 'workspace', 'result.txt') ||
-            !props.tool?.callID
-          )
-            throw new Error('Unexpected native approval request')
-          await client.request(`/permission/${props.id}/reply`, 'POST', { reply: 'once' }, controller.signal)
-          approved = true
+    if (permissions || plan) {
+      const agents = await client.request<any[]>('/agent', 'GET', undefined, controller.signal)
+      const rule = (agent: string, permission: string, pattern: string) =>
+        agents
+          .find((entry) => entry.name === agent)
+          ?.permission.findLast((entry: any) => entry.permission === permission && entry.pattern === pattern)?.action
+      if (plan) {
+        for (const permission of ['edit', 'bash', 'mcp__assistant_*', 'mcp__browser_*']) {
+          if (rule('plan', permission, '*') !== 'deny') throw new Error(`Native Plan did not deny ${permission}`)
         }
-        if (
-          event.type === 'message.part.updated' &&
-          props.part.type === 'text' &&
-          props.part.text?.includes('local mock reply')
+        if (rule('plan', 'mcp__assistant__read_document', '*') !== 'allow')
+          throw new Error('Native Plan lost authorized document reading')
+        process.stdout.write(
+          'PASS native Plan: no editing, terminal or mutating MCP; authorized document reading retained; zero paid requests.\n'
         )
-          output = true
-        if (approved && output && event.type === 'session.status' && props.status.type === 'idle') break
+        return
       }
-      await submit
       if (
-        !approved ||
-        !output ||
-        (await readFile(path.join(root, 'workspace', 'result.txt'), 'utf8')) !== 'verified local tool execution'
+        rule('build', '*', '*') !== 'allow' ||
+        rule('build', 'read', '*.env') !== 'ask' ||
+        rule('build', 'doom_loop', '*') !== 'ask' ||
+        rule('build', 'bash', 'rm *') !== 'ask' ||
+        rule('plan', 'edit', '*') !== 'deny'
       )
-        throw new Error('Native one-time write approval did not complete')
+        throw new Error('Native Plan/Build rules lost their execution or safety boundary')
+      // Exercise both normal Build execution and an explicitly requested
+      // one-time approval. The product no longer makes every edit ask.
+      for (const ask of [false, true]) {
+        const filename = ask ? 'approval.txt' : 'result.txt'
+        const session = await client.request<{ id: string }>(
+          '/session',
+          'POST',
+          {
+            title: ask ? 'Native explicit approval' : 'Native Build automatic write',
+            ...(ask ? { permission: [{ permission: 'edit', pattern: '*', action: 'ask' }] } : {})
+          },
+          controller.signal
+        )
+        const events = client.events(controller.signal)
+        await events.next()
+        const submit = client.request(
+          `/session/${session.id}/prompt_async`,
+          'POST',
+          {
+            agent: 'build',
+            model: { providerID: 'zen-selected', modelID: smokeModel },
+            parts: [{ type: 'text', text: ask ? 'CREATE_SMOKE_FILE_APPROVAL' : 'CREATE_SMOKE_FILE' }]
+          },
+          controller.signal
+        )
+        let approved = false
+        let output = false
+        for await (const event of events) {
+          const props = event.properties
+          if (
+            props.sessionID !== session.id &&
+            props.info?.sessionID !== session.id &&
+            props.part?.sessionID !== session.id
+          )
+            continue
+          if (event.type === 'session.error') throw new Error('Native approval fixture failed')
+          if (event.type === 'permission.asked') {
+            if (
+              !ask ||
+              props.permission !== 'edit' ||
+              path.resolve(props.metadata.filepath) !== path.join(root, 'workspace', filename) ||
+              !props.tool?.callID
+            )
+              throw new Error('Unexpected native approval request')
+            await client.request(`/permission/${props.id}/reply`, 'POST', { reply: 'once' }, controller.signal)
+            approved = true
+          }
+          if (
+            event.type === 'message.part.updated' &&
+            props.part.type === 'text' &&
+            props.part.text?.includes('local mock reply')
+          )
+            output = true
+          if ((!ask || approved) && output && event.type === 'session.status' && props.status.type === 'idle') break
+        }
+        await submit
+        if (
+          approved !== ask ||
+          !output ||
+          (await readFile(path.join(root, 'workspace', filename), 'utf8')) !== 'verified local tool execution'
+        )
+          throw new Error(`Native ${ask ? 'approved' : 'automatic'} write did not complete`)
+        await events.return(undefined)
+      }
       process.stdout.write(
-        'PASS native edit approval: linked tool ID, one-time reply and actual file output; zero paid requests.\n'
+        'PASS native Build: automatic file output, sensitive reads/deletion guarded, explicit one-time approval; zero paid requests.\n'
       )
       return
     }
@@ -378,7 +438,7 @@ async function main() {
     const shellResult = await client.request<any>(
       `/session/${toolSession.id}/shell`,
       'POST',
-      { agent: 'build', model: { providerID: 'zen-selected', modelID: 'zen-smoke' }, command: 'zen-smoke-tool' },
+      { agent: 'build', model: { providerID: 'zen-selected', modelID: smokeModel }, command: 'zen-smoke-tool' },
       controller.signal
     )
     if (
@@ -403,7 +463,7 @@ async function main() {
       {
         messageID: `msg_${(BigInt(Date.now()) * 4096n).toString(16).padStart(12, '0')}${randomBytes(7).toString('hex')}`,
         noReply: true,
-        model: { providerID: 'zen-selected', modelID: 'zen-smoke' },
+        model: { providerID: 'zen-selected', modelID: smokeModel },
         parts: [
           {
             type: 'text',
@@ -415,7 +475,7 @@ async function main() {
       controller.signal
     )
     if (requests !== 0) throw new Error('noReply unexpectedly called model')
-    const turn = async (text: string, modelID = 'zen-smoke', targetSession = session.id) => {
+    const turn = async (text: string, modelID = smokeModel, targetSession = session.id) => {
       const turnStartedAt = performance.now()
       const auditStart = requestAudits.length
       const taskId = `local-smoke-turn-${++auditTurn}`
@@ -476,7 +536,10 @@ async function main() {
     if (Object.values(mcpStatus).some((value) => value.status !== 'connected') || Object.keys(mcpStatus).length !== 2)
       throw new Error('Native MCP discovery did not finish successfully')
     await turn('CREATE_SMOKE_FILE')
-    if ((await readFile(path.join(root, 'workspace', 'result.txt'), 'utf8')) !== 'verified local tool execution')
+    if (
+      (await readFile(path.join(root, 'workspace', 'result.txt'), 'utf8')) !==
+      `verified local tool execution${reasoning ? '\n' : ''}`
+    )
       throw new Error('Native tool file verification failed')
     const history = await client.request<any[]>(`/session/${session.id}/message`, 'GET', undefined, controller.signal)
     if (history.filter((item) => item.info.role === 'user').length !== 3)
@@ -484,7 +547,7 @@ async function main() {
     await client.request(
       `/session/${session.id}/summarize`,
       'POST',
-      { providerID: 'zen-selected', modelID: 'zen-smoke' },
+      { providerID: 'zen-selected', modelID: smokeModel },
       controller.signal
     )
     const compacted = await client.request<any[]>(`/session/${session.id}/message`, 'GET', undefined, controller.signal)
@@ -496,8 +559,9 @@ async function main() {
       )
     )
       throw new Error('Native compaction checkpoint missing')
-    await turn('hello after compaction', 'zen-smoke-2')
-    if (!usedModels.has('zen-smoke-2')) throw new Error('Native model switch did not use the requested model')
+    await turn('hello after compaction', `${smokeModel}-2`)
+    if (reasoning && !reasoningVerified) throw new Error('Native model request lost the configured reasoning effort')
+    if (!usedModels.has(`${smokeModel}-2`)) throw new Error('Native model switch did not use the requested model')
     const cancelEvents = new AbortController()
     const cancelIterator = client.events(AbortSignal.any([cancelEvents.signal, controller.signal]))
     await cancelIterator.next()
@@ -505,7 +569,7 @@ async function main() {
       `/session/${session.id}/prompt_async`,
       'POST',
       {
-        model: { providerID: 'zen-selected', modelID: 'zen-smoke' },
+        model: { providerID: 'zen-selected', modelID: smokeModel },
         parts: [{ type: 'text', text: 'WAIT_FOR_CANCEL' }]
       },
       controller.signal
@@ -589,7 +653,7 @@ async function main() {
     if (JSON.stringify(originalHistory) !== JSON.stringify(resumedHistory))
       throw new Error('Branch/delete changed original conversation')
     if (requests !== requestsBeforeHistory) throw new Error('History operations unexpectedly called a model')
-    await turn('hello in branch after deletion', 'zen-smoke', branch.id)
+    await turn('hello in branch after deletion', smokeModel, branch.id)
     const branchContinued = await client.request<any[]>(
       `/session/${branch.id}/message`,
       'GET',

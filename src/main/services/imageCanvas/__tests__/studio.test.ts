@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { generateCanvasImages } from '../protocol'
 import { readStudioImages, studioModels } from '../studio'
+import type { StudioAssets } from '../StudioAssetCache'
 
 const provider: ImageCanvasProvider = {
   id: 'zen',
@@ -49,6 +50,79 @@ afterEach(() => {
 })
 
 describe('background Zen image jobs', () => {
+  it.each([
+    [true, 200, 0],
+    [true, 404, 1],
+    [true, 500, 1],
+    [false, 200, 1]
+  ])(
+    'checks cached references with capability=%s and HEAD=%s, uploading %s times',
+    async (supported, status, uploads) => {
+      const cachedId = randomUUID()
+      const uploadedId = randomUUID()
+      const cache: StudioAssets = { find: () => cachedId, remember: vi.fn(), forget: vi.fn(), alias: vi.fn() }
+      const accepted = vi.fn()
+      const request = vi.fn(async (url: string, init?: RequestInit) => {
+        if (url.endsWith('/bootstrap')) {
+          const data = await bootstrap().json()
+          return json({ ...data.data, asset_reuse: supported })
+        }
+        if (init?.method === 'HEAD') {
+          expect(init.headers).toBeInstanceOf(Headers)
+          expect((init.headers as Headers).get('Authorization')).toBe('Bearer secret-key')
+          return new Response(null, { status })
+        }
+        if (url.endsWith('/assets')) return json({ id: uploadedId })
+        if (url.endsWith('/jobs')) {
+          expect(JSON.parse(init!.body as string).asset_ids).toEqual([uploads ? uploadedId : cachedId])
+          return json(job)
+        }
+        return new Response('image')
+      })
+      await generateCanvasImages(
+        provider,
+        { ...input(), references: ['data:image/png;base64,iVBORw0KGgo='] },
+        request,
+        accepted,
+        undefined,
+        cache
+      )
+      expect(request.mock.calls.filter(([url]) => url.endsWith('/assets'))).toHaveLength(uploads)
+      expect(request.mock.calls.filter(([, init]) => init?.method === 'HEAD')).toHaveLength(supported ? 1 : 0)
+      expect(request.mock.calls.filter(([url]) => url.endsWith('/jobs'))).toHaveLength(1)
+      expect(accepted).toHaveBeenCalledOnce()
+      expect(cache.forget).toHaveBeenCalledTimes(supported && status !== 200 ? 1 : 0)
+    }
+  )
+  it('recovers a temporary reference upload failure before submitting exactly one generation job', async () => {
+    vi.useFakeTimers()
+    let uploads = 0
+    const accepted = vi.fn()
+    const progress = vi.fn()
+    const payload = { ...input(), references: ['data:image/png;base64,iVBORw0KGgo='] }
+    const request = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.endsWith('/bootstrap')) return bootstrap()
+      if (url.endsWith('/assets')) {
+        expect(accepted).not.toHaveBeenCalled()
+        expect(init!.body).toBeInstanceOf(FormData)
+        if (++uploads === 1) throw new TypeError('upload connection interrupted')
+        return json({ id: randomUUID() })
+      }
+      if (url.endsWith('/jobs')) {
+        expect(accepted).toHaveBeenCalledOnce()
+        expect(JSON.parse(init!.body as string).asset_ids).toHaveLength(1)
+        return json(job)
+      }
+      return new Response('image')
+    })
+    const result = generateCanvasImages(provider, payload, request, accepted, progress)
+    await vi.advanceTimersByTimeAsync(1000)
+    await expect(result).resolves.toEqual([Buffer.from('image')])
+    expect(uploads).toBe(2)
+    expect(progress).toHaveBeenCalledWith('configuring')
+    expect(progress).toHaveBeenCalledWith('uploading')
+    expect(request.mock.calls.filter(([url]) => url.endsWith('/jobs'))).toHaveLength(1)
+  })
   it('offers common resolutions and submits 4K unchanged even when server metadata only lists 1K', async () => {
     const source: ImageCanvasProvider = {
       ...provider,

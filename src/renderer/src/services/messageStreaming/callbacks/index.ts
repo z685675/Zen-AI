@@ -1,5 +1,6 @@
 import { recordDiagnostic } from '@renderer/services/DiagnosticEvidenceService'
-import type { Assistant } from '@renderer/types'
+import type { Assistant, MCPToolResponse, NormalToolResponse } from '@renderer/types'
+import { isAgentSessionTopicId } from '@renderer/utils/agentSession'
 import { createMessageResponseTimer } from '@renderer/utils/messageTiming'
 
 import type { BlockManager } from '../BlockManager'
@@ -36,6 +37,21 @@ export const createCallbacks = (deps: CallbacksDependencies) => {
     if (body && !firstTextRecorded) {
       firstTextRecorded = true
       recordDiagnostic(assistantMsgId, 'response', 'first-text')
+    }
+  }
+  const observeToolActivity = (response: MCPToolResponse | NormalToolResponse) => {
+    // Only real model tool events count; runtime startup, MCP discovery and
+    // connection/heartbeat notifications are not a user-visible response.
+    if (
+      (!isAgentSessionTopicId(topicId) && assistant.type !== 'agent-session') ||
+      !response?.id ||
+      !response.tool?.name
+    )
+      return
+    responseTimer.markFirstActivity()
+    if (!firstContentRecorded) {
+      firstContentRecorded = true
+      recordDiagnostic(assistantMsgId, 'response', 'first-content', { type: 'tool' })
     }
   }
 
@@ -106,6 +122,19 @@ export const createCallbacks = (deps: CallbacksDependencies) => {
     ...citationCallbacks,
     ...videoCallbacks,
     ...compactCallbacks,
+    onToolCallPending: (...args: Parameters<typeof toolCallbacks.onToolCallPending>) => {
+      observeToolActivity(args[0])
+      return toolCallbacks.onToolCallPending(...args)
+    },
+    onToolArgumentStreaming: (...args: Parameters<typeof toolCallbacks.onToolArgumentStreaming>) => {
+      observeToolActivity(args[0])
+      return toolCallbacks.onToolArgumentStreaming(...args)
+    },
+    onToolCallInProgress: observeToolActivity,
+    onToolCallComplete: (...args: Parameters<typeof toolCallbacks.onToolCallComplete>) => {
+      observeToolActivity(args[0])
+      return toolCallbacks.onToolCallComplete(...args)
+    },
     onTextChunk: (...args: Parameters<typeof textCallbacks.onTextChunk>) => {
       observeContent(args[0], true)
       responseTimer.markFirstToken(args[0])

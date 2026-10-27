@@ -19,7 +19,9 @@ Create Chinese content that is clear, useful, and platform-aware.
 ## Bundled Resources
 
 - Read `references/platform-patterns.md` when adapting for WeChat, Xiaohongshu, short video, or product marketing.
+- For polishing an existing draft or removing repetitive/template language, read `references/humanizer-zh.md` once. Keep the platform structure and the author's voice. Preserve names, numbers, dates, negation, uncertainty, causal strength, and planned versus completed status; never invent anecdotes or evidence to make copy sound natural. Do not promise AI-detector results.
 - Use `scripts/check_cn_copy.py` for commercial copy, important public posts, long drafts, or when the user asks for a more premium/professional result.
+- Treat its cliché warnings as review hints, not word bans. Legitimate formal or technical language may stay. A short rewrite needs no extra script or model round trip; compare protected facts against the original before returning it.
 - Use `assets/copy-templates/` as starting structures when the user asks for:
   - `wechat-article.md` for 公众号文章.
   - `xiaohongshu-post.md` for 小红书笔记.
@@ -51,4 +53,4 @@ Call `mcp__assistant__python_execute` with `script_path: "<skill-root>/scripts/c
 - Each paragraph should move the reader forward.
 - Avoid vague phrases like "赋能", "全场景", "深度使能", and empty slogans unless context requires them.
 - Headlines should be concrete and testable.
-- End with a clear next action or memorable point.
+- For original marketing copy, end with a clear next action or memorable point. When polishing an existing formal draft, preserve its purpose and ending; do not add a CTA or new claim unless requested.

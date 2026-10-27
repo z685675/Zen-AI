@@ -29,23 +29,16 @@ export const permissionModeCards: PermissionModeCard[] = [
   {
     mode: 'plan',
     titleKey: 'agent.settings.tooling.permissionMode.plan.title',
-    titleFallback: '计划',
+    titleFallback: 'Plan',
     descriptionKey: 'agent.settings.tooling.permissionMode.plan.description',
-    descriptionFallback: '先帮你分析问题、整理思路和列步骤，不会直接改文件，也不会执行命令。'
+    descriptionFallback:
+      '分析问题、读取已授权资料并制定计划，不修改用户文件或执行任务。需要实际操作时，请切换到 Build。'
   },
   {
     mode: 'acceptEdits',
     titleKey: 'agent.settings.tooling.permissionMode.acceptEdits.title',
-    titleFallback: '执行',
+    titleFallback: 'Build',
     descriptionKey: 'agent.settings.tooling.permissionMode.acceptEdits.description',
-    descriptionFallback: '可以直接帮你改内容、执行任务，但遇到关键操作时会先确认。'
-  },
-  {
-    mode: 'bypassPermissions',
-    titleKey: 'agent.settings.tooling.permissionMode.bypassPermissions.title',
-    titleFallback: '全自动',
-    descriptionKey: 'agent.settings.tooling.permissionMode.bypassPermissions.description',
-    descriptionFallback: '会尽量自己把任务连续做完，修改文件和执行命令通常不再逐项确认。',
-    caution: true
+    descriptionFallback: '连续完成已授权的任务，普通操作无需逐项批准。覆盖原文件、删除文件或超出授权范围时，仍需确认。'
   }
 ]

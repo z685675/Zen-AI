@@ -29,6 +29,8 @@ Run `scripts/extraction_quality_check.py` on extracted text when:
 
 Use `mcp__assistant__create_file` with `format: "pdf"` for generated PDFs. Supply markdown-like headings, lists, and pipe tables so the generator can paginate structured content. For highly designed layouts, create a DOCX/PPTX draft first when that is more editable.
 
+For exactly two pages, pass `pdf_pages: ["First-page Markdown", "Second-page Markdown"], expected_pages: 2` instead of `content`. Each string starts its own page; overflowing content is rejected before writing. Alternatively, place a standalone `<!-- pagebreak -->` line between sections in `content` and set `expected_pages: 2`. A heading named "第二页" does not force a page break. Check the returned physical page count; do not guess with extra filler or generate many numbered revisions.
+
 Before delivery:
 
 - require bundled CJK font coverage for Chinese,

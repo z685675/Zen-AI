@@ -1,5 +1,5 @@
 import { throttle } from 'lodash'
-import { useCallback, useEffect, useMemo, useRef } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react'
 
 import { useTimer } from './useTimer'
 
@@ -14,30 +14,28 @@ import { useTimer } from './useTimer'
 export default function useScrollPosition(key: string, throttleWait?: number, shouldRestorePosition = true) {
   const containerRef = useRef<HTMLDivElement>(null)
   const scrollKey = useMemo(() => `scroll:${key}`, [key])
-  const scrollKeyRef = useRef(scrollKey)
   const { setTimeoutTimer } = useTimer()
 
-  useEffect(() => {
-    scrollKeyRef.current = scrollKey
-  }, [scrollKey])
-
-  const handleScroll = useMemo(
+  const savePosition = useMemo(
     () =>
-      throttle(() => {
-        const position = containerRef.current?.scrollTop ?? 0
-        window.requestAnimationFrame(() => {
-          window.keyv.set(scrollKeyRef.current, position)
-        })
+      throttle((position: number) => {
+        window.keyv.set(scrollKey, position)
       }, throttleWait ?? 100),
-    [throttleWait]
+    [scrollKey, throttleWait]
   )
 
+  const handleScroll = useCallback(() => {
+    // Capture both the position and its conversation before a throttled write.
+    if (containerRef.current) savePosition(containerRef.current.scrollTop)
+  }, [savePosition])
+
   const getStoredPosition = useCallback(() => {
-    const rawPosition = window.keyv.get(scrollKeyRef.current)
+    const rawPosition = window.keyv.get(scrollKey)
+    if (rawPosition === null || rawPosition === undefined || rawPosition === '') return null
     const position = typeof rawPosition === 'number' ? rawPosition : Number(rawPosition)
 
     return Number.isFinite(position) ? position : null
-  }, [])
+  }, [scrollKey])
 
   const restorePosition = useCallback(
     (positionOverride?: number) => {
@@ -53,12 +51,16 @@ export default function useScrollPosition(key: string, throttleWait?: number, sh
     if (!shouldRestorePosition) return
 
     restorePosition()
-    setTimeoutTimer('scrollEffect', () => restorePosition(), 50)
+    return setTimeoutTimer('scrollEffect', () => restorePosition(), 50)
   }, [restorePosition, scrollKey, setTimeoutTimer, shouldRestorePosition])
 
-  useEffect(() => {
-    return () => handleScroll.cancel()
-  }, [handleScroll])
+  useLayoutEffect(() => {
+    return () => {
+      // Navigation often happens within the throttle window. Keep the last event.
+      savePosition.flush()
+      savePosition.cancel()
+    }
+  }, [savePosition])
 
   return { containerRef, handleScroll, getStoredPosition, restorePosition }
 }

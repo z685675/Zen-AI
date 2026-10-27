@@ -18,7 +18,14 @@ vi.mock('@renderer/services/ErrorDiagnosticPackageService', () => ({
   exportErrorDiagnosticPackage: mocks.export,
   getDiagnosticAppInfo: async () => ({ version: 'test' })
 }))
-vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }))
+vi.mock('react-i18next', async () => {
+  const { default: locale } = await import('@renderer/i18n/locales/zh-cn.json')
+  return {
+    useTranslation: () => ({
+      t: (key: string) => (key === 'assistantPeripheral.discovered' ? locale.assistantPeripheral.discovered : key)
+    })
+  }
+})
 vi.mock('antd', () => ({
   Checkbox: ({ children }: any) => <span>{children}</span>,
   Button: ({ children, onClick, ...props }: any) => (
@@ -46,8 +53,11 @@ vi.mock('antd', () => ({
     ) : null,
   Alert: ({ message }: any) => <div>{message}</div>,
   Spin: () => <div>busy</div>,
-  Table: ({ dataSource }: any) => (
+  Table: ({ dataSource, columns }: any) => (
     <div>
+      {columns.map((column: any) => (
+        <span key={column.dataIndex}>{column.title}</span>
+      ))}
       {dataSource.map((item: any) => (
         <div key={item.path}>{item.name}</div>
       ))}
@@ -80,6 +90,13 @@ beforeEach(() => {
   window.toast = { success: mocks.toast, error: mocks.toast } as any
 })
 describe('current-session inspection menu', () => {
+  it('labels discovery as 智能助手已发现 without claiming that every skill was used', async () => {
+    render(<SessionInspectionMenu session={session} />)
+    fireEvent.click(screen.getByText('assistantPeripheral.skillsTitle'))
+    await screen.findByText('智能助手已发现')
+    expect(screen.queryByText('OpenCode 已发现')).not.toBeInTheDocument()
+    expect(screen.getByText('assistantPeripheral.skillsHint')).toBeInTheDocument()
+  })
   it('loads only on click, never initializes a runtime, and shows unconfirmed discovery honestly', async () => {
     render(<SessionInspectionMenu session={session} />)
     expect(mocks.inspect).not.toHaveBeenCalled()

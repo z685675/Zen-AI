@@ -37,11 +37,6 @@ const AgentChatNavbar = ({ activeAgent, className }: Props) => {
           </Tooltip>
         )}
         <AgentContent activeAgent={activeAgent} />
-        {workspace === 'opencode' && (
-          <Tooltip title={t('new_assistant.memory_notice')}>
-            <span className="mx-2 shrink-0 text-xs opacity-60">OpenCode</span>
-          </Tooltip>
-        )}
       </div>
     </NavbarHeader>
   )

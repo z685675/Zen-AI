@@ -31,13 +31,13 @@ License: MIT
 
 ----------------------------------------
 
-@opencode-ai/plugin@1.18.35
+@opencode-ai/plugin@1.19.4
 License: MIT
 
 
 ----------------------------------------
 
-@opencode-ai/sdk@1.18.35
+@opencode-ai/sdk@1.19.4
 License: MIT
 
 

@@ -195,15 +195,10 @@ const AgentSessionMessages = ({ agentId, sessionId }: Props) => {
   // Guard: suppress InfiniteScroll triggers during scroll position restoration
   const isRestoringScrollRef = useRef(true)
 
-  useEffect(() => {
-    displayCountRef.current = AGENT_PAGE_SIZE
-    pendingRestorePositionRef.current = undefined
-    isRestoringScrollRef.current = true
-    const timer = setTimeout(() => {
-      isRestoringScrollRef.current = false
-    }, 150)
-    return () => clearTimeout(timer)
-  }, [sessionId])
+  const finishScrollRestoration = useCallback(() => {
+    pendingRestorePositionRef.current = null
+    isRestoringScrollRef.current = false
+  }, [])
 
   useEffect(() => {
     const displayed = computeDisplayMessages(messages, 0, displayCountRef.current)
@@ -242,12 +237,13 @@ const AgentSessionMessages = ({ agentId, sessionId }: Props) => {
       const targetIndex = messages.findIndex((item) => item.id === message.id)
       if (targetIndex < 0) return
 
+      finishScrollRestoration()
       displayCountRef.current = messages.length - targetIndex
 
       setDisplayMessages(messages.slice(targetIndex).toReversed())
       setHasMore(targetIndex > 0)
     },
-    [messages]
+    [finishScrollRestoration, messages]
   )
 
   useEffect(() => {
@@ -259,7 +255,6 @@ const AgentSessionMessages = ({ agentId, sessionId }: Props) => {
       if (data.topicId !== sessionTopicId) return
       const target = messages.find((message) => message.id === data.messageId)
       if (!target) return
-      pendingRestorePositionRef.current = null
       // A deliverable can originate outside the currently rendered history page.
       revealMessageForNavigation(target)
       for (const message of messages) {
@@ -311,11 +306,10 @@ const AgentSessionMessages = ({ agentId, sessionId }: Props) => {
 
   // Scroll to bottom function
   const scrollToBottom = useCallback(() => {
-    if (scrollContainerRef.current) {
+    const container = scrollContainerRef.current
+    if (container) {
       requestAnimationFrame(() => {
-        if (scrollContainerRef.current) {
-          scrollContainerRef.current.scrollTo({ top: 0 })
-        }
+        if (container.isConnected) container.scrollTo({ top: 0 })
       })
     }
   }, [scrollContainerRef])
@@ -326,24 +320,25 @@ const AgentSessionMessages = ({ agentId, sessionId }: Props) => {
     }
 
     if (pendingRestorePositionRef.current === undefined) {
-      pendingRestorePositionRef.current = getStoredPosition()
+      pendingRestorePositionRef.current = getStoredPosition() ?? 0
     }
 
     const targetPosition = pendingRestorePositionRef.current
     if (targetPosition === null) {
-      scrollToBottom()
-      pendingRestorePositionRef.current = null
       return
     }
 
+    let settleFrame: number | undefined
     const frame = requestAnimationFrame(() => {
+      if (pendingRestorePositionRef.current !== targetPosition) return
       restorePosition(targetPosition)
-      requestAnimationFrame(() => {
+      settleFrame = requestAnimationFrame(() => {
+        if (pendingRestorePositionRef.current !== targetPosition) return
         const currentPosition = scrollContainerRef.current?.scrollTop ?? 0
         const positionReached = Math.abs(currentPosition - targetPosition) <= 2
 
         if (positionReached || !hasMore) {
-          pendingRestorePositionRef.current = null
+          finishScrollRestoration()
           return
         }
 
@@ -351,15 +346,18 @@ const AgentSessionMessages = ({ agentId, sessionId }: Props) => {
       })
     })
 
-    return () => cancelAnimationFrame(frame)
+    return () => {
+      cancelAnimationFrame(frame)
+      if (settleFrame !== undefined) cancelAnimationFrame(settleFrame)
+    }
   }, [
     displayMessages.length,
+    finishScrollRestoration,
     getStoredPosition,
     hasMore,
     loadMoreMessages,
     restorePosition,
-    scrollContainerRef,
-    scrollToBottom
+    scrollContainerRef
   ])
 
   // Listen for send message events to auto-scroll to bottom
@@ -367,19 +365,31 @@ const AgentSessionMessages = ({ agentId, sessionId }: Props) => {
     const unsubscribes = [
       EventEmitter.on(EVENT_NAMES.SEND_MESSAGE, (data?: { topicId?: string }) => {
         if (!data?.topicId || data.topicId === sessionTopicId) {
+          finishScrollRestoration()
           scrollToBottom()
         }
       })
     ]
     return () => unsubscribes.forEach((unsub) => unsub())
-  }, [scrollToBottom, sessionTopicId])
+  }, [finishScrollRestoration, scrollToBottom, sessionTopicId])
 
   return (
     <MessagesContainer
       id="messages"
       className="messages-container"
       ref={scrollContainerRef}
-      onScroll={handleScrollPosition}>
+      onWheel={finishScrollRestoration}
+      onTouchStart={finishScrollRestoration}
+      onPointerDown={finishScrollRestoration}
+      onKeyDown={(event) => {
+        if (['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' '].includes(event.key)) {
+          finishScrollRestoration()
+        }
+      }}
+      onScroll={() => {
+        // Restoring a position can temporarily hit the end of a partial history page.
+        if (!isRestoringScrollRef.current) handleScrollPosition()
+      }}>
       <NarrowLayout style={{ display: 'flex', flexDirection: 'column-reverse' }} contentMaxWidth="960px">
         <InfiniteScroll
           dataLength={displayMessages.length}

@@ -601,8 +601,8 @@
         },
         "permissionMode": {
           "acceptEdits": {
-            "description": "檔案編輯與檔案系統操作會自動核准。",
-            "title": "自動接受檔案編輯"
+            "description": "連續完成已授權的任務，一般操作無需逐項批准。覆寫原始檔案、刪除檔案或超出授權範圍時，仍需確認。",
+            "title": "Build"
           },
           "bypassPermissions": {
             "description": "所有權限提示都會被略過，請務必謹慎使用。",
@@ -616,8 +616,8 @@
           "helper": "指定助手如何處理工具使用授權",
           "placeholder": "選擇權限模式",
           "plan": {
-            "description": "沿用預設的唯讀工具集，並會在執行前先呈現計畫。",
-            "title": "規劃模式"
+            "description": "分析問題、讀取已授權資料並制定計畫，不修改使用者檔案或執行任務。需要實際操作時，請切換到 Build。",
+            "title": "Plan"
           },
           "simpleTitle": "[to be translated]:模式选择",
           "title": "權限模式"
@@ -886,17 +886,20 @@
     "busy": "智慧助手任務或資料操作尚未結束，請先停止任務，或等待資料操作完成後再進行備份、還原或清空。"
   },
   "assistantDeliverables": {
+    "checking": "正在檢查檔案",
     "empty": "本會話暫無已登記成果。",
     "entry": "成果 · {{count}}",
     "folder": "資料夾",
     "locate": "查看對應回答",
+    "missing": "檔案已移動或刪除",
     "no_match": "沒有符合的成果。",
     "notice": "僅彙整本會話中成功檔案工具登記的成果。這些是快捷入口，不是檔案副本；檔案被移動或刪除後可能無法開啟。",
     "open": "開啟",
     "reveal": "定位檔案",
     "search": "搜尋檔案名稱或路徑",
     "source": "最近來源：第 {{turn}} 輪 · 共 {{count}} 條回答登記",
-    "title": "會話成果"
+    "title": "會話成果",
+    "unavailable": "無法檢查檔案狀態"
   },
   "assistantFileSafety": {
     "message": "即將覆寫以下原始檔案。確認後會先儲存並驗證備份，再替換內容；取消則保留原始檔案不變。",
@@ -908,7 +911,7 @@
     "callStarted": "已发起",
     "callStopped": "已停止",
     "calledThisTurn": "最新一轮用户任务的原生技能调用",
-    "discovered": "OpenCode 已发现",
+    "discovered": "智慧助手已發現",
     "enabled": "已启用",
     "exportFailed": "诊断包导出失败，请稍后重试。",
     "exportSaved": "诊断包已导出",
@@ -2473,6 +2476,34 @@
     },
     "title": "搜尋話題"
   },
+  "hotpatch": {
+    "check": "檢查修補",
+    "description": "背景檢查並於下次正常啟動時套用，不會中斷執行中的任務。",
+    "disable": "暫停修補",
+    "disableConfirm": "下次啟動使用內建介面，並暫停下載修補？",
+    "enable": "恢復補丁更新",
+    "nextStartup": "下次啟動套用：{{patch}}",
+    "requestFailed": "暫時無法取得修補狀態。",
+    "rescue": {
+      "description": "介面修補未能完成啟動。你的對話、檔案和設定均已保留，可重新啟動並使用內建介面繼續。",
+      "export": "匯出啟動診斷包",
+      "exportFailed": "無法儲存啟動診斷包，請選擇新的儲存位置。",
+      "restart": "使用內建介面重新啟動",
+      "title": "介面復原"
+    },
+    "safeFallback": "已保留目前可用介面。",
+    "status": {
+      "active": "修補已套用",
+      "builtin": "內建介面",
+      "checking": "正在檢查",
+      "disabled": "已暫停",
+      "pending": "等待下次啟動",
+      "recovering": "正在復原",
+      "unavailable": "未啟用"
+    },
+    "testCode": "測試投放碼（選填）",
+    "title": "介面修補"
+  },
   "html_artifacts": {
     "capture": {
       "label": "擷取頁面",
@@ -2486,17 +2517,11 @@
     "split": "分割畫面"
   },
   "image_studio": {
-    "canvas": "图片画布",
-    "canvas_unavailable": "本地图片画布未能打开，请重试或查看应用日志。",
-    "key": "密钥 {{index}}",
-    "key_label": "工作台密钥",
     "local": "本地图片",
     "opening": "正在打开图片工作台……",
     "reconnect": "重新连接",
-    "server": "伺服器工作台",
-    "title": "图片工作台",
-    "unavailable": "工作台暂时无法打开。请确认 Zen API 服务端已更新，且所选密钥有效。原有图片仍可在“本地图片”中查看。",
-    "workbench": "圖片工作台"
+    "workbench": "圖片工作台",
+    "workbench_unavailable": "圖片工作台未能開啟，請重試或查看應用程式日誌。"
   },
   "import": {
     "chatgpt": {
@@ -3355,6 +3380,13 @@
     },
     "memory_notice": "使用獨立的原生會話記憶，更換模型仍保留歷史。支援重試、分支和單則刪除；暫不支援直接編輯或批次刪除。",
     "outputting": "模型正在輸出",
+    "permission": {
+      "description": "請檢查本次操作及目標，確認後任務將繼續。",
+      "details": "檢視操作詳情",
+      "loopDescription": "助手連續嘗試了相同操作。你可以允許繼續一次，或取消本次操作。",
+      "loopTitle": "偵測到重複操作，任務已暫停",
+      "title": "任務需要你的確認"
+    },
     "preparing": "請求已收到，正在準備任務",
     "responding": "正在處理回覆",
     "restoring": "正在恢復目前對話",
@@ -5783,7 +5815,7 @@
       "prompt": "提示詞顯示",
       "show_message_outline": "顯示訊息大綱",
       "stats_time": "首字 {{first}} · 用時 {{total}}",
-      "stats_tip": "輸入、輸出、快取的單位均為 Token。首字：本輪開始處理到首次可見文字（含顯示的思考文字）。用時：到整輪任務結束，包含工具執行和等待時間。快取只統計讀取命中的 Token；— 表示未提供該項統計。",
+      "stats_tip": "輸入、輸出、快取的單位均為 Token。首字：本輪開始處理到首次可見文字或思考；智慧助手也計入首次工具呼叫。用時：到整輪任務結束，包含工具執行和等待時間。快取只統計讀取命中的 Token；— 表示未提供該項統計。",
       "stats_tokens": "輸入 {{input}} · 輸出 {{output}} · 快取 {{cached}}",
       "title": "訊息設定",
       "use_serif_font": "使用襯線字型"
@@ -6786,6 +6818,7 @@
     "show_window": "顯示視窗"
   },
   "turnDiagnostics": {
+    "aggregate": "持久儲存的執行統計（可能重疊，不可直接相加）：模型請求 {{requests}}，回應標頭等待 {{headers}}，已完成工具 {{tools}}。缺失的逐條時間線不會補造。",
     "description": "匯出這一輪的執行狀態、耗時和鏈路記錄，不會重新執行任務或呼叫模型。",
     "export": "匯出本輪診斷包",
     "includeContent": "包含本輪對話及工具內容（選用）",
@@ -6805,7 +6838,7 @@
       "processing": "執行中"
     },
     "privacy": "預設僅包含診斷資料，不包含對話正文、工具參數和結果、附件原件或完整歷史。請確認接收人可信；若勾選包含內容，本輪對話可能含個人資訊。",
-    "reportTemplate": "# Zen AI 本輪執行診斷報告\n\n- 結果：{{outcome}}\n- 模型：{{model}}；Provider：{{provider}}\n- Token：輸入 {{input}}；輸出 {{output}}；快取讀取 {{cache}}（已含於輸入，不重複相加）\n- 記錄起點：{{start}}；結束：{{end}}；完成用時：{{total}}\n- 首次內容（可能是思考）：{{firstContent}}；首次正文：{{firstText}}；首批網路資料：{{firstBytes}}（不等於首字）\n- 觀察到的請求：{{requests}}；工具：{{tools}}；重試/切換事件：{{retries}}\n- 介面提交延遲：{{render}}（React 提交記錄，不保證螢幕繪製）\n\n## 最耗時的已配對階段\n{{slowest}}\n\n## 請求與工具時間線\n{{timeline}}\n\n## 觀察到的使用者等待（可能與工具重疊）\n{{waits}}\n\n## 判斷邊界與缺失資料\n- 僅列實測時間，不直接判定網路、用戶端或上游根因。階段可重疊，不可直接相加或扣除使用者等待。\n- 未記錄不等於零耗時；未配對階段可能仍在執行。執行中匯出僅為快照，舊對話不能補造歷史事件。\n- 起點通常是準備模型回應，更早的附件上傳未必涵蓋。重試事件數不等於重複執行任務次數。\n- 伺服器內部耗時請結合 zen-api-evidence.json 與請求編號。後台無記錄不證明未收到，寫出不保證用戶端完整收到。\n- 有界記錄捨棄事件：{{dropped}}；更早請求可能過期。缺項代碼（詳見 performance.json）：{{missing}}\n",
+    "reportTemplate": "# Zen AI 本輪執行診斷報告\n\n- 結果：{{outcome}}\n- 模型：{{model}}；Provider：{{provider}}\n- Token：輸入 {{input}}；輸出 {{output}}；快取讀取 {{cache}}（已含於輸入，不重複相加）\n- 記錄起點：{{start}}；結束：{{end}}；完成用時：{{total}}\n- 首次回應（文字、思考或工具呼叫）：{{firstContent}}；首次正文：{{firstText}}；首批網路資料：{{firstBytes}}（不等於首字）\n- 觀察到的請求：{{requests}}；工具：{{tools}}；重試/切換事件：{{retries}}\n- 介面提交延遲：{{render}}（React 提交記錄，不保證螢幕繪製）\n\n## 最耗時的已配對階段\n{{slowest}}\n\n## 請求與工具時間線\n{{timeline}}\n\n## 觀察到的使用者等待（可能與工具重疊）\n{{waits}}\n\n## 判斷邊界與缺失資料\n- 僅列實測時間，不直接判定網路、用戶端或上游根因。階段可重疊，不可直接相加或扣除使用者等待。\n- 未記錄不等於零耗時；未配對階段可能仍在執行。執行中匯出僅為快照，舊對話不能補造歷史事件。\n- 起點通常是準備模型回應，更早的附件上傳未必涵蓋。重試事件數不等於重複執行任務次數。\n- 伺服器內部耗時請結合 zen-api-evidence.json 與請求編號。後台無記錄不證明未收到，寫出不保證用戶端完整收到。\n- 有界記錄捨棄事件：{{dropped}}；更早請求可能過期。缺項代碼（詳見 performance.json）：{{missing}}\n",
     "requestTiming": " | 等回應標頭 {{headers}} | 等首批資料 {{bytes}} | HTTP {{status}} | 請求編號 {{requestId}}"
   },
   "update": {

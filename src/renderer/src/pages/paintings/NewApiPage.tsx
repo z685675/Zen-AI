@@ -164,7 +164,7 @@ const subscribeNewApiPaintingTasks = (listener: () => void) => {
   }
 }
 
-const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
+const NewApiPage: FC<{ Options: string[]; showNavbar?: boolean }> = ({ Options, showNavbar = true }) => {
   const { openai_image_generate, addPainting, removePainting, updatePainting } = usePaintings()
   const [currentImageIndex, setCurrentImageIndex] = useState(0)
   const [loadingPaintingIds, setLoadingPaintingIds] = useState<Set<string>>(getActiveNewApiPaintingIds)
@@ -1246,9 +1246,11 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
   if (!newApiProvider) {
     return (
       <Container>
-        <Navbar>
-          <NavbarCenter style={{ borderRight: 'none' }}>{t('paintings.title')}</NavbarCenter>
-        </Navbar>
+        {showNavbar && (
+          <Navbar>
+            <NavbarCenter style={{ borderRight: 'none' }}>{t('paintings.title')}</NavbarCenter>
+          </Navbar>
+        )}
         <ContentContainer id="content-container">
           <LeftContainer>
             <Empty
@@ -1269,9 +1271,11 @@ const NewApiPage: FC<{ Options: string[] }> = ({ Options }) => {
 
   return (
     <Container>
-      <Navbar>
-        <NavbarCenter style={{ borderRight: 'none' }}>{t('paintings.title')}</NavbarCenter>
-      </Navbar>
+      {showNavbar && (
+        <Navbar>
+          <NavbarCenter style={{ borderRight: 'none' }}>{t('paintings.title')}</NavbarCenter>
+        </Navbar>
+      )}
       <ContentContainer id="content-container">
         <LeftContainer>
           <SettingTitle style={{ marginBottom: 5 }}>{t('common.provider')}</SettingTitle>

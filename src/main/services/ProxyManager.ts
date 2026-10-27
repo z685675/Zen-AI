@@ -82,7 +82,11 @@ export class ProxyManager {
   }
 
   private async setSessionsProxy(config: ProxyConfig): Promise<void> {
-    const sessions = [session.defaultSession, session.fromPartition('persist:webview')]
+    const sessions = [
+      session.defaultSession,
+      session.fromPartition('persist:webview'),
+      session.fromPartition('zen-hotpatch-download')
+    ]
     await Promise.all(sessions.map((session) => session.setProxy(config)))
 
     void app.setProxy(config)

@@ -9,6 +9,12 @@ on:
         description: "Published release tag (e.g. v1.1.7)"
         required: true
         type: string
+  workflow_call:
+    inputs:
+      tag:
+        description: "Published release tag"
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -25,7 +31,7 @@ jobs:
           if [ "${{ github.event_name }}" = "release" ]; then
             echo "tag=${{ github.event.release.tag_name }}" >> "$GITHUB_OUTPUT"
           else
-            echo "tag=${{ github.event.inputs.tag }}" >> "$GITHUB_OUTPUT"
+            echo "tag=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Check out Git repository

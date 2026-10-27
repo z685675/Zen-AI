@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto'
+
 import * as z from 'zod'
 
 import type { CdpBrowserController } from '../controller'
@@ -29,6 +31,8 @@ function normalizeMaxChars(value: number | undefined): number {
 // Script that walks the DOM and produces an AI-friendly text snapshot with numbered refs for interactive elements
 const SNAPSHOT_SCRIPT = `(() => {
   const out = [];
+  const snapshot = { id: SNAPSHOT_ID, url: location.href, elements: new Map() };
+  globalThis.__zenBrowserSnapshot = snapshot;
   let n = 0;
   let outputChars = 0;
   const skip = new Set(['SCRIPT','STYLE','NOSCRIPT','SVG','PATH','META','LINK','BR','HR']);
@@ -62,13 +66,14 @@ const SNAPSHOT_SCRIPT = `(() => {
 
     const tag = node.tagName;
     const r = ++n;
+    snapshot.elements.set(r, node);
 
     if (tag === 'A' && node.href) {
       const t = node.textContent.trim();
       if (t) append('[' + r + '] link: ' + t + ' (' + node.href + ')');
       return;
     }
-    if (tag === 'BUTTON' || (tag === 'INPUT' && (node.type === 'submit' || node.type === 'button'))) {
+    if (tag === 'BUTTON' || node.getAttribute('role') === 'button' || (tag === 'INPUT' && (node.type === 'submit' || node.type === 'button'))) {
       append('[' + r + '] button: ' + (node.textContent.trim() || node.value || ''));
       return;
     }
@@ -100,13 +105,13 @@ const SNAPSHOT_SCRIPT = `(() => {
   }
 
   walk(ROOT_ELEMENT);
-  return out.join('\\n');
+  return 'Snapshot ID: ' + snapshot.id + '\\n' + out.join('\\n');
 })()`
 
 export const snapshotToolDefinition = {
   name: 'snapshot',
   description:
-    'Get an AI-friendly text snapshot of the current page with numbered refs for interactive elements. Much more compact than raw HTML/markdown. Use selector to scope to a specific part (e.g. "#search" for Google results, "#main" for article body). Keep browser snapshots within the shared two-operation concurrency limit.',
+    'Get a compact page snapshot with a snapshot ID and numbered element refs. Use click with that snapshotId and ref instead of guessing selectors. Refs expire on navigation or the next snapshot. Use selector to scope to relevant content. Keep browser operations within the shared two-operation concurrency limit.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -138,7 +143,10 @@ export async function handleSnapshot(controller: CdpBrowserController, args: unk
       ? `(document.querySelector(${JSON.stringify(selector)}) || document.body)`
       : 'document.body'
 
-    const script = SNAPSHOT_SCRIPT.replace('ROOT_ELEMENT', rootExpr)
+    const script = SNAPSHOT_SCRIPT.replace('ROOT_ELEMENT', rootExpr).replace(
+      'SNAPSHOT_ID',
+      JSON.stringify(randomUUID())
+    )
 
     const result = await controller.execute(script, 10000, privateMode ?? false, tabId)
 

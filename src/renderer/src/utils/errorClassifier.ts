@@ -37,7 +37,12 @@ export function classifyError(error?: SerializedError, providerId?: string): Err
   const numStatus = typeof status === 'number' ? status : typeof status === 'string' ? parseInt(status, 10) : undefined
   const msg = connectionErrorText(error)
   const dailyQuota = getModelDailyQuotaErrorKind(error)
-  if (dailyQuota) return { category: 'quota', i18nKey: `model_daily_quota.${dailyQuota}`, navTarget: null }
+  if (dailyQuota)
+    return {
+      category: dailyQuota === 'unavailable' ? 'server' : 'quota',
+      i18nKey: `model_daily_quota.${dailyQuota}`,
+      navTarget: null
+    }
   const providerSuffix = providerId ? `?id=${providerId}` : ''
   const deadlineKind = getAgentTaskDeadlineKind(error)
   if (deadlineKind)

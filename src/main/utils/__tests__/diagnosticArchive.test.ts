@@ -13,7 +13,8 @@ describe('diagnostic ZIP integrity', () => {
           path: 'error.json',
           content: JSON.stringify({ apiKey: 'fake-secret', input_tokens: 400, cause: '{"apiKey":"nested-secret"}' })
         },
-        { path: '链路结论.txt', content: 'API_KEY=stderr-secret' }
+        { path: '链路结论.txt', content: 'API_KEY=stderr-secret' },
+        { path: '本轮耗时报告.md', content: '# 本轮耗时\n\nAPI_KEY=report-secret\n首字用时：2秒' }
       ])
     )
     const manifest = JSON.parse(zip.readAsText('integrity.json'))
@@ -23,11 +24,20 @@ describe('diagnostic ZIP integrity', () => {
       expect(buffer.length).toBe(entry.bytes)
     }
     expect(zip.readAsText('error.json')).toContain('400')
+    expect(zip.readAsText('本轮耗时报告.md')).toContain('首字用时：2秒')
     for (const entry of zip.getEntries())
-      expect(entry.getData().toString()).not.toMatch(/fake-secret|nested-secret|stderr-secret/)
+      expect(entry.getData().toString()).not.toMatch(/fake-secret|nested-secret|stderr-secret|report-secret/)
   })
   it('rejects traversal, duplicate names and malformed JSON rather than silently skipping entries', () => {
-    for (const path of ['../secret.txt', 'C:\\secret.txt', '/secret.txt', 'integrity.json'])
+    for (const path of [
+      '../secret.txt',
+      '../report.md',
+      'C:\\secret.txt',
+      '/secret.txt',
+      'integrity.json',
+      'run.js',
+      'view.html'
+    ])
       expect(() => buildDiagnosticArchive([{ path, content: '{}' }])).toThrow()
     expect(() =>
       buildDiagnosticArchive([

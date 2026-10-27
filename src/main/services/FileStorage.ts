@@ -19,6 +19,7 @@ import {
 import { t } from '@main/utils/locales'
 import { SpreadsheetExtractionLimitError, spreadsheetSections } from '@main/utils/spreadsheetSections'
 import { documentExts, imageExts, KB, MB } from '@shared/config/constant'
+import type { FilePathCheck } from '@shared/filePathStatus'
 import { parseDataUrl } from '@shared/utils'
 import type {
   EmbeddedFileImage,
@@ -1471,8 +1472,37 @@ class FileStorage {
     }
   }
 
-  public openPath = async (_: Electron.IpcMainInvokeEvent, path: string): Promise<void> => {
-    const resolved = await shell.openPath(path)
+  public checkPaths = async (_: Electron.IpcMainInvokeEvent, paths: string[]): Promise<FilePathCheck[]> => {
+    if (
+      !Array.isArray(paths) ||
+      paths.length > 200 ||
+      paths.some(
+        (filePath) =>
+          typeof filePath !== 'string' ||
+          !path.isAbsolute(filePath) ||
+          filePath.includes('\0') ||
+          /[\r\n]/.test(filePath)
+      )
+    ) {
+      throw new Error('Expected at most 200 absolute file paths')
+    }
+    return Promise.all(
+      [...new Set(paths)].map(async (filePath): Promise<FilePathCheck> => {
+        try {
+          const stat = await fs.promises.stat(filePath)
+          return { path: filePath, status: stat.isFile() || stat.isDirectory() ? 'available' : 'unavailable' }
+        } catch (error) {
+          const code = (error as NodeJS.ErrnoException).code
+          return { path: filePath, status: code === 'ENOENT' || code === 'ENOTDIR' ? 'missing' : 'unavailable' }
+        }
+      })
+    )
+  }
+
+  public openPath = async (event: Electron.IpcMainInvokeEvent, filePath: string): Promise<void> => {
+    const [check] = await this.checkPaths(event, [filePath])
+    if (check.status !== 'available') throw new Error(`File or folder is ${check.status}: ${filePath}`)
+    const resolved = await shell.openPath(filePath)
     if (resolved !== '') {
       throw new Error(resolved)
     }

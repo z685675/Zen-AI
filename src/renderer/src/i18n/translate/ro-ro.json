@@ -601,8 +601,8 @@
         },
         "permissionMode": {
           "acceptEdits": {
-            "description": "Editările de fișiere și operațiunile sistemului de fișiere sunt aprobate automat.",
-            "title": "Acceptă automat editările de fișiere"
+            "description": "Execută sarcinile autorizate fără aprobarea fiecărui pas obișnuit. Suprascrierea originalelor, ștergerea fișierelor și depășirea autorizării necesită confirmare.",
+            "title": "Build"
           },
           "bypassPermissions": {
             "description": "Toate solicitările de permisiune sunt omise — folosește cu precauție.",
@@ -616,8 +616,8 @@
           "helper": "Alege cum gestionează agentul aprobările pentru instrumente.",
           "placeholder": "Selectează modul de permisiune",
           "plan": {
-            "description": "Partajează setul implicit de instrumente doar-pentru-citire, dar prezintă un plan înainte de execuție.",
-            "title": "Mod de planificare"
+            "description": "Analizează, citește informațiile autorizate și planifică fără să modifice fișiere sau să execute sarcina. Selectați Build pentru execuție.",
+            "title": "Plan"
           },
           "simpleTitle": "[to be translated]:Mode Selection",
           "title": "Mod de permisiune"
@@ -886,17 +886,20 @@
     "busy": "[to be translated]:Stop active assistant tasks first, then back up, restore or reset data. A data operation may also still be in progress."
   },
   "assistantDeliverables": {
+    "checking": "Se verifică fișierul",
     "empty": "No registered outputs in this conversation yet.",
     "entry": "Outputs · {{count}}",
     "folder": "Folder",
     "locate": "Go to response",
+    "missing": "Fișier mutat sau șters",
     "no_match": "No matching outputs.",
     "notice": "Only outputs registered by successful file tools in this conversation are listed. These are shortcuts, not copies; moved or deleted files may no longer open.",
     "open": "Open",
     "reveal": "Show in folder",
     "search": "Search name or path",
     "source": "Latest source: turn {{turn}} · registered in {{count}} responses",
-    "title": "Conversation outputs"
+    "title": "Conversation outputs",
+    "unavailable": "Starea fișierului nu poate fi verificată"
   },
   "assistantFileSafety": {
     "message": "Fișierul original de mai jos va fi înlocuit după salvarea și verificarea unei copii de siguranță. Anularea păstrează originalul neschimbat.",
@@ -908,7 +911,7 @@
     "callStarted": "Started",
     "callStopped": "Stopped",
     "calledThisTurn": "Native skill calls in the latest user turn",
-    "discovered": "Discovered by OpenCode",
+    "discovered": "Detectat de asistent",
     "enabled": "Enabled",
     "exportFailed": "Could not export diagnostics. Please try again.",
     "exportSaved": "Diagnostic package exported",
@@ -2473,6 +2476,34 @@
     },
     "title": "Căutare subiecte"
   },
+  "hotpatch": {
+    "check": "Verifică corecțiile",
+    "description": "Verificate în fundal și aplicate la următoarea pornire, fără întreruperea sarcinilor.",
+    "disable": "Suspendă corecțiile",
+    "disableConfirm": "Folosești interfața inclusă la următoarea pornire și suspenzi descărcările?",
+    "enable": "Reia actualizările",
+    "nextStartup": "Următoarea pornire: {{patch}}",
+    "requestFailed": "Starea corecțiilor nu este disponibilă.",
+    "rescue": {
+      "description": "Corecția nu a putut porni. Conversațiile, fișierele și setările sunt păstrate. Repornește cu interfața inclusă.",
+      "export": "Exportă diagnosticul de pornire",
+      "exportFailed": "Pachetul de diagnostic de pornire nu a putut fi salvat. Alege o locație nouă.",
+      "restart": "Repornește cu interfața inclusă",
+      "title": "Recuperare interfață"
+    },
+    "safeFallback": "Interfața funcțională este păstrată.",
+    "status": {
+      "active": "Corecție activă",
+      "builtin": "Interfață inclusă",
+      "checking": "Se verifică",
+      "disabled": "Suspendat",
+      "pending": "Pregătit pentru repornire",
+      "recovering": "Se recuperează",
+      "unavailable": "Neactivat"
+    },
+    "testCode": "Cod de testare (opțional)",
+    "title": "Corecții de interfață"
+  },
   "html_artifacts": {
     "capture": {
       "label": "Capturează pagina",
@@ -2486,17 +2517,11 @@
     "split": "Divizat"
   },
   "image_studio": {
-    "canvas": "Image canvas",
-    "canvas_unavailable": "The local image canvas could not open. Retry or check the application logs.",
-    "key": "Key {{index}}",
-    "key_label": "Workspace key",
     "local": "[to be translated]:Local images",
     "opening": "[to be translated]:Opening image workspace…",
     "reconnect": "[to be translated]:Reconnect",
-    "server": "Server workspace",
-    "title": "[to be translated]:Image workspace",
-    "unavailable": "[to be translated]:The workspace could not open. Make sure your Zen API server has been updated and the selected key is valid. You can still open Local images.",
-    "workbench": "Image studio"
+    "workbench": "Image studio",
+    "workbench_unavailable": "Studioul de imagini nu a putut fi deschis. Încercați din nou sau verificați jurnalele aplicației."
   },
   "import": {
     "chatgpt": {
@@ -3355,6 +3380,13 @@
     },
     "memory_notice": "Independent native memory survives model changes. Retry, branching and individual deletion are supported; direct editing and bulk deletion are not yet supported.",
     "outputting": "The model is producing output",
+    "permission": {
+      "title": "Această sarcină necesită confirmarea dvs.",
+      "description": "Verificați operațiunea și ținta ei înainte de a permite continuarea sarcinii.",
+      "loopTitle": "Au fost detectate operațiuni repetate; sarcina este în pauză",
+      "loopDescription": "Asistentul a încercat aceeași operațiune de mai multe ori. Puteți permite o singură continuare sau anula această operațiune.",
+      "details": "Detaliile operațiunii"
+    },
     "preparing": "[to be translated]:Request received; preparing the task",
     "responding": "[to be translated]:Processing the response",
     "restoring": "[to be translated]:Restoring this conversation",
@@ -5783,7 +5815,7 @@
       "prompt": "Afișează prompt",
       "show_message_outline": "Afișează conturul mesajului",
       "stats_time": "Primul token {{first}} · Durată {{total}}",
-      "stats_tip": "Primul token: timpul până la primul text vizibil, inclusiv raționamentul vizibil. Total: până la încheierea întregii sarcini, inclusiv instrumentele și așteptarea. Cache numără doar citirile; — indică lipsa statisticilor de la furnizor.",
+      "stats_tip": "Prima reacție: timpul până la primul text sau raționament vizibil; pentru asistent contează și primul apel de instrument. Total: până la încheierea sarcinii, inclusiv instrumentele și așteptarea. Cache-ul numără doar tokenurile citite; — înseamnă statistici nefurnizate.",
       "stats_tokens": "Intrare {{input}} · Ieșire {{output}} · Cache {{cached}}",
       "title": "Setări mesaje",
       "use_serif_font": "Folosește font serif"
@@ -6786,6 +6818,7 @@
     "show_window": "Afișează fereastra"
   },
   "turnDiagnostics": {
+    "aggregate": "Statistici de execuție salvate (duratele se pot suprapune și nu trebuie adunate): cereri către model {{requests}}, așteptarea antetelor {{headers}}, instrumente finalizate {{tools}}. Intervalele individuale lipsă nu sunt reconstruite.",
     "description": "Exportă starea, duratele și cererile acestei runde fără a repeta sarcina sau a apela un model.",
     "export": "Exportă diagnosticul rundei",
     "includeContent": "Include conversația și conținutul instrumentelor din această rundă (opțional)",

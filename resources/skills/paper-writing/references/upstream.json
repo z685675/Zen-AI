@@ -1,0 +1,27 @@
+{
+  "repository": "https://github.com/K-Dense-AI/scientific-agent-skills",
+  "revision": "5f2bc0341354fd5590aef76a533ada1e1e5b4e62",
+  "license": "MIT",
+  "files": [
+    {
+      "local": "scripts/scientific_writing/check_consistency.py",
+      "upstream": "skills/scientific-writing/scripts/check_consistency.py",
+      "sha256": "5bd1f0dcbcccdac31e422b5a7b220d1ab1272a7eed906a62c0a5f2518e495d87"
+    },
+    {
+      "local": "scripts/scientific_writing/_common.py",
+      "upstream": "skills/scientific-writing/scripts/_common.py",
+      "sha256": "8cc192d82d219d1ec9720f8a8ab0c440fb35f2562fdeaeb7432a38d18e5e7b42"
+    },
+    {
+      "local": "assets/consistency-manifest.json",
+      "upstream": "skills/scientific-writing/assets/consistency_manifest_template.json",
+      "sha256": "2ea6f468ab6fab45c4db3616fbaddcc2ae706b3a26d6745b4cf74ddb53266872"
+    },
+    {
+      "local": "references/K-Dense-LICENSE.txt",
+      "upstream": "LICENSE.md",
+      "sha256": "09b02a3c9df3053c55531d503357a9c7cde275970e6c3ceaa1ddf5f0e90b40c1"
+    }
+  ]
+}

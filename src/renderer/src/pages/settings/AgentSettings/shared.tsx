@@ -12,7 +12,7 @@ import type {
   UpdateAgentFunction,
   UpdateAgentSessionFunction
 } from '@renderer/types'
-import { AgentConfigurationSchema, normalizePermissionMode } from '@renderer/types'
+import { AgentConfigurationSchema } from '@renderer/types'
 import { cn } from '@renderer/utils'
 import { getAgentAvatar } from '@shared/config/agents'
 import type { ModalProps } from 'antd'
@@ -40,7 +40,9 @@ export type AgentOrSessionSettingsProps =
 
 export const computeModeDefaults = (mode: PermissionMode, tools: Tool[]): string[] => {
   const defaultToolIds = tools.filter((tool) => !tool.requirePermissions).map((tool) => tool.id)
-  switch (normalizePermissionMode(mode)) {
+  // Legacy SDK tool lists are not used to authorize OpenCode modes.
+  switch (mode) {
+    case 'default':
     case 'acceptEdits':
       return [
         ...defaultToolIds,

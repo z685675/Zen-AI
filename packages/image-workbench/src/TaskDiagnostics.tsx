@@ -40,6 +40,39 @@ export function TaskDiagnostics({ task }: { task: ImageCanvasTask }) {
           <dd>{task.id}</dd>
         </div>
       </dl>
+      {diagnostics.requestFailure && (
+        <dl>
+          <div>
+            <dt>{t('requestEndpoint')}</dt>
+            <dd>
+              {diagnostics.requestFailure.method} {diagnostics.requestFailure.endpoint}
+            </dd>
+          </div>
+          <div>
+            <dt>{t('requestFailure')}</dt>
+            <dd>
+              {t('requestReasons.' + diagnostics.requestFailure.reason)} · {diagnostics.requestFailure.errorName}
+              {diagnostics.requestFailure.transportCode && ` · ${diagnostics.requestFailure.transportCode}`}
+            </dd>
+          </div>
+          {diagnostics.requestFailure.httpStatus && (
+            <div>
+              <dt>HTTP</dt>
+              <dd>{diagnostics.requestFailure.httpStatus}</dd>
+            </div>
+          )}
+          <div>
+            <dt>{t('requestTiming')}</dt>
+            <dd>
+              {t('requestTimingValue', {
+                seconds: seconds(diagnostics.requestFailure.durationMs),
+                timeout: seconds(diagnostics.requestFailure.timeoutMs),
+                attempt: diagnostics.requestFailure.attempt
+              })}
+            </dd>
+          </div>
+        </dl>
+      )}
       {diagnostics.server && (
         <>
           <p>{t('serverTimingsHint')}</p>

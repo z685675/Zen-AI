@@ -16,6 +16,8 @@ import iconPath from '../../../build/icon.png?asset'
 import { titleBarOverlayDark, titleBarOverlayLight } from '../config'
 import { configManager } from './ConfigManager'
 import { contextMenu } from './ContextMenu'
+import { hotpatchWindowPreferences } from './hotpatch/security'
+import { hotpatchService } from './hotpatch/service'
 import { isSafeExternalUrl } from './security'
 import { initSessionUserAgent } from './WebviewService'
 
@@ -98,6 +100,7 @@ export class WindowService {
         webSecurity: false,
         webviewTag: true,
         allowRunningInsecureContent: true,
+        ...hotpatchWindowPreferences(hotpatchService.secure),
         zoomFactor: configManager.getZoomFactor(),
         backgroundThrottling: false
       }
@@ -144,6 +147,10 @@ export class WindowService {
 
   private setupMainWindowMonitor(mainWindow: BrowserWindow) {
     mainWindow.webContents.on('render-process-gone', (_, details) => {
+      if (hotpatchService.guardingStartup) {
+        void hotpatchService.failStartup('renderer-crashed')
+        return
+      }
       logger.error(`Renderer process crashed with: ${JSON.stringify(details)}`)
       const currentTime = Date.now()
       const lastCrashTime = this.lastRendererProcessCrashTime
@@ -175,6 +182,19 @@ export class WindowService {
     app.on('web-contents-created', (_, webContents) => {
       contextMenu.contextMenu(webContents)
     })
+
+    if (hotpatchService.secure) {
+      mainWindow.webContents.on('will-attach-webview', (_event, preferences) => {
+        // Remote mini-apps never inherit the full desktop bridge.
+        delete preferences.preload
+        preferences.nodeIntegration = false
+        preferences.nodeIntegrationInSubFrames = false
+        preferences.contextIsolation = true
+        preferences.sandbox = true
+        preferences.webSecurity = true
+        preferences.allowRunningInsecureContent = false
+      })
+    }
 
     // Dangerous API
     if (isDev) {
@@ -306,7 +326,11 @@ export class WindowService {
           action: 'allow',
           overrideBrowserWindowOptions: {
             webPreferences: {
-              partition: 'persist:webview'
+              partition: 'persist:webview',
+              preload: undefined,
+              nodeIntegration: false,
+              contextIsolation: true,
+              sandbox: true
             }
           }
         }
@@ -339,6 +363,8 @@ export class WindowService {
   }
 
   private setupWebRequestHeaders(mainWindow: BrowserWindow) {
+    // Downloaded code must never erase the base CSP or weaken third-party frame isolation.
+    if (hotpatchService.secure) return
     mainWindow.webContents.session.webRequest.onHeadersReceived({ urls: ['*://*/*'] }, (details, callback) => {
       if (details.responseHeaders?.['X-Frame-Options']) {
         delete details.responseHeaders['X-Frame-Options']
@@ -560,6 +586,7 @@ export class WindowService {
         preload: join(__dirname, '../preload/index.js'),
         sandbox: false,
         webSecurity: false,
+        ...hotpatchWindowPreferences(hotpatchService.secure),
         webviewTag: true
       }
     })

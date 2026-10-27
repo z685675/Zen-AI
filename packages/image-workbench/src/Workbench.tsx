@@ -12,6 +12,7 @@ import { useTranslation } from 'react-i18next'
 
 import { blobToDataUrl } from './browserImages'
 import { emptyDraft, readDraft, type WorkbenchDraft, writeDraft } from './draft'
+import { dimensionKey, imageDimensionLabel, orderedImageDimensions } from './imageDimensions'
 import { MaskEditor } from './MaskEditor'
 import { TaskDiagnostics } from './TaskDiagnostics'
 
@@ -57,10 +58,6 @@ export function FieldSelect({
       </select>
     </label>
   )
-}
-
-export function dimensionKey(dimension: { ratio: string; size: string; resolution?: string }): string {
-  return JSON.stringify([dimension.ratio, dimension.size, dimension.resolution || ''])
 }
 
 function Configuration({
@@ -272,7 +269,6 @@ export default function Workbench() {
   const [message, setMessage] = useState('')
   const [notice, setNotice] = useState('')
   const [history, setHistory] = useState(false)
-  const [more, setMore] = useState(false)
   const [configuration, setConfiguration] = useState(false)
   const [preview, setPreview] = useState('')
   const [maskEditor, setMaskEditor] = useState(false)
@@ -297,8 +293,7 @@ export default function Workbench() {
   const model = provider?.models.find((item) => item.id === draft.modelId)
   const capabilities = model?.capabilities
   const dimension = capabilities?.dimensions.find((item) => dimensionKey(item) === draft.dimension)
-  const ratios = [...new Set(capabilities?.dimensions.map((item) => item.ratio) || [])]
-  const ratio = dimension?.ratio || ''
+  const dimensions = orderedImageDimensions(capabilities?.dimensions || [])
 
   const showError = useCallback(
     (issue: unknown) => {
@@ -324,14 +319,13 @@ export default function Workbench() {
         if (current.providerId) return current
         const first = list.find((item) => item.models.length)
         const firstModel = first?.models[0]
+        const firstDimension = orderedImageDimensions(firstModel?.capabilities?.dimensions || [])[0]
         return first && firstModel
           ? {
               ...current,
               providerId: first.id,
               modelId: firstModel.id,
-              dimension: firstModel.capabilities?.dimensions[0]
-                ? dimensionKey(firstModel.capabilities.dimensions[0])
-                : ''
+              dimension: firstDimension ? dimensionKey(firstDimension) : ''
             }
           : current
       })
@@ -664,7 +658,6 @@ export default function Workbench() {
     setComparisonImages({})
     setPreview('')
     setMaskEditor(false)
-    setMore(false)
     setConfiguration(false)
     setMessage('')
     setNotice('')
@@ -877,13 +870,16 @@ export default function Workbench() {
                 </span>
               </div>
               {task.status === 'running' && <p>{t('runningHint')}</p>}
+              {task.diagnostics?.generationSubmitted === false && task.status === 'failed' && (
+                <p>{t('notSubmittedHint')}</p>
+              )}
               {!!task.assets.length && task.assets.length < (task.parameters?.count || 1) && (
                 <p>{t('partialResult', { have: task.assets.length, wanted: task.parameters?.count })}</p>
               )}
               {task.status === 'uncertain' && (
                 <p>
                   {t(task.error === 'studio_download_failed' ? 'downloadPending' : 'uncertainHint')}
-                  {!task.recoverable && ` ${t('directHint')}`}
+                  {!task.recoverable && task.diagnostics?.transport === 'direct' && ` ${t('directHint')}`}
                 </p>
               )}
               {task.error && (
@@ -1035,37 +1031,18 @@ export default function Workbench() {
               options={provider?.models.map((item) => ({ value: item.id, label: item.name })) || []}
               onChange={(id) => chooseModel(draft.providerId, id)}
             />
-            <FieldSelect
-              label={t('ratio')}
-              value={ratio}
-              options={[
-                ...(!ratio ? [{ value: '', label: t('chooseDimension') }] : []),
-                ...ratios.map((value) => ({ value, label: value === 'auto' ? t('auto') : value }))
-              ]}
-              onChange={(value) => {
-                const next =
-                  capabilities?.dimensions.find(
-                    (item) => item.ratio === value && item.resolution === dimension?.resolution
-                  ) || capabilities?.dimensions.find((item) => item.ratio === value)
-                setDraft((current) => ({ ...current, dimension: next ? dimensionKey(next) : '' }))
-              }}
-            />
             {capabilities && (
-              <FieldSelect
-                label={t('resolution')}
-                value={dimension ? draft.dimension : ''}
-                options={[
-                  ...(!dimension ? [{ value: '', label: t('chooseDimension') }] : []),
-                  ...(capabilities?.dimensions
-                    .filter((item) => item.ratio === ratio)
-                    .map((item) => ({
-                      value: dimensionKey(item),
-                      label:
-                        item.resolution || (item.size.includes(':') || item.size === 'auto' ? t('auto') : item.size)
-                    })) || [])
-                ]}
-                onChange={(value) => setDraft((current) => ({ ...current, dimension: value }))}
-              />
+              <div className="image-size-field">
+                <FieldSelect
+                  label={t('imageSize')}
+                  value={dimension ? draft.dimension : ''}
+                  options={[
+                    ...(!dimension ? [{ value: '', label: t('chooseDimension') }] : []),
+                    ...dimensions.map((item) => ({ value: dimensionKey(item), label: imageDimensionLabel(item, t) }))
+                  ]}
+                  onChange={(value) => setDraft((current) => ({ ...current, dimension: value }))}
+                />
+              </div>
             )}
           </div>
           {capabilities && (
@@ -1074,134 +1051,125 @@ export default function Workbench() {
               {t('referenceLimit', { min: capabilities.minReferences, max: capabilities.maxReferences })}
             </small>
           )}
-          <button
-            type="button"
-            className="subtle more-button"
-            aria-controls="image-advanced"
-            aria-expanded={more}
-            onClick={() => setMore((value) => !value)}>
-            {more ? '−' : '＋'} {t('more')}
-          </button>
-          {more && (
-            <div id="image-advanced" className="advanced">
-              {capabilities?.supportsMask && draft.references.length === 1 && (
-                <details>
-                  <summary>{t('advancedEditing')}</summary>
-                  <button type="button" onClick={() => setMaskEditor(true)}>
-                    {t('maskEditor')}
-                  </button>
-                  <p className="muted">{t('expansionHint')}</p>
-                  <div className="settings-grid">
-                    {(['top', 'right', 'bottom', 'left'] as const).map((edge) => (
-                      <label className="field" key={edge}>
-                        <span>{t('edge.' + edge)}</span>
-                        <input
-                          type="number"
-                          min={0}
-                          max={2048}
-                          step={16}
-                          value={draft.expansion?.[edge] || 0}
-                          onChange={(event) => {
-                            const expansion = {
-                              top: 0,
-                              right: 0,
-                              bottom: 0,
-                              left: 0,
-                              ...draft.expansion,
-                              [edge]: Number(event.target.value)
-                            }
-                            setDraft((value) => ({
-                              ...value,
-                              mask: undefined,
-                              expansion: Object.values(expansion).some((value) => value > 0) ? expansion : undefined
-                            }))
-                          }}
-                        />
-                      </label>
-                    ))}
-                  </div>
-                </details>
-              )}
-              <details>
-                <summary>{t('comparison')}</summary>
-                <p className="muted">{t('comparisonHint')}</p>
-                <div className="comparison-models">
-                  {catalog
-                    .flatMap((provider) => provider.models.map((model) => ({ provider, model })))
-                    .filter((value) => value.provider.id !== draft.providerId || value.model.id !== draft.modelId)
-                    .map((value) => {
-                      const checked = (draft.comparisons || []).some(
-                        (target) => target.providerId === value.provider.id && target.modelId === value.model.id
-                      )
-                      return (
-                        <label className="check-field" key={JSON.stringify([value.provider.id, value.model.id])}>
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            disabled={!checked && (draft.comparisons?.length || 0) >= 3}
-                            onChange={() =>
-                              setDraft((current) => ({
-                                ...current,
-                                comparisons: checked
-                                  ? current.comparisons?.filter(
-                                      (target) =>
-                                        target.providerId !== value.provider.id || target.modelId !== value.model.id
-                                    )
-                                  : [
-                                      ...(current.comparisons || []),
-                                      { providerId: value.provider.id, modelId: value.model.id }
-                                    ]
-                              }))
-                            }
-                          />
-                          {value.provider.name} · {value.model.name}
-                        </label>
-                      )
-                    })}
-                </div>
-              </details>
-              <div className="settings-grid">
-                {(!!capabilities?.qualities.length || draft.quality !== 'auto') && (
-                  <FieldSelect
-                    label={t('quality')}
-                    value={draft.quality}
-                    options={[...new Set(['auto', ...(capabilities?.qualities || [])])].map((value) => ({
-                      value,
-                      label: t(value, { defaultValue: value })
-                    }))}
-                    onChange={(value) => setDraft((current) => ({ ...current, quality: value }))}
-                  />
-                )}
-                {(!!capabilities?.backgrounds.length || draft.background !== 'auto') && (
-                  <FieldSelect
-                    label={t('background')}
-                    value={draft.background}
-                    options={[...new Set(['auto', ...(capabilities?.backgrounds || [])])].map((value) => ({
-                      value,
-                      label: t(value, { defaultValue: value })
-                    }))}
-                    onChange={(value) => setDraft((current) => ({ ...current, background: value }))}
-                  />
-                )}
-                {((capabilities?.maxImages || 0) > 1 || draft.count > (capabilities?.maxImages || 1)) && (
-                  <FieldSelect
-                    label={t('count')}
-                    value={String(draft.count)}
-                    options={Array.from({ length: capabilities?.maxImages || 1 }, (_, i) => ({
-                      value: String(i + 1),
-                      label: String(i + 1)
-                    }))}
-                    onChange={(value) => setDraft((current) => ({ ...current, count: Number(value) }))}
-                  />
-                )}
-              </div>
-              {model && capabilities?.source !== 'server' && (
-                <button type="button" onClick={() => setConfiguration(true)}>
-                  {t('configure')}
+          <section id="image-advanced" className="advanced" aria-label={t('more')}>
+            <h2>{t('more')}</h2>
+            {capabilities?.supportsMask && draft.references.length === 1 && (
+              <section className="editing-settings" aria-label={t('advancedEditing')}>
+                <h3>{t('advancedEditing')}</h3>
+                <button type="button" onClick={() => setMaskEditor(true)}>
+                  {t('maskEditor')}
                 </button>
+                <p className="muted">{t('expansionHint')}</p>
+                <div className="settings-grid">
+                  {(['top', 'right', 'bottom', 'left'] as const).map((edge) => (
+                    <label className="field" key={edge}>
+                      <span>{t('edge.' + edge)}</span>
+                      <input
+                        type="number"
+                        min={0}
+                        max={2048}
+                        step={16}
+                        value={draft.expansion?.[edge] || 0}
+                        onChange={(event) => {
+                          const expansion = {
+                            top: 0,
+                            right: 0,
+                            bottom: 0,
+                            left: 0,
+                            ...draft.expansion,
+                            [edge]: Number(event.target.value)
+                          }
+                          setDraft((value) => ({
+                            ...value,
+                            mask: undefined,
+                            expansion: Object.values(expansion).some((value) => value > 0) ? expansion : undefined
+                          }))
+                        }}
+                      />
+                    </label>
+                  ))}
+                </div>
+              </section>
+            )}
+            <div className="settings-grid">
+              {(!!capabilities?.qualities.length || draft.quality !== 'auto') && (
+                <FieldSelect
+                  label={t('quality')}
+                  value={draft.quality}
+                  options={[...new Set(['auto', ...(capabilities?.qualities || [])])].map((value) => ({
+                    value,
+                    label: t(value, { defaultValue: value })
+                  }))}
+                  onChange={(value) => setDraft((current) => ({ ...current, quality: value }))}
+                />
+              )}
+              {(!!capabilities?.backgrounds.length || draft.background !== 'auto') && (
+                <FieldSelect
+                  label={t('background')}
+                  value={draft.background}
+                  options={[...new Set(['auto', ...(capabilities?.backgrounds || [])])].map((value) => ({
+                    value,
+                    label: t(value, { defaultValue: value })
+                  }))}
+                  onChange={(value) => setDraft((current) => ({ ...current, background: value }))}
+                />
+              )}
+              {((capabilities?.maxImages || 0) > 1 || draft.count > (capabilities?.maxImages || 1)) && (
+                <FieldSelect
+                  label={t('count')}
+                  value={String(draft.count)}
+                  options={Array.from({ length: capabilities?.maxImages || 1 }, (_, i) => ({
+                    value: String(i + 1),
+                    label: String(i + 1)
+                  }))}
+                  onChange={(value) => setDraft((current) => ({ ...current, count: Number(value) }))}
+                />
               )}
             </div>
-          )}
+            {model && capabilities?.source !== 'server' && (
+              <button type="button" onClick={() => setConfiguration(true)}>
+                {t('configure')}
+              </button>
+            )}
+            <section className="model-comparison" aria-label={t('comparison')}>
+              <h3>{t('comparison')}</h3>
+              <p className="muted">{t('comparisonHint')}</p>
+              <div className="comparison-models">
+                {catalog
+                  .flatMap((provider) => provider.models.map((model) => ({ provider, model })))
+                  .filter((value) => value.provider.id !== draft.providerId || value.model.id !== draft.modelId)
+                  .map((value) => {
+                    const checked = (draft.comparisons || []).some(
+                      (target) => target.providerId === value.provider.id && target.modelId === value.model.id
+                    )
+                    return (
+                      <label className="check-field" key={JSON.stringify([value.provider.id, value.model.id])}>
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          disabled={!checked && (draft.comparisons?.length || 0) >= 3}
+                          onChange={() =>
+                            setDraft((current) => ({
+                              ...current,
+                              comparisons: checked
+                                ? current.comparisons?.filter(
+                                    (target) =>
+                                      target.providerId !== value.provider.id || target.modelId !== value.model.id
+                                  )
+                                : [
+                                    ...(current.comparisons || []),
+                                    { providerId: value.provider.id, modelId: value.model.id }
+                                  ]
+                            }))
+                          }
+                        />
+                        {value.provider.name} · {value.model.name}
+                      </label>
+                    )
+                  })}
+              </div>
+            </section>
+          </section>
           {!catalog.length && !loadingCatalog && (
             <div className="callout">
               <strong>{t('noProviders')}</strong>

@@ -91,3 +91,7 @@ Call `mcp__assistant__python_execute` with `script_path: "<skill-root>/scripts/r
 - The `.docx` must pass ZIP/CRC/XML, relationship, field, TOC-cache, and open-time-update validation.
 - Image-bearing documents must contain internal `word/media/*` parts and internal image relationships; linked local files are not deliverable media.
 - The resolved style, source (`explicit`, `brand`, `inferred`, or `default`), mode, and `document_type` must be present in the `create_file` result for traceability.
+
+## Delivery contract
+
+Treat explicit page, slide, worksheet and file counts as hard requirements. Verify actual outputs using the format validator and rendered pages where applicable; do not infer a Word page count from source text. Check requested formulas and final-page text, and distinguish obsolete values from the final decision. Deliver only existing final paths, excluding temporary previews and replaced files. Reuse validation already completed by the generator; add checks only for unverified requirements.

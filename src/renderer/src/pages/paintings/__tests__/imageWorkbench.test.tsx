@@ -52,7 +52,77 @@ afterEach(() => {
 })
 
 describe('image workbench workflows', () => {
-  it('shows common ratios and resolutions and submits the selected 4K preference', async () => {
+  it('shows upload failures as not submitted with safe request evidence, not a billing warning', async () => {
+    const task: ImageCanvasTask = {
+      id: 'preparation-failed',
+      providerId: 'a',
+      modelId: model.id,
+      prompt: 'edit the poster',
+      createdAt: new Date().toISOString(),
+      status: 'failed',
+      assets: [],
+      recoverable: false,
+      error: 'studio_reference_upload_failed',
+      diagnostics: {
+        protocol: 'openai',
+        capabilitySource: 'server',
+        capabilityRevision: 'previous',
+        attempts: 1,
+        transport: 'studio',
+        generationSubmitted: false,
+        failedPhase: 'uploading',
+        phaseDurationsMs: { uploading: 241000 },
+        requestFailure: {
+          operation: 'reference-upload',
+          endpoint: '/api/image-studio/assets',
+          method: 'POST',
+          reason: 'timeout',
+          errorName: 'TimeoutError',
+          durationMs: 120000,
+          timeoutMs: 120000,
+          attempt: 2
+        }
+      }
+    }
+    vi.mocked(window.imageCanvas!.history).mockResolvedValue([task])
+    render(<Workbench />)
+    await screen.findByText(/No generation task was submitted and the image model has not been called/)
+    expect(screen.getByText('Stopped during: Uploading references')).toBeInTheDocument()
+    expect(screen.getByText('POST /api/image-studio/assets')).toBeInTheDocument()
+    expect(screen.getByText(/Request timed out · TimeoutError/)).toBeInTheDocument()
+    expect(screen.getByText('120.0 s / 120.0 s timeout · attempt 2')).toBeInTheDocument()
+    expect(screen.queryByText(/may have accepted/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/direct endpoint/i)).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Retrieve original result' })).not.toBeInTheDocument()
+    expect(window.imageCanvas!.submit).not.toHaveBeenCalled()
+  })
+  it('does not infer a direct endpoint from a legacy server task without recovery metadata', async () => {
+    vi.mocked(window.imageCanvas!.history).mockResolvedValue([
+      {
+        id: 'legacy-uncertain',
+        providerId: 'a',
+        modelId: model.id,
+        prompt: 'legacy task',
+        createdAt: new Date().toISOString(),
+        status: 'uncertain',
+        assets: [],
+        recoverable: false,
+        diagnostics: {
+          protocol: 'openai',
+          capabilitySource: 'server',
+          capabilityRevision: 'previous',
+          attempts: 1,
+          phaseDurationsMs: { preparing: 30000 },
+          failedPhase: 'preparing'
+        }
+      }
+    ])
+    render(<Workbench />)
+    await screen.findByRole('heading', { name: 'Result unconfirmed' })
+    expect(screen.queryByText(/direct endpoint/i)).not.toBeInTheDocument()
+    expect(window.imageCanvas!.submit).not.toHaveBeenCalled()
+  })
+  it('combines ratios and resolutions in one size selector and submits the selected 4K preference', async () => {
     const gemini = { id: 'gemini-2.5-flash-image', name: 'Gemini image', protocol: 'gemini' as const }
     vi.mocked(window.imageCanvas!.catalog).mockResolvedValue([
       {
@@ -73,8 +143,11 @@ describe('image workbench workflows', () => {
     render(<Workbench />)
     await waitFor(() => expect(screen.getByLabelText('Model')).toHaveValue(gemini.id))
     fireEvent.change(screen.getByLabelText('Prompt'), { target: { value: 'a landscape' } })
-    fireEvent.change(screen.getByLabelText('Aspect ratio'), { target: { value: '16:9' } })
-    const resolution = screen.getByLabelText('Resolution / size')
+    expect(screen.queryByLabelText('Aspect ratio')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Resolution / size')).not.toBeInTheDocument()
+    const resolution = screen.getByLabelText('Image size')
+    expect(resolution).toHaveValue(JSON.stringify(['auto', 'auto', '']))
+    expect(resolution.querySelector('option')).toHaveTextContent('Auto (smart match)')
     expect(resolution).toHaveTextContent('1K')
     expect(resolution).toHaveTextContent('2K')
     expect(resolution).toHaveTextContent('4K')
@@ -85,6 +158,52 @@ describe('image workbench workflows', () => {
         expect.objectContaining({ size: '16:9', aspectRatio: '16:9', resolution: '4K' })
       )
     )
+  })
+  it('shows expanded settings by default and puts model comparison last', async () => {
+    const { container } = render(<Workbench />)
+    await waitFor(() => expect(screen.getByLabelText('Model')).toHaveValue(model.id))
+    expect(screen.queryByRole('button', { name: /More settings/ })).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Quality')).toBeVisible()
+    expect(screen.getByLabelText('Background')).toBeVisible()
+    expect(screen.getByLabelText('Images')).toBeVisible()
+    const settings = screen.getByRole('region', { name: 'More settings' })
+    expect(settings.lastElementChild).toBe(screen.getByRole('region', { name: 'Compare models' }))
+    expect(screen.getByLabelText('Gateway B · Image model')).toBeVisible()
+    expect(container.querySelector('#image-advanced details')).not.toBeInTheDocument()
+  })
+  it('puts automatic sizing first even when the model catalog lists it last', async () => {
+    const reordered = structuredClone(catalog)
+    reordered[0].models[0].capabilities.dimensions = [
+      { ratio: '2:3', size: '1024x1536' },
+      { ratio: '1:1', size: '1024x1024' },
+      { ratio: 'auto', size: 'auto' }
+    ]
+    vi.mocked(window.imageCanvas!.catalog).mockResolvedValue(reordered)
+    render(<Workbench />)
+    await waitFor(() => expect(screen.getByLabelText('Model')).toHaveValue(model.id))
+    const size = screen.getByLabelText('Image size')
+    expect(size).toHaveValue(JSON.stringify(['auto', 'auto', '']))
+    expect(size.querySelector('option')).toHaveTextContent('Auto (smart match)')
+    expect(size).toHaveTextContent('Portrait 1024 × 1536')
+    expect(size).toHaveTextContent('Square 1024 × 1024')
+  })
+  it('shows understandable Chinese size labels without changing the saved selection', async () => {
+    const { readDraft } = await import('../../../../../../packages/image-workbench/src/draft')
+    vi.mocked(readDraft).mockResolvedValueOnce({
+      ...emptyDraft,
+      providerId: 'a',
+      modelId: model.id,
+      dimension: JSON.stringify(['2:3', '1024x1536', ''])
+    })
+    await i18next.changeLanguage('zh')
+    render(<Workbench />)
+    await waitFor(() => expect(screen.getByLabelText('模型')).toHaveValue(model.id))
+    const size = await screen.findByLabelText('图片尺寸')
+    expect(size).toHaveValue(JSON.stringify(['2:3', '1024x1536', '']))
+    expect(size.querySelector('option')).toHaveTextContent('自动（智能匹配）')
+    expect(size).toHaveTextContent('竖图 1024 × 1536')
+    expect(size).toHaveTextContent('横图 1536 × 1024')
+    expect(size).toHaveTextContent('方图 1024 × 1024')
   })
   it('starts a blank draft without restoring old results on polling or removing history', async () => {
     const { readDraft, writeDraft } = await import('../../../../../../packages/image-workbench/src/draft')
@@ -213,8 +332,6 @@ describe('image workbench workflows', () => {
     render(<Workbench />)
     await waitFor(() => expect(screen.getByLabelText('Provider')).toHaveValue('a'))
     fireEvent.change(screen.getByLabelText('Prompt'), { target: { value: 'compare a waterfall' } })
-    fireEvent.click(screen.getByRole('button', { name: /More settings/ }))
-    fireEvent.click(screen.getByText('Compare models'))
     fireEvent.click(screen.getByLabelText('Gateway B · Image model'))
     expect(
       screen.getByText('2 separate model tasks will be submitted and may be billed separately.')
@@ -370,7 +487,7 @@ describe('image workbench workflows', () => {
     })
     render(<Workbench />)
     await waitFor(() => expect(screen.getByLabelText('Model')).toHaveValue(model.id))
-    expect(screen.getByLabelText('Aspect ratio')).toHaveValue('')
+    expect(await screen.findByLabelText('Image size')).toHaveValue('')
     expect(screen.getByRole('button', { name: /Generate image/ })).toBeDisabled()
     expect(window.imageCanvas!.submit).not.toHaveBeenCalled()
   })
@@ -387,20 +504,22 @@ describe('image workbench workflows', () => {
     render(<Workbench />)
     await waitFor(() => expect(screen.getByLabelText('Provider')).toHaveValue('a'))
     fireEvent.change(screen.getByLabelText('Prompt'), { target: { value: 'a wide landscape' } })
-    fireEvent.change(screen.getByLabelText('Aspect ratio'), { target: { value: '3:2' } })
-    fireEvent.click(screen.getByRole('button', { name: /More settings/ }))
+    fireEvent.change(screen.getByLabelText('Image size'), {
+      target: { value: JSON.stringify(['3:2', '1536x1024', '']) }
+    })
     fireEvent.change(screen.getByLabelText('Quality'), { target: { value: 'high' } })
     fireEvent.change(screen.getByLabelText('Background'), { target: { value: 'transparent' } })
     fireEvent.change(screen.getByLabelText('Images'), { target: { value: '4' } })
     fireEvent.change(screen.getByLabelText('Provider'), { target: { value: 'b' } })
-    expect(screen.getByLabelText('Aspect ratio')).toHaveValue('')
-    expect(screen.getByLabelText('Resolution / size')).toHaveValue('')
+    expect(screen.getByLabelText('Image size')).toHaveValue('')
     expect(screen.getByLabelText('Quality')).toHaveValue('high')
     expect(screen.getByLabelText('Background')).toHaveValue('transparent')
     expect(screen.getByLabelText('Images')).toHaveValue('4')
     expect(screen.getByRole('button', { name: /Generate image/ })).toBeDisabled()
     expect(window.imageCanvas!.submit).not.toHaveBeenCalled()
-    fireEvent.change(screen.getByLabelText('Aspect ratio'), { target: { value: '1:1' } })
+    fireEvent.change(screen.getByLabelText('Image size'), {
+      target: { value: JSON.stringify(['1:1', '1024x1024', '']) }
+    })
     fireEvent.change(screen.getByLabelText('Quality'), { target: { value: 'auto' } })
     fireEvent.change(screen.getByLabelText('Background'), { target: { value: 'auto' } })
     fireEvent.change(screen.getByLabelText('Images'), { target: { value: '1' } })

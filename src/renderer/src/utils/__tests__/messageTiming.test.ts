@@ -15,6 +15,25 @@ afterEach(() => {
 })
 
 describe('response timing', () => {
+  it('freezes the first tool activity without waiting for a later text answer', () => {
+    let clock = 0
+    vi.spyOn(performance, 'now').mockImplementation(() => clock)
+    const timer = createMessageResponseTimer()
+    clock = 2000
+    timer.markFirstActivity()
+    clock = 20_000
+    timer.markFirstActivity()
+    clock = 900_000
+    timer.markFirstToken('final answer')
+    clock = 903_000
+    expect(timer.finish('completed')).toMatchObject({ firstTokenMs: 2000, elapsedMs: 903_000 })
+  })
+  it('does not invent activity after a task already stopped', () => {
+    const timer = createMessageResponseTimer()
+    timer.finish('cancelled')
+    timer.markFirstActivity()
+    expect(timer.finish('completed').firstTokenMs).toBeUndefined()
+  })
   it('measures the entire round and freezes its first visible token and finish time', () => {
     vi.useFakeTimers({ toFake: ['Date'] })
     vi.setSystemTime('2026-10-11T01:30:00Z')

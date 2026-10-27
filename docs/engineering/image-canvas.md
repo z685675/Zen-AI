@@ -1,5 +1,9 @@
 # 本地图片画布
 
+> 历史设计记录（2026-10-25 更新）：产品现仅保留“图片工作台”和“本地图片”。
+> 本文所述 infinite-canvas 演示入口、`packages/image-canvas` 及其构建已移除，不再作为当前使用说明。
+> 原生成任务/作品存储和安全 IPC 由图片工作台继续复用；为兼容既有记录，内部仍保留 `image-canvas` 命名与数据目录，不删除用户历史。
+
 绘画页面默认打开“图片画布”。基于 basketikun/infinite-canvas v0.20.0，固定提交
 `3a6b64b602ad062b29fac66902ed18a7ef5fd9dc`，修改后的源码在 `packages/image-canvas`，
 MIT 许可证和页面中的作者归属均保留。每次桌面构建会生成本地静态页面和独立的沙盒 preload；

@@ -8,19 +8,18 @@ import { build } from 'vite'
 // A real Electron smoke check with an isolated userData directory and local
 // mock upstream. It never reads user providers or sends paid model requests.
 async function main() {
-  const workbench = process.argv.includes('--workbench')
+  const workbench = true
   const benchmark = process.argv.includes('--benchmark')
   const packagedIndex = process.argv.indexOf('--packaged-app')
   const packagedApp = packagedIndex >= 0 ? process.argv[packagedIndex + 1] : undefined
   if (packagedIndex >= 0 && (!packagedApp || !packagedApp.endsWith('.asar')))
     throw new Error('--packaged-app requires the path to app.asar')
-  const surface = workbench ? 'workbench' : 'canvas'
   const directory = mkdtempSync(resolve('tmp/image-canvas-smoke-'))
   const root = process.cwd()
   const data = mkdtempSync(resolve(tmpdir(), 'zen-image-canvas-smoke-'))
   writeFileSync(
     resolve(directory, 'logger.ts'),
-    `export const loggerService = { withContext: () => ({ error: (...args: unknown[]) => process.stderr.write(String(args[1]) + '\\n') }) }`
+    `export const loggerService = { withContext: () => ({ info: () => {}, warn: () => {}, error: (...args: unknown[]) => process.stderr.write(String(args[1]) + '\\n') }) }`
   )
   writeFileSync(
     resolve(directory, 'entry.ts'),
@@ -48,28 +47,29 @@ app.whenReady().then(async () => {
   const providers=[{id:'offline',name:'Offline smoke',apiHost:'http://127.0.0.1:'+server.address().port,apiKey:'offline-test-key',models:[{id:'gpt-image-test',name:'Image',protocol:'openai'},{id:'gpt-image-alternate',name:'Image alternate',protocol:'openai'}]}]
   if(${JSON.stringify(benchmark)}) {
    const samples=[]
-   for(const surface of ['workbench','canvas'])for(let trial=0;trial<5;trial++) {
+   for(let trial=0;trial<5;trial++) {
     const start=performance.now()
-    const result=await service.open({providers,surface,bounds:{x:0,y:0,width:1000,height:760}})
+    const result=await service.open({providers,bounds:{x:0,y:80,width:1000,height:680}})
     if(!result.ok)throw Error('benchmark_open_failed')
     const contents=service.view.webContents
     contents.setBackgroundThrottling(false)
     const deadline=Date.now()+10000
-    const condition=surface==='workbench'?'document.querySelector("select")?.value === "offline"':'document.body.innerText.includes("Zen-AI") && typeof window.imageCanvas === "object"'
+    const condition='document.querySelector("select")?.value === "offline"'
     while(!(await contents.executeJavaScript(condition))&&Date.now()<deadline)await new Promise(resolve=>setTimeout(resolve,20))
     if(!(await contents.executeJavaScript(condition)))throw Error('benchmark_not_ready')
     const readyMs=Math.round(performance.now()-start)
     await new Promise(resolve=>setTimeout(resolve,150))
     const workingSetKB=app.getAppMetrics().find(item=>item.pid===contents.getOSProcessId())?.memory.workingSetSize
-    samples.push({surface,trial,readyMs,workingSetKB})
+    samples.push({surface:'workbench',trial,readyMs,workingSetKB})
     await service.close()
    }
    if(calls!==0)throw Error('benchmark_generated_image')
    require('node:fs').writeFileSync(${JSON.stringify(resolve('../workspace-docs/artifacts/image-page-performance.json'))},JSON.stringify({kind:'local-hidden-electron-ui-not-inference',platform:process.platform,arch:process.arch,hardwareAcceleration:false,generatedAt:new Date().toISOString(),samples},null,2))
-   process.stdout.write('PASS: 5 local opens per surface, readiness and renderer working set recorded; no generation requests\\n')
+   process.stdout.write('PASS: 5 workbench opens, readiness and renderer working set recorded; no generation requests\\n')
   }
-  const opened=await service.open({providers,surface:${JSON.stringify(surface)},userFontFamily:'Consolas',bounds:{x:0,y:0,width:1000,height:760}})
+  const opened=await service.open({providers,userFontFamily:'Consolas',bounds:{x:0,y:80,width:1000,height:680}})
   if(!opened.ok)throw Error('view_open_failed')
+  service.setVisible(true)
   const view=service.view
   view.webContents.setBackgroundThrottling(false)
   const fontDeadline=Date.now()+5000
@@ -82,6 +82,9 @@ app.whenReady().then(async () => {
   if(state.bridge!=='object'||state.api!=='undefined'||state.node!=='undefined'||!state.body.includes(${JSON.stringify(workbench ? '图片工作台' : 'Zen-AI')}))throw Error('invalid_page_isolation:'+health)
   const catalog=await view.webContents.executeJavaScript('window.imageCanvas.catalog()')
   if(JSON.stringify(catalog).includes('offline-test-key')||JSON.stringify(catalog).includes('127.0.0.1'))throw Error('catalog_secret_leak')
+  for(let i=0;i<10;i++) {service.setVisible(false);service.resize({x:0,y:80,width:1000,height:680});service.setVisible(true)}
+  if(service.view!==view||calls!==0||view.getBounds().y!==80)throw Error('mode_switch_recreated_view_or_covered_titlebar')
+  process.stdout.write('PASS: 10 visibility switches keep the workbench instance and reserved titlebar; no generation requests\\n')
   const id=randomUUID()
   const request={id,providerId:'offline',modelId:'gpt-image-test',prompt:'Offline smoke',references:[],size:'1:1',quality:'auto',background:'',count:1}
   let firstId=id
@@ -101,7 +104,8 @@ app.whenReady().then(async () => {
   const deadline=Date.now()+10000
   while(service.store().task(firstId).status==='running'&&Date.now()<deadline)await new Promise(resolve=>setTimeout(resolve,30))
   if(service.store().task(firstId).status!=='completed'||calls!==1)throw Error('task_did_not_survive_close')
-  if(!(await service.open({providers,surface:${JSON.stringify(surface)},bounds:{x:0,y:0,width:1000,height:760}})).ok)throw Error('reopen_failed')
+  if(!(await service.open({providers,bounds:{x:0,y:80,width:1000,height:680}})).ok)throw Error('reopen_failed')
+  service.setVisible(true)
   const defaultFonts=await service.view.webContents.executeJavaScript('document.fonts.ready.then(()=>JSON.stringify({family:getComputedStyle(document.body).fontFamily,loaded:[...document.fonts].some(font=>font.family.includes("HarmonyOS Sans")&&font.status==="loaded")}))')
   if(!JSON.parse(defaultFonts).family.includes('HarmonyOS Sans')||JSON.parse(defaultFonts).family.includes('Consolas')||!JSON.parse(defaultFonts).loaded)throw Error('bundled_global_font_not_loaded:'+defaultFonts)
   process.stdout.write('PASS: default global font loads from bundled local assets after clearing custom font\\n')
@@ -179,8 +183,7 @@ app.whenReady().then(async () => {
    const clickText=async(text)=>{if(!(await contents.executeJavaScript('(()=>{const e=[...document.querySelectorAll("button,summary,label")].find(e=>e.textContent.trim()==='+JSON.stringify(text)+');if(!e)return false;e.click();return true})()')))throw Error('missing_advanced_control:'+text)}
    await contents.executeJavaScript('(()=>{const data=Uint8Array.from(atob('+JSON.stringify(image.toString('base64'))+'),c=>c.charCodeAt(0));const transfer=new DataTransfer();transfer.items.add(new File([data],"offline.png",{type:"image/png"}));const input=document.querySelector("input[type=file]");input.files=transfer.files;input.dispatchEvent(new Event("change",{bubbles:true}))})()')
    await waitFor('document.querySelectorAll(".reference img").length===1')
-   await contents.executeJavaScript('document.querySelector(".more-button").click()')
-   await clickText('局部重绘 / 扩图')
+   if(!(await contents.executeJavaScript('(()=>{const settings=document.querySelector("#image-advanced"),size=document.querySelector("select[aria-label=图片尺寸]");return !!settings && !settings.querySelector("details") && settings.lastElementChild.classList.contains("model-comparison") && !!size && size.options[0].textContent==="自动（智能匹配）" && !document.querySelector(".more-button")})()')))throw Error('expanded_settings_or_size_selector_invalid')
    await clickText('涂抹需要重绘的区域')
    await waitFor('document.querySelector(".mask-stage canvas")?.width===960')
    const bounds=await contents.executeJavaScript('(()=>{const canvas=document.querySelector(".mask-stage canvas"),a=canvas.getBoundingClientRect(),b=document.querySelector(".mask-stage img").getBoundingClientRect();return {x:a.x+a.width/2,y:a.y+a.height/2,aligned:Math.abs(a.width-b.width)<1&&Math.abs(a.height-b.height)<1}})()')
@@ -193,7 +196,6 @@ app.whenReady().then(async () => {
    await waitFor('!document.querySelector("dialog") && !document.querySelector("button.generate").disabled')
    await contents.executeJavaScript('document.querySelector("button.generate").click()')
    await waitFor('window.imageCanvas.history().then(items=>items.some(task=>task.maskAsset&&task.status==="completed"))')
-   await clickText('多模型比较')
    await clickText('Offline smoke · Image alternate')
    await waitFor('document.querySelector("button.generate").textContent.includes("2") && !document.querySelector("button.generate").disabled')
    await contents.executeJavaScript('document.querySelector("button.generate").click()')
@@ -240,7 +242,7 @@ app.whenReady().then(async () => {
         },
         load(id) {
           if (id === '\0smoke-logger')
-            return 'export const loggerService = { withContext: () => ({ error: (...args) => process.stderr.write(String(args[1]) + "\\n") }) }'
+            return 'export const loggerService = { withContext: () => ({ info: () => {}, warn: () => {}, error: (...args) => process.stderr.write(String(args[1]) + "\\n") }) }'
           return null
         }
       }

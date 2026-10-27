@@ -1,0 +1,72 @@
+diff --git a/dist/fontkit.es.js b/dist/fontkit.es.js
+index 2711b07413d1eb095487d4fddc7273f4afc1d82b..a0a691e96ecfa3d6f9c08c1599b3d27628935f4e 100644
+--- a/dist/fontkit.es.js
++++ b/dist/fontkit.es.js
+@@ -32932,18 +32932,18 @@ var CFFSubset = /*#__PURE__*/function (_Subset) {
+         continue;
+       }
+ 
+-      if (!used_fds[fd]) {
++      if (used_fds[fd] == null) {
+         topDict.FDArray.push(Object.assign({}, this.cff.topDict.FDArray[fd]));
+         used_subrs.push({});
+       }
+ 
+-      used_fds[fd] = true;
+-      topDict.FDSelect.fds.push(topDict.FDArray.length - 1);
++      if (used_fds[fd] == null) used_fds[fd] = topDict.FDArray.length - 1;
++      topDict.FDSelect.fds.push(used_fds[fd]);
+       var glyph = this.font.getGlyph(gid);
+       var path = glyph.path; // this causes the glyph to be parsed
+ 
+       for (var subr in glyph._usedSubrs) {
+-        used_subrs[used_subrs.length - 1][subr] = true;
++        used_subrs[used_fds[fd]][subr] = true;
+       }
+     }
+ 
+@@ -33038,7 +33038,7 @@ var CFFSubset = /*#__PURE__*/function (_Subset) {
+     var top = {
+       version: 1,
+       hdrSize: this.cff.hdrSize,
+-      offSize: this.cff.length,
++      offSize: this.cff.offSize,
+       header: this.cff.header,
+       nameIndex: [this.cff.postscriptName],
+       topDictIndex: [topDict],
+diff --git a/dist/fontkit.umd.js b/dist/fontkit.umd.js
+index c18af0e3cfce5893cc0012cc3a4e2b69c78d4c95..fdf1b3c4dd459b115590a6d3ac90e82734fd7e00 100644
+--- a/dist/fontkit.umd.js
++++ b/dist/fontkit.umd.js
+@@ -41082,18 +41082,18 @@
+ 	        continue;
+ 	      }
+ 
+-	      if (!used_fds[fd]) {
++	      if (used_fds[fd] == null) {
+ 	        topDict.FDArray.push(Object.assign({}, this.cff.topDict.FDArray[fd]));
+ 	        used_subrs.push({});
+ 	      }
+ 
+-	      used_fds[fd] = true;
+-	      topDict.FDSelect.fds.push(topDict.FDArray.length - 1);
++	      if (used_fds[fd] == null) used_fds[fd] = topDict.FDArray.length - 1;
++	      topDict.FDSelect.fds.push(used_fds[fd]);
+ 	      var glyph = this.font.getGlyph(gid);
+ 	      var path = glyph.path; // this causes the glyph to be parsed
+ 
+ 	      for (var subr in glyph._usedSubrs) {
+-	        used_subrs[used_subrs.length - 1][subr] = true;
++	        used_subrs[used_fds[fd]][subr] = true;
+ 	      }
+ 	    }
+ 
+@@ -41188,7 +41188,7 @@
+ 	    var top = {
+ 	      version: 1,
+ 	      hdrSize: this.cff.hdrSize,
+-	      offSize: this.cff.length,
++	      offSize: this.cff.offSize,
+ 	      header: this.cff.header,
+ 	      nameIndex: [this.cff.postscriptName],
+ 	      topDictIndex: [topDict],

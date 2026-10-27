@@ -5,10 +5,12 @@ import { NodeTracer as MCPNodeTracer } from '@mcp-trace/trace-node/nodeTracer'
 import type { SpanContext } from '@opentelemetry/api'
 import { context, trace } from '@opentelemetry/api'
 import { APP_NAME } from '@shared/config/constant'
-import { BrowserWindow, ipcMain } from 'electron'
+import { app, BrowserWindow, ipcMain } from 'electron'
 import * as path from 'path'
 
 import { ConfigKeys, configManager } from './ConfigManager'
+import { hotpatchWindowPreferences, trustedHotpatchFrame } from './hotpatch/security'
+import { HOTPATCH_PRODUCTION_ENABLED, HOTPATCH_PRODUCTION_TRUST } from './hotpatch/trust'
 import { spanCacheService } from './SpanCacheService'
 
 export const TRACER_NAME = APP_NAME.replace(/\s+/g, '')
@@ -34,6 +36,15 @@ export class NodeTraceService {
 const originalHandle = ipcMain.handle
 ipcMain.handle = (channel: string, handler: (...args: any[]) => Promise<any>) => {
   return originalHandle.call(ipcMain, channel, async (event, ...args) => {
+    if (
+      app.isPackaged &&
+      HOTPATCH_PRODUCTION_ENABLED &&
+      Object.keys(HOTPATCH_PRODUCTION_TRUST).length &&
+      BrowserWindow.fromWebContents(event.sender)?.webContents === event.sender &&
+      !trustedHotpatchFrame(event, path.join(__dirname, '../renderer'))
+    ) {
+      throw new Error('Untrusted renderer IPC sender')
+    }
     const carray = args && args.length > 0 ? args[args.length - 1] : {}
     let ctx = context.active()
     let newArgs = args
@@ -83,6 +94,9 @@ export function openTraceWindow(topicId: string, traceId: string, autoOpen = tru
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
+      ...hotpatchWindowPreferences(
+        app.isPackaged && HOTPATCH_PRODUCTION_ENABLED && !!Object.keys(HOTPATCH_PRODUCTION_TRUST).length
+      ),
       devTools: isDev ? true : false
     }
   })

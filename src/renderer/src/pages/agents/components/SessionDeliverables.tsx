@@ -1,8 +1,9 @@
 import { useTopicMessages } from '@renderer/hooks/useMessageOperations'
 import { collectSessionArtifacts, localArtifactKey } from '@renderer/pages/home/Messages/artifactShortcuts'
+import { useArtifactAvailability } from '@renderer/pages/home/Messages/useArtifactAvailability'
 import { EVENT_NAMES, EventEmitter } from '@renderer/services/EventService'
 import { useAppSelector } from '@renderer/store'
-import { Button, Drawer, Empty, Input, List } from 'antd'
+import { Button, Drawer, Empty, Input, List, Tag } from 'antd'
 import { FileText, FolderOpen, PackageOpen } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -25,15 +26,20 @@ export default function SessionDeliverables({ topicId }: { topicId: string }) {
   )
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
+  const availability = useArtifactAvailability(artifacts)
   const filtered = artifacts.filter((item) => item.path.toLowerCase().includes(query.trim().toLowerCase()))
-  const openPath = (path: string, reveal: boolean) => {
-    const operation = reveal ? window.api.file.showInFolder(path) : window.api.file.openPath(path)
-    void operation.catch(() => window.toast.error(t('chat.input.tools.open_file_error', { path })))
-  }
+  const count = artifacts.filter((item) => availability.status(item.path) !== 'missing').length
   return (
     <>
-      <Button type="text" size="small" icon={<PackageOpen size={16} />} onClick={() => setOpen(true)}>
-        {t('assistantDeliverables.entry', { count: artifacts.length })}
+      <Button
+        type="text"
+        size="small"
+        icon={<PackageOpen size={16} />}
+        onClick={() => {
+          setOpen(true)
+          void availability.refresh()
+        }}>
+        {t('assistantDeliverables.entry', { count })}
       </Button>
       <Drawer
         title={t('assistantDeliverables.title')}
@@ -42,6 +48,9 @@ export default function SessionDeliverables({ topicId }: { topicId: string }) {
         width="min(520px, 90vw)"
         destroyOnHidden>
         <p className="text-(--color-text-2) text-xs">{t('assistantDeliverables.notice')}</p>
+        <Button size="small" onClick={() => void availability.refresh()}>
+          {t('common.refresh')}
+        </Button>
         <Input.Search
           aria-label={t('assistantDeliverables.search')}
           placeholder={t('assistantDeliverables.search')}
@@ -63,6 +72,7 @@ export default function SessionDeliverables({ topicId }: { topicId: string }) {
           }}
           renderItem={(item) => {
             const name = item.path.replace(/\\/g, '/').split('/').filter(Boolean).at(-1) ?? item.path
+            const status = availability.status(item.path)
             return (
               <List.Item className="items-stretch! flex flex-col gap-2">
                 <div className="flex items-center gap-2">
@@ -75,15 +85,30 @@ export default function SessionDeliverables({ topicId }: { topicId: string }) {
                   </span>
                 </div>
                 <div className="break-all text-(--color-text-2) text-xs">{item.path}</div>
+                {status !== 'available' && (
+                  <Tag color={status === 'checking' ? 'default' : 'warning'}>
+                    {status === 'checking'
+                      ? t('assistantDeliverables.checking')
+                      : status === 'missing'
+                        ? t('assistantDeliverables.missing')
+                        : t('assistantDeliverables.unavailable')}
+                  </Tag>
+                )}
                 <div className="text-(--color-text-2) text-xs">
                   {t('assistantDeliverables.source', { turn: item.turn, count: item.occurrences })}
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  <Button size="small" onClick={() => openPath(item.path, false)}>
+                  <Button
+                    size="small"
+                    disabled={status !== 'available'}
+                    onClick={() => void availability.open(item.path)}>
                     {t('assistantDeliverables.open')}
                   </Button>
                   {item.kind !== 'directory' && (
-                    <Button size="small" onClick={() => openPath(item.path, true)}>
+                    <Button
+                      size="small"
+                      disabled={status !== 'available'}
+                      onClick={() => void availability.open(item.path, true)}>
                       {t('assistantDeliverables.reveal')}
                     </Button>
                   )}

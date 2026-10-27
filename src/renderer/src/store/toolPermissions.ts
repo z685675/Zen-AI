@@ -88,6 +88,11 @@ const toolPermissionsSlice = createSlice({
       if (!entry) return
 
       if (behavior === 'allow') {
+        // Native session permissions have no executing tool/result to clear them.
+        if (entry.toolCallId.includes(':permission:')) {
+          delete state.requests[requestId]
+          return
+        }
         entry.status = 'invoking'
         entry.resolvedInput = updatedInput
         if (updatedInput && entry.toolCallId) {
@@ -100,9 +105,8 @@ const toolPermissionsSlice = createSlice({
     removeByToolCallId: (state, action: PayloadAction<{ toolCallId: string }>) => {
       const { toolCallId } = action.payload
 
-      const entryId = Object.keys(state.requests).find((key) => state.requests[key]?.toolCallId === toolCallId)
-      if (entryId) {
-        delete state.requests[entryId]
+      for (const [entryId, entry] of Object.entries(state.requests)) {
+        if (entry.toolCallId === toolCallId) delete state.requests[entryId]
       }
       delete state.resolvedInputs[toolCallId]
     },
@@ -144,7 +148,7 @@ export const selectPendingPermission = (
   if (activeEntries.length === 0) return undefined
 
   activeEntries.sort((a, b) => a.createdAt - b.createdAt)
-  return activeEntries[0]
+  return activeEntries.find((entry) => entry.status !== 'invoking') ?? activeEntries[0]
 }
 
 export default toolPermissionsSlice.reducer

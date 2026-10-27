@@ -11,6 +11,7 @@ import type {
   ImageCanvasTask
 } from '@shared/config/imageCanvas'
 import { defaultImageCapabilities } from '@shared/config/imageCapabilities'
+import { isZenManagedApiHost } from '@shared/config/zenProvider'
 import sharp from 'sharp'
 
 import { readExternalImages } from './externalImages'
@@ -22,6 +23,8 @@ import {
   validateCanvasRequest
 } from './protocol'
 import { type CanvasRemoteJob, readStudioImages } from './studio'
+import { StudioAssetCache } from './StudioAssetCache'
+import { ImageStudioRequestError } from './studioRequest'
 
 type StoredTask = ImageCanvasTask & { fingerprint: string; remote?: CanvasRemoteJob; providerBinding?: string }
 const logger = loggerService.withContext('ImageCanvas')
@@ -49,12 +52,14 @@ export class ImageCanvasTaskStore {
   private pending: Array<() => void> = []
   private activePhases = new Map<string, { phase: NonNullable<ImageCanvasTask['phase']>; started: number }>()
   private readonly index: string
+  private readonly studioAssets: StudioAssetCache
 
   constructor(
     private readonly directory: string,
     private readonly request: ImageFetch
   ) {
     mkdirSync(directory, { recursive: true })
+    this.studioAssets = new StudioAssetCache(directory)
     this.index = join(directory, 'tasks.json')
     if (existsSync(this.index)) {
       // A corrupt index must not silently discard billing/deduplication evidence.
@@ -77,10 +82,11 @@ export class ImageCanvasTaskStore {
         throw new Error('invalid_task_index')
       this.tasks = records.map((task) => {
         if (task.status !== 'running') return task
+        const notSubmitted = task.diagnostics?.generationSubmitted === false && !task.remote
         return {
           ...task,
-          status: 'uncertain',
-          error: 'interrupted_check_provider',
+          status: notSubmitted ? 'failed' : 'uncertain',
+          error: notSubmitted ? 'studio_preparation_interrupted' : 'interrupted_check_provider',
           diagnostics: task.diagnostics ? { ...task.diagnostics, failedPhase: task.phase } : undefined,
           phase: undefined
         }
@@ -269,7 +275,9 @@ export class ImageCanvasTaskStore {
             .slice(0, 16),
         capabilitySource: capabilities.source,
         attempts: 0,
-        phaseDurationsMs: {}
+        phaseDurationsMs: {},
+        transport: isZenManagedApiHost(provider.apiHost) ? 'studio' : 'direct',
+        ...(isZenManagedApiHost(provider.apiHost) ? { generationSubmitted: false } : {})
       }
     }
     this.tasks.unshift(task)
@@ -360,6 +368,7 @@ export class ImageCanvasTaskStore {
       task.diagnostics.attempts++
       task.diagnostics.finishedAt = undefined
       task.diagnostics.failedPhase = undefined
+      task.diagnostics.requestFailure = undefined
     }
     const finishPhase = () => {
       if (task.diagnostics) {
@@ -380,6 +389,9 @@ export class ImageCanvasTaskStore {
       this.persist()
     }
     try {
+      const studioAssets = isZenManagedApiHost(provider.apiHost)
+        ? this.studioAssets.forScope(providerBinding(provider))
+        : undefined
       try {
         for (const reference of input?.references || [])
           await sharp(decodeImage(reference).bytes, { limitInputPixels: 100_000_000 }).metadata()
@@ -394,19 +406,25 @@ export class ImageCanvasTaskStore {
             this.request,
             (remote) => {
               task.remote = remote
+              if (task.diagnostics?.transport === 'studio') task.diagnostics.generationSubmitted = true
               this.persist()
             },
-            progress
+            progress,
+            studioAssets
           )
         : task.remote?.kind
           ? await readExternalImages(provider, task.remote, this.request, progress)
-          : await readStudioImages(provider, task.remote!, this.request, undefined, progress)
+          : await readStudioImages(provider, task.remote!, this.request, undefined, progress, studioAssets)
       for (const [index, bytes] of images.entries()) {
         if (task.assets[index]) continue
         progress('decoding')
         let normalized: Buffer
         try {
           normalized = await sharp(bytes, { limitInputPixels: 100_000_000 }).rotate().png().toBuffer()
+          // Avoid aliasing an EXIF rotation: the remote original may be interpreted
+          // differently by a provider. Ordinary generated PNGs keep the same pixels.
+          if (studioAssets && ((await sharp(bytes).metadata()).orientation ?? 1) === 1)
+            studioAssets.alias(bytes, normalized)
         } catch {
           throw new Error('invalid_result_image')
         }
@@ -433,7 +451,11 @@ export class ImageCanvasTaskStore {
       }
     } catch (error) {
       const code = error instanceof Error ? error.message : ''
+      const notSubmitted = task.diagnostics?.generationSubmitted === false && !task.remote
+      if (error instanceof ImageStudioRequestError && task.diagnostics)
+        task.diagnostics.requestFailure = { ...error.failure }
       task.status =
+        notSubmitted ||
         /^(?:upstream_http_4(?!08|09|29)\d\d|studio_upgrade_required|studio_model_unavailable|studio_reference_limit|studio_parameters_unsupported|studio_generation_failed|studio_http_40[013]|gemini_size_unsupported|image_dimensions_unsupported|invalid_image)$/.test(
           code
         ) ||
@@ -448,9 +470,22 @@ export class ImageCanvasTaskStore {
           code
         )
           ? code
-          : 'request_uncertain_check_provider'
+          : notSubmitted
+            ? phase === 'configuring'
+              ? 'studio_bootstrap_failed'
+              : phase === 'uploading'
+                ? 'studio_reference_upload_failed'
+                : 'studio_preparation_failed'
+            : 'request_uncertain_check_provider'
       if (task.diagnostics) task.diagnostics.failedPhase = phase
-      logger.error('Image task stopped', { taskId: task.id, phase, code: task.error, recoverable: !!task.remote })
+      logger.error('Image task stopped', {
+        taskId: task.id,
+        phase,
+        code: task.error,
+        recoverable: !!task.remote,
+        generationSubmitted: task.diagnostics?.generationSubmitted,
+        requestFailure: task.diagnostics?.requestFailure
+      })
     } finally {
       finishPhase()
       this.activePhases.delete(task.id)

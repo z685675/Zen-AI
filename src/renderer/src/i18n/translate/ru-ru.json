@@ -601,8 +601,8 @@
         },
         "permissionMode": {
           "acceptEdits": {
-            "description": "Редактирование файлов и операции с файловой системой автоматически одобряются.",
-            "title": "Автоматически принимать изменения файлов"
+            "description": "Выполняет разрешённые задачи без подтверждения каждого обычного шага. Перезапись оригиналов, удаление файлов и выход за рамки разрешений требуют подтверждения.",
+            "title": "Build"
           },
           "bypassPermissions": {
             "description": "Все запросы разрешений пропускаются — используйте с осторожностью.",
@@ -616,8 +616,8 @@
           "helper": "Определяет, как агент обрабатывает авторизацию использования инструментов",
           "placeholder": "Выбрать режим разрешений",
           "plan": {
-            "description": "Claude может использовать только инструменты только для чтения и представляет план перед выполнением.",
-            "title": "Режим планирования (скоро появится)"
+            "description": "Анализирует, читает разрешённую информацию и составляет план без изменения файлов и выполнения задачи. Для выполнения выберите Build.",
+            "title": "Plan"
           },
           "simpleTitle": "[to be translated]:Mode Selection",
           "title": "Режим разрешений"
@@ -886,17 +886,20 @@
     "busy": "[to be translated]:Stop active assistant tasks first, then back up, restore or reset data. A data operation may also still be in progress."
   },
   "assistantDeliverables": {
+    "checking": "Проверка файла",
     "empty": "No registered outputs in this conversation yet.",
     "entry": "Outputs · {{count}}",
     "folder": "Folder",
     "locate": "Go to response",
+    "missing": "Файл перемещён или удалён",
     "no_match": "No matching outputs.",
     "notice": "Only outputs registered by successful file tools in this conversation are listed. These are shortcuts, not copies; moved or deleted files may no longer open.",
     "open": "Open",
     "reveal": "Show in folder",
     "search": "Search name or path",
     "source": "Latest source: turn {{turn}} · registered in {{count}} responses",
-    "title": "Conversation outputs"
+    "title": "Conversation outputs",
+    "unavailable": "Не удалось проверить состояние файла"
   },
   "assistantFileSafety": {
     "message": "Исходный файл будет заменён после сохранения и проверки резервной копии. Отмена оставит исходный файл без изменений.",
@@ -908,7 +911,7 @@
     "callStarted": "Started",
     "callStopped": "Stopped",
     "calledThisTurn": "Native skill calls in the latest user turn",
-    "discovered": "Discovered by OpenCode",
+    "discovered": "Обнаружено ассистентом",
     "enabled": "Enabled",
     "exportFailed": "Could not export diagnostics. Please try again.",
     "exportSaved": "Diagnostic package exported",
@@ -2473,6 +2476,34 @@
     },
     "title": "Поиск топиков"
   },
+  "hotpatch": {
+    "check": "Проверить исправления",
+    "description": "Проверка в фоне, применение при следующем запуске. Текущие задачи не прерываются.",
+    "disable": "Приостановить исправления",
+    "disableConfirm": "Использовать встроенный интерфейс при следующем запуске и приостановить загрузки?",
+    "enable": "Возобновить обновления",
+    "nextStartup": "Следующий запуск: {{patch}}",
+    "requestFailed": "Не удалось получить состояние исправлений.",
+    "rescue": {
+      "description": "Исправление не смогло запуститься. Переписка, файлы и настройки сохранены. Перезапустите приложение со встроенным интерфейсом.",
+      "export": "Экспорт диагностики запуска",
+      "exportFailed": "Не удалось сохранить пакет диагностики запуска. Выберите новое расположение файла.",
+      "restart": "Перезапустить со встроенным интерфейсом",
+      "title": "Восстановление интерфейса"
+    },
+    "safeFallback": "Рабочий интерфейс сохранён.",
+    "status": {
+      "active": "Исправление применено",
+      "builtin": "Встроенный интерфейс",
+      "checking": "Проверка",
+      "disabled": "Приостановлено",
+      "pending": "Готово к следующему запуску",
+      "recovering": "Восстановление",
+      "unavailable": "Не включено"
+    },
+    "testCode": "Код тестовой рассылки (необязательно)",
+    "title": "Исправления интерфейса"
+  },
   "html_artifacts": {
     "capture": {
       "label": "Захват страницы",
@@ -2486,17 +2517,11 @@
     "split": "Разделить"
   },
   "image_studio": {
-    "canvas": "Image canvas",
-    "canvas_unavailable": "The local image canvas could not open. Retry or check the application logs.",
-    "key": "Key {{index}}",
-    "key_label": "Workspace key",
     "local": "[to be translated]:Local images",
     "opening": "[to be translated]:Opening image workspace…",
     "reconnect": "[to be translated]:Reconnect",
-    "server": "Server workspace",
-    "title": "[to be translated]:Image workspace",
-    "unavailable": "[to be translated]:The workspace could not open. Make sure your Zen API server has been updated and the selected key is valid. You can still open Local images.",
-    "workbench": "Image studio"
+    "workbench": "Image studio",
+    "workbench_unavailable": "Не удалось открыть студию изображений. Повторите попытку или проверьте журналы приложения."
   },
   "import": {
     "chatgpt": {
@@ -3355,6 +3380,13 @@
     },
     "memory_notice": "Independent native memory survives model changes. Retry, branching and individual deletion are supported; direct editing and bulk deletion are not yet supported.",
     "outputting": "The model is producing output",
+    "permission": {
+      "title": "Для этой задачи требуется ваше подтверждение",
+      "description": "Проверьте операцию и её цель, прежде чем разрешить продолжение задачи.",
+      "loopTitle": "Обнаружены повторяющиеся операции; задача приостановлена",
+      "loopDescription": "Ассистент несколько раз попытался выполнить одну и ту же операцию. Можно разрешить однократное продолжение или отменить эту операцию.",
+      "details": "Сведения об операции"
+    },
     "preparing": "[to be translated]:Request received; preparing the task",
     "responding": "[to be translated]:Processing the response",
     "restoring": "[to be translated]:Restoring this conversation",
@@ -5783,7 +5815,7 @@
       "prompt": "Показывать подсказки",
       "show_message_outline": "Показать наброски сообщения",
       "stats_time": "Первый токен {{first}} · Время {{total}}",
-      "stats_tip": "Первый токен: время до первого видимого текста, включая видимые рассуждения. Общее время: до окончания задачи, включая инструменты и ожидание. Кэш учитывает только чтение; — означает, что поставщик не предоставил статистику.",
+      "stats_tip": "Первый отклик: время до первого видимого текста или рассуждения; у ассистента учитывается и первый вызов инструмента. Всего: до завершения задачи, включая инструменты и ожидание. Кеш учитывает только прочитанные токены; — означает отсутствие статистики.",
       "stats_tokens": "Ввод {{input}} · Вывод {{output}} · Кэш {{cached}}",
       "title": "Настройки сообщений",
       "use_serif_font": "Использовать serif шрифт"
@@ -6786,6 +6818,7 @@
     "show_window": "Показать окно"
   },
   "turnDiagnostics": {
+    "aggregate": "Сохранённая статистика выполнения (интервалы могут пересекаться, их нельзя складывать): запросы к модели {{requests}}, ожидание заголовков ответа {{headers}}, завершённые инструменты {{tools}}. Отсутствующие отдельные интервалы не восстанавливаются.",
     "description": "Экспорт состояния, времени и запросов этого хода без повторного выполнения задачи или вызова модели.",
     "export": "Экспорт диагностики хода",
     "includeContent": "Включить диалог и содержимое инструментов этого хода (необязательно)",

@@ -1,18 +1,17 @@
 import { loggerService } from '@logger'
+import { Navbar, NavbarCenter } from '@renderer/components/app/Navbar'
 import { isImageGenerationEndpointModel } from '@renderer/config/models'
 import { usePaintingProviders } from '@renderer/hooks/useProvider'
 import { useAppDispatch } from '@renderer/store'
 import { setDefaultPaintingProvider } from '@renderer/store/settings'
 import { updateTab } from '@renderer/store/tabs'
-import { isZenManagedApiHost } from '@shared/config/zenProvider'
-import { Button, Select } from 'antd'
+import { Select } from 'antd'
 import type { FC } from 'react'
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Navigate, Route, Routes, useParams } from 'react-router-dom'
 
 import ImageCanvasPage from './ImageCanvasPage'
-import ImageStudioPage from './ImageStudioPage'
 import NewApiPage from './NewApiPage'
 
 const logger = loggerService.withContext('PaintingsRoutePage')
@@ -52,7 +51,7 @@ const LegacyPaintingsRoutePage: FC = () => {
   }, [provider, dispatch, validOptions])
 
   if (!firstAvailableProvider) {
-    return <NewApiPage Options={[]} />
+    return <NewApiPage Options={[]} showNavbar={false} />
   }
 
   return (
@@ -62,14 +61,14 @@ const LegacyPaintingsRoutePage: FC = () => {
         path="*"
         element={
           validOptions.includes(provider || '') ? (
-            <NewApiPage Options={validOptions} />
+            <NewApiPage Options={validOptions} showNavbar={false} />
           ) : (
             <Navigate to={`/paintings/${firstAvailableProvider}`} replace />
           )
         }
       />
       {validOptions.map((providerId) => (
-        <Route key={providerId} path={providerId} element={<NewApiPage Options={validOptions} />} />
+        <Route key={providerId} path={providerId} element={<NewApiPage Options={validOptions} showNavbar={false} />} />
       ))}
     </Routes>
   )
@@ -77,33 +76,20 @@ const LegacyPaintingsRoutePage: FC = () => {
 
 const PaintingsRoutePage: FC = () => {
   const { t } = useTranslation()
-  const providers = usePaintingProviders().filter((item) => item.enabled && isZenManagedApiHost(item.apiHost))
-  const [mode, setMode] = useState<'workbench' | 'canvas' | 'web' | 'local'>('workbench')
-  const [providerID, setProviderID] = useState('')
-  const [keyIndex, setKeyIndex] = useState(0)
-  const selected = providers.find((item) => item.id === providerID) || providers[0]
-  const keys = useMemo(
-    () =>
-      selected?.apiKey
-        .split(/(?<!\\),|\r?\n/)
-        .map((key) => key.trim().replace(/\\,/g, ','))
-        .filter(Boolean) || [],
-    [selected?.apiKey]
-  )
-  // A stable, explicit key keeps history from changing when provider key
-  // rotation would otherwise pick a different identity on every reconnect.
-  const scopedProvider = useMemo(
-    () => (selected ? { ...selected, apiKey: keys[keyIndex] || keys[0] || '' } : undefined),
-    [selected, keys, keyIndex]
-  )
+  const [mode, setMode] = useState<'workbench' | 'local'>('workbench')
+  const [menuOpen, setMenuOpen] = useState(false)
   return (
     <div style={{ display: 'flex', flexDirection: 'column', width: '100%', height: '100%', minHeight: 0 }}>
+      <Navbar>
+        <NavbarCenter>{t('paintings.title')}</NavbarCenter>
+      </Navbar>
       <div
         style={{
           display: 'flex',
           alignItems: 'center',
           gap: 8,
           padding: '10px 16px',
+          flexShrink: 0,
           borderBottom: '1px solid var(--color-border)'
         }}>
         <Select
@@ -111,42 +97,21 @@ const PaintingsRoutePage: FC = () => {
           aria-label={t('image_studio.workbench')}
           value={mode}
           onChange={setMode}
+          onOpenChange={setMenuOpen}
+          style={{ minWidth: 140 }}
           options={(
             [
               ['workbench', 'image_studio.workbench'],
-              ['canvas', 'image_studio.canvas'],
-              ['web', 'image_studio.server'],
               ['local', 'image_studio.local']
             ] as const
           ).map(([value, key]) => ({ value, label: t(key) }))}
         />
-        {mode === 'web' && providers.length > 1 && (
-          <Select
-            size="small"
-            value={selected?.id}
-            options={providers.map((item) => ({ value: item.id, label: item.name }))}
-            onChange={setProviderID}
-          />
-        )}
-        {mode === 'web' && keys.length > 1 && (
-          <Select
-            size="small"
-            aria-label={t('image_studio.key_label')}
-            value={keys[keyIndex] ? keyIndex : 0}
-            options={keys.map((_, index) => ({ value: index, label: t('image_studio.key', { index: index + 1 }) }))}
-            onChange={setKeyIndex}
-          />
-        )}
-        <Button size="small" style={{ marginLeft: 'auto' }} onClick={() => window.navigate('/settings/provider')}>
-          {t('model_setup.open_settings')}
-        </Button>
       </div>
-      {mode === 'workbench' || mode === 'canvas' ? (
-        <ImageCanvasPage key={mode} surface={mode === 'workbench' ? 'workbench' : 'canvas'} />
-      ) : mode === 'web' ? (
-        <ImageStudioPage provider={scopedProvider} />
-      ) : (
-        <div style={{ flex: 1, minHeight: 0 }}>
+      {/* Keep the workbench mounted: switching modes must not race native close/open
+          or lose a draft while its generation is still running. */}
+      <ImageCanvasPage active={mode === 'workbench'} menuOpen={menuOpen} />
+      {mode === 'local' && (
+        <div style={{ flex: 1, minHeight: 0, display: 'flex' }}>
           <LegacyPaintingsRoutePage />
         </div>
       )}

@@ -601,8 +601,8 @@
         },
         "permissionMode": {
           "acceptEdits": {
-            "description": "Las ediciones de archivos y las operaciones del sistema de archivos se aprueban automáticamente.",
-            "title": "Aceptar automáticamente las ediciones de archivos"
+            "description": "Completa tareas autorizadas sin aprobar cada paso habitual. Sobrescribir originales, eliminar archivos o exceder el alcance autorizado sigue requiriendo confirmación.",
+            "title": "Build"
           },
           "bypassPermissions": {
             "description": "Todos los mensajes de permiso se omiten — úsalo con precaución.",
@@ -616,8 +616,8 @@
           "helper": "Especifica cómo el agente maneja la autorización de uso de herramientas",
           "placeholder": "Seleccionar modo de permisos",
           "plan": {
-            "description": "Claude solo puede usar herramientas de solo lectura y presenta un plan antes de ejecutarlo.",
-            "title": "Modo de planificación (próximamente)"
+            "description": "Analiza, lee información autorizada y prepara un plan sin modificar archivos ni ejecutar la tarea. Selecciona Build para actuar.",
+            "title": "Plan"
           },
           "simpleTitle": "[to be translated]:Mode Selection",
           "title": "Modo de permisos"
@@ -886,17 +886,20 @@
     "busy": "[to be translated]:Stop active assistant tasks first, then back up, restore or reset data. A data operation may also still be in progress."
   },
   "assistantDeliverables": {
+    "checking": "Comprobando archivo",
     "empty": "No registered outputs in this conversation yet.",
     "entry": "Outputs · {{count}}",
     "folder": "Folder",
     "locate": "Go to response",
+    "missing": "Archivo movido o eliminado",
     "no_match": "No matching outputs.",
     "notice": "Only outputs registered by successful file tools in this conversation are listed. These are shortcuts, not copies; moved or deleted files may no longer open.",
     "open": "Open",
     "reveal": "Show in folder",
     "search": "Search name or path",
     "source": "Latest source: turn {{turn}} · registered in {{count}} responses",
-    "title": "Conversation outputs"
+    "title": "Conversation outputs",
+    "unavailable": "No se puede comprobar el estado del archivo"
   },
   "assistantFileSafety": {
     "message": "Se reemplazará el archivo original indicado. Primero se guardará y verificará una copia de seguridad. Cancelar conserva el original.",
@@ -908,7 +911,7 @@
     "callStarted": "Started",
     "callStopped": "Stopped",
     "calledThisTurn": "Native skill calls in the latest user turn",
-    "discovered": "Discovered by OpenCode",
+    "discovered": "Detectado por el asistente",
     "enabled": "Enabled",
     "exportFailed": "Could not export diagnostics. Please try again.",
     "exportSaved": "Diagnostic package exported",
@@ -2473,6 +2476,34 @@
     },
     "title": "Búsqueda de temas"
   },
+  "hotpatch": {
+    "check": "Buscar parches",
+    "description": "Se comprueban en segundo plano y se aplican al volver a iniciar, sin interrumpir tareas.",
+    "disable": "Pausar parches",
+    "disableConfirm": "¿Usar la interfaz integrada al volver a iniciar y pausar las descargas?",
+    "enable": "Reanudar parches",
+    "nextStartup": "Próximo inicio: {{patch}}",
+    "requestFailed": "No se pudo consultar el estado de los parches.",
+    "rescue": {
+      "description": "El parche no pudo iniciarse. Tus conversaciones, archivos y ajustes se conservan. Reinicia con la interfaz integrada para continuar.",
+      "export": "Exportar diagnóstico de inicio",
+      "exportFailed": "No se pudo guardar el paquete de diagnóstico de inicio. Elige una nueva ubicación.",
+      "restart": "Reiniciar con interfaz integrada",
+      "title": "Recuperar interfaz"
+    },
+    "safeFallback": "Se conserva la interfaz que funciona.",
+    "status": {
+      "active": "Parche activo",
+      "builtin": "Interfaz integrada",
+      "checking": "Comprobando",
+      "disabled": "En pausa",
+      "pending": "Listo para el próximo inicio",
+      "recovering": "Recuperando",
+      "unavailable": "No activado"
+    },
+    "testCode": "Código de prueba (opcional)",
+    "title": "Parches de interfaz"
+  },
   "html_artifacts": {
     "capture": {
       "label": "Capturar página",
@@ -2486,17 +2517,11 @@
     "split": "Dividir"
   },
   "image_studio": {
-    "canvas": "Image canvas",
-    "canvas_unavailable": "The local image canvas could not open. Retry or check the application logs.",
-    "key": "Key {{index}}",
-    "key_label": "Workspace key",
     "local": "[to be translated]:Local images",
     "opening": "[to be translated]:Opening image workspace…",
     "reconnect": "[to be translated]:Reconnect",
-    "server": "Server workspace",
-    "title": "[to be translated]:Image workspace",
-    "unavailable": "[to be translated]:The workspace could not open. Make sure your Zen API server has been updated and the selected key is valid. You can still open Local images.",
-    "workbench": "Image studio"
+    "workbench": "Image studio",
+    "workbench_unavailable": "No se pudo abrir el estudio de imágenes. Reinténtalo o revisa los registros de la aplicación."
   },
   "import": {
     "chatgpt": {
@@ -3355,6 +3380,13 @@
     },
     "memory_notice": "Independent native memory survives model changes. Retry, branching and individual deletion are supported; direct editing and bulk deletion are not yet supported.",
     "outputting": "The model is producing output",
+    "permission": {
+      "title": "Esta tarea necesita tu confirmación",
+      "description": "Revisa la operación y su destino antes de permitir que continúe la tarea.",
+      "loopTitle": "Se detectaron operaciones repetidas; tarea en pausa",
+      "loopDescription": "El asistente intentó la misma operación varias veces. Puedes permitir que continúe una vez o cancelar esta operación.",
+      "details": "Detalles de la operación"
+    },
     "preparing": "[to be translated]:Request received; preparing the task",
     "responding": "[to be translated]:Processing the response",
     "restoring": "[to be translated]:Restoring this conversation",
@@ -5783,7 +5815,7 @@
       "prompt": "Palabra de indicación",
       "show_message_outline": "Mostrar esquema del mensaje",
       "stats_time": "Primer token {{first}} · Duración {{total}}",
-      "stats_tip": "Primer token: tiempo hasta el primer texto visible, incluido el razonamiento visible. Total: hasta el final de toda la tarea, incluidas herramientas y esperas. La caché solo cuenta lecturas; — indica que el proveedor no envió estadísticas.",
+      "stats_tip": "Primera respuesta: tiempo hasta el primer texto o razonamiento visible; en el asistente también cuenta la primera llamada a una herramienta. Total: hasta finalizar la tarea, incluidas herramientas y esperas. La caché solo cuenta tokens leídos; — indica que no se proporcionó la estadística.",
       "stats_tokens": "Entrada {{input}} · Salida {{output}} · Caché {{cached}}",
       "title": "Configuración de mensajes",
       "use_serif_font": "Usar fuente serif"
@@ -6786,6 +6818,7 @@
     "show_window": "Mostrar ventana"
   },
   "turnDiagnostics": {
+    "aggregate": "Estadísticas de ejecución guardadas (los tiempos pueden solaparse y no deben sumarse): solicitudes al modelo {{requests}}, espera de cabeceras {{headers}}, herramientas completadas {{tools}}. No se reconstruyen los intervalos individuales que faltan.",
     "description": "Exporta estado, tiempos y solicitudes de este turno sin repetir la tarea ni llamar a un modelo.",
     "export": "Exportar diagnóstico del turno",
     "includeContent": "Incluir conversación y contenido de herramientas de este turno (opcional)",

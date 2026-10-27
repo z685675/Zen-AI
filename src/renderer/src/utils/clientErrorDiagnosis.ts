@@ -283,6 +283,9 @@ export function diagnoseClientError(error?: SerializedError, options: DiagnoseOp
   const msg = normalizeMessage(error)
   const dailyQuota = getModelDailyQuotaErrorKind(error)
   const hasStatus = typeof status === 'number'
+  const quotaResponseUnknown =
+    transport?.receivedResponse === false ||
+    (error?.zenFailureStage === 'quota-admission' && !hasStatus && transport?.receivedResponse !== true)
   const isTimeout = msg.includes('timeout') || msg.includes('timed out') || msg.includes('etimedout')
   const isFetchFailure =
     msg.includes('failed to fetch') ||
@@ -327,13 +330,13 @@ export function diagnoseClientError(error?: SerializedError, options: DiagnoseOp
   if (dailyQuota)
     return {
       ...base,
-      category: 'rate_limited',
+      category: dailyQuota === 'unavailable' ? 'service' : 'rate_limited',
       title: i18next.t(MODEL_DAILY_QUOTA_MESSAGE_KEYS[dailyQuota]),
       summary: i18next.t(MODEL_DAILY_QUOTA_MESSAGE_KEYS[dailyQuota]),
       stage: i18next.t('model_daily_quota.stage'),
       errorType: `model_daily_${dailyQuota}`,
-      serviceConnectivity: serviceConnectivityFromCheck(connectivityCheck, '已连接'),
-      serviceReceived: '是',
+      serviceConnectivity: serviceConnectivityFromCheck(connectivityCheck, quotaResponseUnknown ? UNKNOWN : '已连接'),
+      serviceReceived: quotaResponseUnknown ? UNKNOWN : '是',
       startedGenerating: '否',
       suggestion: i18next.t('model_daily_quota.suggestion')
     }
