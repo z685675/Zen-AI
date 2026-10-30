@@ -1,5 +1,6 @@
 import { loggerService } from '@logger'
-import { isMac, isWin } from '@main/constant'
+import { isWin } from '@main/constant'
+import { getRipgrepBinaryPath } from '@main/utils/ripgrep'
 import { spawn } from 'child_process'
 import fs from 'fs/promises'
 import os from 'os'
@@ -622,27 +623,15 @@ export interface RipgrepResult {
   exitCode: number | null
 }
 
-export function getRipgrepAddonPath(): string {
-  const pkgJsonPath = require.resolve('@anthropic-ai/claude-agent-sdk/package.json')
-  const pkgRoot = path.dirname(pkgJsonPath)
-  const platform = isMac ? 'darwin' : isWin ? 'win32' : 'linux'
-  const arch = process.arch === 'arm64' ? 'arm64' : 'x64'
-  return path.join(pkgRoot, 'vendor', 'ripgrep', `${arch}-${platform}`, 'ripgrep.node')
-}
-
 export async function runRipgrep(args: string[]): Promise<RipgrepResult> {
-  const addonPath = getRipgrepAddonPath()
-  const childScript = `const { ripgrepMain } = require(process.env.RIPGREP_ADDON_PATH); process.exit(ripgrepMain(process.argv.slice(1)));`
+  const binary = getRipgrepBinaryPath()
+  if (!binary) return { ok: false, stdout: '', exitCode: null }
 
   return new Promise((resolve) => {
-    const child = spawn(process.execPath, ['--eval', childScript, 'rg', ...args], {
+    const child = spawn(binary, ['--no-config', ...args], {
       cwd: process.cwd(),
-      env: {
-        ...process.env,
-        ELECTRON_RUN_AS_NODE: '1',
-        RIPGREP_ADDON_PATH: addonPath
-      },
-      stdio: ['ignore', 'pipe', 'pipe']
+      windowsHide: true,
+      stdio: ['ignore', 'pipe', 'ignore']
     })
 
     let stdout = ''

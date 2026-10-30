@@ -3,7 +3,6 @@ import { loggerService } from '@logger'
 import { readAssistantOffice } from '@main/mcpServers/assistantDocumentOffice'
 import { createStructuredOfficeReaders } from '@main/mcpServers/assistantDocumentOfficeParsers'
 import { readAssistantPdf } from '@main/mcpServers/assistantDocumentPdf'
-import { toAsarUnpackedPath } from '@main/utils'
 import { buildDiagnosticArchive } from '@main/utils/diagnosticArchive'
 import {
   checkName,
@@ -17,6 +16,7 @@ import {
   scanDir
 } from '@main/utils/file'
 import { t } from '@main/utils/locales'
+import { getRipgrepBinaryPath } from '@main/utils/ripgrep'
 import { SpreadsheetExtractionLimitError, spreadsheetSections } from '@main/utils/spreadsheetSections'
 import { documentExts, imageExts, KB, MB } from '@shared/config/constant'
 import type { FilePathCheck } from '@shared/filePathStatus'
@@ -322,30 +322,6 @@ const numberToColumnName = (value: number): string => {
   return result
 }
 
-// Get ripgrep binary path
-const getRipgrepBinaryPath = (): string | null => {
-  try {
-    const arch = process.arch === 'arm64' ? 'arm64' : 'x64'
-    const platform = process.platform === 'darwin' ? 'darwin' : process.platform === 'win32' ? 'win32' : 'linux'
-    let ripgrepBinaryPath = path.join(
-      __dirname,
-      '../../node_modules/@anthropic-ai/claude-agent-sdk/vendor/ripgrep',
-      `${arch}-${platform}`,
-      process.platform === 'win32' ? 'rg.exe' : 'rg'
-    )
-
-    ripgrepBinaryPath = toAsarUnpackedPath(ripgrepBinaryPath)
-
-    if (fs.existsSync(ripgrepBinaryPath)) {
-      return ripgrepBinaryPath
-    }
-    return null
-  } catch (error) {
-    logger.error('Failed to locate ripgrep binary:', error as Error)
-    return null
-  }
-}
-
 /**
  * Execute ripgrep with captured output
  */
@@ -360,6 +336,7 @@ function executeRipgrep(args: string[]): Promise<{ exitCode: number; output: str
 
     const { spawn } = require('child_process')
     const child = spawn(ripgrepBinaryPath, ['--no-config', '--ignore-case', ...args], {
+      windowsHide: true,
       stdio: ['pipe', 'pipe', 'pipe']
     })
 

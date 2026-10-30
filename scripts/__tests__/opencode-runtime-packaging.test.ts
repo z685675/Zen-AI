@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process'
 import fs from 'node:fs'
 import { createRequire } from 'node:module'
 import os from 'node:os'
@@ -8,6 +9,8 @@ import { afterEach, describe, expect, it } from 'vitest'
 
 const require_ = createRequire(import.meta.url)
 const { copyOpenCodeRuntime, copyOpenCodeOfflineRuntime } = require_('../opencode-runtime-packaging')
+const { copySearchBinary } = require_('../ripgrep-packaging')
+const { AGENT_TARGETS } = require_('../agent-runtime-packaging')
 const fixtures: string[] = []
 function fixture(platform: 'mac' | 'windows', arch: 'arm64' | 'x64') {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'zen-opencode-pack-test-'))
@@ -53,6 +56,33 @@ describe('OpenCode native installer resources', () => {
     ['mac', 'x64'],
     ['windows', 'arm64'],
     ['windows', 'x64']
+  ] as const)('packages the standalone search program for %s %s', (platform, arch) => {
+    const data = fixture(platform, arch)
+    const target = AGENT_TARGETS[`${platform}:${arch}`]
+    const source = path.join(
+      data.root,
+      'node_modules',
+      '@openai',
+      `codex-${target.packageSuffix}`,
+      'vendor',
+      target.targetTriple,
+      'codex-path',
+      platform === 'windows' ? 'rg.exe' : 'rg'
+    )
+    fs.mkdirSync(path.dirname(source), { recursive: true })
+    fs.copyFileSync(data.binary, source)
+    const license = path.join(data.root, 'resources', 'licenses', 'ripgrep-LICENSE.txt')
+    fs.mkdirSync(path.dirname(license), { recursive: true })
+    fs.writeFileSync(license, 'MIT fixture')
+    const output = copySearchBinary(data.context, data.root)
+    expect(output).toContain(`${path.sep}resources${path.sep}search${path.sep}`)
+    expect(fs.readFileSync(output)).toEqual(fs.readFileSync(source))
+  })
+  it.each([
+    ['mac', 'arm64'],
+    ['mac', 'x64'],
+    ['windows', 'arm64'],
+    ['windows', 'x64']
   ] as const)('copies only a verified %s %s executable outside ASAR', (platform, arch) => {
     const data = fixture(platform, arch)
     const result = copyOpenCodeRuntime(data.context, data.root)
@@ -93,5 +123,32 @@ describe('OpenCode native installer resources', () => {
   it('refuses to package an incomplete offline dependency tree', () => {
     const data = fixture('windows', 'x64')
     expect(() => copyOpenCodeOfflineRuntime(data.context, data.root)).toThrow('offline resource missing')
+  })
+  it('checks a slim installer without the old runtimes and rejects a missing offline plugin', () => {
+    const platform = process.platform === 'darwin' ? 'windows' : 'mac'
+    const data = fixture(platform, 'arm64')
+    const resources = data.context.packager.getResourcesDir()
+    copyOpenCodeRuntime(data.context, data.root)
+    const searchBinary = path.join(resources, 'search', platform === 'windows' ? 'rg.exe' : 'rg')
+    fs.mkdirSync(path.dirname(searchBinary), { recursive: true })
+    fs.copyFileSync(data.binary, searchBinary)
+    if (process.platform !== 'win32') fs.chmodSync(searchBinary, 0o755)
+    for (const file of [
+      'opencode-runtime/package.json',
+      'opencode-runtime/package-lock.json',
+      'opencode-runtime/node_modules/@opencode-ai/plugin/package.json',
+      'licenses/opencode-LICENSE.txt',
+      'licenses/opencode-dependencies.txt',
+      'licenses/ripgrep-LICENSE.txt'
+    ]) {
+      const target = path.join(resources, file)
+      fs.mkdirSync(path.dirname(target), { recursive: true })
+      fs.writeFileSync(target, '{}')
+    }
+    const script = path.resolve('scripts/check-packaged-agent-runtimes.js')
+    const check = () => spawnSync(process.execPath, [script, resources, platform, 'arm64'], { encoding: 'utf8' })
+    expect(check().status).toBe(0)
+    fs.unlinkSync(path.join(resources, 'opencode-runtime/node_modules/@opencode-ai/plugin/package.json'))
+    expect(check().status).not.toBe(0)
   })
 })

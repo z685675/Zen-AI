@@ -1,12 +1,16 @@
+import { getRipgrepBinaryPath } from '@main/utils/ripgrep'
 import fs from 'fs/promises'
 import path from 'path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { resolveFilesystemBaseDir } from '../config'
 import { handleGlobTool } from '../tools/glob'
+import { handleGrepTool } from '../tools/grep'
 import { handleLsTool } from '../tools/ls'
 import * as types from '../types'
 import { validatePath } from '../types'
+
+vi.mock('node:fs', async (importOriginal) => importOriginal())
 
 describe('filesystem MCP security', () => {
   const tempDirs: string[] = []
@@ -156,5 +160,19 @@ describe('filesystem MCP security', () => {
 
   it('detects whether symlink creation is available in the current environment', () => {
     expect(typeof symlinkSupported).toBe('boolean')
+  })
+
+  it('searches real filenames and content with the bundled standalone search binary', async () => {
+    const workspaceRoot = await createTempDir('filesystem-real-search-')
+    const filename = path.join(workspaceRoot, '中文 项目.txt')
+    await fs.writeFile(filename, '第一行\n预算 700 元\n', 'utf8')
+    expect(getRipgrepBinaryPath()).toBeTruthy()
+    const glob = await handleGlobTool({ pattern: '*.txt' }, workspaceRoot)
+    expect(glob.content[0].text).toContain('中文 项目.txt')
+    const grep = await handleGrepTool({ pattern: '预算 700' }, workspaceRoot)
+    expect(grep.content[0].text).toContain('中文 项目.txt')
+    expect(grep.content[0].text).toContain('2: 预算 700 元')
+    const singleFile = await handleGrepTool({ pattern: '预算 700', path: filename }, workspaceRoot)
+    expect(singleFile.content[0].text).toContain('中文 项目.txt')
   })
 })

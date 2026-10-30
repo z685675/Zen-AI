@@ -36,26 +36,25 @@ export async function packageSnapshot(root: string, target: PackageTarget) {
     target.platform === 'windows' ? 'opencode.exe' : 'opencode'
   )
   await access(binary)
+  const searchBinary = path.join(resources, 'search', target.platform === 'windows' ? 'rg.exe' : 'rg')
+  await access(searchBinary)
   const builder = createRequire(createRequire(require.resolve('electron-builder')).resolve('app-builder-lib'))
   const asar = builder('@electron/asar') as { extractFile(archive: string, file: string): Buffer }
   const metadata = JSON.parse(asar.extractFile(archive, 'package.json').toString('utf8'))
   if (metadata.version !== target.expectedVersion)
     throw new Error(`安装包版本${metadata.version}与预期${target.expectedVersion}不一致。`)
   const verifier = require(path.join(root, 'scripts/agent-runtime-packaging.js')) as {
-    verifyPackagedAgentRuntimes(
-      resources: string,
-      platform: string,
-      arch: string
-    ): { codexBinary: string; claudeBinary: string }
+    verifyNativeAgentBinary(binary: string, platform: string, arch: string): void
   }
-  const paths = verifier.verifyPackagedAgentRuntimes(resources, target.platform, target.arch)
+  verifier.verifyNativeAgentBinary(binary, target.platform, target.arch)
+  verifier.verifyNativeAgentBinary(searchBinary, target.platform, target.arch)
   // Hash the actual packaged executable/resources, never just the filename/tag.
   return {
     version: metadata.version,
     resources,
     archiveSha256: await hash(archive),
     runtimeSha256: await hash(binary),
-    runtimeHashes: { codex: await hash(paths.codexBinary), claude: await hash(paths.claudeBinary) },
+    searchSha256: await hash(searchBinary),
     bytes: info.size,
     platform: target.platform,
     arch: target.arch
@@ -122,8 +121,7 @@ export async function auditPackage(
   if (
     after.archiveSha256 !== before.archiveSha256 ||
     after.runtimeSha256 !== before.runtimeSha256 ||
-    after.runtimeHashes.codex !== before.runtimeHashes.codex ||
-    after.runtimeHashes.claude !== before.runtimeHashes.claude
+    after.searchSha256 !== before.searchSha256
   )
     throw new Error('验收期间安装包被替换。')
   return {

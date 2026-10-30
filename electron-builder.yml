@@ -76,6 +76,9 @@ files:
   - "!node_modules/opencode-{darwin,windows,linux}-*/**"
   - "!node_modules/.pnpm/opencode-{darwin,windows,linux}-*/**"
   - "!node_modules/.pnpm/opencode-ai@*/node_modules/opencode-ai/bin/**"
+  # Legacy assistant executables are not used by the read-only history view.
+  - "!**/node_modules/@openai/codex-{win32,darwin,linux}-*/**"
+  - "!**/node_modules/@anthropic-ai/claude-agent-sdk-{win32,darwin,linux}-*/**"
   - "!node_modules/@tavily/core/node_modules/js-tiktoken"
   - "!node_modules/pdf-parse/lib/pdf.js/{v1.9.426,v1.10.88,v2.0.550}"
   - "!node_modules/mammoth/{mammoth.browser.js,mammoth.browser.min.js}"

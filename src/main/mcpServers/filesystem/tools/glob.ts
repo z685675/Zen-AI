@@ -81,6 +81,7 @@ export async function handleGlobTool(args: unknown, baseDir: string) {
   // Use ripgrep for file listing
   logger.debug('Running ripgrep with args', { rgArgs })
   const rgResult = await runRipgrep(rgArgs)
+  if (!rgResult.ok || (rgResult.exitCode === 2 && !rgResult.stdout)) throw new Error('File search failed')
   logger.debug('Ripgrep result', {
     ok: rgResult.ok,
     exitCode: rgResult.exitCode,

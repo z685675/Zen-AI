@@ -56,6 +56,7 @@ export async function handleGrepTool(args: unknown, baseDir: string) {
   const rgArgs: string[] = [
     '--no-heading',
     '--line-number',
+    '--with-filename',
     '--color',
     'never',
     '--ignore-case',
@@ -80,7 +81,7 @@ export async function handleGrepTool(args: unknown, baseDir: string) {
     }
   }
 
-  rgArgs.push(data.pattern)
+  rgArgs.push('--', data.pattern)
   rgArgs.push(validPath)
 
   try {
@@ -191,7 +192,7 @@ export async function handleGrepTool(args: unknown, baseDir: string) {
   let usedRipgrep = false
   try {
     const rgResult = await runRipgrep(rgArgs)
-    if (rgResult.ok && rgResult.exitCode !== null && rgResult.exitCode !== 2) {
+    if (rgResult.ok && (rgResult.exitCode === 0 || rgResult.exitCode === 1)) {
       usedRipgrep = true
       const lines = rgResult.stdout.split('\n').filter(Boolean)
       for (const line of lines) {
@@ -200,13 +201,9 @@ export async function handleGrepTool(args: unknown, baseDir: string) {
           break
         }
 
-        const firstColon = line.indexOf(':')
-        const secondColon = line.indexOf(':', firstColon + 1)
-        if (firstColon === -1 || secondColon === -1) continue
-
-        const filePart = line.slice(0, firstColon)
-        const linePart = line.slice(firstColon + 1, secondColon)
-        const contentPart = line.slice(secondColon + 1)
+        const match = line.match(/^(.*?):(\d+):(.*)$/)
+        if (!match) continue
+        const [, filePart, linePart, contentPart] = match
         const lineNum = Number.parseInt(linePart, 10)
         if (!Number.isFinite(lineNum)) continue
 
