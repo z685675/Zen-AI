@@ -30,7 +30,11 @@ describe('read-only in-progress turn export', () => {
     } as Message
     render(<ActiveTurnDiagnostics message={message} source={source} />)
     expect(screen.getAllByRole('button')).toHaveLength(1)
-    fireEvent.click(screen.getByRole('button', { name: 'turnDiagnostics.export' }))
+    const button = screen.getByRole('button', { name: 'turnDiagnostics.export' })
+    expect(button).toHaveStyle({ color: 'var(--color-text-3)', fontSize: '11px', height: '22px', padding: '0 4px' })
+    expect(button.querySelector('svg')).toHaveAttribute('width', '12')
+    expect(button).not.toBeDisabled()
+    fireEvent.click(button)
     expect(mocks.export).toHaveBeenLastCalledWith({
       source,
       message,

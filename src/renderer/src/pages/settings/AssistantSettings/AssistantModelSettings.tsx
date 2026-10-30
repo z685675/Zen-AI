@@ -21,6 +21,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import styled from 'styled-components'
 
+import ModelAdvancedSettings from './ModelAdvancedSettings'
+
 interface Props {
   assistant: Assistant
   updateAssistant: (assistant: Assistant) => void
@@ -33,7 +35,7 @@ const AssistantModelSettings: FC<Props> = ({ assistant, updateAssistant, updateA
     () => assistant?.settings?.enableMaxTokens ?? DEFAULT_ASSISTANT_SETTINGS.enableMaxTokens,
     [assistant?.settings?.enableMaxTokens]
   )
-  const [maxTokens, setMaxTokens] = useState(assistant?.settings?.maxTokens ?? 0)
+  const [maxTokens, setMaxTokens] = useState(assistant?.settings?.maxTokens ?? DEFAULT_ASSISTANT_SETTINGS.maxTokens)
   const streamOutput = useMemo(
     () => assistant?.settings?.streamOutput ?? DEFAULT_ASSISTANT_SETTINGS.streamOutput,
     [assistant?.settings?.streamOutput]
@@ -215,16 +217,8 @@ const AssistantModelSettings: FC<Props> = ({ assistant, updateAssistant, updateA
         model: selectedModel,
         defaultModel: selectedModel
       })
-      // TODO: 移除根据模型自动修改参数的逻辑
-      if (selectedModel.name.includes('kimi-k2')) {
-        setTemperature(0.6)
-        setTimeoutTimer('onSelectModel_1', () => updateAssistantSettings({ temperature: 0.6 }), 500)
-      } else if (selectedModel.name.includes('moonshot')) {
-        setTemperature(0.3)
-        setTimeoutTimer('onSelectModel_2', () => updateAssistantSettings({ temperature: 0.3 }), 500)
-      }
     }
-  }, [assistant, defaultModel, setTimeoutTimer, updateAssistant, updateAssistantSettings])
+  }, [assistant, defaultModel, updateAssistant])
 
   useEffect(() => {
     return () => updateAssistantSettings({ customParameters: customParametersRef.current })
@@ -257,150 +251,9 @@ const AssistantModelSettings: FC<Props> = ({ assistant, updateAssistant, updateA
       <Divider style={{ margin: '10px 0' }} />
 
       <SettingRow style={{ minHeight: 30 }}>
-        <HStack alignItems="center">
-          <Label>
-            {t('chat.settings.temperature.label')}
-            <Tooltip title={t('chat.settings.temperature.tip')}>
-              <QuestionIcon />
-            </Tooltip>
-          </Label>
-        </HStack>
-        <Switch
-          checked={enableTemperature}
-          onChange={(enabled) => {
-            updateAssistantSettings({ enableTemperature: enabled })
-          }}
-        />
-      </SettingRow>
-      {enableTemperature && (
-        <Row align="middle" gutter={12}>
-          <Col span={20}>
-            <Slider
-              min={0}
-              max={2}
-              onChange={setTemperature}
-              onChangeComplete={onTemperatureChange}
-              value={typeof temperature === 'number' ? temperature : 0}
-              marks={{ 0: '0', 0.7: '0.7', 2: '2' }}
-              step={0.01}
-            />
-          </Col>
-          <Col span={4}>
-            <EditableNumber
-              min={0}
-              max={2}
-              step={0.01}
-              value={temperature}
-              changeOnBlur
-              onChange={(value) => {
-                if (!isNull(value)) {
-                  setTemperature(value)
-                  setTimeoutTimer('temperature_onChange', () => updateAssistantSettings({ temperature: value }), 500)
-                }
-              }}
-              style={{ width: '100%' }}
-            />
-          </Col>
-        </Row>
-      )}
-      <Divider style={{ margin: '10px 0' }} />
-
-      <SettingRow style={{ minHeight: 30 }}>
-        <HStack alignItems="center">
-          <Label>{t('chat.settings.top_p.label')}</Label>
-          <Tooltip title={t('chat.settings.top_p.tip')}>
-            <QuestionIcon />
-          </Tooltip>
-        </HStack>
-        <Switch
-          checked={enableTopP}
-          onChange={(enabled) => {
-            updateAssistantSettings({ enableTopP: enabled })
-          }}
-        />
-      </SettingRow>
-      {enableTopP && (
-        <Row align="middle" gutter={12}>
-          <Col span={20}>
-            <Slider
-              min={0}
-              max={1}
-              onChange={setTopP}
-              onChangeComplete={onTopPChange}
-              value={typeof topP === 'number' ? topP : 1}
-              marks={{ 0: '0', 1: '1' }}
-              step={0.01}
-            />
-          </Col>
-          <Col span={4}>
-            <EditableNumber
-              min={0}
-              max={1}
-              step={0.01}
-              value={topP}
-              changeOnBlur
-              onChange={(value) => {
-                if (!isNull(value)) {
-                  setTopP(value)
-                  setTimeoutTimer('topP_onChange', () => updateAssistantSettings({ topP: value }), 500)
-                }
-              }}
-              style={{ width: '100%' }}
-            />
-          </Col>
-        </Row>
-      )}
-      <Divider style={{ margin: '10px 0' }} />
-
-      <SettingRow style={{ minHeight: 30 }}>
-        <HStack alignItems="center">
-          <Label>{t('chat.settings.max_tokens.label')}</Label>
-          <Tooltip title={t('chat.settings.max_tokens.tip')}>
-            <QuestionIcon />
-          </Tooltip>
-        </HStack>
-        <Switch
-          checked={enableMaxTokens}
-          onChange={async (enabled) => {
-            if (enabled) {
-              const confirmed = await modalConfirm({
-                title: t('chat.settings.max_tokens.confirm'),
-                content: t('chat.settings.max_tokens.confirm_content'),
-                okButtonProps: {
-                  danger: true
-                }
-              })
-              if (!confirmed) return
-            }
-            updateAssistantSettings({ enableMaxTokens: enabled })
-          }}
-        />
-      </SettingRow>
-      {enableMaxTokens && (
-        <Row align="middle" style={{ marginTop: 5, marginBottom: 5 }}>
-          <Col span={24}>
-            <InputNumber
-              disabled={!enableMaxTokens}
-              min={0}
-              max={10000000}
-              step={100}
-              value={maxTokens}
-              changeOnBlur
-              onChange={(value) => {
-                if (!isNull(value)) {
-                  setMaxTokens(value)
-                  setTimeoutTimer('maxTokens_onChange', () => updateAssistantSettings({ maxTokens: value }), 1000)
-                }
-              }}
-              style={{ width: '100%' }}
-            />
-          </Col>
-        </Row>
-      )}
-      <Divider style={{ margin: '10px 0' }} />
-      <SettingRow style={{ minHeight: 30 }}>
         <Label>{t('models.stream_output')}</Label>
         <Switch
+          aria-label={t('models.stream_output')}
           checked={streamOutput}
           onChange={(checked) => {
             updateAssistantSettings({ streamOutput: checked })
@@ -408,101 +261,262 @@ const AssistantModelSettings: FC<Props> = ({ assistant, updateAssistant, updateA
         />
       </SettingRow>
       <Divider style={{ margin: '10px 0' }} />
-      <SettingRow style={{ minHeight: 30 }}>
-        <Label>{t('assistants.settings.tool_use_mode.label')}</Label>
-        <Selector
-          value={toolUseMode}
-          options={[
-            { label: t('assistants.settings.tool_use_mode.prompt'), value: 'prompt' },
-            { label: t('assistants.settings.tool_use_mode.function'), value: 'function' }
-          ]}
-          onChange={(value) => {
-            updateAssistantSettings({ toolUseMode: value })
-          }}
-          size={14}
-        />
-      </SettingRow>
-      <Divider style={{ margin: '10px 0' }} />
-      <SettingRow style={{ minHeight: 30 }}>
-        <HStack alignItems="center">
-          <Label>{t('assistants.settings.max_tool_calls.label')}</Label>
-          <Tooltip title={t('assistants.settings.max_tool_calls.tip')}>
-            <QuestionIcon />
-          </Tooltip>
-        </HStack>
-        <Switch
-          checked={enableMaxToolCalls}
-          onChange={(enabled) => {
-            updateAssistantSettings({ enableMaxToolCalls: enabled })
-          }}
-        />
-      </SettingRow>
-      {enableMaxToolCalls && (
-        <Row align="middle" style={{ marginTop: 5, marginBottom: 5 }}>
-          <Col span={24}>
-            <InputNumber
-              min={MIN_TOOL_CALLS}
-              max={MAX_TOOL_CALLS}
-              step={1}
-              value={maxToolCalls}
-              onChange={(value) => {
-                if (!isNull(value)) {
-                  setMaxToolCalls(value)
-                  setTimeoutTimer('maxToolCalls_onChange', () => updateAssistantSettings({ maxToolCalls: value }), 500)
-                }
-              }}
-              style={{ width: '100%' }}
-            />
-          </Col>
-        </Row>
-      )}
-      <Divider style={{ margin: '10px 0' }} />
-      <SettingRow style={{ minHeight: 30 }}>
-        <Label>{t('models.custom_parameters')}</Label>
-        <Button icon={<PlusIcon size={18} />} onClick={onAddCustomParameter}>
-          {t('models.add_parameter')}
-        </Button>
-      </SettingRow>
-      {customParameters.map((param, index) => (
-        <div key={index} style={{ marginTop: 10 }}>
-          <Row align="stretch" gutter={10}>
-            <Col span={6}>
-              <Input
-                placeholder={t('models.parameter_name')}
-                value={param.name}
-                onChange={(e) => onUpdateCustomParameter(index, 'name', e.target.value)}
+      <ModelAdvancedSettings
+        customized={
+          enableTemperature ||
+          enableTopP ||
+          enableMaxTokens ||
+          customParameters.length > 0 ||
+          toolUseMode !== DEFAULT_ASSISTANT_SETTINGS.toolUseMode ||
+          enableMaxToolCalls !== DEFAULT_ASSISTANT_SETTINGS.enableMaxToolCalls ||
+          maxToolCalls !== DEFAULT_ASSISTANT_SETTINGS.maxToolCalls
+        }>
+        <SettingRow style={{ minHeight: 30 }}>
+          <HStack alignItems="center">
+            <Label>
+              {t('chat.settings.temperature.label')}
+              <Tooltip title={t('chat.settings.temperature.tip')}>
+                <QuestionIcon />
+              </Tooltip>
+            </Label>
+          </HStack>
+          <Switch
+            aria-label={t('chat.settings.temperature.label')}
+            checked={enableTemperature}
+            onChange={(enabled) => {
+              updateAssistantSettings({ enableTemperature: enabled, ...(enabled ? { enableTopP: false } : {}) })
+            }}
+          />
+        </SettingRow>
+        {enableTemperature && (
+          <Row align="middle" gutter={12}>
+            <Col span={20}>
+              <Slider
+                min={0}
+                max={2}
+                onChange={setTemperature}
+                onChangeComplete={onTemperatureChange}
+                value={typeof temperature === 'number' ? temperature : 0}
+                marks={{ 0: '0', 0.7: '0.7', 2: '2' }}
+                step={0.01}
               />
             </Col>
-            <Col span={6}>
-              <Select
-                value={param.type}
-                onChange={(value) => onUpdateCustomParameter(index, 'type', value)}
-                style={{ width: '100%' }}>
-                <Select.Option value="string">{t('models.parameter_type.string')}</Select.Option>
-                <Select.Option value="number">{t('models.parameter_type.number')}</Select.Option>
-                <Select.Option value="boolean">{t('models.parameter_type.boolean')}</Select.Option>
-                <Select.Option value="json">{t('models.parameter_type.json')}</Select.Option>
-              </Select>
-            </Col>
-            {param.type !== 'json' && <Col span={10}>{renderParameterValueInput(param, index)}</Col>}
-            <Col span={param.type === 'json' ? 12 : 2} style={{ display: 'flex', justifyContent: 'flex-end' }}>
-              <Button
-                color="danger"
-                variant="filled"
-                icon={<DeleteIcon size={14} className="lucide-custom" />}
-                onClick={() => onDeleteCustomParameter(index)}
+            <Col span={4}>
+              <EditableNumber
+                min={0}
+                max={2}
+                step={0.01}
+                value={temperature}
+                changeOnBlur
+                onChange={(value) => {
+                  if (!isNull(value)) {
+                    setTemperature(value)
+                    setTimeoutTimer('temperature_onChange', () => updateAssistantSettings({ temperature: value }), 500)
+                  }
+                }}
+                style={{ width: '100%' }}
               />
             </Col>
           </Row>
-          {param.type === 'json' && <div style={{ marginTop: 6 }}>{renderParameterValueInput(param, index)}</div>}
-        </div>
-      ))}
-      <Divider style={{ margin: '15px 0' }} />
-      <HStack justifyContent="flex-end">
-        <Button onClick={onReset} danger type="primary" icon={<ResetIcon size={16} />}>
-          {t('chat.settings.reset')}
-        </Button>
-      </HStack>
+        )}
+        <Divider style={{ margin: '10px 0' }} />
+
+        <SettingRow style={{ minHeight: 30 }}>
+          <HStack alignItems="center">
+            <Label>{t('chat.settings.top_p.label')}</Label>
+            <Tooltip title={t('chat.settings.top_p.tip')}>
+              <QuestionIcon />
+            </Tooltip>
+          </HStack>
+          <Switch
+            aria-label={t('chat.settings.top_p.label')}
+            checked={enableTopP}
+            onChange={(enabled) => {
+              updateAssistantSettings({ enableTopP: enabled, ...(enabled ? { enableTemperature: false } : {}) })
+            }}
+          />
+        </SettingRow>
+        {enableTopP && (
+          <Row align="middle" gutter={12}>
+            <Col span={20}>
+              <Slider
+                min={0}
+                max={1}
+                onChange={setTopP}
+                onChangeComplete={onTopPChange}
+                value={typeof topP === 'number' ? topP : 1}
+                marks={{ 0: '0', 1: '1' }}
+                step={0.01}
+              />
+            </Col>
+            <Col span={4}>
+              <EditableNumber
+                min={0}
+                max={1}
+                step={0.01}
+                value={topP}
+                changeOnBlur
+                onChange={(value) => {
+                  if (!isNull(value)) {
+                    setTopP(value)
+                    setTimeoutTimer('topP_onChange', () => updateAssistantSettings({ topP: value }), 500)
+                  }
+                }}
+                style={{ width: '100%' }}
+              />
+            </Col>
+          </Row>
+        )}
+        <Divider style={{ margin: '10px 0' }} />
+
+        <SettingRow style={{ minHeight: 30 }}>
+          <HStack alignItems="center">
+            <Label>{t('chat.settings.max_tokens.label')}</Label>
+            <Tooltip title={t('chat.settings.max_tokens.tip')}>
+              <QuestionIcon />
+            </Tooltip>
+          </HStack>
+          <Switch
+            aria-label={t('chat.settings.max_tokens.label')}
+            checked={enableMaxTokens}
+            onChange={async (enabled) => {
+              if (enabled) {
+                const confirmed = await modalConfirm({
+                  title: t('chat.settings.max_tokens.confirm'),
+                  content: t('chat.settings.max_tokens.confirm_content'),
+                  okButtonProps: {
+                    danger: true
+                  }
+                })
+                if (!confirmed) return
+              }
+              updateAssistantSettings({ enableMaxTokens: enabled })
+            }}
+          />
+        </SettingRow>
+        {enableMaxTokens && (
+          <Row align="middle" style={{ marginTop: 5, marginBottom: 5 }}>
+            <Col span={24}>
+              <InputNumber
+                disabled={!enableMaxTokens}
+                min={1}
+                max={10000000}
+                step={100}
+                value={maxTokens}
+                changeOnBlur
+                onChange={(value) => {
+                  if (!isNull(value)) {
+                    setMaxTokens(value)
+                    setTimeoutTimer('maxTokens_onChange', () => updateAssistantSettings({ maxTokens: value }), 1000)
+                  }
+                }}
+                style={{ width: '100%' }}
+              />
+            </Col>
+          </Row>
+        )}
+        <Divider style={{ margin: '10px 0' }} />
+        <SettingRow style={{ minHeight: 30 }}>
+          <Label>{t('assistants.settings.tool_use_mode.label')}</Label>
+          <Selector
+            value={toolUseMode}
+            options={[
+              { label: t('assistants.settings.tool_use_mode.prompt'), value: 'prompt' },
+              { label: t('assistants.settings.tool_use_mode.function'), value: 'function' }
+            ]}
+            onChange={(value) => {
+              updateAssistantSettings({ toolUseMode: value })
+            }}
+            size={14}
+          />
+        </SettingRow>
+        <Divider style={{ margin: '10px 0' }} />
+        <SettingRow style={{ minHeight: 30 }}>
+          <HStack alignItems="center">
+            <Label>{t('assistants.settings.max_tool_calls.label')}</Label>
+            <Tooltip title={t('assistants.settings.max_tool_calls.tip')}>
+              <QuestionIcon />
+            </Tooltip>
+          </HStack>
+          <Switch
+            aria-label={t('assistants.settings.max_tool_calls.label')}
+            checked={enableMaxToolCalls}
+            onChange={(enabled) => {
+              updateAssistantSettings({ enableMaxToolCalls: enabled })
+            }}
+          />
+        </SettingRow>
+        {enableMaxToolCalls && (
+          <Row align="middle" style={{ marginTop: 5, marginBottom: 5 }}>
+            <Col span={24}>
+              <InputNumber
+                min={MIN_TOOL_CALLS}
+                max={MAX_TOOL_CALLS}
+                step={1}
+                value={maxToolCalls}
+                onChange={(value) => {
+                  if (!isNull(value)) {
+                    setMaxToolCalls(value)
+                    setTimeoutTimer(
+                      'maxToolCalls_onChange',
+                      () => updateAssistantSettings({ maxToolCalls: value }),
+                      500
+                    )
+                  }
+                }}
+                style={{ width: '100%' }}
+              />
+            </Col>
+          </Row>
+        )}
+        <Divider style={{ margin: '10px 0' }} />
+        <SettingRow style={{ minHeight: 30 }}>
+          <Label>{t('models.custom_parameters')}</Label>
+          <Button icon={<PlusIcon size={18} />} onClick={onAddCustomParameter}>
+            {t('models.add_parameter')}
+          </Button>
+        </SettingRow>
+        {customParameters.map((param, index) => (
+          <div key={index} style={{ marginTop: 10 }}>
+            <Row align="stretch" gutter={10}>
+              <Col span={6}>
+                <Input
+                  placeholder={t('models.parameter_name')}
+                  value={param.name}
+                  onChange={(e) => onUpdateCustomParameter(index, 'name', e.target.value)}
+                />
+              </Col>
+              <Col span={6}>
+                <Select
+                  value={param.type}
+                  onChange={(value) => onUpdateCustomParameter(index, 'type', value)}
+                  style={{ width: '100%' }}>
+                  <Select.Option value="string">{t('models.parameter_type.string')}</Select.Option>
+                  <Select.Option value="number">{t('models.parameter_type.number')}</Select.Option>
+                  <Select.Option value="boolean">{t('models.parameter_type.boolean')}</Select.Option>
+                  <Select.Option value="json">{t('models.parameter_type.json')}</Select.Option>
+                </Select>
+              </Col>
+              {param.type !== 'json' && <Col span={10}>{renderParameterValueInput(param, index)}</Col>}
+              <Col span={param.type === 'json' ? 12 : 2} style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                <Button
+                  color="danger"
+                  variant="filled"
+                  icon={<DeleteIcon size={14} className="lucide-custom" />}
+                  onClick={() => onDeleteCustomParameter(index)}
+                />
+              </Col>
+            </Row>
+            {param.type === 'json' && <div style={{ marginTop: 6 }}>{renderParameterValueInput(param, index)}</div>}
+          </div>
+        ))}
+        <Divider style={{ margin: '15px 0' }} />
+        <HStack justifyContent="flex-end">
+          <Button onClick={onReset} danger type="primary" icon={<ResetIcon size={16} />}>
+            {t('chat.settings.reset')}
+          </Button>
+        </HStack>
+      </ModelAdvancedSettings>
     </Container>
   )
 }

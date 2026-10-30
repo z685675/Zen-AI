@@ -2,9 +2,18 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { sanitizeDiagnostic } from '../../diagnostics'
 import { getModelDailyQuotaErrorKind } from '../modelDailyQuota'
-import { ModelDailyQuotaRefusal, ModelDailyQuotaTurn } from '../modelDailyQuotaTurn'
+import {
+  ModelDailyQuotaTask,
+  ModelDailyQuotaTurn,
+  parseModelDailyTurnResult,
+  readModelDailyQuotaResults,
+  shouldShowModelDailyQuotaNotice
+} from '../modelDailyQuotaTurn'
 
-afterEach(() => vi.restoreAllMocks())
+afterEach(() => {
+  vi.useRealTimers()
+  vi.restoreAllMocks()
+})
 
 describe('model daily quota protocol', () => {
   it('recognizes wrapped errors, but not generic credential/rate-limit failures', () => {
@@ -32,164 +41,164 @@ describe('model daily quota protocol', () => {
     expect(JSON.stringify(value)).not.toContain('private')
     expect(JSON.stringify(value)).toContain('public-task')
   })
-  it('falls back only for older server endpoints, not quota errors or network failures', async () => {
-    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('', { status: 404 }))
-    const older = new ModelDailyQuotaTurn('https://local.invalid/prefix/v1', 'premium')
-    const headers = new Headers({ Authorization: 'Bearer key' })
-    expect(await older.getPermit(headers, new AbortController().signal)).toBeUndefined()
-    expect(await older.getPermit(headers, new AbortController().signal)).toBeUndefined()
-    expect(fetchMock).toHaveBeenCalledTimes(1)
-    expect(String(fetchMock.mock.calls[0][0])).toBe('https://local.invalid/prefix/api/usage/token/model-daily/turn')
-    await older.finish()
-    fetchMock.mockResolvedValue(new Response('{"error":{"code":"model_daily_token_limit_exceeded"}}', { status: 403 }))
-    const limited = new ModelDailyQuotaTurn('https://local.invalid/v1', 'premium')
-    await expect(limited.getPermit(headers, new AbortController().signal)).rejects.toBeInstanceOf(
-      ModelDailyQuotaRefusal
-    )
-    await limited.finish()
-    fetchMock.mockRejectedValue(new Error('network failure'))
-    const offline = new ModelDailyQuotaTurn('https://local.invalid/v1', 'premium')
-    await expect(offline.getPermit(headers, new AbortController().signal)).rejects.toMatchObject({
-      code: 'model_daily_quota_unavailable',
-      cause: { message: 'network failure' }
-    })
-    await offline.finish()
-  })
-  it('retries a failed admission with the same task ID and caches only a successful permit', async () => {
-    const timeout = new DOMException('The operation was aborted due to timeout', 'TimeoutError')
-    const fetchMock = vi
-      .spyOn(globalThis, 'fetch')
-      .mockRejectedValueOnce(timeout)
-      .mockResolvedValueOnce(new Response(JSON.stringify({ success: true, data: { permit: 'a'.repeat(64) } })))
-      .mockResolvedValue(new Response('{}'))
-    const turn = new ModelDailyQuotaTurn('https://local.invalid/v1', 'premium')
-    const headers = new Headers({ Authorization: 'Bearer test-only' })
-    await expect(turn.getPermit(headers, new AbortController().signal)).rejects.toMatchObject({
-      code: 'model_daily_quota_unavailable',
-      zenFailureStage: 'quota-admission',
-      zenRequestUrl: 'https://local.invalid/api/usage/token/model-daily/turn',
-      cause: timeout
-    })
-    expect(await turn.getPermit(headers, new AbortController().signal)).toBe('a'.repeat(64))
-    expect(await turn.getPermit(headers, new AbortController().signal)).toBe('a'.repeat(64))
-    expect(fetchMock).toHaveBeenCalledTimes(2)
-    const bodies = fetchMock.mock.calls.map(([, init]) => JSON.parse(String(init?.body)))
-    expect(bodies[0].task_id).toBe(bodies[1].task_id)
-    await turn.finish()
-    expect(fetchMock).toHaveBeenCalledTimes(3)
-    expect(String(fetchMock.mock.calls[2][0])).toMatch(/\/turn\/state$/)
-  })
-  it('shares each in-flight admission, but starts a real new request after a shared failure', async () => {
-    let rejectFirst!: (error: Error) => void
-    const fetchMock = vi
-      .spyOn(globalThis, 'fetch')
-      .mockImplementationOnce(() => new Promise((_resolve, reject) => (rejectFirst = reject)))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ success: true, data: { permit: 'b'.repeat(64) } })))
-      .mockResolvedValue(new Response('{}'))
-    const turn = new ModelDailyQuotaTurn('https://local.invalid/v1', 'premium')
-    const headers = new Headers({ Authorization: 'Bearer test-only' })
-    const first = Promise.allSettled([
-      turn.getPermit(headers, new AbortController().signal),
-      turn.getPermit(headers, new AbortController().signal)
-    ])
-    expect(fetchMock).toHaveBeenCalledTimes(1)
-    rejectFirst(new Error('network failure'))
-    expect((await first).map((result) => result.status)).toEqual(['rejected', 'rejected'])
-    expect(
-      await Promise.all([
-        turn.getPermit(headers, new AbortController().signal),
-        turn.getPermit(headers, new AbortController().signal)
-      ])
-    ).toEqual(['b'.repeat(64), 'b'.repeat(64)])
-    expect(fetchMock).toHaveBeenCalledTimes(2)
-    await turn.finish()
-  })
-  it('does not poison another task on the same Provider, model and key', async () => {
-    const fetchMock = vi
-      .spyOn(globalThis, 'fetch')
-      .mockResolvedValueOnce(new Response(JSON.stringify({ success: true, data: { permit: 'c'.repeat(64) } })))
-      .mockRejectedValueOnce(new Error('network failure'))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ success: true, data: { permit: 'd'.repeat(64) } })))
-      .mockImplementation(async () => new Response('{}'))
-    const running = new ModelDailyQuotaTurn('https://local.invalid/v1', 'premium')
-    const starting = new ModelDailyQuotaTurn('https://local.invalid/v1', 'premium')
-    const headers = new Headers({ Authorization: 'Bearer test-only' })
-    expect(await running.getPermit(headers, new AbortController().signal)).toBe('c'.repeat(64))
-    await expect(starting.getPermit(headers, new AbortController().signal)).rejects.toThrow()
-    expect(await running.getPermit(headers, new AbortController().signal)).toBe('c'.repeat(64))
-    expect(await starting.getPermit(headers, new AbortController().signal)).toBe('d'.repeat(64))
-    expect(fetchMock).toHaveBeenCalledTimes(3)
-    const bodies = fetchMock.mock.calls.map(([, init]) => JSON.parse(String(init?.body)))
-    expect(bodies[0].task_id).not.toBe(bodies[1].task_id)
-    expect(bodies[1].task_id).toBe(bodies[2].task_id)
-    await Promise.all([running.finish(), starting.finish()])
-  })
   it.each([
-    [503, '{"error":{"code":"model_daily_quota_unavailable"}}'],
-    [403, '{"error":{"code":"model_daily_token_limit_exceeded"}}']
-  ])('never bypasses a %s refusal on a subsequent admission attempt', async (status, body) => {
-    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response(body, { status }))
-    const turn = new ModelDailyQuotaTurn('https://local.invalid/v1', 'premium')
-    const headers = new Headers({ Authorization: 'Bearer test-only' })
-    for (let attempt = 0; attempt < 2; attempt++)
-      await expect(turn.getPermit(headers, new AbortController().signal)).rejects.toBeInstanceOf(ModelDailyQuotaRefusal)
-    expect(fetchMock).toHaveBeenCalledTimes(2)
-    await turn.finish()
+    [{ name: 'TimeoutError', message: 'signal timed out' }, 'timeout'],
+    [JSON.stringify({ name: 'TimeoutError' }), 'timeout'],
+    [{ name: 'TypeError', message: 'Failed to fetch' }, 'connection'],
+    [{ cause: { code: 'ENOTFOUND' } }, 'connection'],
+    [{ name: 'SyntaxError', message: 'Invalid JSON response' }, 'unavailable']
+  ])('distinguishes an admission failure caused by %j', (cause, kind) => {
+    expect(getModelDailyQuotaErrorKind({ code: 'model_daily_quota_unavailable', cause })).toBe(kind)
   })
-  it('does not request admission for an already cancelled task', async () => {
+  it('keeps actual HTTP failures separate from timeouts and supports saved timeout metadata', () => {
+    expect(
+      getModelDailyQuotaErrorKind({
+        statusCode: 503,
+        code: 'model_daily_quota_unavailable',
+        message: 'Request timed out on server'
+      })
+    ).toBe('unavailable')
+    expect(
+      getModelDailyQuotaErrorKind({ code: 'model_daily_quota_unavailable', cause: '{}', i18nKey: 'request_timeout' })
+    ).toBe('timeout')
+    expect(getModelDailyQuotaErrorKind({ name: 'TimeoutError' })).toBeUndefined()
+  })
+
+  const result = {
+    model: 'premium',
+    date: '2026-10-29',
+    current_date: '2026-10-29',
+    limit: 100,
+    used: 120,
+    exhausted: true,
+    extra_allowed: false,
+    pending: false
+  }
+  const headers = () => new Headers({ Authorization: 'Bearer test-key' })
+  const signal = () => new AbortController().signal
+
+  it('shares admission with checkpoint calls while isolating models, keys and user tasks', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, options) => {
+      const body = JSON.parse(String(options?.body))
+      return new Response(JSON.stringify({ success: true, data: { ...result, model: body.model } }))
+    })
+    const task = new ModelDailyQuotaTask()
+    const first = await task.headers('https://local.invalid/v1', 'premium', 'key-a', signal())
+    expect(first['X-Zen-Model-Turn-Mode']).toBe('inline-v1')
+    expect(await task.headers('https://local.invalid/v1', 'premium', 'key-a', signal())).toEqual(first)
+    const checkpoint = await task.headers('https://local.invalid/v1', 'checkpoint', 'key-a', signal())
+    const failover = await task.headers('https://local.invalid/v1', 'premium', 'key-b', signal())
+    expect(new Set([first, checkpoint, failover].map((headers) => headers['X-Zen-Model-Turn'])).size).toBe(3)
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(await task.finish()).toHaveLength(3)
+    await task.finish()
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+    await expect(task.headers('https://local.invalid/v1', 'premium', 'key-a', signal())).rejects.toThrow('finished')
+    const nextTask = new ModelDailyQuotaTask()
+    expect(await nextTask.headers('https://local.invalid/v1', 'premium', 'key-a', signal())).not.toEqual(first)
+    await nextTask.finish()
+  })
+
+  it('prepares a private task capability locally even when quota endpoints cannot be reached', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new TypeError('Failed to fetch'))
+    const turn = new ModelDailyQuotaTurn('https://local.invalid/prefix/v1', 'premium')
+    const permit = await turn.getPermit(headers(), signal())
+    expect(permit).toMatch(/^[a-f0-9]{64}$/)
+    expect(await turn.getPermit(headers(), signal())).toBe(permit)
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(await turn.finish()).toBeUndefined()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(String(fetchMock.mock.calls[0][0])).toBe(
+      'https://local.invalid/prefix/api/usage/token/model-daily/turn/state'
+    )
+    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toEqual({ model: 'premium', permit, close: true })
+  })
+  it('shares a capability across parallel calls and returns only a validated final advisory', async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation(
+        async () => new Response(JSON.stringify({ success: true, data: { ...result, permit: 'must-never-persist' } }))
+      )
+    const turn = new ModelDailyQuotaTurn('https://local.invalid/v1', 'premium')
+    const permits = await Promise.all([turn.getPermit(headers(), signal()), turn.getPermit(headers(), signal())])
+    expect(permits[0]).toBe(permits[1])
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(await turn.finish()).toEqual(result)
+    expect(await turn.finish()).toEqual(result)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(JSON.stringify(await turn.finish())).not.toContain('must-never-persist')
+  })
+  it('starts a new capability for a new task, and never leaks it across tasks on the same key', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response('{}'))
+    const first = new ModelDailyQuotaTurn('https://local.invalid/v1', 'premium')
+    const other = new ModelDailyQuotaTurn('https://local.invalid/v1', 'premium')
+    const old = await first.getPermit(headers(), signal())
+    expect(await other.getPermit(headers(), signal())).not.toBe(old)
+    await first.finish()
+    expect(await first.getPermit(headers(), signal())).not.toBe(old)
+    await Promise.all([first.finish(), other.finish()])
+  })
+  it('does not prepare or send anything for an already cancelled task or missing credentials', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch')
     const turn = new ModelDailyQuotaTurn('https://local.invalid/v1', 'premium')
     const controller = new AbortController()
     const reason = new DOMException('User stopped', 'AbortError')
     controller.abort(reason)
-    await expect(turn.getPermit(new Headers({ Authorization: 'Bearer test-only' }), controller.signal)).rejects.toBe(
-      reason
-    )
-    expect(fetchMock).not.toHaveBeenCalled()
+    await expect(turn.getPermit(headers(), controller.signal)).rejects.toBe(reason)
+    expect(await turn.getPermit(new Headers(), signal())).toBeUndefined()
     await turn.finish()
+    expect(fetchMock).not.toHaveBeenCalled()
   })
-  it.each(['invalid-json', 'invalid-permit'])(
-    'can retry a %s admission response without bypassing authorization',
-    async (kind) => {
-      const fetchMock = vi
-        .spyOn(globalThis, 'fetch')
-        .mockResolvedValueOnce(
-          new Response(
-            kind === 'invalid-json' ? '<html>bad gateway</html>' : '{"success":true,"data":{"permit":"bad"}}'
-          )
-        )
-        .mockResolvedValueOnce(new Response(JSON.stringify({ success: true, data: { permit: 'e'.repeat(64) } })))
-        .mockImplementation(async () => new Response('{}'))
-      const turn = new ModelDailyQuotaTurn('https://local.invalid/v1', 'premium')
-      const headers = new Headers({ Authorization: 'Bearer test-only' })
-      await expect(turn.getPermit(headers, new AbortController().signal)).rejects.toMatchObject({
-        code: 'model_daily_quota_unavailable'
-      })
-      expect(await turn.getPermit(headers, new AbortController().signal)).toBe('e'.repeat(64))
-      expect(fetchMock).toHaveBeenCalledTimes(2)
-      await turn.finish()
-    }
-  )
-  it('preserves cancellation during admission and allows a later real attempt', async () => {
+  it('renews an admitted task in the background and stops renewing after completion', async () => {
+    vi.useFakeTimers()
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response('{}'))
+    const turn = new ModelDailyQuotaTurn('https://local.invalid/v1', 'premium')
+    const permit = await turn.getPermit(headers(), signal())
+    expect(fetchMock).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toEqual({ model: 'premium', permit, close: false })
+    await turn.finish()
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+  it('waits briefly for in-flight settlement instead of fabricating a quota notice', async () => {
     const fetchMock = vi
       .spyOn(globalThis, 'fetch')
-      .mockImplementationOnce(
-        (_input, init) =>
-          new Promise((_resolve, reject) => {
-            init?.signal?.addEventListener('abort', () => reject(init.signal?.reason), { once: true })
-          })
-      )
-      .mockResolvedValueOnce(new Response(JSON.stringify({ success: true, data: { permit: 'f'.repeat(64) } })))
-      .mockImplementation(async () => new Response('{}'))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ success: true, data: { ...result, pending: true } })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ success: true, data: result })))
     const turn = new ModelDailyQuotaTurn('https://local.invalid/v1', 'premium')
-    const headers = new Headers({ Authorization: 'Bearer test-only' })
-    const controller = new AbortController()
-    const reason = new DOMException('User stopped', 'AbortError')
-    const attempt = turn.getPermit(headers, controller.signal)
-    controller.abort(reason)
-    await expect(attempt).rejects.toBe(reason)
-    expect(await turn.getPermit(headers, new AbortController().signal)).toBe('f'.repeat(64))
+    await turn.getPermit(headers(), signal())
+    expect(await turn.finish()).toEqual(result)
     expect(fetchMock).toHaveBeenCalledTimes(2)
-    await turn.finish()
+  })
+  it.each([
+    [503, '{}'],
+    [200, '<html>error</html>'],
+    [200, '{"success":true,"data":{"exhausted":true}}']
+  ])('keeps a completed model result usable if final synchronization returns %s', async (status, body) => {
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation(async () => new Response(String(body), { status: Number(status) }))
+    const turn = new ModelDailyQuotaTurn('https://local.invalid/v1', 'premium')
+    await turn.getPermit(headers(), signal())
+    expect(await turn.finish()).toBeUndefined()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+  it.each([
+    { ...result, pending: true },
+    { ...result, extra_allowed: true },
+    { ...result, current_date: '2026-10-30' },
+    { ...result, limit: 0 },
+    { ...result, used: 99 },
+    { ...result, exhausted: false }
+  ])('does not recommend switching a model for a non-actionable result %j', (value) => {
+    expect(shouldShowModelDailyQuotaNotice(value)).toBe(false)
+    expect(readModelDailyQuotaResults([value])).toEqual([])
+  })
+  it('rejects malformed advisories and strips fields not needed for the notice', () => {
+    expect(parseModelDailyTurnResult({ ...result, used: -1 })).toBeUndefined()
+    expect(parseModelDailyTurnResult({ ...result, used: '120' })).toBeUndefined()
+    expect(readModelDailyQuotaResults([null, { ...result, permit: 'private' }])).toEqual([result])
+    expect(getModelDailyQuotaErrorKind({ message: '该模型额度已达到日限额，请切换其他模型使用。' })).toBe('exceeded')
   })
 })

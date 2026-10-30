@@ -200,44 +200,14 @@ main {
     transform: rotate(360deg);
   }
 }
-figure {
-  margin: 0;
-  width: 100%;
-  min-width: 0;
-}
-figure img {
-  display: block;
-  width: 100%;
-  max-height: calc(100dvh - 250px);
-  object-fit: contain;
-  border-radius: 12px;
-}
 .image-button {
   border: 0;
   padding: 0;
   background: transparent;
   width: 100%;
 }
-figcaption {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 6px;
-  margin-top: 12px;
-}
-figcaption button {
-  font-size: 12px;
-}
-.preview.multiple {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  align-items: start;
-  gap: 14px;
-}
-.multiple img {
-  max-height: 300px;
-}
 .task-info {
+  flex-shrink: 0;
   border: 1px solid var(--line);
   background: var(--surface);
   border-radius: 12px;
@@ -632,9 +602,6 @@ figcaption button {
   .generate {
     margin-top: 0;
   }
-  .preview.multiple {
-    grid-template-columns: 1fr;
-  }
   .history {
     top: 65px !important;
   }
@@ -643,9 +610,6 @@ figcaption button {
   }
   .toast {
     bottom: 12px;
-  }
-  .multiple img {
-    max-height: 220px;
   }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -657,8 +621,7 @@ figcaption button {
   }
 }
 
-/* Keep the output actions within the preview and the primary action visible
-   on desktop windows with a shorter content area. */
+/* The empty preview and the composer keep their own scroll boundaries. */
 .preview {
   overflow: hidden;
 }
@@ -666,11 +629,6 @@ figcaption button {
   display: flex;
   align-items: center;
   justify-content: center;
-}
-figure img {
-  max-height: max(220px, calc(100dvh - 350px));
-  width: auto;
-  max-width: 100%;
 }
 .composer {
   gap: 12px;
@@ -740,27 +698,143 @@ figure img {
   max-height: 220px;
   overflow: auto;
 }
-.comparison-results {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr));
-  gap: 12px;
-  margin-bottom: 16px;
-}
-.comparison-card {
-  min-width: 0;
+.result-gallery {
+  flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  min-width: 0;
+  gap: 12px;
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: 16px;
   padding: 12px;
   background: var(--surface);
 }
-.comparison-card strong {
-  overflow-wrap: anywhere;
+.gallery-thumbnails {
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+  overflow-x: auto;
+  padding: 2px 2px 6px;
+  scrollbar-width: thin;
 }
-.comparison-card img {
-  max-width: 100%;
-  max-height: 360px;
+.gallery-thumbnail {
+  flex: 0 0 90px;
+  width: 90px;
+  min-width: 0;
+  padding: 4px;
+  border: 2px solid transparent;
+  background: var(--soft);
+  text-align: left;
+}
+.gallery-thumbnail[aria-current='true'] {
+  border-color: var(--accent);
+  background: var(--surface);
+}
+.gallery-thumbnail img,
+.thumbnail-placeholder {
+  display: block;
+  width: 100%;
+  height: 52px;
+  border-radius: 5px;
+  object-fit: cover;
+}
+.thumbnail-placeholder {
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  font-size: 24px;
+}
+.thumbnail-label {
+  display: block;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 10px;
+  margin-top: 4px;
+}
+.thumbnail-label .status-dot {
+  margin-right: 4px;
+}
+.gallery-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.gallery-source {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.gallery-source strong {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 12px;
+}
+.gallery-navigation {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 8px;
+}
+.gallery-navigation button {
+  font-size: 24px;
+  line-height: 24px;
+  padding: 4px 12px;
+}
+.gallery-counter {
+  min-width: 42px;
+  text-align: center;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.gallery-stage {
+  display: grid;
+  place-items: center;
+  height: clamp(160px, calc(100dvh - 370px), 640px);
+  min-height: 0;
+  min-width: 0;
+  border-radius: 10px;
+  background: var(--soft);
+  overflow: hidden;
+}
+.gallery-stage .image-button {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+.gallery-stage img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
   object-fit: contain;
+}
+.gallery-stage .empty-preview {
+  padding: 12px;
+}
+.gallery-stage .art-icon {
+  width: 48px;
+  height: 48px;
+  font-size: 28px;
+  margin: 0 auto 10px;
+}
+.gallery-stage h2 {
+  font-size: 18px;
+}
+.gallery-stage .empty-preview p {
+  max-height: 72px;
+}
+.gallery-actions {
+  display: flex;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+.gallery-actions button {
+  font-size: 12px;
 }

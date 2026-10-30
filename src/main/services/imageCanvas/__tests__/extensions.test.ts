@@ -399,12 +399,41 @@ describe('image workbench extension transports', () => {
     expect(store.historyPage(next.nextCursor, 50).items).toHaveLength(1)
     expect(() => store.historyPage('bad-cursor')).toThrow('invalid_history_page')
   })
-  it('queues four explicitly selected models with at most two concurrent generations', async () => {
+  it('paginates whole batches and counts one record per submission after restart', () => {
+    const path = directory()
+    const batchId = randomUUID()
+    const records = [0, 1, 2, 3].map((index) => ({
+      id: randomUUID(),
+      providerId: 'p',
+      modelId: 'gpt-image-2',
+      prompt: 'one submission',
+      createdAt: new Date(1700000000000 + index * 1000).toISOString(),
+      status: 'completed',
+      assets: [],
+      fingerprint: 'fixture',
+      batchId: index === 1 || index === 3 ? batchId : undefined
+    }))
+    writeFileSync(join(path, 'tasks.json'), JSON.stringify(records))
+    const store = new ImageCanvasTaskStore(path, vi.fn())
+    const first = store.historyPage(undefined, 1)
+    expect(first.total).toBe(3)
+    expect(first.items.map((item) => item.id)).toEqual([records[1].id, records[3].id])
+    expect(first.items.every((item) => item.batchId === batchId)).toBe(true)
+    const next = store.historyPage(first.nextCursor, 1)
+    expect(next.items.map((item) => item.id)).toEqual([records[2].id])
+    const last = store.historyPage(next.nextCursor, 1)
+    expect(last.items.map((item) => item.id)).toEqual([records[0].id])
+    expect(last.nextCursor).toBeUndefined()
+    expect(new Set([...first.items, ...next.items, ...last.items].map((item) => item.id)).size).toBe(4)
+    expect(new ImageCanvasTaskStore(path, vi.fn()).historyPage(undefined, 1).items).toHaveLength(2)
+  })
+  it.each([1, 4])('queues %s images per selected model with at most two concurrent generations', async (count) => {
     const path = directory(),
       batchId = randomUUID()
     let active = 0,
       maximum = 0
-    const request = vi.fn(async () => {
+    const request = vi.fn(async (_url: unknown, init?: RequestInit) => {
+      expect(JSON.parse(String(init?.body)).n).toBe(1)
       active++
       maximum = Math.max(active, maximum)
       await new Promise((resolve) => setTimeout(resolve, 10))
@@ -412,22 +441,50 @@ describe('image workbench extension transports', () => {
       return response({ data: [{ b64_json: png.toString('base64') }] })
     })
     const store = new ImageCanvasTaskStore(path, request)
-    const fixtures = Array.from({ length: 4 }, (_, index) => {
-      const value = fixture('openai', `gpt-image-${index}`)
-      value.input.batchId = batchId
-      return value
-    })
+    const fixtures = Array.from({ length: 4 }, (_, index) =>
+      Array.from({ length: count }, () => {
+        const value = fixture('openai', `gpt-image-${index}`)
+        value.input.batchId = batchId
+        return value
+      })
+    ).flat()
     const tasks = store.submitBatch(
       fixtures.map((value) => value.provider),
       fixtures.map((value) => value.input)
     )
-    expect(tasks).toHaveLength(4)
-    expect(tasks.filter((task) => task.phase === 'queued')).toHaveLength(2)
+    expect(tasks).toHaveLength(4 * count)
+    expect(tasks.filter((task) => task.phase === 'queued')).toHaveLength(4 * count - 2)
     await vi.waitFor(() => expect(store.history().every((task) => task.status === 'completed')).toBe(true))
     expect(maximum).toBe(2)
-    expect(request).toHaveBeenCalledTimes(4)
+    expect(request).toHaveBeenCalledTimes(4 * count)
+    expect(store.history().every((task) => task.assets.length === 1)).toBe(true)
+    store.submitBatch(
+      fixtures.map((value) => value.provider),
+      fixtures.map((value) => value.input)
+    )
+    expect(request).toHaveBeenCalledTimes(4 * count)
     const saved = JSON.parse(readFileSync(join(path, 'tasks.json'), 'utf8'))
     expect(saved.every((task: any) => task.batchId === batchId)).toBe(true)
     expect(JSON.stringify(saved)).not.toContain('private-key')
+  })
+  it('rejects invalid image batches before making any model calls', () => {
+    const request = vi.fn()
+    const store = new ImageCanvasTaskStore(directory(), request)
+    for (const count of [5, 17]) {
+      const batchId = randomUUID()
+      const fixtures = Array.from({ length: count }, () => {
+        const value = fixture('openai')
+        value.input.batchId = batchId
+        return value
+      })
+      expect(() =>
+        store.submitBatch(
+          fixtures.map((value) => value.provider),
+          fixtures.map((value) => value.input)
+        )
+      ).toThrow()
+    }
+    expect(store.history()).toHaveLength(0)
+    expect(request).not.toHaveBeenCalled()
   })
 })

@@ -10,14 +10,12 @@ import { useMinappPopup } from '@renderer/hooks/useMinappPopup'
 import { useMessageStyle, useSettings } from '@renderer/hooks/useSettings'
 import { getMessageModelId } from '@renderer/services/MessagesService'
 import type { Assistant, Model, Topic } from '@renderer/types'
-import type { AgentSessionSyncMetadata } from '@renderer/types/newMessage'
 import type { Message } from '@renderer/types/newMessage'
 import { firstLetter, isEmoji, removeLeadingEmoji } from '@renderer/utils'
-import { isAgentSessionTopicId } from '@renderer/utils/agentSession'
 import { formatMessageTimestamp } from '@renderer/utils/messageTiming'
 import { Avatar, Checkbox, Tooltip } from 'antd'
 import { Sparkle } from 'lucide-react'
-import type { FC } from 'react'
+import type { FC, ReactNode } from 'react'
 import { memo, useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import styled from 'styled-components'
@@ -30,6 +28,7 @@ interface Props {
   model?: Model
   topic: Topic
   isGroupContextMessage?: boolean
+  actions?: ReactNode
 }
 
 const getAvatarSource = (isLocalAi: boolean, modelId: string | undefined) => {
@@ -40,15 +39,7 @@ const getAvatarSource = (isLocalAi: boolean, modelId: string | undefined) => {
 export const getMessageHeaderModelName = (model: Model | undefined, fallbackModelId?: string): string =>
   model?.name || model?.id || fallbackModelId || ''
 
-const getSyncStatusLabel = (sync?: AgentSessionSyncMetadata) => {
-  if (!sync || sync.target !== 'wechat') return null
-
-  if (sync.status === 'pending') return '等待同步到微信'
-  if (sync.status === 'synced') return '已同步到微信'
-  return '未同步'
-}
-
-const MessageHeader: FC<Props> = memo(({ assistant, model, message, topic, isGroupContextMessage }) => {
+const MessageHeader: FC<Props> = memo(({ assistant, model, message, topic, isGroupContextMessage, actions }) => {
   const avatar = useAvatar()
   const { theme } = useTheme()
   const { userName, sidebarIcons } = useSettings()
@@ -87,8 +78,6 @@ const MessageHeader: FC<Props> = memo(({ assistant, model, message, topic, isGro
 
   const avatarName = useMemo(() => firstLetter(assistant?.name).toUpperCase(), [assistant?.name])
   const username = useMemo(() => removeLeadingEmoji(getUserName()), [getUserName])
-  const syncStatus = message.providerMetadata?.agentSessionSync
-  const syncStatusLabel = isAgentSessionTopicId(message.topicId) ? getSyncStatusLabel(syncStatus) : null
 
   const showMiniApp = useCallback(() => {
     showMinappIcon && model?.provider && openMinappById(model.provider)
@@ -134,7 +123,10 @@ const MessageHeader: FC<Props> = memo(({ assistant, model, message, topic, isGro
         </>
       )}
       <UserWrap>
-        <HStack alignItems="center" justifyContent={userNameJustifyContent}>
+        <HStack
+          alignItems="center"
+          justifyContent={userNameJustifyContent}
+          style={{ flexWrap: 'wrap', columnGap: 8, rowGap: 4 }}>
           <UserName isBubbleStyle={isBubbleStyle} theme={theme}>
             {username}
           </UserName>
@@ -143,6 +135,7 @@ const MessageHeader: FC<Props> = memo(({ assistant, model, message, topic, isGro
               <Sparkle fill="var(--color-primary)" strokeWidth={0} size={18} />
             </Tooltip>
           )}
+          {actions}
         </HStack>
         <InfoWrap className="message-header-info-wrap text-(--color-text-3) text-[10px]">
           <MessageTime>{formatMessageTimestamp(message)}</MessageTime>
@@ -151,11 +144,6 @@ const MessageHeader: FC<Props> = memo(({ assistant, model, message, topic, isGro
             <>
               |
               <MessageTokens message={message} />
-            </>
-          )}
-          {syncStatusLabel && (
-            <>
-              |<SyncStatusBadge status={syncStatus?.status}>{syncStatusLabel}</SyncStatusBadge>
             </>
           )}
         </InfoWrap>
@@ -187,6 +175,7 @@ const UserWrap = styled.div`
   flex-direction: column;
   justify-content: space-between;
   flex: 1;
+  min-width: 0;
 `
 
 const InfoWrap = styled.div`
@@ -200,22 +189,13 @@ const InfoWrap = styled.div`
 const UserName = styled.span<{ isBubbleStyle?: boolean; theme?: string }>`
   font-size: 14px;
   font-weight: 600;
+  overflow-wrap: anywhere;
   color: ${(props) => (props.isBubbleStyle && props.theme === 'dark' ? 'white' : 'var(--color-text)')};
 `
 
 const MessageTime = styled.div`
   font-size: 10px;
   color: var(--color-text-3);
-`
-
-const SyncStatusBadge = styled.span<{ status?: AgentSessionSyncMetadata['status'] }>`
-  font-size: 10px;
-  color: ${(props) =>
-    props.status === 'failed'
-      ? 'var(--color-error)'
-      : props.status === 'synced'
-        ? 'var(--color-success)'
-        : 'var(--color-text-3)'};
 `
 
 export default MessageHeader

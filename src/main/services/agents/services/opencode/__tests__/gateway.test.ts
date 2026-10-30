@@ -20,135 +20,66 @@ async function upstream(handler: Parameters<typeof createServer>[0]) {
   return `http://127.0.0.1:${(server.address() as { port: number }).port}/v1`
 }
 describe('native Provider byte-transparent diagnostic bridge', () => {
-  it('retries a timed-out quota admission instead of reusing its rejection or diagnosing a model request', async () => {
+  it('sends the first model request directly even when the old quota endpoint times out', async () => {
     let modelCalls = 0
+    const permits: string[] = []
     const url = await upstream((req, res) => {
-      if (req.url === '/api/usage/token/model-daily/turn')
-        return res.end(JSON.stringify({ success: true, data: { permit: 'a'.repeat(64) } }))
       if (req.url === '/api/usage/token/model-daily/turn/state') return res.end('{}')
       modelCalls++
+      permits.push(String(req.headers['x-zen-model-turn']))
+      expect(req.headers['x-zen-model-turn-mode']).toBe('inline-v1')
       res.end('{"choices":[]}')
     })
-    const originalFetch = globalThis.fetch
-    const admissionUrl = `${new URL(url).origin}/api/usage/token/model-daily/turn`
-    const tasks: string[] = []
-    vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
-      if (String(input) === admissionUrl) {
-        tasks.push(JSON.parse(String(init?.body)).task_id)
-        if (tasks.length === 1)
-          return Promise.reject(new DOMException('The operation was aborted due to timeout', 'TimeoutError'))
-      }
-      return originalFetch(input, init)
-    })
-    const records: Array<{ event: string; details: Record<string, unknown> }> = []
-    const gateway = await createOpenCodeGateway(
-      url,
-      (_id, event, details) => records.push({ event, details }),
-      'premium'
-    )
+    const original = globalThis.fetch
+    const oldEndpoint = new URL(url).origin + '/api/usage/token/model-daily/turn'
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation((input, init) =>
+        String(input) === oldEndpoint
+          ? Promise.reject(new DOMException('timeout', 'TimeoutError'))
+          : original(input, init)
+      )
+    const events: string[] = []
+    const gateway = await createOpenCodeGateway(url, (_id, event) => events.push(event), 'premium')
     cleanup.push(gateway.stop)
-    const ask = () =>
-      fetch(`${gateway.baseURL}/chat/completions`, {
-        headers: { 'x-zen-runtime-token': gateway.token, Authorization: 'Bearer test-key' }
-      })
-    const failed = await ask()
-    expect(failed.status).toBe(502)
-    expect(await failed.json()).toMatchObject({ error: { code: 'model_daily_quota_unavailable' } })
-    expect(modelCalls).toBe(0)
-    expect(records.map((record) => record.event)).toEqual(['quota-check-started', 'failed'])
-    expect(records.at(-1)?.details).toMatchObject({
-      phase: 'quota-admission',
-      url: admissionUrl,
-      receivedResponse: false,
-      error: { code: 'model_daily_quota_unavailable', cause: { name: 'TimeoutError' } }
+    const response = await fetch(gateway.baseURL + '/chat/completions', {
+      headers: { 'x-zen-runtime-token': gateway.token, Authorization: 'Bearer key' }
     })
-    const recovered = await ask()
-    expect(recovered.status).toBe(200)
-    await recovered.text()
-    expect(tasks).toHaveLength(2)
-    expect(tasks[0]).toBe(tasks[1])
+    expect(response.status).toBe(200)
+    await response.text()
     expect(modelCalls).toBe(1)
-    expect(records.filter((record) => record.event === 'request-started')).toHaveLength(1)
+    expect(permits[0]).toMatch(/^[a-f0-9]{64}$/)
+    expect(fetchMock.mock.calls.some(([input]) => String(input) === oldEndpoint)).toBe(false)
+    expect(events).not.toContain('quota-check-started')
+    expect(events).not.toContain('failed')
     await gateway.finishTurn()
   })
-  it('keeps another task streaming when admission fails on the same Provider, model and key', async () => {
-    let permits = 0
-    let modelCalls = 0
-    let finishStream: (() => void) | undefined
-    const url = await upstream((req, res) => {
-      if (req.url === '/api/usage/token/model-daily/turn') {
-        permits++
-        return res.end(JSON.stringify({ success: true, data: { permit: String(permits).repeat(64) } }))
-      }
-      if (req.url === '/api/usage/token/model-daily/turn/state') return res.end('{}')
-      expect(req.headers.authorization).toBe('Bearer same-key')
-      modelCalls++
-      res.writeHead(200, { 'Content-Type': 'text/event-stream' })
-      if (modelCalls === 1) {
-        res.write('data: first\n\n')
-        finishStream = () => res.end('data: [DONE]\n\n')
-      } else res.end('data: second\n\ndata: [DONE]\n\n')
-    })
-    const originalFetch = globalThis.fetch
-    const admissionUrl = `${new URL(url).origin}/api/usage/token/model-daily/turn`
-    let admissions = 0
-    vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
-      if (String(input) === admissionUrl && ++admissions === 2)
-        return Promise.reject(new DOMException('The operation was aborted due to timeout', 'TimeoutError'))
-      return originalFetch(input, init)
-    })
-    const runningEvents: string[] = []
-    const running = await createOpenCodeGateway(url, (_id, event) => runningEvents.push(event), 'premium')
-    const starting = await createOpenCodeGateway(url, () => {}, 'premium')
-    cleanup.push(running.stop, starting.stop)
-    const ask = (gateway: typeof running) =>
-      fetch(`${gateway.baseURL}/chat/completions`, {
-        headers: { 'x-zen-runtime-token': gateway.token, Authorization: 'Bearer same-key' }
-      })
-    const active = await ask(running)
-    const reader = active.body!.getReader()
-    expect(new TextDecoder().decode((await reader.read()).value)).toContain('first')
-    const failed = await ask(starting)
-    expect(failed.status).toBe(502)
-    await failed.text()
-    const recovered = await ask(starting)
-    expect(await recovered.text()).toContain('second')
-    expect(modelCalls).toBe(2)
-    expect(permits).toBe(2)
-    finishStream!()
-    expect(new TextDecoder().decode((await reader.read()).value)).toContain('[DONE]')
-    expect((await reader.read()).done).toBe(true)
-    expect(runningEvents).not.toContain('failed')
-    expect(runningEvents).not.toContain('cancelled')
-    await Promise.all([running.finishTurn(), starting.finishTurn()])
-  })
-  it('shares one server permit within a question, closes it, and obtains a fresh permit for the next question', async () => {
-    let begins = 0
+  it('shares one admitted capability across model calls, but gives the next question a fresh capability', async () => {
+    let preflights = 0
     let closes = 0
     const permits: string[] = []
-    const url = await upstream(async (req, res) => {
+    const url = await upstream((req, res) => {
       if (req.url === '/api/usage/token/model-daily/turn') {
-        begins++
-        res.setHeader('Content-Type', 'application/json')
-        res.end(JSON.stringify({ success: true, data: { permit: String(begins).repeat(64) } }))
-        return
+        preflights++
+        return res.writeHead(503).end()
       }
       if (req.url === '/api/usage/token/model-daily/turn/state') {
         closes++
-        res.end('{"success":true}')
-        return
+        return res.end('{}')
       }
       permits.push(String(req.headers['x-zen-model-turn']))
+      expect(req.headers['x-zen-model-turn-mode']).toBe('inline-v1')
       res.end('{"choices":[]}')
     })
     const gateway = await createOpenCodeGateway(url, () => {}, 'premium')
     cleanup.push(gateway.stop)
     const ask = async () => {
-      const response = await fetch(`${gateway.baseURL}/chat/completions`, {
+      const response = await fetch(gateway.baseURL + '/chat/completions', {
         headers: {
           'x-zen-runtime-token': gateway.token,
-          Authorization: 'Bearer test-key',
-          'X-Zen-Model-Turn': 'forged'
+          Authorization: 'Bearer key',
+          'X-Zen-Model-Turn': 'forged',
+          'X-Zen-Model-Turn-Mode': 'forged'
         }
       })
       expect(response.status).toBe(200)
@@ -157,35 +88,50 @@ describe('native Provider byte-transparent diagnostic bridge', () => {
     gateway.setOperation('first-question')
     await ask()
     await ask()
-    expect(begins).toBe(1)
-    expect(permits).toEqual(['1'.repeat(64), '1'.repeat(64)])
+    expect(permits[0]).toMatch(/^[a-f0-9]{64}$/)
+    expect(permits[1]).toBe(permits[0])
     await gateway.finishTurn()
     expect(closes).toBe(1)
-    gateway.setOperation('second-question')
+    gateway.setOperation('next-question')
     await ask()
-    expect(begins).toBe(2)
-    expect(permits[2]).toBe('2'.repeat(64))
+    expect(permits[2]).not.toBe(permits[0])
+    expect(preflights).toBe(0)
     await gateway.finishTurn()
   })
-
-  it('passes a personal quota refusal back without a model request or a network failure diagnosis', async () => {
+  it('forwards an API quota refusal from the formal request without retrying or calling an admission endpoint', async () => {
     let calls = 0
-    const url = await upstream((_req, res) => {
+    const body =
+      '{"error":{"code":"model_daily_token_limit_exceeded","message":"该模型额度已达到日限额，请切换其他模型使用。"}}'
+    const url = await upstream((req, res) => {
+      if (req.url === '/api/usage/token/model-daily/turn/state') return res.end('{}')
       calls++
-      res.writeHead(403, { 'Content-Type': 'application/json' })
-      res.end('{"error":{"code":"model_daily_token_limit_exceeded","message":"该模型额度今日已用完，请明日再使用。"}}')
+      res
+        .writeHead(403, {
+          'Content-Type': 'application/json',
+          'X-Zen-Model-Quota-Error': 'model_daily_token_limit_exceeded'
+        })
+        .end(body)
     })
-    const records: string[] = []
-    const gateway = await createOpenCodeGateway(url, (_id, event) => records.push(event), 'premium')
+    const events: Array<{ event: string; details: Record<string, unknown> }> = []
+    const gateway = await createOpenCodeGateway(
+      url,
+      (_id, event, details) => events.push({ event, details }),
+      'premium'
+    )
     cleanup.push(gateway.stop)
-    const response = await fetch(`${gateway.baseURL}/chat/completions`, {
-      headers: { 'x-zen-runtime-token': gateway.token, Authorization: 'Bearer test-key' }
+    const response = await fetch(gateway.baseURL + '/chat/completions', {
+      headers: { 'x-zen-runtime-token': gateway.token, Authorization: 'Bearer key' }
     })
     expect(response.status).toBe(403)
-    expect(await response.text()).toContain('model_daily_token_limit_exceeded')
+    expect(await response.text()).toBe(body)
     expect(calls).toBe(1)
-    expect(records).toContain('quota-refused')
-    expect(records).not.toContain('failed')
+    expect(events.find((entry) => entry.event === 'quota-refused')?.details).toMatchObject({
+      phase: 'provider',
+      status: 403,
+      receivedResponse: true,
+      error: { code: 'model_daily_token_limit_exceeded' }
+    })
+    expect(events.some((entry) => entry.event === 'quota-check-started' || entry.event === 'failed')).toBe(false)
     await gateway.finishTurn()
   })
   it('observes only numeric usage without changing fragmented response bytes or making another request', async () => {

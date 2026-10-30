@@ -9,7 +9,6 @@ import { selectNewTopicLoading, useMessageOperations } from '@renderer/hooks/use
 import { useModel } from '@renderer/hooks/useModel'
 import { useSettings } from '@renderer/hooks/useSettings'
 import { useTimer } from '@renderer/hooks/useTimer'
-import { getDiagnosticEvidence, recordDiagnostic } from '@renderer/services/DiagnosticEvidenceService'
 import { EVENT_NAMES, EventEmitter } from '@renderer/services/EventService'
 import { getMessageModelId } from '@renderer/services/MessagesService'
 import { getModelUniqId } from '@renderer/services/ModelService'
@@ -31,6 +30,7 @@ import { useSelector } from 'react-redux'
 import styled from 'styled-components'
 
 import ActiveTurnDiagnostics from './ActiveTurnDiagnostics'
+import AgentMessageSyncStatus from './AgentMessageSyncStatus'
 import AgentTaskProgress from './AgentTaskProgress'
 import MessageArtifacts from './MessageArtifacts'
 import MessageContent from './MessageContent'
@@ -39,7 +39,9 @@ import MessageErrorBoundary from './MessageErrorBoundary'
 import MessageHeader from './MessageHeader'
 import MessageMenubar from './MessageMenubar'
 import MessageOutline from './MessageOutline'
+import ModelDailyQuotaNotice from './ModelDailyQuotaNotice'
 import { useRenderedMessageActivity } from './useRenderedMessageActivity'
+import { useTurnRenderDiagnostics } from './useTurnRenderDiagnostics'
 
 interface Props {
   message: Message
@@ -80,18 +82,6 @@ const MessageItem: FC<Props> = ({
 }) => {
   const { t } = useTranslation()
   const nativeMemory = useAgentWorkspace() === 'opencode'
-  useEffect(() => {
-    if (
-      message.role === 'assistant' &&
-      (message.status === 'success' || message.status === 'error') &&
-      getDiagnosticEvidence(message.id) &&
-      !getDiagnosticEvidence(message.id)?.events.some(
-        (event) => event.stage === 'ui' && event.event === 'render-committed'
-      )
-    ) {
-      recordDiagnostic(message.id, 'ui', 'render-committed', { status: message.status })
-    }
-  }, [message.id, message.role, message.status])
   const { assistant: fallbackAssistant, setModel } = useAssistant(message.assistantId)
   const assistant = sessionAssistant ?? fallbackAssistant
   const { isMultiSelectMode } = useChatContext(topic)
@@ -99,6 +89,7 @@ const MessageItem: FC<Props> = ({
   const { messageFont, conversationFontSize, messageStyle, showMessageOutline } = useSettings()
   const { editMessageBlocks, resendUserMessageWithEdit, editMessage } = useMessageOperations(topic)
   const messageContainerRef = useRef<HTMLDivElement>(null)
+  useTurnRenderDiagnostics(message, messageContainerRef)
   const responseContentRef = useRef<HTMLDivElement>(null)
   const { editingMessageId, startEditing, stopEditing } = useMessageEditing()
   const { setTimeoutTimer } = useTimer()
@@ -272,6 +263,11 @@ const MessageItem: FC<Props> = ({
           key={getModelUniqId(model)}
           topic={topic}
           isGroupContextMessage={isGroupContextMessage}
+          actions={
+            isAssistantMessage && isProcessing && !isEditing && !legacyReadOnly ? (
+              <ActiveTurnDiagnostics message={message} source={nativeMemory ? 'agent' : 'chat'} />
+            ) : undefined
+          }
         />
         {canCollapse && (
           <MessageCollapseBar>
@@ -316,12 +312,13 @@ const MessageItem: FC<Props> = ({
                 <MessageContent message={message} isStreaming={isProcessing} />
               </MessageErrorBoundary>
             </MessageContentContainer>
+            {isAssistantMessage && <ModelDailyQuotaNotice message={message} processing={isProcessing} />}
             {isAssistantMessage && <MessageArtifacts message={message} />}
             {nativeMemory && isAssistantMessage && isProcessing && (
               <AgentTaskProgress message={message} hasRenderedContent={hasRenderedContent} />
             )}
-            {isAssistantMessage && isProcessing && !legacyReadOnly && (
-              <ActiveTurnDiagnostics message={message} source={nativeMemory ? 'agent' : 'chat'} />
+            {nativeMemory && isAssistantMessage && (
+              <AgentMessageSyncStatus message={message} processing={isProcessing} />
             )}
             {showMenubar && (
               <MessageFooter className="MessageFooter">

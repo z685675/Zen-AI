@@ -25,7 +25,12 @@ import { sessionMessagesTable, sessionsTable } from '../database/schema'
 import { agentMessageRepository } from '../database/sessionMessageRepository'
 import type { AgentStream, AgentStreamEvent } from '../interfaces/AgentStreamInterface'
 import { broadcastAgentActionRequired } from './agentIpc'
-import { mirrorAutomationExchange, prepareAutomationSession } from './automation/bridge'
+import {
+  type AutomationMirrorContext,
+  captureAutomationMirrorTarget,
+  mirrorAutomationExchange,
+  prepareAutomationSession
+} from './automation/bridge'
 import { automationOutputPaths, headlessAttachmentBlocks } from './automation/files'
 import { getManagedRecoveryInventory, resolveManagedSessionModel } from './managedModelRecovery'
 import { isRecoverableAgentContextError, withAgentRecoveryContext } from './runtime/contextRecovery'
@@ -73,6 +78,7 @@ type SessionMirrorResult = {
   target: 'wechat'
   status: 'synced' | 'failed' | 'skipped'
   reason?: string
+  runId?: string
 }
 
 export type CreateMessageOptions = {
@@ -115,6 +121,11 @@ function toStreamError(error: unknown): Error {
 }
 
 class TextStreamAccumulator {
+  constructor(
+    private readonly startedAt = Date.now(),
+    private readonly startedClock = performance.now()
+  ) {}
+  private firstActivityMs?: number
   private textBuffer = ''
   private totalText = ''
   private finalText = ''
@@ -126,6 +137,15 @@ class TextStreamAccumulator {
   private readonly toolErrors = new Set<string>()
 
   add(part: TextStreamPart<Record<string, any>>): void {
+    if (
+      this.firstActivityMs === undefined &&
+      (part.type === 'tool-call' ||
+        part.type === 'tool-input-start' ||
+        part.type === 'tool-result' ||
+        (part.type === 'text-delta' && part.text?.trim()) ||
+        (part.type === 'reasoning-delta' && part.text?.trim()))
+    )
+      this.firstActivityMs = Math.max(0, performance.now() - this.startedClock)
     switch (part.type) {
       case 'text-start':
         this.textBuffer = ''
@@ -201,6 +221,12 @@ class TextStreamAccumulator {
       usage: this.usage,
       diagnostics: this.diagnostics,
       turn: this.turn,
+      responseTiming: {
+        startedAt: new Date(this.startedAt).toISOString(),
+        finishedAt: new Date().toISOString(),
+        firstTokenMs: this.firstActivityMs,
+        elapsedMs: Math.max(0, performance.now() - this.startedClock)
+      },
       tools: [...this.toolCalls].map(([id, call]) => ({
         id,
         ...call,
@@ -361,7 +387,14 @@ export class SessionMessageService extends BaseService {
     abortController: AbortController,
     options?: CreateMessageOptions
   ): Promise<SessionStreamResult> {
+    const startedAt = Date.now()
+    const startedClock = performance.now()
     const diagnosticId = options?.diagnosticId ?? `agent-${randomUUID()}`
+    // Bind delivery to the authorized peer at admission, not whoever binds while the model runs.
+    const mirrorContext: AutomationMirrorContext = {
+      exchangeId: diagnosticId,
+      target: options?.mirrorToBoundChannel ? await captureAutomationMirrorTarget(session.id) : undefined
+    }
     beginMainDiagnostic(diagnosticId, {
       sessionId: session.id,
       model: session.model,
@@ -443,7 +476,7 @@ export class SessionMessageService extends BaseService {
       capabilities: runtimeResolution.capabilities,
       model: session.model
     })
-    const accumulator = new TextStreamAccumulator()
+    const accumulator = new TextStreamAccumulator(startedAt, startedClock)
 
     let resolveCompletion!: (value: {
       userMessage?: AgentSessionMessageEntity
@@ -484,7 +517,10 @@ export class SessionMessageService extends BaseService {
             await this.mirrorSessionExchangeToBoundChannel(
               session,
               options.displayContent ?? req.content,
-              t('automation.notice.failed')
+              t('automation.notice.failed'),
+              false,
+              [],
+              mirrorContext
             )
         }
         void finalize()
@@ -1020,7 +1056,8 @@ export class SessionMessageService extends BaseService {
                           }
                         }
                       }))
-                    )
+                    ),
+                    mirrorContext
                   )
                     .then((result) => {
                       controller.enqueue({
@@ -1029,6 +1066,7 @@ export class SessionMessageService extends BaseService {
                           type: 'agent_session_sync',
                           target: result.target,
                           status: result.status,
+                          runId: result.runId,
                           reason: result.reason
                         }
                       } as TextStreamPart<Record<string, any>>)
@@ -1096,7 +1134,9 @@ export class SessionMessageService extends BaseService {
                     session,
                     options?.displayContent ?? req.content,
                     partialText,
-                    true
+                    true,
+                    [],
+                    mirrorContext
                   )
                     .then((result) => {
                       controller.enqueue({
@@ -1105,6 +1145,7 @@ export class SessionMessageService extends BaseService {
                           type: 'agent_session_sync',
                           target: result.target,
                           status: result.status,
+                          runId: result.runId,
                           reason: result.reason
                         }
                       } as TextStreamPart<Record<string, any>>)
@@ -1231,6 +1272,8 @@ export class SessionMessageService extends BaseService {
     const userBlockId = randomUUID()
     const assistantBlockId = randomUUID()
     const topicId = `agent-session:${session.id}`
+    const separator = session.model.indexOf(':')
+    const modelId = separator >= 0 ? session.model.slice(separator + 1) : session.model
 
     // Build image blocks for user message
     const imageBlocks: Array<{
@@ -1261,7 +1304,7 @@ export class SessionMessageService extends BaseService {
         role: 'user' as const,
         assistantId: session.agent_id,
         topicId,
-        createdAt: now,
+        createdAt: snapshot?.responseTiming?.startedAt ?? now,
         status: 'success',
         blocks: [userBlockId, ...imageBlocks.map((b) => b.id), ...fileBlocks.map((b) => b.id)]
       },
@@ -1288,7 +1331,13 @@ export class SessionMessageService extends BaseService {
         createdAt: now,
         status: 'success',
         blocks: [assistantBlockId],
-        modelId: session.model
+        modelId,
+        model: {
+          id: modelId,
+          name: modelId,
+          provider: separator >= 0 ? session.model.slice(0, separator) : '',
+          group: ''
+        }
       },
       blocks: [
         {
@@ -1315,7 +1364,13 @@ export class SessionMessageService extends BaseService {
           finalText: snapshot.finalText,
           diagnosticId: persistenceId ? `automation-${persistenceId}` : undefined
         },
-        opencodeDiagnostics: snapshot.diagnostics
+        opencodeDiagnostics: snapshot.diagnostics,
+        responseTiming: snapshot.responseTiming
+          ? {
+              ...snapshot.responseTiming,
+              outcome: status === 'paused' ? 'cancelled' : status === 'error' ? 'failed' : 'completed'
+            }
+          : undefined
       } as any
       if (snapshot.usage) {
         const usage = snapshot.usage as {
@@ -1371,10 +1426,15 @@ export class SessionMessageService extends BaseService {
     userContent: string,
     assistantContent: string,
     stopped = false,
-    files: string[] = []
+    files: string[] = [],
+    context?: AutomationMirrorContext
   ): Promise<SessionMirrorResult> {
-    await mirrorAutomationExchange(session.id, userContent, assistantContent, stopped, files)
-    return { target: 'wechat', status: 'synced' }
+    const mirrored = await mirrorAutomationExchange(session.id, userContent, assistantContent, stopped, files, context)
+    return {
+      target: 'wechat',
+      status: mirrored === false ? 'skipped' : 'synced',
+      ...(mirrored && typeof mirrored === 'object' ? { runId: mirrored.runId } : {})
+    }
   }
 
   private async getLastAgentSessionId(sessionId: string, modelId?: string): Promise<string> {

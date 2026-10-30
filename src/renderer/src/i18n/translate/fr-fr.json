@@ -776,6 +776,12 @@
         "tasks_desc": "[to be translated]:Handle complex work that needs multiple steps and sustained execution."
       },
       "model_label": "[to be translated]:Model for this chat",
+      "quick_entries": {
+        "skills_desc": "[to be translated]:Import, find, and manage assistant skills",
+        "tasks_desc": "[to be translated]:Schedule tasks and view their run history",
+        "title": "[to be translated]:Quick access",
+        "wechat_desc": "[to be translated]:Connect WeChat and continue chats on your phone or computer"
+      },
       "title": "[to be translated]:Hand over the task and get started with ease"
     }
   },
@@ -1428,6 +1434,7 @@
     },
     "status": "Status",
     "stop": "Stop",
+    "syncComplete": "Synchronisé",
     "syncing": "Sync enabled",
     "taskConsent": "I authorize this specific task to run automatically with controlled tools in its dedicated workspace. This does not authorize overwriting, deletion, payments or unrestricted computer access.",
     "taskFailed": "Task failed or was interrupted. Open the conversation for details; completed files are preserved.",
@@ -1857,11 +1864,14 @@
       },
       "max": "Illimité",
       "max_tokens": {
-        "confirm": "Activer la limitation de la longueur du message",
+        "confirm": "Limite de longueur de sortie",
         "confirm_content": "Après activation de la limitation de la longueur du message, le nombre maximal de tokens utilisé pour une interaction unique affectera la longueur du résultat renvoyé. Il faut le configurer en fonction des limitations du contexte du modèle, sinon cela génèrera une erreur",
-        "label": "Activer la limitation de la longueur du message",
+        "label": "Limite de longueur de sortie",
         "tip": "Nombre maximal de tokens utilisé pour une interaction unique. Cela affectera la longueur du résultat renvoyé. Il faut le configurer en fonction des limitations du contexte du modèle, sinon cela génèrera une erreur"
       },
+      "parameters_customized": "Paramètres personnalisés actifs",
+      "parameters_default": "Paramètres par défaut",
+      "parameters_tip": "Aucun réglage n’est généralement nécessaire. Désactiver la température, Top-P et la limite de sortie utilise les valeurs du modèle. Ces contrôles ont priorité ; les paramètres personnalisés du même nom sont ignorés. Les réglages des rôles existants sont conservés. Réinitialiser rétablit les valeurs par défaut.",
       "reset": "Réinitialiser",
       "set_as_default": "Appliquer à l'assistant par défaut",
       "show_line_numbers": "Afficher les numéros de ligne",
@@ -3259,17 +3269,22 @@
     }
   },
   "model_daily_quota": {
-    "exceeded": "Le quota quotidien de ce modèle est épuisé. Réessayez demain.",
+    "connection": "Impossible de joindre le service de validation. La génération du modèle n’a pas commencé. Vérifiez la connexion ou essayez un autre réseau.",
+    "exceeded": "Ce modèle a atteint son quota quotidien. Veuillez choisir un autre modèle.",
     "hint": "Entrée + sortie ; le cache est inclus dans l’entrée. Réinitialisation à minuit à Pékin. La dernière question admise peut dépasser le plafond.",
     "invalid": "L’autorisation de cette question a expiré. Envoyez une nouvelle question.",
     "limit": "Plafond quotidien",
     "pending": "Le quota restant est réservé par une autre tâche. Attendez sa fin.",
     "remaining": "Restant",
+    "request_stage": "Validation avant la requête au modèle",
+    "request_suggestion": "Réessayez une fois. Si l’échec persiste, essayez un autre réseau, comme un point d’accès mobile, et vérifiez le proxy de l’application. Exportez un paquet de diagnostic pour l’administrateur si nécessaire. Cette erreur ne signifie pas que le quota du modèle est épuisé.",
     "stage": "Vérification du quota du modèle",
     "status_error": "Impossible d’actualiser les quotas du jour. L’historique reste disponible.",
     "suggestion": "Choisissez un autre modèle disponible ou attendez la réinitialisation. Évitez les tentatives répétées.",
+    "timeout": "La validation de la requête a expiré. La génération du modèle n’a pas commencé. Vérifiez la connexion ou essayez un autre réseau.",
     "title": "Quotas du jour · heure de Pékin",
-    "unavailable": "Le service des quotas est temporairement indisponible.",
+    "turn_exceeded": "{{model}} a atteint son quota du jour. Veuillez choisir un autre modèle.",
+    "unavailable": "L’API ne peut pas vérifier le quota du modèle pour le moment. Réessayez plus tard ; si le problème persiste, exportez les diagnostics et contactez l’administrateur.",
     "used": "Utilisé",
     "used_up": "Épuisé aujourd’hui"
   },
@@ -3381,11 +3396,11 @@
     "memory_notice": "Independent native memory survives model changes. Retry, branching and individual deletion are supported; direct editing and bulk deletion are not yet supported.",
     "outputting": "The model is producing output",
     "permission": {
-      "title": "Cette tâche nécessite votre confirmation",
       "description": "Vérifiez l’opération et sa cible avant d’autoriser la poursuite de la tâche.",
-      "loopTitle": "Opérations répétées détectées ; tâche en pause",
+      "details": "Détails de l’opération",
       "loopDescription": "L’assistant a tenté plusieurs fois la même opération. Vous pouvez autoriser une poursuite unique ou annuler cette opération.",
-      "details": "Détails de l’opération"
+      "loopTitle": "Opérations répétées détectées ; tâche en pause",
+      "title": "Cette tâche nécessite votre confirmation"
     },
     "preparing": "[to be translated]:Request received; preparing the task",
     "responding": "[to be translated]:Processing the response",
@@ -6838,8 +6853,25 @@
       "processing": "En cours"
     },
     "privacy": "Par défaut, seules les métadonnées de diagnostic sont incluses, sans texte de conversation, arguments/résultats des outils, pièces jointes originales ni historique complet. Partagez uniquement avec des destinataires de confiance. Le contenu facultatif peut contenir des données personnelles.",
-    "reportTemplate": "# Zen AI : diagnostic de ce tour\n\n- Résultat : {{outcome}}\n- Modèle : {{model}} ; Provider : {{provider}}\n- Tokens : entrée {{input}} ; sortie {{output}} ; cache lu {{cache}} (déjà inclus dans l’entrée)\n- Début : {{start}} ; fin : {{end}} ; durée totale : {{total}}\n- Premier contenu (raisonnement possible) : {{firstContent}} ; premier texte de réponse : {{firstText}} ; premiers octets réseau : {{firstBytes}} (pas le premier token)\n- Requêtes observées : {{requests}} ; outils : {{tools}} ; nouvelles tentatives/bascules : {{retries}}\n- Délai de commit de l’interface : {{render}} (React, sans garantie d’affichage à l’écran)\n\n## Étapes complètes les plus lentes\n{{slowest}}\n\n## Chronologie des requêtes et outils\n{{timeline}}\n\n## Attentes utilisateur observées (chevauchement possible avec les outils)\n{{waits}}\n\n## Limites et données manquantes\n- Durées mesurées uniquement, pas de verdict sur la cause réseau/client/amont. Les étapes se chevauchent : ne pas les additionner ni soustraire les attentes.\n- Une absence n’est pas un zéro. Les intervalles ouverts peuvent être actifs. Un export actif est un instantané ; les anciens échanges ne récupèrent pas les événements non enregistrés.\n- L’enregistrement commence généralement à la préparation de réponse ; les uploads antérieurs peuvent manquer. Les nouvelles tentatives ne comptent pas les tâches rejouées.\n- Corréler zen-api-evidence.json et les ID pour les détails serveur. L’absence de trace ne prouve pas l’absence de réception ; une écriture ne garantit pas une réception complète.\n- Événements supprimés par la limite : {{dropped}} ; les anciennes requêtes peuvent expirer. Codes des données manquantes (performance.json) : {{missing}}\n",
-    "requestTiming": " | En-têtes {{headers}} | Premiers octets {{bytes}} | HTTP {{status}} | ID de requête {{requestId}}"
+    "renderNotRecorded": "Non recueilli",
+    "reportTemplate": "# Zen AI : diagnostic de ce tour\n\n- Résultat : {{outcome}}\n- Modèle : {{model}} ; Provider : {{provider}}\n- Tokens : entrée {{input}} ; sortie {{output}} ; cache lu {{cache}} (déjà inclus dans l’entrée)\n- Début : {{start}} ; fin : {{end}} ; durée totale : {{total}}\n- Premier contenu (raisonnement possible) : {{firstContent}} ; premier texte de réponse : {{firstText}} ; premiers octets réseau : {{firstBytes}} (pas le premier token)\n- Requêtes observées : {{requests}} ; outils : {{tools}} ; nouvelles tentatives/bascules : {{retries}}\n- Fin de réponse au commit de l’interface : {{render}} (fin en direct dans un composant resté visible ; pas le temps de rendu à l’écran)\n\n## Étapes complètes les plus lentes\n{{slowest}}\n\n## Chronologie des requêtes et outils\n{{timeline}}\n\n## Attentes utilisateur observées (chevauchement possible avec les outils)\n{{waits}}\n\n## Limites et données manquantes\n- Durées mesurées uniquement, pas de verdict sur la cause réseau/client/amont. Les étapes se chevauchent : ne pas les additionner ni soustraire les attentes.\n- Une absence n’est pas un zéro. Les intervalles ouverts peuvent être actifs. Un export actif est un instantané ; les anciens échanges ne récupèrent pas les événements non enregistrés.\n- L’enregistrement commence généralement à la préparation de réponse ; les uploads antérieurs peuvent manquer. Les nouvelles tentatives ne comptent pas les tâches rejouées.\n- Corréler zen-api-evidence.json et les ID pour les détails serveur. L’absence de trace ne prouve pas l’absence de réception ; une écriture ne garantit pas une réception complète.\n- Événements supprimés par la limite : {{dropped}} ; les anciennes requêtes peuvent expirer. Codes des données manquantes (performance.json) : {{missing}}\n",
+    "requestTiming": " | En-têtes {{headers}} | Premiers octets {{bytes}} | HTTP {{status}} | ID de requête {{requestId}}",
+    "serverTiming": {
+      "attempt": "[to be translated]:  - Attempt {{index}} / channel {{channel}} | Total {{total}} | Before attempt {{before}}\n    First event {{event}} | Effective content {{content}} | Answer text {{text}} | First non-ping forward {{forward}} | Content to forward {{forwarding}} (unavailable if metadata was forwarded earlier)\n{{http}}\n    Missing: {{missing}}",
+      "http": "[to be translated]:    - HTTP {{index}} | Before HTTP {{prepare}} | DNS {{dns}} | TCP (summed connections, may overlap) {{connect}} | TLS {{tls}} | Connection ready {{ready}} | Sent {{sent}} | First byte {{firstByte}} | Wait after sending {{wait}} | Body reading {{body}} | Connection reused {{reused}}",
+      "intro": "[to be translated]:## Server and upstream timing\n\nEach request and channel attempt is listed separately. Preparation milestones are offsets from API receipt; stream milestones are offsets from the channel attempt; HTTP milestones are offsets from that HTTP call. DNS/TCP/TLS may overlap or be skipped on connection reuse. First byte/event is not first answer text. Outside-gateway time compares elapsed durations and includes client/network work; it is not a one-way network measurement. Unknown or unfinished stages are not zero.",
+      "missing": "[to be translated]:  Missing: {{missing}}",
+      "no": "[to be translated]:No",
+      "phases": {
+        "admission_ready": "[to be translated]:Admission ready",
+        "body_ready": "[to be translated]:Body ready",
+        "routing_ready": "[to be translated]:Routing ready",
+        "tokens_ready": "[to be translated]:Token estimate ready",
+        "validated": "[to be translated]:Validated"
+      },
+      "request": "[to be translated]:- Request {{requestId}} | API total {{total}} | Outside API {{outside}}\n  Preparation milestones: {{phases}}",
+      "yes": "[to be translated]:Yes"
+    }
   },
   "update": {
     "available": "A new version {{version}} is available. Click Check for Updates any time to download it.",
@@ -6873,6 +6905,9 @@
       "unavailable": "Unable to load usage. Please try again later.",
       "unsupported": "This service does not support usage queries yet"
     },
+    "image_requests": "Requêtes d’images",
+    "image_requests_hint": "Une par requête, même pour plusieurs images. La tarification du service s’applique.",
+    "image_trend": "Évolution des requêtes d’images",
     "input": "Input tokens",
     "intervals": {
       "day": "Daily",

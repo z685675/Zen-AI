@@ -27,14 +27,8 @@ import { getStoreSetting } from '@renderer/hooks/useSettings'
 import i18n from '@renderer/i18n'
 import { getDiagnosticEvidence, recordDiagnostic } from '@renderer/services/DiagnosticEvidenceService'
 import store from '@renderer/store'
-import { hubMCPServer } from '@renderer/store/mcp'
 import type { Assistant, MCPServer, MCPTool, Model, Provider } from '@renderer/types'
-import {
-  type FetchChatCompletionParams,
-  getEffectiveMcpMode,
-  isSupportedOcrFile,
-  isSystemProvider
-} from '@renderer/types'
+import { type FetchChatCompletionParams, isSupportedOcrFile, isSystemProvider } from '@renderer/types'
 import type { StreamTextParams } from '@renderer/types/aiCoreTypes'
 import { type Chunk, ChunkType, type ErrorChunk } from '@renderer/types/chunk'
 import type { FileMessageBlock, Message, ResponseError } from '@renderer/types/newMessage'
@@ -45,6 +39,7 @@ import { isToolUseModeFunction } from '@renderer/utils/assistant'
 import { isPromptToolUse, isSupportedToolUse } from '@renderer/utils/assistant'
 import { getErrorMessage, isAbortError } from '@renderer/utils/error'
 import { purifyMarkdownImages } from '@renderer/utils/markdown'
+import { getMcpModeForRequest, selectAssistantMcpServers } from '@renderer/utils/mcpMode'
 import {
   findFileBlocks,
   findImageBlocks,
@@ -58,7 +53,7 @@ import { isZenManagedApiHost } from '@shared/config/zenProvider'
 import { DIAGNOSTIC_OPERATION_HEADER, TOPIC_NAMING_REQUEST_HEADERS } from '@shared/diagnostics'
 import { formatApiHost } from '@shared/utils/api'
 import { getModelDailyQuotaErrorKind, MODEL_DAILY_QUOTA_MESSAGE_KEYS } from '@shared/utils/modelDailyQuota'
-import { ModelDailyQuotaTurn } from '@shared/utils/modelDailyQuotaTurn'
+import { ModelDailyQuotaTask, shouldShowModelDailyQuotaNotice } from '@shared/utils/modelDailyQuotaTurn'
 import type { ImagePart, ModelMessage, TextPart } from 'ai'
 import { isEmpty, takeRight } from 'lodash'
 
@@ -772,22 +767,7 @@ const insertResourceContextBeforeLastUser = (messages: ModelMessage[], resourceC
  * Get the MCP servers to use based on the assistant's MCP mode.
  */
 export function getMcpServersForAssistant(assistant: Assistant): MCPServer[] {
-  const mode = getEffectiveMcpMode(assistant)
-  const allMcpServers = store.getState().mcp.servers || []
-  const activedMcpServers = allMcpServers.filter((s) => s.isActive)
-
-  switch (mode) {
-    case 'disabled':
-      return []
-    case 'auto':
-      return [hubMCPServer]
-    case 'manual': {
-      const assistantMcpServers = assistant.mcpServers || []
-      return activedMcpServers.filter((server) => assistantMcpServers.some((s) => s.id === server.id))
-    }
-    default:
-      return []
-  }
+  return selectAssistantMcpServers(assistant, store.getState().mcp.servers || [])
 }
 
 export async function fetchAllActiveServerTools(): Promise<MCPTool[]> {
@@ -1075,7 +1055,7 @@ export async function fetchChatCompletion({
       // avoids repeatedly hitting a known-bad model and preserves the order
       // configured by the API panel.
       const checkpointDeadline = Date.now() + CONTEXT_CHECKPOINT_TOTAL_TIMEOUT_MS
-      const fetchContextCompaction = createContextCompactionKeyFailover(topicId, diagnosticId)
+      const fetchContextCompaction = createContextCompactionKeyFailover(topicId, diagnosticId, dailyQuotaHeaders)
       const generateCheckpoint = createContextCompactionGenerator({
         models: compactionModels,
         generate: (compactionModel, systemPrompt, content) => {
@@ -1251,21 +1231,22 @@ export async function fetchChatCompletion({
   type CompletionAttemptResult = {
     visibleOutput: boolean
     contextError?: unknown
+    completeChunk?: Chunk
   }
 
-  const quotaTurns = new Map<string, ModelDailyQuotaTurn>()
-  const dailyQuotaHeaders = async (): Promise<Record<string, string>> => {
-    if (!(baseProvider.type === 'new-api' || isZenManagedApiHost(baseProvider.apiHost))) return {}
-    let turn = quotaTurns.get(activeChatKey)
-    if (!turn) {
-      turn = new ModelDailyQuotaTurn(formatApiHost(baseProvider.apiHost), model.id)
-      quotaTurns.set(activeChatKey, turn)
-    }
-    const permit = await turn.getPermit(
-      new Headers({ Authorization: `Bearer ${activeChatKey}` }),
+  const quotaTask = new ModelDailyQuotaTask()
+  const dailyQuotaHeaders = async (
+    quotaModel: Model = model,
+    quotaProvider: Provider = baseProvider,
+    quotaKey: string = activeChatKey
+  ): Promise<Record<string, string>> => {
+    if (!(quotaProvider.type === 'new-api' || isZenManagedApiHost(quotaProvider.apiHost))) return {}
+    return quotaTask.headers(
+      formatApiHost(quotaProvider.apiHost),
+      quotaModel.id,
+      quotaKey,
       requestOptions?.signal ?? new AbortController().signal
     )
-    return permit ? { 'X-Zen-Model-Turn': permit } : {}
   }
 
   const persistStableChatApiKey = (key: string) => {
@@ -1449,7 +1430,7 @@ export async function fetchChatCompletion({
       enableWebSearch: capabilities.enableWebSearch,
       enableGenerateImage: capabilities.enableGenerateImage,
       enableUrlContext: capabilities.enableUrlContext,
-      mcpMode: getEffectiveMcpMode(assistant),
+      mcpMode: getMcpModeForRequest(assistant, mcpTools),
       mcpTools,
       uiMessages,
       knowledgeRecognition: assistant.knowledgeRecognition,
@@ -1513,8 +1494,7 @@ export async function fetchChatCompletion({
       } satisfies CompletionAttemptFailure
     }
 
-    if (!contextError && pendingCompleteChunk) await onChunkReceived(pendingCompleteChunk)
-    return { visibleOutput, contextError }
+    return { visibleOutput, contextError, completeChunk: contextError ? undefined : pendingCompleteChunk }
   }
 
   const runCompletionAttempt = async (attemptMessages: ModelMessage[]): Promise<CompletionAttemptResult> => {
@@ -1593,7 +1573,6 @@ export async function fetchChatCompletion({
   }
 
   try {
-    await dailyQuotaHeaders()
     let preparedMessages = await prepareMessagesForContext()
     contextPrepared = true
     if (topicId) {
@@ -1639,6 +1618,11 @@ export async function fetchChatCompletion({
     if (attemptResult.contextError) {
       throw attemptResult.contextError
     }
+    const quotaResults = (await quotaTask.finish()).filter(shouldShowModelDailyQuotaNotice)
+    if (quotaResults.length > 0) {
+      await onChunkReceived({ type: ChunkType.RAW, content: { type: 'model_daily_quota', results: quotaResults } })
+    }
+    if (attemptResult.completeChunk) await onChunkReceived(attemptResult.completeChunk)
   } catch (error) {
     recordDiagnostic(
       diagnosticId,
@@ -1661,7 +1645,7 @@ export async function fetchChatCompletion({
     }
     throw error
   } finally {
-    await Promise.all([...quotaTurns.values()].map((turn) => turn.finish()))
+    await quotaTask.finish()
   }
 }
 
@@ -2281,11 +2265,15 @@ function getStableChatApiKey(provider: Provider, topicId?: string, modelId?: str
  * after every key for that model fails does the model fallback chain get a
  * chance to move on.
  */
-export const createContextCompactionKeyFailover = (topicId?: string, diagnosticId?: string) =>
+export const createContextCompactionKeyFailover = (
+  topicId?: string,
+  diagnosticId?: string,
+  quotaHeaders?: (model: Model, provider: Provider, key: string) => Promise<Record<string, string>>
+) =>
   createKeyFailover({
     topicId,
     resolveProvider: getProviderByModel,
-    generate: ({ model, prompt, content, apiKey, signal, timeoutMs, maxOutputTokens }) =>
+    generate: async ({ model, provider, prompt, content, apiKey, signal, timeoutMs, maxOutputTokens }) =>
       fetchGenerate({
         prompt,
         content,
@@ -2296,6 +2284,7 @@ export const createContextCompactionKeyFailover = (topicId?: string, diagnosticI
         throwOnError: true,
         headers: {
           ...CONTEXT_COMPACTION_REQUEST_HEADERS,
+          ...(quotaHeaders && apiKey ? await quotaHeaders(model, provider, apiKey) : {}),
           ...(diagnosticId ? { [DIAGNOSTIC_OPERATION_HEADER]: diagnosticId } : {})
         },
         maxOutputTokens

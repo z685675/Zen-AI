@@ -35,6 +35,8 @@ export const imageCanvasProtocols = [
   'comfyui'
 ] as const
 export type ImageCanvasProtocol = (typeof imageCanvasProtocols)[number]
+// Four selected models, each generating up to four independently billed images.
+export const imageCanvasMaxBatchTasks = 16
 export type ImageCanvasExpansion = { top: number; right: number; bottom: number; left: number }
 export type ImageCanvasDimension = { ratio: string; size: string; resolution?: '1K' | '2K' | '4K' }
 export type ImageCanvasCapabilities = {
@@ -160,6 +162,8 @@ export type ImageCanvasModelConfiguration = {
   imageField?: 'image' | 'images'
   workflow?: string
 }
+// Items retain the individual requests, but pagination and total count whole
+// submissions. All members of a batch are included together in one page.
 export type ImageCanvasHistoryPage = { items: ImageCanvasTask[]; total: number; nextCursor?: string }
 export type ImageCanvasBridge = {
   catalog: () => Promise<ImageCanvasCatalog>

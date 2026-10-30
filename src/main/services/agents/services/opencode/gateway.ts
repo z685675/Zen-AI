@@ -4,8 +4,13 @@ import { createServer, type IncomingMessage } from 'node:http'
 import { Readable } from 'node:stream'
 
 import { listenOnLoopback } from '@shared/utils/loopbackServer'
+import {
+  MODEL_DAILY_QUOTA_ERROR_HEADER,
+  MODEL_DAILY_TURN_INLINE_MODE,
+  MODEL_DAILY_TURN_MODE_HEADER
+} from '@shared/utils/modelDailyQuotaTurn'
 
-import { ModelDailyQuotaRefusal, OpenCodeDailyQuota } from './dailyQuota'
+import { OpenCodeDailyQuota } from './dailyQuota'
 import { OpenCodeUsageObserver } from './usageObservation'
 
 export type TransportEvent = (operationId: string | undefined, event: string, details: Record<string, unknown>) => void
@@ -43,12 +48,12 @@ export async function createOpenCodeGateway(baseURL: string, record: TransportEv
       emit(id, event, { transportRequestId, ...details })
     const requestTaskId = taskId
     let started = Date.now()
-    let phase: 'quota-admission' | 'provider' = quota ? 'quota-admission' : 'provider'
+    const phase = 'provider'
     let upstreamStatus: number | undefined
     let usageObserver: OpenCodeUsageObserver | undefined
     let bodyComplete = false
     const upstream = new URL(req.url || '/', target.origin)
-    let requestUrl = quota?.requestUrl ?? `${upstream.origin}${upstream.pathname}`
+    const requestUrl = `${upstream.origin}${upstream.pathname}`
     if (upstream.origin !== target.origin || !upstream.pathname.startsWith(target.pathname.replace(/\/$/, '') + '/')) {
       active.delete(controller)
       res.writeHead(400).end()
@@ -70,6 +75,7 @@ export async function createOpenCodeGateway(baseURL: string, record: TransportEv
             'transfer-encoding',
             'x-zen-runtime-token',
             'x-zen-model-turn',
+            'x-zen-model-turn-mode',
             'x-zen-task-id',
             'x-zen-diagnostic-operation'
           ].includes(name) ||
@@ -80,18 +86,11 @@ export async function createOpenCodeGateway(baseURL: string, record: TransportEv
       }
       if (id) headers.set('X-Zen-Diagnostic-Operation', id)
       headers.set('X-Zen-Task-Id', requestTaskId)
-      if (quota) transport('quota-check-started', { runtime: 'opencode', phase, url: requestUrl })
       const permit = await quota?.getPermit(headers, controller.signal)
-      if (quota)
-        transport('quota-check-complete', {
-          runtime: 'opencode',
-          phase,
-          url: requestUrl,
-          durationMs: Date.now() - started
-        })
-      if (permit) headers.set('X-Zen-Model-Turn', permit)
-      phase = 'provider'
-      requestUrl = `${upstream.origin}${upstream.pathname}`
+      if (permit) {
+        headers.set('X-Zen-Model-Turn', permit)
+        headers.set(MODEL_DAILY_TURN_MODE_HEADER, MODEL_DAILY_TURN_INLINE_MODE)
+      }
       started = Date.now()
       transport('request-started', { runtime: 'opencode', url: upstream.href, method: req.method })
       const response = await fetch(upstream, {
@@ -143,20 +142,23 @@ export async function createOpenCodeGateway(baseURL: string, record: TransportEv
       res.end()
       bodyComplete = true
       transport('body-complete', { runtime: 'opencode', status: response.status, durationMs: Date.now() - started })
-    } catch (error) {
-      if (error instanceof ModelDailyQuotaRefusal) {
+      const quotaError = response.headers.get(MODEL_DAILY_QUOTA_ERROR_HEADER)
+      if (
+        !response.ok &&
+        quotaError &&
+        /^model_daily_(token_limit_(exceeded|pending)|turn_invalid|quota_unavailable)$/.test(quotaError)
+      ) {
         transport('quota-refused', {
           runtime: 'opencode',
           phase,
           url: requestUrl,
-          status: error.status,
+          status: response.status,
           receivedResponse: true,
-          error,
+          error: { code: quotaError },
           durationMs: Date.now() - started
         })
-        res.writeHead(error.status, { 'Content-Type': 'application/json' }).end(error.body)
-        return
       }
+    } catch (error) {
       transport(controller.signal.aborted ? 'cancelled' : 'failed', {
         runtime: 'opencode',
         phase,
@@ -166,17 +168,7 @@ export async function createOpenCodeGateway(baseURL: string, record: TransportEv
         ...(upstreamStatus !== undefined ? { status: upstreamStatus } : {}),
         durationMs: Date.now() - started
       })
-      if (!res.headersSent && phase === 'quota-admission')
-        res.writeHead(502, { 'Content-Type': 'application/json' }).end(
-          JSON.stringify({
-            error: {
-              code: 'model_daily_quota_unavailable',
-              type: 'model_daily_quota_error',
-              message: 'Model daily quota admission request failed'
-            }
-          })
-        )
-      else if (!res.headersSent) res.writeHead(502).end('Zen AI could not connect to the model service')
+      if (!res.headersSent) res.writeHead(502).end('Zen AI could not connect to the model service')
       else res.destroy()
     } finally {
       try {

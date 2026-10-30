@@ -136,6 +136,30 @@ describe('atomic patch selection and startup recovery', () => {
     await mkdir(path.join(state.root, 'snapshots'))
     expect((await HotpatchStateStore.load(state.root, base.baseBuildId)).snapshot.recoveryRequired).toBe(true)
   })
+  it.each(['opt-out', 'safe-mode'] as const)(
+    'restages the last healthy patch after a builtin %s boot and explicit resume',
+    async (mode) => {
+      const state = await store(),
+        policy = makePolicy(),
+        raw = signingFixture().encode('policy', policy)
+      await state.acceptPolicy(policy, raw)
+      await state.stage(policy, raw)
+      const boot = await state.beginBoot(true)
+      await state.healthy(boot.challenge!)
+      if (mode === 'opt-out') await state.disable()
+      const restarted = await HotpatchStateStore.load(state.root, base.baseBuildId)
+      expect((await restarted.beginBoot(false, mode === 'safe-mode')).target).toBeNull()
+      expect(restarted.snapshot.active).toBeNull()
+      expect(restarted.snapshot.lastGood).toEqual(boot.target)
+      await restarted.enable()
+      await restarted.acceptPolicy(policy, raw)
+      await restarted.stage(policy, raw)
+      expect(restarted.snapshot.pending?.target).toEqual(boot.target)
+      expect((await restarted.beginBoot(true)).target).toEqual(boot.target)
+      expect(restarted.snapshot.highestSequence).toBe(policy.policySequence)
+      expect(restarted.snapshot.quarantined).toEqual([])
+    }
+  )
   it('safe mode and user opt-out keep builtin, without deleting downloaded/user data', async () => {
     const state = await store(),
       policy = makePolicy(),

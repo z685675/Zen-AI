@@ -189,7 +189,12 @@ export class HotpatchStateStore {
         state.pending = null
         state.lastError = { code: 'startup-interrupted', at: Date.now() }
       }
-      if (safeMode || state.disabledByUser || state.recoveryRequired) return { target: null, trial: false }
+      if (safeMode || state.disabledByUser || state.recoveryRequired) {
+        // This process selected builtin. Keep the healthy snapshot for recovery, but let
+        // a later explicit offer stage it again after the user resumes updates.
+        state.active = null
+        return { target: null, trial: false }
+      }
       if (state.pending && allowPending) {
         const pending = state.pending
         state.pending = null

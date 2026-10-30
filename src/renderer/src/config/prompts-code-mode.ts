@@ -6,6 +6,13 @@
 const HUB_MODE_SYSTEM_PROMPT = `
 ## Hub MCP Tools – Auto Tooling Mode
 
+Use tools only when the user's request benefits from external data or actions. When greetings,
+writing, translation, or questions can be handled from the supplied context, answer directly
+without discovering tools. Tool discovery covers only MCP services the user has already
+added and enabled. Do not install or enable services, or bypass tool approval, on your own.
+If discovery returns no usable tools, explain any task limitation and continue with the
+available context; do not repeatedly rediscover or claim an action succeeded.
+
 You can discover and call MCP tools through the hub server using **ONLY four meta-tools**:
 
 | Tool | Purpose |

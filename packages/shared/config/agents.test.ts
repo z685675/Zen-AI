@@ -10,10 +10,16 @@ import {
 } from './agents'
 
 describe('assistant display identity', () => {
-  it('uses the managed name and red heart for the OpenCode assistant, including old saved avatars', () => {
+  it('uses the default heart only when the new assistant has no saved avatar', () => {
     expect(DEFAULT_OPENCODE_AGENT_NAME).toBe('智能助手')
     expect(getAgentAvatar(DEFAULT_OPENCODE_AGENT_ID)).toBe('❤️')
-    expect(getAgentAvatar(DEFAULT_OPENCODE_AGENT_ID, '🩶')).toBe('❤️')
+    expect(getAgentAvatar(DEFAULT_OPENCODE_AGENT_ID, null)).toBe('❤️')
+    expect(getAgentAvatar(DEFAULT_OPENCODE_AGENT_ID, '   ')).toBe('❤️')
+  })
+
+  it('displays the user-selected avatar for the new assistant', () => {
+    expect(getAgentAvatar(DEFAULT_OPENCODE_AGENT_ID, '🩶')).toBe('🩶')
+    expect(getAgentAvatar(DEFAULT_OPENCODE_AGENT_ID, '🌻')).toBe('🌻')
   })
 
   it('preserves the legacy and other agent avatar rules', () => {

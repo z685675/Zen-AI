@@ -776,6 +776,12 @@
         "tasks_desc": "[to be translated]:Handle complex work that needs multiple steps and sustained execution."
       },
       "model_label": "[to be translated]:Model for this chat",
+      "quick_entries": {
+        "skills_desc": "[to be translated]:Import, find, and manage assistant skills",
+        "tasks_desc": "[to be translated]:Schedule tasks and view their run history",
+        "title": "[to be translated]:Quick access",
+        "wechat_desc": "[to be translated]:Connect WeChat and continue chats on your phone or computer"
+      },
       "title": "[to be translated]:Hand over the task and get started with ease"
     }
   },
@@ -1428,6 +1434,7 @@
     },
     "status": "Status",
     "stop": "Stop",
+    "syncComplete": "Sincronizare finalizată",
     "syncing": "Sync enabled",
     "taskConsent": "I authorize this specific task to run automatically with controlled tools in its dedicated workspace. This does not authorize overwriting, deletion, payments or unrestricted computer access.",
     "taskFailed": "Task failed or was interrupted. Open the conversation for details; completed files are preserved.",
@@ -1857,11 +1864,14 @@
       },
       "max": "Nelimitat",
       "max_tokens": {
-        "confirm": "Setează tokeni maximi",
+        "confirm": "Limită de lungime a ieșirii",
         "confirm_content": "Setează numărul maxim de tokeni pe care modelul îi poate genera. Trebuie să iei în considerare limita de context a modelului, altfel va fi raportată o eroare",
-        "label": "Setează tokeni maximi",
+        "label": "Limită de lungime a ieșirii",
         "tip": "Numărul maxim de tokeni pe care modelul îi poate genera. Trebuie să iei în considerare limita de context a modelului, altfel va fi raportată o eroare"
       },
+      "parameters_customized": "Parametri personalizați activi",
+      "parameters_default": "Parametri impliciți",
+      "parameters_tip": "De obicei nu sunt necesare ajustări. Temperatura, Top-P și limitele de ieșire dezactivate folosesc valorile modelului. Aceste comenzi au prioritate; parametrii personalizați cu același nume sunt ignorați. Setările rolurilor existente sunt păstrate. Resetarea restabilește valorile implicite.",
       "reset": "Resetează",
       "set_as_default": "Aplică la asistentul implicit",
       "show_line_numbers": "Afișează numerele liniilor de cod",
@@ -3259,17 +3269,22 @@
     }
   },
   "model_daily_quota": {
-    "exceeded": "Limita zilnică a acestui model a fost epuizată. Încercați mâine.",
+    "connection": "Conectarea la serviciul de validare nu este posibilă. Generarea modelului nu a început. Verificați conexiunea sau încercați altă rețea.",
+    "exceeded": "Acest model a atins limita zilnică. Alegeți alt model.",
     "hint": "Intrare + ieșire; memoria cache este inclusă în intrare. Resetare la miezul nopții în Beijing. Ultima întrebare admisă poate depăși limita.",
     "invalid": "Autorizarea acestei întrebări a expirat. Trimiteți o întrebare nouă.",
     "limit": "Limită zilnică",
     "pending": "Limita rămasă este rezervată de altă sarcină. Așteptați finalizarea ei.",
     "remaining": "Rămas",
+    "request_stage": "Validare înaintea cererii către model",
+    "request_suggestion": "Reîncercați o dată. Dacă eroarea persistă, încercați altă rețea, de exemplu un hotspot mobil, și verificați setările proxy ale aplicației. Exportați un pachet de diagnostic pentru administrator dacă problema continuă. Această eroare nu înseamnă că limita modelului a fost epuizată.",
     "stage": "Verificarea limitei modelului",
     "status_error": "Limitele de azi nu pot fi actualizate. Istoricul rămâne disponibil.",
     "suggestion": "Alegeți alt model disponibil sau așteptați resetarea. Nu reîncercați repetat.",
+    "timeout": "Validarea cererii a expirat. Generarea modelului nu a început. Verificați conexiunea sau încercați altă rețea.",
     "title": "Limitele de azi · ora Beijingului",
-    "unavailable": "Serviciul de limite este temporar indisponibil.",
+    "turn_exceeded": "{{model}} a atins limita de astăzi. Alegeți alt model.",
+    "unavailable": "API-ul nu poate verifica limita modelului acum. Încercați mai târziu; dacă problema persistă, exportați diagnosticele și contactați administratorul.",
     "used": "Utilizat",
     "used_up": "Epuizat azi"
   },
@@ -3381,11 +3396,11 @@
     "memory_notice": "Independent native memory survives model changes. Retry, branching and individual deletion are supported; direct editing and bulk deletion are not yet supported.",
     "outputting": "The model is producing output",
     "permission": {
-      "title": "Această sarcină necesită confirmarea dvs.",
       "description": "Verificați operațiunea și ținta ei înainte de a permite continuarea sarcinii.",
-      "loopTitle": "Au fost detectate operațiuni repetate; sarcina este în pauză",
+      "details": "Detaliile operațiunii",
       "loopDescription": "Asistentul a încercat aceeași operațiune de mai multe ori. Puteți permite o singură continuare sau anula această operațiune.",
-      "details": "Detaliile operațiunii"
+      "loopTitle": "Au fost detectate operațiuni repetate; sarcina este în pauză",
+      "title": "Această sarcină necesită confirmarea dvs."
     },
     "preparing": "[to be translated]:Request received; preparing the task",
     "responding": "[to be translated]:Processing the response",
@@ -6838,8 +6853,25 @@
       "processing": "În desfășurare"
     },
     "privacy": "Implicit sunt incluse doar metadate de diagnostic, nu textul conversației, argumentele/rezultatele instrumentelor, atașamentele originale sau istoricul complet. Distribuiți doar destinatarilor de încredere. Conținutul opțional poate include date personale.",
-    "reportTemplate": "# Zen AI: diagnosticarea acestei runde\n\n- Rezultat: {{outcome}}\n- Model: {{model}}; Provider: {{provider}}\n- Tokenuri: intrare {{input}}; ieșire {{output}}; cache citit {{cache}} (deja inclus în intrare)\n- Început: {{start}}; sfârșit: {{end}}; total: {{total}}\n- Primul conținut (posibil raționament): {{firstContent}}; primul text de răspuns: {{firstText}}; primii octeți de rețea: {{firstBytes}} (nu primul token)\n- Cereri observate: {{requests}}; instrumente: {{tools}}; reîncercări/comutări: {{retries}}\n- Întârziere commit UI: {{render}} (React, nu garantează afișarea pe ecran)\n\n## Cele mai lente etape cu început și sfârșit\n{{slowest}}\n\n## Cronologia cererilor și instrumentelor\n{{timeline}}\n\n## Așteptări observate ale utilizatorului (pot suprapune instrumentele)\n{{waits}}\n\n## Limite și date lipsă\n- Numai durate măsurate, nu un verdict privind cauza rețelei/clientului/serviciului. Etapele se suprapun: nu însumați și nu scădeți așteptările.\n- Lipsă nu înseamnă zero. Intervalele deschise pot fi active. Exportul activ este o captură; conversațiile vechi nu recuperează evenimente neînregistrate.\n- Înregistrarea începe de obicei la pregătirea răspunsului; încărcările anterioare pot lipsi. Reîncercările nu numără sarcini executate din nou.\n- Corelați zen-api-evidence.json și ID-urile pentru detalii server. Absența înregistrării nu dovedește neprimirea; scrierea nu garantează primirea completă.\n- Evenimente eliminate din cauza limitei: {{dropped}}; cererile vechi pot expira. Coduri de date lipsă (performance.json): {{missing}}\n",
-    "requestTiming": " | Antete {{headers}} | Primii octeți {{bytes}} | HTTP {{status}} | ID cerere {{requestId}}"
+    "renderNotRecorded": "Necolectat",
+    "reportTemplate": "# Zen AI: diagnosticarea acestei runde\n\n- Rezultat: {{outcome}}\n- Model: {{model}}; Provider: {{provider}}\n- Tokenuri: intrare {{input}}; ieșire {{output}}; cache citit {{cache}} (deja inclus în intrare)\n- Început: {{start}}; sfârșit: {{end}}; total: {{total}}\n- Primul conținut (posibil raționament): {{firstContent}}; primul text de răspuns: {{firstText}}; primii octeți de rețea: {{firstBytes}} (nu primul token)\n- Cereri observate: {{requests}}; instrumente: {{tools}}; reîncercări/comutări: {{retries}}\n- De la sfârșitul răspunsului la commit UI: {{render}} (doar finalizare în direct într-o componentă vizibilă continuu; nu măsoară desenarea ecranului)\n\n## Cele mai lente etape cu început și sfârșit\n{{slowest}}\n\n## Cronologia cererilor și instrumentelor\n{{timeline}}\n\n## Așteptări observate ale utilizatorului (pot suprapune instrumentele)\n{{waits}}\n\n## Limite și date lipsă\n- Numai durate măsurate, nu un verdict privind cauza rețelei/clientului/serviciului. Etapele se suprapun: nu însumați și nu scădeți așteptările.\n- Lipsă nu înseamnă zero. Intervalele deschise pot fi active. Exportul activ este o captură; conversațiile vechi nu recuperează evenimente neînregistrate.\n- Înregistrarea începe de obicei la pregătirea răspunsului; încărcările anterioare pot lipsi. Reîncercările nu numără sarcini executate din nou.\n- Corelați zen-api-evidence.json și ID-urile pentru detalii server. Absența înregistrării nu dovedește neprimirea; scrierea nu garantează primirea completă.\n- Evenimente eliminate din cauza limitei: {{dropped}}; cererile vechi pot expira. Coduri de date lipsă (performance.json): {{missing}}\n",
+    "requestTiming": " | Antete {{headers}} | Primii octeți {{bytes}} | HTTP {{status}} | ID cerere {{requestId}}",
+    "serverTiming": {
+      "attempt": "[to be translated]:  - Attempt {{index}} / channel {{channel}} | Total {{total}} | Before attempt {{before}}\n    First event {{event}} | Effective content {{content}} | Answer text {{text}} | First non-ping forward {{forward}} | Content to forward {{forwarding}} (unavailable if metadata was forwarded earlier)\n{{http}}\n    Missing: {{missing}}",
+      "http": "[to be translated]:    - HTTP {{index}} | Before HTTP {{prepare}} | DNS {{dns}} | TCP (summed connections, may overlap) {{connect}} | TLS {{tls}} | Connection ready {{ready}} | Sent {{sent}} | First byte {{firstByte}} | Wait after sending {{wait}} | Body reading {{body}} | Connection reused {{reused}}",
+      "intro": "[to be translated]:## Server and upstream timing\n\nEach request and channel attempt is listed separately. Preparation milestones are offsets from API receipt; stream milestones are offsets from the channel attempt; HTTP milestones are offsets from that HTTP call. DNS/TCP/TLS may overlap or be skipped on connection reuse. First byte/event is not first answer text. Outside-gateway time compares elapsed durations and includes client/network work; it is not a one-way network measurement. Unknown or unfinished stages are not zero.",
+      "missing": "[to be translated]:  Missing: {{missing}}",
+      "no": "[to be translated]:No",
+      "phases": {
+        "admission_ready": "[to be translated]:Admission ready",
+        "body_ready": "[to be translated]:Body ready",
+        "routing_ready": "[to be translated]:Routing ready",
+        "tokens_ready": "[to be translated]:Token estimate ready",
+        "validated": "[to be translated]:Validated"
+      },
+      "request": "[to be translated]:- Request {{requestId}} | API total {{total}} | Outside API {{outside}}\n  Preparation milestones: {{phases}}",
+      "yes": "[to be translated]:Yes"
+    }
   },
   "update": {
     "available": "A new version {{version}} is available. Click Check for Updates any time to download it.",
@@ -6873,6 +6905,9 @@
       "unavailable": "Unable to load usage. Please try again later.",
       "unsupported": "This service does not support usage queries yet"
     },
+    "image_requests": "Cereri de imagini",
+    "image_requests_hint": "O numărare per cerere, inclusiv pentru mai multe imagini. Se aplică tarifele serviciului.",
+    "image_trend": "Evoluția cererilor de imagini",
     "input": "Input tokens",
     "intervals": {
       "day": "Daily",

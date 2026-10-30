@@ -94,10 +94,13 @@ const assistantsSlice = createSlice({
   reducers: {
     updateDefaultAssistant: (state, action: PayloadAction<{ assistant: Assistant }>) => {
       // @ts-ignore ts2589
-      state.defaultAssistant = action.payload.assistant
+      state.defaultAssistant = { ...action.payload.assistant, prompt: state.defaultAssistant.prompt }
     },
     updateAssistants: (state, action: PayloadAction<Assistant[]>) => {
-      state.assistants = action.payload
+      const defaultAssistant = state.assistants.find((assistant) => assistant.id === 'default')
+      state.assistants = action.payload.map((assistant) =>
+        assistant.id === 'default' && defaultAssistant ? { ...assistant, prompt: defaultAssistant.prompt } : assistant
+      )
     },
     addAssistant: (state, action: PayloadAction<Assistant>) => {
       state.assistants.unshift(action.payload)
@@ -128,7 +131,9 @@ const assistantsSlice = createSlice({
     updateAssistant: (state, action: PayloadAction<Partial<Assistant> & { id: string }>) => {
       const { id, ...update } = action.payload
       // @ts-ignore ts2589
-      state.assistants = state.assistants.map((c) => (c.id === id ? { ...c, ...update } : c))
+      state.assistants = state.assistants.map((c) =>
+        c.id === id ? { ...c, ...update, ...(c.id === 'default' && { prompt: c.prompt }) } : c
+      )
     },
     updateAssistantSettings: (
       state,

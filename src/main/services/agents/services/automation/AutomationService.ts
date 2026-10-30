@@ -9,6 +9,7 @@ import { configManager } from '@main/services/ConfigManager'
 import { recordMainDiagnostic } from '@main/services/DiagnosticEvidenceService'
 import { remoteModelPolicyService } from '@main/services/RemoteModelPolicyService'
 import { getDataPath } from '@main/utils'
+import { t } from '@main/utils/locales'
 import {
   type AutomationOverview,
   type AutomationRequest,
@@ -19,7 +20,6 @@ import { DEFAULT_OPENCODE_AGENT_ID } from '@shared/config/agents'
 import { sanitizeDiagnostic } from '@shared/diagnostics'
 import type { AgentPersistedMessage, FileMetadata } from '@types'
 import { and, desc, eq, inArray, sql } from 'drizzle-orm'
-import { t } from 'i18next'
 
 import { resolveAssistantFallbackModel } from '../../../../../renderer/src/config/agentModelPolicy'
 import { BaseService } from '../../BaseService'
@@ -49,7 +49,7 @@ import { acquireSessionActivity, hasSessionActivity } from '../sessionActivity'
 import { sessionMessageService } from '../SessionMessageService'
 import { sessionService } from '../SessionService'
 import { AutomationOutbox, type AutomationTextTransport } from './AutomationOutbox'
-import { AutomationRepository } from './AutomationRepository'
+import { type AutomationFile, AutomationRepository } from './AutomationRepository'
 import { AutomationScheduleRepository } from './AutomationScheduleRepository'
 import { registerAutomationBridge } from './bridge'
 import {
@@ -119,20 +119,15 @@ export class AutomationService extends BaseService {
           await this.repository.disable(binding.channelId, binding.version)
         }
       },
-      mirror: async (sessionId, input, answer, stopped, paths) => {
-        const binding = await this.repository.bindingForSession(sessionId)
-        if (!binding) return
-        const id = randomUUID()
-        const { run } = await this.repository.acceptMessage(binding, id, 'desktop', safeAutomationReply(input))
-        await this.repository.claimRun(run.id)
-        await this.repository.completeRun(
-          run.id,
-          stopped ? t('automation.notice.stopped') : safeAutomationReply(answer) || t('automation.notice.empty')
-        )
+      captureMirrorTarget: (sessionId) => this.repository.bindingForSession(sessionId),
+      mirror: async (sessionId, input, answer, stopped, paths, context) => {
+        const binding = context ? context.target : await this.repository.bindingForSession(sessionId)
+        if (!binding || binding.sessionId !== sessionId) return false
         const db = await this.getDatabase()
         const [profile] = await db.select().from(automationSessions).where(eq(automationSessions.sessionId, sessionId))
         let fileFailure = false
         let total = 0
+        const files: AutomationFile[] = []
         if (!stopped && profile)
           for (const [index, file] of paths.entries()) {
             try {
@@ -146,11 +141,19 @@ export class AutomationService extends BaseService {
                 continue
               }
               total += verified.size
-              await this.repository.enqueueFile(run.id, verified)
+              files.push(verified)
             } catch {
               fileFailure = true
             }
           }
+        const { run, duplicate } = await this.repository.mirrorCompletedExchange(
+          binding,
+          context?.exchangeId ?? randomUUID(),
+          safeAutomationReply(input),
+          stopped ? t('automation.notice.stopped') : safeAutomationReply(answer) || t('automation.notice.empty'),
+          files
+        )
+        if (duplicate) return { runId: run.id }
         if (fileFailure)
           await this.repository.enqueueNotice(
             binding,
@@ -158,6 +161,7 @@ export class AutomationService extends BaseService {
             t('automation.notice.fileDeliveryLimited')
           )
         this.kickDelivery()
+        return { runId: run.id }
       }
     })
     this.timer = setInterval(() => {
@@ -213,7 +217,11 @@ export class AutomationService extends BaseService {
         error instanceof Error && /^automation_[a-z_]+$/.test(error.message)
           ? error.message
           : 'automation_operation_failed'
-      logger.warn('Automation operation failed', { code, action: parsed.data.action })
+      logger.warn('Automation operation failed', {
+        code,
+        action: parsed.data.action,
+        error: sanitizeDiagnostic(error)
+      })
       return { ok: false, code }
     }
   }
@@ -393,9 +401,11 @@ export class AutomationService extends BaseService {
       ) {
         this.listen(bot, generation)
       } else this.connection = { status: 'awaiting_confirmation', owner: credentials.userId.slice(-6) }
-    } catch {
-      if (generation === this.generation)
+    } catch (error) {
+      if (generation === this.generation) {
+        logger.warn('Automation WeChat login failed', { error: sanitizeDiagnostic(error) })
         this.connection = { status: 'failed', reason: 'automation_wechat_login_failed' }
+      }
     }
   }
 
@@ -808,9 +818,11 @@ export class AutomationService extends BaseService {
       }
     )
     const reader = stream.getReader()
+    const persistence = { userMessageId: `${id}:user`, assistantMessageId: `${id}:assistant` }
     sessionStreamBus.publish(sessionId, {
       sessionId,
       agentId: DEFAULT_OPENCODE_AGENT_ID,
+      persistence,
       type: 'user-message',
       userMessage: {
         chatId: CHANNEL,
@@ -827,6 +839,7 @@ export class AutomationService extends BaseService {
           sessionStreamBus.publish(sessionId, {
             sessionId,
             agentId: DEFAULT_OPENCODE_AGENT_ID,
+            persistence,
             type: 'chunk',
             chunk: value
           })
@@ -867,7 +880,12 @@ export class AutomationService extends BaseService {
       }
     }
     broadcastSessionChanged(DEFAULT_OPENCODE_AGENT_ID, sessionId, true)
-    sessionStreamBus.publish(sessionId, { sessionId, agentId: DEFAULT_OPENCODE_AGENT_ID, type: 'complete' })
+    sessionStreamBus.publish(sessionId, {
+      sessionId,
+      agentId: DEFAULT_OPENCODE_AGENT_ID,
+      type: 'complete',
+      persistence
+    })
     return {
       text:
         (safeAutomationReply(String(final)) || t('automation.notice.empty')) +
@@ -942,6 +960,7 @@ export class AutomationService extends BaseService {
       sessionId,
       agentId: DEFAULT_OPENCODE_AGENT_ID,
       type: 'error',
+      persistence: { userMessageId: `${id}:user`, assistantMessageId: `${id}:assistant` },
       error: { message: t(stopped ? 'automation.notice.stopped' : 'automation.notice.failed') }
     })
   }
@@ -996,8 +1015,7 @@ export class AutomationService extends BaseService {
     }
     // A delivery/storage failure cannot reclassify a saved successful model answer as failed.
     try {
-      await this.repository.completeRun(id, result.text)
-      for (const file of result.files) await this.repository.enqueueFile(id, file)
+      await this.repository.completeRun(id, result.text, result.files)
     } catch {
       recordMainDiagnostic(`automation-${id}`, 'runtime', 'failed', {
         stage: 'delivery_queue',
@@ -1203,6 +1221,7 @@ export class AutomationService extends BaseService {
       .limit(100)
     return {
       connection: { ...this.connection, sessionId: binding?.sessionId, enabled: binding?.enabled },
+      syncedRuns: binding?.enabled ? await this.repository.syncedRuns(binding) : [],
       deliveries: (await this.repository.deliveries(CHANNEL)).map(({ id, state, role, reason, createdAt }) => ({
         id,
         state,

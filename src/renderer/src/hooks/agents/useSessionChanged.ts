@@ -35,13 +35,11 @@ export function useSessionChanged(agentId: string | undefined, mutate: () => voi
           fulfilled: true
         })
       )
-      // Only force-reload from DB when the exchange was persisted headlessly
-      // (i.e. the renderer was NOT streaming in real-time). When the renderer
-      // was watching, it already has the rich data in Redux via BlockManager,
-      // and force-reloading here would race with its fire-and-forget DB writes.
+      // Automation owns durable history, even while its display-only stream is watched.
+      // A watched stream reloads after draining; do not replace its blocks mid-chunk.
       if (data.headless) {
-        const currentTopicId = store.getState().messages.currentTopicId
-        if (currentTopicId === topicId) {
+        const state = store.getState().messages
+        if (state.currentTopicId === topicId && !state.loadingByTopic[topicId]) {
           void dispatch(loadTopicMessagesThunk(topicId, true))
         }
       }

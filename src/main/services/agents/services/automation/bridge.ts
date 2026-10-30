@@ -1,8 +1,20 @@
 import type { GetAgentSessionResponse } from '@types'
 
+import type { AutomationTarget } from './AutomationRepository'
+
+export type AutomationMirrorContext = { target?: AutomationTarget; exchangeId: string }
+
 type Bridge = {
   prepare: (session: GetAgentSessionResponse) => Promise<GetAgentSessionResponse>
-  mirror: (sessionId: string, input: string, answer: string, stopped: boolean, files: string[]) => Promise<void>
+  captureMirrorTarget?: (sessionId: string) => Promise<AutomationTarget | undefined>
+  mirror: (
+    sessionId: string,
+    input: string,
+    answer: string,
+    stopped: boolean,
+    files: string[],
+    context?: AutomationMirrorContext
+  ) => Promise<{ runId: string } | boolean | void>
   invalidate?: (sessionId: string) => Promise<void>
 }
 let bridge: Bridge | undefined
@@ -20,9 +32,14 @@ export async function mirrorAutomationExchange(
   input: string,
   answer: string,
   stopped = false,
-  files: string[] = []
+  files: string[] = [],
+  context?: AutomationMirrorContext
 ) {
-  if (bridge) await bridge.mirror(sessionId, input, answer, stopped, files)
+  return bridge ? bridge.mirror(sessionId, input, answer, stopped, files, context) : false
+}
+
+export async function captureAutomationMirrorTarget(sessionId: string) {
+  return bridge?.captureMirrorTarget?.(sessionId)
 }
 
 export async function invalidateAutomationSession(sessionId: string) {

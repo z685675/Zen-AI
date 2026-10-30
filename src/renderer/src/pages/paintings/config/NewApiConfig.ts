@@ -1,5 +1,6 @@
 import type { GeneratePainting } from '@renderer/types'
 import { uuid } from '@renderer/utils'
+import { commonImageSizePresets } from '@shared/config/imageSizePresets'
 
 type PaintingOption<Value extends string = string> = {
   value: Value
@@ -35,45 +36,11 @@ const GPT_IMAGE_1_SIZES: PaintingOption[] = [
   { value: '1024x1536', label: 'paintings.image_size_options.1024x1536' }
 ]
 
-const GPT_IMAGE_2_SIZES: PaintingOption[] = [
-  { value: 'auto' },
-  { value: '1024x1024', label: 'paintings.image_size_options.1024x1024' },
-  { value: '1536x1024', label: 'paintings.image_size_options.1536x1024' },
-  { value: '1024x1536', label: 'paintings.image_size_options.1024x1536' },
-  { value: '2048x2048', label: 'paintings.image_size_options.2048x2048' },
-  { value: '2560x1440', label: 'paintings.image_size_options.2560x1440' },
-  { value: '1440x2560', label: 'paintings.image_size_options.1440x2560' },
-  {
-    value: '2880x2880',
-    label: 'paintings.image_size_options.2880x2880',
-    isExperimental: true,
-    descriptionKey: 'paintings.help.image_size.experimental'
-  },
-  {
-    value: '3072x2048',
-    label: 'paintings.image_size_options.3072x2048',
-    isExperimental: true,
-    descriptionKey: 'paintings.help.image_size.experimental'
-  },
-  {
-    value: '2048x3072',
-    label: 'paintings.image_size_options.2048x3072',
-    isExperimental: true,
-    descriptionKey: 'paintings.help.image_size.experimental'
-  },
-  {
-    value: '3840x2160',
-    label: 'paintings.image_size_options.3840x2160',
-    isExperimental: true,
-    descriptionKey: 'paintings.help.image_size.experimental'
-  },
-  {
-    value: '2160x3840',
-    label: 'paintings.image_size_options.2160x3840',
-    isExperimental: true,
-    descriptionKey: 'paintings.help.image_size.experimental'
-  }
-]
+const GPT_IMAGE_2_SIZES: PaintingOption[] = commonImageSizePresets.map(({ size, isExperimental }) => ({
+  value: size,
+  ...(size !== 'auto' ? { label: `paintings.image_size_options.${size}` } : {}),
+  ...(isExperimental ? { isExperimental, descriptionKey: 'paintings.help.image_size.experimental' } : {})
+}))
 
 export const GPT_IMAGE_2_FAMILY = ['gpt-image-2', 'gpt-image-2-pro', 'gpt-image-2-vip'] as const
 // Gateways may expose the new model with or without the separator after

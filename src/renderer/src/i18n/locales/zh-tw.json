@@ -776,6 +776,12 @@
         "tasks_desc": "適合需要多步推進、持續執行的複雜工作。"
       },
       "model_label": "本次對話模型",
+      "quick_entries": {
+        "skills_desc": "匯入、搜尋和管理智慧助手技能",
+        "tasks_desc": "安排定時任務，查看執行記錄",
+        "title": "快捷入口",
+        "wechat_desc": "連接微信，在手機與電腦間繼續對話"
+      },
       "title": "把任務交給我，輕鬆一點開始"
     }
   },
@@ -1428,6 +1434,7 @@
     },
     "status": "状态",
     "stop": "停止当前任务",
+    "syncComplete": "同步完成",
     "syncing": "正在同步",
     "taskConsent": "我授权此任务在专用工作目录中使用受控工具自动执行，不包含覆盖原件、删除、付款或任意操作电脑的权限。",
     "taskFailed": "任务失败或已中断，请打开对应对话查看；已生成文件保留。",
@@ -1857,17 +1864,20 @@
       },
       "max": "不限",
       "max_tokens": {
-        "confirm": "設定最大 Token 數",
-        "confirm_content": "設定單次互動的最大 Token 數，會影響回應內容的長度。請依模型的上下文上限調整，否則可能發生錯誤",
-        "label": "最大 Token 數",
-        "tip": "模型可產生的最大 Token 數。請依模型的上下文上限調整，否則可能發生錯誤"
+        "confirm": "輸出長度上限",
+        "confirm_content": "限制單次生成的輸出 Token 數，部分模型包含思考 Token，並非上下文容量。關閉時自動適配；設定過小可能截斷回答。",
+        "label": "輸出長度上限",
+        "tip": "限制單次生成的輸出 Token 數，部分模型包含思考 Token，並非上下文容量。關閉時自動適配；設定過小可能截斷回答。"
       },
+      "parameters_customized": "已自訂",
+      "parameters_default": "預設參數",
+      "parameters_tip": "通常無需調整。關閉溫度、Top-P 和輸出長度上限時採用模型服務預設值。這些參數以本頁開關和值為準，自訂參數中的同名欄位不生效。舊角色設定會保留，可點擊重設恢復預設。",
       "reset": "重設",
       "set_as_default": "設為預設助手",
       "show_line_numbers": "程式碼顯示行號",
       "temperature": {
         "label": "溫度",
-        "tip": "模型產生文字的隨機程度。數值越高，回應內容越具多樣性、創意性及隨機性；設定為 0 則會依據事實回答。一般聊天建議設定為 0.7"
+        "tip": "控制輸出的隨機程度。通常保持關閉並採用模型預設值；開啟後會按模型相容性處理。溫度為 0 不保證回答正確。"
       },
       "thought_auto_collapse": {
         "label": "思考內容自動折疊",
@@ -3259,17 +3269,22 @@
     }
   },
   "model_daily_quota": {
-    "exceeded": "該模型額度今日已用完，請明日再使用。",
+    "connection": "暫時無法連線至請求檢查服務，模型尚未開始產生回覆。請檢查網路，或切換網路後重試。",
+    "exceeded": "此模型額度已達每日上限，請切換其他模型使用。",
     "hint": "按輸入＋輸出 Token 計算，輸入已含快取；北京時間零點重設。最後一次獲准的提問可超額完成。",
     "invalid": "本輪模型授權已結束或過期，請重新提問。",
     "limit": "每日上限",
     "pending": "該模型剩餘額度正由其他任務使用，請等待任務完成後再試。",
     "remaining": "剩餘",
+    "request_stage": "模型請求前檢查",
+    "request_suggestion": "請先重試一次；若仍失敗，嘗試手機熱點等其他網路，並檢查軟體的代理設定。持續失敗請匯出診斷包聯絡管理員。此錯誤不表示模型額度已用完。",
     "stage": "模型額度檢查",
     "status_error": "今日模型額度暫時更新失敗，不影響歷史用量查詢。",
     "suggestion": "可手動選擇其他可用模型，或等待額度恢復，請勿反覆重試。",
+    "timeout": "請求檢查逾時，模型尚未開始產生回覆。請檢查網路，或切換網路後重試。",
     "title": "今日模型額度 · 北京時間",
-    "unavailable": "模型額度服務暫時無法使用，請稍後再試。",
+    "turn_exceeded": "{{model}} 今日額度已達上限，請切換其他模型使用。",
+    "unavailable": "API 暫時無法完成模型額度檢查，請稍後重試；若持續失敗，請匯出診斷包聯絡管理員。",
     "used": "已用",
     "used_up": "今日已用完"
   },
@@ -6838,8 +6853,25 @@
       "processing": "執行中"
     },
     "privacy": "預設僅包含診斷資料，不包含對話正文、工具參數和結果、附件原件或完整歷史。請確認接收人可信；若勾選包含內容，本輪對話可能含個人資訊。",
-    "reportTemplate": "# Zen AI 本輪執行診斷報告\n\n- 結果：{{outcome}}\n- 模型：{{model}}；Provider：{{provider}}\n- Token：輸入 {{input}}；輸出 {{output}}；快取讀取 {{cache}}（已含於輸入，不重複相加）\n- 記錄起點：{{start}}；結束：{{end}}；完成用時：{{total}}\n- 首次回應（文字、思考或工具呼叫）：{{firstContent}}；首次正文：{{firstText}}；首批網路資料：{{firstBytes}}（不等於首字）\n- 觀察到的請求：{{requests}}；工具：{{tools}}；重試/切換事件：{{retries}}\n- 介面提交延遲：{{render}}（React 提交記錄，不保證螢幕繪製）\n\n## 最耗時的已配對階段\n{{slowest}}\n\n## 請求與工具時間線\n{{timeline}}\n\n## 觀察到的使用者等待（可能與工具重疊）\n{{waits}}\n\n## 判斷邊界與缺失資料\n- 僅列實測時間，不直接判定網路、用戶端或上游根因。階段可重疊，不可直接相加或扣除使用者等待。\n- 未記錄不等於零耗時；未配對階段可能仍在執行。執行中匯出僅為快照，舊對話不能補造歷史事件。\n- 起點通常是準備模型回應，更早的附件上傳未必涵蓋。重試事件數不等於重複執行任務次數。\n- 伺服器內部耗時請結合 zen-api-evidence.json 與請求編號。後台無記錄不證明未收到，寫出不保證用戶端完整收到。\n- 有界記錄捨棄事件：{{dropped}}；更早請求可能過期。缺項代碼（詳見 performance.json）：{{missing}}\n",
-    "requestTiming": " | 等回應標頭 {{headers}} | 等首批資料 {{bytes}} | HTTP {{status}} | 請求編號 {{requestId}}"
+    "renderNotRecorded": "未採集",
+    "reportTemplate": "# Zen AI 本輪執行診斷報告\n\n- 結果：{{outcome}}\n- 模型：{{model}}；Provider：{{provider}}\n- Token：輸入 {{input}}；輸出 {{output}}；快取讀取 {{cache}}（已含於輸入，不重複相加）\n- 記錄起點：{{start}}；結束：{{end}}；完成用時：{{total}}\n- 首次回應（文字、思考或工具呼叫）：{{firstContent}}；首次正文：{{firstText}}；首批網路資料：{{firstBytes}}（不等於首字）\n- 觀察到的請求：{{requests}}；工具：{{tools}}；重試/切換事件：{{retries}}\n- 回覆結束至介面提交：{{render}}（僅採納持續可見期間本輪完成時的 React 提交；不代表螢幕繪製耗時）\n\n## 最耗時的已配對階段\n{{slowest}}\n\n## 請求與工具時間線\n{{timeline}}\n\n## 觀察到的使用者等待（可能與工具重疊）\n{{waits}}\n\n## 判斷邊界與缺失資料\n- 僅列實測時間，不直接判定網路、用戶端或上游根因。階段可重疊，不可直接相加或扣除使用者等待。\n- 未記錄不等於零耗時；未配對階段可能仍在執行。執行中匯出僅為快照，舊對話不能補造歷史事件。\n- 起點通常是準備模型回應，更早的附件上傳未必涵蓋。重試事件數不等於重複執行任務次數。\n- 伺服器內部耗時請結合 zen-api-evidence.json 與請求編號。後台無記錄不證明未收到，寫出不保證用戶端完整收到。\n- 有界記錄捨棄事件：{{dropped}}；更早請求可能過期。缺項代碼（詳見 performance.json）：{{missing}}\n",
+    "requestTiming": " | 等回應標頭 {{headers}} | 等首批資料 {{bytes}} | HTTP {{status}} | 請求編號 {{requestId}}",
+    "serverTiming": {
+      "attempt": "  - 第 {{index}} 次嘗試 / 渠道 {{channel}} | 總用時 {{total}} | 嘗試前處理 {{before}}\n    首個事件 {{event}} | 有效內容 {{content}} | 正文 {{text}} | 首次非心跳轉發 {{forward}} | 內容到轉發 {{forwarding}}（若已提前轉發中繼資料則不適用）\n{{http}}\n    缺項：{{missing}}",
+      "http": "    - HTTP {{index}} | HTTP 前準備 {{prepare}} | DNS {{dns}} | TCP（多次連線累計，可能重疊）{{connect}} | TLS {{tls}} | 連線就緒 {{ready}} | 傳送完成 {{sent}} | 首位元組 {{firstByte}} | 傳送後等待 {{wait}} | 回應本文讀取 {{body}} | 連線重用 {{reused}}",
+      "intro": "## 伺服器與上游分段計時\n\n按請求和渠道嘗試逐條列出。前置處理里程碑從 API 收到請求起算；串流事件里程碑從該次渠道嘗試起算；HTTP 里程碑從該次 HTTP 呼叫起算。DNS、TCP、TLS 可能重疊，連線重用時部分階段不會發生。首位元組、首個事件不等於首次正文。API 外耗時透過時長比較取得，包含用戶端和網路工作，並非單向網路延遲。缺失或尚未結束不按零處理。",
+      "missing": "  缺項：{{missing}}",
+      "no": "否",
+      "phases": {
+        "admission_ready": "額度准入完成",
+        "body_ready": "請求本文就緒",
+        "routing_ready": "路由就緒",
+        "tokens_ready": "Token 估算完成",
+        "validated": "驗證完成"
+      },
+      "request": "- 請求 {{requestId}} | API 總用時 {{total}} | API 外耗時 {{outside}}\n  前置處理里程碑：{{phases}}",
+      "yes": "是"
+    }
   },
   "update": {
     "available": "發現新版本 {{version}}，你可以稍後在「檢查更新」中手動下載安裝。",
@@ -6873,6 +6905,9 @@
       "unavailable": "暫時無法載入用量，請稍後重試。",
       "unsupported": "目前服務暫不支援用量查詢"
     },
+    "image_requests": "圖片呼叫次數",
+    "image_requests_hint": "每次呼叫計一次，多張圖片仍計一次；收費以服務定價為準。",
+    "image_trend": "圖片呼叫趨勢",
     "input": "輸入 Token",
     "intervals": {
       "day": "按日",

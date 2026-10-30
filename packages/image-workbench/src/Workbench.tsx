@@ -7,13 +7,15 @@ import type {
 } from '@shared/config/imageCanvas'
 import { imageCanvasProtocols } from '@shared/config/imageCanvas'
 import { defaultImageCapabilities, validateImageCapabilities } from '@shared/config/imageCapabilities'
-import { type ChangeEvent, type ReactNode, useCallback, useEffect, useId, useRef, useState } from 'react'
+import { groupImageCanvasTasks } from '@shared/config/imageRecords'
+import { type ChangeEvent, type ReactNode, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { blobToDataUrl } from './browserImages'
 import { emptyDraft, readDraft, type WorkbenchDraft, writeDraft } from './draft'
 import { dimensionKey, imageDimensionLabel, orderedImageDimensions } from './imageDimensions'
 import { MaskEditor } from './MaskEditor'
+import { ResultGallery } from './ResultGallery'
 import { TaskDiagnostics } from './TaskDiagnostics'
 
 declare global {
@@ -265,7 +267,6 @@ export default function Workbench() {
   const [tasks, setTasks] = useState<ImageCanvasTask[]>([])
   // Undefined selects the latest task on entry; an empty string keeps a new draft blank.
   const [selectedId, setSelectedId] = useState<string>()
-  const [images, setImages] = useState<Array<{ id: string; data: string }>>([])
   const [message, setMessage] = useState('')
   const [notice, setNotice] = useState('')
   const [history, setHistory] = useState(false)
@@ -276,7 +277,6 @@ export default function Workbench() {
   const [historyTotal, setHistoryTotal] = useState(0)
   const [loadingHistory, setLoadingHistory] = useState(false)
   const olderLoaded = useRef(false)
-  const [comparisonImages, setComparisonImages] = useState<Record<string, string>>({})
   const [submitting, setSubmitting] = useState(false)
   const submittingRef = useRef(false)
   const [loadingCatalog, setLoadingCatalog] = useState(false)
@@ -288,12 +288,13 @@ export default function Workbench() {
   const pendingUploads = useRef(0)
   const [readingImages, setReadingImages] = useState(false)
   const task = tasks.find((item) => item.id === selectedId)
-  const comparisonTasks = task?.batchId ? tasks.filter((value) => value.batchId === task.batchId) : []
+  const records = useMemo(() => groupImageCanvasTasks(tasks), [tasks])
+  const record = records.find((item) => item.tasks.some((value) => value.id === selectedId))
   const provider = catalog.find((item) => item.id === draft.providerId)
   const model = provider?.models.find((item) => item.id === draft.modelId)
   const capabilities = model?.capabilities
   const dimension = capabilities?.dimensions.find((item) => dimensionKey(item) === draft.dimension)
-  const dimensions = orderedImageDimensions(capabilities?.dimensions || [])
+  const dimensions = orderedImageDimensions(capabilities?.dimensions || [], draft.dimension)
 
   const showError = useCallback(
     (issue: unknown) => {
@@ -377,7 +378,7 @@ export default function Workbench() {
         const list = page ? page.items : await bridge.history()
         if (!cancelled) {
           setTasks((current) => [...list, ...current.filter((item) => !list.some((value) => value.id === item.id))])
-          setHistoryTotal(page?.total ?? list.length)
+          setHistoryTotal(page?.total ?? groupImageCanvasTasks(list).length)
           if (!olderLoaded.current) setNextCursor(page?.nextCursor)
           setSelectedId((id) => id ?? list[0]?.id ?? '')
         }
@@ -394,38 +395,6 @@ export default function Workbench() {
       clearInterval(interval)
     }
   }, [bridge, showError])
-  const assetIds = task?.assets.join(',') || ''
-  useEffect(() => {
-    let cancelled = false
-    setImages([])
-    if (bridge && assetIds)
-      void Promise.all(assetIds.split(',').map(async (id) => ({ id, data: await bridge.asset(id) })))
-        .then((values) => {
-          if (!cancelled) setImages(values)
-        })
-        .catch((issue) => {
-          if (!cancelled) showError(issue)
-        })
-    return () => {
-      cancelled = true
-    }
-  }, [bridge, assetIds, showError])
-  const comparisonAssets = comparisonTasks.flatMap((value) => value.assets).join(',')
-  useEffect(() => {
-    let cancelled = false
-    setComparisonImages({})
-    if (bridge && comparisonAssets)
-      void Promise.all(comparisonAssets.split(',').map(async (id) => [id, await bridge.asset(id)] as const))
-        .then((values) => {
-          if (!cancelled) setComparisonImages(Object.fromEntries(values))
-        })
-        .catch((issue) => {
-          if (!cancelled) showError(issue)
-        })
-    return () => {
-      cancelled = true
-    }
-  }, [bridge, comparisonAssets, showError])
   const loadMoreHistory = async () => {
     if (!bridge?.historyPage || !nextCursor || loadingHistory) return
     setLoadingHistory(true)
@@ -537,6 +506,7 @@ export default function Workbench() {
     }
   }
   const targets = [{ providerId: draft.providerId, modelId: draft.modelId }, ...(draft.comparisons || [])]
+  const requestCount = targets.length * draft.count
   for (const target of targets.slice(1)) {
     const selected = catalog
       .find((provider) => provider.id === target.providerId)
@@ -582,21 +552,24 @@ export default function Workbench() {
         size: dimension.size,
         aspectRatio: dimension.ratio,
         resolution: dimension.resolution,
-        count: draft.count,
+        count: 1,
         quality: draft.quality,
         background: draft.background,
         mask: draft.mask,
         expansion: draft.expansion
       }
       let values: ImageCanvasTask[]
-      if (targets.length > 1) {
+      if (requestCount > 1) {
         if (!bridge.submitBatch) throw new Error('batch_unavailable')
         const batchId = crypto.randomUUID()
         values = await bridge.submitBatch(
-          targets.map((target) => ({ ...input, ...target, id: crypto.randomUUID(), batchId }))
+          targets.flatMap((target) =>
+            Array.from({ length: draft.count }, () => ({ ...input, ...target, id: crypto.randomUUID(), batchId }))
+          )
         )
       } else values = [await bridge.submit(input)]
       setTasks((items) => [...values, ...items.filter((item) => !values.some((value) => value.id === item.id))])
+      setHistoryTotal((total) => total + 1)
       setSelectedId(values[0].id)
     } catch (issue) {
       showError(issue)
@@ -613,6 +586,18 @@ export default function Workbench() {
       const mask = value.maskAsset ? await bridge.asset(value.maskAsset) : undefined
       if (version !== draftVersion.current) return
       const parameters = value.parameters
+      const members = value.batchId ? tasks.filter((task) => task.batchId === value.batchId) : [value]
+      const sameModel = members.filter((task) => task.providerId === value.providerId && task.modelId === value.modelId)
+      const comparisons = [
+        ...new Map(
+          members
+            .filter((task) => task.providerId !== value.providerId || task.modelId !== value.modelId)
+            .map((task) => [
+              JSON.stringify([task.providerId, task.modelId]),
+              { providerId: task.providerId, modelId: task.modelId }
+            ])
+        ).values()
+      ]
       const selectedModel = catalog
         .find((item) => item.id === value.providerId)
         ?.models.find((item) => item.id === value.modelId)
@@ -631,7 +616,8 @@ export default function Workbench() {
         dimension: selectedDimension ? dimensionKey(selectedDimension) : '',
         quality: parameters?.quality || 'auto',
         background: parameters?.background || 'auto',
-        count: parameters?.count || 1,
+        count: sameModel.reduce((sum, task) => sum + (task.parameters?.count || 1), 0),
+        comparisons,
         mask,
         expansion: parameters?.expansion
       })
@@ -649,13 +635,12 @@ export default function Workbench() {
       references: [],
       mask: undefined,
       expansion: undefined,
+      count: emptyDraft.count,
       comparisons: []
     }
     draftRef.current = next
     setDraft(next)
     setSelectedId('')
-    setImages([])
-    setComparisonImages({})
     setPreview('')
     setMaskEditor(false)
     setConfiguration(false)
@@ -674,6 +659,22 @@ export default function Workbench() {
         ? t(value.phase || 'running')
         : t(value.status)
   const status = task ? taskStatus(task) : ''
+  const removeRecord = async () => {
+    if (!bridge || !record || !window.confirm(t('deleteConfirm'))) return
+    const removed = new Set<string>()
+    try {
+      for (const member of record.tasks) {
+        await bridge.remove(member.id)
+        removed.add(member.id)
+      }
+    } catch (issue) {
+      showError(issue)
+    } finally {
+      setTasks((items) => items.filter((item) => !removed.has(item.id)))
+      if (removed.has(selectedId ?? '')) setSelectedId(record.tasks.find((item) => !removed.has(item.id))?.id ?? '')
+      if (removed.size === record.tasks.length) setHistoryTotal((total) => Math.max(0, total - 1))
+    }
+  }
   return (
     <div
       className="workbench"
@@ -735,24 +736,38 @@ export default function Workbench() {
                 ×
               </button>
             </header>
-            <small className="muted">{t('historyLoaded', { loaded: tasks.length, total: historyTotal })}</small>
+            <small className="muted">{t('historyLoaded', { loaded: records.length, total: historyTotal })}</small>
             <div className="history-list">
               {!tasks.length && <p className="muted">{t('noHistory')}</p>}
-              {tasks.map((value) => (
+              {records.map((value) => (
                 <button
                   type="button"
-                  className={`history-item ${value.id === selectedId ? 'selected' : ''}`}
+                  className={`history-item ${value.id === record?.id ? 'selected' : ''}`}
                   key={value.id}
-                  aria-current={value.id === selectedId ? 'true' : undefined}
-                  onClick={() => setSelectedId(value.id)}>
+                  aria-current={value.id === record?.id ? 'true' : undefined}
+                  onClick={() => setSelectedId(value.tasks[0].id)}>
                   <span className={`status-dot ${value.status}`} />
                   <div>
-                    <strong>{value.prompt}</strong>
+                    <strong>{value.latest.prompt}</strong>
                     <small>
-                      {value.providerName || value.providerId} · {value.modelName || value.modelId}
+                      {[
+                        ...new Set(
+                          value.tasks.map(
+                            (task) => `${task.providerName || task.providerId} · ${task.modelName || task.modelId}`
+                          )
+                        )
+                      ].join(' / ')}
                     </small>
                     <small>
-                      {new Date(value.createdAt).toLocaleString(i18n.language)} · {taskStatus(value)}
+                      {new Date(value.latest.createdAt).toLocaleString(i18n.language)} ·{' '}
+                      {t(
+                        value.status === 'uncertain' && value.tasks.some((task) => task.status === 'failed')
+                          ? 'partialBatch'
+                          : value.status
+                      )}
+                    </small>
+                    <small>
+                      {t('recordImages', { count: value.tasks.reduce((sum, task) => sum + task.assets.length, 0) })}
                     </small>
                   </div>
                 </button>
@@ -766,100 +781,39 @@ export default function Workbench() {
           </aside>
         )}
         <main>
-          {comparisonTasks.length > 1 && (
-            <section className="comparison-results" aria-label={t('comparison')}>
-              {comparisonTasks.map((value) => (
-                <article className="comparison-card" key={value.id}>
-                  <strong>
-                    {value.providerName || value.providerId} · {value.modelName || value.modelId}
-                  </strong>
-                  <span role="status">{taskStatus(value)}</span>
-                  {value.assets.map(
-                    (id) =>
-                      comparisonImages[id] && (
-                        <button
-                          type="button"
-                          className="image-button"
-                          key={id}
-                          onClick={() => {
-                            setSelectedId(value.id)
-                            setPreview(comparisonImages[id])
-                          }}
-                          aria-label={t('preview')}>
-                          <img src={comparisonImages[id]} alt={value.prompt} />
-                        </button>
-                      )
-                  )}
-                  <button type="button" onClick={() => setSelectedId(value.id)}>
-                    {t('taskDetails')}
-                  </button>
-                </article>
-              ))}
+          {task && record && bridge ? (
+            <ResultGallery
+              key={record.id}
+              bridge={bridge}
+              tasks={record.tasks}
+              selectedTaskId={task.id}
+              onSelect={setSelectedId}
+              taskStatus={taskStatus}
+              onPreview={setPreview}
+              onNotice={setNotice}
+              onError={showError}
+              onUseReference={(data) => {
+                if (draft.references.length >= 4) {
+                  showError(new Error('image_reference_or_count_unsupported'))
+                  return
+                }
+                setDraft((current) => ({
+                  ...current,
+                  references: [...current.references, data],
+                  mask: undefined,
+                  expansion: undefined
+                }))
+              }}
+            />
+          ) : (
+            <section className="preview" aria-live="polite">
+              <div className="empty-preview">
+                <div className="art-icon">▧</div>
+                <h2>{t('emptyTitle')}</h2>
+                <p>{t('emptyHint')}</p>
+              </div>
             </section>
           )}
-          <section className={`preview ${images.length > 1 ? 'multiple' : ''}`} aria-live="polite">
-            {images.length ? (
-              images.map((image) => (
-                <figure key={image.id}>
-                  <button
-                    type="button"
-                    className="image-button"
-                    onClick={() => setPreview(image.data)}
-                    aria-label={t('preview')}>
-                    <img src={image.data} alt={task?.prompt || ''} />
-                  </button>
-                  <figcaption>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        void bridge
-                          ?.exportAsset(image.id, 'save')
-                          .then((saved) => {
-                            if (saved) setNotice(t('saved'))
-                          })
-                          .catch(showError)
-                      }>
-                      {t('save')}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        void bridge
-                          ?.exportAsset(image.id, 'copy')
-                          .then(() => setNotice(t('copied')))
-                          .catch(showError)
-                      }>
-                      {t('copy')}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (draft.references.length >= 4) {
-                          showError(new Error('image_reference_or_count_unsupported'))
-                          return
-                        }
-                        setDraft((current) => ({
-                          ...current,
-                          references: [...current.references, image.data],
-                          mask: undefined,
-                          expansion: undefined
-                        }))
-                      }}>
-                      {t('useReference')}
-                    </button>
-                  </figcaption>
-                </figure>
-              ))
-            ) : (
-              <div className="empty-preview">
-                <div className={task?.status === 'running' ? 'art-icon spinning' : 'art-icon'}>
-                  {task?.status === 'running' ? '◌' : '▧'}
-                </div>
-                <h2>{task ? status : t('emptyTitle')}</h2>
-                <p>{task ? task.prompt : t('emptyHint')}</p>
-              </div>
-            )}
-          </section>
           {task && (
             <section className={`task-info ${task.status}`}>
               <div>
@@ -911,19 +865,8 @@ export default function Workbench() {
                 <button type="button" aria-describedby="image-reuse-hint" onClick={() => void reuse(task)}>
                   {t('reuse')}
                 </button>
-                {task.status !== 'running' && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (window.confirm(t('deleteConfirm')))
-                        void bridge
-                          ?.remove(task.id)
-                          .then(() => {
-                            setTasks((items) => items.filter((item) => item.id !== task.id))
-                            setSelectedId('')
-                          })
-                          .catch(showError)
-                    }}>
+                {record?.tasks.every((member) => member.status !== 'running') && (
+                  <button type="button" onClick={() => void removeRecord()}>
                     {t('removeTask')}
                   </button>
                 )}
@@ -1182,7 +1125,7 @@ export default function Workbench() {
           {provider && !model && <p className="error">{t('noModel')}</p>}
           {model && capabilities && !dimension && <p className="error">{t('chooseDimension')}</p>}
           {incompatible && <p className="error">{t('unsupported')}</p>}
-          {targets.length > 1 && <p className="callout">{t('batchBilling', { count: targets.length })}</p>}
+          {requestCount > 1 && <p className="callout">{t('batchBilling', { count: requestCount })}</p>}
           <button
             type="button"
             className="primary generate"

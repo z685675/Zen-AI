@@ -113,6 +113,7 @@ describe('My usage page', () => {
     })
     view.rerender(<UsagePage />)
     expect(screen.getByText('这段时间还没有用量记录')).toBeInTheDocument()
+    expect(screen.getByText('图片调用次数')).toBeInTheDocument()
     view.unmount()
     mocks.providers = []
     mocks.usage.mockReturnValue({ stats: null, error: null, loading: false, updatedAt: null })
@@ -124,5 +125,61 @@ describe('My usage page', () => {
     render(<UsagePage />)
     expect(screen.getByRole('status')).toHaveTextContent('正在加载用量')
     expect(screen.queryByRole('table')).not.toBeInTheDocument()
+  })
+  it('shows image requests in their own unit and keeps text cache coverage complete', () => {
+    const text = {
+      ...emptyUsageMetrics(),
+      input_tokens: 1000,
+      output_tokens: 100,
+      total_tokens: 1100,
+      cache_tokens: 800,
+      cache_read_tokens: 800,
+      request_count: 1,
+      cache_known_requests: 1,
+      cache_read_known_requests: 1
+    }
+    const image = { ...emptyUsageMetrics(), request_count: 3, image_request_count: 3 }
+    mocks.usage.mockReturnValue({
+      stats: {
+        summary: { ...text, request_count: 4, image_request_count: 3 },
+        models: [
+          { model: 'gpt-4o', ...text },
+          { model: 'gpt-image-1', ...image }
+        ],
+        days: []
+      },
+      error: null,
+      loading: false,
+      updatedAt: null
+    })
+    const view = render(<UsagePage />)
+    expect(screen.getByText('每次调用计一次，多张图片仍计一次；收费以服务定价为准。')).toBeInTheDocument()
+    const imageRow = screen.getByText('gpt-image-1').closest('tr')!
+    expect(within(imageRow).getByText('3')).toBeInTheDocument()
+    expect(within(imageRow).getAllByText('—')).toHaveLength(4)
+    expect(within(imageRow).queryByText('0')).not.toBeInTheDocument()
+    expect(screen.getAllByText('80.0%')).toHaveLength(2)
+    expect(screen.queryByText('≥ 800')).not.toBeInTheDocument()
+    expect(screen.getByRole('group', { name: '图片调用趋势' })).toBeInTheDocument()
+    expect(screen.getByRole('group', { name: '用量趋势' })).toBeInTheDocument()
+    for (const scene of ['AI 对话', '智能助手']) {
+      fireEvent.click(screen.getByText(scene))
+      expect(screen.queryByText('图片调用次数')).not.toBeInTheDocument()
+      expect(screen.queryByRole('group', { name: '图片调用趋势' })).not.toBeInTheDocument()
+      expect(screen.queryByText('gpt-image-1')).not.toBeInTheDocument()
+      expect(screen.getByText('gpt-4o')).toBeInTheDocument()
+    }
+    fireEvent.click(screen.getByText('全部'))
+    expect(screen.getAllByText('图片调用次数').length).toBeGreaterThan(0)
+    mocks.usage.mockReturnValue({
+      stats: { summary: image, models: [{ model: 'gpt-image-1', ...image }], days: [] },
+      error: null,
+      loading: false,
+      updatedAt: null
+    })
+    view.rerender(<UsagePage />)
+    expect(screen.queryByRole('group', { name: '用量趋势' })).not.toBeInTheDocument()
+    expect(screen.getByRole('group', { name: '图片调用趋势' })).toBeInTheDocument()
+    expect(screen.queryByText('这段时间还没有用量记录')).not.toBeInTheDocument()
   })
 })

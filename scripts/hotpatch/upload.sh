@@ -18,7 +18,7 @@ staging="$parent/.upload-$(openssl rand -hex 16)"
 remote="$HOTPATCH_SSH_USER@$HOTPATCH_SSH_HOST"
 options=(-F /dev/null -i "$HOTPATCH_SSH_KEY_FILE" -o "UserKnownHostsFile=$HOTPATCH_KNOWN_HOSTS_FILE" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes)
 ssh -p "$port" "${options[@]}" "$remote" \
-  "set -eu; test -d '$HOTPATCH_DEPLOY_ROOT'; test ! -L '$HOTPATCH_DEPLOY_ROOT'; test \"\$(readlink -f '$HOTPATCH_DEPLOY_ROOT')\" = '$HOTPATCH_DEPLOY_ROOT'; mkdir -p '$parent'; test ! -L '$parent'; test \"\$(readlink -f '$parent')\" = '$parent'; test ! -e '$destination'; test ! -L '$destination'; mkdir -m 755 '$staging'"
+  "set -eu; umask 022; test -d '$HOTPATCH_DEPLOY_ROOT'; test ! -L '$HOTPATCH_DEPLOY_ROOT'; test \"\$(readlink -f '$HOTPATCH_DEPLOY_ROOT')\" = '$HOTPATCH_DEPLOY_ROOT'; mkdir -p -m 755 '$parent'; test ! -L '$parent'; test \"\$(readlink -f '$parent')\" = '$parent'; test ! -e '$destination'; test ! -L '$destination'; mkdir -m 755 '$staging'"
 # On transfer failure the random staging directory is left unserved; no risky remote recursive cleanup.
 scp -P "$port" "${options[@]}" \
   "$HOTPATCH_SOURCE_DIR/manifest.json" "$HOTPATCH_SOURCE_DIR/snapshot.zip" "$remote:$staging/"

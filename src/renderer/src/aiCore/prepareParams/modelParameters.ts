@@ -59,6 +59,8 @@ export function getTemperature(assistant: Assistant, model: Model): number | und
 
   let temperature = assistant.settings?.temperature ?? DEFAULT_ASSISTANT_SETTINGS.temperature
 
+  if (!Number.isFinite(temperature) || temperature < 0 || temperature > 2) return undefined
+
   if (isMaxTemperatureOneModel(model) && temperature > 1) {
     logger.info(`Model ${model.id} has max temperature of 1, clamping temperature from ${temperature} to 1`)
     temperature = 1
@@ -90,12 +92,14 @@ export function getTopP(assistant: Assistant, model: Model): number | undefined 
     return undefined
   }
 
-  if (isTemperatureTopPMutuallyExclusiveModel(model) && assistant.settings?.enableTemperature) {
+  if (isTemperatureTopPMutuallyExclusiveModel(model) && getTemperature(assistant, model) !== undefined) {
     logger.info(`Model ${model.id} only accepts one of temperature and topP, disabling topP.`)
     return undefined
   }
 
   let topP = assistant.settings?.topP ?? DEFAULT_ASSISTANT_SETTINGS.topP
+
+  if (!Number.isFinite(topP) || topP < 0 || topP > 1) return undefined
 
   // When thinking is enabled, the topP should be between 0.95 and 1
   // See: https://platform.claude.com/docs/en/build-with-claude/extended-thinking#feature-compatibility
@@ -136,6 +140,10 @@ export function getMaxTokens(assistant: Assistant, model: Model): number | undef
   // Note: Anthropic API requires max_tokens, but that's handled by the Anthropic client with a fallback.
   if (!enabledMaxTokens || maxTokens === undefined) {
     return undefined
+  }
+
+  if (!Number.isSafeInteger(maxTokens) || maxTokens <= 0) {
+    maxTokens = DEFAULT_ASSISTANT_SETTINGS.maxTokens
   }
 
   const provider = getProviderByModel(model)

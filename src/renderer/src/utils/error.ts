@@ -176,12 +176,23 @@ const serializeNoSuchToolError = (error: NoSuchToolError): SerializedAiSdkNoSuch
 }
 
 export const serializeError = (error: AiSdkErrorUnion): SerializedError => {
+  const cause = error.cause
+  // Error/DOMException fields may be non-enumerable. Keep admission failure
+  // evidence usable after reloading history instead of storing an empty object.
+  const serializedCause =
+    getModelDailyQuotaErrorKind(error) && cause && typeof cause === 'object'
+      ? {
+          ...getErrorDetails(cause),
+          ...('name' in cause ? { name: cause.name } : {}),
+          ...('message' in cause ? { message: cause.message } : {})
+        }
+      : cause
   // 统一所有可能的错误字段
   const serializedError: SerializedError = {
     name: error.name ?? null,
     message: error.message ?? null,
     stack: error.stack ?? null,
-    cause: safeSerialize(error.cause)
+    cause: safeSerialize(serializedCause)
   }
 
   if ('url' in error) serializedError.url = error.url

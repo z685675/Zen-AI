@@ -10,7 +10,9 @@ import type {
   ImageCanvasRequest,
   ImageCanvasTask
 } from '@shared/config/imageCanvas'
+import { imageCanvasMaxBatchTasks } from '@shared/config/imageCanvas'
 import { defaultImageCapabilities } from '@shared/config/imageCapabilities'
+import { groupImageCanvasTasks } from '@shared/config/imageRecords'
 import { isZenManagedApiHost } from '@shared/config/zenProvider'
 import sharp from 'sharp'
 
@@ -96,7 +98,7 @@ export class ImageCanvasTaskStore {
   }
 
   history(): ImageCanvasTask[] {
-    return this.tasks.slice(0, 100).map((task) => this.publicTask(task))
+    return this.historyPage(undefined, 100).items
   }
 
   historyPage(cursor?: string, limit = 30): ImageCanvasHistoryPage {
@@ -117,17 +119,18 @@ export class ImageCanvasTaskStore {
         throw new Error('invalid_history_page')
       }
     }
-    const ordered = this.tasks
-      .filter(
-        (task) =>
-          !before || task.createdAt < before.createdAt || (task.createdAt === before.createdAt && task.id < before.id)
-      )
-      .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id))
+    const records = groupImageCanvasTasks(this.tasks)
+    const ordered = records.filter(
+      ({ latest }) =>
+        !before ||
+        latest.createdAt < before.createdAt ||
+        (latest.createdAt === before.createdAt && latest.id < before.id)
+    )
     const page = ordered.slice(0, limit)
-    const last = page.at(-1)
+    const last = page.at(-1)?.latest
     return {
-      items: page.map((task) => this.publicTask(task)),
-      total: this.tasks.length,
+      items: page.flatMap((record) => record.tasks.map((task) => this.publicTask(task))),
+      total: records.length,
       ...(ordered.length > limit && last
         ? { nextCursor: Buffer.from(JSON.stringify({ createdAt: last.createdAt, id: last.id })).toString('base64url') }
         : {})
@@ -182,16 +185,29 @@ export class ImageCanvasTaskStore {
   submitBatch(providers: ImageCanvasProvider[], inputs: ImageCanvasRequest[]): ImageCanvasTask[] {
     if (
       inputs.length < 2 ||
-      inputs.length > 4 ||
+      inputs.length > imageCanvasMaxBatchTasks ||
       providers.length !== inputs.length ||
-      this.active + this.pending.length + inputs.length > 8
+      this.active + this.pending.length + inputs.length > imageCanvasMaxBatchTasks
     )
       throw new Error('too_many_tasks')
     if (
       !inputs[0].batchId ||
       inputs.some((input) => input.batchId !== inputs[0].batchId) ||
-      new Set(inputs.map((input) => input.id)).size !== inputs.length ||
-      new Set(inputs.map((input) => JSON.stringify([input.providerId, input.modelId]))).size !== inputs.length
+      new Set(inputs.map((input) => input.id)).size !== inputs.length
+    )
+      throw new Error('invalid_request')
+    const modelTasks = new Map<string, ImageCanvasRequest[]>()
+    for (const input of inputs) {
+      const key = JSON.stringify([input.providerId, input.modelId])
+      const tasks = modelTasks.get(key) ?? []
+      tasks.push(input)
+      modelTasks.set(key, tasks)
+    }
+    if (
+      modelTasks.size > 4 ||
+      [...modelTasks.values()].some(
+        (tasks) => tasks.length > 4 || (tasks.length > 1 && tasks.some((input) => input.count !== 1))
+      )
     )
       throw new Error('invalid_request')
     inputs.forEach((input, index) => {

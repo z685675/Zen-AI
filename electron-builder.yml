@@ -49,6 +49,7 @@ files:
   - "!tests/**"
   - "!coverage/**"
   - "!out/main/*smoke*"
+  - "!out/hotpatch-acceptance{,/**}"
   - "!.swc"
   - "!.bin"
   - "!._*"

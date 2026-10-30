@@ -233,11 +233,15 @@ jobs:
             fi
           done
 
-      - name: Preserve exact hotpatch base descriptor
+      - name: Preserve exact hotpatch installer baseline
         shell: bash
         env:
           PATCH_PLATFORM: ${{ runner.os == 'Windows' && 'win32' || 'darwin' }}
-        run: cp out/main/hotpatch-base.json "dist/hotpatch-base-$PATCH_PLATFORM.json"
+        run: |
+          cp out/main/hotpatch-base.json "dist/hotpatch-base-$PATCH_PLATFORM.json"
+          pnpm exec tsx --tsconfig tsconfig.node.json scripts/hotpatch/runtime.ts \
+            --mode pack --descriptor "dist/hotpatch-base-$PATCH_PLATFORM.json" \
+            --archive "dist/hotpatch-runtime-$PATCH_PLATFORM.zip"
 
       - name: Release Windows
         if: matrix.os == 'windows-2022'
@@ -248,7 +252,7 @@ jobs:
           makeLatest: false
           tag: ${{ steps.get-tag.outputs.tag }}
           bodyFile: .release-body.md
-          artifacts: "dist/*.exe,dist/latest*.yml,dist/*.blockmap,dist/hotpatch-base-*.json"
+          artifacts: "dist/*.exe,dist/latest*.yml,dist/*.blockmap,dist/hotpatch-base-*.json,dist/hotpatch-runtime-*.zip"
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Release Mac
@@ -291,7 +295,8 @@ jobs:
 
   publish:
     needs: [release, python-runtime]
-    if: github.event_name == 'push' || (inputs.publish && inputs.platform == 'all')
+    # Tags only build a draft. Public updates require an explicit manual publish.
+    if: github.event_name == 'workflow_dispatch' && inputs.publish && inputs.platform == 'all'
     runs-on: ubuntu-latest
     outputs:
       tag: ${{ steps.publish.outputs.tag }}

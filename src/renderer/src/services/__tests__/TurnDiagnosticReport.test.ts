@@ -1,5 +1,6 @@
 import type { Message, MessageBlock } from '@renderer/types/newMessage'
 import type { DiagnosticEvent } from '@shared/diagnostics'
+import { LIVE_RENDER_MEASUREMENT } from '@shared/turnRenderTiming'
 import { beforeAll, describe, expect, it } from 'vitest'
 
 import {
@@ -9,6 +10,54 @@ import {
   metadataEvent,
   metadataMessage
 } from '../TurnDiagnosticReport'
+
+describe('live UI commit report', () => {
+  beforeAll(async () => {
+    await i18n.changeLanguage('zh-CN')
+  })
+  const message = {
+    status: 'success',
+    providerMetadata: {
+      responseTiming: {
+        startedAt: '2026-10-27T09:50:04.855Z',
+        finishedAt: '2026-10-27T09:50:45.589Z',
+        elapsedMs: 40734,
+        firstTokenMs: 38204,
+        outcome: 'completed'
+      }
+    }
+  } as Message
+
+  it('reports the legacy 174.85 second observation as uncollected without changing request timing', () => {
+    const report = createTurnReport(message, [
+      { at: '2026-10-27T09:53:40.437Z', stage: 'ui', event: 'render-committed', details: { status: 'success' } }
+    ])
+    expect(report.performance.renderCommitDelayMs).toBeNull()
+    expect(report.performance.totalMs).toBe(40734)
+    expect(report.performance.firstContentMs).toBe(38204)
+    expect(report.summary).toContain('回复结束至界面提交：未采集')
+    expect(report.summary).not.toContain('174.85s')
+  })
+
+  it('keeps live measurement evidence through the metadata-only export and labels its scope', () => {
+    const event = metadataEvent({
+      at: '2026-10-27T09:50:45.789Z',
+      stage: 'ui',
+      event: 'render-committed',
+      details: {
+        measurement: LIVE_RENDER_MEASUREMENT,
+        observedActiveAt: '2026-10-27T09:50:05.000Z',
+        responseFinishedAt: '2026-10-27T09:50:45.589Z',
+        content: 'PRIVATE_CONTENT'
+      }
+    })
+    const report = createTurnReport(message, [event])
+    expect(report.performance.renderCommitDelayMs).toBe(200)
+    expect(report.summary).toContain('回复结束至界面提交：0.20s')
+    expect(report.summary).toContain('不代表屏幕绘制耗时')
+    expect(JSON.stringify(event)).not.toContain('PRIVATE_CONTENT')
+  })
+})
 
 describe('turn report metadata privacy', () => {
   beforeAll(async () => {
@@ -150,4 +199,34 @@ it('retains a safe local deadline cause in metadata-only exports without error t
     cause: { code: 'agent_human_wait_timeout', zenFailureStage: 'local-task-deadline' }
   })
   expect(JSON.stringify(event)).not.toContain('PRIVATE_CONTENT')
+})
+
+it('includes safe server timing in both the default export and readable report', () => {
+  const entry = metadataBackend({
+    requestId: 'api-timed',
+    startedAt: '2026-10-27T06:00:00Z',
+    finishedAt: '2026-10-27T06:00:24Z',
+    phases: { body_ready: 0, tokens_ready: 1000, prompt: 'PRIVATE' },
+    attempts: [
+      {
+        index: 1,
+        channelId: 57,
+        durationMs: 22000,
+        startedAt: '2026-10-27T06:00:02Z',
+        timing: {
+          startedAt: '2026-10-27T06:00:02Z',
+          milestones: { first_event: 16000, first_content: 21000, first_text: 21000, first_forward: 21020 },
+          http: [{ request_sent_ms: 100, wait_after_send_ms: 15900, connection_reused: true, prompt: 'PRIVATE' }],
+          raw: 'PRIVATE'
+        }
+      }
+    ]
+  })
+  expect(entry.attempts?.[0].timing?.http[0].wait_after_send_ms).toBe(15900)
+  expect(JSON.stringify(entry)).not.toContain('PRIVATE')
+  const report = createTurnReport({ status: 'success' } as Message, [], undefined, 0, [entry])
+  expect(report.performance.serverRequests[0].attempts[0].firstForwardAfterContentMs).toBe(20)
+  expect(report.summary).toContain('api-timed')
+  expect(report.summary).toContain('15.90s')
+  expect(report.summary).toContain('16.00s')
 })

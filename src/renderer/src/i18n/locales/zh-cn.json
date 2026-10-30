@@ -776,6 +776,12 @@
         "tasks_desc": "适合需要多步推进、持续执行的复杂工作。"
       },
       "model_label": "本次对话模型",
+      "quick_entries": {
+        "skills_desc": "导入、搜索和管理智能助手技能",
+        "tasks_desc": "安排定时任务，查看执行记录",
+        "title": "快捷入口",
+        "wechat_desc": "连接微信，在手机与电脑间继续对话"
+      },
       "title": "把任务交给我，轻松一点开始"
     }
   },
@@ -1428,6 +1434,7 @@
     },
     "status": "状态",
     "stop": "停止当前任务",
+    "syncComplete": "同步完成",
     "syncing": "正在同步",
     "taskConsent": "我授权此任务在专用工作目录中使用受控工具自动执行，不包含覆盖原件、删除、付款或任意操作电脑的权限。",
     "taskFailed": "任务失败或已中断，请打开对应对话查看；已生成文件保留。",
@@ -1857,17 +1864,20 @@
       },
       "max": "不限",
       "max_tokens": {
-        "confirm": "最大 Token 数",
-        "confirm_content": "设置单次交互所用的最大 Token 数，会影响返回结果的长度。要根据模型上下文限制来设置，否则会报错",
-        "label": "最大 Token 数",
-        "tip": "单次交互所用的最大 Token 数，会影响返回结果的长度。要根据模型上下文限制来设置，否则会报错"
+        "confirm": "输出长度上限",
+        "confirm_content": "限制单次生成的输出 Token 数，部分模型包含思考 Token，不是上下文容量。关闭时自动适配；设置过小可能截断回答。",
+        "label": "输出长度上限",
+        "tip": "限制单次生成的输出 Token 数，部分模型包含思考 Token，不是上下文容量。关闭时自动适配；设置过小可能截断回答。"
       },
+      "parameters_customized": "已自定义",
+      "parameters_default": "默认参数",
+      "parameters_tip": "通常无需调整。关闭温度、Top-P 和输出长度上限时采用模型服务默认值。这些参数以本页开关和值为准，自定义参数中的同名字段不生效。旧角色设置会保留，可点击重置恢复默认。",
       "reset": "重置",
       "set_as_default": "应用到默认助手",
       "show_line_numbers": "代码显示行号",
       "temperature": {
         "label": "模型温度",
-        "tip": "模型生成文本的随机程度。值越大，回复内容越富有多样性、创造性、随机性；设为 0 根据事实回答。日常聊天建议设置为 0.7"
+        "tip": "控制输出的随机程度。通常保持关闭并采用模型默认值；开启后会按模型兼容性处理。温度为 0 不保证回答正确。"
       },
       "thought_auto_collapse": {
         "label": "思考内容自动折叠",
@@ -3259,17 +3269,22 @@
     }
   },
   "model_daily_quota": {
-    "exceeded": "该模型额度今日已用完，请明日再使用。",
+    "connection": "暂时无法连接请求校验服务，模型尚未开始生成。请检查网络，或切换网络后重试。",
+    "exceeded": "该模型额度已达到日限额，请切换其他模型使用。",
     "hint": "按输入＋输出 Token 计算，输入已含缓存；北京时间零点重置。最后一次获准的提问可以超额完成。",
     "invalid": "本轮模型授权已结束或过期，请重新发起提问。",
     "limit": "每日上限",
     "pending": "该模型剩余额度正在被其他任务使用，请等待任务完成后再试。",
     "remaining": "剩余",
+    "request_stage": "模型请求前校验",
+    "request_suggestion": "请先重试一次；若仍失败，尝试手机热点等其他网络，并检查软件的代理设置。持续失败请导出诊断包联系管理员。此错误不表示模型额度已用完。",
     "stage": "模型额度校验",
     "status_error": "今日模型额度暂时刷新失败，不影响历史用量查询。",
     "suggestion": "可手动选择其他可用模型，或等待额度恢复，请勿反复重试。",
+    "timeout": "请求校验超时，模型尚未开始生成。请检查网络，或切换网络后重试。",
     "title": "今日模型额度 · 北京时间",
-    "unavailable": "模型额度服务暂时不可用，请稍后重试。",
+    "turn_exceeded": "{{model}} 今日额度已达上限，请切换其他模型使用。",
+    "unavailable": "API 暂时无法完成模型额度检查，请稍后重试；持续失败请导出诊断包联系管理员。",
     "used": "已用",
     "used_up": "今日已用完"
   },
@@ -6838,8 +6853,25 @@
       "processing": "执行中"
     },
     "privacy": "默认仅包含诊断数据，不包含对话正文、工具参数和结果、附件原件或完整历史。请确认接收人可信；如勾选包含内容，本轮对话可能含个人信息。",
-    "reportTemplate": "# Zen AI 本轮运行诊断报告\n\n- 结果：{{outcome}}\n- 模型：{{model}}；Provider：{{provider}}\n- Token：输入 {{input}}；输出 {{output}}；缓存读取 {{cache}}（包含在输入内，不重复相加）\n- 记录起点：{{start}}；结束：{{end}}；完成用时：{{total}}\n- 首次响应（文字、思考或工具调用）：{{firstContent}}；首次正文：{{firstText}}；首批网络数据：{{firstBytes}}（不等于首字）\n- 观察到的请求：{{requests}}；工具：{{tools}}；重试/切换事件：{{retries}}\n- 界面提交延迟：{{render}}（React 提交记录，不是屏幕绘制保证）\n\n## 最耗时的已配对阶段\n{{slowest}}\n\n## 请求与工具时间线\n{{timeline}}\n\n## 观察到的用户等待（可能与工具重叠）\n{{waits}}\n\n## 判断边界与缺失数据\n- 仅列实测时长，不直接判定网络、客户端或上游的根因；阶段可重叠，不可直接相加或扣除用户等待。\n- 未记录不等于零耗时；未配对阶段可能仍在运行。执行中导出只代表快照，旧会话不能补造历史事件。\n- 起点通常是准备模型响应；更早的附件上传不一定覆盖。重试事件数不等于重复执行任务次数。\n- 服务端内部耗时请结合 zen-api-evidence.json 与请求编号。后台无记录不证明未收到，后台写出不保证客户端完整收到。\n- 有界记录丢弃事件：{{dropped}}；更早请求可能过期。数据缺项代码（详见 performance.json）：{{missing}}\n",
-    "requestTiming": " | 等响应头 {{headers}} | 等首批数据 {{bytes}} | HTTP {{status}} | 请求编号 {{requestId}}"
+    "renderNotRecorded": "未采集",
+    "reportTemplate": "# Zen AI 本轮运行诊断报告\n\n- 结果：{{outcome}}\n- 模型：{{model}}；Provider：{{provider}}\n- Token：输入 {{input}}；输出 {{output}}；缓存读取 {{cache}}（包含在输入内，不重复相加）\n- 记录起点：{{start}}；结束：{{end}}；完成用时：{{total}}\n- 首次响应（文字、思考或工具调用）：{{firstContent}}；首次正文：{{firstText}}；首批网络数据：{{firstBytes}}（不等于首字）\n- 观察到的请求：{{requests}}；工具：{{tools}}；重试/切换事件：{{retries}}\n- 回复结束至界面提交：{{render}}（仅采纳持续可见期间本轮完成时的 React 提交；不代表屏幕绘制耗时）\n\n## 最耗时的已配对阶段\n{{slowest}}\n\n## 请求与工具时间线\n{{timeline}}\n\n## 观察到的用户等待（可能与工具重叠）\n{{waits}}\n\n## 判断边界与缺失数据\n- 仅列实测时长，不直接判定网络、客户端或上游的根因；阶段可重叠，不可直接相加或扣除用户等待。\n- 未记录不等于零耗时；未配对阶段可能仍在运行。执行中导出只代表快照，旧会话不能补造历史事件。\n- 起点通常是准备模型响应；更早的附件上传不一定覆盖。重试事件数不等于重复执行任务次数。\n- 服务端内部耗时请结合 zen-api-evidence.json 与请求编号。后台无记录不证明未收到，后台写出不保证客户端完整收到。\n- 有界记录丢弃事件：{{dropped}}；更早请求可能过期。数据缺项代码（详见 performance.json）：{{missing}}\n",
+    "requestTiming": " | 等响应头 {{headers}} | 等首批数据 {{bytes}} | HTTP {{status}} | 请求编号 {{requestId}}",
+    "serverTiming": {
+      "attempt": "  - 第 {{index}} 次尝试 / 渠道 {{channel}} | 总用时 {{total}} | 尝试前处理 {{before}}\n    首个事件 {{event}} | 有效内容 {{content}} | 正文 {{text}} | 首次非心跳转发 {{forward}} | 内容到转发 {{forwarding}}（若已提前转发元数据则不适用）\n{{http}}\n    缺项：{{missing}}",
+      "http": "    - HTTP {{index}} | HTTP 前准备 {{prepare}} | DNS {{dns}} | TCP（多次连接累计，可能重叠）{{connect}} | TLS {{tls}} | 连接就绪 {{ready}} | 发送完成 {{sent}} | 首字节 {{firstByte}} | 发送后等待 {{wait}} | 响应体读取 {{body}} | 连接复用 {{reused}}",
+      "intro": "## 服务器与上游分段计时\n\n按请求和渠道尝试逐条列出。前置处理里程碑从 API 收到请求起算；流事件里程碑从该次渠道尝试起算；HTTP 里程碑从该次 HTTP 调用起算。DNS、TCP、TLS 可能重叠，连接复用时部分阶段不会发生。首字节、首个事件不等于首次正文。API 外耗时通过时长对比得到，包含客户端和网络工作，不是单向网络延迟。缺失或尚未结束不按零处理。",
+      "missing": "  缺项：{{missing}}",
+      "no": "否",
+      "phases": {
+        "admission_ready": "额度准入完成",
+        "body_ready": "请求体就绪",
+        "routing_ready": "路由就绪",
+        "tokens_ready": "Token 估算完成",
+        "validated": "校验完成"
+      },
+      "request": "- 请求 {{requestId}} | API 总用时 {{total}} | API 外耗时 {{outside}}\n  前置处理里程碑：{{phases}}",
+      "yes": "是"
+    }
   },
   "update": {
     "available": "发现新版本 {{version}}，你可以稍后在“检查更新”里手动下载安装。",
@@ -6873,6 +6905,9 @@
       "unavailable": "暂时无法加载用量，请稍后重试。",
       "unsupported": "当前服务暂不支持用量查询"
     },
+    "image_requests": "图片调用次数",
+    "image_requests_hint": "每次调用计一次，多张图片仍计一次；收费以服务定价为准。",
+    "image_trend": "图片调用趋势",
     "input": "输入 Token",
     "intervals": {
       "day": "按日",

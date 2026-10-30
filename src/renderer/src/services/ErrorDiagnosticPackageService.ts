@@ -14,6 +14,7 @@ import { getDiagnosticEvidence } from './DiagnosticEvidenceService'
 import {
   createTurnReport,
   metadataBackend,
+  metadataBackendCollection,
   metadataBlock,
   metadataError,
   metadataEvent,
@@ -204,7 +205,8 @@ export const exportErrorDiagnosticPackage = async ({
     ? collectedBackend
     : {
         status: collectedBackend.status,
-        evidence: collectedBackend.evidence.map(metadataBackend)
+        evidence: collectedBackend.evidence.map(metadataBackend),
+        details: metadataBackendCollection(collectedBackend.details)
       }
   const attribution = attributeDiagnostic(
     events,
@@ -212,7 +214,7 @@ export const exportErrorDiagnosticPackage = async ({
     mode === 'error' ? metadataError(errorRecord) : undefined
   )
   const droppedEvents = (rendererEvidence?.droppedEvents ?? 0) + (mainEvidence?.evidence?.droppedEvents ?? 0)
-  const report = createTurnReport(message, events, rendererEvidence?.startedAt, droppedEvents)
+  const report = createTurnReport(message, events, rendererEvidence?.startedAt, droppedEvents, backend.evidence)
   const opencodeEvents = events.filter((event) => event.stage === 'runtime' && event.details?.runtime === 'opencode')
   const processEvents = opencodeEvents.filter((event) =>
     [
@@ -441,7 +443,10 @@ export const exportErrorDiagnosticPackage = async ({
           retainedOperations: 100,
           textCharacters: 8000,
           longText: 'head-and-tail',
-          logs: 'operation-matched-last-80'
+          logs: 'operation-matched-last-80',
+          serverChannelAttempts: 64,
+          httpCallsPerServerAttempt: 8,
+          serverCollection: metadataBackendCollection(collectedBackend.details)
         },
         droppedEvents,
         includeContent,

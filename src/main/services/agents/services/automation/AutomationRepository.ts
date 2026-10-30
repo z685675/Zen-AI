@@ -19,6 +19,7 @@ import { assertAssistantDataAvailable } from '../dataOperationGate'
 
 export type AutomationDatabase = LibSQLDatabase<typeof schema>
 export type AutomationTarget = Pick<AutomationBinding, 'channelId' | 'accountId' | 'peerId' | 'sessionId' | 'version'>
+export type AutomationFile = { path: string; sha256: string; size: number }
 /** `retryable` requires proof of non-acceptance, not merely a timeout or a broken connection. */
 export type DeliveryOutcome = { status: 'accepted' } | { status: 'retryable' | 'failed' | 'unknown'; reason: string }
 
@@ -96,6 +97,68 @@ function key(parts: string[]): string {
   return createHash('sha256').update(JSON.stringify(parts)).digest('hex')
 }
 
+function replyDeliveries(
+  run: { id: string; origin: string; input: string },
+  binding: AutomationBinding,
+  answer: string,
+  now: number
+) {
+  const parts = [
+    ...(run.origin === 'desktop'
+      ? splitAutomationText(run.input).map((part) => ({ role: 'user' as const, text: part }))
+      : []),
+    ...splitAutomationText(answer).map((part) => ({ role: 'assistant' as const, text: part }))
+  ]
+  return parts.map((part, sequence) => ({
+    ...part,
+    deliveryKey: key([run.id, String(sequence)]),
+    runId: run.id,
+    channelId: binding.channelId,
+    accountId: binding.accountId,
+    peerId: binding.peerId,
+    sessionId: binding.sessionId,
+    bindingVersion: binding.version,
+    state: 'pending' as const,
+    nextAttemptAt: now,
+    expiresAt: now + DELIVERY_TTL_MS,
+    createdAt: now,
+    updatedAt: now
+  }))
+}
+
+/** Queue the full verified file manifest in the same transaction as the turn's text. */
+async function insertFileDeliveries(
+  db: Pick<AutomationDatabase, 'insert'>,
+  runId: string,
+  binding: AutomationBinding,
+  files: AutomationFile[],
+  now: number
+) {
+  for (const file of files) {
+    const [delivery] = await db
+      .insert(automationOutbox)
+      .values({
+        deliveryKey: key([runId, 'file', file.path, file.sha256]),
+        runId,
+        channelId: binding.channelId,
+        accountId: binding.accountId,
+        peerId: binding.peerId,
+        sessionId: binding.sessionId,
+        bindingVersion: binding.version,
+        role: 'assistant',
+        text: '[file]',
+        state: 'pending',
+        nextAttemptAt: now,
+        expiresAt: now + DELIVERY_TTL_MS,
+        createdAt: now,
+        updatedAt: now
+      })
+      .onConflictDoNothing()
+      .returning()
+    if (delivery) await db.insert(automationFiles).values({ deliveryId: delivery.id, ...file })
+  }
+}
+
 /** Bound UTF-16 length as well as character count, without splitting a surrogate pair. */
 export function splitAutomationText(value: string, limit = 1800): string[] {
   if (!Number.isSafeInteger(limit) || limit < 1) fail('automation_invalid_chunk_limit')
@@ -166,6 +229,32 @@ export class AutomationRepository {
       .limit(200)
   }
 
+  async syncedRuns(target: AutomationTarget) {
+    const db = await this.getDatabase()
+    const binding = await authorizedBinding(db, target.channelId)
+    if (!sameTarget(binding, target)) return []
+    return db
+      .select({ id: automationRuns.id, sessionId: automationRuns.sessionId })
+      .from(automationRuns)
+      .innerJoin(automationOutbox, eq(automationOutbox.runId, automationRuns.id))
+      .where(
+        and(
+          eq(automationRuns.channelId, target.channelId),
+          eq(automationRuns.sessionId, target.sessionId),
+          eq(automationRuns.bindingVersion, target.version),
+          eq(automationRuns.state, 'completed'),
+          eq(automationOutbox.accountId, target.accountId),
+          eq(automationOutbox.peerId, target.peerId),
+          eq(automationOutbox.bindingVersion, target.version)
+        )
+      )
+      .groupBy(automationRuns.id)
+      .having(sql`min(case when ${automationOutbox.state} = 'accepted' then 1 else 0 end) = 1
+        and sum(case when ${automationOutbox.role} = 'assistant' then 1 else 0 end) > 0`)
+      .orderBy(sql`${automationRuns}.rowid desc`)
+      .limit(100)
+  }
+
   /** A retry is an explicit user decision, never an automatic replay of unknown acceptance. */
   async resolveDelivery(id: number, action: 'retry' | 'cancel') {
     const db = await this.getDatabase()
@@ -191,34 +280,14 @@ export class AutomationRepository {
     })
   }
 
-  async enqueueFile(runId: string, file: { path: string; sha256: string; size: number }) {
+  async enqueueFile(runId: string, file: AutomationFile) {
     const db = await this.getDatabase()
     await db.transaction(async (tx) => {
       const [run] = await tx.select().from(automationRuns).where(eq(automationRuns.id, runId))
       if (!run || run.state !== 'completed') fail('automation_run_not_completed')
       const binding = await authorizedBinding(tx, run.channelId)
       if (!binding || binding.version !== run.bindingVersion || binding.sessionId !== run.sessionId) return
-      const [delivery] = await tx
-        .insert(automationOutbox)
-        .values({
-          deliveryKey: key([runId, 'file', file.path, file.sha256]),
-          runId,
-          channelId: binding.channelId,
-          accountId: binding.accountId,
-          peerId: binding.peerId,
-          sessionId: binding.sessionId,
-          bindingVersion: binding.version,
-          role: 'assistant',
-          text: '[file]',
-          state: 'pending',
-          nextAttemptAt: this.now(),
-          expiresAt: this.now() + DELIVERY_TTL_MS,
-          createdAt: this.now(),
-          updatedAt: this.now()
-        })
-        .onConflictDoNothing()
-        .returning()
-      if (delivery) await tx.insert(automationFiles).values({ deliveryId: delivery.id, ...file })
+      await insertFileDeliveries(tx, runId, binding, [file], this.now())
     })
   }
 
@@ -436,8 +505,55 @@ export class AutomationRepository {
     })
   }
 
-  /** Stores the immutable result and its text outbox together; never sends on this path. */
-  async completeRun(id: string, answer: string): Promise<void> {
+  /** A desktop turn already ran. Mirror it atomically; never enqueue a second model task. */
+  async mirrorCompletedExchange(
+    target: AutomationTarget,
+    messageId: string,
+    input: string,
+    answer: string,
+    files: AutomationFile[] = []
+  ) {
+    identifier(messageId)
+    text(input)
+    text(answer)
+    const db = await this.getDatabase()
+    return db.transaction(async (tx) => {
+      const binding = await authorizedBinding(tx, target.channelId)
+      if (!sameTarget(binding, target)) fail('automation_binding_changed')
+      const sourceKey = key([
+        'desktop',
+        target.channelId,
+        target.accountId,
+        target.peerId,
+        String(target.version),
+        messageId
+      ])
+      const [existing] = await tx.select().from(automationRuns).where(eq(automationRuns.sourceKey, sourceKey))
+      if (existing) return { run: existing, duplicate: true }
+      const [run] = await tx
+        .insert(automationRuns)
+        .values({
+          id: randomUUID(),
+          sourceKey,
+          origin: 'desktop',
+          channelId: target.channelId,
+          bindingVersion: target.version,
+          sessionId: target.sessionId,
+          state: 'completed',
+          input,
+          result: answer,
+          createdAt: this.now(),
+          updatedAt: this.now()
+        })
+        .returning()
+      await tx.insert(automationOutbox).values(replyDeliveries(run, binding, answer, this.now()))
+      await insertFileDeliveries(tx, run.id, binding, files, this.now())
+      return { run, duplicate: false }
+    })
+  }
+
+  /** Stores the immutable result and its complete outbox together; never sends on this path. */
+  async completeRun(id: string, answer: string, files: AutomationFile[] = []): Promise<void> {
     identifier(id)
     text(answer)
     const db = await this.getDatabase()
@@ -452,29 +568,8 @@ export class AutomationRepository {
         .set({ state: 'completed', result: answer, updatedAt: this.now() })
         .where(eq(automationRuns.id, id))
       if (!binding?.enabled || binding.version !== run.bindingVersion || binding.sessionId !== run.sessionId) return
-      const parts = [
-        ...(run.origin === 'desktop'
-          ? splitAutomationText(run.input).map((part) => ({ role: 'user' as const, text: part }))
-          : []),
-        ...splitAutomationText(answer).map((part) => ({ role: 'assistant' as const, text: part }))
-      ]
-      await tx.insert(automationOutbox).values(
-        parts.map((part, sequence) => ({
-          ...part,
-          deliveryKey: key([id, String(sequence)]),
-          runId: id,
-          channelId: binding.channelId,
-          accountId: binding.accountId,
-          peerId: binding.peerId,
-          sessionId: binding.sessionId,
-          bindingVersion: binding.version,
-          state: 'pending' as const,
-          nextAttemptAt: this.now(),
-          expiresAt: this.now() + DELIVERY_TTL_MS,
-          createdAt: this.now(),
-          updatedAt: this.now()
-        }))
-      )
+      await tx.insert(automationOutbox).values(replyDeliveries(run, binding, answer, this.now()))
+      await insertFileDeliveries(tx, run.id, binding, files, this.now())
     })
   }
 

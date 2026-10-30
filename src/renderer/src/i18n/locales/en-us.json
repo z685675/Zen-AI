@@ -776,6 +776,12 @@
         "tasks_desc": "Handle complex work that needs multiple steps and sustained execution."
       },
       "model_label": "Model for this chat",
+      "quick_entries": {
+        "skills_desc": "Import, find, and manage assistant skills",
+        "tasks_desc": "Schedule tasks and view their run history",
+        "title": "Quick access",
+        "wechat_desc": "Connect WeChat and continue chats on your phone or computer"
+      },
       "title": "Hand over the task and get started with ease"
     }
   },
@@ -1428,6 +1434,7 @@
     },
     "status": "Status",
     "stop": "Stop",
+    "syncComplete": "Synced",
     "syncing": "Sync enabled",
     "taskConsent": "I authorize this specific task to run automatically with controlled tools in its dedicated workspace. This does not authorize overwriting, deletion, payments or unrestricted computer access.",
     "taskFailed": "Task failed or was interrupted. Open the conversation for details; completed files are preserved.",
@@ -1857,17 +1864,20 @@
       },
       "max": "Unlimited",
       "max_tokens": {
-        "confirm": "Set max tokens",
-        "confirm_content": "Set the maximum number of tokens the model can generate. Need to consider the context limit of the model, otherwise an error will be reported",
-        "label": "Set max tokens",
-        "tip": "The maximum number of tokens the model can generate. Need to consider the context limit of the model, otherwise an error will be reported"
+        "confirm": "Output length limit",
+        "confirm_content": "Limits output tokens per generation, including reasoning tokens for some models, rather than context capacity. Leave off for automatic defaults. A small limit may truncate the answer.",
+        "label": "Output length limit",
+        "tip": "Limits output tokens per generation, including reasoning tokens for some models, rather than context capacity. Leave off for automatic defaults. A small limit may truncate the answer."
       },
+      "parameters_customized": "Custom parameters active",
+      "parameters_default": "Default parameters",
+      "parameters_tip": "Usually no changes are needed. Disabled temperature, Top-P and output limits use model service defaults. These controls take precedence: matching custom parameters are ignored. Existing role settings are preserved; Reset restores defaults.",
       "reset": "Reset",
       "set_as_default": "Apply to default assistant",
       "show_line_numbers": "Show line numbers in code",
       "temperature": {
         "label": "Temperature",
-        "tip": "Higher values make the model more creative and unpredictable, while lower values make it more deterministic and precise."
+        "tip": "Controls output randomness. Usually leave off to use model defaults. Model compatibility rules apply when enabled. A temperature of 0 does not guarantee accuracy."
       },
       "thought_auto_collapse": {
         "label": "Collapse Thought Content",
@@ -3259,17 +3269,22 @@
     }
   },
   "model_daily_quota": {
-    "exceeded": "This model’s daily allowance is used up. Please try again tomorrow.",
+    "connection": "Unable to connect to the request validation service. Model generation has not started. Check your connection or try another network.",
+    "exceeded": "This model has reached its daily quota. Please switch to another model.",
     "hint": "Input + output tokens; cache is included in input. Resets at midnight Beijing time. The last admitted question can finish over the limit.",
     "invalid": "This question’s authorization has ended. Please send a new question.",
     "limit": "Daily limit",
     "pending": "The remaining allowance is reserved by another task. Please wait for it to finish.",
     "remaining": "Remaining",
+    "request_stage": "Pre-generation request validation",
+    "request_suggestion": "Retry once. If it still fails, try another network such as a mobile hotspot and check the app's proxy settings. Export a diagnostic package for your administrator if the problem persists. This error does not mean your model allowance is used up.",
     "stage": "Model allowance check",
     "status_error": "Unable to refresh today’s model allowances. Your historical usage is unaffected.",
     "suggestion": "Choose another available model, or wait for this allowance to reset. Do not repeatedly retry.",
+    "timeout": "Request validation timed out. Model generation has not started. Check your connection or try another network.",
     "title": "Today’s model allowances · Beijing time",
-    "unavailable": "Model allowance service is temporarily unavailable. Please try again later.",
+    "turn_exceeded": "{{model}} has reached today’s quota. Please switch to another model.",
+    "unavailable": "The API cannot complete the model quota check right now. Try again later; export diagnostics and contact your administrator if the problem persists.",
     "used": "Used",
     "used_up": "Used up today"
   },
@@ -6838,8 +6853,25 @@
       "processing": "Running"
     },
     "privacy": "By default, only diagnostic metadata is included, not conversation text, tool arguments/results, original attachments or full history. Share with trusted recipients only. Optional content may contain personal information.",
-    "reportTemplate": "# Zen AI turn diagnostics\n\n- Outcome: {{outcome}}\n- Model: {{model}}; Provider: {{provider}}\n- Tokens: input {{input}}; output {{output}}; cache read {{cache}} (already included in input)\n- Start: {{start}}; end: {{end}}; total: {{total}}\n- First response (text, reasoning or tool activity): {{firstContent}}; first answer text: {{firstText}}; first network bytes: {{firstBytes}} (not first token)\n- Observed requests: {{requests}}; tools: {{tools}}; retry/fallback events: {{retries}}\n- UI commit delay: {{render}} (React commit, not a screen-paint guarantee)\n\n## Slowest paired stages\n{{slowest}}\n\n## Request and tool timeline\n{{timeline}}\n\n## Observed user waits (may overlap tools)\n{{waits}}\n\n## Limits and missing evidence\n- Measured durations only, not a network/client/upstream root-cause verdict. Stages overlap: do not sum them or subtract user waits.\n- Missing is not zero. Unpaired spans may still be running. Active exports are snapshots; old conversations cannot recover unrecorded events.\n- Recording usually starts at response preparation; earlier attachment upload may be excluded. Retry events are not counts of replayed tasks.\n- Correlate zen-api-evidence.json with request IDs for server internals. Missing server records do not prove non-arrival; server writes do not guarantee complete client receipt.\n- Dropped bounded events: {{dropped}}; older requests may expire. Missing-data codes (see performance.json): {{missing}}\n",
-    "requestTiming": " | Headers {{headers}} | First bytes {{bytes}} | HTTP {{status}} | Request ID {{requestId}}"
+    "renderNotRecorded": "Not collected",
+    "reportTemplate": "# Zen AI turn diagnostics\n\n- Outcome: {{outcome}}\n- Model: {{model}}; Provider: {{provider}}\n- Tokens: input {{input}}; output {{output}}; cache read {{cache}} (already included in input)\n- Start: {{start}}; end: {{end}}; total: {{total}}\n- First response (text, reasoning or tool activity): {{firstContent}}; first answer text: {{firstText}}; first network bytes: {{firstBytes}} (not first token)\n- Observed requests: {{requests}}; tools: {{tools}}; retry/fallback events: {{retries}}\n- Response end to UI commit: {{render}} (live completion in a continuously visible component only; not screen-paint timing)\n\n## Slowest paired stages\n{{slowest}}\n\n## Request and tool timeline\n{{timeline}}\n\n## Observed user waits (may overlap tools)\n{{waits}}\n\n## Limits and missing evidence\n- Measured durations only, not a network/client/upstream root-cause verdict. Stages overlap: do not sum them or subtract user waits.\n- Missing is not zero. Unpaired spans may still be running. Active exports are snapshots; old conversations cannot recover unrecorded events.\n- Recording usually starts at response preparation; earlier attachment upload may be excluded. Retry events are not counts of replayed tasks.\n- Correlate zen-api-evidence.json with request IDs for server internals. Missing server records do not prove non-arrival; server writes do not guarantee complete client receipt.\n- Dropped bounded events: {{dropped}}; older requests may expire. Missing-data codes (see performance.json): {{missing}}\n",
+    "requestTiming": " | Headers {{headers}} | First bytes {{bytes}} | HTTP {{status}} | Request ID {{requestId}}",
+    "serverTiming": {
+      "attempt": "  - Attempt {{index}} / channel {{channel}} | Total {{total}} | Before attempt {{before}}\n    First event {{event}} | Effective content {{content}} | Answer text {{text}} | First non-ping forward {{forward}} | Content to forward {{forwarding}} (unavailable if metadata was forwarded earlier)\n{{http}}\n    Missing: {{missing}}",
+      "http": "    - HTTP {{index}} | Before HTTP {{prepare}} | DNS {{dns}} | TCP (summed connections, may overlap) {{connect}} | TLS {{tls}} | Connection ready {{ready}} | Sent {{sent}} | First byte {{firstByte}} | Wait after sending {{wait}} | Body reading {{body}} | Connection reused {{reused}}",
+      "intro": "## Server and upstream timing\n\nEach request and channel attempt is listed separately. Preparation milestones are offsets from API receipt; stream milestones are offsets from the channel attempt; HTTP milestones are offsets from that HTTP call. DNS/TCP/TLS may overlap or be skipped on connection reuse. First byte/event is not first answer text. Outside-gateway time compares elapsed durations and includes client/network work; it is not a one-way network measurement. Unknown or unfinished stages are not zero.",
+      "missing": "  Missing: {{missing}}",
+      "no": "No",
+      "phases": {
+        "admission_ready": "Admission ready",
+        "body_ready": "Body ready",
+        "routing_ready": "Routing ready",
+        "tokens_ready": "Token estimate ready",
+        "validated": "Validated"
+      },
+      "request": "- Request {{requestId}} | API total {{total}} | Outside API {{outside}}\n  Preparation milestones: {{phases}}",
+      "yes": "Yes"
+    }
   },
   "update": {
     "available": "A new version {{version}} is available. Click Check for Updates any time to download it.",
@@ -6873,6 +6905,9 @@
       "unavailable": "Unable to load usage. Please try again later.",
       "unsupported": "This service does not support usage queries yet"
     },
+    "image_requests": "Image requests",
+    "image_requests_hint": "One count per request, including requests for multiple images. Charges follow service pricing.",
+    "image_trend": "Image request trend",
     "input": "Input tokens",
     "intervals": {
       "day": "Daily",

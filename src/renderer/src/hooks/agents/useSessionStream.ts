@@ -4,6 +4,7 @@ type SessionStreamChunk = {
   sessionId: string
   agentId: string
   type: 'user-message' | 'chunk' | 'complete' | 'error'
+  persistence?: { userMessageId: string; assistantMessageId: string }
   chunk?: any
   userMessage?: {
     chatId: string

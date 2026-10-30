@@ -42,6 +42,45 @@ beforeEach(() => {
   mocks.browser.mockReturnValue(true)
 })
 describe('OpenCode owned process leases', () => {
+  it('reuses lightweight WeChat/schedule runtimes that intentionally have no browser context', async () => {
+    const mod = await import('../process')
+    const start = vi.spyOn(mod.OpenCodeProcess.prototype, 'start').mockResolvedValue()
+    mocks.browser.mockReturnValue(false)
+    const config = { permission: { '*': 'deny', bash: 'deny', mcp__assistant__python_execute: 'deny' } }
+    const runtime = await mod.getOpenCodeProcess('wechat', '/workspace', config, [], new AbortController().signal)
+    runtime.release()
+    expect(await mod.getOpenCodeProcess('wechat', '/workspace', config, [], new AbortController().signal)).toBe(runtime)
+    expect(start).toHaveBeenCalledOnce()
+    runtime.release()
+    runtime.stop()
+  })
+
+  it('awaits termination when the same session configuration changes', async () => {
+    const mod = await import('../process')
+    const start = vi.spyOn(mod.OpenCodeProcess.prototype, 'start').mockResolvedValue()
+    const runtime = await mod.getOpenCodeProcess('wechat', '/workspace', {}, [], new AbortController().signal)
+    runtime.release()
+    let finish!: () => void
+    vi.spyOn(runtime, 'stopAndWait').mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = () => {
+            runtime.stop()
+            resolve()
+          }
+        })
+    )
+    const next = mod.getOpenCodeProcess('wechat', '/workspace', { model: 'new' }, [], new AbortController().signal)
+    expect(start).toHaveBeenCalledOnce()
+    await expect(mod.getOpenCodeProcess('wechat', '/workspace', {}, [], new AbortController().signal)).rejects.toThrow(
+      'active task'
+    )
+    finish()
+    const replacement = await next
+    expect(replacement).not.toBe(runtime)
+    replacement.release()
+    replacement.stop()
+  })
   it('does not start a native process during a protected Skill update and releases the gate on failure', async () => {
     const mod = await import('../process')
     const start = vi.spyOn(mod.OpenCodeProcess.prototype, 'start').mockResolvedValue()

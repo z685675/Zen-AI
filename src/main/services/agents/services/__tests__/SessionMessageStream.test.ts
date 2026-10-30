@@ -62,6 +62,7 @@ vi.mock('../managedModelRecovery', () => ({
   resolveManagedSessionModel: (_slot: string, current: string) => ({ managed: false, selected: current })
 }))
 
+import { registerAutomationBridge } from '../automation/bridge'
 import { SessionMessageService } from '../SessionMessageService'
 
 function createAgentStream(): AgentStream {
@@ -177,10 +178,89 @@ describe('SessionMessageService runtime stream lifecycle', () => {
     resolveAgentRuntimeMock.mockReset()
     broadcastAgentActionRequiredMock.mockReset()
     recordMainDiagnosticMock.mockReset()
+    registerAutomationBridge({ prepare: async (session) => session, mirror: async () => false })
   })
 
   afterEach(() => {
     vi.useRealTimers()
+  })
+
+  it('mirrors the desktop final exchange to its admission-time target with one stable turn identity', async () => {
+    const agentStream = createAgentStream()
+    const target = { channelId: 'wechat', accountId: 'account', peerId: 'owner', sessionId: session().id, version: 1 }
+    const capture = vi.fn(async () => target)
+    const mirror = vi.fn(async () => ({ runId: 'mirror-run-1' }))
+    registerAutomationBridge({ prepare: async (session) => session, captureMirrorTarget: capture, mirror })
+    resolveAgentRuntimeMock.mockResolvedValue({ runtimeId: 'opencode', candidates: ['opencode'], source: 'workspace' })
+    invokeMock.mockResolvedValue(agentStream)
+    const result = await new SessionMessageService().createSessionMessage(
+      session(),
+      { content: '电脑追问' } as any,
+      new AbortController(),
+      { mirrorToBoundChannel: true, diagnosticId: 'desktop-turn-1' }
+    )
+    const chunks = collect(result.stream)
+    capture.mockResolvedValue({ ...target, peerId: 'other', version: 2 })
+    agentStream.emit('data', { type: 'chunk', chunk: { type: 'text-delta', text: '最终回答' } })
+    agentStream.emit('data', { type: 'complete' })
+    expect(await chunks).toContainEqual({
+      type: 'raw',
+      rawValue: {
+        type: 'agent_session_sync',
+        target: 'wechat',
+        status: 'synced',
+        runId: 'mirror-run-1',
+        reason: undefined
+      }
+    })
+    await result.completion
+    expect(capture).toHaveBeenCalledOnce()
+    expect(mirror).toHaveBeenCalledExactlyOnceWith(session().id, '电脑追问', '最终回答', false, [], {
+      exchangeId: 'desktop-turn-1',
+      target
+    })
+  })
+
+  it('keeps native timing and a readable model name in canonical headless history after UI reload', async () => {
+    const clock = vi.spyOn(performance, 'now').mockImplementation(() => Date.now())
+    try {
+      const agentStream = createAgentStream()
+      resolveAgentRuntimeMock.mockResolvedValue({
+        runtimeId: 'opencode',
+        candidates: ['opencode'],
+        source: 'workspace'
+      })
+      invokeMock.mockResolvedValue(agentStream)
+      const result = await new SessionMessageService().createSessionMessage(
+        session(),
+        { content: '制作文件' } as any,
+        new AbortController(),
+        { persist: true, persistenceId: 'timed-turn' }
+      )
+      const chunks = consume(result.stream)
+      await vi.advanceTimersByTimeAsync(2000)
+      agentStream.emit('data', {
+        type: 'chunk',
+        chunk: { type: 'tool-call', toolCallId: 'create', toolName: 'create_file', input: {} }
+      })
+      await vi.advanceTimersByTimeAsync(8000)
+      agentStream.emit('data', { type: 'chunk', chunk: { type: 'text-delta', text: '完成' } })
+      agentStream.emit('data', { type: 'complete' })
+      await chunks
+      await result.completion
+      const saved = persistExchangeMock.mock.calls.at(-1)![0] as any
+      expect(saved.assistant.payload.message).toMatchObject({
+        id: 'timed-turn:assistant',
+        modelId: 'grok-4.5',
+        model: { id: 'grok-4.5', provider: 'provider', name: 'grok-4.5' },
+        providerMetadata: { responseTiming: { firstTokenMs: 2000, elapsedMs: 10000, outcome: 'completed' } }
+      })
+      expect(
+        Date.parse(saved.assistant.payload.message.createdAt) - Date.parse(saved.user.payload.message.createdAt)
+      ).toBe(10000)
+    } finally {
+      clock.mockRestore()
+    }
   })
 
   it.each(['startup', 'continuation', 'deep-research'])(

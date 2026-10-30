@@ -776,6 +776,12 @@
         "tasks_desc": "[to be translated]:Handle complex work that needs multiple steps and sustained execution."
       },
       "model_label": "[to be translated]:Model for this chat",
+      "quick_entries": {
+        "skills_desc": "[to be translated]:Import, find, and manage assistant skills",
+        "tasks_desc": "[to be translated]:Schedule tasks and view their run history",
+        "title": "[to be translated]:Quick access",
+        "wechat_desc": "[to be translated]:Connect WeChat and continue chats on your phone or computer"
+      },
       "title": "[to be translated]:Hand over the task and get started with ease"
     }
   },
@@ -1428,6 +1434,7 @@
     },
     "status": "Status",
     "stop": "Stop",
+    "syncComplete": "Sincronizado",
     "syncing": "Sync enabled",
     "taskConsent": "I authorize this specific task to run automatically with controlled tools in its dedicated workspace. This does not authorize overwriting, deletion, payments or unrestricted computer access.",
     "taskFailed": "Task failed or was interrupted. Open the conversation for details; completed files are preserved.",
@@ -1857,11 +1864,14 @@
       },
       "max": "Sem limite",
       "max_tokens": {
-        "confirm": "Ativar limite de comprimento da mensagem",
+        "confirm": "Limite de comprimento da saída",
         "confirm_content": "Ao ativar o limite de comprimento da mensagem, o número máximo de tokens usados em uma única interação afetará o comprimento do resultado retornado. É necessário definir de acordo com o limite de contexto do modelo, caso contrário, ocorrerá um erro",
-        "label": "Ativar limite de comprimento da mensagem",
+        "label": "Limite de comprimento da saída",
         "tip": "Número máximo de tokens usados em uma única interação, afetando o comprimento do resultado retornado. É necessário definir de acordo com o limite de contexto do modelo, caso contrário, ocorrerá um erro"
       },
+      "parameters_customized": "Parâmetros personalizados ativos",
+      "parameters_default": "Parâmetros predefinidos",
+      "parameters_tip": "Normalmente não são necessários ajustes. A temperatura, Top-P e os limites de saída desativados usam os valores do modelo. Estes controlos têm prioridade; os parâmetros personalizados com o mesmo nome são ignorados. As definições existentes dos perfis são preservadas. Repor restaura os valores predefinidos.",
       "reset": "Redefinir",
       "set_as_default": "Aplicar ao assistente padrão",
       "show_line_numbers": "Exibir números de linha no código",
@@ -3259,17 +3269,22 @@
     }
   },
   "model_daily_quota": {
-    "exceeded": "A quota diária deste modelo esgotou-se. Tente amanhã.",
+    "connection": "Não foi possível ligar ao serviço de validação. A geração do modelo ainda não começou. Verifique a ligação ou tente outra rede.",
+    "exceeded": "Este modelo atingiu a quota diária. Mude para outro modelo.",
     "hint": "Entrada + saída; a cache está incluída na entrada. Reposição à meia-noite em Pequim. A última pergunta admitida pode ultrapassar o limite.",
     "invalid": "A autorização desta pergunta expirou. Envie uma nova pergunta.",
     "limit": "Limite diário",
     "pending": "A quota restante está reservada por outra tarefa. Aguarde a sua conclusão.",
     "remaining": "Restante",
+    "request_stage": "Validação antes do pedido ao modelo",
+    "request_suggestion": "Tente novamente uma vez. Se continuar a falhar, experimente outra rede, como um ponto de acesso móvel, e verifique o proxy da aplicação. Se o problema persistir, exporte um pacote de diagnóstico para o administrador. Este erro não significa que a quota do modelo se esgotou.",
     "stage": "Verificação da quota do modelo",
     "status_error": "Não foi possível atualizar as quotas de hoje. O histórico continua disponível.",
     "suggestion": "Escolha outro modelo disponível ou aguarde a reposição. Evite tentativas repetidas.",
+    "timeout": "A validação do pedido excedeu o tempo limite. A geração do modelo ainda não começou. Verifique a ligação ou tente outra rede.",
     "title": "Quotas de hoje · hora de Pequim",
-    "unavailable": "O serviço de quotas está temporariamente indisponível.",
+    "turn_exceeded": "{{model}} atingiu a quota de hoje. Mude para outro modelo.",
+    "unavailable": "A API não consegue verificar a quota do modelo neste momento. Tente mais tarde; se persistir, exporte os diagnósticos e contacte o administrador.",
     "used": "Utilizado",
     "used_up": "Esgotado hoje"
   },
@@ -3381,11 +3396,11 @@
     "memory_notice": "Independent native memory survives model changes. Retry, branching and individual deletion are supported; direct editing and bulk deletion are not yet supported.",
     "outputting": "The model is producing output",
     "permission": {
-      "title": "Esta tarefa precisa da sua confirmação",
       "description": "Verifique a operação e o respetivo destino antes de permitir a continuação da tarefa.",
-      "loopTitle": "Foram detetadas operações repetidas; tarefa em pausa",
+      "details": "Detalhes da operação",
       "loopDescription": "O assistente tentou a mesma operação várias vezes. Pode permitir uma continuação única ou cancelar esta operação.",
-      "details": "Detalhes da operação"
+      "loopTitle": "Foram detetadas operações repetidas; tarefa em pausa",
+      "title": "Esta tarefa precisa da sua confirmação"
     },
     "preparing": "[to be translated]:Request received; preparing the task",
     "responding": "[to be translated]:Processing the response",
@@ -6838,8 +6853,25 @@
       "processing": "Em execução"
     },
     "privacy": "Por predefinição, inclui apenas metadados de diagnóstico, sem texto da conversa, argumentos/resultados de ferramentas, anexos originais ou histórico completo. Partilhe apenas com destinatários de confiança. O conteúdo opcional pode conter dados pessoais.",
-    "reportTemplate": "# Zen AI: diagnóstico deste turno\n\n- Resultado: {{outcome}}\n- Modelo: {{model}}; Provider: {{provider}}\n- Tokens: entrada {{input}}; saída {{output}}; cache lida {{cache}} (já incluída na entrada)\n- Início: {{start}}; fim: {{end}}; total: {{total}}\n- Primeiro conteúdo (pode ser raciocínio): {{firstContent}}; primeiro texto da resposta: {{firstText}}; primeiros bytes de rede: {{firstBytes}} (não é o primeiro token)\n- Pedidos observados: {{requests}}; ferramentas: {{tools}}; repetições/alternâncias: {{retries}}\n- Atraso de commit da interface: {{render}} (React, sem garantia de apresentação no ecrã)\n\n## Etapas completas mais lentas\n{{slowest}}\n\n## Cronologia de pedidos e ferramentas\n{{timeline}}\n\n## Esperas do utilizador observadas (podem sobrepor-se às ferramentas)\n{{waits}}\n\n## Limites e dados em falta\n- Apenas tempos medidos, sem diagnóstico da causa de rede/cliente/serviço. As etapas sobrepõem-se: não somar nem subtrair esperas.\n- Em falta não significa zero. Intervalos abertos podem estar ativos. Uma exportação ativa é um instantâneo; conversas antigas não recuperam eventos não registados.\n- O registo começa normalmente na preparação da resposta; carregamentos anteriores podem ficar de fora. Repetições não são contagens de tarefas reexecutadas.\n- Correlacionar zen-api-evidence.json com os ID para detalhes do servidor. Sem registo não prova que não chegou; escrever não garante receção completa.\n- Eventos descartados pelo limite: {{dropped}}; pedidos antigos podem expirar. Códigos de dados em falta (performance.json): {{missing}}\n",
-    "requestTiming": " | Cabeçalhos {{headers}} | Primeiros bytes {{bytes}} | HTTP {{status}} | ID do pedido {{requestId}}"
+    "renderNotRecorded": "Não recolhido",
+    "reportTemplate": "# Zen AI: diagnóstico deste turno\n\n- Resultado: {{outcome}}\n- Modelo: {{model}}; Provider: {{provider}}\n- Tokens: entrada {{input}}; saída {{output}}; cache lida {{cache}} (já incluída na entrada)\n- Início: {{start}}; fim: {{end}}; total: {{total}}\n- Primeiro conteúdo (pode ser raciocínio): {{firstContent}}; primeiro texto da resposta: {{firstText}}; primeiros bytes de rede: {{firstBytes}} (não é o primeiro token)\n- Pedidos observados: {{requests}}; ferramentas: {{tools}}; repetições/alternâncias: {{retries}}\n- Fim da resposta até ao commit da interface: {{render}} (apenas conclusão em direto num componente sempre visível; não mede a pintura do ecrã)\n\n## Etapas completas mais lentas\n{{slowest}}\n\n## Cronologia de pedidos e ferramentas\n{{timeline}}\n\n## Esperas do utilizador observadas (podem sobrepor-se às ferramentas)\n{{waits}}\n\n## Limites e dados em falta\n- Apenas tempos medidos, sem diagnóstico da causa de rede/cliente/serviço. As etapas sobrepõem-se: não somar nem subtrair esperas.\n- Em falta não significa zero. Intervalos abertos podem estar ativos. Uma exportação ativa é um instantâneo; conversas antigas não recuperam eventos não registados.\n- O registo começa normalmente na preparação da resposta; carregamentos anteriores podem ficar de fora. Repetições não são contagens de tarefas reexecutadas.\n- Correlacionar zen-api-evidence.json com os ID para detalhes do servidor. Sem registo não prova que não chegou; escrever não garante receção completa.\n- Eventos descartados pelo limite: {{dropped}}; pedidos antigos podem expirar. Códigos de dados em falta (performance.json): {{missing}}\n",
+    "requestTiming": " | Cabeçalhos {{headers}} | Primeiros bytes {{bytes}} | HTTP {{status}} | ID do pedido {{requestId}}",
+    "serverTiming": {
+      "attempt": "[to be translated]:  - Attempt {{index}} / channel {{channel}} | Total {{total}} | Before attempt {{before}}\n    First event {{event}} | Effective content {{content}} | Answer text {{text}} | First non-ping forward {{forward}} | Content to forward {{forwarding}} (unavailable if metadata was forwarded earlier)\n{{http}}\n    Missing: {{missing}}",
+      "http": "[to be translated]:    - HTTP {{index}} | Before HTTP {{prepare}} | DNS {{dns}} | TCP (summed connections, may overlap) {{connect}} | TLS {{tls}} | Connection ready {{ready}} | Sent {{sent}} | First byte {{firstByte}} | Wait after sending {{wait}} | Body reading {{body}} | Connection reused {{reused}}",
+      "intro": "[to be translated]:## Server and upstream timing\n\nEach request and channel attempt is listed separately. Preparation milestones are offsets from API receipt; stream milestones are offsets from the channel attempt; HTTP milestones are offsets from that HTTP call. DNS/TCP/TLS may overlap or be skipped on connection reuse. First byte/event is not first answer text. Outside-gateway time compares elapsed durations and includes client/network work; it is not a one-way network measurement. Unknown or unfinished stages are not zero.",
+      "missing": "[to be translated]:  Missing: {{missing}}",
+      "no": "[to be translated]:No",
+      "phases": {
+        "admission_ready": "[to be translated]:Admission ready",
+        "body_ready": "[to be translated]:Body ready",
+        "routing_ready": "[to be translated]:Routing ready",
+        "tokens_ready": "[to be translated]:Token estimate ready",
+        "validated": "[to be translated]:Validated"
+      },
+      "request": "[to be translated]:- Request {{requestId}} | API total {{total}} | Outside API {{outside}}\n  Preparation milestones: {{phases}}",
+      "yes": "[to be translated]:Yes"
+    }
   },
   "update": {
     "available": "A new version {{version}} is available. Click Check for Updates any time to download it.",
@@ -6873,6 +6905,9 @@
       "unavailable": "Unable to load usage. Please try again later.",
       "unsupported": "This service does not support usage queries yet"
     },
+    "image_requests": "Pedidos de imagens",
+    "image_requests_hint": "Uma contagem por pedido, mesmo com várias imagens. Aplicam-se os preços do serviço.",
+    "image_trend": "Evolução dos pedidos de imagens",
     "input": "Input tokens",
     "intervals": {
       "day": "Daily",

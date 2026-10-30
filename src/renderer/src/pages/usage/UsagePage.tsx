@@ -46,6 +46,9 @@ const errorKeys = {
   invalid_response: 'usage_statistics.errors.invalid_response'
 } as const
 
+const isImageOnlyUsage = (metrics: UsageMetrics) =>
+  metrics.request_count > 0 && metrics.image_request_count === metrics.request_count
+
 export default function UsagePage() {
   const { t, i18n } = useTranslation()
   const providers = useAllProviders()
@@ -56,6 +59,7 @@ export default function UsagePage() {
   const [period, setPeriod] = useState<UsagePeriod>('month')
   const [range, setRange] = useState<[dayjs.Dayjs, dayjs.Dayjs]>(() => getUsageRange('month'))
   const [scene, setScene] = useState<UsageScene>('all')
+  const showImageUsage = scene === 'all'
   const [interval, setInterval] = useState<UsageInterval>('day')
   const [search, setSearch] = useState('')
   const [revision, setRevision] = useState(0)
@@ -66,8 +70,9 @@ export default function UsagePage() {
 
   const format = (value: number) => value.toLocaleString(i18n.language)
   const cacheDisplay = (metrics: UsageMetrics) => {
+    if (isImageOnlyUsage(metrics)) return '—'
     if (metrics.cache_tokens === null) return <Tooltip title={t('usage_statistics.cache_unknown')}>—</Tooltip>
-    const partial = metrics.cache_known_requests < metrics.request_count
+    const partial = metrics.cache_known_requests < metrics.request_count - (metrics.image_request_count ?? 0)
     return (
       <Tooltip title={partial ? t('usage_statistics.cache_partial') : t('usage_statistics.cache_hint')}>
         {partial ? '≥ ' : ''}
@@ -80,7 +85,11 @@ export default function UsagePage() {
     return rate === null ? '—' : `${(rate * 100).toFixed(1)}%`
   }
   const days = useMemo(() => groupUsageDays(stats?.days ?? [], range[0], range[1], interval), [stats, range, interval])
-  const models = stats?.models.filter((model) => model.model.toLowerCase().includes(search.trim().toLowerCase())) ?? []
+  const models =
+    stats?.models.filter(
+      (model) =>
+        (showImageUsage || !isImageOnlyUsage(model)) && model.model.toLowerCase().includes(search.trim().toLowerCase())
+    ) ?? []
   const columns = [
     {
       title: t('usage_statistics.model'),
@@ -95,7 +104,7 @@ export default function UsagePage() {
       align: 'right' as const,
       width: 150,
       sorter: (a: UsageMetrics, b: UsageMetrics) => a.input_tokens - b.input_tokens,
-      render: (_: unknown, row: UsageMetrics) => format(row.input_tokens)
+      render: (_: unknown, row: UsageMetrics) => (isImageOnlyUsage(row) ? '—' : format(row.input_tokens))
     },
     {
       title: t('usage_statistics.output'),
@@ -103,7 +112,15 @@ export default function UsagePage() {
       align: 'right' as const,
       width: 140,
       sorter: (a: UsageMetrics, b: UsageMetrics) => a.output_tokens - b.output_tokens,
-      render: (_: unknown, row: UsageMetrics) => format(row.output_tokens)
+      render: (_: unknown, row: UsageMetrics) => (isImageOnlyUsage(row) ? '—' : format(row.output_tokens))
+    },
+    {
+      title: t('usage_statistics.image_requests'),
+      key: 'image_requests',
+      align: 'right' as const,
+      width: 150,
+      sorter: (a: UsageMetrics, b: UsageMetrics) => (a.image_request_count ?? 0) - (b.image_request_count ?? 0),
+      render: (_: unknown, row: UsageMetrics) => (row.image_request_count ? format(row.image_request_count) : '—')
     },
     {
       title: t('usage_statistics.cache'),
@@ -223,28 +240,39 @@ export default function UsagePage() {
         {stats && !loading ? (
           <>
             <Cards>
-              <Metric>
-                <MetricLabel>{t('usage_statistics.input')}</MetricLabel>
-                <MetricValue>{format(stats.summary.input_tokens)}</MetricValue>
-                <MetricHint>Token</MetricHint>
-              </Metric>
-              <Metric>
-                <MetricLabel>{t('usage_statistics.output')}</MetricLabel>
-                <MetricValue>{format(stats.summary.output_tokens)}</MetricValue>
-                <MetricHint>Token</MetricHint>
-              </Metric>
-              <Metric>
-                <MetricLabel>{t('usage_statistics.cache')}</MetricLabel>
-                <MetricValue>{cacheDisplay(stats.summary)}</MetricValue>
-                <MetricHint>{t('usage_statistics.cache_subset')}</MetricHint>
-              </Metric>
-              <Metric>
-                <MetricLabel>{t('usage_statistics.cache_rate')}</MetricLabel>
-                <Tooltip title={t('usage_statistics.rate_hint')}>
-                  <MetricValue>{rateDisplay(stats.summary)}</MetricValue>
-                </Tooltip>
-                <MetricHint>{t('usage_statistics.cache_read')}</MetricHint>
-              </Metric>
+              {showImageUsage ? (
+                <Metric>
+                  <MetricLabel>{t('usage_statistics.image_requests')}</MetricLabel>
+                  <MetricValue>{format(stats.summary.image_request_count ?? 0)}</MetricValue>
+                  <MetricHint>{t('usage_statistics.image_requests_hint')}</MetricHint>
+                </Metric>
+              ) : null}
+              {!showImageUsage || !isImageOnlyUsage(stats.summary) ? (
+                <>
+                  <Metric>
+                    <MetricLabel>{t('usage_statistics.input')}</MetricLabel>
+                    <MetricValue>{format(stats.summary.input_tokens)}</MetricValue>
+                    <MetricHint>Token</MetricHint>
+                  </Metric>
+                  <Metric>
+                    <MetricLabel>{t('usage_statistics.output')}</MetricLabel>
+                    <MetricValue>{format(stats.summary.output_tokens)}</MetricValue>
+                    <MetricHint>Token</MetricHint>
+                  </Metric>
+                  <Metric>
+                    <MetricLabel>{t('usage_statistics.cache')}</MetricLabel>
+                    <MetricValue>{cacheDisplay(stats.summary)}</MetricValue>
+                    <MetricHint>{t('usage_statistics.cache_subset')}</MetricHint>
+                  </Metric>
+                  <Metric>
+                    <MetricLabel>{t('usage_statistics.cache_rate')}</MetricLabel>
+                    <Tooltip title={t('usage_statistics.rate_hint')}>
+                      <MetricValue>{rateDisplay(stats.summary)}</MetricValue>
+                    </Tooltip>
+                    <MetricHint>{t('usage_statistics.cache_read')}</MetricHint>
+                  </Metric>
+                </>
+              ) : null}
             </Cards>
             {stats.summary.request_count === 0 ? (
               <EmptyBlock>
@@ -264,7 +292,15 @@ export default function UsagePage() {
                       }))}
                     />
                   </SectionHeader>
-                  <UsageTrend days={days} />
+                  {stats.summary.request_count > (stats.summary.image_request_count ?? 0) ? (
+                    <UsageTrend days={days} />
+                  ) : null}
+                  {showImageUsage && (stats.summary.image_request_count ?? 0) > 0 ? (
+                    <>
+                      <h4>{t('usage_statistics.image_trend')}</h4>
+                      <UsageTrend days={days} mode="images" />
+                    </>
+                  ) : null}
                 </Panel>
                 <Panel>
                   <SectionHeader>
@@ -283,8 +319,8 @@ export default function UsagePage() {
                     size="middle"
                     rowKey="model"
                     dataSource={models}
-                    columns={columns}
-                    scroll={{ x: 760 }}
+                    columns={showImageUsage ? columns : columns.filter((column) => column.key !== 'image_requests')}
+                    scroll={{ x: showImageUsage ? 910 : 760 }}
                     pagination={{ pageSize: 10, showSizeChanger: false, hideOnSinglePage: true }}
                   />
                 </Panel>
@@ -305,7 +341,7 @@ const Heading = styled.h1`font-size: 24px; font-weight: 600; display: flex; alig
 const Subtitle = styled.p`color: var(--color-text-2); margin: 8px 0 0; font-size: 13px;`
 const Panel = styled.section`border: 1px solid var(--color-border); border-radius: 16px; padding: 20px; margin-bottom: 20px; background: var(--color-background-soft); min-width: 0;`
 const Filters = styled.div`display: flex; flex-wrap: wrap; gap: 12px; align-items: center; & + & { margin-top: 14px; }`
-const Cards = styled.div`display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin: 24px 0; @media (max-width: 1000px) { grid-template-columns: repeat(2, minmax(0, 1fr)); }`
+const Cards = styled.div`display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin: 24px 0; @media (max-width: 1000px) { grid-template-columns: repeat(2, minmax(0, 1fr)); }`
 const Metric = styled.div`border: 1px solid var(--color-border); border-radius: 16px; padding: 20px; background: var(--color-background-soft); min-width: 0;`
 const MetricLabel = styled.div`font-size: 13px; color: var(--color-text-2); margin-bottom: 12px;`
 const MetricValue = styled.div`font-size: clamp(20px, 2.1vw, 30px); font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: -0.5px; overflow-wrap: anywhere;`

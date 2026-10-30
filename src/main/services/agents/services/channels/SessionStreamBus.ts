@@ -6,6 +6,8 @@ export type SessionStreamChunk = {
   sessionId: string
   agentId: string
   type: 'user-message' | 'chunk' | 'complete' | 'error'
+  /** Main owns durable messages; watchers must reuse these IDs without writing another copy. */
+  persistence?: { userMessageId: string; assistantMessageId: string }
   chunk?: TextStreamPart<Record<string, any>>
   userMessage?: {
     chatId: string

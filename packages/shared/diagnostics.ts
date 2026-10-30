@@ -1,3 +1,5 @@
+import { getModelDailyQuotaErrorKind } from './utils/modelDailyQuota'
+
 /** Bounded, content-free request evidence shared by main and renderer. */
 export const DIAGNOSTIC_OPERATION_HEADER = 'X-Zen-Diagnostic-Operation'
 export const DIAGNOSTIC_TRACE_HEADER = 'X-Zen-Trace-Id'
@@ -230,7 +232,12 @@ export function attributeDiagnostic(
   }
   const localFailure = [...events]
     .reverse()
-    .find((item) => item.event === 'failed' && ['preparation', 'context', 'ui', 'storage'].includes(item.stage))
+    .find(
+      (item) =>
+        item.event === 'failed' &&
+        ['preparation', 'context', 'ui', 'storage'].includes(item.stage) &&
+        !getModelDailyQuotaErrorKind(item.details?.error)
+    )
   if (localFailure) {
     return {
       owner: 'zen-ai',
@@ -291,9 +298,8 @@ export function attributeDiagnostic(
     .reverse()
     .find(
       (item) =>
-        item.stage === 'transport' &&
         ['failed', 'quota-refused'].includes(item.event) &&
-        item.details?.phase === 'quota-admission'
+        (item.details?.phase === 'quota-admission' || getModelDailyQuotaErrorKind(item.details?.error))
     )
   if (
     quotaFailure &&
@@ -311,7 +317,7 @@ export function attributeDiagnostic(
       stage: 'quota-admission',
       confidence: 'confirmed',
       explanation:
-        '请求停在模型每日额度授权环节，尚未发起本次模型调用；额度拒绝、连接超时及后台异常需结合授权接口的响应或服务器日志区分，不能认定为模型或渠道故障。',
+        '请求停在模型请求前校验环节，尚未发起本次模型调用；连接超时、后台异常与明确的额度拒绝需结合校验接口的响应或服务器日志区分，不能仅凭此错误认定额度耗尽或客户端程序故障。',
       evidence: [JSON.stringify(quotaFailure)]
     }
   if (apiFailure?.failureStage === 'downstream-delivery')

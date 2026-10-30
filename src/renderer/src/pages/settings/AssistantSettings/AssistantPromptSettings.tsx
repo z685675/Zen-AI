@@ -26,6 +26,7 @@ interface Props {
 }
 
 const AssistantPromptSettings: React.FC<Props> = ({ assistant, updateAssistant }) => {
+  const promptReadOnly = assistant.id === 'default'
   const [emoji, setEmoji] = useState(getLeadingEmoji(assistant.name) || assistant.emoji)
   const [name, setName] = useState(assistant.name.replace(getLeadingEmoji(assistant.name) || '', '').trim())
   const [prompt, setPrompt] = useState(assistant.prompt)
@@ -44,20 +45,30 @@ const AssistantPromptSettings: React.FC<Props> = ({ assistant, updateAssistant }
   })
 
   const onUpdate = () => {
-    const _assistant = { ...assistant, name: name.trim(), emoji, prompt }
+    const _assistant = { ...assistant, name: name.trim(), emoji, prompt: promptReadOnly ? assistant.prompt : prompt }
     updateAssistant(_assistant)
     window.toast.success(t('common.saved'))
   }
 
   const handleEmojiSelect = (selectedEmoji: string) => {
     setEmoji(selectedEmoji)
-    const _assistant = { ...assistant, name: name.trim(), emoji: selectedEmoji, prompt }
+    const _assistant = {
+      ...assistant,
+      name: name.trim(),
+      emoji: selectedEmoji,
+      prompt: promptReadOnly ? assistant.prompt : prompt
+    }
     updateAssistant(_assistant)
   }
 
   const handleEmojiDelete = () => {
     setEmoji('')
-    const _assistant = { ...assistant, name: name.trim(), prompt, emoji: '' }
+    const _assistant = {
+      ...assistant,
+      name: name.trim(),
+      prompt: promptReadOnly ? assistant.prompt : prompt,
+      emoji: ''
+    }
     updateAssistant(_assistant)
   }
 
@@ -120,6 +131,7 @@ const AssistantPromptSettings: React.FC<Props> = ({ assistant, updateAssistant }
           {showPreview ? (
             <MarkdownContainer
               onDoubleClick={() => {
+                if (promptReadOnly) return
                 const currentScrollTop = editorRef.current?.getScrollTop?.() || 0
                 setShowPreview(false)
                 requestAnimationFrame(() => editorRef.current?.setScrollTop?.(currentScrollTop))
@@ -130,7 +142,8 @@ const AssistantPromptSettings: React.FC<Props> = ({ assistant, updateAssistant }
             <CodeEditor
               value={prompt}
               language="markdown"
-              onChange={setPrompt}
+              onChange={promptReadOnly ? undefined : setPrompt}
+              readOnly={promptReadOnly}
               height="100%"
               expanded={false}
               style={{
@@ -142,24 +155,26 @@ const AssistantPromptSettings: React.FC<Props> = ({ assistant, updateAssistant }
       </TextAreaContainer>
       <HSpaceBetweenStack width="100%" justifyContent="flex-end" mt="10px">
         <TokenCount>Tokens: {tokenCount}</TokenCount>
-        <Button
-          type="primary"
-          icon={showPreview ? <Edit size={14} /> : <Save size={14} />}
-          onClick={() => {
-            const currentScrollTop = editorRef.current?.getScrollTop?.() || 0
-            if (showPreview) {
-              setShowPreview(false)
-              requestAnimationFrame(() => editorRef.current?.setScrollTop?.(currentScrollTop))
-            } else {
-              onUpdate()
-              requestAnimationFrame(() => {
-                setShowPreview(true)
+        {!promptReadOnly && (
+          <Button
+            type="primary"
+            icon={showPreview ? <Edit size={14} /> : <Save size={14} />}
+            onClick={() => {
+              const currentScrollTop = editorRef.current?.getScrollTop?.() || 0
+              if (showPreview) {
+                setShowPreview(false)
                 requestAnimationFrame(() => editorRef.current?.setScrollTop?.(currentScrollTop))
-              })
-            }
-          }}>
-          {showPreview ? t('common.edit') : t('common.save')}
-        </Button>
+              } else {
+                onUpdate()
+                requestAnimationFrame(() => {
+                  setShowPreview(true)
+                  requestAnimationFrame(() => editorRef.current?.setScrollTop?.(currentScrollTop))
+                })
+              }
+            }}>
+            {showPreview ? t('common.edit') : t('common.save')}
+          </Button>
+        )}
       </HSpaceBetweenStack>
     </Container>
   )

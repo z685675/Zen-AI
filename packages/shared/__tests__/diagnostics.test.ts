@@ -142,6 +142,23 @@ describe('observed transport', () => {
 })
 
 describe('evidence-based attribution', () => {
+  it('does not blame local context processing for the reported chat admission timeout', () => {
+    const r = new DiagnosticRecorder()
+    r.record('op', 'context', 'failed', {
+      error: {
+        code: 'model_daily_quota_unavailable',
+        zenFailureStage: 'quota-admission',
+        cause: { name: 'TimeoutError', message: 'signal timed out' }
+      }
+    })
+    expect(attributeDiagnostic(r.get('op')!.events)).toMatchObject({
+      owner: 'undetermined',
+      stage: 'quota-admission',
+      confidence: 'confirmed'
+    })
+    r.record('op', 'ui', 'failed', { error: 'render failed' })
+    expect(attributeDiagnostic(r.get('op')!.events)).toMatchObject({ owner: 'zen-ai', stage: 'ui' })
+  })
   it('identifies quota admission as a separate stage and ignores it once it recovers', () => {
     const r = new DiagnosticRecorder()
     r.record('op', 'transport', 'quota-check-started', { phase: 'quota-admission' })

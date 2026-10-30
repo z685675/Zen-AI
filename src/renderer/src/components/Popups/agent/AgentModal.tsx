@@ -21,6 +21,7 @@ import type {
 import { AgentConfigurationSchema, isAgentType, normalizePermissionMode } from '@renderer/types'
 import { parseKeyValueString, serializeKeyValueString } from '@renderer/utils/env'
 import { getAnthropicSupportedProviders } from '@renderer/utils/provider'
+import { isProtectedAgentId } from '@shared/config/agents'
 import type { GitBashPathInfo } from '@shared/config/constant'
 import { Button, Input, Modal, Select, Switch, Tooltip } from 'antd'
 import { Info } from 'lucide-react'
@@ -63,6 +64,7 @@ const PopupContainer: React.FC<Props> = ({ agent, afterSubmit, resolve }) => {
   const { addAgent } = useAgents()
   const { updateAgent } = useUpdateAgent()
   const isEditing = (agent?: AgentWithTools) => agent !== undefined
+  const promptReadOnly = isProtectedAgentId(agent?.id)
 
   const [form, setForm] = useState<BaseAgentForm>(() => buildAgentForm(agent))
   const [gitBashPathInfo, setGitBashPathInfo] = useState<GitBashPathInfo>({ path: null, source: null })
@@ -187,12 +189,16 @@ const PopupContainer: React.FC<Props> = ({ agent, afterSubmit, resolve }) => {
   //   }))
   // }, [])
 
-  const onInstChange = useCallback((e: ChangeEvent<HTMLTextAreaElement>) => {
-    setForm((prev) => ({
-      ...prev,
-      instructions: e.target.value
-    }))
-  }, [])
+  const onInstChange = useCallback(
+    (e: ChangeEvent<HTMLTextAreaElement>) => {
+      if (promptReadOnly) return
+      setForm((prev) => ({
+        ...prev,
+        instructions: e.target.value
+      }))
+    },
+    [promptReadOnly]
+  )
 
   const [envVarsText, setEnvVarsText] = useState(() => serializeKeyValueString(form.configuration?.env_vars ?? {}))
 
@@ -311,7 +317,7 @@ const PopupContainer: React.FC<Props> = ({ agent, afterSubmit, resolve }) => {
           id: agent.id,
           name: form.name,
           description: form.description,
-          instructions: form.instructions,
+          ...(!promptReadOnly && { instructions: form.instructions }),
           model: form.model,
           accessible_paths: [...form.accessible_paths],
           allowed_tools: [...form.allowed_tools],
@@ -357,6 +363,7 @@ const PopupContainer: React.FC<Props> = ({ agent, afterSubmit, resolve }) => {
       form.allowed_tools,
       form.configuration,
       agent,
+      promptReadOnly,
       t,
       updateAgent,
       afterSubmit,
@@ -522,7 +529,7 @@ const PopupContainer: React.FC<Props> = ({ agent, afterSubmit, resolve }) => {
 
             <FormItem>
               <Label>{t('common.prompt')}</Label>
-              <TextArea rows={3} value={form.instructions ?? ''} onChange={onInstChange} />
+              <TextArea rows={3} value={form.instructions ?? ''} readOnly={promptReadOnly} onChange={onInstChange} />
             </FormItem>
 
             <FormItem>

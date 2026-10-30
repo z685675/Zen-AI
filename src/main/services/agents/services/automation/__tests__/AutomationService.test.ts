@@ -11,6 +11,10 @@ const mocks = vi.hoisted(() => ({
   db: undefined as any,
   root: '',
   execute: vi.fn(),
+  createSession: vi.fn(),
+  login: vi.fn(),
+  listen: vi.fn(),
+  botOptions: undefined as any,
   getSession: vi.fn(),
   persist: vi.fn(),
   developer: false
@@ -31,7 +35,9 @@ vi.mock('@main/apiServer/services/models', () => ({
   modelsService: { getModels: async () => ({ data: [{ id: 'zen:model', name: 'test model' }] }) }
 }))
 vi.mock('@main/services/ApiServerService', () => ({ apiServerService: { isRunning: () => true, start: vi.fn() } }))
-vi.mock('@main/services/ConfigManager', () => ({ configManager: { getEnableDeveloperMode: () => mocks.developer } }))
+vi.mock('@main/services/ConfigManager', () => ({
+  configManager: { getEnableDeveloperMode: () => mocks.developer, getLanguage: () => 'zh-CN' }
+}))
 vi.mock('@main/services/RemoteModelPolicyService', () => ({ remoteModelPolicyService: { getSnapshot: () => ({}) } }))
 vi.mock('../../../../../../renderer/src/config/agentModelPolicy', () => ({
   resolveAssistantFallbackModel: (data: any[]) => data[0]
@@ -39,13 +45,27 @@ vi.mock('../../../../../../renderer/src/config/agentModelPolicy', () => ({
 vi.mock('../../opencode/builtin', () => ({ ensureOpenCodeAgent: async () => true }))
 vi.mock('../../channels/sessionStreamIpc', () => ({ broadcastSessionChanged: vi.fn() }))
 vi.mock('../../channels/SessionStreamBus', () => ({ sessionStreamBus: { publish: vi.fn() } }))
-vi.mock('../../channels/adapters/wechat/WeChatProtocol', () => ({ WeixinBot: class {} }))
+vi.mock('../../channels/adapters/wechat/WeChatProtocol', () => ({
+  WeixinBot: class {
+    constructor(options: unknown) {
+      mocks.botOptions = options
+    }
+    login = mocks.login
+    onMessage = vi.fn()
+    run = mocks.listen
+    stop = vi.fn()
+  }
+}))
 vi.mock('../../SessionMessageService', () => ({ sessionMessageService: { createSessionMessage: mocks.execute } }))
 vi.mock('../../../database/sessionMessageRepository', () => ({
   agentMessageRepository: { persistExchange: mocks.persist, persistAssistantMessage: mocks.persist }
 }))
 vi.mock('../../SessionService', () => ({
-  sessionService: { getSession: mocks.getSession, reconcileManagedModels: vi.fn(async () => {}) }
+  sessionService: {
+    getSession: mocks.getSession,
+    createSession: mocks.createSession,
+    reconcileManagedModels: vi.fn(async () => {})
+  }
 }))
 vi.mock('../../managedModelRecovery', () => ({
   getManagedRecoveryInventory: async () => ({ models: [], providers: [] }),
@@ -53,13 +73,15 @@ vi.mock('../../managedModelRecovery', () => ({
 }))
 
 import * as schema from '../../../database/schema'
+import { sessionStreamBus } from '../../channels/SessionStreamBus'
 import { acquireSessionActivity } from '../../sessionActivity'
 import { AutomationService } from '../AutomationService'
-import { mirrorAutomationExchange, prepareAutomationSession } from '../bridge'
+import { captureAutomationMirrorTarget, mirrorAutomationExchange, prepareAutomationSession } from '../bridge'
 import { getAutomationProfile } from '../profile'
 
 describe('new assistant automation orchestration (SQLite + simulated runtime, no external account)', () => {
   let client: Client
+  let memoryAnchor: Client
   let service: AutomationService
   let internal: any
   let modelCalls: number
@@ -74,8 +96,16 @@ describe('new assistant automation orchestration (SQLite + simulated runtime, no
     _contextToken: 'context'
   })
   beforeEach(async () => {
+    vi.mocked(sessionStreamBus.publish).mockClear()
+    mocks.login.mockReset().mockResolvedValue({ accountId: 'account', userId: 'owner' })
+    mocks.listen.mockReset().mockResolvedValue(undefined)
     mocks.root = await fs.mkdtemp(path.join(os.tmpdir(), 'zen-automation-integration-'))
-    client = createClient({ url: 'file::memory:?cache=shared' })
+    const url = 'file::memory:?cache=shared'
+    // libsql detaches its primary connection when leasing a transaction. Keep
+    // a non-transactional anchor alive so GC cannot destroy the fixture schema.
+    memoryAnchor = createClient({ url })
+    await memoryAnchor.execute('SELECT 1')
+    client = createClient({ url })
     await client.execute('PRAGMA foreign_keys=OFF')
     const tables = await client.execute(
       "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
@@ -87,6 +117,27 @@ describe('new assistant automation orchestration (SQLite + simulated runtime, no
       await client.executeMultiple(await fs.readFile(path.join('resources/database/drizzle', file), 'utf8'))
     }
     mocks.db = drizzle(client, { schema })
+    mocks.createSession.mockReset().mockImplementation(async (agentId, request) => {
+      const session = {
+        id: `created-${mocks.createSession.mock.calls.length}`,
+        agent_id: agentId,
+        agent_type: 'claude-code',
+        ...request,
+        created_at: 'now',
+        updated_at: 'now'
+      }
+      // Preserve the real SessionService's NOT NULL contract. An undefined translated
+      // name must fail here too, rather than a permissive mock hiding the login bug.
+      await mocks.db.insert(schema.sessionsTable).values({
+        ...session,
+        name: request.name || null,
+        accessible_paths: JSON.stringify(request.accessible_paths),
+        configuration: JSON.stringify(request.configuration),
+        mcps: JSON.stringify(request.mcps),
+        allowed_tools: JSON.stringify(request.allowed_tools)
+      })
+      return session
+    })
     await client.execute({
       sql: "INSERT INTO agents(id,type,name,model,created_at,updated_at) VALUES(?, 'claude-code','test','zen:model','now','now')",
       args: [DEFAULT_OPENCODE_AGENT_ID]
@@ -152,12 +203,118 @@ describe('new assistant automation orchestration (SQLite + simulated runtime, no
   afterEach(async () => {
     await service.stop()
     client.close()
+    memoryAnchor.close()
     await fs.rm(mocks.root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
   })
   async function settled() {
     await internal.tick()
     await vi.waitFor(() => expect(internal.active.size).toBe(0))
   }
+
+  it('completes scanned login and explicit owner confirmation with a non-empty localized session name', async () => {
+    expect(await service.request({ action: 'login' })).toMatchObject({ ok: true })
+    await vi.waitFor(() => expect(internal.connection.status).toBe('awaiting_confirmation'))
+    expect(mocks.listen).not.toHaveBeenCalled()
+    const result = await service.request({ action: 'confirm', authorized: true })
+    expect(result).toMatchObject({
+      ok: true,
+      data: { connection: { status: 'connected', enabled: true, sessionId: 'created-1' } }
+    })
+    expect(mocks.createSession).toHaveBeenCalledWith(
+      DEFAULT_OPENCODE_AGENT_ID,
+      expect.objectContaining({ name: '微信会话', model: 'zen:model' })
+    )
+    expect((await client.execute({ sql: 'SELECT name FROM sessions WHERE id = ?', args: ['created-1'] })).rows).toEqual(
+      [{ name: '微信会话' }]
+    )
+    expect(await service.repository.getBinding(channelId)).toMatchObject({
+      accountId: 'account',
+      peerId: 'owner',
+      sessionId: 'created-1'
+    })
+    expect(mocks.listen).toHaveBeenCalledTimes(1)
+    expect(modelCalls).toBe(0)
+  })
+
+  it('keeps confirmation pending after a local save failure, allowing retry without rescanning', async () => {
+    await service.request({ action: 'login' })
+    await vi.waitFor(() => expect(internal.connection.status).toBe('awaiting_confirmation'))
+    mocks.createSession.mockRejectedValueOnce(new Error('SQLITE_BUSY: test database temporarily unavailable'))
+    expect(await service.request({ action: 'confirm', authorized: true })).toMatchObject({
+      ok: false,
+      code: 'automation_operation_failed'
+    })
+    expect(internal.connection.status).toBe('awaiting_confirmation')
+    expect(mocks.listen).not.toHaveBeenCalled()
+    expect(await service.repository.getBinding(channelId)).toMatchObject({ sessionId: 'session' })
+    expect(await service.request({ action: 'confirm', authorized: true })).toMatchObject({
+      ok: true,
+      data: { connection: { status: 'connected' } }
+    })
+    expect(mocks.login).toHaveBeenCalledTimes(1)
+  })
+
+  it('rejects owner confirmation before login and does not create any conversation', async () => {
+    expect(await service.request({ action: 'confirm', authorized: true })).toMatchObject({
+      ok: false,
+      code: 'automation_login_not_ready'
+    })
+    expect(mocks.createSession).not.toHaveBeenCalled()
+    expect(mocks.listen).not.toHaveBeenCalled()
+  })
+
+  it('creates subsequent WeChat conversations with the same localized name', async () => {
+    expect(await service.request({ action: 'newChat' })).toMatchObject({
+      ok: true,
+      data: { connection: { sessionId: 'created-1' } }
+    })
+    expect(mocks.createSession).toHaveBeenCalledWith(
+      DEFAULT_OPENCODE_AGENT_ID,
+      expect.objectContaining({ name: '微信会话' })
+    )
+    expect(modelCalls).toBe(0)
+  })
+
+  it('reconnects an explicitly bound account without creating duplicate conversations or requiring new consent', async () => {
+    await internal.connect(false)
+    expect(internal.connection.status).toBe('connected')
+    expect(mocks.login).toHaveBeenCalledWith({ force: false })
+    expect(mocks.createSession).not.toHaveBeenCalled()
+    expect(mocks.listen).toHaveBeenCalledTimes(1)
+  })
+
+  it('allows an explicitly disconnected account to be scanned and confirmed again without deleting history', async () => {
+    expect(await service.request({ action: 'disconnect' })).toMatchObject({
+      ok: true,
+      data: { connection: { status: 'disconnected', enabled: false } }
+    })
+    await service.request({ action: 'login' })
+    await vi.waitFor(() => expect(internal.connection.status).toBe('awaiting_confirmation'))
+    expect(await service.request({ action: 'confirm', authorized: true })).toMatchObject({
+      ok: true,
+      data: { connection: { status: 'connected', enabled: true } }
+    })
+    expect((await client.execute({ sql: 'SELECT id FROM sessions WHERE id = ?', args: ['session'] })).rows).toEqual([
+      { id: 'session' }
+    ])
+  })
+
+  it('uses the main-process translation for WeChat control replies as well as conversation names', async () => {
+    await internal.receive(input('stop-command', '停止'))
+    expect(await service.repository.deliveries(channelId)).toEqual([
+      expect.objectContaining({ role: 'notice', text: '已停止，已保存的文件和会话记录保留。' })
+    ])
+    expect(modelCalls).toBe(0)
+  })
+
+  it('retains the previous binding but does not start listening when login fails', async () => {
+    mocks.login.mockRejectedValueOnce(new Error('wechat_secure_storage_unavailable'))
+    await internal.connect(true)
+    expect(internal.connection).toEqual({ status: 'failed', reason: 'automation_wechat_login_failed' })
+    expect(await service.repository.getBinding(channelId)).toMatchObject({ sessionId: 'session' })
+    expect(mocks.createSession).not.toHaveBeenCalled()
+    expect(mocks.listen).not.toHaveBeenCalled()
+  })
 
   it('validates sender identity and deduplicates the same incoming ID before any model call', async () => {
     await internal.receive({ ...input('wrong'), userId: 'stranger' })
@@ -174,6 +331,25 @@ describe('new assistant automation orchestration (SQLite + simulated runtime, no
     expect(await service.repository.deliveries(channelId)).toHaveLength(1)
     expect(mocks.persist).toHaveBeenCalled()
   })
+  it('exposes delivery receipts only after acknowledgement and hides them when synchronization is disabled', async () => {
+    await internal.receive(input('receipt'))
+    await settled()
+    expect(await service.request({ action: 'status' })).toMatchObject({ ok: true, data: { syncedRuns: [] } })
+    const delivery = await service.repository.claimDelivery(channelId)
+    expect(delivery).toBeDefined()
+    expect(await service.request({ action: 'status' })).toMatchObject({ ok: true, data: { syncedRuns: [] } })
+    await service.repository.settleDelivery(delivery!.id, delivery!.lease!, { status: 'accepted' })
+    expect(await service.request({ action: 'status' })).toMatchObject({
+      ok: true,
+      data: { syncedRuns: [{ id: delivery!.runId, sessionId: 'session' }] }
+    })
+    expect(await service.request({ action: 'sync', sessionId: 'session', enabled: false })).toMatchObject({
+      ok: true,
+      data: { syncedRuns: [] }
+    })
+    expect(modelCalls).toBe(1)
+  })
+
   it('queues when a desktop task owns the shared slot without incrementing failures', async () => {
     const release = acquireSessionActivity('desktop', 'run', 1)
     try {
@@ -316,6 +492,36 @@ describe('new assistant automation orchestration (SQLite + simulated runtime, no
     expect(modelCalls).toBe(0)
     await service.request({ action: 'sync', sessionId: 'session', enabled: false })
     await internal.receive(input('after-pause'))
+    expect(modelCalls).toBe(0)
+  })
+
+  it('publishes main-owned stable identities for a phone turn and mirrors a desktop continuation only once', async () => {
+    await internal.receive(input('phone-start'))
+    await settled()
+    expect(modelCalls).toBe(1)
+    const published = vi.mocked(sessionStreamBus.publish).mock.calls.map(([, event]) => event)
+    const user = published.find((event) => event.type === 'user-message')!
+    expect(user.persistence?.userMessageId).toMatch(/:user$/)
+    expect(published.find((event) => event.type === 'complete')?.persistence).toEqual(user.persistence)
+    const context = { target: await captureAutomationMirrorTarget('session'), exchangeId: 'desktop-followup' }
+    await mirrorAutomationExchange('session', '电脑追问', '电脑回答', false, [], context)
+    await mirrorAutomationExchange('session', '电脑追问', '电脑回答', false, [], context)
+    await settled()
+    expect(modelCalls).toBe(1)
+    const parts = await service.repository.deliveries(channelId)
+    expect(parts.toReversed().map((part) => part.text)).toEqual(['Final answer', '电脑追问', '电脑回答'])
+    expect((await client.execute("SELECT state FROM assistant_automation_runs WHERE origin='desktop'")).rows).toEqual([
+      { state: 'completed' }
+    ])
+  })
+
+  it('skips unrelated conversations and rejects paused or rebound desktop delivery targets', async () => {
+    expect(await mirrorAutomationExchange('unrelated', 'q', 'a')).toBe(false)
+    const context = { target: await captureAutomationMirrorTarget('session'), exchangeId: 'before-pause' }
+    await service.repository.disable(channelId, context.target!.version)
+    await expect(mirrorAutomationExchange('session', 'q', 'a', false, [], context)).rejects.toThrow('binding_changed')
+    expect(await service.repository.deliveries(channelId)).toHaveLength(0)
+    expect(await mirrorAutomationExchange('session', 'q', 'a', false, [], { exchangeId: 'not-bound' })).toBe(false)
     expect(modelCalls).toBe(0)
   })
   it('requires consent and rejects malformed configuration without side effects', async () => {

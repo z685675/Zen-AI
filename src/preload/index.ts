@@ -639,6 +639,7 @@ const api = {
         sessionId: string
         agentId: string
         type: string
+        persistence?: { userMessageId: string; assistantMessageId: string }
         chunk?: any
         error?: any
         userMessage?: {

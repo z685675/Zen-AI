@@ -60,14 +60,15 @@ jobs:
           test "$(node -p 'require("./package.json").version')" = "${BASE_TAG#v}"
       - name: Install frozen dependencies
         run: pnpm install --frozen-lockfile
-      - name: Fetch exact base descriptor
+      - name: Fetch exact installer descriptor and compiled runtime
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p local/hotpatch-base
           gh release download "$BASE_TAG" --repo "$GITHUB_REPOSITORY" \
-            --pattern "hotpatch-base-$PATCH_PLATFORM.json" --dir local/hotpatch-base
+            --pattern "hotpatch-base-$PATCH_PLATFORM.json" \
+            --pattern "hotpatch-runtime-$PATCH_PLATFORM.zip" --dir local/hotpatch-base
       - name: Build and test without signing credentials
         env:
           NODE_OPTIONS: --max-old-space-size=8192
@@ -78,6 +79,12 @@ jobs:
         run: |
           pnpm test:hotpatch
           pnpm validate:release
+      - name: Restore and verify the exact installer runtime
+        shell: bash
+        run: |
+          pnpm exec tsx --tsconfig tsconfig.node.json scripts/hotpatch/runtime.ts \
+            --mode restore --descriptor "local/hotpatch-base/hotpatch-base-$PATCH_PLATFORM.json" \
+            --archive "local/hotpatch-base/hotpatch-runtime-$PATCH_PLATFORM.zip"
       - name: Package and sign eligible renderer snapshots
         shell: bash
         env:
@@ -147,6 +154,13 @@ jobs:
             export HOTPATCH_PATCH_ID="$(node -p 'JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).patchId' "$receipt")"
             bash scripts/hotpatch/upload.sh
             pnpm exec tsx --tsconfig tsconfig.node.json scripts/hotpatch/verify-published.ts --publication "$receipt"
+            node - "$receipt" >> "$GITHUB_STEP_SUMMARY" <<'NODE'
+          const fs = require('node:fs')
+          const path = require('node:path')
+          const item = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'))
+          const variant = path.basename(path.dirname(process.argv[2]))
+          process.stdout.write(`- **${variant}**: [manifest.json](${item.manifestUrl})\n`)
+          NODE
           done
       - name: Clear uploader credential
         if: always()

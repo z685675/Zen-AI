@@ -1,5 +1,6 @@
 import type { CompletionUsage } from '@cherrystudio/openai/resources'
 import type { OpenCodeTurnDiagnostics } from '@shared/agents/opencodeDiagnostics'
+import type { ModelDailyTurnResult } from '@shared/utils/modelDailyQuotaTurn'
 import type { ProviderMetadata } from 'ai'
 
 import type {
@@ -229,6 +230,7 @@ export type AgentSessionSyncStatus = 'pending' | 'synced' | 'failed'
 export type AgentSessionSyncMetadata = {
   target: 'wechat'
   status: AgentSessionSyncStatus
+  runId?: string
   updatedAt?: string
   reason?: string
 }
@@ -259,6 +261,7 @@ export type MessageProviderMetadata = ProviderMetadata & {
   deepResearch?: DeepResearchTaskMetadata
   responseTiming?: MessageResponseTiming
   opencodeDiagnostics?: OpenCodeTurnDiagnostics
+  modelDailyQuota?: { results: ModelDailyTurnResult[] }
 }
 
 export type MessageResponseTiming = {

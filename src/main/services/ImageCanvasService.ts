@@ -6,6 +6,7 @@ import { loggerService } from '@logger'
 import {
   type ImageCanvasCatalog,
   imageCanvasChannels as channels,
+  imageCanvasMaxBatchTasks,
   type ImageCanvasModelConfiguration,
   type ImageCanvasOpen,
   imageCanvasProtocols,
@@ -68,7 +69,8 @@ export class ImageCanvasService {
       return this.store().submit(provider, input)
     })
     handle(channels.submitBatch, async (inputs: ImageCanvasRequest[]) => {
-      if (!Array.isArray(inputs) || inputs.length < 2 || inputs.length > 4) throw new Error('invalid_request')
+      if (!Array.isArray(inputs) || inputs.length < 2 || inputs.length > imageCanvasMaxBatchTasks)
+        throw new Error('invalid_request')
       const providers = await Promise.all(inputs.map((input) => this.readyProvider(input?.providerId)))
       return this.store().submitBatch(providers, inputs)
     })

@@ -45,9 +45,17 @@ vi.mock('@renderer/config/models', () => ({ getModelSupportedReasoningEffortOpti
 vi.mock('@renderer/config/models/qwen', () => ({ isQwenMTModel: vi.fn() }))
 vi.mock('@renderer/services/ModelRequestRecovery', () => ({ resolveNextManagedRequestModel: vi.fn() }))
 
-function openSettings() {
+function openSettings(expand = true) {
   void DefaultAssistantSettingsPopup.show()
-  return render(vi.mocked(TopView.show).mock.calls.at(-1)![0])
+  const view = render(vi.mocked(TopView.show).mock.calls.at(-1)![0])
+  if (expand) fireEvent.click(screen.getByText('common.advanced_settings'))
+  return view
+}
+
+function parameterSwitches() {
+  return screen
+    .getAllByRole('switch')
+    .filter((control) => control.getAttribute('aria-label') !== 'models.stream_output')
 }
 
 function resetSettings() {
@@ -93,13 +101,37 @@ afterEach(() => {
 })
 
 describe('default assistant settings reset', () => {
+  it('shows the existing default prompt as read-only without rewriting it', () => {
+    openSettings(false)
+    expect(screen.getByDisplayValue('Keep this prompt')).toHaveAttribute('readonly')
+    expect(mocks.update).not.toHaveBeenCalled()
+  })
+
+  it('collapses advanced controls while identifying existing customized settings', () => {
+    openSettings(false)
+    expect(screen.getAllByRole('switch')).toHaveLength(1)
+    expect(screen.getByRole('switch', { name: 'models.stream_output' })).toBeChecked()
+    expect(screen.getByText('chat.settings.parameters_customized')).toBeInTheDocument()
+    expect(mocks.update).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByText('common.advanced_settings'))
+    expect(screen.getByRole('switch', { name: 'chat.settings.temperature.label' })).toBeChecked()
+  })
+
+  it('preserves disabled streaming when another advanced setting changes', () => {
+    openSettings()
+    fireEvent.click(screen.getByRole('switch', { name: 'models.stream_output' }))
+    fireEvent.click(screen.getByRole('switch', { name: 'chat.settings.temperature.label' }))
+    expect(mocks.assistant?.settings?.streamOutput).toBe(false)
+    expect(screen.getByRole('switch', { name: 'models.stream_output' })).not.toBeChecked()
+  })
+
   it('resets the visible controls and persisted parameters to the same defaults', () => {
     openSettings()
-    expect(screen.getAllByRole('switch').every((control) => control.getAttribute('aria-checked') === 'true')).toBe(true)
+    expect(parameterSwitches().every((control) => control.getAttribute('aria-checked') === 'true')).toBe(true)
 
     resetSettings()
 
-    for (const control of screen.getAllByRole('switch')) {
+    for (const control of parameterSwitches()) {
       expect(control).not.toBeChecked()
     }
     expect(screen.queryByRole('spinbutton')).not.toBeInTheDocument()
@@ -116,11 +148,11 @@ describe('default assistant settings reset', () => {
     openSettings()
     resetSettings()
 
-    fireEvent.click(screen.getAllByRole('switch')[1])
+    fireEvent.click(parameterSwitches()[1])
 
     expect(mocks.assistant?.settings).toEqual({ ...DEFAULT_ASSISTANT_SETTINGS, enableTopP: true })
-    expect(screen.getAllByRole('switch')[0]).not.toBeChecked()
-    expect(screen.getAllByRole('switch')[1]).toBeChecked()
+    expect(parameterSwitches()[0]).not.toBeChecked()
+    expect(parameterSwitches()[1]).toBeChecked()
     expect(screen.getByRole('spinbutton')).toHaveValue(DEFAULT_ASSISTANT_SETTINGS.topP.toFixed(2))
   })
 
@@ -128,7 +160,7 @@ describe('default assistant settings reset', () => {
     const view = openSettings()
     resetSettings()
 
-    fireEvent.click(screen.getAllByRole('switch')[2])
+    fireEvent.click(parameterSwitches()[2])
     await waitFor(() =>
       expect(screen.getByRole('spinbutton')).toHaveValue(String(DEFAULT_ASSISTANT_SETTINGS.maxTokens))
     )
@@ -137,9 +169,9 @@ describe('default assistant settings reset', () => {
     view.unmount()
     openSettings()
 
-    expect(screen.getAllByRole('switch')[0]).not.toBeChecked()
-    expect(screen.getAllByRole('switch')[1]).not.toBeChecked()
-    expect(screen.getAllByRole('switch')[2]).toBeChecked()
+    expect(parameterSwitches()[0]).not.toBeChecked()
+    expect(parameterSwitches()[1]).not.toBeChecked()
+    expect(parameterSwitches()[2]).toBeChecked()
     expect(screen.getByRole('spinbutton')).toHaveValue(String(DEFAULT_ASSISTANT_SETTINGS.maxTokens))
   })
 })

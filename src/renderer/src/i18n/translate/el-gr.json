@@ -776,6 +776,12 @@
         "tasks_desc": "[to be translated]:Handle complex work that needs multiple steps and sustained execution."
       },
       "model_label": "[to be translated]:Model for this chat",
+      "quick_entries": {
+        "skills_desc": "[to be translated]:Import, find, and manage assistant skills",
+        "tasks_desc": "[to be translated]:Schedule tasks and view their run history",
+        "title": "[to be translated]:Quick access",
+        "wechat_desc": "[to be translated]:Connect WeChat and continue chats on your phone or computer"
+      },
       "title": "[to be translated]:Hand over the task and get started with ease"
     }
   },
@@ -1428,6 +1434,7 @@
     },
     "status": "Status",
     "stop": "Stop",
+    "syncComplete": "Ο συγχρονισμός ολοκληρώθηκε",
     "syncing": "Sync enabled",
     "taskConsent": "I authorize this specific task to run automatically with controlled tools in its dedicated workspace. This does not authorize overwriting, deletion, payments or unrestricted computer access.",
     "taskFailed": "Task failed or was interrupted. Open the conversation for details; completed files are preserved.",
@@ -1857,11 +1864,14 @@
       },
       "max": "άπειρος",
       "max_tokens": {
-        "confirm": "Ενεργοποίηση περιορισμού μήκους μηνύματος",
+        "confirm": "Όριο μήκους εξόδου",
         "confirm_content": "Μετά την ενεργοποίηση του περιορισμού μήκους μηνύματος, ο μέγιστος αριθμός των tokens που χρησιμοποιούνται κάθε φορά, θα επηρεάζει το μήκος της απάντησης. Πρέπει να το ρυθμίζετε βάσει των περιορισμών του πλαισίου του μοντέλου, διαφορετικά θα σφάλλεται.",
-        "label": "Ενεργοποίηση περιορισμού μήκους μηνύματος",
+        "label": "Όριο μήκους εξόδου",
         "tip": "Ο μέγιστος αριθμός των tokens που χρησιμοποιούνται κάθε φορά, θα επηρεάζει το μήκος της απάντησης. Πρέπει να το ρυθμίζετε βάσει των περιορισμών του πλαισίου του μοντέλου, διαφορετικά θα σφάλλεται."
       },
+      "parameters_customized": "Ενεργές προσαρμοσμένες παράμετροι",
+      "parameters_default": "Προεπιλεγμένες παράμετροι",
+      "parameters_tip": "Συνήθως δεν χρειάζονται αλλαγές. Αν απενεργοποιηθούν η θερμοκρασία, το Top-P και το όριο εξόδου, χρησιμοποιούνται οι προεπιλογές του μοντέλου. Αυτά τα στοιχεία ελέγχου υπερισχύουν των ομώνυμων προσαρμοσμένων παραμέτρων. Οι υπάρχουσες ρυθμίσεις ρόλων διατηρούνται. Η επαναφορά επαναφέρει τις προεπιλογές.",
       "reset": "Επαναφορά",
       "set_as_default": "Εφαρμογή στον προεπαγγελματικό βοηθό",
       "show_line_numbers": "Εμφάνιση αριθμού γραμμών στον κώδικα",
@@ -3259,17 +3269,22 @@
     }
   },
   "model_daily_quota": {
-    "exceeded": "Το ημερήσιο όριο αυτού του μοντέλου εξαντλήθηκε. Δοκιμάστε αύριο.",
+    "connection": "Δεν είναι δυνατή η σύνδεση στην υπηρεσία ελέγχου αιτήματος. Η παραγωγή απάντησης δεν έχει ξεκινήσει. Ελέγξτε τη σύνδεση ή δοκιμάστε άλλο δίκτυο.",
+    "exceeded": "Το μοντέλο έφτασε το ημερήσιο όριο. Επιλέξτε άλλο μοντέλο.",
     "hint": "Είσοδος + έξοδος· η κρυφή μνήμη περιλαμβάνεται στην είσοδο. Επαναφορά τα μεσάνυχτα στο Πεκίνο. Η τελευταία εγκεκριμένη ερώτηση μπορεί να υπερβεί το όριο.",
     "invalid": "Η έγκριση αυτής της ερώτησης έληξε. Στείλτε νέα ερώτηση.",
     "limit": "Ημερήσιο όριο",
     "pending": "Το υπόλοιπο έχει δεσμευτεί από άλλη εργασία. Περιμένετε να ολοκληρωθεί.",
     "remaining": "Υπόλοιπο",
+    "request_stage": "Έλεγχος πριν από το αίτημα μοντέλου",
+    "request_suggestion": "Δοκιμάστε ξανά μία φορά. Αν αποτύχει, δοκιμάστε άλλο δίκτυο, όπως ένα σημείο πρόσβασης κινητού, και ελέγξτε τις ρυθμίσεις διακομιστή μεσολάβησης. Αν το πρόβλημα επιμένει, εξαγάγετε ένα πακέτο διαγνωστικών για τον διαχειριστή. Αυτό το σφάλμα δεν σημαίνει εξάντληση του ορίου μοντέλου.",
     "stage": "Έλεγχος ορίου μοντέλου",
     "status_error": "Αδυναμία ενημέρωσης των σημερινών ορίων. Το ιστορικό παραμένει διαθέσιμο.",
     "suggestion": "Επιλέξτε άλλο μοντέλο ή περιμένετε την επαναφορά. Μην επαναλαμβάνετε συνεχώς.",
+    "timeout": "Ο έλεγχος αιτήματος έληξε λόγω χρονικού ορίου. Η παραγωγή απάντησης δεν έχει ξεκινήσει. Ελέγξτε τη σύνδεση ή δοκιμάστε άλλο δίκτυο.",
     "title": "Σημερινά όρια · ώρα Πεκίνου",
-    "unavailable": "Η υπηρεσία ορίων δεν είναι προσωρινά διαθέσιμη.",
+    "turn_exceeded": "Το {{model}} έφτασε το σημερινό όριο. Επιλέξτε άλλο μοντέλο.",
+    "unavailable": "Το API δεν μπορεί να ολοκληρώσει τον έλεγχο ορίου του μοντέλου. Δοκιμάστε αργότερα· αν επιμένει, εξαγάγετε τα διαγνωστικά και επικοινωνήστε με τον διαχειριστή.",
     "used": "Χρησιμοποιήθηκαν",
     "used_up": "Εξαντλήθηκε σήμερα"
   },
@@ -3381,11 +3396,11 @@
     "memory_notice": "Independent native memory survives model changes. Retry, branching and individual deletion are supported; direct editing and bulk deletion are not yet supported.",
     "outputting": "The model is producing output",
     "permission": {
-      "title": "Αυτή η εργασία χρειάζεται την επιβεβαίωσή σας",
       "description": "Ελέγξτε την ενέργεια και τον στόχο της πριν επιτρέψετε τη συνέχεια της εργασίας.",
-      "loopTitle": "Εντοπίστηκαν επαναλαμβανόμενες ενέργειες· η εργασία τέθηκε σε παύση",
+      "details": "Λεπτομέρειες ενέργειας",
       "loopDescription": "Ο βοηθός επιχείρησε την ίδια ενέργεια επανειλημμένα. Μπορείτε να επιτρέψετε μία συνέχεια ή να ακυρώσετε την ενέργεια.",
-      "details": "Λεπτομέρειες ενέργειας"
+      "loopTitle": "Εντοπίστηκαν επαναλαμβανόμενες ενέργειες· η εργασία τέθηκε σε παύση",
+      "title": "Αυτή η εργασία χρειάζεται την επιβεβαίωσή σας"
     },
     "preparing": "[to be translated]:Request received; preparing the task",
     "responding": "[to be translated]:Processing the response",
@@ -6838,8 +6853,25 @@
       "processing": "Εκτελείται"
     },
     "privacy": "Από προεπιλογή περιλαμβάνονται μόνο διαγνωστικά μεταδεδομένα, όχι συνομιλίες, ορίσματα/αποτελέσματα εργαλείων, αρχικά συνημμένα ή πλήρες ιστορικό. Κοινοποιήστε μόνο σε έμπιστους παραλήπτες. Το προαιρετικό περιεχόμενο μπορεί να περιέχει προσωπικά δεδομένα.",
-    "reportTemplate": "# Zen AI: διαγνωστικά αυτού του γύρου\n\n- Αποτέλεσμα: {{outcome}}\n- Μοντέλο: {{model}}; Provider: {{provider}}\n- Token: είσοδος {{input}}; έξοδος {{output}}; ανάγνωση cache {{cache}} (περιλαμβάνεται ήδη στην είσοδο)\n- Έναρξη: {{start}}; τέλος: {{end}}; σύνολο: {{total}}\n- Πρώτο περιεχόμενο (ίσως συλλογισμός): {{firstContent}}; πρώτο κείμενο απάντησης: {{firstText}}; πρώτα byte δικτύου: {{firstBytes}} (όχι πρώτο token)\n- Παρατηρημένα αιτήματα: {{requests}}; εργαλεία: {{tools}}; επαναλήψεις/εναλλαγές: {{retries}}\n- Καθυστέρηση UI commit: {{render}} (React commit, όχι εγγύηση εμφάνισης στην οθόνη)\n\n## Βραδύτερα στάδια με καταγεγραμμένη αρχή και τέλος\n{{slowest}}\n\n## Χρονολόγιο αιτημάτων και εργαλείων\n{{timeline}}\n\n## Παρατηρημένη αναμονή χρήστη (ενδέχεται να επικαλύπτει εργαλεία)\n{{waits}}\n\n## Όρια και ελλείποντα στοιχεία\n- Μόνο μετρημένοι χρόνοι, όχι διάγνωση αιτίας δικτύου/πελάτη/υπηρεσίας. Τα στάδια επικαλύπτονται: μην τα αθροίζετε ή αφαιρείτε αναμονές.\n- Ελλείπον δεν σημαίνει μηδέν. Ανολοκλήρωτα διαστήματα ίσως εκτελούνται. Η ενεργή εξαγωγή είναι στιγμιότυπο· παλιές συνομιλίες δεν ανακτούν μη καταγεγραμμένα συμβάντα.\n- Η καταγραφή αρχίζει συνήθως στην προετοιμασία απάντησης· παλιότερα ανεβάσματα ίσως εξαιρούνται. Οι επαναλήψεις δεν μετρούν επανεκτελέσεις εργασιών.\n- Συσχετίστε zen-api-evidence.json και ID για στοιχεία διακομιστή. Απουσία εγγραφής δεν αποδεικνύει μη παραλαβή· αποστολή δεν εγγυάται πλήρη λήψη.\n- Απορριφθέντα συμβάντα: {{dropped}}· παλιότερα αιτήματα ίσως έληξαν. Κωδικοί ελλείψεων (performance.json): {{missing}}\n",
-    "requestTiming": " | Κεφαλίδες {{headers}} | Πρώτα byte {{bytes}} | HTTP {{status}} | ID αιτήματος {{requestId}}"
+    "renderNotRecorded": "Δεν συλλέχθηκε",
+    "reportTemplate": "# Zen AI: διαγνωστικά αυτού του γύρου\n\n- Αποτέλεσμα: {{outcome}}\n- Μοντέλο: {{model}}; Provider: {{provider}}\n- Token: είσοδος {{input}}; έξοδος {{output}}; ανάγνωση cache {{cache}} (περιλαμβάνεται ήδη στην είσοδο)\n- Έναρξη: {{start}}; τέλος: {{end}}; σύνολο: {{total}}\n- Πρώτο περιεχόμενο (ίσως συλλογισμός): {{firstContent}}; πρώτο κείμενο απάντησης: {{firstText}}; πρώτα byte δικτύου: {{firstBytes}} (όχι πρώτο token)\n- Παρατηρημένα αιτήματα: {{requests}}; εργαλεία: {{tools}}; επαναλήψεις/εναλλαγές: {{retries}}\n- Από το τέλος απάντησης έως το UI commit: {{render}} (μόνο ζωντανή ολοκλήρωση σε συνεχώς ορατό στοιχείο· όχι χρόνος σχεδίασης οθόνης)\n\n## Βραδύτερα στάδια με καταγεγραμμένη αρχή και τέλος\n{{slowest}}\n\n## Χρονολόγιο αιτημάτων και εργαλείων\n{{timeline}}\n\n## Παρατηρημένη αναμονή χρήστη (ενδέχεται να επικαλύπτει εργαλεία)\n{{waits}}\n\n## Όρια και ελλείποντα στοιχεία\n- Μόνο μετρημένοι χρόνοι, όχι διάγνωση αιτίας δικτύου/πελάτη/υπηρεσίας. Τα στάδια επικαλύπτονται: μην τα αθροίζετε ή αφαιρείτε αναμονές.\n- Ελλείπον δεν σημαίνει μηδέν. Ανολοκλήρωτα διαστήματα ίσως εκτελούνται. Η ενεργή εξαγωγή είναι στιγμιότυπο· παλιές συνομιλίες δεν ανακτούν μη καταγεγραμμένα συμβάντα.\n- Η καταγραφή αρχίζει συνήθως στην προετοιμασία απάντησης· παλιότερα ανεβάσματα ίσως εξαιρούνται. Οι επαναλήψεις δεν μετρούν επανεκτελέσεις εργασιών.\n- Συσχετίστε zen-api-evidence.json και ID για στοιχεία διακομιστή. Απουσία εγγραφής δεν αποδεικνύει μη παραλαβή· αποστολή δεν εγγυάται πλήρη λήψη.\n- Απορριφθέντα συμβάντα: {{dropped}}· παλιότερα αιτήματα ίσως έληξαν. Κωδικοί ελλείψεων (performance.json): {{missing}}\n",
+    "requestTiming": " | Κεφαλίδες {{headers}} | Πρώτα byte {{bytes}} | HTTP {{status}} | ID αιτήματος {{requestId}}",
+    "serverTiming": {
+      "attempt": "[to be translated]:  - Attempt {{index}} / channel {{channel}} | Total {{total}} | Before attempt {{before}}\n    First event {{event}} | Effective content {{content}} | Answer text {{text}} | First non-ping forward {{forward}} | Content to forward {{forwarding}} (unavailable if metadata was forwarded earlier)\n{{http}}\n    Missing: {{missing}}",
+      "http": "[to be translated]:    - HTTP {{index}} | Before HTTP {{prepare}} | DNS {{dns}} | TCP (summed connections, may overlap) {{connect}} | TLS {{tls}} | Connection ready {{ready}} | Sent {{sent}} | First byte {{firstByte}} | Wait after sending {{wait}} | Body reading {{body}} | Connection reused {{reused}}",
+      "intro": "[to be translated]:## Server and upstream timing\n\nEach request and channel attempt is listed separately. Preparation milestones are offsets from API receipt; stream milestones are offsets from the channel attempt; HTTP milestones are offsets from that HTTP call. DNS/TCP/TLS may overlap or be skipped on connection reuse. First byte/event is not first answer text. Outside-gateway time compares elapsed durations and includes client/network work; it is not a one-way network measurement. Unknown or unfinished stages are not zero.",
+      "missing": "[to be translated]:  Missing: {{missing}}",
+      "no": "[to be translated]:No",
+      "phases": {
+        "admission_ready": "[to be translated]:Admission ready",
+        "body_ready": "[to be translated]:Body ready",
+        "routing_ready": "[to be translated]:Routing ready",
+        "tokens_ready": "[to be translated]:Token estimate ready",
+        "validated": "[to be translated]:Validated"
+      },
+      "request": "[to be translated]:- Request {{requestId}} | API total {{total}} | Outside API {{outside}}\n  Preparation milestones: {{phases}}",
+      "yes": "[to be translated]:Yes"
+    }
   },
   "update": {
     "available": "A new version {{version}} is available. Click Check for Updates any time to download it.",
@@ -6873,6 +6905,9 @@
       "unavailable": "Unable to load usage. Please try again later.",
       "unsupported": "This service does not support usage queries yet"
     },
+    "image_requests": "Αιτήματα εικόνων",
+    "image_requests_hint": "Μία καταμέτρηση ανά αίτημα, ακόμη και για πολλές εικόνες. Ισχύει η τιμολόγηση της υπηρεσίας.",
+    "image_trend": "Τάση αιτημάτων εικόνων",
     "input": "Input tokens",
     "intervals": {
       "day": "Daily",

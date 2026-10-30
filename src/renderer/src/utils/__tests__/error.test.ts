@@ -1,6 +1,8 @@
 import AiSdkToChunkAdapter from '@renderer/aiCore/chunk/AiSdkToChunkAdapter'
 import { type Chunk, ChunkType } from '@renderer/types/chunk'
 import { AgentTaskLimitError, getAgentTaskLimitDetails } from '@shared/agents/taskConcurrency'
+import { getModelDailyQuotaErrorKind } from '@shared/utils/modelDailyQuota'
+import { ModelDailyQuotaRequestError } from '@shared/utils/modelDailyQuotaTurn'
 import { describe, expect, it, vi } from 'vitest'
 
 import { getAgentTaskDeadlineKind } from '../agentTaskDeadline'
@@ -14,6 +16,18 @@ import {
 } from '../error'
 
 describe('error', () => {
+  it.each([
+    [new DOMException('signal timed out', 'TimeoutError'), 'timeout'],
+    [new TypeError('Failed to fetch'), 'connection']
+  ])('preserves admission cause %s through saved history', (cause, kind) => {
+    const saved = JSON.parse(
+      JSON.stringify(
+        serializeError(new ModelDailyQuotaRequestError('https://example.test/api/usage/token/model-daily/turn', cause))
+      )
+    )
+    expect(JSON.parse(saved.cause)).toMatchObject({ name: cause.name, message: cause.message })
+    expect(getModelDailyQuotaErrorKind(saved)).toBe(kind)
+  })
   it.each(['agent_human_wait_timeout', 'agent_execution_timeout', 'agent_inactivity_timeout'])(
     'preserves %s through stream conversion and saved history',
     async (code) => {

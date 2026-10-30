@@ -7,6 +7,7 @@ import type {
   ImageCanvasRequest
 } from './imageCanvas'
 import { imageCanvasProtocols } from './imageCanvas'
+import { commonImageSizePresets } from './imageSizePresets'
 
 export const imageRatios = ['1:1', '2:3', '3:2', '3:4', '4:3', '4:5', '5:4', '9:16', '16:9', '21:9']
 export const dashscopeFixedSizes = ['1328x1328', '1664x928', '1472x1104', '1104x1472', '928x1664']
@@ -57,7 +58,7 @@ export function commonImageDimensions(
       }))
     )
   if (!['openai', 'openai-json', 'seedream'].includes(protocol)) return existing
-  const sizes = ['auto', '256x256', '512x512']
+  const sizes = [...commonImageSizePresets.map((item) => item.size), '256x256', '512x512']
   for (const [width, height] of [
     [1024, 1024],
     [1024, 1536],

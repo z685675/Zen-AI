@@ -30,9 +30,19 @@ import { useNavigate } from 'react-router-dom'
 const { Paragraph, Text, Title } = Typography
 type Task = AutomationOverview['tasks'][number]
 
+type AutomationSettingsProps = {
+  embedded?: boolean
+  initialTab?: 'wechat' | 'schedule'
+  onNavigateToSession?: () => void
+}
+
 /** New opt-in interface. Legacy records and their disabled APIs are deliberately untouched. */
-export default function AutomationSettings() {
-  const { t } = useTranslation()
+export default function AutomationSettings({
+  embedded = false,
+  initialTab = 'wechat',
+  onNavigateToSession
+}: AutomationSettingsProps) {
+  const { t, i18n } = useTranslation()
   const dispatch = useAppDispatch()
   const navigate = useNavigate()
   const { models } = useApiModels()
@@ -48,7 +58,8 @@ export default function AutomationSettings() {
     const result = await window.api.assistantAutomation({ action: 'status' })
     if (result.ok) {
       setData(result.data)
-      setError('')
+      // A successful status poll does not mean the preceding bind/save operation succeeded.
+      setError((current) => (current === 'automation_connection_failed' ? '' : current))
     } else setError(result.code)
   }, [])
   useEffect(() => {
@@ -99,6 +110,7 @@ export default function AutomationSettings() {
   const openSession = (sessionId: string) => {
     dispatch(setActiveAgentId(DEFAULT_OPENCODE_AGENT_ID))
     dispatch(setActiveSessionIdAction({ agentId: DEFAULT_OPENCODE_AGENT_ID, sessionId }))
+    onNavigateToSession?.()
     navigate('/new-assistant')
   }
   const modelOptions = useMemo(
@@ -153,21 +165,24 @@ export default function AutomationSettings() {
     if (success) setEditing(undefined)
   }
   const stateLabel = (value: string) => t('automation.states.' + value, { defaultValue: value })
+  const failure = error || data?.connection.reason
+  const failureKey = 'automation.errors.' + failure
 
   return (
-    <div style={{ flex: 1, overflow: 'auto', padding: 24 }}>
-      <Title level={3}>{t('automation.title')}</Title>
+    <div style={{ flex: 1, height: embedded ? '100%' : undefined, overflow: 'auto', padding: embedded ? 16 : 24 }}>
+      {!embedded && <Title level={3}>{t('automation.title')}</Title>}
       <Alert type="info" showIcon message={t('automation.localOnly')} description={t('automation.scope')} />
-      {error && (
+      {failure && (
         <Alert
           style={{ marginTop: 12 }}
           type="error"
           showIcon
           message={t('automation.error')}
-          description={t('automation.errors.' + error, { defaultValue: t('automation.genericError') })}
+          description={i18n.exists(failureKey) ? t(failureKey) : t('automation.genericError')}
         />
       )}
       <Tabs
+        defaultActiveKey={initialTab}
         style={{ marginTop: 16 }}
         items={[
           {

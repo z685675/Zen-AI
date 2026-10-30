@@ -6,7 +6,14 @@ function verifyReleaseAssets(release, tag, profile) {
   if (typeof release.body !== 'string' || !release.body.trim()) throw new Error('Release notes are missing')
   if (!/^\d+$/.test(profile)) throw new Error('Invalid Python profile')
   const version = tag.slice(1)
-  const required = ['latest.yml', 'latest-mac.yml', 'hotpatch-base-win32.json', 'hotpatch-base-darwin.json']
+  const required = [
+    'latest.yml',
+    'latest-mac.yml',
+    'hotpatch-base-win32.json',
+    'hotpatch-base-darwin.json',
+    'hotpatch-runtime-win32.zip',
+    'hotpatch-runtime-darwin.zip'
+  ]
   for (const arch of ['x64', 'arm64']) {
     for (const kind of ['setup', 'portable']) required.push(`Zen-AI-${version}-windows-${arch}-${kind}.exe`)
     for (const ext of ['dmg', 'zip']) required.push(`Zen-AI-${version}-macos-${arch}.${ext}`)

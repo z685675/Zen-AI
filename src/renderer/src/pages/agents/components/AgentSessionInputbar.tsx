@@ -63,7 +63,6 @@ import { useTranslation } from 'react-i18next'
 import styled from 'styled-components'
 import { v4 as uuid } from 'uuid'
 
-import AutomationSessionBanner from './AutomationSessionBanner'
 import LegacyAssistantInputbar from './LegacyAssistantInputbar'
 
 const logger = loggerService.withContext('AgentSessionInputbar')
@@ -178,7 +177,6 @@ const ActiveAgentSessionInputbar = ({ agentId, sessionId, variant = 'default' }:
         onNewContext: () => {},
         toggleExpanded: () => actionsRef.current.toggleExpanded()
       }}>
-      <AutomationSessionBanner sessionId={sessionId} />
       <AgentSessionInputbarInner
         assistant={assistantStub}
         agentId={agentId}

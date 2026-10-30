@@ -776,6 +776,12 @@
         "tasks_desc": "[to be translated]:Handle complex work that needs multiple steps and sustained execution."
       },
       "model_label": "[to be translated]:Model for this chat",
+      "quick_entries": {
+        "skills_desc": "[to be translated]:Import, find, and manage assistant skills",
+        "tasks_desc": "[to be translated]:Schedule tasks and view their run history",
+        "title": "[to be translated]:Quick access",
+        "wechat_desc": "[to be translated]:Connect WeChat and continue chats on your phone or computer"
+      },
       "title": "[to be translated]:Hand over the task and get started with ease"
     }
   },
@@ -1428,6 +1434,7 @@
     },
     "status": "Status",
     "stop": "Stop",
+    "syncComplete": "Đã đồng bộ",
     "syncing": "Sync enabled",
     "taskConsent": "I authorize this specific task to run automatically with controlled tools in its dedicated workspace. This does not authorize overwriting, deletion, payments or unrestricted computer access.",
     "taskFailed": "Task failed or was interrupted. Open the conversation for details; completed files are preserved.",
@@ -1857,11 +1864,14 @@
       },
       "max": "Không giới hạn",
       "max_tokens": {
-        "confirm": "Đặt số token tối đa",
+        "confirm": "Giới hạn độ dài đầu ra",
         "confirm_content": "Đặt số lượng token tối đa mà mô hình có thể tạo ra. Cần xem xét giới hạn ngữ cảnh của mô hình, nếu không sẽ báo lỗi",
-        "label": "Đặt số token tối đa",
+        "label": "Giới hạn độ dài đầu ra",
         "tip": "Số lượng token tối đa mà mô hình có thể tạo ra. Cần xem xét giới hạn ngữ cảnh của mô hình, nếu không sẽ báo lỗi"
       },
+      "parameters_customized": "Đang dùng tham số tùy chỉnh",
+      "parameters_default": "Tham số mặc định",
+      "parameters_tip": "Thông thường không cần điều chỉnh. Khi tắt nhiệt độ, Top-P và giới hạn đầu ra, giá trị mặc định của mô hình được sử dụng. Các điều khiển này được ưu tiên; tham số tùy chỉnh cùng tên bị bỏ qua. Cài đặt vai trò hiện có được giữ lại. Đặt lại khôi phục giá trị mặc định.",
       "reset": "Đặt lại",
       "set_as_default": "Áp dụng cho trợ lý mặc định",
       "show_line_numbers": "Hiển thị số dòng trong mã",
@@ -3259,17 +3269,22 @@
     }
   },
   "model_daily_quota": {
-    "exceeded": "Hạn mức hôm nay của mô hình này đã hết. Vui lòng dùng lại vào ngày mai.",
+    "connection": "Không thể kết nối dịch vụ kiểm tra yêu cầu. Mô hình chưa bắt đầu tạo câu trả lời. Hãy kiểm tra kết nối hoặc thử mạng khác.",
+    "exceeded": "Mô hình đã đạt hạn mức hằng ngày. Vui lòng chuyển sang mô hình khác.",
     "hint": "Đầu vào + đầu ra; bộ nhớ đệm đã nằm trong đầu vào. Đặt lại lúc 0 giờ Bắc Kinh. Câu hỏi cuối được chấp thuận có thể vượt hạn mức.",
     "invalid": "Quyền cho câu hỏi này đã hết hạn. Vui lòng gửi câu hỏi mới.",
     "limit": "Giới hạn ngày",
     "pending": "Hạn mức còn lại đang được tác vụ khác giữ chỗ. Hãy chờ tác vụ hoàn tất.",
     "remaining": "Còn lại",
+    "request_stage": "Kiểm tra trước khi gửi yêu cầu đến mô hình",
+    "request_suggestion": "Hãy thử lại một lần. Nếu vẫn lỗi, thử mạng khác như điểm phát sóng điện thoại và kiểm tra cài đặt proxy của ứng dụng. Nếu lỗi tiếp diễn, xuất gói chẩn đoán cho quản trị viên. Lỗi này không có nghĩa là hạn mức mô hình đã hết.",
     "stage": "Kiểm tra hạn mức mô hình",
     "status_error": "Không thể cập nhật hạn mức hôm nay. Lịch sử sử dụng không bị ảnh hưởng.",
     "suggestion": "Chọn mô hình khác hoặc chờ đặt lại hạn mức. Không thử lại liên tục.",
+    "timeout": "Kiểm tra yêu cầu đã hết thời gian chờ. Mô hình chưa bắt đầu tạo câu trả lời. Hãy kiểm tra kết nối hoặc thử mạng khác.",
     "title": "Hạn mức hôm nay · giờ Bắc Kinh",
-    "unavailable": "Dịch vụ hạn mức mô hình tạm thời không khả dụng.",
+    "turn_exceeded": "{{model}} đã đạt hạn mức hôm nay. Vui lòng chuyển sang mô hình khác.",
+    "unavailable": "API hiện không thể kiểm tra hạn mức mô hình. Hãy thử lại sau; nếu vẫn lỗi, hãy xuất gói chẩn đoán và liên hệ quản trị viên.",
     "used": "Đã dùng",
     "used_up": "Đã hết hôm nay"
   },
@@ -3381,11 +3396,11 @@
     "memory_notice": "Independent native memory survives model changes. Retry, branching and individual deletion are supported; direct editing and bulk deletion are not yet supported.",
     "outputting": "The model is producing output",
     "permission": {
-      "title": "Tác vụ này cần bạn xác nhận",
       "description": "Hãy kiểm tra thao tác và đối tượng trước khi cho phép tác vụ tiếp tục.",
-      "loopTitle": "Phát hiện thao tác lặp lại; tác vụ đã tạm dừng",
+      "details": "Chi tiết thao tác",
       "loopDescription": "Trợ lý đã thử cùng một thao tác nhiều lần. Bạn có thể cho phép tiếp tục một lần hoặc hủy thao tác này.",
-      "details": "Chi tiết thao tác"
+      "loopTitle": "Phát hiện thao tác lặp lại; tác vụ đã tạm dừng",
+      "title": "Tác vụ này cần bạn xác nhận"
     },
     "preparing": "[to be translated]:Request received; preparing the task",
     "responding": "[to be translated]:Processing the response",
@@ -6838,8 +6853,25 @@
       "processing": "Đang chạy"
     },
     "privacy": "Mặc định chỉ gồm siêu dữ liệu chẩn đoán, không gồm nội dung trò chuyện, tham số/kết quả công cụ, tệp đính kèm gốc hoặc toàn bộ lịch sử. Chỉ chia sẻ với người nhận đáng tin cậy. Nội dung tùy chọn có thể chứa thông tin cá nhân.",
-    "reportTemplate": "# Zen AI: chẩn đoán lượt này\n\n- Kết quả: {{outcome}}\n- Mô hình: {{model}}; Provider: {{provider}}\n- Token: đầu vào {{input}}; đầu ra {{output}}; đọc bộ nhớ đệm {{cache}} (đã nằm trong đầu vào)\n- Bắt đầu: {{start}}; kết thúc: {{end}}; tổng thời gian: {{total}}\n- Nội dung đầu tiên (có thể là suy luận): {{firstContent}}; phần trả lời đầu tiên: {{firstText}}; byte mạng đầu tiên: {{firstBytes}} (không phải token đầu)\n- Yêu cầu ghi nhận: {{requests}}; công cụ: {{tools}}; sự kiện thử lại/chuyển đổi: {{retries}}\n- Độ trễ commit giao diện: {{render}} (React, không bảo đảm thời điểm vẽ lên màn hình)\n\n## Giai đoạn có đủ đầu/cuối lâu nhất\n{{slowest}}\n\n## Dòng thời gian yêu cầu và công cụ\n{{timeline}}\n\n## Thời gian chờ người dùng được ghi nhận (có thể trùng công cụ)\n{{waits}}\n\n## Giới hạn và dữ liệu thiếu\n- Chỉ là thời gian đo được, không kết luận nguyên nhân mạng/ứng dụng/dịch vụ. Các giai đoạn có thể trùng nhau: không cộng hoặc trừ thời gian chờ một cách đơn giản.\n- Không ghi nhận không có nghĩa bằng không. Khoảng chưa kết thúc có thể vẫn chạy. Xuất khi đang chạy là ảnh chụp; hội thoại cũ không khôi phục sự kiện chưa ghi.\n- Thường bắt đầu ghi khi chuẩn bị phản hồi; tải tệp trước đó có thể không được tính. Sự kiện thử lại không phải số lần chạy lại tác vụ.\n- Đối chiếu zen-api-evidence.json và ID để xem nội bộ máy chủ. Thiếu bản ghi không chứng minh chưa nhận; ghi ra không bảo đảm ứng dụng nhận đầy đủ.\n- Sự kiện bỏ do giới hạn: {{dropped}}; yêu cầu cũ có thể hết hạn. Mã dữ liệu thiếu (performance.json): {{missing}}\n",
-    "requestTiming": " | Tiêu đề phản hồi {{headers}} | Byte đầu tiên {{bytes}} | HTTP {{status}} | ID yêu cầu {{requestId}}"
+    "renderNotRecorded": "Chưa thu thập",
+    "reportTemplate": "# Zen AI: chẩn đoán lượt này\n\n- Kết quả: {{outcome}}\n- Mô hình: {{model}}; Provider: {{provider}}\n- Token: đầu vào {{input}}; đầu ra {{output}}; đọc bộ nhớ đệm {{cache}} (đã nằm trong đầu vào)\n- Bắt đầu: {{start}}; kết thúc: {{end}}; tổng thời gian: {{total}}\n- Nội dung đầu tiên (có thể là suy luận): {{firstContent}}; phần trả lời đầu tiên: {{firstText}}; byte mạng đầu tiên: {{firstBytes}} (không phải token đầu)\n- Yêu cầu ghi nhận: {{requests}}; công cụ: {{tools}}; sự kiện thử lại/chuyển đổi: {{retries}}\n- Từ khi phản hồi kết thúc đến commit giao diện: {{render}} (chỉ ghi nhận hoàn tất trực tiếp khi thành phần luôn hiển thị; không đo thời gian vẽ màn hình)\n\n## Giai đoạn có đủ đầu/cuối lâu nhất\n{{slowest}}\n\n## Dòng thời gian yêu cầu và công cụ\n{{timeline}}\n\n## Thời gian chờ người dùng được ghi nhận (có thể trùng công cụ)\n{{waits}}\n\n## Giới hạn và dữ liệu thiếu\n- Chỉ là thời gian đo được, không kết luận nguyên nhân mạng/ứng dụng/dịch vụ. Các giai đoạn có thể trùng nhau: không cộng hoặc trừ thời gian chờ một cách đơn giản.\n- Không ghi nhận không có nghĩa bằng không. Khoảng chưa kết thúc có thể vẫn chạy. Xuất khi đang chạy là ảnh chụp; hội thoại cũ không khôi phục sự kiện chưa ghi.\n- Thường bắt đầu ghi khi chuẩn bị phản hồi; tải tệp trước đó có thể không được tính. Sự kiện thử lại không phải số lần chạy lại tác vụ.\n- Đối chiếu zen-api-evidence.json và ID để xem nội bộ máy chủ. Thiếu bản ghi không chứng minh chưa nhận; ghi ra không bảo đảm ứng dụng nhận đầy đủ.\n- Sự kiện bỏ do giới hạn: {{dropped}}; yêu cầu cũ có thể hết hạn. Mã dữ liệu thiếu (performance.json): {{missing}}\n",
+    "requestTiming": " | Tiêu đề phản hồi {{headers}} | Byte đầu tiên {{bytes}} | HTTP {{status}} | ID yêu cầu {{requestId}}",
+    "serverTiming": {
+      "attempt": "[to be translated]:  - Attempt {{index}} / channel {{channel}} | Total {{total}} | Before attempt {{before}}\n    First event {{event}} | Effective content {{content}} | Answer text {{text}} | First non-ping forward {{forward}} | Content to forward {{forwarding}} (unavailable if metadata was forwarded earlier)\n{{http}}\n    Missing: {{missing}}",
+      "http": "[to be translated]:    - HTTP {{index}} | Before HTTP {{prepare}} | DNS {{dns}} | TCP (summed connections, may overlap) {{connect}} | TLS {{tls}} | Connection ready {{ready}} | Sent {{sent}} | First byte {{firstByte}} | Wait after sending {{wait}} | Body reading {{body}} | Connection reused {{reused}}",
+      "intro": "[to be translated]:## Server and upstream timing\n\nEach request and channel attempt is listed separately. Preparation milestones are offsets from API receipt; stream milestones are offsets from the channel attempt; HTTP milestones are offsets from that HTTP call. DNS/TCP/TLS may overlap or be skipped on connection reuse. First byte/event is not first answer text. Outside-gateway time compares elapsed durations and includes client/network work; it is not a one-way network measurement. Unknown or unfinished stages are not zero.",
+      "missing": "[to be translated]:  Missing: {{missing}}",
+      "no": "[to be translated]:No",
+      "phases": {
+        "admission_ready": "[to be translated]:Admission ready",
+        "body_ready": "[to be translated]:Body ready",
+        "routing_ready": "[to be translated]:Routing ready",
+        "tokens_ready": "[to be translated]:Token estimate ready",
+        "validated": "[to be translated]:Validated"
+      },
+      "request": "[to be translated]:- Request {{requestId}} | API total {{total}} | Outside API {{outside}}\n  Preparation milestones: {{phases}}",
+      "yes": "[to be translated]:Yes"
+    }
   },
   "update": {
     "available": "A new version {{version}} is available. Click Check for Updates any time to download it.",
@@ -6873,6 +6905,9 @@
       "unavailable": "Unable to load usage. Please try again later.",
       "unsupported": "This service does not support usage queries yet"
     },
+    "image_requests": "Yêu cầu hình ảnh",
+    "image_requests_hint": "Mỗi yêu cầu tính một lần, kể cả khi tạo nhiều ảnh. Phí theo giá của dịch vụ.",
+    "image_trend": "Xu hướng yêu cầu hình ảnh",
     "input": "Input tokens",
     "intervals": {
       "day": "Daily",

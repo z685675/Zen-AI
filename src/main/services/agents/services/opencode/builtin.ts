@@ -6,6 +6,7 @@ import {
 
 import { agentService } from '../AgentService'
 import { provisionBuiltinAgent } from '../builtin/BuiltinAgentProvisioner'
+import { DEFAULT_ASSISTANT_DESCRIPTION, DEFAULT_ASSISTANT_INSTRUCTIONS } from './defaults'
 
 let initialization: Promise<string | null> | undefined
 
@@ -23,9 +24,8 @@ export function ensureOpenCodeAgent(): Promise<string | null> {
           name: DEFAULT_OPENCODE_AGENT_NAME,
           // Do not inherit the old agent's Exa/scheduler/Soul instructions.
           // The OpenCode service supplies its own connected-tool contract.
-          description: 'Zen AI 智能助手，使用 OpenCode 执行任务、处理文件和操作浏览器。',
-          instructions:
-            'You are Zen AI New Assistant. Help the user finish tasks using the tools actually available in this session. Answer simple greetings directly. Never claim to have configured background tasks, messaging or cross-conversation memory without an actual connected tool and authorization.',
+          description: DEFAULT_ASSISTANT_DESCRIPTION,
+          instructions: DEFAULT_ASSISTANT_INSTRUCTIONS,
           configuration: {
             ...original?.configuration,
             avatar: DEFAULT_OPENCODE_AGENT_AVATAR,

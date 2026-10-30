@@ -195,10 +195,12 @@ const dbFacade = DbService.getInstance()
 
 const buildAgentSessionSyncMetadata = (
   status: AgentSessionSyncMetadata['status'],
-  reason?: string
+  reason?: string,
+  runId?: string
 ): AgentSessionSyncMetadata => ({
   target: 'wechat',
   status,
+  ...(runId ? { runId } : {}),
   updatedAt: new Date().toISOString(),
   ...(reason ? { reason } : {})
 })
@@ -206,10 +208,11 @@ const buildAgentSessionSyncMetadata = (
 const withAgentSessionSyncMetadata = (
   message: Message | undefined,
   status: AgentSessionSyncMetadata['status'],
-  reason?: string
+  reason?: string,
+  runId?: string
 ): MessageProviderMetadata => ({
   ...message?.providerMetadata,
-  agentSessionSync: buildAgentSessionSyncMetadata(status, reason)
+  agentSessionSync: buildAgentSessionSyncMetadata(status, reason, runId)
 })
 
 const updateAgentSessionSyncStatus = async (
@@ -218,7 +221,8 @@ const updateAgentSessionSyncStatus = async (
   topicId: string,
   messageIds: string[],
   status: AgentSessionSyncMetadata['status'],
-  reason?: string
+  reason?: string,
+  runId?: string
 ) => {
   const updates = messageIds
     .map((messageId) => {
@@ -227,7 +231,7 @@ const updateAgentSessionSyncStatus = async (
         return null
       }
 
-      const providerMetadata = withAgentSessionSyncMetadata(message, status, reason)
+      const providerMetadata = withAgentSessionSyncMetadata(message, status, reason, runId)
       return { messageId, providerMetadata }
     })
     .filter(Boolean) as Array<{ messageId: string; providerMetadata: MessageProviderMetadata }>
@@ -1710,6 +1714,7 @@ const fetchAndProcessAgentResponseImpl = async (
             target?: string
             status?: 'synced' | 'failed' | 'skipped'
             reason?: string
+            runId?: string
           }
 
           if (syncEvent.target !== 'wechat' || syncEvent.status === 'skipped') {
@@ -1723,7 +1728,8 @@ const fetchAndProcessAgentResponseImpl = async (
             topicId,
             syncMessageIds,
             syncEvent.status === 'synced' ? 'synced' : 'failed',
-            syncEvent.reason
+            syncEvent.reason,
+            syncEvent.runId
           )
         }
       }
@@ -3464,13 +3470,13 @@ export const updateBlocks = async (blocks: MessageBlock[]): Promise<void> => {
 // streaming. IPC chunks are wrapped into a ReadableStream and fed into the
 // existing stream processing infrastructure.
 //
-// Persistence is handled by the same saveUpdatesToDB / saveUpdatedBlockToDB
-// functions used for normal agent messages (writes to SQLite via
-// AgentMessageDataSource). When the renderer is watching, the backend skips
-// its own persistHeadlessExchange to avoid duplicate writes.
+// New automation always persists in main, even while the UI is watching.
+// Its stream carries stable IDs and uses persist:false for display-only updates.
+// The default persistence mode is retained for older channel callers.
 // ---------------------------------------------------------------------------
 
 export type ChannelStreamController = {
+  settled: Promise<void>
   pushChunk: (chunk: TextStreamPart<Record<string, any>>) => void
   complete: () => void
   error: (err: Error) => void
@@ -3488,10 +3494,12 @@ export const addChannelUserMessage = (
   agentId: string,
   text: string,
   images?: ChannelImageAttachment[],
-  imagePaths?: string[]
+  imagePaths?: string[],
+  options?: { messageId: string; persist: false }
 ): string => {
   const now = new Date().toISOString()
-  const userMsgId = uuid()
+  const userMsgId = options?.messageId ?? uuid()
+  if (options && store.getState().messages.entities[userMsgId]) return userMsgId
   const blockId = uuid()
 
   const allBlocks: MessageBlock[] = [
@@ -3534,9 +3542,10 @@ export const addChannelUserMessage = (
   }
   dispatch(newMessagesActions.addMessage({ topicId, message: userMessage }))
 
-  dbService.appendMessage(topicId, userMessage, allBlocks).catch((err) => {
-    logger.error('Failed to persist channel user message', err as Error)
-  })
+  if (options?.persist !== false)
+    dbService.appendMessage(topicId, userMessage, allBlocks).catch((err) => {
+      logger.error('Failed to persist channel user message', err as Error)
+    })
 
   return userMsgId
 }
@@ -3552,20 +3561,30 @@ export const setupChannelStream = (
   topicId: string,
   agentId: string,
   modelId?: string,
-  askId?: string
+  askId?: string,
+  options?: { messageId: string; persist: false }
 ): ChannelStreamController => {
+  const separator = modelId?.indexOf(':') ?? -1
+  const providerId = separator >= 0 ? modelId!.slice(0, separator) : undefined
+  const actualModelId = separator >= 0 ? modelId!.slice(separator + 1) : modelId
   const model: Model | undefined =
-    (modelId ? getModel(modelId) : undefined) ??
-    (modelId ? { id: modelId, provider: '', name: '', group: '' } : undefined)
+    (actualModelId ? getModel(actualModelId, providerId) : undefined) ??
+    (actualModelId ? { id: actualModelId, provider: providerId ?? '', name: actualModelId, group: '' } : undefined)
   const assistantMessage = createAssistantMessage(agentId, topicId, {
     ...(askId ? { askId } : {}),
     ...(model ? { modelId: model.id, model } : {})
   })
-  dispatch(newMessagesActions.addMessage({ topicId, message: assistantMessage }))
+  if (options) assistantMessage.id = options.messageId
+  if (options && getState().messages.entities[assistantMessage.id]) {
+    dispatch(newMessagesActions.updateMessage({ topicId, messageId: assistantMessage.id, updates: assistantMessage }))
+  } else {
+    dispatch(newMessagesActions.addMessage({ topicId, message: assistantMessage }))
+  }
   dispatch(newMessagesActions.setTopicLoading({ topicId, loading: true }))
-  dbService.appendMessage(topicId, assistantMessage, []).catch((err) => {
-    logger.error('Failed to persist initial channel assistant message', err as Error)
-  })
+  if (options?.persist !== false)
+    dbService.appendMessage(topicId, assistantMessage, []).catch((err) => {
+      logger.error('Failed to persist initial channel assistant message', err as Error)
+    })
 
   let streamController: ReadableStreamDefaultController<TextStreamPart<Record<string, any>>> | null = null
   const stream = new ReadableStream<TextStreamPart<Record<string, any>>>({
@@ -3575,16 +3594,20 @@ export const setupChannelStream = (
   })
 
   const assistant: Assistant = { id: agentId, name: '', prompt: '', topics: [], type: 'claude-code', model }
+  const persistUpdates = options?.persist === false ? async () => {} : saveUpdatesToDB
+  const persistBlock = options?.persist === false ? async () => {} : saveUpdatedBlockToDB
 
   const blockManager = new BlockManager({
     dispatch,
     getState,
-    saveUpdatedBlockToDB,
-    saveUpdatesToDB,
+    saveUpdatedBlockToDB: persistBlock,
+    saveUpdatesToDB: persistUpdates,
     assistantMsgId: assistantMessage.id,
     topicId,
-    throttledBlockUpdate,
-    cancelThrottledBlockUpdate
+    // The shared throttler also writes blocks to SQLite; display-only streams must not use it.
+    throttledBlockUpdate:
+      options?.persist === false ? (id, changes) => dispatch(updateOneBlock({ id, changes })) : throttledBlockUpdate,
+    cancelThrottledBlockUpdate: options?.persist === false ? () => {} : cancelThrottledBlockUpdate
   })
 
   const callbacks = createCallbacks({
@@ -3593,7 +3616,7 @@ export const setupChannelStream = (
     getState,
     topicId,
     assistantMsgId: assistantMessage.id,
-    saveUpdatesToDB,
+    saveUpdatesToDB: persistUpdates,
     assistant
   })
 
@@ -3616,11 +3639,12 @@ export const setupChannelStream = (
     streamController?.close()
   }, AGENT_SESSION_CHANNEL_STALL_TIMEOUT_MS)
 
-  adapter
+  const settled = adapter
     .processStream({
       fullStream: stream,
       text: Promise.resolve('')
     })
+    .then(() => undefined)
     .catch((err) => {
       logger.error('Channel stream processing failed', err as Error)
     })
@@ -3631,6 +3655,7 @@ export const setupChannelStream = (
     })
 
   return {
+    settled,
     assistantMessageId: assistantMessage.id,
     markUserMessageReceived() {
       userMessageReceived = true

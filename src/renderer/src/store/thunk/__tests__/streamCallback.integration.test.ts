@@ -1,12 +1,13 @@
 import { combineReducers, configureStore } from '@reduxjs/toolkit'
 import db from '@renderer/databases'
 import { autoRenameTopic } from '@renderer/hooks/useTopic'
+import { dbService } from '@renderer/services/db'
 import { beginDiagnostic, getDiagnosticEvidence } from '@renderer/services/DiagnosticEvidenceService'
 import { BlockManager } from '@renderer/services/messageStreaming/BlockManager'
 import { createCallbacks } from '@renderer/services/messageStreaming/callbacks'
 import { createStreamProcessor } from '@renderer/services/StreamProcessingService'
 import { estimateMessagesUsage } from '@renderer/services/TokenService'
-import type { AppDispatch } from '@renderer/store'
+import rendererStore, { type AppDispatch } from '@renderer/store'
 import { messageBlocksSlice } from '@renderer/store/messageBlock'
 import { messagesSlice } from '@renderer/store/newMessage'
 import toolPermissionsReducer, { toolPermissionsActions } from '@renderer/store/toolPermissions'
@@ -21,10 +22,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { RootState } from '../../index'
 import {
+  addChannelUserMessage,
   appendAssistantResponseThunk,
   regenerateAssistantResponseThunk,
   resendMessageThunk,
-  sendMessage
+  sendMessage,
+  setupChannelStream
 } from '../messageThunk'
 
 vi.mock('@renderer/config/models', async (importOriginal) => {
@@ -305,6 +308,40 @@ describe('streamCallback integration', () => {
     )
   })
 
+  it('uses canonical channel IDs without appending duplicate rows or writing streamed blocks back to storage', async () => {
+    vi.spyOn(rendererStore, 'getState').mockImplementation(getState)
+    const append = vi.spyOn(dbService, 'appendMessage').mockResolvedValue(undefined)
+    const update = vi.spyOn(dbService, 'updateMessage').mockResolvedValue(undefined)
+    const channelTopic = 'agent-session:display-only'
+    const userId = 'run:user'
+    const answerId = 'run:assistant'
+    const userOptions = { messageId: userId, persist: false as const }
+    addChannelUserMessage(dispatch, channelTopic, 'agent-channel', '你好', undefined, undefined, userOptions)
+    addChannelUserMessage(dispatch, channelTopic, 'agent-channel', '你好', undefined, undefined, userOptions)
+    const stream = setupChannelStream(dispatch, getState, channelTopic, 'agent-channel', undefined, userId, {
+      messageId: answerId,
+      persist: false
+    })
+    stream.pushChunk({ type: 'text-start', id: 'text' })
+    stream.pushChunk({ type: 'text-delta', id: 'text', text: '第一段' })
+    stream.pushChunk({ type: 'text-delta', id: 'text', text: '第二段' })
+    stream.pushChunk({ type: 'text-end', id: 'text' })
+    stream.complete()
+    await stream.settled
+    const replay = setupChannelStream(dispatch, getState, channelTopic, 'agent-channel', undefined, userId, {
+      messageId: answerId,
+      persist: false
+    })
+    replay.complete()
+    await replay.settled
+    expect(getState().messages.messageIdsByTopic[channelTopic]).toEqual([userId, answerId])
+    expect(getState().messages.entities[answerId].askId).toBe(userId)
+    expect(append).not.toHaveBeenCalled()
+    expect(update).not.toHaveBeenCalled()
+    expect(db.message_blocks.update).not.toHaveBeenCalled()
+    expect(db.message_blocks.bulkPut).not.toHaveBeenCalled()
+  })
+
   it.each([false, true])(
     'blocks all old execution thunks without rewriting history (developer=%s)',
     async (developer) => {
@@ -418,6 +455,63 @@ describe('streamCallback integration', () => {
       })
     }
   )
+
+  it('persists a sanitized quota notice with terminal metadata without adding text to the answer', async () => {
+    const result = {
+      model: 'gpt-test',
+      date: '2026-10-29',
+      current_date: '2026-10-29',
+      limit: 100,
+      used: 120,
+      exhausted: true,
+      extra_allowed: false,
+      pending: false
+    }
+    const save = vi.fn().mockResolvedValue(undefined)
+    const callbacks = createCallbacks({
+      blockManager: new BlockManager({
+        dispatch,
+        getState,
+        saveUpdatedBlockToDB: vi.fn(),
+        saveUpdatesToDB: save,
+        assistantMsgId,
+        topicId,
+        throttledBlockUpdate: vi.fn(),
+        cancelThrottledBlockUpdate: vi.fn()
+      }),
+      dispatch,
+      getState,
+      topicId,
+      assistantMsgId,
+      saveUpdatesToDB: save,
+      assistant
+    })
+    const blocks = [...getState().messages.entities[assistantMsgId].blocks]
+    await processChunks(
+      [
+        {
+          type: ChunkType.RAW,
+          content: { type: 'model_daily_quota', results: [{ ...result, permit: 'private-secret' }, null] }
+        }
+      ],
+      callbacks
+    )
+    expect(getState().messages.entities[assistantMsgId].providerMetadata?.modelDailyQuota).toEqual({
+      results: [result]
+    })
+    expect(save).not.toHaveBeenCalled()
+    await callbacks.onComplete(AssistantMessageStatus.SUCCESS, {
+      usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 }
+    })
+    const message = getState().messages.entities[assistantMsgId]
+    expect(message.blocks).toEqual(blocks)
+    expect(message.status).toBe(AssistantMessageStatus.SUCCESS)
+    expect(save.mock.calls.at(-1)?.[2].providerMetadata).toMatchObject({
+      modelDailyQuota: { results: [result] },
+      responseTiming: expect.any(Object)
+    })
+    expect(JSON.stringify(save.mock.calls)).not.toContain('private-secret')
+  })
 
   it('handles a complete text streaming flow', async () => {
     const callbacks = createMockCallbacks(assistantMsgId, topicId, assistant, dispatch, getState)
@@ -616,7 +710,9 @@ describe('streamCallback integration', () => {
       messagesSlice.actions.updateMessage({
         topicId,
         messageId: assistantMsgId,
-        updates: { providerMetadata: { agentSessionSync: { target: 'wechat', status: 'synced' } } }
+        updates: {
+          providerMetadata: { agentSessionSync: { target: 'wechat', status: 'synced', runId: 'mirror-run-1' } }
+        }
       })
     )
     const callbacks = createMockCallbacks(assistantMsgId, topicId, assistant, dispatch, getState)
@@ -638,7 +734,11 @@ describe('streamCallback integration', () => {
     })
     const message = getState().messages.entities[assistantMsgId]
     expect(message.updatedAt).toBe('2026-10-11T01:30:06.500Z')
-    expect(message.providerMetadata?.agentSessionSync).toEqual({ target: 'wechat', status: 'synced' })
+    expect(message.providerMetadata?.agentSessionSync).toEqual({
+      target: 'wechat',
+      status: 'synced',
+      runId: 'mirror-run-1'
+    })
     expect(message.providerMetadata?.responseTiming).toEqual({
       startedAt: '2026-10-11T01:30:00.000Z',
       finishedAt: '2026-10-11T01:30:06.500Z',

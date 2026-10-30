@@ -43,6 +43,27 @@ const group = (interval: UsageInterval = 'day', days = records) =>
 const column = (date: string) => screen.getByRole('button', { name: new RegExp(`^${date}`) })
 
 describe('Usage trend details', () => {
+  it('plots image calls with their own scale and no token or cache details', async () => {
+    const days = group(
+      'day',
+      records.map((day, index) => ({
+        ...day,
+        image_request_count: index === 0 ? 3 : 1,
+        request_count: day.request_count + (index === 0 ? 3 : 1)
+      }))
+    )
+    render(<UsageTrend days={days} mode="images" />)
+    const chart = screen.getByRole('group', { name: '图片调用趋势' })
+    expect(chart.querySelectorAll('path')).toHaveLength(1)
+    expect(within(chart).getByText('3')).toBeInTheDocument()
+    expect(within(chart).queryByText('1.5')).not.toBeInTheDocument()
+    fireEvent.mouseEnter(column('2026-10-14'))
+    const tooltip = await screen.findByRole('tooltip')
+    expect(tooltip).toHaveTextContent('图片调用次数')
+    expect(within(tooltip).getByText('3')).toBeInTheDocument()
+    expect(tooltip).not.toHaveTextContent('Token')
+    expect(tooltip).not.toHaveTextContent('缓存')
+  })
   it('opens immediately over the whole date column and shows all three exact counts, then switches dates', async () => {
     render(<UsageTrend days={group()} />)
     const first = column('2026-10-14')

@@ -28,6 +28,7 @@ const identity = { channelId: 'channel', accountId: 'account', peerId: 'peer', s
 
 describe('durable new-assistant automation perimeter', () => {
   let client: Client
+  let memoryAnchor: Client | undefined
   let db: ReturnType<typeof drizzle<typeof schema>>
   let repository: AutomationRepository
   let now: number
@@ -35,6 +36,12 @@ describe('durable new-assistant automation perimeter', () => {
 
   async function initialize(url = 'file::memory:?cache=shared') {
     // Transactions lease another connection; shared memory keeps the test schema visible.
+    memoryAnchor?.close()
+    memoryAnchor = undefined
+    if (url.includes(':memory:')) {
+      memoryAnchor = createClient({ url })
+      await memoryAnchor.execute('SELECT 1')
+    }
     client = createClient({ url })
     db = drizzle(client, { schema })
     await client.executeMultiple(`
@@ -75,6 +82,8 @@ describe('durable new-assistant automation perimeter', () => {
   afterEach(() => {
     vi.useRealTimers()
     client.close()
+    memoryAnchor?.close()
+    memoryAnchor = undefined
     for (const directory of temporaryDatabases.splice(0)) {
       if (path.dirname(directory) !== os.tmpdir() || !path.basename(directory).startsWith('zen-automation-'))
         throw new Error('Invalid temporary database directory')
@@ -98,6 +107,121 @@ describe('durable new-assistant automation perimeter', () => {
   }
   const deliveries = () => db.select().from(automationOutbox)
   const runs = () => db.select().from(automationRuns)
+
+  async function acknowledgeNext() {
+    const part = await repository.claimDelivery(identity.channelId)
+    expect(part).toBeDefined()
+    expect(await repository.settleDelivery(part!.id, part!.lease!, { status: 'accepted' })).toBe(true)
+  }
+
+  it.each(['wechat', 'desktop'] as const)(
+    'reports %s synchronization only after all text parts are accepted',
+    async (origin) => {
+      const run = await complete('回答'.repeat(3000), origin)
+      expect(await repository.syncedRuns(binding())).toEqual([])
+      const parts = await deliveries()
+      expect(parts.length).toBeGreaterThan(1)
+      for (let index = 0; index < parts.length - 1; index++) {
+        await acknowledgeNext()
+        expect(await repository.syncedRuns(binding())).toEqual([])
+      }
+      await acknowledgeNext()
+      expect(await repository.syncedRuns(binding())).toEqual([{ id: run.id, sessionId: identity.sessionId }])
+    }
+  )
+
+  it('includes file delivery in the completion receipt and drops receipts after rebinding', async () => {
+    const { run } = await accept()
+    await repository.claimRun(run.id)
+    await repository.completeRun(run.id, 'answer', [
+      { path: '/workspace/output.pdf', sha256: 'a'.repeat(64), size: 123 }
+    ])
+    await acknowledgeNext()
+    expect(await repository.syncedRuns(binding())).toEqual([])
+    await acknowledgeNext()
+    expect(await repository.syncedRuns(binding())).toEqual([{ id: run.id, sessionId: identity.sessionId }])
+    const next = await repository.bind({ ...identity, peerId: 'new-peer' }, 1)
+    expect(await repository.syncedRuns(next)).toEqual([])
+    expect(await repository.syncedRuns(binding())).toEqual([])
+  })
+
+  it.each(['wechat', 'desktop'] as const)(
+    'rolls back the whole %s outbox if the file manifest cannot be saved',
+    async (origin) => {
+      await client.executeMultiple(`
+      CREATE TRIGGER reject_test_file BEFORE INSERT ON assistant_automation_files
+      BEGIN SELECT RAISE(ABORT, 'test_file_rejected'); END;
+    `)
+      const files = [{ path: '/workspace/output.pdf', sha256: 'a'.repeat(64), size: 123 }]
+      if (origin === 'wechat') {
+        const { run } = await accept()
+        await repository.claimRun(run.id)
+        await expect(repository.completeRun(run.id, 'answer', files)).rejects.toThrow()
+        expect((await runs())[0].state).toBe('running')
+      } else {
+        await expect(
+          repository.mirrorCompletedExchange(binding(), 'turn', 'question', 'answer', files)
+        ).rejects.toThrow()
+        expect(await runs()).toEqual([])
+      }
+      expect(await deliveries()).toEqual([])
+      expect(await repository.syncedRuns(binding())).toEqual([])
+      await client.execute('DROP TRIGGER reject_test_file')
+    }
+  )
+
+  it.each(['failed', 'unknown', 'cancelled', 'retry_wait', 'sending'] as const)(
+    'does not report %s deliveries as synchronized',
+    async (state) => {
+      await complete()
+      await client.execute({ sql: 'UPDATE assistant_automation_outbox SET state = ?', args: [state] })
+      expect(await repository.syncedRuns(binding())).toEqual([])
+    }
+  )
+
+  it('does not report interrupted runs, missing assistant output or disabled bindings as synchronized', async () => {
+    const run = await complete('answer', 'desktop')
+    await acknowledgeNext()
+    await client.execute("UPDATE assistant_automation_outbox SET state = 'accepted', role = 'user'")
+    expect(await repository.syncedRuns(binding())).toEqual([])
+    await client.execute("UPDATE assistant_automation_outbox SET role = 'assistant'")
+    await client.execute("UPDATE assistant_automation_runs SET state = 'interrupted'")
+    expect(await repository.syncedRuns(binding())).toEqual([])
+    await client.execute("UPDATE assistant_automation_runs SET state = 'completed'")
+    expect(await repository.syncedRuns(binding())).toEqual([{ id: run.id, sessionId: identity.sessionId }])
+    await repository.disable(identity.channelId, 1)
+    expect(await repository.syncedRuns(binding())).toEqual([])
+  })
+
+  it('mirrors completed desktop exchanges atomically, once, without entering the execution queue', async () => {
+    await accept('phone-waiting')
+    const result = await repository.mirrorCompletedExchange(binding(), 'desktop-turn', '电脑追问', '最终答复')
+    expect(result.run.state).toBe('completed')
+    expect((await repository.queued()).map((run) => run.input)).toEqual(['你好'])
+    expect((await deliveries()).map((part) => [part.role, part.text])).toEqual([
+      ['user', '电脑追问'],
+      ['assistant', '最终答复']
+    ])
+    expect(
+      (await repository.mirrorCompletedExchange(binding(), 'desktop-turn', '电脑追问', '最终答复')).duplicate
+    ).toBe(true)
+    expect(await deliveries()).toHaveLength(2)
+    expect(await runs()).toHaveLength(2)
+  })
+
+  it('does not mirror an old desktop result to a changed or disabled binding', async () => {
+    await repository.bind({ ...identity, peerId: 'new-owner' }, 1)
+    await expect(repository.mirrorCompletedExchange(binding(), 'old-turn', 'question', 'answer')).rejects.toThrow(
+      'binding_changed'
+    )
+    expect(await deliveries()).toHaveLength(0)
+    expect(await runs()).toHaveLength(0)
+    await repository.disable(identity.channelId, 2)
+    await expect(
+      repository.mirrorCompletedExchange({ ...identity, peerId: 'new-owner', version: 2 }, 'turn', 'q', 'a')
+    ).rejects.toThrow('binding_changed')
+    expect(await deliveries()).toHaveLength(0)
+  })
 
   it('delivers immutable file manifests after text, never through the text transport', async () => {
     const run = await complete()

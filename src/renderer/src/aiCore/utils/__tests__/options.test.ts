@@ -496,6 +496,114 @@ describe('options utils', () => {
     })
 
     describe('Custom parameters', () => {
+      it('omits controlled overrides from the actual compatible SDK request body', async () => {
+        const { createOpenAICompatible } = await import('@ai-sdk/openai-compatible')
+        const { getCustomParameters } = await import('../reasoning')
+        vi.mocked(getCustomParameters).mockReturnValue({
+          temperature: 0.7,
+          topP: 0.8,
+          maxOutputTokens: 1000,
+          openai: { top_p: 0.4, max_tokens: 2000, max_completion_tokens: 3000, seed: 42 }
+        })
+        const result = buildProviderOptions(
+          mockAssistant,
+          mockModel,
+          {
+            id: SystemProviderIds.openai,
+            type: 'openai',
+            apiKey: 'unused',
+            apiHost: 'https://unused.invalid/v1'
+          } as Provider,
+          { enableReasoning: false, enableWebSearch: false, enableGenerateImage: false }
+        )
+        let request: Record<string, unknown> = {}
+        const provider = createOpenAICompatible({
+          name: 'openai',
+          baseURL: 'https://unused.invalid/v1',
+          fetch: async (_url, init) => {
+            request = JSON.parse(init!.body as string)
+            return new Response(
+              JSON.stringify({
+                id: 'test',
+                model: 'test',
+                created: 1,
+                choices: [{ index: 0, message: { role: 'assistant', content: 'ok' }, finish_reason: 'stop' }],
+                usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 }
+              }),
+              { headers: { 'content-type': 'application/json' } }
+            )
+          }
+        })
+        await provider.chatModel('test').doGenerate({
+          prompt: [{ role: 'user', content: [{ type: 'text', text: 'Hello' }] }],
+          ...result.standardParams,
+          providerOptions: result.providerOptions
+        })
+        expect(request).toMatchObject({ model: 'test', seed: 42 })
+        for (const key of ['temperature', 'top_p', 'max_tokens', 'max_completion_tokens']) {
+          expect(request).not.toHaveProperty(key)
+        }
+      })
+
+      it.each(['default', 'existing-custom-role'])(
+        'prevents %s custom parameters from bypassing model controls',
+        async (id) => {
+          const { getCustomParameters } = await import('../reasoning')
+          const custom = {
+            temperature: 0.8,
+            topP: 0.9,
+            maxOutputTokens: 99999,
+            top_p: 0.3,
+            max_completion_tokens: 99999,
+            openai: {
+              temperature: 1,
+              extra_body: { top_p: 0.4, max_tokens: 100, reasoning_effort: 'low' },
+              response_format: { json_schema: { schema: { properties: { temperature: { type: 'number' } } } } }
+            },
+            seed: 42
+          }
+          vi.mocked(getCustomParameters).mockReturnValue(custom)
+          const result = buildProviderOptions(
+            { ...mockAssistant, id },
+            mockModel,
+            {
+              id: SystemProviderIds.openai,
+              type: 'openai',
+              apiKey: 'test-key',
+              apiHost: 'https://api.openai.com/v1'
+            } as Provider,
+            { enableReasoning: false, enableWebSearch: false, enableGenerateImage: false }
+          )
+          expect(result.standardParams).toEqual({ seed: 42 })
+          expect(result.providerOptions.openai).not.toHaveProperty('temperature')
+          expect(result.providerOptions.openai).not.toHaveProperty('top_p')
+          expect(result.providerOptions.openai).not.toHaveProperty('max_completion_tokens')
+          expect(result.providerOptions.openai.extra_body).toEqual({ reasoning_effort: 'low' })
+          expect(result.providerOptions.openai.response_format).toEqual(custom.openai.response_format)
+          expect(custom.openai.extra_body.top_p).toBe(0.4)
+        }
+      )
+
+      it('removes output and sampling aliases from Google and Ollama request containers', async () => {
+        const { getCustomParameters } = await import('../reasoning')
+        vi.mocked(getCustomParameters).mockReturnValue({
+          generationConfig: { temperature: 0.4, topP: 0.6, maxOutputTokens: 100, responseMimeType: 'text/plain' },
+          options: { num_predict: 500, temperature: 1.5, num_ctx: 32768 }
+        })
+        const result = buildProviderOptions(
+          mockAssistant,
+          mockModel,
+          {
+            id: SystemProviderIds.gemini,
+            type: 'gemini',
+            apiKey: 'test-key'
+          } as Provider,
+          { enableReasoning: false, enableWebSearch: false, enableGenerateImage: false }
+        )
+        expect(result.providerOptions.google.generationConfig).toEqual({ responseMimeType: 'text/plain' })
+        expect(result.providerOptions.google.options).toEqual({ num_ctx: 32768 })
+      })
+
       it('should merge custom provider-specific parameters', async () => {
         const { getCustomParameters } = await import('../reasoning')
 

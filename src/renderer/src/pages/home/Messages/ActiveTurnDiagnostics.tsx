@@ -14,7 +14,8 @@ export default function ActiveTurnDiagnostics({ message, source }: { message: Me
     <Button
       type="text"
       size="small"
-      icon={<Download size={14} />}
+      icon={<Download size={12} />}
+      style={{ color: 'var(--color-text-3)', fontSize: 11, height: 22, padding: '0 4px', gap: 4 }}
       loading={exporting}
       onClick={(event) => {
         event.stopPropagation()

@@ -28,12 +28,12 @@ import { buildAgentSessionTopicId } from '@renderer/utils/agentSession'
 import { clearAgentSessionDraft, getAgentSessionDraft } from '@renderer/utils/agentSessionDraft'
 import { isUnnamedAgentSessionName } from '@renderer/utils/agentSessionTitle'
 import { shouldDiscardEmptyConversation } from '@renderer/utils/conversationDraft'
-import { DEFAULT_FUSION_AGENT_ID, getAgentAvatar } from '@shared/config/agents'
+import { getAgentAvatar } from '@shared/config/agents'
 import { isZenManagedApiHost } from '@shared/config/zenProvider'
 import { Alert, Spin, Tooltip } from 'antd'
-import { FolderOpen, ListTodo, PanelLeftOpen, Puzzle, ScrollText, Search } from 'lucide-react'
+import { FolderOpen, ListTodo, PanelLeftOpen, ScrollText, Search } from 'lucide-react'
 import type { PropsWithChildren, ReactNode } from 'react'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import styled from 'styled-components'
 import { mutate } from 'swr'
@@ -43,7 +43,7 @@ import { PinnedTodoPanel } from '../home/Inputbar/components/PinnedTodoPanel'
 import ChatNavigation from '../home/Messages/ChatNavigation'
 import NarrowLayout from '../home/Messages/NarrowLayout'
 import AgentChatNavbar from './components/AgentChatNavbar'
-import AgentQuickEntryModal, { type AgentQuickEntry } from './components/AgentQuickEntryModal'
+import AgentQuickEntries from './components/AgentQuickEntries'
 import AgentSessionInputbar from './components/AgentSessionInputbar'
 import AgentSessionMessages from './components/AgentSessionMessages'
 import AgentSessionPermissions from './components/AgentSessionPermissions'
@@ -58,14 +58,6 @@ type CapabilityCardItem = {
   title: string
   description: string
   icon: ReactNode
-}
-
-type QuickEntryItem = {
-  key: string
-  title: string
-  description: string
-  icon: ReactNode
-  onClick: () => void
 }
 
 type TrackedAgentSession = {
@@ -107,7 +99,6 @@ const AgentChat = () => {
   const providers = useAppSelector((state) => state.llm.providers)
   const isWelcomeState = hasLoadedSessionMessages && messages.length === 0
   const isSessionMessagesBootstrapping = !!activeSessionId && !!sessionTopicId && !hasLoadedSessionMessages
-  const [quickEntry, setQuickEntry] = useState<AgentQuickEntry | null>(null)
   const trackedSessionRef = useRef<TrackedAgentSession | undefined>(undefined)
   const sessionsBeingDiscardedRef = useRef(new Set<string>())
   const modelRepairAttemptsRef = useRef(new Set<string>())
@@ -393,36 +384,6 @@ const AgentChat = () => {
     [t]
   )
 
-  const quickEntryItems = useMemo<QuickEntryItem[]>(
-    () => [
-      {
-        key: 'skills',
-        title: t('settings.skills.title'),
-        description: t('agent.welcome.quick_entries.skills_desc', '导入、搜索和管理智能助手技能'),
-        icon: <Puzzle size={19} />,
-        onClick: () => setQuickEntry('skills')
-      }
-    ],
-    [t]
-  )
-
-  const renderQuickEntrySection = () => (
-    <QuickEntrySection>
-      <QuickEntryLabel>快捷入口</QuickEntryLabel>
-      <QuickEntryGrid>
-        {quickEntryItems.map((item) => (
-          <QuickEntryButton key={item.key} type="button" onClick={item.onClick}>
-            <QuickEntryIcon>{item.icon}</QuickEntryIcon>
-            <QuickEntryBody>
-              <QuickEntryTitle>{item.title}</QuickEntryTitle>
-              <QuickEntryDescription>{item.description}</QuickEntryDescription>
-            </QuickEntryBody>
-          </QuickEntryButton>
-        ))}
-      </QuickEntryGrid>
-    </QuickEntrySection>
-  )
-
   useShortcut(
     'new_topic',
     () => {
@@ -437,7 +398,7 @@ const AgentChat = () => {
 
   const isInitializing =
     isAgentsLoading || isAgentLoading || !isSessionInitialized || !agents || (!activeAgentId && agents.length > 0)
-  const brandAvatar = getAgentAvatar(DEFAULT_FUSION_AGENT_ID)
+  const brandAvatar = getAgentAvatar(activeAgentId, activeAgent?.configuration?.avatar)
 
   if (isInitializing) {
     return (
@@ -561,7 +522,7 @@ const AgentChat = () => {
                     )}
                     <AgentSessionInputbar agentId={activeAgentId} sessionId={activeSessionId} variant="hero" />
                   </WelcomeComposer>
-                  {workspace === 'opencode' && renderQuickEntrySection()}
+                  <AgentQuickEntries />
                 </WelcomeInner>
               </WelcomeState>
             ) : (
@@ -589,7 +550,6 @@ const AgentChat = () => {
           {!isWelcomeState && <AgentSessionInputbar agentId={activeAgentId} sessionId={activeSessionId} />}
         </div>
       </QuickPanelProvider>
-      <AgentQuickEntryModal entry={quickEntry} onClose={() => setQuickEntry(null)} />
     </Container>
   )
 }
@@ -816,124 +776,6 @@ const WelcomeModelLabel = styled.span`
   color: var(--color-text-2);
   font-size: 12px;
   line-height: 1.4;
-`
-
-const QuickEntrySection = styled.div`
-  width: 100%;
-  max-width: 1040px;
-  margin-top: 56px;
-  padding: 18px 20px 20px;
-  border-radius: 28px;
-  background: rgba(255, 255, 255, 0.78);
-  border: 1px solid rgba(255, 255, 255, 0.76);
-  box-shadow:
-    0 16px 40px rgba(15, 23, 42, 0.05),
-    0 1px 0 rgba(255, 255, 255, 0.88) inset;
-  backdrop-filter: blur(14px);
-
-  @media (max-height: 880px) {
-    margin-top: 24px;
-    padding: 12px 16px 14px;
-    border-radius: 24px;
-  }
-`
-
-const QuickEntryLabel = styled.div`
-  margin-bottom: 14px;
-  font-size: 12px;
-  font-weight: 600;
-  color: #7d8794;
-  letter-spacing: 0.04em;
-
-  @media (max-height: 880px) {
-    margin-bottom: 10px;
-  }
-`
-
-const QuickEntryGrid = styled.div`
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 14px;
-
-  @media (max-width: 1040px) {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  @media (max-width: 820px) {
-    grid-template-columns: 1fr;
-  }
-`
-
-const QuickEntryButton = styled.button`
-  display: flex;
-  align-items: flex-start;
-  gap: 14px;
-  min-height: 92px;
-  padding: 18px 18px;
-  border: 1px solid rgba(245, 223, 226, 0.7);
-  border-radius: 22px;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(255, 250, 247, 0.9)),
-    linear-gradient(135deg, rgba(255, 235, 239, 0.24), rgba(255, 245, 228, 0.24));
-  box-shadow:
-    0 12px 28px rgba(15, 23, 42, 0.04),
-    0 1px 0 rgba(255, 255, 255, 0.92) inset;
-  cursor: pointer;
-  text-align: left;
-  transition:
-    transform 0.16s ease,
-    box-shadow 0.16s ease,
-    border-color 0.16s ease,
-    background 0.16s ease;
-
-  &:hover {
-    transform: translateY(-1px);
-    border-color: rgba(244, 114, 125, 0.28);
-    box-shadow:
-      0 18px 34px rgba(15, 23, 42, 0.06),
-      0 1px 0 rgba(255, 255, 255, 0.94) inset;
-    background:
-      linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(255, 248, 244, 0.94)),
-      linear-gradient(135deg, rgba(255, 235, 239, 0.28), rgba(255, 245, 228, 0.28));
-  }
-
-  @media (max-height: 880px) {
-    min-height: 76px;
-    padding: 13px 16px;
-  }
-`
-
-const QuickEntryIcon = styled.div`
-  width: 46px;
-  height: 46px;
-  min-width: 46px;
-  border-radius: 15px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: linear-gradient(135deg, rgba(255, 235, 239, 0.98), rgba(255, 245, 228, 0.98));
-  color: #e25d74;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.86);
-`
-
-const QuickEntryBody = styled.div`
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-`
-
-const QuickEntryTitle = styled.div`
-  font-size: 15px;
-  font-weight: 600;
-  color: #303642;
-`
-
-const QuickEntryDescription = styled.div`
-  margin-top: 5px;
-  font-size: 12px;
-  line-height: 1.55;
-  color: #7f8896;
 `
 
 const Container = ({ children, className }: PropsWithChildren<{ className?: string }>) => {

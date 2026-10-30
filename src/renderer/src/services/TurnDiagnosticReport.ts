@@ -2,6 +2,7 @@ import i18n from '@renderer/i18n'
 import type { Message, MessageBlock } from '@renderer/types/newMessage'
 import { readOpenCodeTurnDiagnostics } from '@shared/agents/opencodeDiagnostics'
 import type { DiagnosticEvent, DiagnosticEvidence } from '@shared/diagnostics'
+import { serverAttemptTiming, serverPhases } from '@shared/serverTiming'
 import { buildTurnPerformance } from '@shared/turnPerformance'
 
 // Strict allow-list for exports without conversation content. In particular,
@@ -52,7 +53,10 @@ const fields = new Set([
   'permission',
   'linkedTool',
   'behavior',
-  'zenFailureStage'
+  'zenFailureStage',
+  'measurement',
+  'observedActiveAt',
+  'responseFinishedAt'
 ])
 export function metadataEvent(event: DiagnosticEvent): DiagnosticEvent {
   return {
@@ -87,6 +91,7 @@ function scalarFields(value: unknown, keys: string[]) {
 /** The API diagnostic contract is metadata-only; still allow-list it against future additions. */
 export function metadataBackend(entry: Record<string, unknown>) {
   return {
+    phases: serverPhases(entry.phases),
     ...scalarFields(entry, [
       'requestId',
       'traceId',
@@ -110,26 +115,40 @@ export function metadataBackend(entry: Record<string, unknown>) {
     ]),
     ...(Array.isArray(entry.attempts)
       ? {
-          attempts: entry.attempts
-            .slice(0, 64)
-            .map((attempt) =>
-              scalarFields(attempt, [
-                'index',
-                'channelId',
-                'channelType',
-                'group',
-                'upstreamModel',
-                'startedAt',
-                'durationMs',
-                'outcome',
-                'status',
-                'errorCode',
-                'streamEndReason'
-              ])
-            )
+          attempts: entry.attempts.slice(0, 64).map((attempt) => ({
+            ...scalarFields(attempt, [
+              'index',
+              'channelId',
+              'channelType',
+              'group',
+              'upstreamModel',
+              'startedAt',
+              'durationMs',
+              'outcome',
+              'status',
+              'errorCode',
+              'streamEndReason'
+            ]),
+            timing: serverAttemptTiming(attempt && typeof attempt === 'object' ? attempt.timing : undefined)
+          }))
         }
       : {})
   }
+}
+
+export function metadataBackendCollection(details: unknown) {
+  const responses = Array.isArray(details)
+    ? details
+    : details && typeof details === 'object' && 'responses' in details
+      ? details.responses
+      : []
+  return Array.isArray(responses)
+    ? responses
+        .slice(0, 24)
+        .map((entry) =>
+          scalarFields(entry, ['requestId', 'status', 'source', 'available', 'omittedRequests', 'persistentStatus'])
+        )
+    : []
 }
 export function metadataEvidence(evidence: DiagnosticEvidence | undefined) {
   if (!evidence) return undefined
@@ -199,7 +218,13 @@ export function metadataBlock(block?: MessageBlock) {
   }
 }
 
-export function createTurnReport(message: Message, events: DiagnosticEvent[], startedAt?: string, droppedEvents = 0) {
+export function createTurnReport(
+  message: Message,
+  events: DiagnosticEvent[],
+  startedAt?: string,
+  droppedEvents = 0,
+  backendEvidence: Array<Record<string, unknown>> = []
+) {
   const timing = message.providerMetadata?.responseTiming
   const useResponseTimer = !startedAt || startedAt === timing?.startedAt
   const performance = buildTurnPerformance({
@@ -210,7 +235,8 @@ export function createTurnReport(message: Message, events: DiagnosticEvent[], st
     elapsedMs: useResponseTimer ? timing?.elapsedMs : undefined,
     firstTokenMs: useResponseTimer ? timing?.firstTokenMs : undefined,
     droppedEvents,
-    persistedDiagnostics: message.providerMetadata?.opencodeDiagnostics
+    persistedDiagnostics: message.providerMetadata?.opencodeDiagnostics,
+    backendEvidence
   })
   const t = i18n.t
   const unavailable = t('turnDiagnostics.notRecorded')
@@ -252,7 +278,10 @@ export function createTurnReport(message: Message, events: DiagnosticEvent[], st
       requests: performance.observedRequests ?? unavailable,
       tools: performance.toolCalls ?? unavailable,
       retries: performance.retryEvents ?? unavailable,
-      render: ms(performance.renderCommitDelayMs),
+      render:
+        performance.renderCommitDelayMs == null
+          ? t('turnDiagnostics.renderNotRecorded')
+          : ms(performance.renderCommitDelayMs),
       slowest:
         performance.slowestObserved
           .map((span) => `- ${kinds[span.kind]} / ${span.label}: ${ms(span.durationMs)}`)
@@ -286,5 +315,77 @@ export function createTurnReport(message: Message, events: DiagnosticEvent[], st
           tools: ms(performance.aggregate.completedToolObservedMs)
         })
       : '')
-  return { performance, summary }
+  const phaseLabels: Record<string, string> = {
+    body_ready: t('turnDiagnostics.serverTiming.phases.body_ready'),
+    routing_ready: t('turnDiagnostics.serverTiming.phases.routing_ready'),
+    validated: t('turnDiagnostics.serverTiming.phases.validated'),
+    tokens_ready: t('turnDiagnostics.serverTiming.phases.tokens_ready'),
+    admission_ready: t('turnDiagnostics.serverTiming.phases.admission_ready')
+  }
+  const serverSummary =
+    t('turnDiagnostics.serverTiming.intro') +
+    '\n' +
+    (performance.serverRequests
+      .map((request) => {
+        const phases =
+          Object.entries(request.phases)
+            .map(([name, value]) => `${phaseLabels[name]} ${ms(value)}`)
+            .join(' | ') || unavailable
+        return (
+          t('turnDiagnostics.serverTiming.request', {
+            requestId: request.requestId ?? unavailable,
+            total: ms(request.totalMs),
+            outside: ms(request.outsideGatewayMs),
+            phases
+          }) +
+          '\n' +
+          request.attempts
+            .map((attempt) => {
+              const marks = attempt.timing?.milestones ?? {}
+              const http =
+                attempt.timing?.http
+                  .map((entry, index) =>
+                    t('turnDiagnostics.serverTiming.http', {
+                      index: index + 1,
+                      prepare: ms(entry.attempt_offset_ms),
+                      dns: ms(entry.dns_ms),
+                      connect: ms(entry.connect_ms),
+                      tls: ms(entry.tls_ms),
+                      ready: ms(entry.connection_ready_ms),
+                      sent: ms(entry.request_sent_ms),
+                      firstByte: ms(entry.first_byte_ms),
+                      wait: ms(entry.wait_after_send_ms),
+                      body: ms(entry.response_body_ms),
+                      reused:
+                        typeof entry.connection_reused === 'boolean'
+                          ? t(
+                              entry.connection_reused
+                                ? 'turnDiagnostics.serverTiming.yes'
+                                : 'turnDiagnostics.serverTiming.no'
+                            )
+                          : unavailable
+                    })
+                  )
+                  .join('\n') || unavailable
+              return t('turnDiagnostics.serverTiming.attempt', {
+                index: attempt.index ?? unavailable,
+                channel: attempt.channelId ?? unavailable,
+                total: ms(attempt.durationMs),
+                before: ms(attempt.gatewayBeforeAttemptMs),
+                event: ms(marks.first_event),
+                content: ms(marks.first_content),
+                text: ms(marks.first_text),
+                forward: ms(marks.first_forward),
+                forwarding: ms(attempt.firstForwardAfterContentMs),
+                missing: attempt.missing.join(', ') || '—',
+                http
+              })
+            })
+            .join('\n') +
+          '\n' +
+          t('turnDiagnostics.serverTiming.missing', { missing: request.missing.join(', ') || '—' })
+        )
+      })
+      .join('\n\n') || unavailable)
+  return { performance, summary: summary + '\n\n' + serverSummary }
 }

@@ -327,19 +327,28 @@ export function diagnoseClientError(error?: SerializedError, options: DiagnoseOp
         : buildDiagnosticId(options.blockId, options.messageId, options.createdAt)
   }
 
-  if (dailyQuota)
+  if (dailyQuota) {
+    const requestFailure = ['timeout', 'connection', 'unavailable'].includes(dailyQuota)
     return {
       ...base,
-      category: dailyQuota === 'unavailable' ? 'service' : 'rate_limited',
+      category:
+        dailyQuota === 'timeout'
+          ? 'timeout'
+          : dailyQuota === 'connection'
+            ? 'network'
+            : dailyQuota === 'unavailable'
+              ? 'service'
+              : 'rate_limited',
       title: i18next.t(MODEL_DAILY_QUOTA_MESSAGE_KEYS[dailyQuota]),
       summary: i18next.t(MODEL_DAILY_QUOTA_MESSAGE_KEYS[dailyQuota]),
-      stage: i18next.t('model_daily_quota.stage'),
+      stage: i18next.t(requestFailure ? 'model_daily_quota.request_stage' : 'model_daily_quota.stage'),
       errorType: `model_daily_${dailyQuota}`,
       serviceConnectivity: serviceConnectivityFromCheck(connectivityCheck, quotaResponseUnknown ? UNKNOWN : '已连接'),
       serviceReceived: quotaResponseUnknown ? UNKNOWN : '是',
       startedGenerating: '否',
-      suggestion: i18next.t('model_daily_quota.suggestion')
+      suggestion: i18next.t(requestFailure ? 'model_daily_quota.request_suggestion' : 'model_daily_quota.suggestion')
     }
+  }
 
   if (error?.i18nKey === ERROR_I18N_KEY_STREAM_PAUSED) {
     return {

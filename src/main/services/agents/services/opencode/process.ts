@@ -35,14 +35,53 @@ export { resolveOpenCodeExecutable } from './executable'
 
 const logger = loggerService.withContext('OpenCodeProcess')
 const processes = new Map<string, OpenCodeProcess>()
+// Removing a server from the pool is not proof that its SQLite files are closed.
+const retiring = new Map<string, Promise<void>>()
 const reservations = new Set<string>()
 let skillMutation = false
 let shuttingDown = false
 const hash = (value: string) => createHash('sha256').update(value).digest('hex')
 
+function isLightweightConfig(config: unknown): boolean {
+  const permission = (config as { permission?: Record<string, unknown> }).permission
+  return (
+    permission?.mcp__assistant__python_execute === 'deny' ||
+    (permission?.['*'] === 'deny' && permission.bash === 'deny')
+  )
+}
+
+async function waitForRetirement(key: string, signal?: AbortSignal): Promise<void> {
+  signal?.throwIfAborted()
+  const pending = retiring.get(key)
+  if (!pending) return
+  await new Promise<void>((resolve, reject) => {
+    const finish = (error?: unknown) => {
+      clearTimeout(timer)
+      signal?.removeEventListener('abort', onAbort)
+      if (error) reject(error)
+      else resolve()
+    }
+    const onAbort = () => finish(signal?.reason ?? new Error('OpenCode startup cancelled'))
+    const timer = setTimeout(
+      () =>
+        finish(
+          Object.assign(new Error('OpenCode process did not stop; native history was not reopened'), {
+            zenFailureStage: 'runtime-startup',
+            zenRuntimeId: 'opencode'
+          })
+        ),
+      10_000
+    )
+    signal?.addEventListener('abort', onAbort, { once: true })
+    void pending.then(() => finish())
+    if (signal?.aborted) onAbort()
+  })
+}
+
 export class OpenCodeProcess {
   client!: OpenCodeClient
   private child?: ChildProcess
+  private childExited = false
   private closed = false
   private idleTimer?: ReturnType<typeof setTimeout>
   private gateway?: Awaited<ReturnType<typeof createOpenCodeGateway>>
@@ -88,6 +127,8 @@ export class OpenCodeProcess {
         error
       })
       this.stop(signal.aborted ? 'startup-cancelled' : 'startup-failed')
+      if (!signal.aborted && error instanceof Error)
+        Object.assign(error, { zenFailureStage: 'runtime-startup', zenRuntimeId: 'opencode' })
       throw error
     }
   }
@@ -151,9 +192,7 @@ export class OpenCodeProcess {
     )
     this.turnSignal = signal
     const productConfig = config as { permission?: Record<string, unknown> }
-    const lightweight =
-      productConfig.permission?.mcp__assistant__python_execute === 'deny' ||
-      (productConfig.permission?.['*'] === 'deny' && productConfig.permission?.bash === 'deny')
+    const lightweight = isLightweightConfig(config)
     const getTurnSignal = () => this.turnSignal
     registerAssistantMcpContext(this.key, allowedRoots, {
       workspace: this.directory,
@@ -235,6 +274,7 @@ export class OpenCodeProcess {
       }
     )
     this.child = child
+    this.childExited = false
     this.recordDiagnostic('process-spawned', { pid: child.pid, executable: this.executable, version: OPENCODE_VERSION })
     child.stderr?.on('data', (chunk: Buffer) => {
       if (this.stderrCollectionFailed) return
@@ -254,6 +294,7 @@ export class OpenCodeProcess {
       })
     })
     child.once('exit', (code, exitSignal) => {
+      this.childExited = true
       const unexpected = !this.closed
       const active = this.active
       this.flushDiagnostic()
@@ -382,22 +423,8 @@ export class OpenCodeProcess {
   }
 
   async stopAndWait(): Promise<void> {
-    const child = this.child
-    const exited =
-      !child || child.exitCode !== null || child.signalCode !== null
-        ? Promise.resolve()
-        : new Promise<void>((resolve, reject) => {
-            const timer = setTimeout(
-              () => reject(new Error('Native process did not stop; history was not copied')),
-              10_000
-            )
-            child.once('exit', () => {
-              clearTimeout(timer)
-              resolve()
-            })
-          })
     this.stop()
-    await exited
+    await waitForRetirement(this.key)
   }
 
   release() {
@@ -411,7 +438,7 @@ export class OpenCodeProcess {
   }
 
   async finishTurn() {
-    await this.gateway?.finishTurn()
+    return this.gateway?.finishTurn()
   }
 
   activate() {
@@ -440,8 +467,14 @@ export class OpenCodeProcess {
     cleanupAssistantMcpContext(this.key)
     cleanupBrowserMcpContext(this.key)
     if (processes.get(this.key) === this) processes.delete(this.key)
-    const pid = this.child?.pid
-    if (!pid) return
+    const child = this.child
+    const pid = child?.pid
+    if (!pid || this.childExited || child.exitCode !== null || child.signalCode !== null) return
+    const exited = new Promise<void>((resolve) => child.once('exit', () => resolve()))
+    retiring.set(this.key, exited)
+    void exited.then(() => {
+      if (retiring.get(this.key) === exited) retiring.delete(this.key)
+    })
     if (process.platform === 'win32') {
       const killer = spawn('taskkill', ['/PID', String(pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' })
       killer.on('error', () => this.child?.kill())
@@ -458,6 +491,7 @@ export class OpenCodeProcess {
           /* Already stopped. */
         }
       }, 1500)
+      child.once('exit', () => clearTimeout(timer))
       timer.unref()
     }
   }
@@ -493,12 +527,14 @@ export async function getOpenCodeProcess(
         runtime.configHash !== configHash ||
         runtime.directory !== directory ||
         !touchAssistantMcpContext(key) ||
-        !touchBrowserMcpContext(key))
+        (!isLightweightConfig(config) && !touchBrowserMcpContext(key)))
     ) {
-      runtime.stop()
+      await runtime.stopAndWait()
       runtime = undefined
     }
     if (!runtime) {
+      await waitForRetirement(key, signal)
+      signal.throwIfAborted()
       if (processes.size >= 4) {
         const idle = [...processes.values()].find((candidate) => !candidate.active)
         idle?.stop()
@@ -554,6 +590,7 @@ export function hasOpenCodeDataActivity(): boolean {
 export async function quiesceOpenCodeData(): Promise<void> {
   if (hasOpenCodeDataActivity()) throw new Error('Stop active assistant tasks before copying their history')
   await Promise.all([...processes.values()].map((runtime) => runtime.stopAndWait()))
+  await Promise.all([...retiring.keys()].map((key) => waitForRetirement(key)))
 }
 
 /** Read an existing local server only. Never start/prepare a runtime for inspection. */
@@ -606,6 +643,8 @@ export async function copyOpenCodeHistory(sourceKey: string, targetKey: string):
   try {
     await processes.get(sourceKey)?.stopAndWait()
     await processes.get(targetKey)?.stopAndWait()
+    await waitForRetirement(sourceKey)
+    await waitForRetirement(targetKey)
     const source = path.join(getDataPath('OpenCode'), hash(sourceKey))
     const target = path.join(getDataPath('OpenCode'), hash(targetKey))
     // mkdir without recursive fails if the destination already contains history.
@@ -630,7 +669,8 @@ export async function archiveOpenCodeSession(key: string, afterArchive?: () => P
   reservations.add(key)
   try {
     const runtime = processes.get(key)
-    runtime?.stop()
+    await runtime?.stopAndWait()
+    await waitForRetirement(key)
     const root = path.join(getDataPath('OpenCode'), hash(key))
     const archive = path.join(getDataPath('OpenCode'), `archived-${hash(key)}-${randomUUID()}`)
     let moved = false

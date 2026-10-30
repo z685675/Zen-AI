@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({ init: vi.fn(), provision: vi.fn() }))
 vi.mock('../../AgentService', () => ({ agentService: { initBuiltinAgent: mocks.init } }))
 vi.mock('../../builtin/BuiltinAgentProvisioner', () => ({ provisionBuiltinAgent: mocks.provision }))
 import { ensureOpenCodeAgent } from '../builtin'
+import { DEFAULT_ASSISTANT_DESCRIPTION, DEFAULT_ASSISTANT_INSTRUCTIONS } from '../defaults'
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -22,6 +23,9 @@ describe('new assistant managed identity', () => {
     const options = mocks.init.mock.calls[0][0]
     const config = await options.provisionWorkspace('/owned-workspace')
     expect(config.name).toBe('智能助手')
+    expect(config.description).toBe(DEFAULT_ASSISTANT_DESCRIPTION)
+    expect(config.description).not.toContain('OpenCode')
+    expect(config.instructions).toBe(DEFAULT_ASSISTANT_INSTRUCTIONS)
     expect(mocks.provision).toHaveBeenCalledWith('/owned-workspace', 'fusion')
     expect(config.instructions).not.toContain('legacy prompt')
     expect(config.configuration).toMatchObject({

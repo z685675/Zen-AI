@@ -39,7 +39,12 @@ export function classifyError(error?: SerializedError, providerId?: string): Err
   const dailyQuota = getModelDailyQuotaErrorKind(error)
   if (dailyQuota)
     return {
-      category: dailyQuota === 'unavailable' ? 'server' : 'quota',
+      category:
+        dailyQuota === 'timeout' || dailyQuota === 'connection'
+          ? 'network'
+          : dailyQuota === 'unavailable'
+            ? 'server'
+            : 'quota',
       i18nKey: `model_daily_quota.${dailyQuota}`,
       navTarget: null
     }

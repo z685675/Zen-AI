@@ -263,6 +263,7 @@ const runtime = {
     vi.fn<(listener: ((event: string, details: Record<string, unknown>) => void) | undefined) => void>(),
   release: vi.fn(),
   flushDiagnostic: vi.fn(),
+  finishTurn: vi.fn(),
   stop: vi.fn(),
   client: { request, events }
 }
@@ -292,6 +293,7 @@ beforeEach(() => {
   recoverTransport = false
   pause = undefined
   longTaskMode = undefined
+  runtime.finishTurn.mockResolvedValue(undefined)
   mocks.getProcess.mockImplementation(async (...args) => {
     args[5]?.()
     return runtime
@@ -303,6 +305,33 @@ afterEach(() => {
   vi.useRealTimers()
 })
 describe('OpenCode adapter turn lifecycle', () => {
+  it('emits the final quota notice after native work and before successful completion, without replay', async () => {
+    const result = {
+      model: 'gpt-test',
+      date: '2026-10-29',
+      current_date: '2026-10-29',
+      limit: 100,
+      used: 120,
+      exhausted: true,
+      extra_allowed: false,
+      pending: false
+    }
+    runtime.finishTurn.mockResolvedValue(result)
+    const events = await run()
+    const notice = events.findIndex(
+      (event: any) => event.type === 'chunk' && event.chunk?.rawValue?.type === 'model_daily_quota'
+    )
+    expect(notice).toBeGreaterThan(-1)
+    expect(events[notice]).toMatchObject({ type: 'chunk', chunk: { type: 'raw', rawValue: { results: [result] } } })
+    expect(events.at(-1)?.type).toBe('complete')
+    expect(request.mock.calls.filter(([route]) => route.endsWith('/prompt_async'))).toHaveLength(1)
+  })
+  it('completes normally when best-effort quota synchronization is unavailable', async () => {
+    runtime.finishTurn.mockResolvedValue(undefined)
+    const events = await run()
+    expect(events.some((event: any) => event.chunk?.rawValue?.type === 'model_daily_quota')).toBe(false)
+    expect(events.at(-1)?.type).toBe('complete')
+  })
   it.each([
     ['plan', 'plan', 'Plan'],
     ['default', 'build', 'Build'],

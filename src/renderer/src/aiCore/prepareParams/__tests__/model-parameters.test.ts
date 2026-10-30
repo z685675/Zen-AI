@@ -93,6 +93,9 @@ const createModel = (overrides: Partial<Model> = {}): Model => ({
 
 describe('modelParameters', () => {
   describe('getTemperature', () => {
+    it.each([NaN, Infinity, -0.1, 2.1])('omits invalid persisted temperature %s', (temperature) => {
+      expect(getTemperature(createAssistant({ enableTemperature: true, temperature }), createModel())).toBeUndefined()
+    })
     it('returns undefined when reasoning effort is enabled for Claude models', () => {
       const assistant = createAssistant({ reasoning_effort: 'medium', enableTemperature: true })
       const model = createModel({ id: 'claude-opus-4', name: 'Claude Opus 4', provider: 'anthropic', group: 'claude' })
@@ -194,6 +197,9 @@ describe('modelParameters', () => {
   })
 
   describe('getTopP', () => {
+    it.each([NaN, Infinity, -0.1, 1.1])('omits invalid persisted Top-P %s', (topP) => {
+      expect(getTopP(createAssistant({ enableTopP: true, topP }), createModel())).toBeUndefined()
+    })
     it('returns undefined when reasoning effort is enabled for Claude models', () => {
       const assistant = createAssistant({ reasoning_effort: 'high' })
       const model = createModel({ id: 'claude-opus-4', provider: 'anthropic', group: 'claude' })
@@ -278,6 +284,9 @@ describe('modelParameters', () => {
   })
 
   describe('getMaxTokens', () => {
+    it.each([NaN, Infinity, -1, 0, 1.5])('uses a safe limit for invalid persisted max tokens %s', (maxTokens) => {
+      expect(getMaxTokens(createAssistant({ enableMaxTokens: true, maxTokens }), createModel())).toBe(4096)
+    })
     it('returns undefined when maxTokens is not enabled', () => {
       const assistant = createAssistant({ enableMaxTokens: false, maxTokens: 128000 })
       const model = createModel({ id: 'claude-opus-4-6', provider: 'anthropic', group: 'claude' })

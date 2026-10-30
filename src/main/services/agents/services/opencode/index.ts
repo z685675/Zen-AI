@@ -9,6 +9,7 @@ import { recordMainDiagnostic } from '@main/services/DiagnosticEvidenceService'
 import type { OpenCodeUsageObservation } from '@shared/agents/opencodeDiagnostics'
 import { getOpenCodeAgentMode } from '@shared/agents/opencodeMode'
 import { diagnosticText, sanitizeDiagnostic } from '@shared/diagnostics'
+import { shouldShowModelDailyQuotaNotice } from '@shared/utils/modelDailyQuotaTurn'
 import type { GetAgentSessionResponse } from '@types'
 import type { TextStreamPart } from 'ai'
 
@@ -522,6 +523,10 @@ export default class OpenCodeService implements AgentServiceInterface {
       if (!completed || !state.hasVisibleOutput)
         throw admissionError || new Error('The new assistant completed without a visible result')
       for (const chunk of state.closeParts()) emit(chunk)
+      const quotaResult = await runtime?.finishTurn?.()
+      if (quotaResult && shouldShowModelDailyQuotaNotice(quotaResult)) {
+        emit({ type: 'raw', rawValue: { type: 'model_daily_quota', results: [quotaResult] } })
+      }
       runtime?.flushDiagnostic()
       const diagnostics = publishDiagnostics('completed')
       emit({

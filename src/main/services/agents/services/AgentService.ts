@@ -9,7 +9,8 @@ import {
   DEFAULT_OPENCODE_AGENT_ID,
   DEFAULT_OPENCODE_AGENT_NAME,
   DEPRECATED_AGENT_NAME_PREFIX,
-  isBuiltinAgentId
+  isBuiltinAgentId,
+  isProtectedAgentId
 } from '@shared/config/agents'
 import type {
   AgentEntity,
@@ -29,6 +30,7 @@ import { type AgentRow, agentsTable, type InsertAgentRow } from '../database/sch
 import type { AgentModelField } from '../errors'
 import { seedWorkspaceTemplates } from './cherryclaw/seedWorkspace'
 import { forgetSessionModelIntent, rememberPreferredModel } from './managedModelRecovery'
+import { isDefaultAssistantDescription, isDefaultAssistantInstructions } from './opencode/defaults'
 
 const logger = loggerService.withContext('AgentService')
 
@@ -425,7 +427,12 @@ export class AgentService extends BaseService {
           // Refresh managed display identities without replacing user defaults.
           if (id === DEFAULT_OPENCODE_AGENT_ID) {
             updateData.name = DEFAULT_OPENCODE_AGENT_NAME
-            mergedConfiguration.avatar = DEFAULT_OPENCODE_AGENT_AVATAR
+            if (typeof currentConfiguration.avatar !== 'string' || !currentConfiguration.avatar.trim()) {
+              mergedConfiguration.avatar = DEFAULT_OPENCODE_AGENT_AVATAR
+            }
+            if (agentConfig.description && isDefaultAssistantDescription(existingAgent?.description)) {
+              updateData.description = agentConfig.description
+            }
           } else if (id === DEFAULT_FUSION_AGENT_ID) {
             updateData.name = DEFAULT_FUSION_AGENT_NAME
           }
@@ -434,8 +441,10 @@ export class AgentService extends BaseService {
             updateData.instructions = agentConfig.instructions
           } else if (
             agentConfig.instructions &&
-            (builtinRole === 'fusion' ||
-              this.shouldRefreshBuiltinInstructions(existingAgent?.instructions, agentConfig.instructions))
+            (id === DEFAULT_OPENCODE_AGENT_ID
+              ? isDefaultAssistantInstructions(existingAgent?.instructions)
+              : builtinRole === 'fusion' ||
+                this.shouldRefreshBuiltinInstructions(existingAgent?.instructions, agentConfig.instructions))
           ) {
             updateData.instructions = agentConfig.instructions
           }
@@ -656,6 +665,9 @@ export class AgentService extends BaseService {
     const shouldReplace = options.replace ?? false
 
     for (const field of replaceableFields) {
+      // Preserve official prompts for patches and full replacements, including
+      // replacements that omit instructions. The HTTP layer also rejects edits.
+      if (field === 'instructions' && isProtectedAgentId(id)) continue
       if (shouldReplace || Object.prototype.hasOwnProperty.call(serializedUpdates, field)) {
         if (Object.prototype.hasOwnProperty.call(serializedUpdates, field)) {
           const value = serializedUpdates[field as keyof typeof serializedUpdates]

@@ -7,6 +7,7 @@ import {
   imageDimension,
   validateImageCapabilities
 } from '../imageCapabilities'
+import { commonImageSizePresets } from '../imageSizePresets'
 
 const input = (size = '1024x1024', aspectRatio = '1:1'): ImageCanvasRequest => ({
   id: '',
@@ -28,6 +29,15 @@ describe('image model capability contracts', () => {
       expect(capabilities.dimensions.some((item) => item.size === size)).toBe(true)
     expect(capabilities.dimensions.some((item) => item.ratio === '21:9')).toBe(true)
     expect(() => validateImageCapabilities(input('4096x2304', '16:9'), capabilities)).not.toThrow()
+  })
+
+  it('accepts every local image preset without dropping previously supported sizes', () => {
+    const capabilities = defaultImageCapabilities({ id: 'gpt-image-2', name: 'Image', protocol: 'openai' })
+    for (const { size } of commonImageSizePresets) {
+      const dimension = imageDimension(size)
+      expect(() => validateImageCapabilities(input(size, dimension.ratio), capabilities)).not.toThrow()
+    }
+    expect(capabilities.dimensions.map((item) => item.size)).toContain('4096x2304')
   })
 
   it('keeps legacy and newer native Qwen model capabilities separate', () => {

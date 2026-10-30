@@ -776,6 +776,12 @@
         "tasks_desc": "[to be translated]:Handle complex work that needs multiple steps and sustained execution."
       },
       "model_label": "[to be translated]:Model for this chat",
+      "quick_entries": {
+        "skills_desc": "[to be translated]:Import, find, and manage assistant skills",
+        "tasks_desc": "[to be translated]:Schedule tasks and view their run history",
+        "title": "[to be translated]:Quick access",
+        "wechat_desc": "[to be translated]:Connect WeChat and continue chats on your phone or computer"
+      },
       "title": "[to be translated]:Hand over the task and get started with ease"
     }
   },
@@ -1428,6 +1434,7 @@
     },
     "status": "Status",
     "stop": "Stop",
+    "syncComplete": "Синхронизировано",
     "syncing": "Sync enabled",
     "taskConsent": "I authorize this specific task to run automatically with controlled tools in its dedicated workspace. This does not authorize overwriting, deletion, payments or unrestricted computer access.",
     "taskFailed": "Task failed or was interrupted. Open the conversation for details; completed files are preserved.",
@@ -1857,11 +1864,14 @@
       },
       "max": "без ограничений",
       "max_tokens": {
-        "confirm": "Максимальное количество токенов",
+        "confirm": "Ограничение длины вывода",
         "confirm_content": "Установить максимальное количество токенов, влияет на длину результата. Нужно учитывать контекст модели, иначе будет ошибка",
-        "label": "Максимальное количество токенов",
+        "label": "Ограничение длины вывода",
         "tip": "Максимальное количество токенов, которые может сгенерировать модель. Нужно учитывать контекст модели, иначе будет ошибка"
       },
+      "parameters_customized": "Свои параметры активны",
+      "parameters_default": "Параметры по умолчанию",
+      "parameters_tip": "Обычно настройка не требуется. При отключении температуры, Top-P и лимита вывода используются значения модели. Эти настройки имеют приоритет; одноимённые пользовательские параметры игнорируются. Настройки существующих ролей сохраняются. Сброс восстанавливает значения по умолчанию.",
       "reset": "Сбросить",
       "set_as_default": "Применить к ассистенту по умолчанию",
       "show_line_numbers": "Показать номера строк в коде",
@@ -3259,17 +3269,22 @@
     }
   },
   "model_daily_quota": {
-    "exceeded": "Дневной лимит этой модели исчерпан. Попробуйте завтра.",
+    "connection": "Не удалось подключиться к службе проверки запроса. Генерация моделью ещё не началась. Проверьте соединение или попробуйте другую сеть.",
+    "exceeded": "Дневной лимит этой модели достигнут. Выберите другую модель.",
     "hint": "Вход + выход; кэш включён во вход. Сброс в полночь по Пекину. Последний допущенный вопрос может завершиться сверх лимита.",
     "invalid": "Разрешение для этого вопроса истекло. Отправьте новый вопрос.",
     "limit": "Дневной лимит",
     "pending": "Остаток лимита зарезервирован другой задачей. Дождитесь её завершения.",
     "remaining": "Осталось",
+    "request_stage": "Проверка перед запросом к модели",
+    "request_suggestion": "Повторите попытку один раз. Если ошибка сохраняется, попробуйте другую сеть, например мобильную точку доступа, и проверьте настройки прокси приложения. При повторных сбоях экспортируйте диагностический пакет для администратора. Эта ошибка не означает исчерпания лимита модели.",
     "stage": "Проверка лимита модели",
     "status_error": "Не удалось обновить дневные лимиты. История использования доступна.",
     "suggestion": "Выберите другую доступную модель или дождитесь сброса. Не повторяйте запрос многократно.",
+    "timeout": "Истекло время проверки запроса. Генерация моделью ещё не началась. Проверьте соединение или попробуйте другую сеть.",
     "title": "Лимиты моделей на сегодня · время Пекина",
-    "unavailable": "Служба лимитов моделей временно недоступна.",
+    "turn_exceeded": "{{model}} достигла дневного лимита. Выберите другую модель.",
+    "unavailable": "API сейчас не может проверить лимит модели. Попробуйте позже; если проблема сохраняется, экспортируйте диагностику и свяжитесь с администратором.",
     "used": "Использовано",
     "used_up": "Сегодня исчерпано"
   },
@@ -3381,11 +3396,11 @@
     "memory_notice": "Independent native memory survives model changes. Retry, branching and individual deletion are supported; direct editing and bulk deletion are not yet supported.",
     "outputting": "The model is producing output",
     "permission": {
-      "title": "Для этой задачи требуется ваше подтверждение",
       "description": "Проверьте операцию и её цель, прежде чем разрешить продолжение задачи.",
-      "loopTitle": "Обнаружены повторяющиеся операции; задача приостановлена",
+      "details": "Сведения об операции",
       "loopDescription": "Ассистент несколько раз попытался выполнить одну и ту же операцию. Можно разрешить однократное продолжение или отменить эту операцию.",
-      "details": "Сведения об операции"
+      "loopTitle": "Обнаружены повторяющиеся операции; задача приостановлена",
+      "title": "Для этой задачи требуется ваше подтверждение"
     },
     "preparing": "[to be translated]:Request received; preparing the task",
     "responding": "[to be translated]:Processing the response",
@@ -6838,8 +6853,25 @@
       "processing": "Выполняется"
     },
     "privacy": "По умолчанию включены только диагностические метаданные, без текста диалога, аргументов/результатов инструментов, исходных вложений и полной истории. Передавайте только доверенным получателям. Дополнительное содержимое может включать персональные данные.",
-    "reportTemplate": "# Zen AI: диагностика этого хода\n\n- Результат: {{outcome}}\n- Модель: {{model}}; Provider: {{provider}}\n- Токены: вход {{input}}; выход {{output}}; чтение кэша {{cache}} (уже включено во вход)\n- Начало: {{start}}; конец: {{end}}; всего: {{total}}\n- Первое содержимое (возможно рассуждение): {{firstContent}}; первый текст ответа: {{firstText}}; первые сетевые байты: {{firstBytes}} (не первый токен)\n- Наблюдавшиеся запросы: {{requests}}; инструменты: {{tools}}; повторы/переключения: {{retries}}\n- Задержка UI commit: {{render}} (React, не гарантия отрисовки экрана)\n\n## Самые долгие этапы с известными началом и концом\n{{slowest}}\n\n## Хронология запросов и инструментов\n{{timeline}}\n\n## Наблюдавшееся ожидание пользователя (может перекрывать инструменты)\n{{waits}}\n\n## Ограничения и отсутствующие данные\n- Только измеренные интервалы, не заключение о причине в сети/клиенте/сервисе. Этапы перекрываются: нельзя просто складывать их или вычитать ожидания.\n- Отсутствие не означает ноль. Незавершённые интервалы могут выполняться. Активный экспорт — снимок; старые диалоги не восстанавливают незаписанные события.\n- Запись обычно начинается с подготовки ответа; ранние загрузки могут не учитываться. События повторов не равны числу повторно выполненных задач.\n- Для данных сервера сопоставьте zen-api-evidence.json и ID. Отсутствие записи не доказывает неполучение; запись в сокет не гарантирует полный приём клиентом.\n- Отброшенные события из-за лимита: {{dropped}}; старые запросы могут истечь. Коды отсутствующих данных (performance.json): {{missing}}\n",
-    "requestTiming": " | Заголовки {{headers}} | Первые байты {{bytes}} | HTTP {{status}} | ID запроса {{requestId}}"
+    "renderNotRecorded": "Не собрано",
+    "reportTemplate": "# Zen AI: диагностика этого хода\n\n- Результат: {{outcome}}\n- Модель: {{model}}; Provider: {{provider}}\n- Токены: вход {{input}}; выход {{output}}; чтение кэша {{cache}} (уже включено во вход)\n- Начало: {{start}}; конец: {{end}}; всего: {{total}}\n- Первое содержимое (возможно рассуждение): {{firstContent}}; первый текст ответа: {{firstText}}; первые сетевые байты: {{firstBytes}} (не первый токен)\n- Наблюдавшиеся запросы: {{requests}}; инструменты: {{tools}}; повторы/переключения: {{retries}}\n- От конца ответа до UI commit: {{render}} (только текущее завершение в непрерывно видимом компоненте; не время отрисовки экрана)\n\n## Самые долгие этапы с известными началом и концом\n{{slowest}}\n\n## Хронология запросов и инструментов\n{{timeline}}\n\n## Наблюдавшееся ожидание пользователя (может перекрывать инструменты)\n{{waits}}\n\n## Ограничения и отсутствующие данные\n- Только измеренные интервалы, не заключение о причине в сети/клиенте/сервисе. Этапы перекрываются: нельзя просто складывать их или вычитать ожидания.\n- Отсутствие не означает ноль. Незавершённые интервалы могут выполняться. Активный экспорт — снимок; старые диалоги не восстанавливают незаписанные события.\n- Запись обычно начинается с подготовки ответа; ранние загрузки могут не учитываться. События повторов не равны числу повторно выполненных задач.\n- Для данных сервера сопоставьте zen-api-evidence.json и ID. Отсутствие записи не доказывает неполучение; запись в сокет не гарантирует полный приём клиентом.\n- Отброшенные события из-за лимита: {{dropped}}; старые запросы могут истечь. Коды отсутствующих данных (performance.json): {{missing}}\n",
+    "requestTiming": " | Заголовки {{headers}} | Первые байты {{bytes}} | HTTP {{status}} | ID запроса {{requestId}}",
+    "serverTiming": {
+      "attempt": "[to be translated]:  - Attempt {{index}} / channel {{channel}} | Total {{total}} | Before attempt {{before}}\n    First event {{event}} | Effective content {{content}} | Answer text {{text}} | First non-ping forward {{forward}} | Content to forward {{forwarding}} (unavailable if metadata was forwarded earlier)\n{{http}}\n    Missing: {{missing}}",
+      "http": "[to be translated]:    - HTTP {{index}} | Before HTTP {{prepare}} | DNS {{dns}} | TCP (summed connections, may overlap) {{connect}} | TLS {{tls}} | Connection ready {{ready}} | Sent {{sent}} | First byte {{firstByte}} | Wait after sending {{wait}} | Body reading {{body}} | Connection reused {{reused}}",
+      "intro": "[to be translated]:## Server and upstream timing\n\nEach request and channel attempt is listed separately. Preparation milestones are offsets from API receipt; stream milestones are offsets from the channel attempt; HTTP milestones are offsets from that HTTP call. DNS/TCP/TLS may overlap or be skipped on connection reuse. First byte/event is not first answer text. Outside-gateway time compares elapsed durations and includes client/network work; it is not a one-way network measurement. Unknown or unfinished stages are not zero.",
+      "missing": "[to be translated]:  Missing: {{missing}}",
+      "no": "[to be translated]:No",
+      "phases": {
+        "admission_ready": "[to be translated]:Admission ready",
+        "body_ready": "[to be translated]:Body ready",
+        "routing_ready": "[to be translated]:Routing ready",
+        "tokens_ready": "[to be translated]:Token estimate ready",
+        "validated": "[to be translated]:Validated"
+      },
+      "request": "[to be translated]:- Request {{requestId}} | API total {{total}} | Outside API {{outside}}\n  Preparation milestones: {{phases}}",
+      "yes": "[to be translated]:Yes"
+    }
   },
   "update": {
     "available": "A new version {{version}} is available. Click Check for Updates any time to download it.",
@@ -6873,6 +6905,9 @@
       "unavailable": "Unable to load usage. Please try again later.",
       "unsupported": "This service does not support usage queries yet"
     },
+    "image_requests": "Запросы изображений",
+    "image_requests_hint": "Один запрос считается один раз, даже для нескольких изображений. Действуют тарифы сервиса.",
+    "image_trend": "Динамика запросов изображений",
     "input": "Input tokens",
     "intervals": {
       "day": "Daily",

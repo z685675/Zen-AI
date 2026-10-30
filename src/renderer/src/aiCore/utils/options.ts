@@ -42,6 +42,7 @@ import { t } from 'i18next'
 import { merge } from 'lodash'
 import type { OllamaProviderOptions } from 'ollama-ai-provider-v2'
 
+import { sanitizeProviderParameters, stripControlledParameters } from '../prepareParams/customParameterPolicy'
 import { addAnthropicHeaders } from '../prepareParams/header'
 import { getAiSdkProviderId } from '../provider/factory'
 import type { ProviderCapabilities } from '../types'
@@ -314,8 +315,8 @@ export function buildProviderOptions(
 
   // 返回 AI Core SDK 要求的格式：{ 'providerId': providerOptions } 以及提取的标准参数
   return {
-    providerOptions: providerSpecificOptions,
-    standardParams
+    providerOptions: sanitizeProviderParameters(providerSpecificOptions),
+    standardParams: stripControlledParameters(standardParams)
   }
 }
 

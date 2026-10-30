@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import type { DiagnosticEvent } from '../diagnostics'
 import { buildTurnPerformance } from '../turnPerformance'
+import { LIVE_RENDER_MEASUREMENT } from '../turnRenderTiming'
 
 const at = (ms: number) => new Date(Date.UTC(2026, 9, 24) + ms).toISOString()
 const event = (ms: number, stage: DiagnosticEvent['stage'], name: string, details = {}): DiagnosticEvent => ({
@@ -30,7 +31,11 @@ describe('turn performance evidence', () => {
         event(6500, 'tool', 'tool-result', { toolCallId: 't1' }),
         event(7000, 'response', 'first-text'),
         event(8500, 'transport', 'body-complete', { traceId: 'r' }),
-        event(9200, 'ui', 'render-committed')
+        event(9200, 'ui', 'render-committed', {
+          measurement: LIVE_RENDER_MEASUREMENT,
+          observedActiveAt: at(1000),
+          responseFinishedAt: at(9000)
+        })
       ]
     })
     expect(report).toMatchObject({
@@ -49,6 +54,68 @@ describe('turn performance evidence', () => {
       firstBytesMs: 1500,
       requestId: 'api-1'
     })
+  })
+  it('does not treat a legacy mount recorded 174.85 seconds later as UI latency', () => {
+    const lateMount = event(184848, 'ui', 'render-committed', { status: 'success' })
+    const report = buildTurnPerformance({
+      startedAt: at(0),
+      finishedAt: at(10000),
+      events: [event(10121, 'ui', 'state-applied'), lateMount]
+    })
+    expect(report.totalMs).toBe(10000)
+    expect(report.uiStateAppliedAt).toBe(at(10121))
+    expect(report.renderCommittedAt).toBeNull()
+    expect(report.renderCommitDelayMs).toBeNull()
+    expect(report.coverage.missing).toContain('live-ui-commit-not-observed')
+  })
+  it('keeps the first verified commit and ignores later or different-turn observations', () => {
+    const details = {
+      measurement: LIVE_RENDER_MEASUREMENT,
+      observedActiveAt: at(1000),
+      responseFinishedAt: at(10000)
+    }
+    const report = buildTurnPerformance({
+      startedAt: at(0),
+      finishedAt: at(10000),
+      events: [
+        event(184848, 'ui', 'render-committed', details),
+        event(10010, 'ui', 'render-committed', { ...details, responseFinishedAt: at(5000) }),
+        event(10200, 'ui', 'render-committed', details)
+      ]
+    })
+    expect(report.renderCommitDelayMs).toBe(200)
+    expect(report.renderCommittedAt).toBe(at(10200))
+    expect(report.coverage.missing).not.toContain('live-ui-commit-not-observed')
+  })
+  it('rejects incomplete, restored-after-completion and invalid-clock render evidence', () => {
+    for (const details of [
+      { observedActiveAt: at(1000), responseFinishedAt: at(10000) },
+      { measurement: LIVE_RENDER_MEASUREMENT, observedActiveAt: at(11000), responseFinishedAt: at(10000) },
+      { measurement: LIVE_RENDER_MEASUREMENT, observedActiveAt: 'invalid', responseFinishedAt: at(10000) },
+      { measurement: LIVE_RENDER_MEASUREMENT, observedActiveAt: at(1000), responseFinishedAt: 'invalid' }
+    ]) {
+      expect(
+        buildTurnPerformance({
+          startedAt: at(0),
+          finishedAt: at(10000),
+          events: [event(12000, 'ui', 'render-committed', details)]
+        }).renderCommitDelayMs
+      ).toBeNull()
+    }
+  })
+  it('retains a genuinely slow observed live commit without applying an arbitrary time cap', () => {
+    const report = buildTurnPerformance({
+      startedAt: at(0),
+      finishedAt: at(10000),
+      events: [
+        event(184848, 'ui', 'render-committed', {
+          measurement: LIVE_RENDER_MEASUREMENT,
+          observedActiveAt: at(1000),
+          responseFinishedAt: at(10000)
+        })
+      ]
+    })
+    expect(report.renderCommitDelayMs).toBe(174848)
   })
   it('keeps concurrent native requests separate even when response headers have no trace ID', () => {
     const report = buildTurnPerformance({

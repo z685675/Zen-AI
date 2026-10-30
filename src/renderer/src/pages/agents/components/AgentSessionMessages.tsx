@@ -18,6 +18,7 @@ import { newMessagesActions } from '@renderer/store/newMessage'
 import {
   addChannelUserMessage,
   type ChannelStreamController,
+  loadTopicMessagesThunk,
   setupChannelStream
 } from '@renderer/store/thunk/messageThunk'
 import type { Assistant } from '@renderer/types'
@@ -89,9 +90,11 @@ const AgentSessionMessages = ({ agentId, sessionId }: Props) => {
   useEffect(() => {
     let cancelled = false
     let cleanupChunk: (() => void) | null = null
+    let currentExchange: string | undefined
+    const completedExchanges = new Set<string>()
     exchangeDoneRef.current = false
 
-    const getOrCreateStream = (askId?: string) => {
+    const getOrCreateStream = (askId?: string, persistence?: { userMessageId: string; assistantMessageId: string }) => {
       if (exchangeDoneRef.current) return streamCtrlRef.current
       if (!streamCtrlRef.current) {
         streamCtrlRef.current = setupChannelStream(
@@ -100,22 +103,31 @@ const AgentSessionMessages = ({ agentId, sessionId }: Props) => {
           sessionTopicId,
           agentId,
           sessionRef.current?.model ?? agentModelRef.current,
-          askId
+          persistence?.userMessageId ?? askId,
+          persistence ? { messageId: persistence.assistantMessageId, persist: false } : undefined
         )
+        if (persistence) {
+          void streamCtrlRef.current.settled.then(() => {
+            if (!cancelled && currentExchange === persistence.assistantMessageId)
+              void dispatch(loadTopicMessagesThunk(sessionTopicId, true))
+          })
+        }
       }
       return streamCtrlRef.current
     }
 
-    // Await subscribe before registering the chunk listener.
-    // This ensures the main-process bus subscription is active before any
-    // events can be published, eliminating the race where user-message is
-    // published before the subscriber exists.
+    // Listen before asking main to subscribe: a fast answer can arrive while
+    // the subscribe IPC promise is still resolving.
     const init = async () => {
-      await window.api.agentSessionStream.subscribe(sessionId)
-      if (cancelled) return
-
       cleanupChunk = window.api.agentSessionStream.onChunk((event) => {
         if (event.sessionId !== sessionId) return
+        if (event.persistence && completedExchanges.has(event.persistence.assistantMessageId)) return
+        if (event.persistence && event.persistence.assistantMessageId !== currentExchange) {
+          streamCtrlRef.current?.complete()
+          streamCtrlRef.current = null
+          currentExchange = event.persistence.assistantMessageId
+          exchangeDoneRef.current = false
+        }
 
         if (event.type === 'user-message' && event.userMessage) {
           // A new exchange starts — reset the done flag
@@ -126,9 +138,10 @@ const AgentSessionMessages = ({ agentId, sessionId }: Props) => {
             agentId,
             event.userMessage.text,
             event.userMessage.images,
-            event.userMessage.imagePaths
+            event.userMessage.imagePaths,
+            event.persistence ? { messageId: event.persistence.userMessageId, persist: false } : undefined
           )
-          const ctrl = getOrCreateStream(userMessageId)
+          const ctrl = getOrCreateStream(userMessageId, event.persistence)
           if (ctrl) {
             ctrl.markUserMessageReceived()
             // Register abort callback so the input bar's stop button can abort the main process stream
@@ -137,19 +150,22 @@ const AgentSessionMessages = ({ agentId, sessionId }: Props) => {
             })
           }
         } else if (event.type === 'chunk' && event.chunk) {
-          const ctrl = getOrCreateStream()
+          const ctrl = getOrCreateStream(undefined, event.persistence)
           ctrl?.pushChunk(event.chunk)
 
           if (event.chunk.type === 'error' || event.chunk.type === 'abort') {
+            if (currentExchange) completedExchanges.add(currentExchange)
             exchangeDoneRef.current = true
             ctrl?.complete()
             streamCtrlRef.current = null
           }
         } else if (event.type === 'complete') {
+          if (currentExchange) completedExchanges.add(currentExchange)
           exchangeDoneRef.current = true
           streamCtrlRef.current?.complete()
           streamCtrlRef.current = null
         } else if (event.type === 'error') {
+          if (currentExchange) completedExchanges.add(currentExchange)
           exchangeDoneRef.current = true
           // Push the error as a data chunk so the adapter can render it via
           // onError, then close the stream normally. Using complete() instead
@@ -165,9 +181,11 @@ const AgentSessionMessages = ({ agentId, sessionId }: Props) => {
           streamCtrlRef.current = null
         }
       })
+      await window.api.agentSessionStream.subscribe(sessionId)
+      if (cancelled) void window.api.agentSessionStream.unsubscribe(sessionId)
     }
 
-    void init()
+    void init().catch((error) => logger.warn('Could not subscribe to assistant session updates', { error }))
 
     return () => {
       cancelled = true

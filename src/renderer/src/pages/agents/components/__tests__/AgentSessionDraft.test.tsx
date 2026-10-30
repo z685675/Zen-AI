@@ -67,7 +67,6 @@ vi.mock('@renderer/pages/home/Inputbar/context/InputbarToolsProvider', () => ({
 vi.mock('@renderer/pages/home/Inputbar/registry', () => ({ getInputbarConfig: () => ({ showTools: false }) }))
 vi.mock('@renderer/pages/home/Inputbar/InputbarTools', () => ({ default: () => null }))
 vi.mock('@renderer/pages/home/Inputbar/components/ScrollToBottomButton', () => ({ default: () => null }))
-vi.mock('../AutomationSessionBanner', () => ({ default: () => null }))
 vi.mock('../LegacyAssistantInputbar', () => ({ default: () => null }))
 vi.mock('@renderer/pages/home/Inputbar/components/InputbarCore', () => ({
   InputbarCore: ({ text, onTextChange, handleSendMessage }: any) => (

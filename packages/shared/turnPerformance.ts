@@ -1,5 +1,7 @@
 import { readOpenCodeTurnDiagnostics } from './agents/opencodeDiagnostics'
 import type { DiagnosticEvent } from './diagnostics'
+import { buildServerPerformance } from './serverTiming'
+import { findLiveRenderCommit } from './turnRenderTiming'
 
 export type TurnInterval = {
   kind: 'request' | 'tool' | 'preparation' | 'context' | 'runtime-stage'
@@ -33,6 +35,7 @@ export function buildTurnPerformance(input: {
   firstTokenMs?: number
   droppedEvents?: number
   persistedDiagnostics?: unknown
+  backendEvidence?: Array<Record<string, unknown>>
 }) {
   const persisted = readOpenCodeTurnDiagnostics(input.persistedDiagnostics)
   const aggregate = persisted?.performance
@@ -131,6 +134,7 @@ export function buildTurnPerformance(input: {
     events.findLast((event) => event.stage === stage && event.event === name)?.at
   const startedAt = input.startedAt
   const finishedAt = input.finishedAt
+  const renderCommit = findLiveRenderCommit(events, startedAt, finishedAt)
   const number = (value: number | undefined) =>
     typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null
   const waits = intervals.filter(
@@ -143,8 +147,12 @@ export function buildTurnPerformance(input: {
   const observedRetries = events.filter((event) =>
     ['native-retry', 'key-fallback', 'model-fallback', 'fallback', 'stream-recovery'].includes(event.event)
   ).length
+  const serverRequests = buildServerPerformance(
+    input.backendEvidence ?? [],
+    intervals.filter((span) => span.kind === 'request')
+  )
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     outcome: input.outcome ?? 'unrecorded',
     startedAt: startedAt ?? null,
     finishedAt: finishedAt ?? null,
@@ -154,9 +162,9 @@ export function buildTurnPerformance(input: {
     firstBytesMs: duration(startedAt, first('first-bytes')),
     responseFinishedAt: last('response', 'processed') ?? last('response', 'model-complete') ?? null,
     uiStateAppliedAt: last('ui', 'state-applied') ?? null,
-    renderCommittedAt: last('ui', 'render-committed') ?? null,
+    renderCommittedAt: renderCommit?.at ?? null,
     // Not all DOM paint work is measurable from a React commit.
-    renderCommitDelayMs: duration(finishedAt, last('ui', 'render-committed')),
+    renderCommitDelayMs: duration(finishedAt, renderCommit?.at),
     observedRequests: persisted
       ? Math.max(persisted.observedRequests, observedRequestCount)
       : observedRequestCount || null,
@@ -169,6 +177,7 @@ export function buildTurnPerformance(input: {
     aggregate: aggregate ?? null,
     droppedEvents: input.droppedEvents ?? 0,
     intervals,
+    serverRequests,
     userWaitIntervals: waits,
     slowestObserved: [...completed].sort((a, b) => b.durationMs! - a.durationMs!).slice(0, 8),
     coverage: {
@@ -184,10 +193,18 @@ export function buildTurnPerformance(input: {
         ...(!startedAt ? ['request-start-time'] : []),
         ...(!finishedAt ? ['request-end-time-or-still-running'] : []),
         ...(!first('first-text') ? ['first-answer-text'] : []),
+        ...(!renderCommit ? ['live-ui-commit-not-observed'] : []),
         ...(intervals.some((span) => !span.finishedAt) ? ['unfinished-or-unpaired-intervals'] : []),
         ...((input.droppedEvents ?? 0) > 0 ? ['bounded-events-truncated'] : []),
         'attachment-upload-before-response-preparation',
-        'server-internal-breakdown-requires-correlated-api-evidence',
+        ...(!serverRequests.length ? ['server-internal-breakdown-requires-correlated-api-evidence'] : []),
+        ...(intervals.some(
+          (span) =>
+            span.kind === 'request' &&
+            !serverRequests.some((request) => request.requestId && request.requestId === span.requestId)
+        )
+          ? ['some-client-requests-lack-server-evidence']
+          : []),
         'user-wait-may-overlap-tool-execution-do-not-subtract-or-sum'
       ]
     }

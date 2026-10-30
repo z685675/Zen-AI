@@ -33,6 +33,8 @@ export const automationRequestSchema = z.discriminatedUnion('action', [
 export type AutomationRequest = z.infer<typeof automationRequestSchema>
 export type AutomationTaskInput = z.infer<typeof automationTaskInput>
 export type AutomationOverview = {
+  /** Fully acknowledged turns for the current authorized binding; not merely queued. */
+  syncedRuns?: Array<{ id: string; sessionId: string }>
   connection: { status: string; qr?: string; owner?: string; sessionId?: string; enabled?: boolean; reason?: string }
   deliveries: Array<{ id: number; state: string; role: string; reason: string | null; createdAt: number }>
   tasks: Array<{

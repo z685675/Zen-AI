@@ -1,3 +1,4 @@
+import { commonImageSizePresets } from '@shared/config/imageSizePresets'
 import { describe, expect, it } from 'vitest'
 
 import { getModelConfig, isGptImage2Family, isGrokImagineFamily, resolveModelConfig } from '../NewApiConfig'
@@ -8,6 +9,11 @@ const parseSize = (size: string) => {
 }
 
 describe('NewApiConfig', () => {
+  it('shares the ordered common image presets and high-cost flags with the workbench', () => {
+    expect(
+      getModelConfig('gpt-image-2')!.imageSizes.map(({ value, isExperimental }) => ({ size: value, isExperimental }))
+    ).toEqual(commonImageSizePresets.map(({ size, isExperimental }) => ({ size, isExperimental })))
+  })
   it('keeps gpt-image-1 legacy sizes unchanged', () => {
     const gptImage1 = getModelConfig('gpt-image-1')
 

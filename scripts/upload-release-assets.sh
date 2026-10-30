@@ -28,7 +28,9 @@ fi
 
 ssh -p "$PORT" -o StrictHostKeyChecking=accept-new "${ALI_SSH_USER}@${ALI_SSH_HOST}" "mkdir -p '${ALI_DEPLOY_PATH}'"
 
-rsync -av --delete \
+# Excluded patch directories are also protected from --delete on the receiver.
+# Match at every depth: deployed assets may live under html/ or html/zen-ai/.
+rsync -av --delete --exclude='hotpatch/' \
   -e "ssh -p ${PORT} -o StrictHostKeyChecking=accept-new" \
   "${SOURCE_DIR}/" \
   "${ALI_SSH_USER}@${ALI_SSH_HOST}:${ALI_DEPLOY_PATH}/"

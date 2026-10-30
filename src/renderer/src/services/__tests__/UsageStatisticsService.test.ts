@@ -175,6 +175,39 @@ describe('server-backed usage statistics', () => {
     expect(getCacheHitRate({ ...metrics, cache_read_tokens: null })).toBeNull()
     expect(getCacheHitRate({ ...metrics, input_tokens: 0 })).toBeNull()
     expect(getCacheHitRate({ ...metrics, cache_read_tokens: 0 })).toBe(0)
+    expect(getCacheHitRate({ ...metrics, request_count: 5, image_request_count: 3 })).toBeCloseTo(100000 / 130000)
+  })
+  it('reads image counts independently of tokens and rejects impossible image totals', async () => {
+    const imageMetrics = {
+      input_tokens: 0,
+      output_tokens: 0,
+      total_tokens: 0,
+      cache_tokens: null,
+      cache_read_tokens: null,
+      request_count: 3,
+      image_request_count: 3,
+      cache_known_requests: 0,
+      cache_read_known_requests: 0
+    }
+    const fetcher = (imageCount: number) => async () =>
+      new Response(
+        JSON.stringify({
+          success: true,
+          data: {
+            summary: { ...imageMetrics, image_request_count: imageCount },
+            models: [{ model: 'gpt-image-1', ...imageMetrics }],
+            days: [{ date: '2026-10-01', ...imageMetrics }]
+          }
+        })
+      )
+    const result = await fetchUsageStatistics(source, query, new AbortController().signal, fetcher(3))
+    expect(result.summary.image_request_count).toBe(3)
+    expect(result.models[0].total_tokens).toBe(0)
+    expect(result.days[0].image_request_count).toBe(3)
+    expect(getCacheHitRate(result.summary)).toBeNull()
+    await expect(fetchUsageStatistics(source, query, new AbortController().signal, fetcher(4))).rejects.toMatchObject({
+      code: 'invalid_response'
+    })
   })
   it('tolerates incomplete imported providers and a fresh installation', () => {
     expect(getUsageSources([])).toEqual([])

@@ -10,6 +10,17 @@ beforeAll(async () => {
   await i18next.init({ lng: 'zh-CN', resources: { 'zh-CN': { translation: zh } } })
 })
 
+it.each([
+  { name: 'Error', message: 'OpenCode process exited during startup' },
+  { name: 'Error', message: 'disk I/O error', zenFailureStage: 'runtime-startup', zenRuntimeId: 'opencode' }
+])('identifies native OpenCode startup failure without blaming the model service', (error) => {
+  const diagnosis = diagnoseClientError(error)
+  expect(diagnosis.category).toBe('runtime')
+  expect(diagnosis.serviceReceived).toBe('否')
+  expect(diagnosis.startedGenerating).toBe('否')
+  expect(classifyError(error).category).toBe('runtime')
+})
+
 const baseOptions = {
   blockId: 'block-abcdef',
   messageId: 'message-123456',
@@ -23,7 +34,7 @@ it('explains the daily quota without blaming channel connectivity or credentials
     statusCode: 403,
     responseBody: '{"error":{"code":"model_daily_token_limit_exceeded"}}'
   })
-  expect(diagnosis.summary).toBe('该模型额度今日已用完，请明日再使用。')
+  expect(diagnosis.summary).toBe('该模型额度已达到日限额，请切换其他模型使用。')
   expect(diagnosis.category).toBe('rate_limited')
   expect(diagnosis.serviceReceived).toBe('是')
 })
@@ -42,16 +53,38 @@ it('explains an admission timeout without claiming the model received the reques
     }
   }
   expect(diagnoseClientError(error)).toMatchObject({
-    category: 'service',
-    summary: zh.model_daily_quota.unavailable,
-    stage: zh.model_daily_quota.stage,
+    category: 'timeout',
+    summary: zh.model_daily_quota.timeout,
+    stage: zh.model_daily_quota.request_stage,
     httpStatus: '无',
     serviceConnectivity: '未确认',
     serviceReceived: '未确认',
     startedGenerating: '否',
     serviceAddress: error.zenRequestUrl
   })
-  expect(classifyError(error).i18nKey).toBe('model_daily_quota.unavailable')
+  expect(classifyError(error)).toMatchObject({ category: 'network', i18nKey: 'model_daily_quota.timeout' })
+})
+
+it('shows network recovery advice for an admission connection failure without waiting for allowance reset', () => {
+  const error = {
+    name: 'ModelDailyQuotaRequestError',
+    message: 'Model daily quota admission request failed',
+    code: 'model_daily_quota_unavailable',
+    zenFailureStage: 'quota-admission',
+    cause: JSON.stringify({ name: 'TypeError', message: 'Failed to fetch' })
+  }
+  const diagnosis = diagnoseClientError(error)
+  expect(diagnosis).toMatchObject({
+    category: 'network',
+    summary: zh.model_daily_quota.connection,
+    stage: zh.model_daily_quota.request_stage,
+    serviceReceived: '未确认',
+    startedGenerating: '否',
+    suggestion: zh.model_daily_quota.request_suggestion
+  })
+  expect(diagnosis.suggestion).toContain('手机热点')
+  expect(diagnosis.suggestion).not.toContain('等待额度恢复')
+  expect(classifyError(error)).toMatchObject({ category: 'network', i18nKey: 'model_daily_quota.connection' })
 })
 
 it('recognizes a direct AI chat admission failure without assuming a server response', () => {

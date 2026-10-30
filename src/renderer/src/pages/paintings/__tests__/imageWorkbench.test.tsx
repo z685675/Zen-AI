@@ -2,7 +2,8 @@ import '../../../../../../packages/image-workbench/src/i18n'
 
 import type { ImageCanvasTask } from '@shared/config/imageCanvas'
 import { defaultImageCapabilities } from '@shared/config/imageCapabilities'
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { commonImageSizePresets } from '@shared/config/imageSizePresets'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import i18next from 'i18next'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -184,8 +185,8 @@ describe('image workbench workflows', () => {
     const size = screen.getByLabelText('Image size')
     expect(size).toHaveValue(JSON.stringify(['auto', 'auto', '']))
     expect(size.querySelector('option')).toHaveTextContent('Auto (smart match)')
-    expect(size).toHaveTextContent('Portrait 1024 × 1536')
-    expect(size).toHaveTextContent('Square 1024 × 1024')
+    expect(size).toHaveTextContent('Portrait · 1024 × 1536')
+    expect(size).toHaveTextContent('Square · 1024 × 1024')
   })
   it('shows understandable Chinese size labels without changing the saved selection', async () => {
     const { readDraft } = await import('../../../../../../packages/image-workbench/src/draft')
@@ -201,9 +202,53 @@ describe('image workbench workflows', () => {
     const size = await screen.findByLabelText('图片尺寸')
     expect(size).toHaveValue(JSON.stringify(['2:3', '1024x1536', '']))
     expect(size.querySelector('option')).toHaveTextContent('自动（智能匹配）')
-    expect(size).toHaveTextContent('竖图 1024 × 1536')
-    expect(size).toHaveTextContent('横图 1536 × 1024')
-    expect(size).toHaveTextContent('方图 1024 × 1024')
+    expect(size).toHaveTextContent('竖图 · 1024 × 1536')
+    expect(size).toHaveTextContent('横图 · 1536 × 1024')
+    expect(size).toHaveTextContent('方图 · 1024 × 1024')
+  })
+  it('offers only the local presets and submits 4K pixels unchanged', async () => {
+    vi.mocked(window.imageCanvas!.submit).mockImplementation(async (input) => ({
+      id: input.id,
+      providerId: input.providerId,
+      modelId: input.modelId,
+      prompt: input.prompt,
+      createdAt: new Date().toISOString(),
+      status: 'running',
+      assets: []
+    }))
+    render(<Workbench />)
+    await waitFor(() => expect(screen.getByLabelText('Model')).toHaveValue(model.id))
+    const size = screen.getByLabelText('Image size')
+    const options = [...size.querySelectorAll('option')]
+    expect(options.map((item) => JSON.parse(item.value)[1])).toEqual(commonImageSizePresets.map((item) => item.size))
+    expect(size).toHaveTextContent('2K Landscape · 2560 × 1440')
+    expect(size).toHaveTextContent('3K Landscape · 3072 × 2048')
+    expect(size).toHaveTextContent('4K-class Landscape · 3840 × 2160')
+    expect(size).not.toHaveTextContent('4096 × 4096')
+    fireEvent.change(size, { target: { value: JSON.stringify(['16:9', '3840x2160', '']) } })
+    fireEvent.change(screen.getByLabelText('Prompt'), { target: { value: 'a landscape' } })
+    fireEvent.click(screen.getByRole('button', { name: /Generate image/ }))
+    await waitFor(() =>
+      expect(window.imageCanvas!.submit).toHaveBeenCalledWith(
+        expect.objectContaining({ size: '3840x2160', aspectRatio: '16:9', resolution: undefined })
+      )
+    )
+  })
+  it('displays and reuses a saved legacy size without exposing every old preset', async () => {
+    const { readDraft } = await import('../../../../../../packages/image-workbench/src/draft')
+    vi.mocked(readDraft).mockResolvedValueOnce({
+      ...emptyDraft,
+      providerId: 'a',
+      modelId: model.id,
+      dimension: JSON.stringify(['16:9', '4096x2304', ''])
+    })
+    render(<Workbench />)
+    await waitFor(() => expect(screen.getByLabelText('Model')).toHaveValue(model.id))
+    const size = screen.getByLabelText('Image size')
+    expect(size).toHaveValue(JSON.stringify(['16:9', '4096x2304', '']))
+    expect(size.querySelectorAll('option')).toHaveLength(13)
+    fireEvent.change(size, { target: { value: JSON.stringify(['auto', 'auto', '']) } })
+    expect(size.querySelectorAll('option')).toHaveLength(12)
   })
   it('starts a blank draft without restoring old results on polling or removing history', async () => {
     const { readDraft, writeDraft } = await import('../../../../../../packages/image-workbench/src/draft')
@@ -242,6 +287,8 @@ describe('image workbench workflows', () => {
     expect(screen.getByLabelText('Prompt')).toHaveFocus()
     expect(screen.getByLabelText('Provider')).toHaveValue('a')
     expect(screen.getByLabelText('Model')).toHaveValue(model.id)
+    expect(screen.getByLabelText('Images')).toHaveValue('1')
+    expect(screen.getByLabelText('Gateway B · Image model')).not.toBeChecked()
     expect(screen.queryByAltText(record.prompt)).not.toBeInTheDocument()
     expect(container.querySelectorAll('.reference img')).toHaveLength(0)
     expect(screen.getByRole('heading', { name: 'Turn an idea into an image' })).toBeInTheDocument()
@@ -261,7 +308,7 @@ describe('image workbench workflows', () => {
           providerId: 'a',
           modelId: model.id,
           quality: 'high',
-          count: 3,
+          count: 1,
           prompt: '',
           references: [],
           mask: undefined,
@@ -334,7 +381,9 @@ describe('image workbench workflows', () => {
     fireEvent.change(screen.getByLabelText('Prompt'), { target: { value: 'compare a waterfall' } })
     fireEvent.click(screen.getByLabelText('Gateway B · Image model'))
     expect(
-      screen.getByText('2 separate model tasks will be submitted and may be billed separately.')
+      screen.getByText(
+        '2 separate image requests will be submitted, one image per request and billed separately. Two tasks run at once.'
+      )
     ).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /Generate with 2 models/ }))
     await waitFor(() => expect(window.imageCanvas!.submitBatch).toHaveBeenCalledOnce())
@@ -342,6 +391,180 @@ describe('image workbench workflows', () => {
     expect(inputs.map((input) => input.providerId)).toEqual(['a', 'b'])
     expect(inputs[0].batchId).toBe(inputs[1].batchId)
     expect(inputs[0].id).not.toBe(inputs[1].id)
+    expect(window.imageCanvas!.submit).not.toHaveBeenCalled()
+  })
+  it.each([false, true])(
+    'submits two images as independent single-image tasks, with comparison: %s',
+    async (compare) => {
+      window.imageCanvas!.submitBatch = vi.fn(async (inputs) =>
+        inputs.map((input, index) => ({
+          ...input,
+          parameters: { ...input },
+          createdAt: new Date().toISOString(),
+          status: 'completed',
+          assets: [`image-${index}`]
+        }))
+      )
+      vi.mocked(window.imageCanvas!.asset).mockResolvedValue('data:image/png;base64,iVBORw0KGgo=')
+      render(<Workbench />)
+      await waitFor(() => expect(screen.getByLabelText('Provider')).toHaveValue('a'))
+      fireEvent.change(screen.getByLabelText('Prompt'), { target: { value: 'two landscapes' } })
+      fireEvent.change(screen.getByLabelText('Images'), { target: { value: '2' } })
+      if (compare) fireEvent.click(screen.getByLabelText('Gateway B · Image model'))
+      const count = compare ? 4 : 2
+      expect(
+        screen.getByText(
+          `${count} separate image requests will be submitted, one image per request and billed separately. Two tasks run at once.`
+        )
+      ).toBeInTheDocument()
+      const button = screen.getByRole('button', { name: compare ? /Generate with 2 models/ : /Generate image/ })
+      fireEvent.click(button)
+      fireEvent.click(button)
+      await waitFor(() => expect(window.imageCanvas!.submitBatch).toHaveBeenCalledOnce())
+      const inputs = vi.mocked(window.imageCanvas!.submitBatch).mock.calls[0][0]
+      expect(inputs).toHaveLength(count)
+      expect(inputs.every((input) => input.count === 1 && input.prompt === 'two landscapes')).toBe(true)
+      expect(inputs.map((input) => input.providerId)).toEqual(compare ? ['a', 'a', 'b', 'b'] : ['a', 'a'])
+      expect(new Set(inputs.map((input) => input.id)).size).toBe(count)
+      expect(new Set(inputs.map((input) => input.batchId)).size).toBe(1)
+      const results = await screen.findByRole('region', { name: 'Batch results' })
+      await waitFor(() => expect(within(results).getAllByRole('button', { name: /Select result/ })).toHaveLength(count))
+      expect(within(results).getAllByRole('img')).toHaveLength(1)
+      expect(window.imageCanvas!.submit).not.toHaveBeenCalled()
+      fireEvent.click(screen.getByRole('button', { name: /New image/ }))
+      expect(screen.getByLabelText('Images')).toHaveValue('1')
+      expect(screen.getByLabelText('Gateway B · Image model')).not.toBeChecked()
+      expect(screen.getByLabelText('Prompt')).toHaveValue('')
+      expect(screen.queryByText(/separate image requests will be submitted/)).not.toBeInTheDocument()
+      vi.mocked(window.imageCanvas!.submit).mockImplementation(async (input) => ({
+        ...input,
+        createdAt: new Date().toISOString(),
+        status: 'completed',
+        assets: ['new-image']
+      }))
+      fireEvent.change(screen.getByLabelText('Prompt'), { target: { value: 'one new landscape' } })
+      fireEvent.click(screen.getByRole('button', { name: /Generate image/ }))
+      await waitFor(() => expect(window.imageCanvas!.submit).toHaveBeenCalledOnce())
+      expect(window.imageCanvas!.submit).toHaveBeenCalledWith(
+        expect.objectContaining({ providerId: 'a', modelId: model.id, prompt: 'one new landscape', count: 1 })
+      )
+      expect(window.imageCanvas!.submitBatch).toHaveBeenCalledOnce()
+    }
+  )
+  it('browses, reuses and deletes a comparison batch as one history record', async () => {
+    const tasks: ImageCanvasTask[] = [0, 1, 2, 3].map((index) => ({
+      id: `child-${index}`,
+      batchId: 'comparison-batch',
+      providerId: index < 2 ? 'a' : 'b',
+      providerName: index < 2 ? 'Gateway A' : 'Gateway B',
+      modelId: model.id,
+      modelName: model.name,
+      prompt: 'four landscapes',
+      createdAt: new Date(1700000000000 + index * 1000).toISOString(),
+      status: index === 3 ? 'failed' : 'completed',
+      assets: index === 3 ? [] : [`image-${index}`],
+      parameters: { size: 'auto', count: 1, quality: 'auto', background: 'auto' }
+    }))
+    vi.mocked(window.imageCanvas!.history).mockResolvedValue(tasks)
+    vi.mocked(window.imageCanvas!.asset).mockImplementation(async (id) => `data:image/png;base64,${id}`)
+    vi.mocked(window.imageCanvas!.exportAsset).mockResolvedValue(true)
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const { container } = render(<Workbench />)
+    const gallery = await screen.findByRole('region', { name: 'Batch results' })
+    await waitFor(() =>
+      expect(within(gallery).getByRole('img')).toHaveAttribute('src', 'data:image/png;base64,image-0')
+    )
+    expect(within(gallery).getAllByRole('button', { name: /Select result/ })).toHaveLength(4)
+    expect(within(gallery).getByRole('button', { name: 'Previous image' })).toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: /Recent images/ }))
+    expect(container.querySelectorAll('.history-item')).toHaveLength(1)
+    expect(screen.getByText('Saved images: 3')).toBeInTheDocument()
+    fireEvent.click(within(gallery).getByRole('button', { name: /Select result 3:/ }))
+    expect(within(gallery).getByRole('img')).toHaveAttribute('src', 'data:image/png;base64,image-2')
+    expect(container.querySelector('.task-info')).toHaveTextContent('Gateway B')
+    fireEvent.click(within(gallery).getByRole('button', { name: 'Save image' }))
+    await waitFor(() => expect(window.imageCanvas!.exportAsset).toHaveBeenCalledWith('image-2', 'save'))
+    fireEvent.click(within(gallery).getByRole('button', { name: 'Use as reference' }))
+    expect(screen.getByRole('button', { name: 'Remove reference 1' })).toBeInTheDocument()
+    fireEvent.click(within(gallery).getByRole('button', { name: 'Next image' }))
+    expect(within(gallery).getByRole('heading', { name: 'Failed' })).toBeInTheDocument()
+    expect(within(gallery).getByRole('button', { name: 'Save image' })).toBeDisabled()
+    expect(within(gallery).getByRole('button', { name: 'Next image' })).toBeDisabled()
+    fireEvent.keyDown(gallery, { key: 'ArrowLeft' })
+    expect(within(gallery).getByText('3 / 4')).toBeInTheDocument()
+    fireEvent.keyDown(gallery, { key: 'ArrowLeft' })
+    fireEvent.click(screen.getByRole('button', { name: 'Reuse parameters' }))
+    await waitFor(() => expect(screen.getByLabelText('Images')).toHaveValue('2'))
+    expect(screen.getByLabelText('Provider')).toHaveValue('a')
+    expect(screen.getByLabelText('Gateway B · Image model')).toBeChecked()
+    expect(screen.queryByRole('button', { name: 'Remove reference 1' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Delete record' }))
+    await waitFor(() => expect(container.querySelectorAll('.history-item')).toHaveLength(0))
+    expect(vi.mocked(window.imageCanvas!.remove).mock.calls.map(([id]) => id)).toEqual(tasks.map((task) => task.id))
+    expect(window.imageCanvas!.submit).not.toHaveBeenCalled()
+  })
+  it('keeps legacy multi-image results browsable when an individual asset cannot be read', async () => {
+    vi.mocked(window.imageCanvas!.history).mockResolvedValue([
+      {
+        id: 'legacy-many',
+        providerId: 'a',
+        modelId: model.id,
+        prompt: 'legacy outputs',
+        createdAt: new Date().toISOString(),
+        status: 'completed',
+        assets: ['first', 'broken', 'last']
+      }
+    ])
+    vi.mocked(window.imageCanvas!.asset).mockImplementation(async (id) => {
+      if (id === 'broken') throw new Error('asset_not_found')
+      return `data:image/png;base64,${id}`
+    })
+    const { container } = render(<Workbench />)
+    const gallery = await screen.findByRole('region', { name: 'Batch results' })
+    await waitFor(() => expect(within(gallery).getByRole('img')).toHaveAttribute('src', 'data:image/png;base64,first'))
+    fireEvent.click(within(gallery).getByRole('button', { name: 'Next image' }))
+    await within(gallery).findByRole('heading', { name: 'This image could not be loaded' })
+    fireEvent.click(within(gallery).getByRole('button', { name: 'Next image' }))
+    expect(within(gallery).getByRole('img')).toHaveAttribute('src', 'data:image/png;base64,last')
+    expect(container.querySelector('.gallery-stage')?.nextElementSibling).toHaveClass('gallery-actions')
+    fireEvent.click(within(gallery).getByRole('button', { name: 'Copy image' }))
+    await waitFor(() => expect(window.imageCanvas!.exportAsset).toHaveBeenCalledWith('last', 'copy'))
+  })
+  it('keeps the selected request while another result finishes during polling', async () => {
+    const tasks: ImageCanvasTask[] = [0, 1].map((index) => ({
+      id: `pending-${index}`,
+      batchId: 'pending-batch',
+      providerId: 'a',
+      modelId: model.id,
+      prompt: 'pending landscapes',
+      createdAt: new Date(1700000000000 + index * 1000).toISOString(),
+      status: 'running',
+      assets: []
+    }))
+    vi.mocked(window.imageCanvas!.history).mockResolvedValue(tasks)
+    vi.mocked(window.imageCanvas!.asset).mockResolvedValue('data:image/png;base64,finished')
+    let poll: (() => void) | undefined
+    const interval = window.setInterval
+    vi.spyOn(window, 'setInterval').mockImplementation((handler, timeout, ...args) => {
+      if (timeout === 2000 && typeof handler === 'function') poll = handler as () => void
+      return interval(handler, timeout, ...args)
+    })
+    render(<Workbench />)
+    const gallery = await screen.findByRole('region', { name: 'Batch results' })
+    fireEvent.click(within(gallery).getByRole('button', { name: 'Next image' }))
+    vi.mocked(window.imageCanvas!.history).mockResolvedValue([
+      { ...tasks[0], status: 'completed', assets: ['finished'] },
+      tasks[1]
+    ])
+    expect(poll).toBeTypeOf('function')
+    await act(async () => {
+      poll!()
+    })
+    expect(within(gallery).getByText('2 / 2')).toBeInTheDocument()
+    expect(within(gallery).getByRole('heading', { name: 'Generating' })).toBeInTheDocument()
+    expect(within(gallery).queryByRole('img')).not.toBeInTheDocument()
+    fireEvent.click(within(gallery).getByRole('button', { name: 'Previous image' }))
+    await within(gallery).findByRole('img')
     expect(window.imageCanvas!.submit).not.toHaveBeenCalled()
   })
   it('blocks every comparison task if one selected model rejects the reference images', async () => {

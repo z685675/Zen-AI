@@ -85,7 +85,11 @@ beforeEach(() => {
     setOperation: vi.fn()
   })
   mocks.spawn.mockImplementation((executable: string) => {
-    if (executable === 'taskkill') return new EventEmitter()
+    if (executable === 'taskkill') {
+      const stopped = child
+      queueMicrotask(() => stopped.emit('exit', null, 'SIGTERM'))
+      return new EventEmitter()
+    }
     child = Object.assign(new EventEmitter(), {
       stdout: new PassThrough(),
       stderr: new PassThrough(),
@@ -124,6 +128,48 @@ const start = async (key = 'session', id = 'turn-1', signal = new AbortControlle
 }
 
 describe('OpenCode operation-scoped lifecycle evidence', () => {
+  it('waits for the previous child to exit before reopening the same native history', async () => {
+    const mod = await import('../process')
+    const runtime = await start()
+    const previous = child
+    const spawn = mocks.spawn.getMockImplementation()!
+    mocks.spawn.mockImplementation((executable, ...args) =>
+      executable === 'taskkill' ? new EventEmitter() : spawn(executable, ...args)
+    )
+    runtime.release()
+    runtime.stop()
+    const next = mod.getOpenCodeProcess('session', '/workspace', config(), ['/workspace'], new AbortController().signal)
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(mocks.spawn.mock.calls.filter((call) => call[0] !== 'taskkill')).toHaveLength(1)
+    previous.emit('exit', 0, null)
+    const replacement = await next
+    expect(replacement).not.toBe(runtime)
+    expect(mocks.spawn.mock.calls.filter((call) => call[0] !== 'taskkill')).toHaveLength(2)
+    replacement.release()
+  })
+
+  it('does not reopen native history if process termination cannot be confirmed', async () => {
+    vi.useFakeTimers()
+    const mod = await import('../process')
+    const runtime = await start()
+    const previous = child
+    const spawn = mocks.spawn.getMockImplementation()!
+    mocks.spawn.mockImplementation((executable, ...args) =>
+      executable === 'taskkill' ? new EventEmitter() : spawn(executable, ...args)
+    )
+    runtime.release()
+    runtime.stop()
+    const next = mod.getOpenCodeProcess('session', '/workspace', config(), [], new AbortController().signal)
+    const assertion = expect(next).rejects.toMatchObject({
+      zenFailureStage: 'runtime-startup',
+      zenRuntimeId: 'opencode'
+    })
+    await vi.advanceTimersByTimeAsync(10_000)
+    await assertion
+    expect(mocks.spawn.mock.calls.filter((call) => call[0] !== 'taskkill')).toHaveLength(1)
+    previous.emit('exit', 0, null)
+  })
+
   it('still requires explicit overwrite confirmation in automatic mode and rejects it in plan mode', async () => {
     const { registerAssistantMcpContext } = await import('@main/apiServer/routes/assistant-mcp')
     const { getOpenCodeProcess } = await import('../process')

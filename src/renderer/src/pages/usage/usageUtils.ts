@@ -21,6 +21,7 @@ export function emptyUsageMetrics(): UsageMetrics {
     cache_tokens: null,
     cache_read_tokens: null,
     request_count: 0,
+    image_request_count: 0,
     cache_known_requests: 0,
     cache_read_known_requests: 0
   }
@@ -52,6 +53,7 @@ export function groupUsageDays(
       bucket.output_tokens += day.output_tokens
       bucket.total_tokens += day.total_tokens
       bucket.request_count += day.request_count
+      bucket.image_request_count = (bucket.image_request_count ?? 0) + (day.image_request_count ?? 0)
       bucket.cache_known_requests += day.cache_known_requests
       bucket.cache_read_known_requests += day.cache_read_known_requests
       if (day.cache_tokens !== null) bucket.cache_tokens = (bucket.cache_tokens ?? 0) + day.cache_tokens

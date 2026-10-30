@@ -1,3 +1,4 @@
+import { DEFAULT_OPENCODE_AGENT_ID } from '@shared/config/agents'
 import type { Request, Response } from 'express'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -51,15 +52,28 @@ vi.mock('@main/services/agents/services/SchedulerService', () => ({
   }
 }))
 
-vi.mock('@shared/config/agents', () => ({
-  isProtectedAgentId: () => false
-}))
-
-import { patchAgent } from '../agents'
+import { patchAgent, updateAgent } from '../agents'
 
 describe('agent handlers', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+  })
+
+  it.each([patchAgent, updateAgent])('rejects direct edits to the official assistant prompt %#', async (handler) => {
+    const req = {
+      params: { agentId: DEFAULT_OPENCODE_AGENT_ID },
+      validatedBody: { instructions: 'Attempted override' }
+    } as unknown as Request
+    const json = vi.fn()
+    const status = vi.fn(() => ({ json }))
+    await handler(req, { status } as unknown as Response)
+    expect(status).toHaveBeenCalledWith(403)
+    expect(json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        error: expect.objectContaining({ code: 'official_agent_prompt_locked' })
+      })
+    )
+    expect(mocks.updateAgent).not.toHaveBeenCalled()
   })
 
   it('treats an Agent model update as a default for future sessions', async () => {

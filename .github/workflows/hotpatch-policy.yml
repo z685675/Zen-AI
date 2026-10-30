@@ -5,7 +5,11 @@ on:
     inputs:
       intent_id:
         description: 'Exact reviewed pending decision ID from the API panel'
-        required: true
+        required: false
+      renew:
+        description: 'Only renew existing signed decisions; leave intent_id empty'
+        type: boolean
+        default: false
   schedule:
     - cron: '17 */6 * * *'
 
@@ -21,7 +25,7 @@ jobs:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     # Renewal may only extend the exact previous signed decision; it cannot sign a new rollout.
-    environment: ${{ github.event_name == 'schedule' && 'hotpatch-renewal' || 'hotpatch-release' }}
+    environment: ${{ (github.event_name == 'schedule' || inputs.renew) && 'hotpatch-renewal' || 'hotpatch-release' }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -36,10 +40,12 @@ jobs:
         env:
           INTENT_ID: ${{ inputs.intent_id }}
           EVENT_KIND: ${{ github.event_name }}
+          RENEW_ONLY: ${{ inputs.renew }}
           ZEN_HOTPATCH_SIGNING_KEY_PEM: ${{ secrets.ZEN_HOTPATCH_SIGNING_KEY_PEM }}
           ZEN_CLIENT_PATCH_SIGNER_TOKEN: ${{ secrets.ZEN_CLIENT_PATCH_SIGNER_TOKEN }}
         run: |
-          if [ "$EVENT_KIND" = schedule ]; then
+          if [ "$EVENT_KIND" = schedule ] || [ "$RENEW_ONLY" = true ]; then
+            test -z "$INTENT_ID"
             pnpm exec tsx --tsconfig tsconfig.node.json scripts/hotpatch/policy-signer.ts --renew
           else
             [[ "$INTENT_ID" =~ ^[a-f0-9]{64}$ ]]

@@ -66,12 +66,12 @@ export type Assistant = {
 }
 
 /**
- * Get the effective MCP mode for an assistant with backward compatibility.
- * Legacy assistants without mcpMode default based on mcpServers presence.
+ * Respect explicit choices and legacy manual selections. Assistants that have
+ * never configured MCP use automatic discovery without rewriting stored data.
  */
 export function getEffectiveMcpMode(assistant: Assistant): McpMode {
   if (assistant.mcpMode) return assistant.mcpMode
-  return (assistant.mcpServers?.length ?? 0) > 0 ? 'manual' : 'disabled'
+  return (assistant.mcpServers?.length ?? 0) > 0 ? 'manual' : 'auto'
 }
 
 export type TranslateAssistant = Assistant & {

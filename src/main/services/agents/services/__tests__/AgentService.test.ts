@@ -30,10 +30,43 @@ vi.mock('@main/utils', () => ({
 }))
 
 import { modelsService } from '@main/apiServer/services/models'
+import { DEFAULT_OPENCODE_AGENT_ID } from '@shared/config/agents'
 
 import { AgentService } from '../AgentService'
+import { DEFAULT_ASSISTANT_DESCRIPTION, DEFAULT_ASSISTANT_INSTRUCTIONS } from '../opencode/defaults'
 
 const getModelsMock = vi.mocked(modelsService.getModels)
+
+describe('official assistant prompt protection on save', () => {
+  it.each([
+    { id: DEFAULT_OPENCODE_AGENT_ID, replace: false, includeInstructions: true, protected: true },
+    { id: DEFAULT_OPENCODE_AGENT_ID, replace: true, includeInstructions: true, protected: true },
+    { id: DEFAULT_OPENCODE_AGENT_ID, replace: true, includeInstructions: false, protected: true },
+    { id: 'custom-agent', replace: false, includeInstructions: true, protected: false }
+  ])('preserves official instructions and permits custom instructions %#', async (fixture) => {
+    const service = new AgentService() as AgentService & {
+      getDatabase: ReturnType<typeof vi.fn>
+      getAgent: ReturnType<typeof vi.fn>
+    }
+    service.getAgent = vi.fn().mockResolvedValue({ id: fixture.id, instructions: 'Existing official prompt' })
+    const set = vi.fn<(updates: unknown) => { where: ReturnType<typeof vi.fn> }>(() => ({
+      where: vi.fn().mockResolvedValue({ rowsAffected: 1 })
+    }))
+    service.getDatabase = vi.fn().mockResolvedValue({ update: () => ({ set }) })
+    const updates = {
+      name: 'Updated settings',
+      ...(fixture.includeInstructions && { instructions: 'Edited prompt' })
+    }
+
+    await service.updateAgent(fixture.id, updates, { replace: fixture.replace })
+
+    const saved = set.mock.calls[0][0]
+    expect(saved).toHaveProperty('name', 'Updated settings')
+    if (fixture.protected) expect(saved).not.toHaveProperty('instructions')
+    else expect(saved).toHaveProperty('instructions', 'Edited prompt')
+    if (fixture.includeInstructions) expect(updates.instructions).toBe('Edited prompt')
+  })
+})
 
 const setRemoteTarget = (target?: string) => {
   remotePolicyRefreshMock.mockResolvedValue({
@@ -537,7 +570,7 @@ describe('AgentService built-in model resolution', () => {
         expect(updatedAgent).not.toHaveProperty('name')
       }
       expect(JSON.parse(String(updatedAgent.configuration))).toMatchObject({
-        avatar: id === 'zen-opencode-default' ? '❤️' : '🩶',
+        avatar: '🩶',
         permission_mode: 'plan',
         custom_setting: 'keep'
       })
@@ -546,6 +579,76 @@ describe('AgentService built-in model resolution', () => {
       expect(service.getPreferredBuiltinRuntimeModel).not.toHaveBeenCalled()
     }
   )
+
+  it.each([
+    {
+      label: 'old default',
+      description: 'Zen AI 智能助手，使用 OpenCode 执行任务、处理文件和操作浏览器。',
+      instructions:
+        'You are Zen AI New Assistant. Help the user finish tasks using the tools actually available in this session. Answer simple greetings directly. Never claim to have configured background tasks, messaging or cross-conversation memory without an actual connected tool and authorization.',
+      refresh: true
+    },
+    {
+      label: 'older description',
+      description: 'Zen AI 新版助手，使用 OpenCode 执行任务、处理文件和操作浏览器。',
+      instructions: DEFAULT_ASSISTANT_INSTRUCTIONS,
+      refresh: true
+    },
+    { label: 'missing defaults', description: undefined, instructions: undefined, refresh: true },
+    { label: 'blank defaults', description: '  ', instructions: '  ', refresh: true },
+    {
+      label: 'user customizations',
+      description: '我的资料助手',
+      instructions: '请优先使用中文整理资料。',
+      refresh: false
+    }
+  ])('updates $label without resetting the saved avatar or custom prompt', async (fixture) => {
+    const service = new AgentService() as AgentService & {
+      getDatabase: ReturnType<typeof vi.fn>
+      getAgent: ReturnType<typeof vi.fn>
+      resolveAccessiblePaths: ReturnType<typeof vi.fn>
+    }
+    const id = 'zen-opencode-default'
+    service.getAgent = vi.fn().mockResolvedValue({
+      id,
+      name: '智能助手',
+      description: fixture.description,
+      instructions: fixture.instructions,
+      configuration: { avatar: '🌻', permission_mode: 'plan' }
+    })
+    service.resolveAccessiblePaths = vi.fn().mockReturnValue(['C:\\workspace'])
+    let updatedAgent: Record<string, unknown> = {}
+    service.getDatabase = vi.fn().mockResolvedValue({
+      select: () => ({ from: () => ({ where: () => ({ limit: async () => [{ id }] }) }) }),
+      update: () => ({
+        set: (value: Record<string, unknown>) => {
+          updatedAgent = value
+          return { where: async () => undefined }
+        }
+      })
+    })
+    const options = {
+      id,
+      builtinRole: 'fusion',
+      provisionWorkspace: vi.fn().mockResolvedValue({
+        description: DEFAULT_ASSISTANT_DESCRIPTION,
+        instructions: DEFAULT_ASSISTANT_INSTRUCTIONS,
+        configuration: { avatar: '❤️', permission_mode: 'default' }
+      })
+    }
+
+    // Repeated provisioning also runs when settings are reopened and after restart.
+    await service.initBuiltinAgent(options)
+    await service.initBuiltinAgent(options)
+    expect(JSON.parse(String(updatedAgent.configuration))).toMatchObject({ avatar: '🌻', permission_mode: 'plan' })
+    if (fixture.refresh) {
+      expect(updatedAgent.description).toBe(DEFAULT_ASSISTANT_DESCRIPTION)
+      expect(updatedAgent.instructions).toBe(DEFAULT_ASSISTANT_INSTRUCTIONS)
+    } else {
+      expect(updatedAgent).not.toHaveProperty('description')
+      expect(updatedAgent).not.toHaveProperty('instructions')
+    }
+  })
 
   it('refreshes the product-managed prompt for the existing official assistant', async () => {
     const service = new AgentService() as AgentService & {

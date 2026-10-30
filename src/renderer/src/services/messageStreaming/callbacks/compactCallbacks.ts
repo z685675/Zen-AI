@@ -6,6 +6,7 @@ import type { MainTextMessageBlock } from '@renderer/types/newMessage'
 import { MessageBlockStatus, MessageBlockType } from '@renderer/types/newMessage'
 import type { ClaudeCodeRawValue } from '@shared/agents/claudecode/types'
 import { readOpenCodeTurnDiagnostics } from '@shared/agents/opencodeDiagnostics'
+import { readModelDailyQuotaResults } from '@shared/utils/modelDailyQuotaTurn'
 
 import type { BlockManager } from '../BlockManager'
 
@@ -57,6 +58,15 @@ export const createCompactCallbacks = (deps: CompactCallbacksDeps) => {
    * Called when raw data is received from the stream
    */
   const onRawData = (content: unknown, metadata?: Record<string, any>) => {
+    if (content && typeof content === 'object' && 'type' in content && content.type === 'model_daily_quota') {
+      const results = readModelDailyQuotaResults((content as { results?: unknown }).results)
+      const message = getState().messages.entities[assistantMsgId]
+      if (results.length === 0 || !message) return
+      const providerMetadata = { ...message.providerMetadata, modelDailyQuota: { results } }
+      dispatch(newMessagesActions.updateMessage({ topicId, messageId: assistantMsgId, updates: { providerMetadata } }))
+      // Persist with the normal terminal callback, without changing model text.
+      return
+    }
     if (content && typeof content === 'object' && 'type' in content && content.type === 'opencode_diagnostics') {
       const diagnostics = readOpenCodeTurnDiagnostics((content as { diagnostics?: unknown }).diagnostics)
       const message = getState().messages.entities[assistantMsgId]

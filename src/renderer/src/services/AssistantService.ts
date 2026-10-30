@@ -88,6 +88,7 @@ export function getDefaultAssistant(): Assistant {
     messages: [],
     type: 'assistant',
     regularPhrases: [], // Added regularPhrases
+    mcpMode: 'auto',
     settings: DEFAULT_ASSISTANT_SETTINGS
   }
 }

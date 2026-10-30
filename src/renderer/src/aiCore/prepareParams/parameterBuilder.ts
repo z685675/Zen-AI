@@ -27,9 +27,10 @@ import { DEFAULT_ASSISTANT_SETTINGS, getDefaultModel } from '@renderer/services/
 import store from '@renderer/store'
 import type { CherryWebSearchConfig } from '@renderer/store/websearch'
 import type { Model } from '@renderer/types'
-import { type Assistant, getEffectiveMcpMode, type MCPTool, type Provider, SystemProviderIds } from '@renderer/types'
+import { type Assistant, type MCPTool, type Provider, SystemProviderIds } from '@renderer/types'
 import type { StreamTextParams } from '@renderer/types/aiCoreTypes'
 import { IdleTimeoutController, type IdleTimeoutHandle } from '@renderer/utils/IdleTimeoutController'
+import { getMcpModeForRequest } from '@renderer/utils/mcpMode'
 import { replacePromptVariables } from '@renderer/utils/prompt'
 import { isAIGatewayProvider, isAwsBedrockProvider } from '@renderer/utils/provider'
 import { DEFAULT_TIMEOUT } from '@shared/config/constant'
@@ -41,6 +42,7 @@ import type { ProviderCapabilities } from '../types'
 import { setupToolsConfig } from '../utils/mcp'
 import { buildProviderOptions } from '../utils/options'
 import { buildProviderBuiltinWebSearchConfig } from '../utils/websearch'
+import { sanitizeProviderParameters } from './customParameterPolicy'
 import { addAnthropicHeaders } from './header'
 import { getMaxTokens, getTemperature, getTopP } from './modelParameters'
 
@@ -195,14 +197,13 @@ export async function buildStreamTextParams(
 
   const params: StreamTextParams = {
     messages: sdkMessages,
+    ...standardParams,
     maxOutputTokens: getMaxTokens(assistant, model),
     temperature: getTemperature(assistant, model),
     topP: getTopP(assistant, model),
-    // Include AI SDK standard params extracted from custom parameters
-    ...standardParams,
     abortSignal: finalSignal,
     headers,
-    providerOptions,
+    providerOptions: sanitizeProviderParameters(providerOptions),
     maxRetries: 0
   }
 
@@ -223,7 +224,7 @@ export async function buildStreamTextParams(
       ? DEFAULT_AI_CHAT_SYSTEM_PROMPT
       : ''
 
-  if (getEffectiveMcpMode(assistant) === 'auto') {
+  if (getMcpModeForRequest(assistant, mcpTools) === 'auto') {
     const autoModePrompt = getHubModeSystemPrompt()
     if (autoModePrompt) {
       systemPrompt = systemPrompt ? `${systemPrompt}\n\n${autoModePrompt}` : autoModePrompt

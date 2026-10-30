@@ -1,6 +1,6 @@
 import { EmojiAvatarWithPicker } from '@renderer/components/Avatar/EmojiAvatarWithPicker'
 import type { AgentBaseWithId, UpdateAgentBaseForm, UpdateAgentFunctionUnion } from '@renderer/types'
-import { AgentConfigurationSchema, isAgentEntity, isAgentType } from '@renderer/types'
+import { AgentConfigurationSchema, isAgentEntity } from '@renderer/types'
 import { getAgentAvatar } from '@shared/config/agents'
 import { Input } from 'antd'
 import { useCallback, useEffect, useState } from 'react'
@@ -23,9 +23,8 @@ export const NameSetting = ({ base, update }: NameSettingsProps) => {
   }
 
   const isAgent = isAgentEntity(base)
-  const isDefault = isAgent ? isAgentType(base.configuration?.avatar) : false
   const fallbackEmoji = isAgent && base ? getAgentAvatar(base.id, base.configuration?.avatar) : '🩶'
-  const [emoji, setEmoji] = useState(isAgent && !isDefault ? fallbackEmoji : fallbackEmoji)
+  const [emoji, setEmoji] = useState(fallbackEmoji)
 
   useEffect(() => {
     setName(base?.name?.trim())

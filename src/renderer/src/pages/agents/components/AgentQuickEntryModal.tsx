@@ -1,10 +1,10 @@
+import AutomationSettings from '@renderer/pages/settings/AutomationSettings'
 import SkillsSettings from '@renderer/pages/settings/SkillsSettings'
-import TasksSettings from '@renderer/pages/settings/TasksSettings'
 import { Modal } from 'antd'
 import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 
-export type AgentQuickEntry = 'skills' | 'tasks'
+export type AgentQuickEntry = 'skills' | 'tasks' | 'wechat'
 
 type AgentQuickEntryModalProps = {
   entry: AgentQuickEntry | null
@@ -27,7 +27,13 @@ const AgentQuickEntryModal = ({ entry, onClose }: AgentQuickEntryModalProps) => 
       footer={null}
       open={entry !== null}
       onCancel={onClose}
-      title={entry === 'skills' ? t('settings.skills.title') : t('settings.scheduledTasks.title')}
+      title={
+        entry === 'skills'
+          ? t('settings.skills.title')
+          : entry === 'wechat'
+            ? t('automation.wechat')
+            : t('automation.schedule')
+      }
       width="min(1220px, calc(100vw - 32px))"
       styles={{
         body: {
@@ -40,8 +46,13 @@ const AgentQuickEntryModal = ({ entry, onClose }: AgentQuickEntryModalProps) => 
       <div className="h-full min-h-0">
         {entry === 'skills' ? (
           <SkillsSettings embedded />
-        ) : entry === 'tasks' ? (
-          <TasksSettings embedded onNavigateToSession={onClose} />
+        ) : entry === 'tasks' || entry === 'wechat' ? (
+          <AutomationSettings
+            key={entry}
+            embedded
+            initialTab={entry === 'wechat' ? 'wechat' : 'schedule'}
+            onNavigateToSession={onClose}
+          />
         ) : null}
       </div>
     </Modal>

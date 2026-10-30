@@ -28,9 +28,8 @@ export function isBuiltinAgentId(agentId: string | null | undefined): boolean {
 }
 
 export function getAgentAvatar(agentId: string | null | undefined, avatar?: string | null): string {
-  void avatar
   if (agentId === DEFAULT_OPENCODE_AGENT_ID) {
-    return DEFAULT_OPENCODE_AGENT_AVATAR
+    return avatar?.trim() || DEFAULT_OPENCODE_AGENT_AVATAR
   }
   if (agentId === DEFAULT_FUSION_AGENT_ID) {
     return DEFAULT_FUSION_AGENT_AVATAR

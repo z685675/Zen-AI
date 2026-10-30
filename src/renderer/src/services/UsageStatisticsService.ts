@@ -11,14 +11,16 @@ const metricsSchema = z
     cache_tokens: counter.nullable(),
     cache_read_tokens: counter.nullable(),
     request_count: counter,
+    image_request_count: counter.optional(),
     cache_known_requests: counter,
     cache_read_known_requests: counter
   })
   .refine(
     (m) =>
       m.total_tokens === m.input_tokens + m.output_tokens &&
-      m.cache_known_requests <= m.request_count &&
-      m.cache_read_known_requests <= m.request_count
+      (m.image_request_count ?? 0) <= m.request_count &&
+      m.cache_known_requests <= m.request_count - (m.image_request_count ?? 0) &&
+      m.cache_read_known_requests <= m.request_count - (m.image_request_count ?? 0)
   )
 
 const statisticsSchema = z.object({
@@ -159,9 +161,9 @@ export async function fetchUsageStatistics(
 export function getCacheHitRate(metrics: UsageMetrics): number | null {
   if (
     !metrics.input_tokens ||
-    !metrics.request_count ||
+    metrics.request_count === (metrics.image_request_count ?? 0) ||
     metrics.cache_read_tokens === null ||
-    metrics.cache_read_known_requests !== metrics.request_count ||
+    metrics.cache_read_known_requests !== metrics.request_count - (metrics.image_request_count ?? 0) ||
     metrics.cache_read_tokens > metrics.input_tokens
   )
     return null

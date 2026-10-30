@@ -2,7 +2,13 @@ import type { Message } from '@renderer/types/newMessage'
 import { act, fireEvent, render } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const mocks = vi.hoisted(() => ({ messages: [] as Message[] }))
+const mocks = vi.hoisted(() => ({
+  messages: [] as Message[],
+  dispatch: vi.fn(),
+  setup: vi.fn(),
+  user: vi.fn(() => 'run:user'),
+  load: vi.fn()
+}))
 vi.mock('@renderer/hooks/agents/useAgent', () => ({
   useAgent: () => ({ agent: { id: 'agent', model: { id: 'test' } } })
 }))
@@ -12,8 +18,12 @@ vi.mock('@renderer/hooks/agents/useSession', () => ({
 vi.mock('@renderer/hooks/useMessageOperations', () => ({ useTopicMessages: () => mocks.messages }))
 vi.mock('@renderer/hooks/useModel', () => ({ getModel: () => ({ id: 'test' }) }))
 vi.mock('@renderer/hooks/useSettings', () => ({ useSettings: () => ({ messageNavigation: 'none' }) }))
-vi.mock('@renderer/store', () => ({ default: { getState: vi.fn() }, useAppDispatch: () => vi.fn() }))
-vi.mock('@renderer/store/thunk/messageThunk', () => ({ setupChannelStream: vi.fn(), addChannelUserMessage: vi.fn() }))
+vi.mock('@renderer/store', () => ({ default: { getState: vi.fn() }, useAppDispatch: () => mocks.dispatch }))
+vi.mock('@renderer/store/thunk/messageThunk', () => ({
+  setupChannelStream: mocks.setup,
+  addChannelUserMessage: mocks.user,
+  loadTopicMessagesThunk: mocks.load
+}))
 vi.mock('@renderer/services/MessagesService', () => ({
   getGroupedMessages: (messages: Message[]) => Object.fromEntries(messages.map((message) => [message.id, [message]]))
 }))
@@ -53,6 +63,7 @@ const frames = async (count = 12) => {
 }
 
 beforeEach(() => {
+  vi.clearAllMocks()
   vi.useFakeTimers()
   positions = new Map()
   mocks.messages = Array.from({ length: 20 }, (_, i) => ({
@@ -88,6 +99,48 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers())
 
 describe('assistant reading position across navigation', () => {
+  it('renders canonical channel IDs without persistence and reloads only after the stream drains', async () => {
+    let drain!: () => void
+    const ctrl = {
+      assistantMessageId: 'run:assistant',
+      markUserMessageReceived: vi.fn(),
+      pushChunk: vi.fn(),
+      complete: vi.fn(),
+      settled: new Promise<void>((resolve) => {
+        drain = resolve
+      })
+    }
+    mocks.setup.mockReturnValue(ctrl)
+    render(<AgentSessionMessages agentId="agent" sessionId="one" />)
+    await act(async () => {})
+    const receive = vi.mocked(window.api.agentSessionStream.onChunk).mock.calls[0][0]
+    const base = {
+      sessionId: 'one',
+      agentId: 'agent',
+      persistence: { userMessageId: 'run:user', assistantMessageId: 'run:assistant' }
+    }
+    await act(async () => receive({ ...base, type: 'user-message', userMessage: { text: '你好' } } as any))
+    expect(mocks.user.mock.calls[0].at(-1)).toEqual({ messageId: 'run:user', persist: false })
+    expect(mocks.setup.mock.calls[0].slice(-2)).toEqual(['run:user', { messageId: 'run:assistant', persist: false }])
+    await act(async () => receive({ ...base, type: 'chunk', chunk: { type: 'text-delta', text: 'answer' } } as any))
+    await act(async () => receive({ ...base, type: 'complete' }))
+    expect(mocks.load).not.toHaveBeenCalled()
+    await act(async () => {
+      drain()
+      await ctrl.settled
+    })
+    expect(mocks.load).toHaveBeenCalledWith('agent-session:one', true)
+    await act(async () => receive({ ...base, type: 'chunk', chunk: { type: 'text-delta', text: 'late' } } as any))
+    expect(mocks.setup).toHaveBeenCalledOnce()
+    expect(ctrl.pushChunk).toHaveBeenCalledOnce()
+    const next = { ...base, persistence: { userMessageId: 'next:user', assistantMessageId: 'next:assistant' } }
+    // Joining a new exchange after missing its user event must also use canonical IDs.
+    await act(async () => receive({ ...next, type: 'chunk', chunk: { type: 'text-delta', text: 'next' } } as any))
+    expect(mocks.setup).toHaveBeenCalledTimes(2)
+    await act(async () => receive({ ...base, type: 'chunk', chunk: { type: 'text-delta', text: 'old' } } as any))
+    expect(mocks.setup).toHaveBeenCalledTimes(2)
+  })
+
   it('loads older pages before restoring a deep position without overwriting it with a clipped position', async () => {
     positions.set(key('one'), -1200)
     const { container } = render(<AgentSessionMessages agentId="agent" sessionId="one" />)

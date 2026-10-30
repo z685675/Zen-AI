@@ -776,6 +776,12 @@
         "tasks_desc": "[to be translated]:Handle complex work that needs multiple steps and sustained execution."
       },
       "model_label": "[to be translated]:Model for this chat",
+      "quick_entries": {
+        "skills_desc": "[to be translated]:Import, find, and manage assistant skills",
+        "tasks_desc": "[to be translated]:Schedule tasks and view their run history",
+        "title": "[to be translated]:Quick access",
+        "wechat_desc": "[to be translated]:Connect WeChat and continue chats on your phone or computer"
+      },
       "title": "[to be translated]:Hand over the task and get started with ease"
     }
   },
@@ -1428,6 +1434,7 @@
     },
     "status": "Status",
     "stop": "Stop",
+    "syncComplete": "同期完了",
     "syncing": "Sync enabled",
     "taskConsent": "I authorize this specific task to run automatically with controlled tools in its dedicated workspace. This does not authorize overwriting, deletion, payments or unrestricted computer access.",
     "taskFailed": "Task failed or was interrupted. Open the conversation for details; completed files are preserved.",
@@ -1857,11 +1864,14 @@
       },
       "max": "制限なし",
       "max_tokens": {
-        "confirm": "最大トークン数",
+        "confirm": "出力長の上限",
         "confirm_content": "最大トークン数を設定すると、モデルが生成できる最大トークン数が制限されます。これにより、返される結果の長さに影響が出る可能性があります。モデルのコンテキスト制限に基づいて設定する必要があります。そうしないとエラーが発生します",
-        "label": "最大トークン数",
+        "label": "出力長の上限",
         "tip": "モデルが生成できる最大トークン数。モデルのコンテキスト制限に基づいて設定する必要があります。そうしないとエラーが発生します"
       },
+      "parameters_customized": "カスタムパラメーター有効",
+      "parameters_default": "既定のパラメーター",
+      "parameters_tip": "通常は調整不要です。温度、Top-P、出力上限を無効にするとモデルサービスの既定値を使用します。この画面の設定が優先され、同名のカスタムパラメーターは無視されます。既存のロール設定は保持され、リセットで既定値に戻せます。",
       "reset": "リセット",
       "set_as_default": "デフォルトのアシスタントに適用",
       "show_line_numbers": "コードに行番号を表示",
@@ -3259,17 +3269,22 @@
     }
   },
   "model_daily_quota": {
-    "exceeded": "このモデルの本日の利用枠を使い切りました。明日ご利用ください。",
+    "connection": "リクエスト確認サービスに接続できません。モデルによる生成はまだ開始されていません。接続を確認するか、別のネットワークで再試行してください。",
+    "exceeded": "このモデルの日次上限に達しました。別のモデルに切り替えてください。",
     "hint": "入力＋出力。キャッシュは入力に含まれます。北京時間の午前0時にリセット。最後に許可された質問は上限を超えて完了できます。",
     "invalid": "この質問の承認が終了しました。新しい質問を送信してください。",
     "limit": "1日の上限",
     "pending": "残りの利用枠は別のタスクで予約されています。完了をお待ちください。",
     "remaining": "残り",
+    "request_stage": "モデルへのリクエスト前の確認",
+    "request_suggestion": "一度再試行してください。失敗が続く場合はスマートフォンのテザリングなど別のネットワークを試し、アプリのプロキシ設定を確認してください。解決しない場合は診断パッケージを書き出して管理者に連絡してください。このエラーはモデルの利用枠を使い切ったことを意味しません。",
     "stage": "モデル利用枠の確認",
     "status_error": "本日の利用枠を更新できません。過去の使用量には影響しません。",
     "suggestion": "別のモデルを選ぶか、利用枠のリセットをお待ちください。繰り返し再試行しないでください。",
+    "timeout": "リクエストの確認がタイムアウトしました。モデルによる生成はまだ開始されていません。接続を確認するか、別のネットワークで再試行してください。",
     "title": "本日のモデル利用枠 · 北京時間",
-    "unavailable": "モデル利用枠サービスを一時的に利用できません。",
+    "turn_exceeded": "{{model}} の本日の上限に達しました。別のモデルに切り替えてください。",
+    "unavailable": "API がモデルの利用枠を確認できません。後で再試行してください。問題が続く場合は診断データをエクスポートして管理者に連絡してください。",
     "used": "使用済み",
     "used_up": "本日分を消費済み"
   },
@@ -3381,11 +3396,11 @@
     "memory_notice": "Independent native memory survives model changes. Retry, branching and individual deletion are supported; direct editing and bulk deletion are not yet supported.",
     "outputting": "The model is producing output",
     "permission": {
-      "title": "このタスクには確認が必要です",
       "description": "操作とその対象を確認してから、タスクの続行を許可してください。",
-      "loopTitle": "同じ操作の繰り返しを検出したため、タスクを一時停止しました",
+      "details": "操作の詳細",
       "loopDescription": "アシスタントが同じ操作を繰り返し試行しました。一度だけ続行を許可するか、この操作をキャンセルできます。",
-      "details": "操作の詳細"
+      "loopTitle": "同じ操作の繰り返しを検出したため、タスクを一時停止しました",
+      "title": "このタスクには確認が必要です"
     },
     "preparing": "[to be translated]:Request received; preparing the task",
     "responding": "[to be translated]:Processing the response",
@@ -6838,8 +6853,25 @@
       "processing": "実行中"
     },
     "privacy": "既定では診断メタデータのみを含み、会話本文、ツールの引数や結果、元の添付ファイル、全履歴は含みません。信頼できる相手にのみ共有してください。任意で含める内容には個人情報がある場合があります。",
-    "reportTemplate": "# Zen AI このターンの診断\n\n- 結果：{{outcome}}\n- モデル：{{model}}；Provider：{{provider}}\n- Token：入力 {{input}}；出力 {{output}}；キャッシュ読取 {{cache}}（入力に含まれるため重複加算しません）\n- 開始：{{start}}；終了：{{end}}；合計：{{total}}\n- 最初の内容（思考の場合あり）：{{firstContent}}；最初の回答本文：{{firstText}}；最初のネットワークデータ：{{firstBytes}}（最初のトークンではありません）\n- 観測した要求：{{requests}}；ツール：{{tools}}；再試行・切替イベント：{{retries}}\n- UI コミット遅延：{{render}}（React の記録であり画面描画の保証ではありません）\n\n## 開始・終了を対応付けられた最も遅い段階\n{{slowest}}\n\n## 要求とツールの時系列\n{{timeline}}\n\n## 観測したユーザー待機（ツールと重複する場合あり）\n{{waits}}\n\n## 制約と欠落データ\n- 実測時間のみであり、ネットワーク・クライアント・上流の根本原因を断定しません。段階は重複するため単純加算や待機時間の減算はできません。\n- 未記録はゼロではありません。未完了区間は実行中かもしれません。実行中の出力はスナップショットであり、過去の未記録イベントは復元できません。\n- 通常は回答準備から記録するため、それ以前の添付アップロードは含まれない場合があります。再試行イベント数はタスク再実行数ではありません。\n- サーバー内部は zen-api-evidence.json と要求 ID を照合してください。記録がなくても未着とは限らず、書出成功も完全受信の保証ではありません。\n- 上限により破棄したイベント：{{dropped}}。古い要求は期限切れの場合があります。欠落コード（performance.json 参照）：{{missing}}\n",
-    "requestTiming": " | ヘッダー待機 {{headers}} | 最初のバイト {{bytes}} | HTTP {{status}} | 要求 ID {{requestId}}"
+    "renderNotRecorded": "未収集",
+    "reportTemplate": "# Zen AI このターンの診断\n\n- 結果：{{outcome}}\n- モデル：{{model}}；Provider：{{provider}}\n- Token：入力 {{input}}；出力 {{output}}；キャッシュ読取 {{cache}}（入力に含まれるため重複加算しません）\n- 開始：{{start}}；終了：{{end}}；合計：{{total}}\n- 最初の内容（思考の場合あり）：{{firstContent}}；最初の回答本文：{{firstText}}；最初のネットワークデータ：{{firstBytes}}（最初のトークンではありません）\n- 観測した要求：{{requests}}；ツール：{{tools}}；再試行・切替イベント：{{retries}}\n- 応答終了から UI コミットまで：{{render}}（継続して表示中のコンポーネントで今回の完了を観測した場合のみ。画面描画時間ではありません）\n\n## 開始・終了を対応付けられた最も遅い段階\n{{slowest}}\n\n## 要求とツールの時系列\n{{timeline}}\n\n## 観測したユーザー待機（ツールと重複する場合あり）\n{{waits}}\n\n## 制約と欠落データ\n- 実測時間のみであり、ネットワーク・クライアント・上流の根本原因を断定しません。段階は重複するため単純加算や待機時間の減算はできません。\n- 未記録はゼロではありません。未完了区間は実行中かもしれません。実行中の出力はスナップショットであり、過去の未記録イベントは復元できません。\n- 通常は回答準備から記録するため、それ以前の添付アップロードは含まれない場合があります。再試行イベント数はタスク再実行数ではありません。\n- サーバー内部は zen-api-evidence.json と要求 ID を照合してください。記録がなくても未着とは限らず、書出成功も完全受信の保証ではありません。\n- 上限により破棄したイベント：{{dropped}}。古い要求は期限切れの場合があります。欠落コード（performance.json 参照）：{{missing}}\n",
+    "requestTiming": " | ヘッダー待機 {{headers}} | 最初のバイト {{bytes}} | HTTP {{status}} | 要求 ID {{requestId}}",
+    "serverTiming": {
+      "attempt": "[to be translated]:  - Attempt {{index}} / channel {{channel}} | Total {{total}} | Before attempt {{before}}\n    First event {{event}} | Effective content {{content}} | Answer text {{text}} | First non-ping forward {{forward}} | Content to forward {{forwarding}} (unavailable if metadata was forwarded earlier)\n{{http}}\n    Missing: {{missing}}",
+      "http": "[to be translated]:    - HTTP {{index}} | Before HTTP {{prepare}} | DNS {{dns}} | TCP (summed connections, may overlap) {{connect}} | TLS {{tls}} | Connection ready {{ready}} | Sent {{sent}} | First byte {{firstByte}} | Wait after sending {{wait}} | Body reading {{body}} | Connection reused {{reused}}",
+      "intro": "[to be translated]:## Server and upstream timing\n\nEach request and channel attempt is listed separately. Preparation milestones are offsets from API receipt; stream milestones are offsets from the channel attempt; HTTP milestones are offsets from that HTTP call. DNS/TCP/TLS may overlap or be skipped on connection reuse. First byte/event is not first answer text. Outside-gateway time compares elapsed durations and includes client/network work; it is not a one-way network measurement. Unknown or unfinished stages are not zero.",
+      "missing": "[to be translated]:  Missing: {{missing}}",
+      "no": "[to be translated]:No",
+      "phases": {
+        "admission_ready": "[to be translated]:Admission ready",
+        "body_ready": "[to be translated]:Body ready",
+        "routing_ready": "[to be translated]:Routing ready",
+        "tokens_ready": "[to be translated]:Token estimate ready",
+        "validated": "[to be translated]:Validated"
+      },
+      "request": "[to be translated]:- Request {{requestId}} | API total {{total}} | Outside API {{outside}}\n  Preparation milestones: {{phases}}",
+      "yes": "[to be translated]:Yes"
+    }
   },
   "update": {
     "available": "A new version {{version}} is available. Click Check for Updates any time to download it.",
@@ -6873,6 +6905,9 @@
       "unavailable": "Unable to load usage. Please try again later.",
       "unsupported": "This service does not support usage queries yet"
     },
+    "image_requests": "画像リクエスト数",
+    "image_requests_hint": "複数枚の画像を含む場合も、1 リクエストを 1 回と数えます。料金はサービスの設定に従います。",
+    "image_trend": "画像リクエストの推移",
     "input": "Input tokens",
     "intervals": {
       "day": "Daily",

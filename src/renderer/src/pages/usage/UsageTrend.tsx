@@ -5,26 +5,34 @@ import styled from 'styled-components'
 
 import type { UsageTrendBucket } from './usageUtils'
 
-const series = [
+const tokenSeries = [
   { field: 'input_tokens', label: 'usage_statistics.input', color: '#6374e9' },
   { field: 'output_tokens', label: 'usage_statistics.output', color: '#ed9a50' },
   { field: 'cache_tokens', label: 'usage_statistics.cache', color: '#26ac93' }
 ] as const
+const imageSeries = [
+  { field: 'image_request_count', label: 'usage_statistics.image_requests', color: '#6374e9' }
+] as const
 
-export default function UsageTrend({ days }: { days: UsageTrendBucket[] }) {
+export default function UsageTrend({
+  days,
+  mode = 'tokens'
+}: {
+  days: UsageTrendBucket[]
+  mode?: 'tokens' | 'images'
+}) {
   const { t, i18n } = useTranslation()
+  const series = mode === 'images' ? imageSeries : tokenSeries
   const [activeBucket, setActiveBucket] = useState<UsageTrendBucket | null>(null)
   // New results must not keep a tooltip from the previous date/source selection.
   const activeDay = activeBucket && days.includes(activeBucket) ? activeBucket : null
   const exact = (value: number) => value.toLocaleString(i18n.language)
   const format = (value: number) =>
     new Intl.NumberFormat(i18n.language, { notation: 'compact', maximumFractionDigits: 1 }).format(value)
-  const maximum = Math.max(
-    1,
-    ...days.map((day) => Math.max(day.input_tokens, day.output_tokens, day.cache_tokens ?? 0))
-  )
+  const maximum = Math.max(1, ...days.map((day) => Math.max(...series.map((item) => day[item.field] ?? 0))))
   const x = (index: number) => (days.length === 1 ? 465 : 60 + (index * 810) / Math.max(days.length - 1, 1))
   const y = (value: number) => 210 - (value * 170) / maximum
+  const yTicks = [...new Set([0, mode === 'images' ? Math.floor(maximum / 2) : maximum / 2, maximum])]
   const ticks = [...new Set([0, Math.floor((days.length - 1) / 2), days.length - 1])].filter(
     (index) => index >= 0 && index < days.length
   )
@@ -38,19 +46,15 @@ export default function UsageTrend({ days }: { days: UsageTrendBucket[] }) {
           </span>
         ))}
       </Legend>
-      <svg role="group" aria-label={t('usage_statistics.trend')} viewBox="0 0 900 252">
-        {[0, 0.5, 1].map((fraction) => (
-          <g key={fraction}>
-            <line
-              x1="60"
-              x2="870"
-              y1={y(maximum * fraction)}
-              y2={y(maximum * fraction)}
-              stroke="currentColor"
-              opacity="0.08"
-            />
-            <text x="50" y={y(maximum * fraction) + 4} textAnchor="end">
-              {format(maximum * fraction)}
+      <svg
+        role="group"
+        aria-label={t(mode === 'images' ? 'usage_statistics.image_trend' : 'usage_statistics.trend')}
+        viewBox="0 0 900 252">
+        {yTicks.map((value) => (
+          <g key={value}>
+            <line x1="60" x2="870" y1={y(value)} y2={y(value)} stroke="currentColor" opacity="0.08" />
+            <text x="50" y={y(value) + 4} textAnchor="end">
+              {format(value)}
             </text>
           </g>
         ))}
@@ -70,7 +74,7 @@ export default function UsageTrend({ days }: { days: UsageTrendBucket[] }) {
           let path = ''
           let connected = false
           days.forEach((day, index) => {
-            const value = day[item.field] ?? (day.request_count === 0 ? 0 : null)
+            const value = day[item.field] ?? (day.request_count === (day.image_request_count ?? 0) ? 0 : null)
             if (value === null) {
               connected = false
               return
@@ -89,7 +93,7 @@ export default function UsageTrend({ days }: { days: UsageTrendBucket[] }) {
                 strokeLinecap="round"
               />
               {days.map((day, index) => {
-                const value = day[item.field] ?? (day.request_count === 0 ? 0 : null)
+                const value = day[item.field] ?? (day.request_count === (day.image_request_count ?? 0) ? 0 : null)
                 if (value === null) return null
                 return (
                   <circle
@@ -113,13 +117,16 @@ export default function UsageTrend({ days }: { days: UsageTrendBucket[] }) {
           const date = day.startDate === day.endDate ? day.startDate : `${day.startDate} — ${day.endDate}`
           const left = index === 0 ? 52 : (x(index - 1) + x(index)) / 2
           const right = index === days.length - 1 ? 878 : (x(index) + x(index + 1)) / 2
-          const cache = day.cache_tokens ?? (day.request_count === 0 ? 0 : null)
-          const partial = cache !== null && day.cache_known_requests < day.request_count
-          const values = [
-            exact(day.input_tokens),
-            exact(day.output_tokens),
-            cache === null ? '—' : `${partial ? '≥ ' : ''}${exact(cache)}`
-          ]
+          const cache = day.cache_tokens ?? (day.request_count === (day.image_request_count ?? 0) ? 0 : null)
+          const partial =
+            cache !== null && day.cache_known_requests < day.request_count - (day.image_request_count ?? 0)
+          const values = series.map((item) =>
+            item.field === 'cache_tokens'
+              ? cache === null
+                ? '—'
+                : `${partial ? '≥ ' : ''}${exact(cache)}`
+              : exact(day[item.field] ?? 0)
+          )
           return (
             <Tooltip
               key={day.date}
@@ -141,7 +148,7 @@ export default function UsageTrend({ days }: { days: UsageTrendBucket[] }) {
                       <strong>{values[seriesIndex]}</strong>
                     </TooltipRow>
                   ))}
-                  {cache === null || partial ? (
+                  {mode === 'tokens' && (cache === null || partial) ? (
                     <TooltipNote>
                       {t(cache === null ? 'usage_statistics.cache_unknown' : 'usage_statistics.cache_partial')}
                     </TooltipNote>

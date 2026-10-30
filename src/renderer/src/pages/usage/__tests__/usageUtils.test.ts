@@ -64,4 +64,22 @@ describe('usage date ranges and buckets', () => {
     )
     expect(grouped[0].input_tokens).toBe(0)
   })
+  it('aggregates image requests separately across days, weeks and months', () => {
+    const days: UsageStatistics['days'] = [
+      { ...emptyUsageMetrics(), date: '2026-10-01', request_count: 2, image_request_count: 2 },
+      {
+        ...emptyUsageMetrics(),
+        date: '2026-10-02',
+        request_count: 3,
+        image_request_count: 2,
+        input_tokens: 100,
+        total_tokens: 100
+      }
+    ]
+    for (const interval of ['day', 'week', 'month'] as const) {
+      const buckets = groupUsageDays(days, dayjs('2026-10-01'), dayjs('2026-10-03'), interval)
+      expect(buckets.reduce((sum, bucket) => sum + (bucket.image_request_count ?? 0), 0)).toBe(4)
+      expect(buckets.reduce((sum, bucket) => sum + bucket.input_tokens, 0)).toBe(100)
+    }
+  })
 })

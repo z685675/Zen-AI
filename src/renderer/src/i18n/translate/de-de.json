@@ -776,6 +776,12 @@
         "tasks_desc": "[to be translated]:Handle complex work that needs multiple steps and sustained execution."
       },
       "model_label": "[to be translated]:Model for this chat",
+      "quick_entries": {
+        "skills_desc": "[to be translated]:Import, find, and manage assistant skills",
+        "tasks_desc": "[to be translated]:Schedule tasks and view their run history",
+        "title": "[to be translated]:Quick access",
+        "wechat_desc": "[to be translated]:Connect WeChat and continue chats on your phone or computer"
+      },
       "title": "[to be translated]:Hand over the task and get started with ease"
     }
   },
@@ -1428,6 +1434,7 @@
     },
     "status": "Status",
     "stop": "Stop",
+    "syncComplete": "Synchronisiert",
     "syncing": "Sync enabled",
     "taskConsent": "I authorize this specific task to run automatically with controlled tools in its dedicated workspace. This does not authorize overwriting, deletion, payments or unrestricted computer access.",
     "taskFailed": "Task failed or was interrupted. Open the conversation for details; completed files are preserved.",
@@ -1857,11 +1864,14 @@
       },
       "max": "Unbegrenzt",
       "max_tokens": {
-        "confirm": "Maximale Token-Anzahl",
+        "confirm": "Ausgabelängenlimit",
         "confirm_content": "Legen Sie die maximale Token-Anzahl für eine einzelne Interaktion fest, was die Länge des Ergebnisses beeinflusst. Muss entsprechend der Kontextbeschränkung des Modells eingestellt werden, sonst tritt ein Fehler auf",
-        "label": "Maximale Token-Anzahl",
+        "label": "Ausgabelängenlimit",
         "tip": "Maximale Token-Anzahl für eine einzelne Interaktion, beeinflusst die Länge des Ergebnisses. Muss entsprechend der Kontextbeschränkung des Modells eingestellt werden, sonst tritt ein Fehler auf"
       },
+      "parameters_customized": "Eigene Parameter aktiv",
+      "parameters_default": "Standardparameter",
+      "parameters_tip": "Normalerweise sind keine Änderungen nötig. Deaktivierte Temperatur-, Top-P- und Ausgabelimits verwenden die Modellvorgaben. Diese Steuerelemente haben Vorrang; gleichnamige eigene Parameter werden ignoriert. Vorhandene Rolleneinstellungen bleiben erhalten. Zurücksetzen stellt die Standardwerte wieder her.",
       "reset": "Zurücksetzen",
       "set_as_default": "Auf Standardassistent anwenden",
       "show_line_numbers": "Code mit Zeilennummern anzeigen",
@@ -3259,17 +3269,22 @@
     }
   },
   "model_daily_quota": {
-    "exceeded": "Das Tageskontingent dieses Modells ist aufgebraucht. Bitte morgen erneut versuchen.",
+    "connection": "Der Dienst zur Anfrageprüfung ist nicht erreichbar. Die Modellgenerierung hat noch nicht begonnen. Prüfen Sie die Verbindung oder versuchen Sie ein anderes Netzwerk.",
+    "exceeded": "Das Tageskontingent dieses Modells ist erreicht. Bitte wechseln Sie zu einem anderen Modell.",
     "hint": "Eingabe + Ausgabe; Cache ist in der Eingabe enthalten. Rücksetzung um Mitternacht in Peking. Die letzte zugelassene Frage darf das Limit überschreiten.",
     "invalid": "Die Freigabe dieser Frage ist abgelaufen. Bitte eine neue Frage senden.",
     "limit": "Tageslimit",
     "pending": "Das Restkontingent ist für eine andere Aufgabe reserviert. Bitte deren Abschluss abwarten.",
     "remaining": "Verbleibend",
+    "request_stage": "Prüfung vor der Modellanfrage",
+    "request_suggestion": "Versuchen Sie es einmal erneut. Wechseln Sie bei weiteren Fehlern beispielsweise zu einem mobilen Hotspot und prüfen Sie die Proxy-Einstellungen der App. Exportieren Sie bei anhaltenden Problemen ein Diagnosepaket für die Administration. Dieser Fehler bedeutet nicht, dass Ihr Modellkontingent aufgebraucht ist.",
     "stage": "Prüfung des Modellkontingents",
     "status_error": "Tageskontingente konnten nicht aktualisiert werden. Der Nutzungsverlauf bleibt verfügbar.",
     "suggestion": "Ein anderes verfügbares Modell wählen oder auf die Rücksetzung warten. Nicht wiederholt versuchen.",
+    "timeout": "Die Anfrageprüfung hat das Zeitlimit überschritten. Die Modellgenerierung hat noch nicht begonnen. Prüfen Sie die Verbindung oder versuchen Sie ein anderes Netzwerk.",
     "title": "Heutige Modellkontingente · Peking-Zeit",
-    "unavailable": "Der Kontingentdienst ist vorübergehend nicht verfügbar.",
+    "turn_exceeded": "{{model}} hat das heutige Kontingent erreicht. Bitte wechseln Sie zu einem anderen Modell.",
+    "unavailable": "Die API kann das Modellkontingent derzeit nicht prüfen. Versuchen Sie es später erneut. Exportieren Sie bei anhaltenden Problemen die Diagnose und kontaktieren Sie den Administrator.",
     "used": "Verbraucht",
     "used_up": "Heute aufgebraucht"
   },
@@ -3381,11 +3396,11 @@
     "memory_notice": "Independent native memory survives model changes. Retry, branching and individual deletion are supported; direct editing and bulk deletion are not yet supported.",
     "outputting": "The model is producing output",
     "permission": {
-      "title": "Diese Aufgabe benötigt Ihre Bestätigung",
       "description": "Prüfen Sie den Vorgang und sein Ziel, bevor Sie die Aufgabe fortsetzen.",
-      "loopTitle": "Wiederholte Vorgänge erkannt; Aufgabe pausiert",
+      "details": "Vorgangsdetails",
       "loopDescription": "Der Assistent hat denselben Vorgang mehrfach versucht. Sie können ihn einmal fortsetzen lassen oder diesen Vorgang abbrechen.",
-      "details": "Vorgangsdetails"
+      "loopTitle": "Wiederholte Vorgänge erkannt; Aufgabe pausiert",
+      "title": "Diese Aufgabe benötigt Ihre Bestätigung"
     },
     "preparing": "[to be translated]:Request received; preparing the task",
     "responding": "[to be translated]:Processing the response",
@@ -6838,8 +6853,25 @@
       "processing": "Läuft"
     },
     "privacy": "Standardmäßig nur Diagnosemetadaten, keine Gesprächstexte, Werkzeugargumente/-ergebnisse, Originalanhänge oder vollständigen Verläufe. Nur mit vertrauenswürdigen Empfängern teilen. Optionale Inhalte können personenbezogene Daten enthalten.",
-    "reportTemplate": "# Zen AI: Diagnose dieses Durchlaufs\n\n- Ergebnis: {{outcome}}\n- Modell: {{model}}; Provider: {{provider}}\n- Token: Eingabe {{input}}; Ausgabe {{output}}; Cache gelesen {{cache}} (bereits in der Eingabe enthalten)\n- Beginn: {{start}}; Ende: {{end}}; Gesamtzeit: {{total}}\n- Erster Inhalt (ggf. Überlegung): {{firstContent}}; erster Antworttext: {{firstText}}; erste Netzwerkbytes: {{firstBytes}} (nicht erstes Token)\n- Beobachtete Anfragen: {{requests}}; Werkzeuge: {{tools}}; Wiederholungs-/Ausweichereignisse: {{retries}}\n- UI-Commit-Verzögerung: {{render}} (React-Commit, keine Garantie der Bildschirmdarstellung)\n\n## Langsamste vollständig erfasste Phasen\n{{slowest}}\n\n## Zeitachse der Anfragen und Werkzeuge\n{{timeline}}\n\n## Beobachtete Benutzerwartezeiten (können Werkzeuge überlappen)\n{{waits}}\n\n## Grenzen und fehlende Daten\n- Nur gemessene Zeiten, keine Feststellung der Netzwerk-, Client- oder Upstream-Ursache. Phasen überlappen; nicht summieren oder Benutzerwartezeiten abziehen.\n- Fehlend bedeutet nicht null. Unvollständige Phasen können noch laufen. Laufende Exporte sind Momentaufnahmen; alte Gespräche erhalten keine nachträglich erfundenen Ereignisse.\n- Die Aufzeichnung beginnt meist mit der Antwortvorbereitung; frühere Uploads können fehlen. Wiederholungsereignisse sind keine Anzahl erneut ausgeführter Aufgaben.\n- Für Serverdetails zen-api-evidence.json und Anfrage-IDs abgleichen. Fehlende Serverdaten beweisen keinen Nichteingang; geschriebene Daten garantieren keinen vollständigen Empfang.\n- Verworfene Ereignisse: {{dropped}}; ältere Anfragen können ablaufen. Fehlende Datencodes (performance.json): {{missing}}\n",
-    "requestTiming": " | Antwortheader {{headers}} | Erste Bytes {{bytes}} | HTTP {{status}} | Anfrage-ID {{requestId}}"
+    "renderNotRecorded": "Nicht erfasst",
+    "reportTemplate": "# Zen AI: Diagnose dieses Durchlaufs\n\n- Ergebnis: {{outcome}}\n- Modell: {{model}}; Provider: {{provider}}\n- Token: Eingabe {{input}}; Ausgabe {{output}}; Cache gelesen {{cache}} (bereits in der Eingabe enthalten)\n- Beginn: {{start}}; Ende: {{end}}; Gesamtzeit: {{total}}\n- Erster Inhalt (ggf. Überlegung): {{firstContent}}; erster Antworttext: {{firstText}}; erste Netzwerkbytes: {{firstBytes}} (nicht erstes Token)\n- Beobachtete Anfragen: {{requests}}; Werkzeuge: {{tools}}; Wiederholungs-/Ausweichereignisse: {{retries}}\n- Antwortende bis UI-Commit: {{render}} (nur beim aktuellen Abschluss in einer durchgehend sichtbaren Komponente; keine Bildschirmzeichenzeit)\n\n## Langsamste vollständig erfasste Phasen\n{{slowest}}\n\n## Zeitachse der Anfragen und Werkzeuge\n{{timeline}}\n\n## Beobachtete Benutzerwartezeiten (können Werkzeuge überlappen)\n{{waits}}\n\n## Grenzen und fehlende Daten\n- Nur gemessene Zeiten, keine Feststellung der Netzwerk-, Client- oder Upstream-Ursache. Phasen überlappen; nicht summieren oder Benutzerwartezeiten abziehen.\n- Fehlend bedeutet nicht null. Unvollständige Phasen können noch laufen. Laufende Exporte sind Momentaufnahmen; alte Gespräche erhalten keine nachträglich erfundenen Ereignisse.\n- Die Aufzeichnung beginnt meist mit der Antwortvorbereitung; frühere Uploads können fehlen. Wiederholungsereignisse sind keine Anzahl erneut ausgeführter Aufgaben.\n- Für Serverdetails zen-api-evidence.json und Anfrage-IDs abgleichen. Fehlende Serverdaten beweisen keinen Nichteingang; geschriebene Daten garantieren keinen vollständigen Empfang.\n- Verworfene Ereignisse: {{dropped}}; ältere Anfragen können ablaufen. Fehlende Datencodes (performance.json): {{missing}}\n",
+    "requestTiming": " | Antwortheader {{headers}} | Erste Bytes {{bytes}} | HTTP {{status}} | Anfrage-ID {{requestId}}",
+    "serverTiming": {
+      "attempt": "[to be translated]:  - Attempt {{index}} / channel {{channel}} | Total {{total}} | Before attempt {{before}}\n    First event {{event}} | Effective content {{content}} | Answer text {{text}} | First non-ping forward {{forward}} | Content to forward {{forwarding}} (unavailable if metadata was forwarded earlier)\n{{http}}\n    Missing: {{missing}}",
+      "http": "[to be translated]:    - HTTP {{index}} | Before HTTP {{prepare}} | DNS {{dns}} | TCP (summed connections, may overlap) {{connect}} | TLS {{tls}} | Connection ready {{ready}} | Sent {{sent}} | First byte {{firstByte}} | Wait after sending {{wait}} | Body reading {{body}} | Connection reused {{reused}}",
+      "intro": "[to be translated]:## Server and upstream timing\n\nEach request and channel attempt is listed separately. Preparation milestones are offsets from API receipt; stream milestones are offsets from the channel attempt; HTTP milestones are offsets from that HTTP call. DNS/TCP/TLS may overlap or be skipped on connection reuse. First byte/event is not first answer text. Outside-gateway time compares elapsed durations and includes client/network work; it is not a one-way network measurement. Unknown or unfinished stages are not zero.",
+      "missing": "[to be translated]:  Missing: {{missing}}",
+      "no": "[to be translated]:No",
+      "phases": {
+        "admission_ready": "[to be translated]:Admission ready",
+        "body_ready": "[to be translated]:Body ready",
+        "routing_ready": "[to be translated]:Routing ready",
+        "tokens_ready": "[to be translated]:Token estimate ready",
+        "validated": "[to be translated]:Validated"
+      },
+      "request": "[to be translated]:- Request {{requestId}} | API total {{total}} | Outside API {{outside}}\n  Preparation milestones: {{phases}}",
+      "yes": "[to be translated]:Yes"
+    }
   },
   "update": {
     "available": "A new version {{version}} is available. Click Check for Updates any time to download it.",
@@ -6873,6 +6905,9 @@
       "unavailable": "Unable to load usage. Please try again later.",
       "unsupported": "This service does not support usage queries yet"
     },
+    "image_requests": "Bildanfragen",
+    "image_requests_hint": "Eine Zählung pro Anfrage, auch bei mehreren Bildern. Es gelten die Preise des Dienstes.",
+    "image_trend": "Verlauf der Bildanfragen",
     "input": "Input tokens",
     "intervals": {
       "day": "Daily",
