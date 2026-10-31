@@ -4,6 +4,7 @@ import { loggerService } from '@logger'
 import { configManager } from '@main/services/ConfigManager'
 import { beginMainDiagnostic, recordMainDiagnostic } from '@main/services/DiagnosticEvidenceService'
 import { assertAssistantExecutionAllowed } from '@shared/agents/assistantAvailability'
+import { isOpenCodeInternalProgress } from '@shared/agents/opencodeProgress'
 import { serializeAgentStreamError } from '@shared/agents/streamError'
 import { getAgentTaskLimit } from '@shared/agents/taskConcurrency'
 import { DEFAULT_OPENCODE_AGENT_ID } from '@shared/config/agents'
@@ -537,6 +538,7 @@ export class SessionMessageService extends BaseService {
     let streamRecoveryActive = false
     let streamRecoveryProducedProgress = false
     let runtimeStarted = false
+    let openCodeWaitingPermission = false
     const pendingToolCalls = new Set<string>()
     let pendingRuntimeChunks: TextStreamPart<Record<string, any>>[] = []
     let firstRuntimeEventTimer: ReturnType<typeof setTimeout> | undefined
@@ -578,7 +580,7 @@ export class SessionMessageService extends BaseService {
       start: (controller) => {
         const startFirstRuntimeEventTimer = (
           timeoutMs = RUNTIME_START_TIMEOUT_MS,
-          phase: 'startup' | 'visible-output' | 'continuation' = 'startup'
+          phase: 'startup' | 'visible-output' | 'continuation' | 'compacting' = 'startup'
         ) => {
           clearFirstRuntimeEventTimer()
           firstRuntimeEventTimer = setTimeout(async () => {
@@ -588,10 +590,17 @@ export class SessionMessageService extends BaseService {
             const timeoutError = new AgentRuntimeNoOutputTimeoutError(
               phase === 'startup'
                 ? `The Agent runtime did not start within ${timeoutSeconds} seconds.`
-                : phase === 'continuation'
-                  ? `The Agent runtime stopped producing progress for ${timeoutSeconds} seconds while continuing the task.`
-                  : `The Agent runtime started but did not produce a visible result within ${timeoutSeconds} seconds.`
+                : phase === 'compacting'
+                  ? `The Agent runtime stopped making progress while summarizing context for ${timeoutSeconds} seconds.`
+                  : phase === 'continuation'
+                    ? `The Agent runtime stopped producing progress for ${timeoutSeconds} seconds while continuing the task.`
+                    : `The Agent runtime started but did not produce a visible result within ${timeoutSeconds} seconds.`
             )
+            Object.assign(timeoutError, {
+              code: 'agent_inactivity_timeout',
+              zenFailureStage: 'local-task-deadline',
+              phase
+            })
             logger.warn('Agent runtime timed out before visible output', {
               sessionId: session.id,
               runtimeId: activeRuntimeId,
@@ -706,6 +715,7 @@ export class SessionMessageService extends BaseService {
           }
           pendingRuntimeChunks = []
           runtimeStarted = false
+          openCodeWaitingPermission = false
           const previousRuntimeId = activeRuntimeId
           activeCandidateIndex += 1
           activeRuntimeId = nextCandidate
@@ -764,6 +774,7 @@ export class SessionMessageService extends BaseService {
           }
           pendingRuntimeChunks = []
           runtimeStarted = false
+          openCodeWaitingPermission = false
           logger.warn('Agent runtime session was unavailable; rebuilding continuity from local context', {
             sessionId: session.id,
             runtimeId: activeRuntimeId,
@@ -821,6 +832,7 @@ export class SessionMessageService extends BaseService {
 
           pendingRuntimeChunks = []
           runtimeStarted = false
+          openCodeWaitingPermission = false
           pendingToolCalls.clear()
           const recoveryContext = [req.recovery_context, accumulator.getRecoveryContext()]
             .filter((value): value is string => Boolean(value?.trim()))
@@ -877,16 +889,41 @@ export class SessionMessageService extends BaseService {
                 if (
                   activeRuntimeId === 'opencode' &&
                   chunk.type === 'raw' &&
+                  isOpenCodeInternalProgress(chunk.rawValue)
+                ) {
+                  // Native summaries stay internal. Their actual content growth
+                  // proves activity without committing an answer or completing a
+                  // turn. Busy events, bytes and repeated snapshots do not.
+                  runtimeStarted = true
+                  if (!openCodeWaitingPermission && pendingToolCalls.size === 0)
+                    startFirstRuntimeEventTimer(
+                      RUNTIME_VISIBLE_OUTPUT_TIMEOUT_MS,
+                      chunk.rawValue.kind === 'completed' ? 'visible-output' : 'compacting'
+                    )
+                  // This is a main-process control frame. The UI receives the
+                  // stable stage and terminal numeric diagnostics, not one raw
+                  // callback/log entry per hidden summary token.
+                  return
+                }
+
+                if (
+                  activeRuntimeId === 'opencode' &&
+                  chunk.type === 'raw' &&
                   (chunk.rawValue as { type?: string })?.type === 'opencode_status'
                 ) {
                   const status = (chunk.rawValue as { status: string }).status
                   if (status === 'waiting_permission') {
+                    openCodeWaitingPermission = true
                     clearFirstRuntimeEventTimer()
                     deepResearchTimerControls?.pause()
-                  } else if (status === 'busy') {
+                  } else if (status === 'busy' || status === 'compacting') {
+                    openCodeWaitingPermission = false
                     deepResearchTimerControls?.resume()
                     if (!firstRuntimeEventTimer)
-                      startFirstRuntimeEventTimer(RUNTIME_VISIBLE_OUTPUT_TIMEOUT_MS, 'visible-output')
+                      startFirstRuntimeEventTimer(
+                        RUNTIME_VISIBLE_OUTPUT_TIMEOUT_MS,
+                        status === 'compacting' ? 'compacting' : 'visible-output'
+                      )
                   }
                   controller.enqueue(chunk)
                   return

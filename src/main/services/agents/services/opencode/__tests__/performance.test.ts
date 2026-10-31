@@ -3,6 +3,39 @@ import { describe, expect, it } from 'vitest'
 import { OpenCodePerformance } from '../performance'
 
 describe('new assistant passive performance evidence', () => {
+  it('measures private context activity separately from first visible output', () => {
+    let now = 0
+    const timing = new OpenCodePerformance(() => now)
+    now = 30_000
+    timing.chunks([
+      {
+        type: 'raw',
+        rawValue: {
+          type: 'opencode_internal_progress',
+          stage: 'compacting',
+          kind: 'reasoning',
+          characters: 12
+        }
+      }
+    ])
+    now = 200_000
+    timing.chunks([
+      {
+        type: 'raw',
+        rawValue: {
+          type: 'opencode_internal_progress',
+          stage: 'compacting',
+          kind: 'text',
+          characters: 18
+        }
+      }
+    ])
+    expect(timing.snapshot('failed')).toMatchObject({
+      firstVisibleOutputMs: null,
+      firstTextMs: null,
+      contextProgress: { firstMs: 30_000, lastMs: 200_000, events: 2, characters: 30 }
+    })
+  })
   it('does not count quota admission failures or checks as upstream model time', () => {
     const timing = new OpenCodePerformance(() => 0)
     timing.transport('quota-check-started', { phase: 'quota-admission' })

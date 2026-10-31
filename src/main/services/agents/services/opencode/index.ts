@@ -8,6 +8,7 @@ import { validateModelId } from '@main/apiServer/utils'
 import { recordMainDiagnostic } from '@main/services/DiagnosticEvidenceService'
 import type { OpenCodeUsageObservation } from '@shared/agents/opencodeDiagnostics'
 import { getOpenCodeAgentMode } from '@shared/agents/opencodeMode'
+import { isOpenCodeInternalProgress } from '@shared/agents/opencodeProgress'
 import { diagnosticText, sanitizeDiagnostic } from '@shared/diagnostics'
 import { shouldShowModelDailyQuotaNotice } from '@shared/utils/modelDailyQuotaTurn'
 import type { GetAgentSessionResponse } from '@types'
@@ -88,6 +89,10 @@ export default class OpenCodeService implements AgentServiceInterface {
     let stopPermissionWatcher: (() => void) | undefined
     const unfinishedTools = new Set<string>()
     let currentStatus: string | undefined
+    let compacting = false
+    let lastContextProgressLog: number | undefined
+    let contextProgressCharacters = 0
+    const completedCompactions = new Set<string>()
     const pendingPermissions = new Set<string>()
     const deadline = createTaskDeadline((kind) =>
       abortController.abort(
@@ -106,6 +111,24 @@ export default class OpenCodeService implements AgentServiceInterface {
     )
     const browserWaits = new Set<string>()
     const emit = (chunk: Chunk) => {
+      if (chunk.type === 'raw' && isOpenCodeInternalProgress(chunk.rawValue)) {
+        deadline.progress()
+        contextProgressCharacters += chunk.rawValue.characters
+        const now = performance.now()
+        if (
+          lastContextProgressLog === undefined ||
+          now - lastContextProgressLog >= 10_000 ||
+          chunk.rawValue.kind === 'completed'
+        ) {
+          lastContextProgressLog = now
+          recordMainDiagnostic(options?.diagnosticId, 'runtime', 'context-progress', {
+            runtime: 'opencode',
+            kind: chunk.rawValue.kind,
+            characters: contextProgressCharacters,
+            elapsedMs: Math.round(now - startedAt)
+          })
+        }
+      }
       if (
         chunk.type === 'tool-call' ||
         chunk.type === 'tool-result' ||
@@ -136,6 +159,9 @@ export default class OpenCodeService implements AgentServiceInterface {
       return snapshot
     }
     const status = (value: string) => {
+      // Native busy updates describe activity, not completion of the summary.
+      if (compacting && (value === 'busy' || value === 'waiting_model')) value = 'compacting'
+      if (permissions > 0 && ['busy', 'waiting_model', 'compacting'].includes(value)) value = 'waiting_permission'
       if (value === currentStatus) return
       currentStatus = value
       timing.changeStage(value)
@@ -357,8 +383,10 @@ export default class OpenCodeService implements AgentServiceInterface {
         const eventSession = props.sessionID || props.info?.sessionID || props.part?.sessionID
         if (eventSession && eventSession !== nativeId) return
         if (event.type === 'message.updated' && props.info?.id === messageId) admitted = true
-        if (event.type === 'message.updated' && props.info?.summary && !state.previousMessages.has(props.info.id))
+        if (event.type === 'message.updated' && props.info?.summary && !state.previousMessages.has(props.info.id)) {
+          compacting = true
           status('compacting')
+        }
         if (event.type === 'session.error') throw this.nativeError(props.error)
         if (event.type === 'server.instance.disposed')
           throw new Error('OpenCode local instance was disposed during the task')
@@ -371,7 +399,25 @@ export default class OpenCodeService implements AgentServiceInterface {
             signal
           )
           await verifyCompaction(history, 'during-task', true)
-          deadline.progress()
+          compacting = false
+          const checkpoint = history.findLast(
+            (entry) =>
+              entry.info.role === 'assistant' &&
+              entry.info.summary &&
+              entry.info.finish &&
+              !entry.info.error &&
+              !state.previousMessages.has(entry.info.id) &&
+              entry.parts.some((part) => part.type === 'text' && part.text?.trim())
+          )
+          if (checkpoint && !completedCompactions.has(checkpoint.info.id)) {
+            completedCompactions.add(checkpoint.info.id)
+            const progress: Chunk = {
+              type: 'raw',
+              rawValue: { type: 'opencode_internal_progress', stage: 'compacting', kind: 'completed', characters: 0 }
+            }
+            timing.chunks([progress])
+            emit(progress)
+          }
           status('busy')
           recordMainDiagnostic(options?.diagnosticId, 'runtime', 'native-compacted', { runtime: 'opencode' })
         }
@@ -401,6 +447,12 @@ export default class OpenCodeService implements AgentServiceInterface {
           }
         }
         const chunks = state.consume(event)
+        if (compacting && chunks.some((chunk) => ['tool-call', 'text-delta', 'reasoning-delta'].includes(chunk.type))) {
+          // A missed compaction-completed event must not leave real answers or
+          // tool execution labelled as context preparation after reconnection.
+          compacting = false
+          status('busy')
+        }
         timing.chunks(chunks)
         if (
           !firstOutputRecorded &&

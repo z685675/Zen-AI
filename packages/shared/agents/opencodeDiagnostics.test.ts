@@ -28,6 +28,27 @@ const fixture: OpenCodeTurnDiagnostics = {
   }
 }
 describe('stored usage observation validation', () => {
+  it('retains numeric context progress without persisting private summary content', () => {
+    const contextProgress = { firstMs: 100, lastMs: 200, events: 2, characters: 30 }
+    const result = readOpenCodeTurnDiagnostics({
+      ...fixture,
+      performance: {
+        ...fixture.performance,
+        contextProgress: { ...contextProgress, text: 'PRIVATE_SUMMARY' }
+      }
+    })
+    expect(result?.performance.contextProgress).toEqual(contextProgress)
+    expect(JSON.stringify(result)).not.toContain('PRIVATE_SUMMARY')
+    expect(
+      readOpenCodeTurnDiagnostics({
+        ...fixture,
+        performance: {
+          ...fixture.performance,
+          contextProgress: { ...contextProgress, lastMs: -1 }
+        }
+      })
+    ).toBeUndefined()
+  })
   it('strips unrecognized content and credentials before persistence', () => {
     expect(
       readOpenCodeTurnDiagnostics({

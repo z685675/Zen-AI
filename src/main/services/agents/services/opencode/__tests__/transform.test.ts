@@ -76,8 +76,32 @@ describe('OpenCode event translation', () => {
     state.consume(message({ id: 'previous' }))
     expect(state.consume(part({ messageID: 'previous', type: 'text', text: 'old' }))).toEqual([])
     state.consume(message({ summary: true }))
+    const chunks = state.consume(part({ type: 'text', text: 'internal summary' }))
+    expect(chunks).toEqual([
+      {
+        type: 'raw',
+        rawValue: { type: 'opencode_internal_progress', stage: 'compacting', kind: 'text', characters: 16 }
+      }
+    ])
+    expect(JSON.stringify(chunks)).not.toContain('internal summary')
+    expect(state.consume(part({ type: 'text', text: 'internal summary' }))).toEqual([])
+    expect(state.consume(part({ type: 'text', text: 'internal summary ' }))).toEqual([])
+    expect(state.consume(part({ type: 'text', text: 'internal summary ' }))).toEqual([])
+    expect(state.consume(part({ type: 'text', text: 'internal' }))).toEqual([])
     expect(state.consume(part({ type: 'text', text: 'internal summary' }))).toEqual([])
     expect(state.hasVisibleOutput).toBe(false)
+    expect(state.closeParts()).toEqual([])
+  })
+  it('counts only new nonempty native summary content, including reasoning deltas', () => {
+    const state = new OpenCodeStreamState('native', 'zen', new Set())
+    state.consume(message({ summary: true }))
+    expect(state.consume(part({ type: 'reasoning', text: '' }))).toEqual([])
+    expect(
+      state.consume({ type: 'message.part.delta', properties: { partID: 'part', field: 'text', delta: 'work' } })
+    ).toMatchObject([{ rawValue: { kind: 'reasoning', characters: 4 } }])
+    expect(state.consume(part({ type: 'reasoning', text: 'work' }))).toEqual([])
+    expect(state.consume(part({ type: 'reasoning', text: 'work', time: { end: 1 } }))).toEqual([])
+    expect(state.consume(part({ type: 'reasoning', text: 'work again' }))).toEqual([])
   })
   it('namespaces tool calls, preserves MCP content and emits each result once', () => {
     const state = new OpenCodeStreamState('native', 'zen', new Set())

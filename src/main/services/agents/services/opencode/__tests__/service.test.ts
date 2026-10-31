@@ -54,6 +54,7 @@ let mode:
   | 'reconnect-exhausted'
   | 'reconnect-cancel'
   | 'empty-compaction'
+  | 'compaction'
   | 'empty-compaction-disconnect' = 'success'
 let longTaskMode: 'progress' | 'busy-only' | undefined
 let pause: { ready: () => void; wait: Promise<void> } | undefined
@@ -110,6 +111,14 @@ const request = vi.fn(async (route: string, _method?: string, data?: unknown) =>
       ]
     return [
       { info: { id: body.messageID, role: 'user' }, parts: [] },
+      ...(mode === 'compaction'
+        ? [
+            {
+              info: { id: 'summary', role: 'assistant', summary: true, finish: 'stop' },
+              parts: [{ id: 'summary-text', messageID: 'summary', type: 'text', text: 'PRIVATE_CONTEXT' }]
+            }
+          ]
+        : []),
       {
         info: nativeInfo(),
         parts:
@@ -129,6 +138,29 @@ async function* events(signal: AbortSignal) {
   }
   yield { type: 'message.updated', properties: { info: { id: body.messageID, sessionID: 'native', role: 'user' } } }
   yield { type: 'session.status', properties: { sessionID: 'native', status: { type: 'busy' } } }
+  if (mode === 'compaction') {
+    yield {
+      type: 'message.updated',
+      properties: { info: { id: 'summary', sessionID: 'native', role: 'assistant', summary: true } }
+    }
+    yield {
+      type: 'message.part.updated',
+      properties: {
+        part: {
+          id: 'summary-part',
+          messageID: 'summary',
+          sessionID: 'native',
+          type: 'reasoning',
+          text: 'PRIVATE_CONTEXT'
+        }
+      }
+    }
+    yield { type: 'session.status', properties: { sessionID: 'native', status: { type: 'busy' } } }
+    pause!.ready()
+    await hold(signal)
+    yield { type: 'session.compacted', properties: { sessionID: 'native' } }
+    yield { type: 'session.compacted', properties: { sessionID: 'native' } }
+  }
   if (longTaskMode) {
     yield { type: 'message.updated', properties: { info: nativeInfo() } }
     pause!.ready()
@@ -305,6 +337,47 @@ afterEach(() => {
   vi.useRealTimers()
 })
 describe('OpenCode adapter turn lifecycle', () => {
+  it('keeps compaction visible through native busy updates and reports private progress separately', async () => {
+    mode = 'compaction'
+    let ready!: () => void, resume!: () => void
+    const entered = new Promise<void>((resolve) => {
+      ready = resolve
+    })
+    pause = {
+      ready,
+      wait: new Promise<void>((resolve) => {
+        resume = resolve
+      })
+    }
+    const result = run()
+    await entered
+    const stages = mocks.diagnostic.mock.calls.filter((call) => call[2] === 'task-stage').map((call) => call[3].stage)
+    expect(stages.at(-1)).toBe('compacting')
+    expect(mocks.diagnostic).toHaveBeenCalledWith(
+      undefined,
+      'runtime',
+      'context-progress',
+      expect.objectContaining({ kind: 'reasoning', characters: 15 })
+    )
+    resume()
+    const events = await result
+    expect(events.at(-1)?.type).toBe('complete')
+    expect(JSON.stringify(events)).not.toContain('PRIVATE_CONTEXT')
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        chunk: expect.objectContaining({
+          rawValue: expect.objectContaining({ type: 'opencode_internal_progress', kind: 'completed' })
+        })
+      })
+    )
+    expect(
+      events.filter(
+        (event: any) =>
+          event.chunk?.rawValue?.type === 'opencode_internal_progress' && event.chunk.rawValue.kind === 'completed'
+      )
+    ).toHaveLength(1)
+    expect(request.mock.calls.filter(([route]) => route.endsWith('/prompt_async'))).toHaveLength(1)
+  })
   it('emits the final quota notice after native work and before successful completion, without replay', async () => {
     const result = {
       model: 'gpt-test',

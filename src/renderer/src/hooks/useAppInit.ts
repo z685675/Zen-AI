@@ -24,7 +24,7 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import { showAppUpdateAvailableModal, showAppUpdateDownloadedModal } from '../utils/appUpdate'
+import { showAppUpdateDownloadedModal } from '../utils/appUpdate'
 import { useAppUpdateState } from './useAppUpdateState'
 import { useDefaultModel } from './useAssistant'
 import useFullScreenNotice from './useFullScreenNotice'
@@ -36,24 +36,15 @@ const logger = loggerService.withContext('useAppInit')
 export function useAppInit() {
   const { t } = useTranslation()
   const dispatch = useAppDispatch()
-  const {
-    proxyUrl,
-    proxyBypassRules,
-    language,
-    windowStyle,
-    proxyMode,
-    customCss,
-    enableDataCollection,
-    autoCheckUpdate
-  } = useSettings()
+  const { proxyUrl, proxyBypassRules, language, windowStyle, proxyMode, customCss, enableDataCollection } =
+    useSettings()
   const { isLeftNavbar } = useNavbarPosition()
   const { minappShow } = useRuntime()
   const { setDefaultModel, setQuickModel, setTranslateModel } = useDefaultModel()
   const avatar = useLiveQuery(() => db.settings.get('image://avatar'))
   const { theme } = useTheme()
   const memoryConfig = useAppSelector(selectMemoryConfig)
-  const hasShownStartupUpdate = useRef(false)
-  const hasShownDownloadedUpdate = useRef(false)
+  const shownDownloadedVersions = useRef(new Set<string>())
   const { updateState } = useAppUpdateState()
 
   useEffect(() => {
@@ -248,40 +239,32 @@ export function useAppInit() {
   }, [enableDataCollection])
 
   useEffect(() => {
-    if (updateState.status !== 'downloaded' || !updateState.updateInfo || hasShownDownloadedUpdate.current) {
+    if (
+      updateState.status !== 'downloaded' ||
+      !updateState.updateInfo ||
+      shownDownloadedVersions.current.has(updateState.updateInfo.version)
+    ) {
       return
     }
 
-    hasShownDownloadedUpdate.current = true
+    shownDownloadedVersions.current.add(updateState.updateInfo.version)
     showAppUpdateDownloadedModal(t, updateState.updateInfo)
   }, [t, updateState.status, updateState.updateInfo])
 
   useEffect(() => {
-    const removeAvailableListener = window.api.update.onAvailable((payload) => {
-      if (payload.source !== 'auto' || hasShownStartupUpdate.current) {
-        return
-      }
-
-      hasShownStartupUpdate.current = true
-      if (!autoCheckUpdate) {
-        showAppUpdateAvailableModal(t, payload)
-      }
-    })
-
     const removeDownloadedListener = window.api.update.onDownloaded((payload) => {
-      if (hasShownDownloadedUpdate.current) {
+      if (shownDownloadedVersions.current.has(payload.version)) {
         return
       }
 
-      hasShownDownloadedUpdate.current = true
+      shownDownloadedVersions.current.add(payload.version)
       showAppUpdateDownloadedModal(t, payload)
     })
 
     return () => {
-      removeAvailableListener()
       removeDownloadedListener()
     }
-  }, [autoCheckUpdate, t])
+  }, [t])
 
   // Update memory service configuration when it changes
   useEffect(() => {

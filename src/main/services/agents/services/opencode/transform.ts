@@ -63,7 +63,29 @@ export class OpenCodeStreamState {
   }
 
   private render(part: NativePart): Part[] {
-    if (this.messages.get(part.messageID)?.summary || part.ignored || this.ended.has(part.id)) return []
+    if (part.ignored || this.ended.has(part.id)) return []
+    if (this.messages.get(part.messageID)?.summary) {
+      if (part.type !== 'text' && part.type !== 'reasoning') return []
+      const text = part.text || ''
+      const previous = this.emittedText.get(part.id) || ''
+      if (part.time?.end) this.ended.add(part.id)
+      // Only growing native content resets inactivity. Replayed snapshots,
+      // empty parts and status heartbeats must not keep a stalled task alive.
+      if (text.length <= previous.length) return []
+      this.emittedText.set(part.id, text)
+      if (!text.slice(previous.length).trim()) return []
+      return [
+        {
+          type: 'raw',
+          rawValue: {
+            type: 'opencode_internal_progress',
+            stage: 'compacting',
+            kind: part.type,
+            characters: text.length - previous.length
+          }
+        } as Part
+      ]
+    }
     const metadata = { opencode: { session_id: this.sessionId, message_id: part.messageID } }
     const chunks: Part[] = []
     if (part.type === 'text' || part.type === 'reasoning') {

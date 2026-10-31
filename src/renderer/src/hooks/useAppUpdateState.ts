@@ -52,14 +52,16 @@ export function useAppUpdateState() {
 
   useEffect(() => {
     let mounted = true
+    let receivedEvent = false
 
     void window.api.getUpdateState().then((nextState: AppUpdateState) => {
-      if (mounted) {
+      if (mounted && !receivedEvent) {
         setState(nextState)
       }
     })
 
     const removeAvailableListener = window.api.update.onAvailable((payload) => {
+      receivedEvent = true
       setState((current) =>
         mergeState(current, {
           status: payload.status ?? 'available',
@@ -71,6 +73,7 @@ export function useAppUpdateState() {
     })
 
     const removeDownloadedListener = window.api.update.onDownloaded((payload) => {
+      receivedEvent = true
       setState((current) =>
         mergeState(current, {
           status: 'downloaded',
@@ -82,6 +85,7 @@ export function useAppUpdateState() {
     })
 
     const removeProgressListener = window.api.update.onDownloadProgress((payload) => {
+      receivedEvent = true
       setState((current) =>
         mergeState(current, {
           status: 'downloading',
@@ -91,6 +95,7 @@ export function useAppUpdateState() {
     })
 
     const removeNotAvailableListener = window.api.update.onNotAvailable((payload) => {
+      receivedEvent = true
       setState((current) =>
         mergeState(current, {
           status: 'up-to-date',
@@ -103,6 +108,7 @@ export function useAppUpdateState() {
     })
 
     const removeErrorListener = window.api.update.onError((payload) => {
+      receivedEvent = true
       setState((current) =>
         mergeState(current, {
           status: 'error',

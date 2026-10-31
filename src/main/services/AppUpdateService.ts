@@ -163,6 +163,7 @@ export class AppUpdateService {
   private periodicTimer: NodeJS.Timeout | null = null
   private currentSource: AppUpdateCheckSource = 'auto'
   private currentState: AppUpdateState
+  private installPromise: Promise<AppUpdateInstallResult> | undefined
 
   constructor(
     private readonly mainWindow: BrowserWindow,
@@ -174,7 +175,9 @@ export class AppUpdateService {
       this.clearPendingUpdateInfo()
     }
     this.currentState = {
-      status: this.downloadedUpdateInfo ? 'downloaded' : 'idle',
+      // A persisted version is not proof that electron-updater has restored
+      // and verified its installer payload in this process.
+      status: this.downloadedUpdateInfo ? 'checking' : 'idle',
       source: 'auto',
       autoUpdateEnabled: this.shouldAutoDownload(),
       currentVersion: this.currentVersion,
@@ -195,6 +198,7 @@ export class AppUpdateService {
     }
 
     const runAutoCheck = () => {
+      if (this.checking || this.downloading || this.installPromise) return
       if (!this.shouldAutoDownload()) {
         return
       }
@@ -202,14 +206,31 @@ export class AppUpdateService {
       void this.checkForUpdates('auto')
     }
 
-    this.startupTimeout = setTimeout(runAutoCheck, delayMs)
+    this.startupTimeout = setTimeout(() => {
+      if (this.downloadedUpdateInfo && !this.downloadedUpdateReady) {
+        // Restore the updater's verified cache before offering installation,
+        // rather than doing a network check after the user clicks Install.
+        if (this.checking || this.downloading) return
+        void this.ensureDownloadedUpdateReady(this.downloadedUpdateInfo).then((result) => {
+          if (!result.success) this.handleUpdateError('auto', result.message)
+        })
+      } else runAutoCheck()
+    }, delayMs)
     this.periodicTimer = setInterval(runAutoCheck, STARTUP_CHECK_INTERVAL_MS)
   }
 
   async checkForUpdates(source: AppUpdateCheckSource = 'manual'): Promise<AppUpdateCheckResult> {
+    if (this.downloading || this.checking || this.installPromise) {
+      return {
+        status: 'downloading',
+        currentVersion: this.currentVersion,
+        source: this.currentSource,
+        updateInfo: this.latestUpdateInfo ?? this.downloadedUpdateInfo
+      }
+    }
     this.currentSource = source
     autoUpdater.autoDownload = isMac ? false : source === 'manual' ? false : this.shouldAutoDownload()
-    const pendingUpdateInfo = this.getReadyPendingUpdateInfo()
+    const pendingUpdateInfo = this.downloadedUpdateReady ? this.getReadyPendingUpdateInfo() : null
     this.setState({
       status: 'checking',
       source,
@@ -228,39 +249,6 @@ export class AppUpdateService {
         source,
         'Portable builds do not support automatic in-place updates. Please use the installer build.'
       )
-    }
-
-    if (this.downloading) {
-      this.setState({
-        status: 'downloading',
-        source,
-        autoUpdateEnabled: this.shouldAutoDownload(),
-        currentVersion: this.currentVersion,
-        updateInfo: this.latestUpdateInfo,
-        progress: this.progressInfo
-      })
-      return {
-        status: 'downloading',
-        currentVersion: this.currentVersion,
-        source,
-        updateInfo: this.latestUpdateInfo
-      }
-    }
-
-    if (this.checking) {
-      return this.latestUpdateInfo
-        ? {
-            status: 'available',
-            currentVersion: this.currentVersion,
-            source,
-            updateInfo: this.latestUpdateInfo
-          }
-        : {
-            status: 'downloading',
-            currentVersion: this.currentVersion,
-            source,
-            updateInfo: this.latestUpdateInfo
-          }
     }
 
     try {
@@ -309,7 +297,7 @@ export class AppUpdateService {
       }
 
       this.latestUpdateInfo = updateInfo
-      if (pendingUpdateInfo && hasNewerServerUpdate) {
+      if (pendingUpdateInfo && hasNewerServerUpdate && this.downloadedUpdateInfo?.version !== updateInfo.version) {
         logger.info('A newer update is available; replacing stale downloaded update info', {
           pendingVersion: pendingUpdateInfo.version,
           latestVersion: updateInfo.version
@@ -317,13 +305,14 @@ export class AppUpdateService {
         this.downloadedUpdateInfo = null
         this.downloadedUpdateReady = false
       }
+      const status = this.downloadedUpdateReady ? 'downloaded' : this.downloading ? 'downloading' : 'available'
       this.setState({
-        status: 'available',
+        status,
         source,
         autoUpdateEnabled: this.shouldAutoDownload(),
         currentVersion: this.currentVersion,
         updateInfo,
-        progress: null
+        progress: this.progressInfo
       })
 
       if (isMac && source === 'auto' && this.shouldAutoDownload()) {
@@ -331,7 +320,7 @@ export class AppUpdateService {
       }
 
       return {
-        status: 'available',
+        status,
         currentVersion: this.currentVersion,
         source,
         updateInfo
@@ -344,8 +333,6 @@ export class AppUpdateService {
   }
 
   async downloadUpdate(source: AppUpdateCheckSource = 'manual'): Promise<AppUpdateCheckResult> {
-    this.currentSource = source
-    autoUpdater.autoDownload = false
     const pendingUpdateInfo = this.getReadyPendingUpdateInfo()
 
     if (!app.isPackaged) {
@@ -369,8 +356,8 @@ export class AppUpdateService {
         })
         this.downloadedUpdateInfo = null
         this.downloadedUpdateReady = false
-      } else if (isMac && !this.downloadedUpdateReady) {
-        logger.info('macOS downloaded update info exists but installer payload is not ready in this process')
+      } else if (!this.downloadedUpdateReady) {
+        logger.info('Pending update metadata exists but installer payload is not ready in this process')
       } else {
         this.setState({
           status: 'downloaded',
@@ -392,7 +379,7 @@ export class AppUpdateService {
     if (this.downloading) {
       this.setState({
         status: 'downloading',
-        source,
+        source: this.currentSource,
         autoUpdateEnabled: this.shouldAutoDownload(),
         currentVersion: this.currentVersion,
         updateInfo: this.latestUpdateInfo,
@@ -401,10 +388,13 @@ export class AppUpdateService {
       return {
         status: 'downloading',
         currentVersion: this.currentVersion,
-        source,
+        source: this.currentSource,
         updateInfo: this.latestUpdateInfo
       }
     }
+
+    this.currentSource = source
+    autoUpdater.autoDownload = false
 
     if (!this.latestUpdateInfo) {
       const result = await this.checkForUpdates('manual')
@@ -441,10 +431,11 @@ export class AppUpdateService {
 
       autoUpdater.autoDownload = true
       await autoUpdater.downloadUpdate()
-      this.downloadedUpdateReady = true
+      if (!this.downloadedUpdateReady || this.downloadedUpdateInfo?.version !== updateInfo.version)
+        this.markDownloadedUpdateReady(updateInfo)
 
       return {
-        status: 'downloading',
+        status: 'downloaded',
         currentVersion: this.currentVersion,
         source,
         updateInfo
@@ -455,7 +446,29 @@ export class AppUpdateService {
     }
   }
 
-  async quitAndInstall(): Promise<AppUpdateInstallResult> {
+  quitAndInstall(): Promise<AppUpdateInstallResult> {
+    // Multiple windows/repeated clicks must share the same preparation and
+    // launch, including the asynchronous assistant-exit confirmation.
+    if (this.installPromise) return this.installPromise
+    this.installPromise = this.performInstall().then(
+      (result) => {
+        if (!result.success || (result.status === 'manual-installer-opened' && result.fallbackToFolder))
+          this.installPromise = undefined
+        return result
+      },
+      (error) => {
+        this.installPromise = undefined
+        throw error
+      }
+    )
+    return this.installPromise
+  }
+
+  private async performInstall(): Promise<AppUpdateInstallResult> {
+    const startedAt = performance.now()
+    const mark = (stage: string) =>
+      logger.info('App update install stage', { stage, elapsedMs: Math.round(performance.now() - startedAt) })
+    mark('requested')
     const updateInfo = this.getReadyPendingUpdateInfo()
 
     if (!updateInfo) {
@@ -472,7 +485,11 @@ export class AppUpdateService {
 
     let installUpdateInfo = updateInfo
 
+    if (!(await allowAssistantExit())) return { success: false, status: 'cancelled', message: '', updateInfo }
+    mark('exit-confirmed')
+
     if (!this.downloadedUpdateReady) {
+      mark('preparing-package')
       const readyResult = await this.ensureDownloadedUpdateReady(updateInfo)
       if (!readyResult.success) {
         return {
@@ -498,8 +515,7 @@ export class AppUpdateService {
       progress: null
     })
 
-    if (!(await allowAssistantExit()))
-      return { success: false, status: 'cancelled', message: '', updateInfo: installUpdateInfo }
+    mark('package-ready')
 
     try {
       app.isInstallingUpdate = true
@@ -525,9 +541,22 @@ export class AppUpdateService {
         }
       }
 
-      const installStartPromise = this.waitForInstallStart()
-      autoUpdater.quitAndInstall(false, true)
-      const installStarted = await installStartPromise
+      const installStart = this.waitForInstallStart()
+      const previousParentPid = process.env.ZEN_AI_UPDATE_PARENT_PID
+      try {
+        // The NSIS child inherits this marker. It must wait for the old app's
+        // bounded asynchronous cleanup before checking/killing running apps.
+        process.env.ZEN_AI_UPDATE_PARENT_PID = String(process.pid)
+        mark('launching-installer')
+        autoUpdater.quitAndInstall(false, true)
+      } catch (error) {
+        installStart.cancel()
+        throw error
+      } finally {
+        if (previousParentPid === undefined) delete process.env.ZEN_AI_UPDATE_PARENT_PID
+        else process.env.ZEN_AI_UPDATE_PARENT_PID = previousParentPid
+      }
+      const installStarted = await installStart.promise
       if (!installStarted) {
         app.isInstallingUpdate = false
         app.isQuitting = false
@@ -541,7 +570,9 @@ export class AppUpdateService {
           updateInfo: installUpdateInfo
         }
       }
-      this.clearPendingUpdateInfo()
+      mark('quit-for-update')
+      // Keep the pending record until the new version actually starts. A quit
+      // notification is not proof that UAC/install completed successfully.
       return {
         success: true,
         status: 'installing',
@@ -780,6 +811,8 @@ export class AppUpdateService {
 
       autoUpdater.autoDownload = true
       await autoUpdater.downloadUpdate()
+      if (!this.downloadedUpdateReady || this.downloadedUpdateInfo?.version !== latestUpdateInfo.version)
+        this.markDownloadedUpdateReady(latestUpdateInfo)
       this.downloading = false
       this.downloadedUpdateReady = true
       this.progressInfo = null
@@ -804,13 +837,13 @@ export class AppUpdateService {
     }
   }
 
-  private waitForInstallStart(): Promise<boolean> {
-    return new Promise((resolve) => {
+  private waitForInstallStart(): { promise: Promise<boolean>; cancel: () => void } {
+    let cancel = () => {}
+    const promise = new Promise<boolean>((resolve) => {
       let settled = false
 
       const cleanup = () => {
         clearTimeout(timer)
-        app.removeListener('before-quit', onBeforeQuit)
         autoUpdater.removeListener('error', onError)
         nativeAutoUpdater.removeListener('before-quit-for-update', onBeforeQuitForUpdate)
         nativeAutoUpdater.removeListener('update-downloaded', onNativeUpdateDownloaded)
@@ -823,8 +856,8 @@ export class AppUpdateService {
         cleanup()
         resolve(started)
       }
+      cancel = () => finish(false)
 
-      const onBeforeQuit = () => finish(true)
       const onBeforeQuitForUpdate = () => finish(true)
       const onNativeUpdateDownloaded = () => {
         logger.info('Native updater downloaded update; waiting for app quit')
@@ -837,12 +870,12 @@ export class AppUpdateService {
       }
       const timer = setTimeout(() => finish(false), WIN_INSTALL_START_TIMEOUT_MS)
 
-      app.once('before-quit', onBeforeQuit)
       autoUpdater.once('error', onError)
       nativeAutoUpdater.once('before-quit-for-update', onBeforeQuitForUpdate)
       nativeAutoUpdater.once('update-downloaded', onNativeUpdateDownloaded)
       nativeAutoUpdater.once('error', onError)
     })
+    return { promise, cancel }
   }
 
   private async prepareMacManualInstaller(updateInfo: AppUpdateInfo): Promise<string> {
@@ -853,7 +886,7 @@ export class AppUpdateService {
     const installerCandidates = this.getMacManualInstallerCandidates(updateInfo.version)
     for (const candidate of installerCandidates) {
       if (await this.isExistingFile(candidate.path)) {
-        this.markMacManualInstallerReady(updateInfo)
+        this.markDownloadedUpdateReady(updateInfo)
         return candidate.path
       }
     }
@@ -887,7 +920,7 @@ export class AppUpdateService {
             installerPath: candidate.path
           })
           await this.downloadFile(candidate.url, primaryCandidate.path)
-          this.markMacManualInstallerReady(updateInfo)
+          this.markDownloadedUpdateReady(updateInfo)
           return primaryCandidate.path
         } catch (error) {
           lastError = error
@@ -952,7 +985,8 @@ export class AppUpdateService {
   private hasMacManualInstaller(version: string) {
     return this.getMacManualInstallerCandidates(version).some((candidate) => {
       try {
-        return statSync(candidate.path).isFile()
+        const file = statSync(candidate.path)
+        return file.isFile() && file.size > 0
       } catch {
         return false
       }
@@ -989,7 +1023,8 @@ export class AppUpdateService {
     return path.join(app.getPath('downloads'), MAC_MANUAL_UPDATE_DIR_NAME, filename)
   }
 
-  private markMacManualInstallerReady(updateInfo: AppUpdateInfo) {
+  private markDownloadedUpdateReady(updateInfo: AppUpdateInfo) {
+    this.downloading = false
     this.downloadedUpdateInfo = updateInfo
     this.latestUpdateInfo = updateInfo
     this.downloadedUpdateReady = true
@@ -1022,7 +1057,8 @@ export class AppUpdateService {
     }
   }
 
-  private async downloadFile(url: string, destinationPath: string): Promise<void> {
+  private async downloadFile(url: string, destinationPath: string, redirects = 0): Promise<void> {
+    if (redirects > 5) throw new Error('Too many installer download redirects.')
     const temporaryPath = `${destinationPath}.download`
     await unlink(temporaryPath).catch(() => undefined)
 
@@ -1043,12 +1079,16 @@ export class AppUpdateService {
         })
       }
 
-      request(url, (response) => {
+      file.on('error', finish)
+      const startedAt = performance.now()
+      let lastProgressAt = 0
+      const downloadRequest = request(url, (response) => {
         const statusCode = response.statusCode ?? 0
         if (statusCode >= 300 && statusCode < 400 && response.headers.location) {
           file.close(() => {
             void unlink(temporaryPath).catch(() => undefined)
-            this.downloadFile(new URL(response.headers.location!, url).toString(), destinationPath).then(
+            response.resume()
+            this.downloadFile(new URL(response.headers.location!, url).toString(), destinationPath, redirects + 1).then(
               resolve,
               reject
             )
@@ -1066,31 +1106,34 @@ export class AppUpdateService {
         let transferred = 0
         response.on('data', (chunk: Buffer) => {
           transferred += chunk.length
-          if (total > 0) {
-            this.progressInfo = {
-              percent: Math.max(0, Math.min(100, (transferred / total) * 100)),
-              transferred,
-              total,
-              bytesPerSecond: 0
-            }
-            this.setState({
-              status: 'downloading',
-              source: this.currentSource,
-              autoUpdateEnabled: this.shouldAutoDownload(),
-              currentVersion: this.currentVersion,
-              updateInfo: this.latestUpdateInfo,
-              progress: this.progressInfo
-            })
-            this.sendEvent(IpcChannel.DownloadProgress, this.progressInfo)
+          const now = performance.now()
+          if (now - lastProgressAt < 250 && (total <= 0 || transferred < total)) return
+          lastProgressAt = now
+          this.progressInfo = {
+            percent: total > 0 ? Math.max(0, Math.min(100, (transferred / total) * 100)) : 0,
+            transferred,
+            total,
+            bytesPerSecond: Math.round(transferred / Math.max(0.001, (now - startedAt) / 1000))
           }
+          this.setState({
+            status: 'downloading',
+            source: this.currentSource,
+            autoUpdateEnabled: this.shouldAutoDownload(),
+            currentVersion: this.currentVersion,
+            updateInfo: this.latestUpdateInfo,
+            progress: this.progressInfo
+          })
+          this.sendEvent(IpcChannel.DownloadProgress, this.progressInfo)
         })
         response.on('error', finish)
-        file.on('error', finish)
+        response.on('aborted', () => finish(new Error('Installer download was interrupted. Please retry.')))
         file.on('finish', () => finish())
         response.pipe(file)
       })
-        .on('error', finish)
-        .end()
+      downloadRequest.setTimeout(30_000, () => {
+        downloadRequest.destroy(new Error('Installer download stopped responding. Please retry.'))
+      })
+      downloadRequest.on('error', finish).end()
     })
 
     await rename(temporaryPath, destinationPath)

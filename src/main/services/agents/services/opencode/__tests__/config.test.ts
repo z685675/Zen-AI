@@ -30,7 +30,7 @@ const config = (id: string, type = 'new-api', endpoint?: string) =>
 describe('OpenCode isolated model config', () => {
   it('gives slow response headers time within a finite whole-request and idle-chunk budget', () => {
     expect(config('alias').provider['zen-selected'].options).toMatchObject({
-      timeout: 180_000,
+      timeout: 600_000,
       headerTimeout: 120_000,
       chunkTimeout: 120_000
     })

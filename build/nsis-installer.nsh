@@ -11,6 +11,7 @@
 !include x64.nsh
 !include FileFunc.nsh
 !include nsDialogs.nsh
+!include "${BUILD_RESOURCES_DIR}\installer-process.nsh"
 
 !ifdef BUILD_UNINSTALLER
 Var un.DeletePersonalDataCheckbox
@@ -34,58 +35,7 @@ FunctionEnd
 
 !define MUI_CUSTOMFUNCTION_GUIINIT bringInstallerToFront
 
-Function closeRunningZenAI
-  Push $0
-  Push $1
-
-  DetailPrint "Closing running ${PRODUCT_NAME} processes..."
-
-  ; Prefer path-based cleanup so helper processes inside the install directory do
-  ; not keep NSIS stuck on the "cannot be closed" retry dialog.
-  nsExec::ExecToStack `"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -Command "$$dirs = @('$INSTDIR', [IO.Path]::Combine([Environment]::GetFolderPath('LocalApplicationData'), 'Programs', 'Zen AI'), [IO.Path]::Combine([Environment]::GetFolderPath('LocalApplicationData'), 'Programs', 'Cherry Studio')); Get-CimInstance Win32_Process | ? { $$_.ProcessId -ne $$PID -and $$_.Path -and ($$dirs | ? { $$_.Path.StartsWith($$_, [StringComparison]::CurrentCultureIgnoreCase) }) } | % { Stop-Process -Id $$_.ProcessId -Force -ErrorAction SilentlyContinue }"`
-  Pop $0
-  Pop $1
-
-  ; Also cover old renamed builds where the executable name is no longer the same
-  ; as the current product name.
-  nsExec::ExecToStack '"$SYSDIR\taskkill.exe" /IM "Zen AI.exe" /T'
-  Pop $0
-  Pop $1
-  nsExec::ExecToStack '"$SYSDIR\taskkill.exe" /IM "Zen-AI.exe" /T'
-  Pop $0
-  Pop $1
-  nsExec::ExecToStack '"$SYSDIR\taskkill.exe" /IM "ZenAI.exe" /T'
-  Pop $0
-  Pop $1
-  nsExec::ExecToStack '"$SYSDIR\taskkill.exe" /IM "Cherry Studio.exe" /T'
-  Pop $0
-  Pop $1
-  nsExec::ExecToStack '"$SYSDIR\taskkill.exe" /IM "CherryStudio.exe" /T'
-  Pop $0
-  Pop $1
-  Sleep 2500
-
-  DetailPrint "Force-closing remaining ${PRODUCT_NAME} processes..."
-  nsExec::ExecToStack '"$SYSDIR\taskkill.exe" /F /IM "Zen AI.exe" /T'
-  Pop $0
-  Pop $1
-  nsExec::ExecToStack '"$SYSDIR\taskkill.exe" /F /IM "Zen-AI.exe" /T'
-  Pop $0
-  Pop $1
-  nsExec::ExecToStack '"$SYSDIR\taskkill.exe" /F /IM "ZenAI.exe" /T'
-  Pop $0
-  Pop $1
-  nsExec::ExecToStack '"$SYSDIR\taskkill.exe" /F /IM "Cherry Studio.exe" /T'
-  Pop $0
-  Pop $1
-  nsExec::ExecToStack '"$SYSDIR\taskkill.exe" /F /IM "CherryStudio.exe" /T'
-  Pop $0
-  Pop $1
-  Sleep 2500
-
-  Pop $1
-  Pop $0
-FunctionEnd
+!insertmacro ZenCloseRunningProcesses ""
 
 Function prepareInstallDirForOverwrite
   Push $0
@@ -157,61 +107,18 @@ Function un.leavePersonalDataOptionsPage
   done:
 FunctionEnd
 
-Function un.closeRunningZenAI
-  Push $0
-  Push $1
-
-  DetailPrint "Closing running ${PRODUCT_NAME} processes..."
-
-  nsExec::ExecToStack `"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -Command "$$dirs = @('$INSTDIR', [IO.Path]::Combine([Environment]::GetFolderPath('LocalApplicationData'), 'Programs', 'Zen AI'), [IO.Path]::Combine([Environment]::GetFolderPath('LocalApplicationData'), 'Programs', 'Cherry Studio')); Get-CimInstance Win32_Process | ? { $$_.ProcessId -ne $$PID -and $$_.Path -and ($$dirs | ? { $$_.Path.StartsWith($$_, [StringComparison]::CurrentCultureIgnoreCase) }) } | % { Stop-Process -Id $$_.ProcessId -Force -ErrorAction SilentlyContinue }"`
-  Pop $0
-  Pop $1
-
-  nsExec::ExecToStack '"$SYSDIR\taskkill.exe" /IM "Zen AI.exe" /T'
-  Pop $0
-  Pop $1
-  nsExec::ExecToStack '"$SYSDIR\taskkill.exe" /IM "Zen-AI.exe" /T'
-  Pop $0
-  Pop $1
-  nsExec::ExecToStack '"$SYSDIR\taskkill.exe" /IM "ZenAI.exe" /T'
-  Pop $0
-  Pop $1
-  nsExec::ExecToStack '"$SYSDIR\taskkill.exe" /IM "Cherry Studio.exe" /T'
-  Pop $0
-  Pop $1
-  nsExec::ExecToStack '"$SYSDIR\taskkill.exe" /IM "CherryStudio.exe" /T'
-  Pop $0
-  Pop $1
-  Sleep 2500
-
-  DetailPrint "Force-closing remaining ${PRODUCT_NAME} processes..."
-  nsExec::ExecToStack '"$SYSDIR\taskkill.exe" /F /IM "Zen AI.exe" /T'
-  Pop $0
-  Pop $1
-  nsExec::ExecToStack '"$SYSDIR\taskkill.exe" /F /IM "Zen-AI.exe" /T'
-  Pop $0
-  Pop $1
-  nsExec::ExecToStack '"$SYSDIR\taskkill.exe" /F /IM "ZenAI.exe" /T'
-  Pop $0
-  Pop $1
-  nsExec::ExecToStack '"$SYSDIR\taskkill.exe" /F /IM "Cherry Studio.exe" /T'
-  Pop $0
-  Pop $1
-  nsExec::ExecToStack '"$SYSDIR\taskkill.exe" /F /IM "CherryStudio.exe" /T'
-  Pop $0
-  Pop $1
-  Sleep 2500
-
-  Pop $1
-  Pop $0
-FunctionEnd
+!insertmacro ZenCloseRunningProcesses "un."
 !endif
 
 !macro customCheckAppRunning
   !ifdef BUILD_UNINSTALLER
     Call un.closeRunningZenAI
   !else
+    Call waitForUpdateParent
     Call closeRunningZenAI
+    ; The user has confirmed installation and $INSTDIR is the selected target.
+    ; Do not remove the old application while merely opening/cancelling Setup.
+    Call prepareInstallDirForOverwrite
   !endif
 !macroend
 
@@ -314,9 +221,6 @@ FunctionEnd
   Push $2
   Push $3
   Push $4
-
-  Call closeRunningZenAI
-  Call prepareInstallDirForOverwrite
 
   ; Check architecture compatibility first
   Call checkArchitectureCompatibility

@@ -1,4 +1,6 @@
 import { isMac } from '@renderer/config/constant'
+import type { AppUpdateProgressInfo } from '@renderer/hooks/useAppUpdateState'
+import { Progress } from 'antd'
 import { type CSSProperties } from 'react'
 import ReactMarkdown from 'react-markdown'
 import rehypeRaw from 'rehype-raw'
@@ -48,19 +50,23 @@ export function formatReleaseDate(value?: string) {
 }
 
 const updateContainerStyle: CSSProperties = {
-  display: 'grid',
+  display: 'flex',
+  flexDirection: 'column',
+  minHeight: 0,
+  height: '100%',
   gap: 12,
   lineHeight: 1.6
 }
 
 const largeModalBodyStyle: CSSProperties = {
-  minHeight: 'calc(80vh - 160px)',
-  maxHeight: 'calc(80vh - 160px)',
-  overflowY: 'auto'
+  height: 'min(80vh, 720px)',
+  maxHeight: 'calc(100dvh - 48px)',
+  overflow: 'hidden'
 }
 
 const releaseNotesStyle: CSSProperties = {
-  maxHeight: 'calc(80vh - 260px)',
+  flex: '1 1 auto',
+  minHeight: 0,
   overflowY: 'auto',
   padding: '12px 14px',
   border: '1px solid var(--color-border)',
@@ -137,113 +143,223 @@ export function showAppUpdateDownloadingToast(t: Translate, version: string) {
   window.toast.info(t('update.downloading', { version }))
 }
 
-export function showAppUpdateAvailableModal(t: Translate, updateInfo: UpdateInfo) {
-  window.modal.confirm({
-    title: t('update.title'),
-    okText: t('update.downloadNow'),
-    cancelText: t('update.later'),
-    centered: true,
-    width: LARGE_MODAL_WIDTH,
-    bodyStyle: largeModalBodyStyle,
-    maskClosable: false,
-    content: renderUpdateContent(t, updateInfo, 'update.available'),
-    async onOk() {
-      const result = await window.api.downloadUpdate()
-      if (result?.status === 'error') {
-        const message =
-          typeof result.message === 'string' && result.message
-            ? result.message
-            : 'Update download failed. Please check your network and try again.'
-        window.toast.error(message)
-        throw new Error(message)
-      }
-    }
-  })
+type PromptPhase = 'available' | 'downloading' | 'downloaded' | 'installing'
+type UpdatePrompt = {
+  version: string
+  ready: (info: UpdateInfo) => void
+  downloading: () => void
+  close: () => void
+}
+let activePrompt: UpdatePrompt | undefined
+
+export function closeAppUpdateModal() {
+  activePrompt?.close()
 }
 
-export function showAppUpdateDownloadedModal(t: Translate, updateInfo: UpdateInfo) {
-  const shouldUseManualMacInstall = isMac
-
-  const renderDownloadedContent = (statusText?: string) => (
+function showAppUpdateModal(t: Translate, initialInfo: UpdateInfo, initialPhase: PromptPhase) {
+  if (activePrompt?.version === initialInfo.version) {
+    if (initialPhase === 'downloaded') activePrompt.ready(initialInfo)
+    else if (initialPhase === 'downloading') activePrompt.downloading()
+    return
+  }
+  closeAppUpdateModal()
+  let info = initialInfo
+  let phase = initialPhase
+  let progress: AppUpdateProgressInfo | null = null
+  let error: string | undefined
+  let revision = 0
+  let closed = false
+  const unsubscribe: Array<() => void> = []
+  const close = () => {
+    if (closed) return
+    closed = true
+    for (const remove of unsubscribe) remove()
+    if (activePrompt === prompt) activePrompt = undefined
+    modal?.destroy()
+  }
+  const ready = (next: UpdateInfo) => {
+    info = next
+    if (phase === 'installing') return
+    phase = 'downloaded'
+    progress = null
+    error = undefined
+    refresh()
+  }
+  const prompt: UpdatePrompt = {
+    version: info.version,
+    ready,
+    close,
+    downloading: () => {
+      if (phase === 'available') {
+        phase = 'downloading'
+        error = undefined
+        refresh()
+      }
+    }
+  }
+  activePrompt = prompt
+  const content = () => (
     <div style={updateContainerStyle}>
-      {statusText && <div style={installStatusStyle}>{statusText}</div>}
-      {shouldUseManualMacInstall && (
-        <div style={manualInstallNoticeStyle}>
-          macOS 当前采用 DMG 覆盖安装。点击“打开安装包”后，软件会先确认本地安装包可用，再打开 DMG 安装窗口并自动退出 Zen
-          AI；请在安装窗口中将 Zen AI 拖入 Applications 覆盖安装。
+      {(phase === 'downloading' || phase === 'installing') && (
+        <div role="status" aria-live="polite" style={installStatusStyle}>
+          {t(phase === 'installing' ? 'update.preparingInstall' : 'update.downloadProgress', { version: info.version })}
+          {(phase === 'downloading' || progress) && (
+            <>
+              <Progress
+                percent={progress?.total ? Math.min(100, Math.round(progress.percent)) : 0}
+                status="active"
+                showInfo={Boolean(progress?.total)}
+              />
+              {progress && (
+                <div>
+                  {(progress.transferred / 1024 / 1024).toFixed(1)} MB
+                  {progress.total > 0 ? ` / ${(progress.total / 1024 / 1024).toFixed(1)} MB` : ''}
+                  {progress.bytesPerSecond > 0 ? ` · ${(progress.bytesPerSecond / 1024 / 1024).toFixed(1)} MB/s` : ''}
+                </div>
+              )}
+            </>
+          )}
         </div>
       )}
-      {renderUpdateContent(t, updateInfo, 'update.message')}
+      {error && (
+        <div role="alert" style={manualInstallNoticeStyle}>
+          {error}
+        </div>
+      )}
+      {isMac && phase === 'downloaded' && <div style={manualInstallNoticeStyle}>{t('update.macInstallNotice')}</div>}
+      {renderUpdateContent(
+        t,
+        info,
+        phase === 'available' || phase === 'downloading' ? 'update.available' : 'update.message'
+      )}
     </div>
   )
-
-  const modal = window.modal.confirm({
-    title: t('update.title'),
-    okText: shouldUseManualMacInstall ? '打开安装包' : t('update.installNow'),
-    cancelText: t('update.later'),
-    centered: true,
-    width: LARGE_MODAL_WIDTH,
-    bodyStyle: largeModalBodyStyle,
-    maskClosable: false,
-    content: renderDownloadedContent(),
-    async onOk() {
-      const statusText = shouldUseManualMacInstall ? '正在准备并打开安装包…' : '正在准备安装包…'
-      const restoreModal = () => {
-        modal?.update({
-          okText: shouldUseManualMacInstall ? '打开安装包' : t('update.installNow'),
-          okButtonProps: { loading: false, disabled: false },
-          cancelButtonProps: { disabled: false },
-          content: renderDownloadedContent()
-        })
-      }
-
-      modal?.update({
-        okText: statusText,
-        okButtonProps: { loading: true, disabled: true },
-        cancelButtonProps: { disabled: true },
-        content: renderDownloadedContent(statusText)
-      })
-      window.toast.info?.(statusText)
-
-      if (shouldUseManualMacInstall) {
-        const result = await window.api.quitAndInstallUpdate()
-        if (result?.status === 'cancelled') {
-          restoreModal()
-          return
-        }
-        if (result === true || result?.success === true) {
-          const message = result?.fallbackToFolder
-            ? '没能直接打开安装包，已为你定位到安装包位置，请双击 DMG 完成安装。'
-            : '已打开安装程序，Zen AI 将自动退出。请在安装窗口中拖入 Applications 完成安装。'
-          window.toast.info(message)
-          return
-        }
-
-        const message = formatInstallFailureMessage(
-          result,
-          '安装包暂时没有准备好，请重新检查更新，或等待下载完成后再试。'
-        )
-        window.toast.error(message)
-        restoreModal()
-        throw new Error(message)
-      }
-
+  const options = () => ({
+    okText:
+      phase === 'installing'
+        ? t('update.preparingInstall')
+        : phase === 'downloading'
+          ? t('update.downloadProgress', { version: info.version })
+          : phase === 'downloaded'
+            ? isMac
+              ? t('update.openInstaller')
+              : t('update.installNow')
+            : t('update.downloadNow'),
+    okButtonProps: {
+      loading: phase === 'installing' || phase === 'downloading',
+      disabled: phase === 'installing' || phase === 'downloading'
+    },
+    cancelButtonProps: { disabled: phase === 'installing' },
+    content: content()
+  })
+  function refresh() {
+    revision++
+    if (!closed) modal?.update(options())
+  }
+  const isDownloaded = () => phase === 'downloaded'
+  async function download() {
+    if (phase !== 'available' || closed) return
+    phase = 'downloading'
+    error = undefined
+    progress = null
+    refresh()
+    try {
+      const result = await window.api.downloadUpdate()
+      if (closed) return
+      if (result?.status === 'error') throw new Error(result.message || t('update.downloadFailed'))
+      if (result?.status === 'downloaded' && result.updateInfo) ready(result.updateInfo)
+      else if (result?.status !== 'downloading' && !isDownloaded()) throw new Error(t('update.downloadFailed'))
+    } catch (cause) {
+      if (closed) return
+      phase = 'available'
+      error = cause instanceof Error ? cause.message : t('update.downloadFailed')
+      refresh()
+    }
+  }
+  async function install() {
+    if (phase !== 'downloaded' || closed) return
+    phase = 'installing'
+    error = undefined
+    refresh()
+    try {
       const result = await window.api.quitAndInstallUpdate()
+      if (closed) return
       if (result?.status === 'cancelled') {
-        restoreModal()
+        phase = 'downloaded'
+        refresh()
         return
       }
       if (result === true || result?.success === true) {
+        if (isMac) window.toast.info(t(result?.fallbackToFolder ? 'update.installerFolder' : 'update.installerOpened'))
+        close()
         return
       }
-
-      const message = formatInstallFailureMessage(
-        result,
-        '更新安装包尚未准备好，请重新检查更新，或等待下载完成后再安装。'
-      )
-      window.toast.error(message)
-      restoreModal()
-      throw new Error(message)
+      throw new Error(formatInstallFailureMessage(result, t('update.installFailed')))
+    } catch (cause) {
+      if (closed) return
+      phase = 'downloaded'
+      error = cause instanceof Error ? cause.message : t('update.installFailed')
+      refresh()
     }
+  }
+  const modal = window.modal.confirm({
+    title: t('update.title'),
+    cancelText: t('update.later'),
+    centered: true,
+    width: LARGE_MODAL_WIDTH,
+    className: 'zen-app-update-modal',
+    bodyStyle: largeModalBodyStyle,
+    maskClosable: false,
+    ...options(),
+    // A synchronous callback with the close argument keeps AntD from closing
+    // the prompt when a download resolves. The same prompt becomes Install.
+    onOk(_close: () => void) {
+      void _close
+      if (phase === 'available') void download()
+      else if (phase === 'downloaded') void install()
+    },
+    onCancel: close,
+    afterClose: close
   })
+  unsubscribe.push(
+    window.api.update.onDownloadProgress((next) => {
+      if (phase !== 'downloading' && phase !== 'installing') return
+      progress = next
+      refresh()
+    }),
+    window.api.update.onDownloaded((next) => {
+      if (next.version === info.version) ready(next)
+    }),
+    window.api.update.onError((next) => {
+      if (phase !== 'downloading') return
+      phase = 'available'
+      error = next.message || t('update.downloadFailed')
+      refresh()
+    })
+  )
+  const snapshotRevision = revision
+  void window.api
+    .getUpdateState()
+    .then((state) => {
+      if (closed || revision !== snapshotRevision || state.updateInfo?.version !== info.version) return
+      if (state.status === 'downloaded') ready(state.updateInfo)
+      else if (state.status === 'downloading' && phase !== 'installing') {
+        phase = 'downloading'
+        progress = state.progress
+        refresh()
+      }
+    })
+    .catch(() => undefined)
+}
+
+export function showAppUpdateAvailableModal(t: Translate, info: UpdateInfo) {
+  showAppUpdateModal(t, info, 'available')
+}
+
+export function showAppUpdateDownloadedModal(t: Translate, info: UpdateInfo) {
+  showAppUpdateModal(t, info, 'downloaded')
+}
+
+export function showAppUpdateDownloadingModal(t: Translate, info: UpdateInfo) {
+  showAppUpdateModal(t, info, 'downloading')
 }

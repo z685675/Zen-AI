@@ -162,7 +162,7 @@ describe('AppUpdateService', () => {
   it('marks the app as installing an update before quitting', async () => {
     vi.useFakeTimers()
     mockAutoUpdater.quitAndInstall.mockImplementation(() => {
-      setTimeout(() => mockApp.emit('before-quit'), 1)
+      setTimeout(() => mockNativeAutoUpdater.emit('before-quit-for-update'), 1)
     })
 
     const { AppUpdateService } = await import('../AppUpdateService')
@@ -186,7 +186,7 @@ describe('AppUpdateService', () => {
       status: 'installing',
       updateInfo: { version: '1.1.0' }
     })
-    expect(configManagerMock.setPendingUpdateInfo).toHaveBeenCalledWith(null)
+    expect(configManagerMock.setPendingUpdateInfo).not.toHaveBeenCalledWith(null)
     expect(mockApp.isInstallingUpdate).toBe(true)
     expect(mockApp.isQuitting).toBe(true)
     expect(mockAutoUpdater.quitAndInstall).toHaveBeenCalledWith(false, true)
@@ -207,7 +207,7 @@ describe('AppUpdateService', () => {
     })
     mockAutoUpdater.downloadUpdate.mockResolvedValue([])
     mockAutoUpdater.quitAndInstall.mockImplementation(() => {
-      setTimeout(() => mockApp.emit('before-quit'), 1)
+      setTimeout(() => mockNativeAutoUpdater.emit('before-quit-for-update'), 1)
     })
 
     const { AppUpdateService } = await import('../AppUpdateService')
@@ -271,6 +271,28 @@ describe('AppUpdateService', () => {
     expect((service as any).downloadedUpdateReady).toBe(false)
   })
 
+  it('keeps a newer cached download that finishes during metadata checking', async () => {
+    const { AppUpdateService } = await import('../AppUpdateService')
+    const service = new AppUpdateService(
+      { isDestroyed: () => false, webContents: { send: vi.fn() } } as any,
+      '1.1.18',
+      () => true
+    )
+    ;(service as any).downloadedUpdateInfo = { version: '1.1.20' }
+    ;(service as any).downloadedUpdateReady = true
+    mockAutoUpdater.checkForUpdates.mockImplementation(async () => {
+      mockAutoUpdater.emit('update-downloaded', { version: '1.1.24' })
+      return { isUpdateAvailable: true, updateInfo: { version: '1.1.24' } }
+    })
+
+    await expect(service.checkForUpdates('auto')).resolves.toMatchObject({
+      status: 'downloaded',
+      updateInfo: { version: '1.1.24' }
+    })
+    expect((service as any).downloadedUpdateReady).toBe(true)
+    expect((service as any).downloadedUpdateInfo.version).toBe('1.1.24')
+  })
+
   it('keeps an existing downloaded update when the server does not offer a newer version', async () => {
     mockAutoUpdater.checkForUpdates.mockResolvedValue({
       isUpdateAvailable: true,
@@ -330,7 +352,7 @@ describe('AppUpdateService', () => {
 
     await service.checkForUpdates('manual')
     await expect(service.downloadUpdate()).resolves.toEqual({
-      status: 'downloading',
+      status: 'downloaded',
       currentVersion: '1.1.18',
       source: 'manual',
       updateInfo: {
@@ -700,7 +722,7 @@ describe('AppUpdateService', () => {
       () => true
     )
 
-    expect(service.getState().status).toBe('downloaded')
+    expect(service.getState().status).toBe('checking')
     expect(service.getState().updateInfo?.version).toBe('1.1.0')
   })
 
@@ -753,7 +775,7 @@ describe('AppUpdateService', () => {
     )
 
     vi.spyOn(service as any, 'prepareMacManualInstaller').mockImplementation(async (updateInfo) => {
-      ;(service as any).markMacManualInstallerReady(updateInfo)
+      ;(service as any).markDownloadedUpdateReady(updateInfo)
       return mockMacInstallerPath
     })
 
@@ -777,5 +799,121 @@ describe('AppUpdateService', () => {
 
     expect(config).toMatch(/^mac:\n[\s\S]*?target:\n[\s\S]*?-\s*target:\s*dmg/m)
     expect(config).toMatch(/^mac:\n[\s\S]*?target:\n[\s\S]*?-\s*target:\s*zip/m)
+  })
+  it('coalesces repeated install requests, passes the parent PID only to the launcher, and keeps the recovery record', async () => {
+    const { AppUpdateService } = await import('../AppUpdateService')
+    const service = new AppUpdateService(
+      { isDestroyed: () => false, webContents: { send: vi.fn() } } as any,
+      '1.0.0',
+      () => true
+    )
+    ;(service as any).downloadedUpdateInfo = { version: '1.1.0' }
+    ;(service as any).downloadedUpdateReady = true
+    const original = process.env.ZEN_AI_UPDATE_PARENT_PID
+    mockAutoUpdater.quitAndInstall.mockImplementation(() => {
+      expect(process.env.ZEN_AI_UPDATE_PARENT_PID).toBe(String(process.pid))
+      mockNativeAutoUpdater.emit('before-quit-for-update')
+    })
+    const first = service.quitAndInstall()
+    expect(service.quitAndInstall()).toBe(first)
+    await expect(first).resolves.toMatchObject({ success: true, status: 'installing' })
+    expect(service.quitAndInstall()).toBe(first)
+    expect(process.env.ZEN_AI_UPDATE_PARENT_PID).toBe(original)
+    expect(mockAutoUpdater.quitAndInstall).toHaveBeenCalledOnce()
+    expect(configManagerMock.setPendingUpdateInfo).not.toHaveBeenCalledWith(null)
+    expect(mockNativeAutoUpdater.listenerCount('before-quit-for-update')).toBe(0)
+  })
+
+  it('does not treat an unrelated application quit as installer launch confirmation', async () => {
+    vi.useFakeTimers()
+    const { AppUpdateService } = await import('../AppUpdateService')
+    const service = new AppUpdateService(
+      { isDestroyed: () => false, webContents: { send: vi.fn() } } as any,
+      '1.0.0',
+      () => true
+    )
+    ;(service as any).downloadedUpdateInfo = { version: '1.1.0' }
+    ;(service as any).downloadedUpdateReady = true
+    mockAutoUpdater.quitAndInstall.mockImplementation(() => mockApp.emit('before-quit'))
+    const result = service.quitAndInstall()
+    await vi.advanceTimersByTimeAsync(60000)
+    await expect(result).resolves.toMatchObject({ success: false, stage: 'start-installer' })
+    expect(configManagerMock.setPendingUpdateInfo).not.toHaveBeenCalledWith(null)
+  })
+
+  it('removes installer listeners after synchronous launch errors and permits a retry', async () => {
+    const { AppUpdateService } = await import('../AppUpdateService')
+    const service = new AppUpdateService(
+      { isDestroyed: () => false, webContents: { send: vi.fn() } } as any,
+      '1.0.0',
+      () => true
+    )
+    ;(service as any).downloadedUpdateInfo = { version: '1.1.0' }
+    ;(service as any).downloadedUpdateReady = true
+    mockAutoUpdater.quitAndInstall.mockImplementationOnce(() => {
+      throw new Error('blocked')
+    })
+    await expect(service.quitAndInstall()).resolves.toMatchObject({ success: false })
+    expect(mockNativeAutoUpdater.listenerCount('before-quit-for-update')).toBe(0)
+    mockAutoUpdater.quitAndInstall.mockImplementationOnce(() => mockNativeAutoUpdater.emit('before-quit-for-update'))
+    await expect(service.quitAndInstall()).resolves.toMatchObject({ success: true })
+    expect(mockAutoUpdater.quitAndInstall).toHaveBeenCalledTimes(2)
+  })
+
+  it('restores and verifies a pending Windows installer before notifying the UI, even with auto checks off', async () => {
+    vi.useFakeTimers()
+    configManagerMock.getPendingUpdateInfo.mockReturnValue({ version: '1.1.0' })
+    mockAutoUpdater.checkForUpdates.mockResolvedValue({ isUpdateAvailable: true, updateInfo: { version: '1.1.0' } })
+    mockAutoUpdater.downloadUpdate.mockResolvedValue([])
+    const { AppUpdateService } = await import('../AppUpdateService')
+    const send = vi.fn()
+    const service = new AppUpdateService(
+      { isDestroyed: () => false, webContents: { send } } as any,
+      '1.0.0',
+      () => false
+    )
+    expect(service.getState().status).toBe('checking')
+    expect(send).not.toHaveBeenCalledWith('update-downloaded', expect.anything())
+    service.scheduleStartupCheck(1)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(service.getState().status).toBe('downloaded')
+    expect(send).toHaveBeenCalledWith('update-downloaded', expect.objectContaining({ version: '1.1.0' }))
+    mockAutoUpdater.quitAndInstall.mockImplementation(() => mockNativeAutoUpdater.emit('before-quit-for-update'))
+    await service.quitAndInstall()
+    expect(mockAutoUpdater.checkForUpdates).toHaveBeenCalledOnce()
+    expect(mockAutoUpdater.downloadUpdate).toHaveBeenCalledOnce()
+    vi.clearAllTimers()
+  })
+
+  it('preserves a background download and its source when the user checks again', async () => {
+    const { AppUpdateService } = await import('../AppUpdateService')
+    const service = new AppUpdateService(
+      { isDestroyed: () => false, webContents: { send: vi.fn() } } as any,
+      '1.0.0',
+      () => true
+    )
+    ;(service as any).latestUpdateInfo = { version: '1.1.0' }
+    mockAutoUpdater.autoDownload = true
+    mockAutoUpdater.emit('update-available', { version: '1.1.0' })
+    mockAutoUpdater.emit('download-progress', { percent: 20, transferred: 20, total: 100, bytesPerSecond: 4 })
+    await expect(service.checkForUpdates('manual')).resolves.toMatchObject({ status: 'downloading', source: 'auto' })
+    expect(service.getState()).toMatchObject({ status: 'downloading', source: 'auto', progress: { percent: 20 } })
+    expect(mockAutoUpdater.autoDownload).toBe(true)
+    expect(mockAutoUpdater.checkForUpdates).not.toHaveBeenCalled()
+  })
+
+  it('never changes an active automatic download back to available after the metadata check resolves', async () => {
+    const { AppUpdateService } = await import('../AppUpdateService')
+    const service = new AppUpdateService(
+      { isDestroyed: () => false, webContents: { send: vi.fn() } } as any,
+      '1.0.0',
+      () => true
+    )
+    mockAutoUpdater.checkForUpdates.mockImplementationOnce(async () => {
+      mockAutoUpdater.emit('update-available', { version: '1.1.0' })
+      return { isUpdateAvailable: true, updateInfo: { version: '1.1.0' } }
+    })
+    await expect(service.checkForUpdates('auto')).resolves.toMatchObject({ status: 'downloading' })
+    expect(service.getState().status).toBe('downloading')
   })
 })

@@ -74,4 +74,21 @@ describe('useAppUpdateState', () => {
 
     expect(result.current.updateState.status).toBe('downloading')
   })
+  it('does not let an old initial snapshot overwrite live download progress', async () => {
+    let finish!: (state: unknown) => void
+    ;(window.api.getUpdateState as any).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve
+        })
+    )
+    const { result } = renderHook(() => useAppUpdateState())
+    act(() => progressListener?.({ percent: 65, transferred: 65, total: 100, bytesPerSecond: 2 }))
+    await act(async () => {
+      finish({ status: 'available', source: 'auto', updateInfo: null })
+      await Promise.resolve()
+    })
+    expect(result.current.updateState.status).toBe('downloading')
+    expect(result.current.updateState.progress?.percent).toBe(65)
+  })
 })

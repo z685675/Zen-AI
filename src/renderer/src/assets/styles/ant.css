@@ -257,3 +257,30 @@
   width: 4px !important;
   background-color: var(--color-primary) !important;
 }
+
+/* Confirm buttons live inside AntD's body; only release notes may scroll. */
+.zen-app-update-modal .ant-modal-confirm-body-wrapper,
+.zen-app-update-modal .ant-modal-confirm-paragraph,
+.zen-app-update-modal .ant-modal-confirm-content {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+.zen-app-update-modal .ant-modal-confirm-body,
+.zen-app-update-modal .ant-modal-confirm-content {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.zen-app-update-modal .ant-modal-confirm-paragraph {
+  flex: 1;
+  max-width: none;
+}
+.zen-app-update-modal .ant-modal-confirm-title,
+.zen-app-update-modal .ant-modal-confirm-btns {
+  flex-shrink: 0;
+}
+.zen-app-update-modal .ant-modal-confirm-btns {
+  margin-top: 16px;
+}

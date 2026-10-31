@@ -1,3 +1,5 @@
+import { isOpenCodeInternalProgress } from '@shared/agents/opencodeProgress'
+
 /** Observes existing events only. No model requests, probes or retry policy. */
 export class OpenCodePerformance {
   private started: number
@@ -13,6 +15,7 @@ export class OpenCodePerformance {
   private retries = 0
   private firstText?: number
   private firstOutput?: number
+  private contextProgress?: { firstMs: number; lastMs: number; events: number; characters: number }
   preparationMs?: number
 
   constructor(private now: () => number = () => performance.now()) {
@@ -41,9 +44,16 @@ export class OpenCodePerformance {
   retry() {
     this.retries++
   }
-  chunks(chunks: Array<{ type: string; toolCallId?: string; text?: string }>) {
+  chunks(chunks: Array<{ type: string; toolCallId?: string; text?: string; rawValue?: unknown }>) {
     const now = this.now()
     for (const chunk of chunks) {
+      if (chunk.type === 'raw' && isOpenCodeInternalProgress(chunk.rawValue)) {
+        const elapsed = Math.round(Math.max(0, now - this.started))
+        this.contextProgress ??= { firstMs: elapsed, lastMs: elapsed, events: 0, characters: 0 }
+        this.contextProgress.lastMs = elapsed
+        this.contextProgress.events++
+        this.contextProgress.characters += chunk.rawValue.characters
+      }
       if (chunk.type === 'tool-call' || (['text-delta', 'reasoning-delta'].includes(chunk.type) && chunk.text?.trim()))
         this.firstOutput ??= now - this.started
       if (chunk.type === 'text-delta' && chunk.text?.trim()) this.firstText ??= now - this.started
@@ -72,6 +82,7 @@ export class OpenCodePerformance {
       preparationMs: this.preparationMs === undefined ? null : Math.round(this.preparationMs),
       firstVisibleOutputMs: this.firstOutput === undefined ? null : Math.round(this.firstOutput),
       firstTextMs: this.firstText === undefined ? null : Math.round(this.firstText),
+      contextProgress: this.contextProgress ? { ...this.contextProgress } : null,
       stageDurationsMs: Object.fromEntries(Object.entries(stages).map(([stage, ms]) => [stage, Math.round(ms)])),
       upstreamRequests: this.requests,
       upstreamHeaderWaitMs: Math.round(this.headerMs),

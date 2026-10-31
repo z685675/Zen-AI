@@ -63,6 +63,7 @@ vi.mock('../managedModelRecovery', () => ({
 }))
 
 import { registerAutomationBridge } from '../automation/bridge'
+import { OpenCodeStreamState } from '../opencode/transform'
 import { SessionMessageService } from '../SessionMessageService'
 
 function createAgentStream(): AgentStream {
@@ -261,6 +262,180 @@ describe('SessionMessageService runtime stream lifecycle', () => {
     } finally {
       clock.mockRestore()
     }
+  })
+
+  it('continues one task past three minutes while native context summaries grow privately', async () => {
+    const agentStream = createAgentStream()
+    resolveAgentRuntimeMock.mockResolvedValue({ runtimeId: 'opencode', candidates: ['opencode'], source: 'workspace' })
+    invokeMock.mockResolvedValue(agentStream)
+    const result = await new SessionMessageService().createSessionMessage(
+      session(),
+      { content: 'continue' } as any,
+      new AbortController()
+    )
+    const chunks = collect(result.stream)
+    const native = new OpenCodeStreamState('native', 'zen', new Set())
+    native.consume({
+      type: 'message.updated',
+      properties: { info: { id: 'summary', role: 'assistant', summary: true } }
+    })
+    agentStream.emit('data', { type: 'chunk', chunk: { type: 'start' } })
+    for (let step = 1; step <= 4; step++) {
+      await vi.advanceTimersByTimeAsync(120_000)
+      for (const chunk of native.consume({
+        type: 'message.part.updated',
+        properties: {
+          part: {
+            id: 'summary-part',
+            messageID: 'summary',
+            type: 'text',
+            text: 'PRIVATE_SUMMARY'.repeat(step)
+          }
+        }
+      }))
+        agentStream.emit('data', { type: 'chunk', chunk })
+      expect(invokeMock.mock.calls[0][2].signal.aborted).toBe(false)
+    }
+    expect(recordMainDiagnosticMock.mock.calls.some((call) => call[2] === 'visible-output')).toBe(false)
+    agentStream.emit('data', {
+      type: 'chunk',
+      chunk: {
+        type: 'raw',
+        rawValue: {
+          type: 'opencode_internal_progress',
+          stage: 'compacting',
+          kind: 'completed',
+          characters: 0
+        }
+      }
+    })
+    agentStream.emit('data', { type: 'chunk', chunk: { type: 'text-delta', text: 'Finished' } })
+    agentStream.emit('data', { type: 'complete' })
+    expect(JSON.stringify(await chunks)).not.toContain('PRIVATE_SUMMARY')
+    await result.completion
+    expect(invokeMock).toHaveBeenCalledOnce()
+  })
+
+  it('still times out a stalled summary despite repeated busy/status and empty progress frames', async () => {
+    const agentStream = createAgentStream()
+    resolveAgentRuntimeMock.mockResolvedValue({ runtimeId: 'opencode', candidates: ['opencode'], source: 'workspace' })
+    invokeMock.mockResolvedValue(agentStream)
+    const result = await new SessionMessageService().createSessionMessage(
+      session(),
+      { content: 'continue' } as any,
+      new AbortController()
+    )
+    const failure = consume(result.stream).catch((error) => error)
+    const completion = result.completion.catch((error) => error)
+    agentStream.emit('data', { type: 'chunk', chunk: { type: 'start' } })
+    agentStream.emit('data', {
+      type: 'chunk',
+      chunk: {
+        type: 'raw',
+        rawValue: {
+          type: 'opencode_internal_progress',
+          stage: 'compacting',
+          kind: 'reasoning',
+          characters: 4
+        }
+      }
+    })
+    for (let step = 0; step < 3; step++) {
+      await vi.advanceTimersByTimeAsync(59_000)
+      agentStream.emit('data', {
+        type: 'chunk',
+        chunk: { type: 'raw', rawValue: { type: 'opencode_status', status: 'compacting' } }
+      })
+      agentStream.emit('data', {
+        type: 'chunk',
+        chunk: {
+          type: 'raw',
+          rawValue: {
+            type: 'opencode_internal_progress',
+            stage: 'compacting',
+            kind: 'text',
+            characters: 0
+          }
+        }
+      })
+    }
+    await vi.advanceTimersByTimeAsync(3_001)
+    await expect(failure).resolves.toMatchObject({
+      name: 'AgentRuntimeNoOutputTimeoutError',
+      code: 'agent_inactivity_timeout',
+      zenFailureStage: 'local-task-deadline',
+      message: expect.stringContaining('summarizing context')
+    })
+    await expect(completion).resolves.toMatchObject({ name: 'AgentRuntimeNoOutputTimeoutError' })
+    expect(invokeMock).toHaveBeenCalledOnce()
+  })
+
+  it('keeps human approval waits paused even when internal context progress arrives', async () => {
+    const agentStream = createAgentStream()
+    resolveAgentRuntimeMock.mockResolvedValue({ runtimeId: 'opencode', candidates: ['opencode'], source: 'workspace' })
+    invokeMock.mockResolvedValue(agentStream)
+    const result = await new SessionMessageService().createSessionMessage(
+      session(),
+      { content: 'continue' } as any,
+      new AbortController()
+    )
+    const chunks = collect(result.stream)
+    agentStream.emit('data', { type: 'chunk', chunk: { type: 'start' } })
+    agentStream.emit('data', {
+      type: 'chunk',
+      chunk: { type: 'raw', rawValue: { type: 'opencode_status', status: 'waiting_permission' } }
+    })
+    await vi.advanceTimersByTimeAsync(240_000)
+    agentStream.emit('data', {
+      type: 'chunk',
+      chunk: {
+        type: 'raw',
+        rawValue: {
+          type: 'opencode_internal_progress',
+          stage: 'compacting',
+          kind: 'reasoning',
+          characters: 4
+        }
+      }
+    })
+    await vi.advanceTimersByTimeAsync(240_000)
+    expect(invokeMock.mock.calls[0][2].signal.aborted).toBe(false)
+    agentStream.emit('data', {
+      type: 'chunk',
+      chunk: { type: 'raw', rawValue: { type: 'opencode_status', status: 'compacting' } }
+    })
+    agentStream.emit('data', { type: 'chunk', chunk: { type: 'text-delta', text: 'Finished' } })
+    agentStream.emit('data', { type: 'complete' })
+    await chunks
+    await result.completion
+  })
+
+  it('does not mistake a completed internal summary for a successful user answer', async () => {
+    const agentStream = createAgentStream()
+    resolveAgentRuntimeMock.mockResolvedValue({ runtimeId: 'opencode', candidates: ['opencode'], source: 'workspace' })
+    invokeMock.mockResolvedValue(agentStream)
+    const result = await new SessionMessageService().createSessionMessage(
+      session(),
+      { content: 'continue' } as any,
+      new AbortController()
+    )
+    const failure = consume(result.stream).catch((error) => error)
+    const completion = result.completion.catch((error) => error)
+    agentStream.emit('data', {
+      type: 'chunk',
+      chunk: {
+        type: 'raw',
+        rawValue: {
+          type: 'opencode_internal_progress',
+          stage: 'compacting',
+          kind: 'completed',
+          characters: 0
+        }
+      }
+    })
+    agentStream.emit('data', { type: 'complete' })
+    await expect(failure).resolves.toMatchObject({ message: expect.stringContaining('user-visible result') })
+    await expect(completion).resolves.toMatchObject({ message: expect.stringContaining('user-visible result') })
   })
 
   it.each(['startup', 'continuation', 'deep-research'])(

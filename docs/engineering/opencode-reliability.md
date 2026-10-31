@@ -1,5 +1,31 @@
 # New assistant: confirmations and avoidable latency
 
+## Native context progress and request limits (October 30)
+
+The supplied 1.1.77 diagnostics show a native context-summary request receiving
+upstream data before the outer 180-second visible-output timer cancelled the
+task. Both the outer watchdog and the native whole-request ceiling were 180
+seconds. A successful HTTP connection or partial usage does not prove that the
+summary completed, and these observations do not establish why upstream
+generation was slow.
+
+Native summary text/reasoning stays private. Deduplicated, non-whitespace content
+growth now emits numeric internal progress, refreshing the outer 180-second
+inactivity timer without committing a visible answer, marking success, or
+replaying a task. Busy/status events, raw bytes, repeated snapshots and empty
+content do not refresh it. Permission waits retain their existing pause and
+bounded native human-wait policy. Summary completion starts a fresh answer
+window; a summary alone cannot complete a user task successfully.
+
+The native whole-request ceiling is ten minutes, while header and idle-chunk
+limits remain two minutes. Existing acceptance probes retain their independent
+185-second budget. Native compaction and prompts are unchanged. Compaction
+status survives generic busy updates until completion or actual answer/tool
+progress. Diagnostics keep numeric first/last internal-progress offsets, counts,
+and a bounded progress timeline, without summary text. The API separately closes
+the upstream body before joining stream workers on cancellation, avoiding the
+previous additional five-second cleanup wait.
+
 The October 26, 2026 diagnostic review found a task that waited 30 minutes on native `doom_loop` approval, and three successful tasks with 22–25 model requests. File-tool execution was short; unnecessary model round trips, parameter corrections and browser trial-and-error dominated avoidable latency. Request duration includes the provider/channel/network path and does not measure model computation alone.
 
 ## Confirmations without a tool call

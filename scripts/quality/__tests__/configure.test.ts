@@ -44,13 +44,13 @@ describe('simple model picker configuration wizard', () => {
         turnTimeoutMs: 300000,
         pauseMs: 20000
       })
-      expect(QUALITY_REQUEST_TIMEOUT_MS).toBe(OPENCODE_REQUEST_TIMEOUT_MS + 5000)
+      expect(QUALITY_REQUEST_TIMEOUT_MS).toBeLessThan(OPENCODE_REQUEST_TIMEOUT_MS)
       expect([
         OPENCODE_HEADERS_TIMEOUT_MS,
         OPENCODE_STREAM_CHUNK_TIMEOUT_MS,
         OPENCODE_REQUEST_TIMEOUT_MS,
         QUALITY_REQUEST_TIMEOUT_MS
-      ]).toEqual([120000, 120000, 180000, 185000])
+      ]).toEqual([120000, 120000, 600000, 185000])
       expect(planLive(saved)).toMatchObject({ executionAvailable: true, userTurns: 15 })
       expect(ask.mock.calls.map(([question]) => question).join('')).not.toMatch(
         /报价依据|普通输入价格|缓存读取价格|最高金额/

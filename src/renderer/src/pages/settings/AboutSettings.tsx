@@ -4,7 +4,11 @@ import { useTheme } from '@renderer/context/ThemeProvider'
 import { useAppUpdateState } from '@renderer/hooks/useAppUpdateState'
 import { refreshRemoteModelPolicy } from '@renderer/services/RemoteModelPolicyService'
 import { runAsyncFunction } from '@renderer/utils'
-import { showAppUpdateAvailableModal, showAppUpdateDownloadedModal } from '@renderer/utils/appUpdate'
+import {
+  showAppUpdateAvailableModal,
+  showAppUpdateDownloadedModal,
+  showAppUpdateDownloadingModal
+} from '@renderer/utils/appUpdate'
 import { APP_DOWNLOADS_URL, APP_RELEASES_URL, APP_SUPPORT_EMAIL, APP_WEBSITE_URL } from '@shared/config/constant'
 import { Avatar, Button, Row, Tag } from 'antd'
 import { ClipboardList, Download, Mail, RefreshCw } from 'lucide-react'
@@ -48,6 +52,11 @@ const AboutSettings: FC = () => {
       return
     }
 
+    if (updateState.status === 'downloading' && updateState.updateInfo) {
+      showAppUpdateDownloadingModal(t, updateState.updateInfo)
+      return
+    }
+
     setCheckingUpdate(true)
 
     try {
@@ -59,7 +68,8 @@ const AboutSettings: FC = () => {
       }
 
       if (result.status === 'downloading') {
-        window.toast.info(t('update.downloading', { version: result.updateInfo?.version || version }))
+        if (result.updateInfo) showAppUpdateDownloadingModal(t, result.updateInfo)
+        else window.toast.info(t('settings.about.checkingUpdate'))
         return
       }
 

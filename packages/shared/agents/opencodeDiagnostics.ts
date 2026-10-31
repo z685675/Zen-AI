@@ -36,6 +36,7 @@ export type OpenCodeTurnDiagnostics = {
     toolCalls: number
     completedToolObservedMs: number
     unfinishedTools: number
+    contextProgress?: { firstMs: number; lastMs: number; events: number; characters: number } | null
   }
 }
 
@@ -75,6 +76,14 @@ export function readOpenCodeTurnDiagnostics(value: unknown): OpenCodeTurnDiagnos
     usage[field] = count
   }
   const perf = data.performance
+  const context = perf.contextProgress
+  if (
+    context != null &&
+    (![context.firstMs, context.lastMs, context.events, context.characters].every(isReportedTokenCount) ||
+      context.lastMs < context.firstMs ||
+      context.events === 0)
+  )
+    return undefined
   if (
     !['completed', 'failed', 'cancelled'].includes(perf.outcome) ||
     ![
@@ -114,7 +123,20 @@ export function readOpenCodeTurnDiagnostics(value: unknown): OpenCodeTurnDiagnos
       retryEvents: perf.retryEvents,
       toolCalls: perf.toolCalls,
       completedToolObservedMs: perf.completedToolObservedMs,
-      unfinishedTools: perf.unfinishedTools
+      unfinishedTools: perf.unfinishedTools,
+      ...(context === undefined
+        ? {}
+        : {
+            contextProgress:
+              context === null
+                ? null
+                : {
+                    firstMs: context.firstMs,
+                    lastMs: context.lastMs,
+                    events: context.events,
+                    characters: context.characters
+                  }
+          })
     }
   }
 }
