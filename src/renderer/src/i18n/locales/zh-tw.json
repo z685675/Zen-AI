@@ -357,6 +357,42 @@
       "success": "成功偵測到 Git Bash！",
       "tooltip": "在 Windows 上執行 Agent 需要 Git Bash。如未安裝，請從 git-scm.com 下載安裝。"
     },
+    "inbox": {
+      "attachments": "附件訊息",
+      "check": "核對接收狀態",
+      "continue": "準備繼續",
+      "dismiss": "收起紀錄",
+      "dismissHint": "僅收起此紀錄，不會撤回已提交的訊息。",
+      "draftOccupied": "請先傳送或儲存輸入框中的草稿，再編輯這則訊息。",
+      "edit": "編輯",
+      "hint": {
+        "accepted": "已儲存至目前任務，等待後續處理。",
+        "deferred": "目前任務已結束，尚未確認這則補充已進入後續處理。請先核對對話結果，再決定是否繼續。",
+        "failed": "執行失敗，佇列已暫停。請先核對對話紀錄，再決定是否編輯後重新傳送。",
+        "rejected": "這則訊息未提交，可編輯後傳送或加入佇列。",
+        "uncertain": "尚無法確認是否已接收，請核對接收狀態或對話紀錄後再傳送，避免重複執行。"
+      },
+      "notReady": "任務正在啟動或收尾，請編輯這則訊息，或改為排隊傳送。",
+      "pause": "暫停佇列",
+      "queue": "排隊傳送",
+      "remove": "移除",
+      "restored": "已放回輸入框，請確認後傳送。",
+      "resume": "繼續佇列",
+      "saveFailed": "無法儲存訊息，輸入框中的草稿已保留。",
+      "state": {
+        "accepted": "已接收",
+        "applied": "已進入後續處理",
+        "deferred": "等待繼續",
+        "failed": "執行失敗",
+        "queued": "待傳送",
+        "rejected": "未傳送",
+        "sending": "正在傳送",
+        "sent": "已傳送",
+        "uncertain": "接收狀態待確認"
+      },
+      "steer": "調整目前任務",
+      "title": "待傳送與任務補充"
+    },
     "input": {
       "deep_research": "深度研究",
       "deep_research_tooltip": "針對下一則訊息建立一次研究任務：保留目前模型，自動使用高思考強度；先制定計畫，確認後分輪檢索、核驗來源，並產生附引用的報告。",
@@ -990,9 +1026,11 @@
     "stageHumanWait": "等待使用者操作",
     "stageInactivity": "監測任務進展",
     "suggestion": "先檢查已完成的內容，再主動傳送指令繼續未完成部分；不要盲目重複提交或產生。",
-    "summaryExecution": "實際執行累計達到15分鐘上限，任務已暫停。已儲存的記錄及成果保留，不會自動重新執行。",
+    "summaryExecution": "任務已達到本機執行時限並暫停。已儲存的記錄與成果保留，檢查後可繼續執行。",
+    "summaryExecutionTimed": "任務達到 {{seconds}} 秒的本機執行時限，已暫停。已儲存的記錄與成果保留，檢查後可繼續執行。",
     "summaryHumanWait": "等待使用者操作累計達到30分鐘上限，任務已暫停。已儲存的記錄及成果保留，不會自動重新執行。",
-    "summaryInactivity": "連續15分鐘未觀察到新的有效進展，任務已暫停。已儲存的記錄與成果保留，檢查後可點選「繼續執行」。",
+    "summaryInactivity": "任務長時間沒有新的有效進展，已暫停。已儲存的記錄與成果保留，檢查後可繼續執行。",
+    "summaryInactivityTimed": "連續 {{seconds}} 秒未觀察到新的有效進展，任務已暫停。已儲存的記錄與成果保留，檢查後可繼續執行。",
     "titleExecution": "任務已暫停：執行時間達到上限",
     "titleHumanWait": "任務已暫停：等待時間達到上限",
     "titleInactivity": "任務已暫停：長時間沒有進展"
@@ -1464,6 +1502,19 @@
       "writing_data": "寫入資料..."
     },
     "title": "資料備份"
+  },
+  "browser": {
+    "external_cancel": "取消",
+    "external_failed": "無法開啟系統瀏覽器，請複製網址後手動開啟。",
+    "external_hint": "系統瀏覽器的登入和驗證狀態不會同步。可在那裡下載檔案，再新增到助手中繼續任務。",
+    "external_open": "用系統瀏覽器開啟",
+    "external_private_description": "將在此隱私視窗之外開啟網頁。系統瀏覽器可能記錄瀏覽紀錄，並使用其中已登入的帳號。",
+    "external_private_title": "要用系統瀏覽器開啟隱私頁面嗎？",
+    "handoff_continue": "完成後繼續",
+    "handoff_default": "請完成登入、驗證碼或確認操作，完成後點擊繼續。",
+    "handoff_title": "需要你接管瀏覽器",
+    "network_hint": "瀏覽器跟隨電腦的系統代理。若驗證持續失敗，可用系統瀏覽器開啟。",
+    "verification_message": "請手動完成網站驗證，完成後點擊繼續。如驗證持續失敗，可用系統瀏覽器開啟。"
   },
   "button": {
     "add": "新增",
@@ -6329,6 +6380,7 @@
     },
     "proxy": {
       "address": "代理伺服器位址",
+      "browser_network": "此設定用於軟體服務和 API 請求；助手瀏覽器獨立跟隨電腦的系統代理。",
       "bypass": "代理略過規則",
       "mode": {
         "custom": "自訂代理伺服器",

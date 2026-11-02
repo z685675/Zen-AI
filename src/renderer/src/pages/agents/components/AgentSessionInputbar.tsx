@@ -19,6 +19,8 @@ import InputbarTools from '@renderer/pages/home/Inputbar/InputbarTools'
 import { getInputbarConfig } from '@renderer/pages/home/Inputbar/registry'
 import type { ToolContext, ToolOrderConfig } from '@renderer/pages/home/Inputbar/types'
 import { TopicType } from '@renderer/pages/home/Inputbar/types'
+import type { AgentInboxEntry } from '@renderer/services/AgentSessionInboxService'
+import { getAgentSessionInbox } from '@renderer/services/AgentSessionInboxService'
 import { CacheService } from '@renderer/services/CacheService'
 import { EVENT_NAMES, EventEmitter } from '@renderer/services/EventService'
 import FileManager from '@renderer/services/FileManager'
@@ -57,12 +59,14 @@ import {
 } from '@renderer/utils/reasoningEffort'
 import { isAssistantExecutionAllowed } from '@shared/agents/assistantAvailability'
 import { documentExts, imageExts, textExts } from '@shared/config/constant'
+import { Dropdown } from 'antd'
 import type { FC } from 'react'
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { useTranslation } from 'react-i18next'
 import styled from 'styled-components'
 import { v4 as uuid } from 'uuid'
 
+import { AgentSessionInboxPanel } from './AgentSessionInbox'
 import LegacyAssistantInputbar from './LegacyAssistantInputbar'
 
 const logger = loggerService.withContext('AgentSessionInputbar')
@@ -244,6 +248,12 @@ const AgentSessionInputbarInner: FC<InnerProps> = ({
   const { sendMessageShortcut, apiServer } = useSettings()
 
   const { t } = useTranslation()
+  const inbox = getAgentSessionInbox()
+  const inboxEntries = useSyncExternalStore(inbox.subscribe, inbox.snapshot)
+  const [delivery, setDelivery] = useState<'queue' | 'steer'>('queue')
+  const [submitting, setSubmitting] = useState(false)
+  const submittingRef = useRef(false)
+  const composerRef = useRef({ text, files: [] as FileMetadata[] })
 
   const [reasoningEffort, setReasoningEffort] = useState<AgentReasoningEffort>(
     initialReasoningEffort ?? AGENT_DEFAULT_REASONING_EFFORT
@@ -271,6 +281,7 @@ const AgentSessionInputbarInner: FC<InnerProps> = ({
   )
 
   const { files } = useInputbarToolsState()
+  composerRef.current = { text, files }
   const { setIsExpanded, setFiles } = useInputbarToolsDispatch()
   const { setCouldAddImageFile } = useInputbarToolsInternalDispatch()
 
@@ -278,6 +289,9 @@ const AgentSessionInputbarInner: FC<InnerProps> = ({
   const sessionTopicId = buildAgentSessionTopicId(sessionId)
   const topicMessages = useAppSelector((state) => selectMessagesForTopic(state, sessionTopicId))
   const loading = useAppSelector((state) => selectNewTopicLoading(state, sessionTopicId))
+  useEffect(() => {
+    if (!loading) setDelivery('queue')
+  }, [loading])
   const modelPolicy = useAppSelector((state) => state.llm.modelPolicy?.policy)
   const enableDeveloperMode = useAppSelector((state) => state.settings.enableDeveloperMode)
 
@@ -352,6 +366,7 @@ const AgentSessionInputbarInner: FC<InnerProps> = ({
   const canAbort = loading && streamingAskIds.length > 0
 
   const abortAgentSession = useCallback(async () => {
+    inbox.pause(sessionId)
     if (!streamingAskIds.length) {
       logger.debug('No active agent session streams to abort', { sessionTopicId })
       return
@@ -370,10 +385,10 @@ const AgentSessionInputbarInner: FC<InnerProps> = ({
     window.toast.info(t('new_assistant.stopped'))
     void pauseTrace(sessionTopicId)
     dispatch(newMessagesActions.setTopicLoading({ topicId: sessionTopicId, loading: false }))
-  }, [dispatch, sessionTopicId, streamingAskIds, t])
+  }, [dispatch, sessionTopicId, streamingAskIds, t, inbox, sessionId])
 
   const sendMessage = useCallback(async () => {
-    if (sendDisabled) {
+    if (sendDisabled || submittingRef.current) {
       return
     }
 
@@ -399,7 +414,8 @@ const AgentSessionInputbarInner: FC<InnerProps> = ({
     }
 
     logger.info('Starting to send message')
-
+    submittingRef.current = true
+    setSubmitting(true)
     try {
       const userMessageId = uuid()
 
@@ -477,35 +493,58 @@ const AgentSessionInputbarInner: FC<InnerProps> = ({
           }
         : {}
 
-      void dispatch(
-        dispatchSendMessage(userMessage, userMessageBlocks, assistant, sessionTopicId, {
-          agentId,
-          sessionId,
-          deepResearch: deepResearchEnabled,
-          ...(deepResearchTask
-            ? {
-                deepResearchTask: {
-                  task_id: deepResearchTask.taskId,
-                  action: deepResearchTask.action
-                }
+      const context = {
+        agentId,
+        sessionId,
+        deepResearch: deepResearchEnabled,
+        ...(deepResearchTask
+          ? {
+              deepResearchTask: {
+                task_id: deepResearchTask.taskId,
+                action: deepResearchTask.action
               }
-            : {}),
-          ...thinkingParams
-        })
-      )
+            }
+          : {}),
+        ...thinkingParams
+      }
+      const queued = inbox
+        .snapshot()
+        .some(
+          (entry) =>
+            entry.sessionId === sessionId && entry.delivery === 'queue' && ['queued', 'sending'].includes(entry.state)
+        )
+      if (loading || queued) {
+        inbox.add(
+          {
+            args: [userMessage, userMessageBlocks, assistant, sessionTopicId, context],
+            text,
+            files: uploadedFiles,
+            workspace: sessionData?.accessiblePaths?.[0]
+          },
+          loading ? delivery : 'queue'
+        )
+      } else {
+        // Wait for persistence/queue admission, not for model completion. This
+        // closes the small gap before the normal pipeline marks the task busy.
+        await dispatch(dispatchSendMessage(userMessage, userMessageBlocks, assistant, sessionTopicId, context))
+      }
 
       // Emit event to trigger scroll to bottom in AgentSessionMessages
       void EventEmitter.emit(EVENT_NAMES.SEND_MESSAGE, { topicId: sessionTopicId })
 
       // Clear text and files after successful send (draft is cleared automatically via onChange)
-      setText('')
-      setFiles([])
+      if (composerRef.current.text === text) setText('')
+      if (composerRef.current.files === files) setFiles([])
       setDeepResearchEnabled(false)
       CacheService.remove(deepResearchCacheKey)
       // Restore focus to textarea after sending to maintain IME state (fcitx5 issue)
       focusTextarea()
     } catch (error) {
       logger.warn('Failed to send message:', error as Error)
+      window.toast.error(t('agent.inbox.saveFailed'))
+    } finally {
+      submittingRef.current = false
+      setSubmitting(false)
     }
   }, [
     sendDisabled,
@@ -515,6 +554,10 @@ const AgentSessionInputbarInner: FC<InnerProps> = ({
     enableDeveloperMode,
     modelPolicy,
     sessionId,
+    inbox,
+    loading,
+    delivery,
+    sessionData,
     sessionTopicId,
     setText,
     setFiles,
@@ -593,6 +636,18 @@ const AgentSessionInputbarInner: FC<InnerProps> = ({
     })
   }, [isHero, sendMessageShortcut, t])
 
+  const editInboxEntry = (entry: AgentInboxEntry) => {
+    if (text.trim() || files.length) {
+      window.toast.info(t('agent.inbox.draftOccupied'))
+      return
+    }
+    if (!inbox.remove(entry.id)) return
+    setText(entry.text)
+    setFiles(entry.files)
+    focusTextarea()
+    window.toast.info(t('agent.inbox.restored'))
+  }
+
   return (
     <InputbarCore
       scope={TopicType.Session}
@@ -607,7 +662,27 @@ const AgentSessionInputbarInner: FC<InnerProps> = ({
       supportedExts={supportedExts}
       onPause={abortAgentSession}
       isLoading={canAbort}
+      allowSendWhileLoading
+      sendDisabled={sendDisabled || submitting}
       handleSendMessage={sendMessage}
+      renderSendButton={(disabled) => (
+        <Dropdown.Button
+          disabled={disabled}
+          loading={submitting}
+          onClick={() => void sendMessage()}
+          menu={{
+            items: [
+              { key: 'queue', label: t('agent.inbox.queue') },
+              { key: 'steer', label: t('agent.inbox.steer'), disabled: !loading }
+            ],
+            onClick: ({ key }) => setDelivery(key as 'queue' | 'steer')
+          }}>
+          {t(loading ? (delivery === 'queue' ? 'agent.inbox.queue' : 'agent.inbox.steer') : 'chat.input.send')}
+        </Dropdown.Button>
+      )}
+      topContent={
+        <AgentSessionInboxPanel entries={inboxEntries} inbox={inbox} sessionId={sessionId} onEdit={editInboxEntry} />
+      }
       leftToolbar={leftToolbar}
       pinnedContent={
         isHero ? undefined : (

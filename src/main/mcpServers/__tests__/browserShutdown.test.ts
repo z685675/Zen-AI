@@ -2,19 +2,28 @@ import { app } from 'electron'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const harness = vi.hoisted(() => ({
-  controllers: [] as Array<{ dispose: ReturnType<typeof vi.fn> }>,
-  servers: [] as Array<{ server: { onclose?: () => void }; close: ReturnType<typeof vi.fn> }>
+  controllers: [] as Array<{ dispose: ReturnType<typeof vi.fn>; assertAutomationAllowed: ReturnType<typeof vi.fn> }>,
+  servers: [] as Array<{
+    server: { onclose?: () => void; setRequestHandler: ReturnType<typeof vi.fn> }
+    close: ReturnType<typeof vi.fn>
+  }>,
+  mutate: vi.fn(async () => ({ content: [], isError: false })),
+  handoff: vi.fn(async () => ({ content: [], isError: false }))
 }))
 vi.mock('electron', () => ({ app: { on: vi.fn() } }))
 vi.mock('../browser/controller', () => ({
   CdpBrowserController: class {
     dispose = vi.fn(async () => {})
+    assertAutomationAllowed = vi.fn()
     constructor() {
       harness.controllers.push(this)
     }
   }
 }))
-vi.mock('../browser/tools', () => ({ toolDefinitions: [], toolHandlers: {} }))
+vi.mock('../browser/tools', () => ({
+  toolDefinitions: [],
+  toolHandlers: { reset: harness.mutate, switch_tab: harness.mutate, wait_for_user: harness.handoff }
+}))
 vi.mock('@modelcontextprotocol/sdk/server/mcp.js', () => ({
   McpServer: class {
     server = { setRequestHandler: vi.fn(), onclose: undefined as (() => void) | undefined }
@@ -33,6 +42,25 @@ beforeEach(() => {
 })
 
 describe('browser native session shutdown', () => {
+  it('blocks agent resets and tab switches during handoff while still accepting the user-wait tool', async () => {
+    const { BrowserServer } = await import('../browser/server')
+    const browser = new BrowserServer()
+    harness.controllers[0].assertAutomationAllowed.mockImplementation(() => {
+      throw new Error('Browser is under user control')
+    })
+    const handler = harness.servers[0].server.setRequestHandler.mock.calls[1][1]
+    for (const name of ['reset', 'switch_tab']) {
+      await expect(handler({ params: { name, arguments: {} } })).resolves.toMatchObject({ isError: true })
+    }
+    expect(harness.mutate).not.toHaveBeenCalled()
+    await expect(handler({ params: { name: 'wait_for_user', arguments: {} } })).resolves.toMatchObject({
+      isError: false
+    })
+    expect(harness.handoff).toHaveBeenCalledOnce()
+    await browser.close()
+    expect(harness.controllers[0].dispose).toHaveBeenCalledOnce()
+  })
+
   it('closes a server once without leaving a per-instance quit listener', async () => {
     const { BrowserServer, shutdownBrowserServers } = await import('../browser/server')
     const server = new BrowserServer()

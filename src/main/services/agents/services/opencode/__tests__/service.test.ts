@@ -29,6 +29,7 @@ vi.mock('@main/utils', () => ({ getDataPath: () => '/nonexistent-open-code-test'
 
 import type { AgentStreamEvent } from '../../../interfaces/AgentStreamInterface'
 import OpenCodeService from '../index'
+import { checkAgentRunInput, getAgentRunInputStatus, submitAgentRunInput } from '../turnInput'
 
 const fixture = {
   id: 'zen-test',
@@ -56,7 +57,7 @@ let mode:
   | 'empty-compaction'
   | 'compaction'
   | 'empty-compaction-disconnect' = 'success'
-let longTaskMode: 'progress' | 'busy-only' | undefined
+let longTaskMode: 'progress' | 'busy-only' | 'tool-input' | 'bytes-only' | undefined
 let pause: { ready: () => void; wait: Promise<void> } | undefined
 function hold(signal: AbortSignal) {
   return new Promise<void>((resolve, reject) => {
@@ -70,6 +71,8 @@ function hold(signal: AbortSignal) {
   })
 }
 let body: any
+let initialBody: any
+let steeringMode: 'applied' | 'deferred' | 'incomplete' | undefined
 let historyReads = 0
 let eventConnections = 0
 let failureMessage = 'upstream unavailable'
@@ -79,11 +82,13 @@ const nativeInfo = () => ({
   id: 'assistant-new',
   sessionID: 'native',
   role: 'assistant',
-  time: { completed: 1 },
+  time: { completed: steeringMode === 'incomplete' ? undefined : 1 },
+  parentID: steeringMode === 'applied' ? body.messageID : initialBody?.messageID,
   tokens: { input: 10, output: 5, reasoning: 0, cache: { read: 50, write: 0 } }
 })
 const request = vi.fn(async (route: string, _method?: string, data?: unknown) => {
   if (route.endsWith('/prompt_async')) {
+    initialBody ??= data
     body = data
     runtime.setProgressListener.mock.calls.at(-1)?.[0]?.('request-started', {})
     return
@@ -110,7 +115,8 @@ const request = vi.fn(async (route: string, _method?: string, data?: unknown) =>
         }
       ]
     return [
-      { info: { id: body.messageID, role: 'user' }, parts: [] },
+      { info: { id: initialBody.messageID, role: 'user' }, parts: [] },
+      ...(steeringMode && body !== initialBody ? [{ info: { id: body.messageID, role: 'user' }, parts: [] }] : []),
       ...(mode === 'compaction'
         ? [
             {
@@ -138,6 +144,10 @@ async function* events(signal: AbortSignal) {
   }
   yield { type: 'message.updated', properties: { info: { id: body.messageID, sessionID: 'native', role: 'user' } } }
   yield { type: 'session.status', properties: { sessionID: 'native', status: { type: 'busy' } } }
+  if (steeringMode) {
+    pause!.ready()
+    await hold(signal)
+  }
   if (mode === 'compaction') {
     yield {
       type: 'message.updated',
@@ -191,7 +201,14 @@ async function* events(signal: AbortSignal) {
             }
           }
         }
-      else yield { type: 'session.status', properties: { sessionID: 'native', status: { type: 'busy' } } }
+      else {
+        if (longTaskMode === 'tool-input' || longTaskMode === 'bytes-only')
+          runtime.setProgressListener.mock.calls.at(-1)?.[0]?.(
+            longTaskMode === 'tool-input' ? 'tool-input-progress' : 'body-progress',
+            { characters: 3, receivedBytes: 100 * (step + 1), lastDataAt: new Date().toISOString() }
+          )
+        yield { type: 'session.status', properties: { sessionID: 'native', status: { type: 'busy' } } }
+      }
     }
   }
   if (mode.startsWith('reconnect') && (connection === 1 || mode === 'reconnect-exhausted'))
@@ -318,6 +335,8 @@ beforeEach(() => {
   fixture.configuration = {}
   fixture.instructions = ''
   body = undefined
+  initialBody = undefined
+  steeringMode = undefined
   historyReads = 0
   eventConnections = 0
   failureMessage = 'upstream unavailable'
@@ -337,6 +356,41 @@ afterEach(() => {
   vi.useRealTimers()
 })
 describe('OpenCode adapter turn lifecycle', () => {
+  it.each(['applied', 'deferred', 'incomplete'] as const)(
+    'reconciles a native %s addition without hanging or restarting the adapter',
+    async (value) => {
+      steeringMode = value
+      let ready!: () => void, resume!: () => void
+      const entered = new Promise<void>((resolve) => {
+        ready = resolve
+      })
+      pause = {
+        ready,
+        wait: new Promise<void>((resolve) => {
+          resume = resolve
+        })
+      }
+      const result = run()
+      await entered
+      const status = getAgentRunInputStatus(fixture.id)
+      expect(status).toMatchObject({ active: true, ready: true })
+      const receipt = await submitAgentRunInput({
+        sessionId: fixture.id,
+        turnId: status.turnId!,
+        id: `addition-${value}`,
+        text: '先总结，再给出引用'
+      })
+      expect(receipt.state).toBe('accepted')
+      resume()
+      const events = await result
+      expect(events.at(-1)?.type).toBe(value === 'incomplete' ? 'error' : 'complete')
+      if (value !== 'incomplete')
+        expect(await checkAgentRunInput(fixture.id, receipt.id)).toMatchObject({ state: value })
+      expect(request.mock.calls.filter(([route]) => route.endsWith('/prompt_async'))).toHaveLength(2)
+      expect(mocks.getProcess).toHaveBeenCalledTimes(1)
+      expect(getAgentRunInputStatus(fixture.id).active).toBe(false)
+    }
+  )
   it('keeps compaction visible through native busy updates and reports private progress separately', async () => {
     mode = 'compaction'
     let ready!: () => void, resume!: () => void
@@ -420,7 +474,7 @@ describe('OpenCode adapter turn lifecycle', () => {
     expect(body.system.indexOf('Custom user preference')).toBeLessThan(body.system.indexOf(`Current mode: ${label}`))
     expect(request.mock.calls.filter(([route]) => route.endsWith('/prompt_async'))).toHaveLength(1)
   })
-  it.each(['progress', 'busy-only'] as const)(
+  it.each(['progress', 'busy-only', 'tool-input', 'bytes-only'] as const)(
     'uses real tool progress, not busy heartbeats, for a long %s task',
     async (value) => {
       vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'performance'] })
@@ -434,11 +488,14 @@ describe('OpenCode adapter turn lifecycle', () => {
       const result = run(controller)
       await entered
       await vi.advanceTimersByTimeAsync(40 * 60_000)
-      if (value === 'progress') {
+      if (value === 'progress' || value === 'tool-input') {
         expect(controller.signal.aborted).toBe(false)
         expect((await result).at(-1)?.type).toBe('complete')
       } else {
-        expect((await result).at(-1)).toMatchObject({ type: 'error', error: { code: 'agent_inactivity_timeout' } })
+        expect((await result).at(-1)).toMatchObject({
+          type: 'error',
+          error: { code: 'agent_inactivity_timeout', timeoutMs: 900_000 }
+        })
       }
       expect(request.mock.calls.filter(([route]) => route.endsWith('/prompt_async'))).toHaveLength(1)
       expect(vi.getTimerCount()).toBe(0)

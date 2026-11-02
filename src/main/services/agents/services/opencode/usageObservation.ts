@@ -19,7 +19,10 @@ export class OpenCodeUsageObserver {
   private usage: ReportedUsage = {}
   private format: OpenCodeUsageObservation['format'] = 'unknown'
 
-  constructor(private contentType: string) {}
+  constructor(
+    private contentType: string,
+    private onFrame?: (body: Record<string, any>) => void
+  ) {}
 
   push(bytes: Uint8Array) {
     // Decode in bounded slices even if the transport delivers a large chunk.
@@ -60,10 +63,11 @@ export class OpenCodeUsageObserver {
   }
 
   private json(text: string) {
-    if (!/"(?:usage|usageMetadata)"\s*:/.test(text)) return
+    if (!this.onFrame && !/"(?:usage|usageMetadata)"\s*:/.test(text)) return
     try {
       const body = record(JSON.parse(text))
       if (!body) return
+      this.onFrame?.(body)
       const usage = record(body.usage) ?? record(body.response?.usage) ?? record(body.message?.usage)
       const google = record(body.usageMetadata)
       const next: ReportedUsage = {}

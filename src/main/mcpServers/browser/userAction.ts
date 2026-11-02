@@ -1,3 +1,5 @@
+import { t } from '@main/utils/locales'
+
 import type { BrowserUserActionReason } from './types'
 
 export interface BrowserPageSignals {
@@ -9,6 +11,7 @@ export interface BrowserPageSignals {
   hasCaptchaField: boolean
   hasVerificationControl: boolean
   hasAuthorizationControl: boolean
+  hasBrowserChallenge?: boolean
 }
 
 export interface DetectedUserAction {
@@ -30,20 +33,29 @@ export const USER_ACTION_DETECTION_SCRIPT = `(() => {
     element.getAttribute('name') || '',
     element.getAttribute('id') || '',
     element.getAttribute('placeholder') || '',
+    element.getAttribute('autocomplete') || '',
+    Array.from(element.labels || []).map((label) => label.textContent || '').join(' '),
     element.textContent || '',
     element.getAttribute('aria-label') || ''
   ].join(' ')).join(' ');
   const bodyText = (document.body?.innerText || '').slice(0, 8000);
-  const allText = (inputText + ' ' + bodyText).toLowerCase();
+  const challengeWidget = Array.from(document.querySelectorAll('iframe, #challenge-form, #challenge-stage, #challenge-running, .cf-turnstile')).some((element) => {
+    if (!visible(element)) return false;
+    if (element.tagName !== 'IFRAME') return true;
+    try {
+      return new URL(element.getAttribute('src'), location.href).hostname === 'challenges.cloudflare.com';
+    } catch { return false; }
+  });
   return {
     url: location.href,
     title: document.title || '',
     text: bodyText,
     hasPasswordField: visibleInputs.some((element) => element.tagName === 'INPUT' && (element.getAttribute('type') || '').toLowerCase() === 'password'),
-    hasLoginControl: /(log in|login|sign in|signin|登录|登陆|统一认证|用户登录)/i.test(allText),
-    hasCaptchaField: /(captcha|recaptcha|hcaptcha|验证码|人机验证|滑块验证)/i.test(allText),
-    hasVerificationControl: /(verify|verification|two.factor|2fa|security code|短信验证码|二次验证|双因素|安全验证)/i.test(allText),
-    hasAuthorizationControl: /(authorize|consent|授权|同意访问|允许访问)/i.test(allText)
+    hasLoginControl: /(log in|login|sign in|signin|登录|登陆|统一认证|用户登录)/i.test(inputText),
+    hasCaptchaField: /(captcha|recaptcha|hcaptcha|验证码|人机验证|滑块验证)/i.test(inputText),
+    hasVerificationControl: /(verify|verification|two.factor|2fa|one-time-code|security code|短信验证码|二次验证|双因素|安全验证)/i.test(inputText),
+    hasAuthorizationControl: /(authorize|consent|授权|同意访问|允许访问)/i.test(inputText),
+    hasBrowserChallenge: challengeWidget
   };
 })()`
 
@@ -55,6 +67,15 @@ const AUTHORIZATION_PATTERN = /(authorize|授权|consent|同意访问|account ac
 
 export function detectUserAction(signals: BrowserPageSignals): DetectedUserAction | undefined {
   const searchableText = `${signals.url} ${signals.title} ${signals.text}`
+
+  if (
+    signals.hasBrowserChallenge &&
+    /(just a moment|are you (?:a )?(?:human|robot)|verify (?:you are|that you)|checking your browser|performing security verification|security of your connection|确认您是真人|验证您是真人|请稍候|安全验证|人机验证)/i.test(
+      searchableText
+    )
+  ) {
+    return { reason: 'captcha', message: t('browser.verification_message') }
+  }
 
   if (
     TWO_FACTOR_PATTERN.test(searchableText) &&

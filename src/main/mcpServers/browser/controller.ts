@@ -1,22 +1,16 @@
 import { titleBarOverlayDark, titleBarOverlayLight } from '@main/config'
 import { isMac } from '@main/constant'
+import { t } from '@main/utils/locales'
 import { randomUUID } from 'crypto'
-import { app, BrowserView, BrowserWindow, nativeTheme, session } from 'electron'
+import { app, BrowserView, BrowserWindow, dialog, nativeTheme, session, shell } from 'electron'
 import TurndownService from 'turndown'
 
 import { clickTargetScript, clickVerificationScript } from './clickScripts'
-import { SESSION_KEY_DEFAULT, SESSION_KEY_PRIVATE, TAB_BAR_HEIGHT } from './constants'
+import { HANDOFF_BAR_HEIGHT, SESSION_KEY_DEFAULT, SESSION_KEY_PRIVATE, TAB_BAR_HEIGHT } from './constants'
 import { type BrowserDownloadInfo, BrowserDownloadManager } from './downloads'
 import { BrowserOperationLimiter } from './operationLimiter'
 import { TAB_BAR_HTML } from './tabbar-html'
-import {
-  type BrowserHandoffInfo,
-  type BrowserUserAction,
-  logger,
-  type TabInfo,
-  userAgent,
-  type WindowInfo
-} from './types'
+import { type BrowserHandoffInfo, type BrowserUserAction, logger, type TabInfo, type WindowInfo } from './types'
 import { type BrowserPageSignals, detectUserAction, USER_ACTION_DETECTION_SCRIPT } from './userAction'
 
 const EARLY_USER_CONTINUATION_GRACE_MS = 30_000
@@ -38,6 +32,7 @@ export class CdpBrowserController {
   private readonly downloadManager: BrowserDownloadManager
   private privateStorageClearPromise: Promise<void> | undefined
   private privateStorageUsed = false
+  private readonly browserNetworkReady = new Map<string, Promise<void>>()
   private disposed = false
   private readonly updateTheme = () => {
     const isDark = nativeTheme.shouldUseDarkColors
@@ -73,6 +68,38 @@ export class CdpBrowserController {
 
   private getPartition(privateMode: boolean): string {
     return privateMode ? SESSION_KEY_PRIVATE : `persist:${SESSION_KEY_DEFAULT}`
+  }
+
+  private async prepareBrowserNetwork(privateMode: boolean): Promise<void> {
+    const partition = this.getPartition(privateMode)
+    let ready = this.browserNetworkReady.get(partition)
+    if (!ready) {
+      // Browser traffic follows the computer's network independently of the
+      // application's API proxy selection. Keep Chromium's live system resolver.
+      ready = session.fromPartition(partition).setProxy({ mode: 'system' })
+      this.browserNetworkReady.set(partition, ready)
+    }
+    try {
+      await ready
+    } catch (error) {
+      this.browserNetworkReady.delete(partition)
+      throw error
+    }
+  }
+
+  private pauseForUser(tab: TabInfo): void {
+    tab.manualControl = true
+    if (tab.userActionDetectionTimer) clearTimeout(tab.userActionDetectionTimer)
+    tab.userActionDetectionTimer = undefined
+    const debuggerClient = tab.view.webContents.debugger
+    if (debuggerClient.isAttached()) debuggerClient.detach()
+  }
+
+  public assertAutomationAllowed(privateMode = false): void {
+    const windowInfo = this.windows.get(this.getWindowKey(privateMode))
+    if (windowInfo?.handoff || [...(windowInfo?.tabs.values() ?? [])].some((tab) => tab.manualControl)) {
+      throw new Error('Browser is under user control. Call wait_for_user and wait for Continue before page operations.')
+    }
   }
 
   private async ensureAppReady() {
@@ -150,30 +177,32 @@ export class CdpBrowserController {
     return tab ? { windowInfo, tab } : undefined
   }
 
-  private clearUserActionForNavigation(tab: TabInfo): void {
+  private clearUserActionForNavigation(tab: TabInfo, preserveManualControl = false): void {
     if (tab.userActionDetectionTimer) clearTimeout(tab.userActionDetectionTimer)
     tab.userActionDetectionTimer = undefined
+    if (preserveManualControl && tab.manualControl) return
+    tab.externalBrowserOpened = false
     tab.userAction = undefined
     tab.userActionFingerprint = undefined
     tab.dismissedUserActionFingerprint = undefined
   }
 
-  private scheduleUserActionDetection(windowInfo: WindowInfo, tab: TabInfo): void {
+  private scheduleUserActionDetection(windowInfo: WindowInfo | undefined, tab: TabInfo): void {
     if (tab.userActionDetectionTimer) clearTimeout(tab.userActionDetectionTimer)
+    if (!windowInfo || tab.view.webContents.isDestroyed()) return
+    if (tab.manualControl || windowInfo.handoff) return
     tab.userActionDetectionTimer = setTimeout(() => {
       tab.userActionDetectionTimer = undefined
       void this.detectUserActionForTab(windowInfo, tab)
     }, 450)
   }
 
-  private async detectUserActionForTab(windowInfo: WindowInfo, tab: TabInfo): Promise<void> {
-    if (tab.view.webContents.isDestroyed()) return
+  private async detectUserActionForTab(windowInfo: WindowInfo | undefined, tab: TabInfo): Promise<void> {
+    if (!windowInfo || tab.view.webContents.isDestroyed() || tab.manualControl || windowInfo.handoff) return
 
     try {
-      const signals = (await tab.view.webContents.executeJavaScript(
-        USER_ACTION_DETECTION_SCRIPT,
-        true
-      )) as BrowserPageSignals
+      const signals = (await tab.view.webContents.executeJavaScript(USER_ACTION_DETECTION_SCRIPT)) as BrowserPageSignals
+      if (tab.view.webContents.isDestroyed() || tab.manualControl || windowInfo.handoff) return
       if (!signals || typeof signals !== 'object') return
       const detected = detectUserAction(signals)
       if (!detected) {
@@ -197,6 +226,7 @@ export class CdpBrowserController {
       }
       tab.userAction = userAction
       tab.userActionFingerprint = fingerprint
+      this.pauseForUser(tab)
 
       if (windowInfo.activeTabId !== tab.id) {
         await this.switchTab(windowInfo.privateMode, tab.id).catch(() => undefined)
@@ -224,12 +254,14 @@ export class CdpBrowserController {
   }
 
   private dismissUserAction(windowInfo: WindowInfo, tabId?: string, recordContinuation = true): void {
+    const activeTab = windowInfo.activeTabId ? windowInfo.tabs.get(windowInfo.activeTabId) : undefined
     const tab = tabId
       ? windowInfo.tabs.get(tabId)
-      : windowInfo.activeTabId
-        ? windowInfo.tabs.get(windowInfo.activeTabId)
-        : undefined
+      : activeTab?.manualControl
+        ? activeTab
+        : ([...windowInfo.tabs.values()].find((tab) => tab.manualControl) ?? activeTab)
     if (!tab) return
+    tab.manualControl = false
     if (tab.userActionFingerprint) {
       tab.dismissedUserActionFingerprint = tab.userActionFingerprint
       if (recordContinuation && tab.userAction) {
@@ -350,6 +382,7 @@ export class CdpBrowserController {
     for (const windowKey of windowKeys) {
       const windowInfo = this.windows.get(windowKey)
       if (!windowInfo) continue
+      if (windowInfo.handoff || [...windowInfo.tabs.values()].some((tab) => tab.manualControl)) continue
       if (now - windowInfo.lastActive > this.idleTimeoutMs) {
         const tabIds = Array.from(windowInfo.tabs.keys())
         for (const tabId of tabIds) {
@@ -438,8 +471,11 @@ export class CdpBrowserController {
     if (!windowInfo.tabBarView || windowInfo.tabBarView.webContents.isDestroyed()) return
 
     const activeTab = windowInfo.activeTabId ? windowInfo.tabs.get(windowInfo.activeTabId) : undefined
-    const message = windowInfo.handoff?.message ?? activeTab?.userAction?.message
-    const script = message ? `window.showHandoff(${JSON.stringify(message)})` : 'window.hideHandoff()'
+    const controlTab = activeTab?.userAction ? activeTab : [...windowInfo.tabs.values()].find((tab) => tab.userAction)
+    const message = windowInfo.handoff?.message ?? controlTab?.userAction?.message
+    const script = message
+      ? `window.showHandoff(${JSON.stringify(message)}, ${!!activeTab?.externalBrowserOpened})`
+      : 'window.hideHandoff()'
 
     windowInfo.tabBarView.webContents.executeJavaScript(script).catch((error) => {
       logger.debug('Handoff bar update failed', { error, windowKey: windowInfo.windowKey })
@@ -545,6 +581,16 @@ export class CdpBrowserController {
       this.handleForwardAction(windowInfo)
     } else if (action.type === 'refresh') {
       this.handleRefreshAction(windowInfo)
+    } else if (action.type === 'open-external') {
+      void this.openInSystemBrowser(windowInfo).catch((error) => {
+        logger.warn('Opening system browser failed', { error })
+        if (!windowInfo.window.isDestroyed()) {
+          void dialog.showMessageBox(windowInfo.window, {
+            type: 'error',
+            message: t('browser.external_failed')
+          })
+        }
+      })
     } else if (action.type === 'handoff-continue') {
       if (windowInfo.handoff) {
         this.resolveHandoff(windowInfo, 'continued')
@@ -570,6 +616,34 @@ export class CdpBrowserController {
     }
   }
 
+  private async openInSystemBrowser(windowInfo: WindowInfo): Promise<void> {
+    const tab = windowInfo.activeTabId ? windowInfo.tabs.get(windowInfo.activeTabId) : undefined
+    if (!tab || tab.view.webContents.isDestroyed()) return
+    // Only the current trusted view's URL may be opened, never a renderer payload.
+    const url = new URL(tab.view.webContents.getURL())
+    if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password) {
+      throw new Error('Only HTTP(S) pages without embedded credentials can open in the system browser')
+    }
+    if (windowInfo.privateMode) {
+      const result = await dialog.showMessageBox(windowInfo.window, {
+        type: 'question',
+        message: t('browser.external_private_title'),
+        detail: t('browser.external_private_description'),
+        buttons: [t('browser.external_cancel'), t('browser.external_open')],
+        defaultId: 0,
+        cancelId: 0
+      })
+      if (result.response !== 1) return
+    }
+    await shell.openExternal(url.href)
+    tab.externalBrowserOpened = true
+    const controlTab = windowInfo.handoff?.tabId
+      ? windowInfo.tabs.get(windowInfo.handoff.tabId)
+      : [...windowInfo.tabs.values()].find((tab) => tab.manualControl)
+    if (controlTab) controlTab.externalBrowserOpened = true
+    this.sendHandoffUpdate(windowInfo)
+  }
+
   private createTabBarView(windowInfo: WindowInfo): BrowserView {
     const tabBarView = new BrowserView({
       webPreferences: {
@@ -586,6 +660,19 @@ export class CdpBrowserController {
     void tabBarView.webContents.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(TAB_BAR_HTML)}`)
 
     tabBarView.webContents.on('did-finish-load', () => {
+      const labels = {
+        handoff_title: t('browser.handoff_title'),
+        handoff_default: t('browser.handoff_default'),
+        handoff_continue: t('browser.handoff_continue'),
+        network_hint: t('browser.network_hint'),
+        external_open: t('browser.external_open'),
+        external_hint: t('browser.external_hint')
+      }
+      void tabBarView.webContents
+        .executeJavaScript(`window.setBrowserLabels(${JSON.stringify(labels)})`)
+        .catch((error) => {
+          logger.debug('Browser labels update failed', { error })
+        })
       // Initialize platform for proper styling
       const platform = isMac ? 'mac' : process.platform === 'win32' ? 'win' : 'linux'
       tabBarView.webContents.executeJavaScript(`window.initPlatform('${platform}')`).catch((error) => {
@@ -611,6 +698,7 @@ export class CdpBrowserController {
     showWindow = false
   ): Promise<BrowserWindow> {
     await this.ensureAppReady()
+    await this.prepareBrowserNetwork(privateMode)
 
     const partition = this.getPartition(privateMode)
     if (privateMode) this.privateStorageUsed = true
@@ -639,6 +727,9 @@ export class CdpBrowserController {
 
     win.on('closed', () => {
       const windowInfo = this.windows.get(windowKey)
+      // A reset can open a replacement before the old native close event runs.
+      // Never let that stale callback dispose the replacement's tabs/storage.
+      if (windowInfo?.window !== win) return
       if (windowInfo) {
         this.resolveHandoff(windowInfo, 'closed')
         const tabIds = Array.from(windowInfo.tabs.keys())
@@ -721,8 +812,8 @@ export class CdpBrowserController {
 
     const [width, height] = windowInfo.window.getContentSize()
 
-    const activeTab = windowInfo.activeTabId ? windowInfo.tabs.get(windowInfo.activeTabId) : undefined
-    const handoffHeight = windowInfo.handoff || activeTab?.userAction ? 48 : 0
+    const handoffHeight =
+      windowInfo.handoff || [...windowInfo.tabs.values()].some((tab) => tab.userAction) ? HANDOFF_BAR_HEIGHT : 0
     const tabBarHeight = TAB_BAR_HEIGHT + handoffHeight
 
     // Update tab bar bounds
@@ -767,7 +858,8 @@ export class CdpBrowserController {
       }
     })
 
-    view.webContents.setUserAgent(userAgent)
+    // Preserve Chromium's real platform, version and client hints. A fixed
+    // macOS/old-Chrome override disagreed with the actual Windows runtime.
     if (view.webContents.session) this.downloadManager.attachSession(view.webContents.session)
 
     const windowKey = windowInfo.windowKey
@@ -806,14 +898,14 @@ export class CdpBrowserController {
 
     view.webContents.on('did-navigate', (_event, url) => {
       tabInfo.url = url
-      this.clearUserActionForNavigation(tabInfo)
+      this.clearUserActionForNavigation(tabInfo, true)
       this.scheduleUserActionDetection(windowInfo, tabInfo)
       this.sendTabBarUpdate(windowInfo)
     })
 
     view.webContents.on('did-navigate-in-page', (_event, url) => {
       tabInfo.url = url
-      this.clearUserActionForNavigation(tabInfo)
+      this.clearUserActionForNavigation(tabInfo, true)
       this.scheduleUserActionDetection(windowInfo, tabInfo)
       this.sendTabBarUpdate(windowInfo)
     })
@@ -871,6 +963,7 @@ export class CdpBrowserController {
     newTab?: boolean,
     showWindow = false
   ): Promise<{ tabId: string; tab: TabInfo }> {
+    this.assertAutomationAllowed(privateMode)
     let windowInfo: WindowInfo
     if (tabId && !newTab) {
       const existingWindow = this.windows.get(this.getWindowKey(privateMode))
@@ -1008,7 +1101,7 @@ export class CdpBrowserController {
     tab.url = currentUrl
     tab.title = title
 
-    await this.detectUserActionForTab(this.windows.get(windowKey)!, tab)
+    await this.detectUserActionForTab(this.windows.get(windowKey), tab)
     return { currentUrl, title, tabId: actualTabId, userAction: this.getUserAction(privateMode, actualTabId) }
   }
 
@@ -1080,7 +1173,7 @@ export class CdpBrowserController {
               target.tabId
             )
           : { verified: false, reason: 'no-expected-text-supplied' }
-        this.scheduleUserActionDetection(this.windows.get(this.getWindowKey(privateMode))!, target.tab)
+        this.scheduleUserActionDetection(this.windows.get(this.getWindowKey(privateMode)), target.tab)
         return { clicked: true, beforeText: point.text, ...verification }
       } catch {
         return {
@@ -1125,7 +1218,7 @@ export class CdpBrowserController {
       }
 
       const value = evalResult?.result?.value ?? evalResult?.result?.description ?? null
-      this.scheduleUserActionDetection(this.windows.get(windowKey)!, tab)
+      this.scheduleUserActionDetection(this.windows.get(windowKey), tab)
       return value
     } finally {
       if (timeoutHandle) clearTimeout(timeoutHandle)
@@ -1161,7 +1254,7 @@ export class CdpBrowserController {
       (!reason || reason === earlyContinuation.reason)
     ) {
       targetTab.lastUserActionContinuation = undefined
-      return { id: handoffId, status: 'continued' as const }
+      return { id: handoffId, status: 'continued' as const, ...this.externalBrowserResult(targetTab) }
     }
 
     if (!windowInfo.window.isDestroyed()) {
@@ -1172,6 +1265,7 @@ export class CdpBrowserController {
     if (windowInfo.handoff) {
       this.resolveHandoff(windowInfo, 'closed')
     }
+    if (targetTab) this.pauseForUser(targetTab)
 
     const result = await new Promise<{ id: string; status: 'continued' | 'closed' }>((resolve, reject) => {
       const handoff: BrowserHandoffInfo = {
@@ -1187,6 +1281,7 @@ export class CdpBrowserController {
         handoff.timeoutHandle = setTimeout(() => {
           if (windowInfo.handoff?.id === handoffId) {
             windowInfo.handoff = undefined
+            if (targetTab && !targetTab.userAction) targetTab.manualControl = false
             this.sendHandoffUpdate(windowInfo)
             this.updateViewBounds(windowInfo)
             reject(new Error('Timed out waiting for user to continue browser handoff'))
@@ -1199,7 +1294,17 @@ export class CdpBrowserController {
       this.updateViewBounds(windowInfo)
     })
 
-    return result
+    return { ...result, ...this.externalBrowserResult(targetTab) }
+  }
+
+  private externalBrowserResult(tab?: TabInfo) {
+    if (!tab?.externalBrowserOpened) return {}
+    tab.externalBrowserOpened = false
+    return {
+      externalBrowserOpened: true,
+      guidance:
+        'The user opened the system browser. Its cookies and verification state are not shared with the embedded browser. Do not claim verification succeeded or repeat a blocked challenge. If the embedded page remains blocked, ask the user to attach the downloaded file or provide an accessible source to continue the task.'
+    }
   }
 
   public async reset(privateMode?: boolean, tabId?: string) {
@@ -1339,6 +1444,9 @@ export class CdpBrowserController {
     try {
       const opened = await this.openInternal(url, timeout, privateMode, newTab, showWindow)
       tabId = opened.tabId
+      if (opened.userAction) {
+        return { tabId, content: JSON.stringify({ userAction: opened.userAction, guidance: 'Call wait_for_user.' }) }
+      }
 
       const { tab } = await this.getTab(privateMode, tabId, false, showWindow)
       const dbg = tab.view.webContents.debugger

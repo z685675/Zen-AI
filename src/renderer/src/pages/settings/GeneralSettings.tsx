@@ -29,7 +29,15 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useSelector } from 'react-redux'
 
-import { SettingContainer, SettingDivider, SettingGroup, SettingRow, SettingRowTitle, SettingTitle } from '.'
+import {
+  SettingContainer,
+  SettingDescription,
+  SettingDivider,
+  SettingGroup,
+  SettingRow,
+  SettingRowTitle,
+  SettingTitle
+} from '.'
 
 type SpellCheckOption = { readonly value: string; readonly label: string; readonly flag: string }
 
@@ -224,6 +232,7 @@ const GeneralSettings: FC = () => {
           <SettingRowTitle>{t('settings.proxy.mode.title')}</SettingRowTitle>
           <Selector value={storeProxyMode} onChange={onProxyModeChange} options={proxyModeOptions} />
         </SettingRow>
+        <SettingDescription>{t('settings.proxy.browser_network')}</SettingDescription>
         {storeProxyMode === 'custom' && (
           <>
             <SettingDivider />

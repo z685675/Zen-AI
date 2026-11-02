@@ -4,6 +4,7 @@ import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprot
 
 import { CdpBrowserController } from './controller'
 import { toolDefinitions, toolHandlers } from './tools'
+import { errorResponse } from './tools/utils'
 import { logger } from './types'
 
 const servers = new Set<BrowserServer>()
@@ -55,6 +56,17 @@ export class BrowserServer {
       const handler = toolHandlers[name]
       if (!handler) {
         throw new Error('Tool not found')
+      }
+      // Keep tool-level tab switches, resets and cookie clearing from
+      // interrupting a human handoff. UI controls and shutdown remain usable.
+      if (!['wait_for_user', 'list_tabs', 'list_downloads', 'wait_for_download'].includes(name)) {
+        const privateMode = args && typeof args.privateMode === 'boolean' ? args.privateMode : undefined
+        try {
+          this.controller.assertAutomationAllowed(privateMode ?? false)
+          if (name === 'reset' && privateMode === undefined) this.controller.assertAutomationAllowed(true)
+        } catch (error) {
+          return errorResponse(error instanceof Error ? error : String(error))
+        }
       }
       return handler(this.controller, args)
     })

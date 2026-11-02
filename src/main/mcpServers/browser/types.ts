@@ -4,8 +4,6 @@ import type { BrowserView, BrowserWindow } from 'electron'
 type McpLogger = Pick<typeof loggerService, 'debug' | 'error' | 'info' | 'silly' | 'verbose' | 'warn'>
 
 export const logger: McpLogger = loggerService.withContext('MCPBrowserCDP')
-export const userAgent =
-  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
 
 export interface TabInfo {
   id: string
@@ -22,6 +20,8 @@ export interface TabInfo {
     continuedAt: number
   }
   userActionDetectionTimer?: ReturnType<typeof setTimeout>
+  manualControl?: boolean
+  externalBrowserOpened?: boolean
 }
 
 export interface WindowInfo {

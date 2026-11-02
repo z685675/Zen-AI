@@ -191,7 +191,8 @@ export function buildOpenCodeEnvironment(
   base: NodeJS.ProcessEnv,
   root: string,
   password: string,
-  toolBinDir?: string
+  toolBinDir?: string,
+  searchBinDir?: string
 ): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {}
   for (const [name, value] of Object.entries(base)) {
@@ -204,9 +205,9 @@ export function buildOpenCodeEnvironment(
   }
   // Include this stable directory even before background installation finishes.
   // Normalize PATH casing so Windows spawn cannot choose a stale duplicate.
-  if (toolBinDir) {
+  if (toolBinDir || searchBinDir) {
     const pathKeys = Object.keys(env).filter((key) => key.toUpperCase() === 'PATH')
-    const directories = [toolBinDir, ...pathKeys.flatMap((key) => (env[key] ?? '').split(path.delimiter))]
+    const directories = [searchBinDir, toolBinDir, ...pathKeys.flatMap((key) => (env[key] ?? '').split(path.delimiter))]
     for (const key of pathKeys) delete env[key]
     env.PATH = [...new Set(directories.filter(Boolean))].join(path.delimiter)
   }

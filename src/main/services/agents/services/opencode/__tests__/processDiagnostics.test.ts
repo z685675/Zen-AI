@@ -336,6 +336,19 @@ describe('OpenCode operation-scoped lifecycle evidence', () => {
     expect(runtime).toBeDefined()
     expect(() => runtime.flushDiagnostic()).not.toThrow()
   })
+  it('keeps progress independent of diagnostic writes and ignores stale-turn callbacks', async () => {
+    const runtime = await start()
+    const progress = vi.fn()
+    runtime.setProgressListener(progress)
+    const transport = mocks.gateway.mock.calls[0][1]
+    mocks.record.mockImplementation(() => {
+      throw new Error('diagnostic unavailable')
+    })
+    expect(() => transport('turn-1', 'tool-input-progress', { characters: 3 })).not.toThrow()
+    expect(progress).toHaveBeenCalledExactlyOnceWith('tool-input-progress', { characters: 3 })
+    transport('previous-turn', 'tool-input-progress', { characters: 5 })
+    expect(progress).toHaveBeenCalledOnce()
+  })
   it('does not let a stderr snapshot failure interrupt the task or hide collector failure', async () => {
     const runtime = await start()
     const { OpenCodeStderr: CurrentStderr } = await import('../stderr')

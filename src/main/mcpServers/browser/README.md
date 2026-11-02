@@ -201,9 +201,16 @@ const controller = new CdpBrowserController({
 ## Technical Details
 
 - **CDP Version**: 1.3
-- **User Agent**: Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:145.0) Gecko/20100101 Firefox/145.0
+- **User Agent**: Native Electron/Chromium user agent, using the actual OS and runtime version
+- **Network**: Browser sessions explicitly follow the system proxy, independently of the application's API proxy setting
 - **Storage**: 
   - Normal mode: `persist:default` (disk-persisted, global)
   - Private mode: `private` (memory only)
 - **Window Size**: 1200x800 (default)
 - **Visibility**: Windows hidden by default (use `showWindow: true` to display)
+
+## Website verification
+
+When a login or browser challenge is detected, the window becomes visible for manual action. Page scripts, screenshots and agent navigation are paused, and the page debugger is detached. User navigation and redirects preserve the handoff; clicking Continue permits the agent to inspect the result. Cookies and local storage remain in the same browser session. Waiting for the user is excluded from idle cleanup.
+
+Cloudflare provides [limited support for embedded browsers](https://developers.cloudflare.com/cloudflare-challenges/reference/supported-browsers/), so these compatibility changes do not guarantee that a site will accept verification. The address bar and handoff bar offer **Open in system browser** for manual access or downloads. External cookies and verification are not shared with the embedded browser. The user can attach downloaded files to the assistant to continue; a handoff result containing `externalBrowserOpened` explains this boundary to the agent. Private windows require confirmation before opening an external browser that may keep history or use another signed-in account.

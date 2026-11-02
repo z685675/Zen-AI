@@ -583,6 +583,9 @@ export class SessionMessageService extends BaseService {
           phase: 'startup' | 'visible-output' | 'continuation' | 'compacting' = 'startup'
         ) => {
           clearFirstRuntimeEventTimer()
+          // OpenCode owns the post-start progress/human-wait watchdog. Keeping
+          // this legacy 180s timer too would terminate it before its 15m budget.
+          if (activeRuntimeId === 'opencode' && phase !== 'startup') return
           firstRuntimeEventTimer = setTimeout(async () => {
             if (finished) return
 
@@ -599,6 +602,7 @@ export class SessionMessageService extends BaseService {
             Object.assign(timeoutError, {
               code: 'agent_inactivity_timeout',
               zenFailureStage: 'local-task-deadline',
+              timeoutMs,
               phase
             })
             logger.warn('Agent runtime timed out before visible output', {
@@ -628,6 +632,9 @@ export class SessionMessageService extends BaseService {
 
         const startDeepResearchTaskTimer = () => {
           if (!req.deep_research && !req.deep_research_task) return
+          // Native research can span many successful model/tool steps. Its
+          // progress watchdog already bounds stalls and human handoffs.
+          if (activeRuntimeId === 'opencode') return
 
           deepResearchTimerRemainingMs = DEEP_RESEARCH_TASK_TIMEOUT_MS
           deepResearchTimerPaused = false

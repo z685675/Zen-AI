@@ -5,7 +5,7 @@ import { getModelDailyQuotaErrorKind, MODEL_DAILY_QUOTA_MESSAGE_KEYS } from '@sh
 import i18next from 'i18next'
 
 import { isAgentRuntimeStartupError } from './agentRuntimeError'
-import { getAgentTaskDeadlineKind } from './agentTaskDeadline'
+import { getAgentTaskDeadlineKind, getAgentTaskDeadlineSeconds } from './agentTaskDeadline'
 import { connectionErrorText, getConnectionFailure } from './connectionFailure'
 
 type DiagnosisCategory =
@@ -367,6 +367,7 @@ export function diagnoseClientError(error?: SerializedError, options: DiagnoseOp
 
   const deadlineKind = getAgentTaskDeadlineKind(error)
   if (deadlineKind) {
+    const seconds = getAgentTaskDeadlineSeconds(error)
     const keys = {
       execution: {
         title: 'assistantTaskDeadline.titleExecution',
@@ -388,7 +389,15 @@ export function diagnoseClientError(error?: SerializedError, options: DiagnoseOp
       ...base,
       category: 'runtime',
       title: i18next.t(keys.title),
-      summary: i18next.t(keys.summary),
+      summary:
+        (deadlineKind === 'inactivity' || deadlineKind === 'execution') && seconds !== undefined
+          ? i18next.t(
+              deadlineKind === 'inactivity'
+                ? 'assistantTaskDeadline.summaryInactivityTimed'
+                : 'assistantTaskDeadline.summaryExecutionTimed',
+              { seconds }
+            )
+          : i18next.t(keys.summary),
       stage: i18next.t(keys.stage),
       errorType: deadlineKind === 'human-wait' ? 'agent_human_wait_timeout' : `agent_${deadlineKind}_timeout`,
       serviceConnectivity: UNKNOWN,

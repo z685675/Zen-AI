@@ -172,7 +172,7 @@ describe('clientErrorDiagnosis', () => {
       const diagnosis = diagnoseClientError(error, baseOptions)
       expect(diagnosis.category).toBe('runtime')
       expect(diagnosis.title).toContain('任务已暂停')
-      expect(diagnosis.summary).toContain(code === 'agent_human_wait_timeout' ? '30分钟' : '15分钟')
+      if (code === 'agent_human_wait_timeout') expect(diagnosis.summary).toContain('30分钟')
       expect(diagnosis.stage).toBe(
         code === 'agent_human_wait_timeout'
           ? '等待用户操作'
@@ -181,7 +181,7 @@ describe('clientErrorDiagnosis', () => {
             : '本地任务执行'
       )
       if (code === 'agent_inactivity_timeout') {
-        expect(diagnosis.summary).toContain('连续15分钟')
+        expect(diagnosis.summary).not.toContain('15分钟')
         expect(diagnosis.summary).not.toContain('累计')
       }
       expect(diagnosis.serviceReceived).toBe('未确认')
@@ -192,6 +192,26 @@ describe('clientErrorDiagnosis', () => {
       expect(classifyError(makeError('provider timeout')).category).toBe('network')
     }
   )
+  it('explains saved 180s and deep research 8m guards as local deadlines using their actual durations', () => {
+    for (const [cause, seconds] of [
+      [
+        {
+          code: 'agent_inactivity_timeout',
+          message: 'The Agent runtime stopped producing progress for 180 seconds while continuing the task.'
+        },
+        180
+      ],
+      [{ name: 'AgentDeepResearchTimeoutError', message: '深度研究已达到 8 分钟安全时限。' }, 480],
+      [{ code: 'agent_inactivity_timeout', timeoutMs: 900_000 }, 900]
+    ] as const) {
+      const error = { ...makeError('wrapped'), cause: JSON.stringify(cause) }
+      const diagnosis = diagnoseClientError(error)
+      expect(diagnosis.category).toBe('runtime')
+      expect(diagnosis.summary).toContain(`${seconds}`)
+      expect(diagnosis.stage).not.toBe('建立连接')
+      expect(diagnosis.suggestion).not.toContain('网络')
+    }
+  })
   it('recognizes the reported Mac native CLI failure before generic stream_error metadata', () => {
     const diagnosis = diagnoseClientError(
       {

@@ -19,6 +19,7 @@ import { configManager } from '@main/services/ConfigManager'
 import { recordMainDiagnostic } from '@main/services/DiagnosticEvidenceService'
 import { getDataPath, getResourcePath, toAsarUnpackedPath } from '@main/utils'
 import { getBinaryPath } from '@main/utils/process'
+import { getRipgrepBinaryPath } from '@main/utils/ripgrep'
 import { isZenManagedApiHost } from '@shared/config/zenProvider'
 import { app } from 'electron'
 
@@ -88,6 +89,8 @@ export class OpenCodeProcess {
   private progressListener?: (event: string, details: Record<string, unknown>) => void
   private turnSignal?: AbortSignal
   private diagnosticId?: string
+  private lastToolInputLogAt = 0
+  private lastBodyLogAt = 0
   private stderr = new OpenCodeStderr()
   private diagnosticSecrets: string[] = []
   private stderrCollectionFailed = false
@@ -220,7 +223,17 @@ export class OpenCodeProcess {
     })
     if (!lightweight) registerBrowserMcpContext(this.key)
     const password = randomBytes(32).toString('hex')
-    const env = buildOpenCodeEnvironment(process.env, this.root, password, await getBinaryPath())
+    const searchBinary = getRipgrepBinaryPath()
+    const env = buildOpenCodeEnvironment(
+      process.env,
+      this.root,
+      password,
+      await getBinaryPath(),
+      searchBinary ? path.dirname(searchBinary) : undefined
+    )
+    this.recordDiagnostic('search-tool-resolved', {
+      bundledSearchAvailable: Boolean(searchBinary)
+    })
     const expected = JSON.parse(JSON.stringify(config)) as Record<string, any>
     const providerOptions = expected.provider[OPENCODE_PROVIDER_ID].options
     const providerHost = providerOptions.baseURL as string
@@ -228,9 +241,23 @@ export class OpenCodeProcess {
     this.gateway = await createOpenCodeGateway(
       providerOptions.baseURL,
       (id, event, details) => {
-        recordMainDiagnostic(id, 'transport', event, details)
+        const progressLogAt =
+          event === 'tool-input-progress'
+            ? this.lastToolInputLogAt
+            : event === 'body-progress'
+              ? this.lastBodyLogAt
+              : undefined
+        try {
+          if (progressLogAt === undefined || Date.now() - progressLogAt >= 10_000) {
+            if (event === 'tool-input-progress') this.lastToolInputLogAt = Date.now()
+            if (event === 'body-progress') this.lastBodyLogAt = Date.now()
+            recordMainDiagnostic(id, 'transport', event, details)
+          }
+        } catch {
+          /* A diagnostic failure cannot discard real generation progress. */
+        }
         // Status callbacks are scoped to the active turn and cannot alter bytes.
-        this.progressListener?.(event, details)
+        if (id === this.diagnosticId) this.progressListener?.(event, details)
       },
       dailyModel ??
         (isZenManagedApiHost(providerHost)
@@ -447,7 +474,10 @@ export class OpenCodeProcess {
   }
 
   setDiagnosticOperation(id: string | undefined, signal?: AbortSignal) {
-    if (id !== this.diagnosticId) this.stderr = new OpenCodeStderr(this.diagnosticSecrets)
+    if (id !== this.diagnosticId) {
+      this.stderr = new OpenCodeStderr(this.diagnosticSecrets)
+      this.lastToolInputLogAt = this.lastBodyLogAt = 0
+    }
     this.diagnosticId = id
     if (signal) this.turnSignal = signal
     this.gateway?.setOperation(id)

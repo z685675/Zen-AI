@@ -1,3 +1,4 @@
+import type { OpenCodeActivity } from '@shared/agents/opencodeDiagnostics'
 import { isOpenCodeInternalProgress } from '@shared/agents/opencodeProgress'
 
 /** Observes existing events only. No model requests, probes or retry policy. */
@@ -16,6 +17,7 @@ export class OpenCodePerformance {
   private firstText?: number
   private firstOutput?: number
   private contextProgress?: { firstMs: number; lastMs: number; events: number; characters: number }
+  private activity: OpenCodeActivity = {}
   preparationMs?: number
 
   constructor(private now: () => number = () => performance.now()) {
@@ -36,7 +38,21 @@ export class OpenCodePerformance {
       typeof details.durationMs === 'number' && Number.isFinite(details.durationMs)
         ? Math.max(0, details.durationMs)
         : 0
-    if (event === 'request-started') this.requests++
+    if (event === 'request-started') {
+      this.requests++
+      this.activity = {
+        lastMeaningfulProgressAt: this.activity.lastMeaningfulProgressAt,
+        lastNativeEventAt: this.activity.lastNativeEventAt,
+        requestStartedAt: new Date().toISOString()
+      }
+    }
+    for (const key of ['lastDataAt', 'lastForwardedAt', 'lastToolInputAt'] as const)
+      if (typeof details[key] === 'string') this.activity[key] = details[key]
+    for (const key of ['receivedBytes', 'toolInputCharacters'] as const)
+      if (typeof details[key] === 'number' && Number.isSafeInteger(details[key]) && details[key] >= 0)
+        this.activity[key] = details[key]
+    if (event === 'tool-input-progress' && typeof details.characters === 'number' && details.characters > 0)
+      this.activity.lastMeaningfulProgressAt = new Date().toISOString()
     if (event === 'headers-received') this.headerMs += ms
     if (['body-complete', 'failed', 'cancelled'].includes(event)) this.requestMs += ms
   }
@@ -44,9 +60,18 @@ export class OpenCodePerformance {
   retry() {
     this.retries++
   }
+  nativeEvent() {
+    this.activity.lastNativeEventAt = new Date().toISOString()
+  }
   chunks(chunks: Array<{ type: string; toolCallId?: string; text?: string; rawValue?: unknown }>) {
     const now = this.now()
     for (const chunk of chunks) {
+      if (
+        (chunk.type === 'raw' && isOpenCodeInternalProgress(chunk.rawValue)) ||
+        ['tool-call', 'tool-result', 'tool-error'].includes(chunk.type) ||
+        (['text-delta', 'reasoning-delta'].includes(chunk.type) && chunk.text?.trim())
+      )
+        this.activity.lastMeaningfulProgressAt = new Date().toISOString()
       if (chunk.type === 'raw' && isOpenCodeInternalProgress(chunk.rawValue)) {
         const elapsed = Math.round(Math.max(0, now - this.started))
         this.contextProgress ??= { firstMs: elapsed, lastMs: elapsed, events: 0, characters: 0 }
@@ -83,6 +108,7 @@ export class OpenCodePerformance {
       firstVisibleOutputMs: this.firstOutput === undefined ? null : Math.round(this.firstOutput),
       firstTextMs: this.firstText === undefined ? null : Math.round(this.firstText),
       contextProgress: this.contextProgress ? { ...this.contextProgress } : null,
+      activity: { ...this.activity },
       stageDurationsMs: Object.fromEntries(Object.entries(stages).map(([stage, ms]) => [stage, Math.round(ms)])),
       upstreamRequests: this.requests,
       upstreamHeaderWaitMs: Math.round(this.headerMs),

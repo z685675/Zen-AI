@@ -357,6 +357,42 @@
       "success": "Το Git Bash εντοπίστηκε με επιτυχία!",
       "tooltip": "Το Git Bash απαιτείται για την εκτέλεση πρακτόρων στα Windows. Εγκαταστήστε το από το git-scm.com εάν δεν είναι διαθέσιμο."
     },
+    "inbox": {
+      "attachments": "Συνημμένα",
+      "check": "Έλεγχος παραλαβής",
+      "continue": "Προετοιμασία συνέχειας",
+      "dismiss": "Απόκρυψη εγγραφής",
+      "dismissHint": "Αποκρύπτει μόνο την εγγραφή, χωρίς ανάκληση απεσταλμένου μηνύματος.",
+      "draftOccupied": "Στείλτε ή αποθηκεύστε πρώτα το τρέχον πρόχειρο.",
+      "edit": "Επεξεργασία",
+      "hint": {
+        "accepted": "Αποθηκεύτηκε στην τρέχουσα εργασία και αναμένει επεξεργασία.",
+        "deferred": "Η εργασία τελείωσε, αλλά η επεξεργασία της προσθήκης δεν επιβεβαιώθηκε. Ελέγξτε το αποτέλεσμα πριν συνεχίσετε.",
+        "failed": "Η εκτέλεση απέτυχε και η ουρά τέθηκε σε παύση. Ελέγξτε το ιστορικό πριν ξαναστείλετε.",
+        "rejected": "Δεν υποβλήθηκε. Επεξεργαστείτε ή στείλτε μετά την εργασία.",
+        "uncertain": "Η παραλαβή δεν επιβεβαιώθηκε. Ελέγξτε παραλαβή ή ιστορικό πριν ξαναστείλετε."
+      },
+      "notReady": "Η εργασία ξεκινά ή ολοκληρώνεται. Επεξεργαστείτε ή στείλτε αργότερα.",
+      "pause": "Παύση ουράς",
+      "queue": "Αποστολή μετά την εργασία",
+      "remove": "Αφαίρεση",
+      "restored": "Επαναφέρθηκε στο πεδίο εισαγωγής. Ελέγξτε και στείλτε.",
+      "resume": "Συνέχιση ουράς",
+      "saveFailed": "Δεν αποθηκεύτηκε το μήνυμα. Το πρόχειρο διατηρήθηκε.",
+      "state": {
+        "accepted": "Παραλήφθηκε",
+        "applied": "Σε επόμενη επεξεργασία",
+        "deferred": "Αναμονή συνέχειας",
+        "failed": "Αποτυχία",
+        "queued": "Στην ουρά",
+        "rejected": "Δεν εστάλη",
+        "sending": "Αποστέλλεται",
+        "sent": "Απεστάλη",
+        "uncertain": "Μη επιβεβαιωμένη παραλαβή"
+      },
+      "steer": "Προσαρμογή τρέχουσας εργασίας",
+      "title": "Μηνύματα σε αναμονή"
+    },
     "input": {
       "deep_research": "[to be translated]:Deep Research",
       "deep_research_tooltip": "[to be translated]:Creates one research task for your next message: plan first, then multi-step source verification and a cited report.",
@@ -990,9 +1026,11 @@
     "stageHumanWait": "[to be translated]:Waiting for user action",
     "stageInactivity": "Παρακολούθηση προόδου",
     "suggestion": "[to be translated]:Review completed work, then explicitly ask to continue only the unfinished part. Avoid blindly repeating submissions or generation.",
-    "summaryExecution": "[to be translated]:The cumulative 15-minute execution limit was reached. The task is paused; saved history and outputs are retained, with no automatic replay.",
+    "summaryExecution": "Η εργασία έφτασε το τοπικό χρονικό όριο και τέθηκε σε παύση. Το ιστορικό και τα αποτελέσματα διατηρούνται.",
+    "summaryExecutionTimed": "Η εργασία έφτασε το τοπικό όριο των {{seconds}} δευτερολέπτων και τέθηκε σε παύση. Το ιστορικό και τα αποτελέσματα διατηρούνται.",
     "summaryHumanWait": "[to be translated]:The cumulative 30-minute user-action wait limit was reached. The task is paused; saved history and outputs are retained, with no automatic replay.",
-    "summaryInactivity": "Δεν παρατηρήθηκε νέα πρόοδος για 15 λεπτά. Η εργασία τέθηκε σε παύση· το ιστορικό και τα αποτελέσματα διατηρούνται και μπορούν να ελεγχθούν πριν από τη συνέχιση.",
+    "summaryInactivity": "Η εργασία τέθηκε σε παύση λόγω παρατεταμένης αδράνειας. Το ιστορικό και τα αποτελέσματα διατηρούνται. Ελέγξτε τα πριν συνεχίσετε.",
+    "summaryInactivityTimed": "Δεν παρατηρήθηκε πρόοδος για {{seconds}} δευτερόλεπτα. Η εργασία τέθηκε σε παύση· το ιστορικό και τα αποτελέσματα διατηρούνται.",
     "titleExecution": "[to be translated]:Task paused: execution time limit reached",
     "titleHumanWait": "[to be translated]:Task paused: user wait limit reached",
     "titleInactivity": "Παύση εργασίας: χωρίς πρόσφατη πρόοδο"
@@ -1464,6 +1502,19 @@
       "writing_data": "Εγγραφή δεδομένων..."
     },
     "title": "Αντιγραφή Δεδομένων"
+  },
+  "browser": {
+    "external_cancel": "Cancel",
+    "external_failed": "Could not open the system browser. Please copy the address and open it manually.",
+    "external_hint": "The system browser has separate sign-in and verification. Download files there, then attach them to the assistant to continue.",
+    "external_open": "Open in system browser",
+    "external_private_description": "This opens the page outside this private window. Your system browser may save its address and use an existing signed-in account.",
+    "external_private_title": "Open this private page in the system browser?",
+    "handoff_continue": "Continue after finishing",
+    "handoff_default": "Complete sign-in, verification or confirmation, then continue.",
+    "handoff_title": "Your browser action is needed",
+    "network_hint": "Browser follows your system proxy. If verification keeps failing, try the system browser.",
+    "verification_message": "Complete the website verification manually, then continue. If it keeps failing, open the page in your system browser."
   },
   "button": {
     "add": "προσθέστε",
@@ -6329,6 +6380,7 @@
     },
     "proxy": {
       "address": "Διεύθυνση διαμεσολάβησης",
+      "browser_network": "This setting controls app services and API requests. The assistant browser independently follows your system proxy.",
       "bypass": "Κανόνες Παράκαμψης",
       "mode": {
         "custom": "προσαρμοσμένη προξενική",

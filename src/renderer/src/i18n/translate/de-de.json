@@ -357,6 +357,42 @@
       "success": "Git Bash erfolgreich erkannt!",
       "tooltip": "Git Bash ist erforderlich, um Agenten unter Windows auszuführen. Installiere es von git-scm.com, falls es nicht verfügbar ist."
     },
+    "inbox": {
+      "attachments": "Anhänge",
+      "check": "Empfang prüfen",
+      "continue": "Fortsetzung vorbereiten",
+      "dismiss": "Eintrag ausblenden",
+      "dismissHint": "Blendet nur diesen Eintrag aus; gesendete Nachrichten werden nicht zurückgenommen.",
+      "draftOccupied": "Senden oder speichern Sie zuerst den aktuellen Entwurf.",
+      "edit": "Bearbeiten",
+      "hint": {
+        "accepted": "In der aktuellen Aufgabe gespeichert; wartet auf weitere Bearbeitung.",
+        "deferred": "Die Aufgabe ist beendet; die Verarbeitung dieser Ergänzung ist unbestätigt. Prüfen Sie vor einer Fortsetzung das Ergebnis.",
+        "failed": "Ausführung fehlgeschlagen; die Warteschlange ist pausiert. Prüfen Sie vor erneutem Senden den Verlauf.",
+        "rejected": "Nicht übermittelt. Bearbeiten oder nach der aktuellen Aufgabe senden.",
+        "uncertain": "Empfang unbestätigt. Prüfen Sie Empfang oder Verlauf, bevor Sie erneut senden."
+      },
+      "notReady": "Die Aufgabe startet oder endet gerade. Bearbeiten oder später senden.",
+      "pause": "Warteschlange pausieren",
+      "queue": "Nach Aufgabe senden",
+      "remove": "Entfernen",
+      "restored": "Im Eingabefeld wiederhergestellt. Prüfen und senden.",
+      "resume": "Warteschlange fortsetzen",
+      "saveFailed": "Nachricht konnte nicht gespeichert werden. Der Entwurf wurde behalten.",
+      "state": {
+        "accepted": "Empfangen",
+        "applied": "In weiterer Bearbeitung",
+        "deferred": "Fortsetzung ausstehend",
+        "failed": "Fehlgeschlagen",
+        "queued": "In Warteschlange",
+        "rejected": "Nicht gesendet",
+        "sending": "Wird gesendet",
+        "sent": "Gesendet",
+        "uncertain": "Empfang unbestätigt"
+      },
+      "steer": "Aktuelle Aufgabe anpassen",
+      "title": "Ausstehende Nachrichten"
+    },
     "input": {
       "deep_research": "[to be translated]:Deep Research",
       "deep_research_tooltip": "[to be translated]:Creates one research task for your next message: plan first, then multi-step source verification and a cited report.",
@@ -990,9 +1026,11 @@
     "stageHumanWait": "[to be translated]:Waiting for user action",
     "stageInactivity": "Aufgabenfortschritt überwachen",
     "suggestion": "[to be translated]:Review completed work, then explicitly ask to continue only the unfinished part. Avoid blindly repeating submissions or generation.",
-    "summaryExecution": "[to be translated]:The cumulative 15-minute execution limit was reached. The task is paused; saved history and outputs are retained, with no automatic replay.",
+    "summaryExecution": "Die Aufgabe hat ihr lokales Zeitlimit erreicht und wurde pausiert. Verlauf und Ergebnisse bleiben erhalten.",
+    "summaryExecutionTimed": "Die Aufgabe hat ihr lokales Zeitlimit von {{seconds}} Sekunden erreicht und wurde pausiert. Verlauf und Ergebnisse bleiben erhalten.",
     "summaryHumanWait": "[to be translated]:The cumulative 30-minute user-action wait limit was reached. The task is paused; saved history and outputs are retained, with no automatic replay.",
-    "summaryInactivity": "Seit 15 Minuten kein neuer Fortschritt. Aufgabe pausiert; gespeicherter Verlauf und Ergebnisse bleiben erhalten und können vor dem Fortsetzen geprüft werden.",
+    "summaryInactivity": "Die Aufgabe wurde wegen längerer Inaktivität pausiert. Verlauf und Ergebnisse bleiben erhalten. Prüfen Sie diese, bevor Sie fortfahren.",
+    "summaryInactivityTimed": "Seit {{seconds}} Sekunden wurde kein Fortschritt erkannt. Die Aufgabe wurde pausiert; Verlauf und Ergebnisse bleiben erhalten.",
     "titleExecution": "[to be translated]:Task paused: execution time limit reached",
     "titleHumanWait": "[to be translated]:Task paused: user wait limit reached",
     "titleInactivity": "Aufgabe pausiert: kein neuer Fortschritt"
@@ -1464,6 +1502,19 @@
       "writing_data": "Daten werden geschrieben..."
     },
     "title": "Datensicherung"
+  },
+  "browser": {
+    "external_cancel": "Cancel",
+    "external_failed": "Could not open the system browser. Please copy the address and open it manually.",
+    "external_hint": "The system browser has separate sign-in and verification. Download files there, then attach them to the assistant to continue.",
+    "external_open": "Open in system browser",
+    "external_private_description": "This opens the page outside this private window. Your system browser may save its address and use an existing signed-in account.",
+    "external_private_title": "Open this private page in the system browser?",
+    "handoff_continue": "Continue after finishing",
+    "handoff_default": "Complete sign-in, verification or confirmation, then continue.",
+    "handoff_title": "Your browser action is needed",
+    "network_hint": "Browser follows your system proxy. If verification keeps failing, try the system browser.",
+    "verification_message": "Complete the website verification manually, then continue. If it keeps failing, open the page in your system browser."
   },
   "button": {
     "add": "Hinzufügen",
@@ -6329,6 +6380,7 @@
     },
     "proxy": {
       "address": "Proxy-Adresse",
+      "browser_network": "This setting controls app services and API requests. The assistant browser independently follows your system proxy.",
       "bypass": "Proxy-Bypass-Regeln",
       "mode": {
         "custom": "Benutzerdefinierter Proxy",

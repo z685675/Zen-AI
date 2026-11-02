@@ -11,6 +11,7 @@ import {
 } from '@shared/utils/modelDailyQuotaTurn'
 
 import { OpenCodeDailyQuota } from './dailyQuota'
+import { ToolInputProgress } from './toolInputProgress'
 import { OpenCodeUsageObserver } from './usageObservation'
 
 export type TransportEvent = (operationId: string | undefined, event: string, details: Record<string, unknown>) => void
@@ -52,6 +53,12 @@ export async function createOpenCodeGateway(baseURL: string, record: TransportEv
     let upstreamStatus: number | undefined
     let usageObserver: OpenCodeUsageObserver | undefined
     let bodyComplete = false
+    let receivedBytes = 0
+    let lastDataAt: string | undefined
+    let lastForwardedAt: string | undefined
+    let toolInputCharacters = 0
+    let lastToolInputAt: string | undefined
+    const activity = () => ({ receivedBytes, lastDataAt, lastForwardedAt, toolInputCharacters, lastToolInputAt })
     const upstream = new URL(req.url || '/', target.origin)
     const requestUrl = `${upstream.origin}${upstream.pathname}`
     if (upstream.origin !== target.origin || !upstream.pathname.startsWith(target.pathname.replace(/\/$/, '') + '/')) {
@@ -104,7 +111,17 @@ export async function createOpenCodeGateway(baseURL: string, record: TransportEv
       } as RequestInit)
       const requestId = response.headers.get('x-oneapi-request-id') || response.headers.get('x-request-id')
       upstreamStatus = response.status
-      usageObserver = new OpenCodeUsageObserver(response.headers.get('content-type') ?? '')
+      const toolInput = new ToolInputProgress()
+      usageObserver = new OpenCodeUsageObserver(response.headers.get('content-type') ?? '', (body) => {
+        if (!response.ok) return
+        const characters = toolInput.characters(body)
+        if (!characters) return
+        toolInputCharacters += characters
+        lastToolInputAt = new Date().toISOString()
+        // Native 1.19.4 does not publish pending argument deltas. This control
+        // signal observes their growth without changing its execution loop.
+        transport('tool-input-progress', { runtime: 'opencode', requestId, characters, ...activity() })
+      })
       transport('headers-received', {
         runtime: 'opencode',
         url: upstream.href,
@@ -127,6 +144,8 @@ export async function createOpenCodeGateway(baseURL: string, record: TransportEv
       if (response.body) {
         let firstBytes = true
         for await (const chunk of Readable.fromWeb(response.body as any)) {
+          receivedBytes += chunk.length
+          lastDataAt = new Date().toISOString()
           if (firstBytes) {
             firstBytes = false
             transport('first-bytes', { runtime: 'opencode', requestId, durationMs: Date.now() - started })
@@ -137,11 +156,20 @@ export async function createOpenCodeGateway(baseURL: string, record: TransportEv
             /* Observation cannot interrupt forwarding. */
           }
           if (!res.write(chunk)) await once(res, 'drain', { signal: controller.signal })
+          lastForwardedAt = new Date().toISOString()
+          // Keep the in-memory last-byte timestamp exact. The process layer
+          // throttles persisted observations; bytes alone never reset a deadline.
+          transport('body-progress', { runtime: 'opencode', requestId, ...activity() })
         }
       }
       res.end()
       bodyComplete = true
-      transport('body-complete', { runtime: 'opencode', status: response.status, durationMs: Date.now() - started })
+      transport('body-complete', {
+        runtime: 'opencode',
+        status: response.status,
+        durationMs: Date.now() - started,
+        ...activity()
+      })
       const quotaError = response.headers.get(MODEL_DAILY_QUOTA_ERROR_HEADER)
       if (
         !response.ok &&
@@ -166,7 +194,8 @@ export async function createOpenCodeGateway(baseURL: string, record: TransportEv
         url: requestUrl,
         receivedResponse: upstreamStatus !== undefined,
         ...(upstreamStatus !== undefined ? { status: upstreamStatus } : {}),
-        durationMs: Date.now() - started
+        durationMs: Date.now() - started,
+        ...activity()
       })
       if (!res.headersSent) res.writeHead(502).end('Zen AI could not connect to the model service')
       else res.destroy()

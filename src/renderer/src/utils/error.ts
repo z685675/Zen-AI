@@ -22,7 +22,7 @@ import { t } from 'i18next'
 import type * as z from 'zod'
 import { ZodError } from 'zod'
 
-import { getAgentTaskDeadlineKind } from './agentTaskDeadline'
+import { getAgentTaskDeadlineKind, getAgentTaskDeadlineSeconds } from './agentTaskDeadline'
 import { ZEN_TRACE_HEADER } from './clientErrorDiagnosis'
 import { parseJSON } from './json'
 
@@ -285,9 +285,11 @@ export const serializeError = (error: AiSdkErrorUnion): SerializedError => {
     })
   }
   const deadline = getAgentTaskDeadlineKind(error)
+  const deadlineSeconds = getAgentTaskDeadlineSeconds(error)
   if (deadline)
     Object.assign(serializedError, {
       code: deadline === 'human-wait' ? 'agent_human_wait_timeout' : `agent_${deadline}_timeout`,
+      ...(deadlineSeconds === undefined ? {} : { timeoutMs: deadlineSeconds * 1000 }),
       zenFailureStage: 'local-task-deadline'
     })
   return serializedError

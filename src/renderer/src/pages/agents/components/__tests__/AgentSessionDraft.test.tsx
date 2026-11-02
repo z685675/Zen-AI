@@ -2,6 +2,7 @@ import { CacheService } from '@renderer/services/CacheService'
 import { getAgentSessionDraft } from '@renderer/utils/agentSessionDraft'
 import { shouldDiscardEmptyConversation } from '@renderer/utils/conversationDraft'
 import { act, fireEvent, render } from '@testing-library/react'
+import type * as Antd from 'antd'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
@@ -15,6 +16,10 @@ const mocks = vi.hoisted(() => ({
   setFiles: vi.fn(),
   setCouldAddImageFile: vi.fn(),
   updateSession: vi.fn(),
+  loading: false,
+  addInput: vi.fn(),
+  pauseQueue: vi.fn(),
+  inboxEntries: [] as any[],
   state: {
     llm: {
       providers: [{ id: 'local', enabled: true, models: [{ id: 'test', name: 'Test', provider: 'local' }] }],
@@ -41,7 +46,36 @@ vi.mock('@renderer/hooks/useTextareaResize', () => ({
     setCustomHeight: mocks.resize
   })
 }))
-vi.mock('@renderer/hooks/useMessageOperations', () => ({ selectNewTopicLoading: () => false }))
+vi.mock('@renderer/hooks/useMessageOperations', () => ({ selectNewTopicLoading: () => mocks.loading }))
+vi.mock('@renderer/services/AgentSessionInboxService', () => ({
+  getAgentSessionInbox: () => ({
+    subscribe: () => () => {},
+    snapshot: () => mocks.inboxEntries,
+    add: mocks.addInput,
+    pause: mocks.pauseQueue,
+    isPaused: () => false
+  })
+}))
+vi.mock('antd', async (importOriginal) => {
+  const original = await importOriginal<typeof Antd>()
+  return {
+    ...original,
+    Dropdown: {
+      Button: ({ children, onClick, disabled, menu }: any) => (
+        <>
+          <button disabled={disabled} onClick={onClick}>
+            {children}
+          </button>
+          {menu.items.map((item: any) => (
+            <button key={item.key} disabled={item.disabled} onClick={() => menu.onClick({ key: item.key })}>
+              Choose {item.key}
+            </button>
+          ))}
+        </>
+      )
+    }
+  }
+})
 vi.mock('@renderer/store', () => ({
   useAppDispatch: () => mocks.dispatch,
   useAppSelector: (selector: any) => selector(mocks.state)
@@ -69,12 +103,14 @@ vi.mock('@renderer/pages/home/Inputbar/InputbarTools', () => ({ default: () => n
 vi.mock('@renderer/pages/home/Inputbar/components/ScrollToBottomButton', () => ({ default: () => null }))
 vi.mock('../LegacyAssistantInputbar', () => ({ default: () => null }))
 vi.mock('@renderer/pages/home/Inputbar/components/InputbarCore', () => ({
-  InputbarCore: ({ text, onTextChange, handleSendMessage }: any) => (
+  InputbarCore: ({ text, onTextChange, handleSendMessage, renderSendButton, sendDisabled, onPause }: any) => (
     <>
       <textarea aria-label="Draft" value={text} onChange={(event) => onTextChange(event.target.value)} />
       <button type="button" onClick={handleSendMessage}>
         Send
       </button>
+      {renderSendButton?.(sendDisabled)}
+      <button onClick={onPause}>Stop</button>
     </>
   )
 }))
@@ -87,6 +123,9 @@ beforeEach(() => {
   vi.clearAllMocks()
   CacheService.clear()
   localStorage.clear()
+  window.toast = { info: vi.fn(), error: vi.fn() } as any
+  mocks.loading = false
+  mocks.inboxEntries = []
 })
 afterEach(() => vi.useRealTimers())
 
@@ -124,5 +163,42 @@ describe('assistant draft composer', () => {
     CacheService.clear()
     const returned = render(<AgentSessionInputbar agentId={agentId} sessionId="one" />)
     expect(returned.getByLabelText('Draft')).toHaveValue('紧接着输入的新草稿')
+  })
+
+  it('queues by default during a run and can explicitly steer the same task', async () => {
+    mocks.loading = true
+    const view = render(<AgentSessionInputbar agentId={agentId} sessionId="running" />)
+    fireEvent.change(view.getByLabelText('Draft'), { target: { value: '完成后再整理为表格' } })
+    await act(async () => fireEvent.click(view.getByText('Send')))
+    expect(mocks.addInput).toHaveBeenLastCalledWith(expect.objectContaining({ text: '完成后再整理为表格' }), 'queue')
+    expect(mocks.sendMessage).not.toHaveBeenCalled()
+    expect(view.getByLabelText('Draft')).toHaveValue('')
+    fireEvent.click(view.getByText('Choose steer'))
+    fireEvent.change(view.getByLabelText('Draft'), { target: { value: '先查最近三年的文献' } })
+    await act(async () => fireEvent.click(view.getByText('Send')))
+    expect(mocks.addInput).toHaveBeenLastCalledWith(expect.objectContaining({ text: '先查最近三年的文献' }), 'steer')
+    fireEvent.click(view.getByText('Stop'))
+    expect(mocks.pauseQueue).toHaveBeenCalledWith('running')
+  })
+
+  it('retains the draft if saving the pending message fails', async () => {
+    mocks.loading = true
+    mocks.addInput.mockImplementationOnce(() => {
+      throw new Error('storage full')
+    })
+    const view = render(<AgentSessionInputbar agentId={agentId} sessionId="storage-error" />)
+    fireEvent.change(view.getByLabelText('Draft'), { target: { value: '请保留这条补充' } })
+    await act(async () => fireEvent.click(view.getByText('Send')))
+    expect(view.getByLabelText('Draft')).toHaveValue('请保留这条补充')
+    expect(getAgentSessionDraft(agentId, 'storage-error')).toBe('请保留这条补充')
+  })
+
+  it('queues behind an admission in progress before the loading indicator appears', async () => {
+    mocks.inboxEntries = [{ sessionId: 'admitting', delivery: 'queue', state: 'sending' }]
+    const view = render(<AgentSessionInputbar agentId={agentId} sessionId="admitting" />)
+    fireEvent.change(view.getByLabelText('Draft'), { target: { value: '下一步要求' } })
+    await act(async () => fireEvent.click(view.getByText('Send')))
+    expect(mocks.addInput).toHaveBeenCalledWith(expect.objectContaining({ text: '下一步要求' }), 'queue')
+    expect(mocks.sendMessage).not.toHaveBeenCalled()
   })
 })

@@ -1,4 +1,3 @@
-import { randomBytes } from 'node:crypto'
 import { EventEmitter } from 'node:events'
 
 import { loggerService } from '@logger'
@@ -9,6 +8,7 @@ import { recordMainDiagnostic } from '@main/services/DiagnosticEvidenceService'
 import type { OpenCodeUsageObservation } from '@shared/agents/opencodeDiagnostics'
 import { getOpenCodeAgentMode } from '@shared/agents/opencodeMode'
 import { isOpenCodeInternalProgress } from '@shared/agents/opencodeProgress'
+import { AGENT_HUMAN_WAIT_TIMEOUT_MS, AGENT_INACTIVITY_TIMEOUT_MS } from '@shared/agents/taskDeadline'
 import { diagnosticText, sanitizeDiagnostic } from '@shared/diagnostics'
 import { shouldShowModelDailyQuotaNotice } from '@shared/utils/modelDailyQuotaTurn'
 import type { GetAgentSessionResponse } from '@types'
@@ -28,6 +28,7 @@ import { prepareOpenCodeRuntime } from './prepare'
 import { type OpenCodeProcess } from './process'
 import { createTaskDeadline } from './taskDeadline'
 import { type NativeMessage, OpenCodeStreamState } from './transform'
+import { newOpenCodeMessageId, OpenCodeTurnInput } from './turnInput'
 import { OpenCodeUsageTotals } from './usageObservation'
 
 const logger = loggerService.withContext('OpenCodeService')
@@ -74,6 +75,7 @@ export default class OpenCodeService implements AgentServiceInterface {
     const eventController = new AbortController()
     const permissionSignal = AbortSignal.any([signal, eventController.signal])
     let runtime: OpenCodeProcess | undefined
+    let turnInput: OpenCodeTurnInput | undefined
     let nativeId: string | undefined
     let completed = false
     let permissions = 0
@@ -104,13 +106,36 @@ export default class OpenCodeService implements AgentServiceInterface {
           ),
           {
             code: kind === 'human-wait' ? 'agent_human_wait_timeout' : 'agent_inactivity_timeout',
-            zenFailureStage: 'local-task-deadline'
+            zenFailureStage: 'local-task-deadline',
+            timeoutMs: kind === 'human-wait' ? AGENT_HUMAN_WAIT_TIMEOUT_MS : AGENT_INACTIVITY_TIMEOUT_MS,
+            phase: currentStatus,
+            progressEvidence: timing.snapshot('failed').activity
           }
         )
       )
     )
     const browserWaits = new Set<string>()
     const emit = (chunk: Chunk) => {
+      if (chunk.type === 'tool-call' || chunk.type === 'tool-result' || chunk.type === 'tool-error') {
+        const metadata = chunk.providerMetadata?.opencode as
+          | { toolStartedAt?: number; toolFinishedAt?: number }
+          | undefined
+        if (metadata?.toolStartedAt !== undefined)
+          recordMainDiagnostic(options?.diagnosticId, 'runtime', 'native-tool-timing', {
+            runtime: 'opencode',
+            toolName: chunk.toolName,
+            toolCallId: chunk.toolCallId,
+            phase: chunk.type,
+            nativeStartedAt: new Date(metadata.toolStartedAt).toISOString(),
+            ...(metadata.toolFinishedAt === undefined
+              ? {}
+              : {
+                  nativeFinishedAt: new Date(metadata.toolFinishedAt).toISOString(),
+                  nativeDurationMs: Math.max(0, metadata.toolFinishedAt - metadata.toolStartedAt)
+                }),
+            observationDelayMs: Math.max(0, Date.now() - (metadata.toolFinishedAt ?? metadata.toolStartedAt))
+          })
+      }
       if (chunk.type === 'raw' && isOpenCodeInternalProgress(chunk.rawValue)) {
         deadline.progress()
         contextProgressCharacters += chunk.rawValue.characters
@@ -207,6 +232,8 @@ export default class OpenCodeService implements AgentServiceInterface {
       runtime.setProgressListener((event, details) => {
         if (event === 'usage-observed') usageTotals.observe(details as unknown as OpenCodeUsageObservation)
         timing.transport(event, details)
+        if (event === 'tool-input-progress' && typeof details.characters === 'number' && details.characters > 0)
+          deadline.progress()
         // Only keep the latest attempt's evidence. A recovered request must not
         // turn a later tool/server failure into a stale local network diagnosis.
         if (
@@ -259,7 +286,7 @@ export default class OpenCodeService implements AgentServiceInterface {
       const first = await iterator.next()
       if (first.done || first.value.type !== 'server.connected')
         throw new Error('OpenCode event stream handshake failed')
-      const messageId = `msg_${(BigInt(Date.now()) * 4096n).toString(16).padStart(12, '0')}${randomBytes(7).toString('hex')}`
+      const messageId = newOpenCodeMessageId()
       emit({ type: 'raw', rawValue: { type: 'opencode_turn', user_message_id: messageId, session_id: nativeId } })
       const body = {
         messageID: messageId,
@@ -292,7 +319,18 @@ export default class OpenCodeService implements AgentServiceInterface {
           admissionError = error
           eventController.abort('submission status uncertain')
         })
-      const reconcile = async () => {
+      turnInput = new OpenCodeTurnInput(session.id, messageId, runtime.client, nativeId, body, signal, (receipt) => {
+        recordMainDiagnostic(options?.diagnosticId, 'runtime', 'user-input-received', {
+          runtime: 'opencode',
+          inputId: receipt.id,
+          state: receipt.state,
+          nativeMessageId: receipt.nativeMessageId
+        })
+      })
+      let awaitingNativeRun = false
+      const reconcile = async (atIdle = false) => {
+        awaitingNativeRun = false
+        await turnInput?.settle()
         const messages = await runtime!.client.request<Array<CompactionEntry & { info: NativeMessage }>>(
           `/session/${nativeId}/message`,
           'GET',
@@ -300,6 +338,7 @@ export default class OpenCodeService implements AgentServiceInterface {
           signal
         )
         await verifyCompaction(messages, 'reconciliation', true)
+        turnInput?.reconcile(messages)
         if (messages.some((item) => item.info.id === messageId)) admitted = true
         for (const message of messages) {
           for (const chunk of state.consume({ type: 'message.updated', properties: { info: message.info } }))
@@ -313,7 +352,30 @@ export default class OpenCodeService implements AgentServiceInterface {
         const failure = [...state.messages.values()].find((info) => info.error)
         if (failure) throw this.nativeError(failure.error)
         const latest = [...state.messages.values()].at(-1)
-        return admitted && Boolean(latest?.time?.completed) && state.hasVisibleOutput
+        if (atIdle && turnInput?.hasAdditions && latest?.parentID !== turnInput.latestMessageId) {
+          const nativeStatus = await runtime!.client.request<Record<string, { type: string }>>(
+            '/session/status',
+            'GET',
+            undefined,
+            signal
+          )
+          if (nativeStatus[nativeId!]?.type === 'busy' || nativeStatus[nativeId!]?.type === 'retry') {
+            awaitingNativeRun = true
+            turnInput.ready(admitted)
+            return false
+          }
+          // Native 1.x has a narrow final-read/idle race. Keep the addition in
+          // history and surface it as awaiting continuation, never pretend it
+          // was processed or replay it automatically.
+          turnInput.reconcile(messages, true)
+          return admitted && Boolean(latest?.time?.completed) && state.hasVisibleOutput
+        }
+        return (
+          admitted &&
+          Boolean(latest?.time?.completed) &&
+          state.hasVisibleOutput &&
+          (!turnInput?.hasAdditions || latest?.parentID === turnInput.latestMessageId)
+        )
       }
       const permission = async (props: OpenCodeEvent['properties']) => {
         if (permissionSignal.aborted || completed || pendingPermissions.has(props.id)) return
@@ -382,7 +444,11 @@ export default class OpenCodeService implements AgentServiceInterface {
         const props = event.properties
         const eventSession = props.sessionID || props.info?.sessionID || props.part?.sessionID
         if (eventSession && eventSession !== nativeId) return
-        if (event.type === 'message.updated' && props.info?.id === messageId) admitted = true
+        timing.nativeEvent()
+        if (event.type === 'message.updated' && props.info?.id === messageId) {
+          admitted = true
+          turnInput?.ready(true)
+        }
         if (event.type === 'message.updated' && props.info?.summary && !state.previousMessages.has(props.info.id)) {
           compacting = true
           status('compacting')
@@ -424,6 +490,7 @@ export default class OpenCodeService implements AgentServiceInterface {
         if (event.type === 'session.status') {
           const next = props.status
           if (next?.type === 'busy') {
+            turnInput?.ready(admitted)
             observedBusy = true
             status(permissions > 0 ? 'waiting_permission' : 'busy')
           }
@@ -442,8 +509,10 @@ export default class OpenCodeService implements AgentServiceInterface {
             recordMainDiagnostic(options?.diagnosticId, 'runtime', 'native-retry', { attempt: next.attempt })
           }
           if (next?.type === 'idle' && admitted && observedBusy && !permissions) {
-            completed = await reconcile()
-            if (!completed) throw new Error('The new assistant returned an empty or incomplete result')
+            turnInput?.ready(false)
+            completed = await reconcile(true)
+            if (!completed && !awaitingNativeRun)
+              throw new Error('The new assistant returned an empty or incomplete result')
           }
         }
         const chunks = state.consume(event)
@@ -524,7 +593,8 @@ export default class OpenCodeService implements AgentServiceInterface {
             signal
           )
           if (nativeStatus[nativeId]?.type === 'idle' || !nativeStatus[nativeId]) {
-            completed = await reconcile()
+            turnInput?.ready(false)
+            completed = await reconcile(true)
             if (!completed) throw admissionError || error
             break
           }
@@ -556,8 +626,10 @@ export default class OpenCodeService implements AgentServiceInterface {
             )
             observedBusy = true
             if (!after[nativeId] || after[nativeId].type === 'idle') {
-              completed = await reconcile()
-              if (!completed) throw new Error('The new assistant returned an empty or incomplete result')
+              turnInput?.ready(false)
+              completed = await reconcile(true)
+              if (!completed && !awaitingNativeRun)
+                throw new Error('The new assistant returned an empty or incomplete result')
             }
             recordMainDiagnostic(options?.diagnosticId, 'runtime', 'event-stream-reconnected', {
               runtime: 'opencode',
@@ -636,6 +708,7 @@ export default class OpenCodeService implements AgentServiceInterface {
         stream.emit('data', { type: 'error', error: failure })
       }
     } finally {
+      turnInput?.close()
       stopPermissionWatcher?.()
       deadline.dispose()
       clearTimeout(retryTimeout)

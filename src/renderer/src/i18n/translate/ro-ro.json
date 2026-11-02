@@ -357,6 +357,42 @@
       "success": "Git Bash a fost detectat cu succes!",
       "tooltip": "Git Bash este necesar pentru a rula agenți pe Windows. Instalează-l de pe git-scm.com dacă nu este disponibil."
     },
+    "inbox": {
+      "attachments": "Atașamente",
+      "check": "Verifică primirea",
+      "continue": "Pregătește continuarea",
+      "dismiss": "Ascunde înregistrarea",
+      "dismissHint": "Ascunde doar înregistrarea; nu retrage un mesaj trimis.",
+      "draftOccupied": "Trimite sau salvează mai întâi ciorna curentă.",
+      "edit": "Editează",
+      "hint": {
+        "accepted": "Salvat în sarcina curentă; așteaptă procesarea.",
+        "deferred": "Sarcina s-a încheiat, dar procesarea completării nu este confirmată. Verifică rezultatul înainte de continuare.",
+        "failed": "Execuția a eșuat și coada este oprită. Verifică istoricul înainte de retrimitere.",
+        "rejected": "Nu a fost trimis. Editează sau trimite după sarcina curentă.",
+        "uncertain": "Primire neconfirmată. Verifică primirea sau istoricul înainte de retrimitere."
+      },
+      "notReady": "Sarcina pornește sau se încheie. Editează sau trimite mai târziu.",
+      "pause": "Pauză coadă",
+      "queue": "Trimite după sarcină",
+      "remove": "Elimină",
+      "restored": "Restabilit în câmpul de text. Verifică și trimite.",
+      "resume": "Continuă coada",
+      "saveFailed": "Mesajul nu a putut fi salvat. Ciorna a fost păstrată.",
+      "state": {
+        "accepted": "Primit",
+        "applied": "În procesare ulterioară",
+        "deferred": "Așteaptă continuarea",
+        "failed": "Eșuat",
+        "queued": "În coadă",
+        "rejected": "Netrimis",
+        "sending": "Se trimite",
+        "sent": "Trimis",
+        "uncertain": "Primire neconfirmată"
+      },
+      "steer": "Ajustează sarcina curentă",
+      "title": "Mesaje în așteptare"
+    },
     "input": {
       "deep_research": "[to be translated]:Deep Research",
       "deep_research_tooltip": "[to be translated]:Creates one research task for your next message: plan first, then multi-step source verification and a cited report.",
@@ -990,9 +1026,11 @@
     "stageHumanWait": "[to be translated]:Waiting for user action",
     "stageInactivity": "Monitorizarea progresului",
     "suggestion": "[to be translated]:Review completed work, then explicitly ask to continue only the unfinished part. Avoid blindly repeating submissions or generation.",
-    "summaryExecution": "[to be translated]:The cumulative 15-minute execution limit was reached. The task is paused; saved history and outputs are retained, with no automatic replay.",
+    "summaryExecution": "Sarcina a atins limita locală de execuție și a fost întreruptă. Istoricul și rezultatele sunt păstrate.",
+    "summaryExecutionTimed": "Sarcina a atins limita locală de {{seconds}} secunde și a fost întreruptă. Istoricul și rezultatele sunt păstrate.",
     "summaryHumanWait": "[to be translated]:The cumulative 30-minute user-action wait limit was reached. The task is paused; saved history and outputs are retained, with no automatic replay.",
-    "summaryInactivity": "Nu s-a observat progres nou timp de 15 minute. Sarcina a fost pusă pe pauză; istoricul și rezultatele salvate sunt păstrate pentru verificare înainte de continuare.",
+    "summaryInactivity": "Sarcina a fost întreruptă după o perioadă lungă fără progres. Istoricul și rezultatele sunt păstrate; verificați-le înainte de a continua.",
+    "summaryInactivityTimed": "Nu s-a observat progres timp de {{seconds}} secunde. Sarcina a fost întreruptă; istoricul și rezultatele sunt păstrate.",
     "titleExecution": "[to be translated]:Task paused: execution time limit reached",
     "titleHumanWait": "[to be translated]:Task paused: user wait limit reached",
     "titleInactivity": "Sarcină în pauză: fără progres recent"
@@ -1464,6 +1502,19 @@
       "writing_data": "Se scriu datele..."
     },
     "title": "Backup date"
+  },
+  "browser": {
+    "external_cancel": "Cancel",
+    "external_failed": "Could not open the system browser. Please copy the address and open it manually.",
+    "external_hint": "The system browser has separate sign-in and verification. Download files there, then attach them to the assistant to continue.",
+    "external_open": "Open in system browser",
+    "external_private_description": "This opens the page outside this private window. Your system browser may save its address and use an existing signed-in account.",
+    "external_private_title": "Open this private page in the system browser?",
+    "handoff_continue": "Continue after finishing",
+    "handoff_default": "Complete sign-in, verification or confirmation, then continue.",
+    "handoff_title": "Your browser action is needed",
+    "network_hint": "Browser follows your system proxy. If verification keeps failing, try the system browser.",
+    "verification_message": "Complete the website verification manually, then continue. If it keeps failing, open the page in your system browser."
   },
   "button": {
     "add": "Adaugă",
@@ -6329,6 +6380,7 @@
     },
     "proxy": {
       "address": "Adresă proxy",
+      "browser_network": "This setting controls app services and API requests. The assistant browser independently follows your system proxy.",
       "bypass": "Reguli de ocolire",
       "mode": {
         "custom": "Proxy personalizat",

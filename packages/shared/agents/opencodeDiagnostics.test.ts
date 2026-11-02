@@ -28,6 +28,30 @@ const fixture: OpenCodeTurnDiagnostics = {
   }
 }
 describe('stored usage observation validation', () => {
+  it('keeps exact progress times/counts but discards argument contents and malformed activity', () => {
+    const result = readOpenCodeTurnDiagnostics({
+      ...fixture,
+      performance: {
+        ...fixture.performance,
+        activity: {
+          lastDataAt: '2026-11-02T09:00:00Z',
+          lastMeaningfulProgressAt: '2026-11-02T08:59:00Z',
+          receivedBytes: 123,
+          toolInputCharacters: 42,
+          arguments: 'PRIVATE',
+          lastForwardedAt: 'invalid',
+          lastNativeEventAt: 123
+        }
+      }
+    })
+    expect(result?.performance.activity).toEqual({
+      lastDataAt: '2026-11-02T09:00:00.000Z',
+      lastMeaningfulProgressAt: '2026-11-02T08:59:00.000Z',
+      receivedBytes: 123,
+      toolInputCharacters: 42
+    })
+    expect(JSON.stringify(result)).not.toContain('PRIVATE')
+  })
   it('retains numeric context progress without persisting private summary content', () => {
     const contextProgress = { firstMs: 100, lastMs: 200, events: 2, characters: 30 }
     const result = readOpenCodeTurnDiagnostics({

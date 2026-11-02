@@ -357,6 +357,42 @@
       "success": "成功检测到 Git Bash！",
       "tooltip": "在 Windows 上运行智能体需要 Git Bash。如果未安装，请从 git-scm.com 下载安装。"
     },
+    "inbox": {
+      "attachments": "附件消息",
+      "check": "核对接收状态",
+      "continue": "准备继续",
+      "dismiss": "收起记录",
+      "dismissHint": "仅收起此记录，不会撤回已经提交的消息。",
+      "draftOccupied": "请先发送或保存输入框中的草稿，再编辑这条消息。",
+      "edit": "编辑",
+      "hint": {
+        "accepted": "已保存到当前任务，等待后续处理。",
+        "deferred": "当前任务已结束，尚未确认这条补充已进入后续处理。请先核对对话结果，再决定是否继续。",
+        "failed": "执行失败，队列已暂停。请先核对对话记录，再决定是否编辑后重新发送。",
+        "rejected": "这条消息未提交，可编辑后发送或加入队列。",
+        "uncertain": "尚不能确认是否已接收，请核对接收状态或对话记录后再发送，避免重复执行。"
+      },
+      "notReady": "任务正在启动或收尾，请编辑这条消息，或改为排队发送。",
+      "pause": "暂停队列",
+      "queue": "排队发送",
+      "remove": "移除",
+      "restored": "已放回输入框，请确认后发送。",
+      "resume": "继续队列",
+      "saveFailed": "未能保存消息，输入框中的草稿已保留。",
+      "state": {
+        "accepted": "已接收",
+        "applied": "已进入后续处理",
+        "deferred": "等待继续",
+        "failed": "执行失败",
+        "queued": "待发送",
+        "rejected": "未发送",
+        "sending": "正在发送",
+        "sent": "已发送",
+        "uncertain": "接收状态待确认"
+      },
+      "steer": "调整当前任务",
+      "title": "待发送与任务补充"
+    },
     "input": {
       "deep_research": "深度研究",
       "deep_research_tooltip": "针对下一条消息创建一次研究任务：保持当前模型，自动使用高思考强度；先制定计划，确认后分轮检索、核验来源，并生成带引用的报告。",
@@ -990,9 +1026,11 @@
     "stageHumanWait": "等待用户操作",
     "stageInactivity": "监测任务进展",
     "suggestion": "先检查已完成的内容，再主动发送指令继续未完成部分；不要盲目重复提交或生成。",
-    "summaryExecution": "实际执行累计达到15分钟上限，任务已暂停。已保存的记录和成果保留，不会自动重新执行。",
+    "summaryExecution": "任务已达到本地执行时限并暂停。已保存的记录和成果保留，检查后可继续执行。",
+    "summaryExecutionTimed": "任务达到 {{seconds}} 秒的本地执行时限，已暂停。已保存的记录和成果保留，检查后可继续执行。",
     "summaryHumanWait": "等待用户操作累计达到30分钟上限，任务已暂停。已保存的记录和成果保留，不会自动重新执行。",
-    "summaryInactivity": "连续15分钟没有观察到新的有效进展，任务已暂停。已保存的记录和成果保留，检查后可点击“继续执行”。",
+    "summaryInactivity": "任务长时间没有新的有效进展，已暂停。已保存的记录和成果保留，检查后可继续执行。",
+    "summaryInactivityTimed": "连续 {{seconds}} 秒没有观察到新的有效进展，任务已暂停。已保存的记录和成果保留，检查后可继续执行。",
     "titleExecution": "任务已暂停：执行时间达到上限",
     "titleHumanWait": "任务已暂停：等待时间达到上限",
     "titleInactivity": "任务已暂停：长时间没有进展"
@@ -1464,6 +1502,19 @@
       "writing_data": "写入数据..."
     },
     "title": "数据备份"
+  },
+  "browser": {
+    "external_cancel": "取消",
+    "external_failed": "无法打开系统浏览器，请复制网址后手动打开。",
+    "external_hint": "系统浏览器的登录和验证状态不会同步。可在那里下载文件，再添加到助手中继续任务。",
+    "external_open": "用系统浏览器打开",
+    "external_private_description": "将在此隐私窗口之外打开网页。系统浏览器可能记录访问历史，并使用其中已登录的账号。",
+    "external_private_title": "要用系统浏览器打开隐私页面吗？",
+    "handoff_continue": "完成后继续",
+    "handoff_default": "请完成登录、验证码或确认操作，完成后点击继续。",
+    "handoff_title": "需要你接管浏览器",
+    "network_hint": "浏览器跟随电脑的系统代理。若验证持续失败，可用系统浏览器打开。",
+    "verification_message": "请手动完成网站验证，完成后点击继续。如验证持续失败，可用系统浏览器打开。"
   },
   "button": {
     "add": "添加",
@@ -6329,6 +6380,7 @@
     },
     "proxy": {
       "address": "代理地址",
+      "browser_network": "此设置用于软件服务和 API 请求；助手浏览器单独跟随电脑的系统代理。",
       "bypass": "代理绕过规则",
       "mode": {
         "custom": "自定义代理",

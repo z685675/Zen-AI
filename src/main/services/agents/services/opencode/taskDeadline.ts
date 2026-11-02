@@ -1,10 +1,12 @@
+import { AGENT_HUMAN_WAIT_TIMEOUT_MS, AGENT_INACTIVITY_TIMEOUT_MS } from '@shared/agents/taskDeadline'
+
 /** Meaningful-progress watchdog only: never submits, retries or replays a task.
  * Busy/status heartbeats and reconnects must NOT call progress().
  */
 export function createTaskDeadline(
   onTimeout: (kind: 'inactivity' | 'human-wait') => void,
-  inactivityMs = 15 * 60_000,
-  humanWaitMs = 30 * 60_000
+  inactivityMs = AGENT_INACTIVITY_TIMEOUT_MS,
+  humanWaitMs = AGENT_HUMAN_WAIT_TIMEOUT_MS
 ) {
   const waiting = new Set<string>()
   let remainingInactivity = inactivityMs

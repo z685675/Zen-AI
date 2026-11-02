@@ -82,6 +82,8 @@ export class ProxyManager {
   }
 
   private async setSessionsProxy(config: ProxyConfig): Promise<void> {
+    // The assistant browser owns persist:default/private and explicitly follows
+    // the system network. API proxy choices must not override those sessions.
     const sessions = [
       session.defaultSession,
       session.fromPartition('persist:webview'),

@@ -316,7 +316,7 @@ describe('SessionMessageService runtime stream lifecycle', () => {
     expect(invokeMock).toHaveBeenCalledOnce()
   })
 
-  it('still times out a stalled summary despite repeated busy/status and empty progress frames', async () => {
+  it('leaves post-start inactivity to OpenCode and forwards its actual deadline without a second 180s guard', async () => {
     const agentStream = createAgentStream()
     resolveAgentRuntimeMock.mockResolvedValue({ runtimeId: 'opencode', candidates: ['opencode'], source: 'workspace' })
     invokeMock.mockResolvedValue(agentStream)
@@ -360,11 +360,25 @@ describe('SessionMessageService runtime stream lifecycle', () => {
       })
     }
     await vi.advanceTimersByTimeAsync(3_001)
+    expect(invokeMock.mock.calls[0][2].signal.aborted).toBe(false)
+    await vi.advanceTimersByTimeAsync(720_000)
+    agentStream.emit('data', {
+      type: 'chunk',
+      chunk: {
+        type: 'error',
+        error: Object.assign(new Error('Native progress deadline'), {
+          name: 'AgentRuntimeNoOutputTimeoutError',
+          code: 'agent_inactivity_timeout',
+          zenFailureStage: 'local-task-deadline',
+          timeoutMs: 900_000
+        })
+      }
+    })
     await expect(failure).resolves.toMatchObject({
       name: 'AgentRuntimeNoOutputTimeoutError',
       code: 'agent_inactivity_timeout',
       zenFailureStage: 'local-task-deadline',
-      message: expect.stringContaining('summarizing context')
+      timeoutMs: 900_000
     })
     await expect(completion).resolves.toMatchObject({ name: 'AgentRuntimeNoOutputTimeoutError' })
     expect(invokeMock).toHaveBeenCalledOnce()
@@ -438,7 +452,26 @@ describe('SessionMessageService runtime stream lifecycle', () => {
     await expect(completion).resolves.toMatchObject({ message: expect.stringContaining('user-visible result') })
   })
 
-  it.each(['startup', 'continuation', 'deep-research'])(
+  it('allows native research to keep progressing beyond the old eight-minute total cap', async () => {
+    const agentStream = createAgentStream()
+    resolveAgentRuntimeMock.mockResolvedValue({ runtimeId: 'opencode', candidates: ['opencode'], source: 'workspace' })
+    invokeMock.mockResolvedValue(agentStream)
+    const result = await new SessionMessageService().createSessionMessage(
+      session(),
+      { content: 'research', deep_research: true } as any,
+      new AbortController()
+    )
+    const collected = collect(result.stream)
+    for (let i = 0; i < 6; i++) {
+      agentStream.emit('data', { type: 'chunk', chunk: { type: 'text-delta', text: `progress ${i}` } })
+      await vi.advanceTimersByTimeAsync(120_000)
+    }
+    expect(invokeMock.mock.calls[0][2].signal.aborted).toBe(false)
+    agentStream.emit('data', { type: 'complete' })
+    await collected
+    await result.completion
+  })
+  it.each(['startup', 'continuation'])(
     'delivers a %s timeout without synchronously cancelling its HTTP reader',
     async (phase) => {
       const agentStream = createAgentStream()
@@ -470,7 +503,22 @@ describe('SessionMessageService runtime stream lifecycle', () => {
         agentStream.emit('data', { type: 'chunk', chunk: { type: 'text-delta', id: 'text', text: 'partial' } })
       }
       await vi.advanceTimersByTimeAsync(phase === 'startup' ? 45_001 : phase === 'continuation' ? 180_001 : 480_001)
-      const name = phase === 'deep-research' ? 'AgentDeepResearchTimeoutError' : 'AgentRuntimeNoOutputTimeoutError'
+      const name = 'AgentRuntimeNoOutputTimeoutError'
+      if (phase === 'continuation') {
+        expect(invokeMock.mock.calls[0][2].signal.aborted).toBe(false)
+        agentStream.emit('data', {
+          type: 'chunk',
+          chunk: {
+            type: 'error',
+            error: Object.assign(new Error('Native inactivity deadline'), {
+              name,
+              code: 'agent_inactivity_timeout',
+              timeoutMs: 900_000
+            })
+          }
+        })
+        await vi.advanceTimersByTimeAsync(0)
+      }
       expect(disconnect).not.toHaveBeenCalled()
       expect(http.abortController.signal.aborted).toBe(false)
       expect(invokeMock.mock.calls[0][2].signal.reason).toMatchObject({ name })

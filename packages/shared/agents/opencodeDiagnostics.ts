@@ -13,6 +13,17 @@ export type OpenCodeUsageObservation = {
   format: 'openai' | 'responses' | 'anthropic' | 'gemini' | 'unknown'
 }
 
+export type OpenCodeActivity = {
+  requestStartedAt?: string
+  lastDataAt?: string
+  lastForwardedAt?: string
+  lastToolInputAt?: string
+  lastMeaningfulProgressAt?: string
+  lastNativeEventAt?: string
+  receivedBytes?: number
+  toolInputCharacters?: number
+}
+
 export type OpenCodeTurnDiagnostics = {
   version: 1
   providerId: string
@@ -37,6 +48,7 @@ export type OpenCodeTurnDiagnostics = {
     completedToolObservedMs: number
     unfinishedTools: number
     contextProgress?: { firstMs: number; lastMs: number; events: number; characters: number } | null
+    activity?: OpenCodeActivity
   }
 }
 
@@ -77,6 +89,22 @@ export function readOpenCodeTurnDiagnostics(value: unknown): OpenCodeTurnDiagnos
   }
   const perf = data.performance
   const context = perf.contextProgress
+  const activity: OpenCodeActivity = {}
+  if (perf.activity) {
+    for (const key of [
+      'requestStartedAt',
+      'lastDataAt',
+      'lastForwardedAt',
+      'lastToolInputAt',
+      'lastMeaningfulProgressAt',
+      'lastNativeEventAt'
+    ] as const) {
+      const value = perf.activity[key]
+      if (typeof value === 'string' && Number.isFinite(Date.parse(value))) activity[key] = new Date(value).toISOString()
+    }
+    for (const key of ['receivedBytes', 'toolInputCharacters'] as const)
+      if (isReportedTokenCount(perf.activity[key])) activity[key] = perf.activity[key]
+  }
   if (
     context != null &&
     (![context.firstMs, context.lastMs, context.events, context.characters].every(isReportedTokenCount) ||
@@ -124,6 +152,7 @@ export function readOpenCodeTurnDiagnostics(value: unknown): OpenCodeTurnDiagnos
       toolCalls: perf.toolCalls,
       completedToolObservedMs: perf.completedToolObservedMs,
       unfinishedTools: perf.unfinishedTools,
+      ...(perf.activity ? { activity } : {}),
       ...(context === undefined
         ? {}
         : {

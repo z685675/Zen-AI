@@ -5,6 +5,7 @@ import type { OpenCodeEvent } from './client'
 export type NativeMessage = {
   id: string
   role: string
+  parentID?: string
   summary?: boolean
   time?: { completed?: number }
   error?: { name?: string; data?: { message?: string; statusCode?: number } }
@@ -118,6 +119,14 @@ export class OpenCodeStreamState {
       const toolCallId = `${this.zenSessionId}:${part.callID}`
       const state = part.state
       if (!state || state.status === 'pending') return []
+      const toolMetadata = {
+        ...metadata,
+        opencode: {
+          ...metadata.opencode,
+          ...(Number.isFinite(state.time?.start) ? { toolStartedAt: state.time.start } : {}),
+          ...(Number.isFinite(state.time?.end) ? { toolFinishedAt: state.time.end } : {})
+        }
+      }
       if (!this.calls.has(part.id)) {
         this.calls.add(part.id)
         this.hasVisibleOutput = true
@@ -126,7 +135,7 @@ export class OpenCodeStreamState {
           toolCallId,
           toolName: part.tool,
           input: state.input,
-          providerMetadata: metadata
+          providerMetadata: toolMetadata
         })
       }
       if (['completed', 'error'].includes(state.status) && !this.results.has(part.id)) {
@@ -141,8 +150,8 @@ export class OpenCodeStreamState {
                 toolCallId,
                 toolName: part.tool,
                 input: state.input,
-                error: state.error,
-                providerMetadata: metadata
+                providerMetadata: toolMetadata,
+                error: state.error
               }
             : {
                 type: 'tool-result',
@@ -150,7 +159,7 @@ export class OpenCodeStreamState {
                 toolName: part.tool,
                 input: state.input,
                 output,
-                providerMetadata: { ...metadata, raw: output }
+                providerMetadata: { ...toolMetadata, raw: output }
               }
         )
       }

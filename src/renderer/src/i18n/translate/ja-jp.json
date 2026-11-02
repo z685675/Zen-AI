@@ -357,6 +357,42 @@
       "success": "Git Bashが正常に検出されました！",
       "tooltip": "Windowsでエージェントを実行するにはGit Bashが必要です。まだインストールされていない場合は、git-scm.comからインストールしてください。"
     },
+    "inbox": {
+      "attachments": "添付ファイル",
+      "check": "受信状況を確認",
+      "continue": "続行を準備",
+      "dismiss": "記録を非表示",
+      "dismissHint": "記録を非表示にするだけで、送信済みのメッセージは取り消しません。",
+      "draftOccupied": "先に現在の下書きを送信または保存してください。",
+      "edit": "編集",
+      "hint": {
+        "accepted": "現在のタスクに保存され、後続処理を待っています。",
+        "deferred": "タスクは終了しましたが、追加指示の処理は未確認です。結果を確認してから続行してください。",
+        "failed": "実行に失敗し、キューは停止中です。再送信前に履歴を確認してください。",
+        "rejected": "送信されていません。編集するかタスク完了後に送信してください。",
+        "uncertain": "受信を確認できません。再送信前に受信状況や履歴を確認してください。"
+      },
+      "notReady": "タスクが開始中または終了処理中です。編集するか後で送信してください。",
+      "pause": "キューを一時停止",
+      "queue": "完了後に送信",
+      "remove": "削除",
+      "restored": "入力欄に戻しました。確認して送信してください。",
+      "resume": "キューを再開",
+      "saveFailed": "保存できませんでした。下書きは保持されています。",
+      "state": {
+        "accepted": "受信済み",
+        "applied": "後続処理に反映",
+        "deferred": "続行待ち",
+        "failed": "失敗",
+        "queued": "送信待ち",
+        "rejected": "未送信",
+        "sending": "送信中",
+        "sent": "送信済み",
+        "uncertain": "受信未確認"
+      },
+      "steer": "実行中のタスクを調整",
+      "title": "送信待ちと追加指示"
+    },
     "input": {
       "deep_research": "[to be translated]:Deep Research",
       "deep_research_tooltip": "[to be translated]:Creates one research task for your next message: plan first, then multi-step source verification and a cited report.",
@@ -990,9 +1026,11 @@
     "stageHumanWait": "[to be translated]:Waiting for user action",
     "stageInactivity": "タスクの進捗監視",
     "suggestion": "[to be translated]:Review completed work, then explicitly ask to continue only the unfinished part. Avoid blindly repeating submissions or generation.",
-    "summaryExecution": "[to be translated]:The cumulative 15-minute execution limit was reached. The task is paused; saved history and outputs are retained, with no automatic replay.",
+    "summaryExecution": "ローカルの実行時間制限に達したため、タスクを一時停止しました。履歴と成果は保持されています。",
+    "summaryExecutionTimed": "{{seconds}} 秒のローカル実行時間制限に達したため、タスクを一時停止しました。履歴と成果は保持されています。",
     "summaryHumanWait": "[to be translated]:The cumulative 30-minute user-action wait limit was reached. The task is paused; saved history and outputs are retained, with no automatic replay.",
-    "summaryInactivity": "15分間、新たな進捗が確認できなかったためタスクを一時停止しました。保存済みの履歴と成果は保持され、確認後に続行できます。",
+    "summaryInactivity": "長時間進捗が確認できなかったため、タスクを一時停止しました。履歴と成果は保持されています。確認してから続行してください。",
+    "summaryInactivityTimed": "{{seconds}} 秒間進捗が確認できなかったため、タスクを一時停止しました。履歴と成果は保持されています。",
     "titleExecution": "[to be translated]:Task paused: execution time limit reached",
     "titleHumanWait": "[to be translated]:Task paused: user wait limit reached",
     "titleInactivity": "タスクを一時停止：進捗がありません"
@@ -1464,6 +1502,19 @@
       "writing_data": "データ書き込み中..."
     },
     "title": "データバックアップ"
+  },
+  "browser": {
+    "external_cancel": "Cancel",
+    "external_failed": "Could not open the system browser. Please copy the address and open it manually.",
+    "external_hint": "The system browser has separate sign-in and verification. Download files there, then attach them to the assistant to continue.",
+    "external_open": "Open in system browser",
+    "external_private_description": "This opens the page outside this private window. Your system browser may save its address and use an existing signed-in account.",
+    "external_private_title": "Open this private page in the system browser?",
+    "handoff_continue": "Continue after finishing",
+    "handoff_default": "Complete sign-in, verification or confirmation, then continue.",
+    "handoff_title": "Your browser action is needed",
+    "network_hint": "Browser follows your system proxy. If verification keeps failing, try the system browser.",
+    "verification_message": "Complete the website verification manually, then continue. If it keeps failing, open the page in your system browser."
   },
   "button": {
     "add": "追加",
@@ -6329,6 +6380,7 @@
     },
     "proxy": {
       "address": "プロキシアドレス",
+      "browser_network": "This setting controls app services and API requests. The assistant browser independently follows your system proxy.",
       "bypass": "バイパスルール",
       "mode": {
         "custom": "カスタムプロキシ",

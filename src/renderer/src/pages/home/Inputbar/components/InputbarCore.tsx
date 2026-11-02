@@ -59,6 +59,8 @@ export interface InputbarCoreProps {
 
   onPause?: () => void
   handleSendMessage: () => void
+  allowSendWhileLoading?: boolean
+  renderSendButton?: (disabled: boolean) => React.ReactNode
 
   // Toolbar sections
   leftToolbar?: React.ReactNode
@@ -117,6 +119,8 @@ export const InputbarCore: FC<InputbarCoreProps> = ({
   isLoading,
   onPause,
   handleSendMessage,
+  allowSendWhileLoading = false,
+  renderSendButton,
   leftToolbar,
   rightToolbar,
   topContent,
@@ -193,7 +197,7 @@ export const InputbarCore: FC<InputbarCoreProps> = ({
   // 判断是否有内容：文本不为空或有文件
   const noContent = isEmpty && files.length === 0
   // 发送入口统一禁用条件：空内容、正在生成、全局搜索态
-  const isSendDisabled = noContent || isLoading || searching || sendDisabled
+  const isSendDisabled = noContent || (isLoading && !allowSendWhileLoading) || searching || sendDisabled
 
   useEffect(() => {
     setExtensions(supportedExts)
@@ -627,7 +631,11 @@ export const InputbarCore: FC<InputbarCoreProps> = ({
         isLoading={isTranslating}
       />
     )
-    extras.push(<SendMessageButton sendMessage={handleSendMessage} disabled={isSendDisabled} />)
+    extras.push(
+      renderSendButton?.(isSendDisabled) ?? (
+        <SendMessageButton sendMessage={handleSendMessage} disabled={isSendDisabled} />
+      )
+    )
 
     if (isLoading) {
       extras.push(
@@ -640,7 +648,7 @@ export const InputbarCore: FC<InputbarCoreProps> = ({
     }
 
     return <>{extras}</>
-  }, [text, onTranslated, isTranslating, handleSendMessage, isSendDisabled, isLoading, t, onPause])
+  }, [text, onTranslated, isTranslating, handleSendMessage, isSendDisabled, isLoading, t, onPause, renderSendButton])
 
   const quickPanelElement = config.enableQuickPanel ? <QuickPanelView setInputText={setText} /> : null
 

@@ -24,7 +24,7 @@ export const WaitForUserSchema = z.object({
 export const waitForUserToolDefinition = {
   name: 'wait_for_user',
   description:
-    'Show the Zen AI internal browser window with a handoff bar and wait until the user clicks Continue. Use after opening a page visibly when login, CAPTCHA, 2FA, authorization, account access, final publish/submit/delete confirmation, upload/download choice, file picker, site check-in, dashboard/admin workflow, or other manual browser interaction is required. After the user clicks Continue, inspect the page and continue the original task rather than asking them to start over. Do not use this for ordinary background search or public page extraction.',
+    'Show the Zen AI internal browser window with a handoff bar and wait until the user clicks Continue. Use after opening a page visibly when login, CAPTCHA, 2FA, authorization, account access, final publish/submit/delete confirmation, upload/download choice, file picker, site check-in, dashboard/admin workflow, or other manual browser interaction is required. Browser automation is paused during handoff. After Continue, inspect the page and continue the original task. If externalBrowserOpened is returned, system-browser cookies and verification are not shared: follow the returned guidance instead of repeating a blocked challenge. Do not use this for ordinary background search or public page extraction.',
   inputSchema: {
     type: 'object',
     properties: {

@@ -357,6 +357,42 @@
       "success": "Git Bash đã được phát hiện thành công!",
       "tooltip": "Git Bash là bắt buộc để chạy các agent trên Windows. Cài đặt từ git-scm.com nếu chưa có."
     },
+    "inbox": {
+      "attachments": "Tệp đính kèm",
+      "check": "Kiểm tra tiếp nhận",
+      "continue": "Chuẩn bị tiếp tục",
+      "dismiss": "Ẩn bản ghi",
+      "dismissHint": "Chỉ ẩn bản ghi, không thu hồi tin nhắn đã gửi.",
+      "draftOccupied": "Hãy gửi hoặc lưu bản nháp hiện tại trước.",
+      "edit": "Sửa",
+      "hint": {
+        "accepted": "Đã lưu vào tác vụ hiện tại, đang chờ xử lý tiếp.",
+        "deferred": "Tác vụ đã kết thúc nhưng chưa xác nhận phần bổ sung được xử lý. Kiểm tra kết quả trước khi tiếp tục.",
+        "failed": "Thực thi thất bại và hàng đợi đã tạm dừng. Kiểm tra lịch sử trước khi gửi lại.",
+        "rejected": "Chưa được gửi. Hãy sửa hoặc gửi sau tác vụ hiện tại.",
+        "uncertain": "Chưa xác nhận tiếp nhận. Kiểm tra trạng thái hoặc lịch sử trước khi gửi lại."
+      },
+      "notReady": "Tác vụ đang bắt đầu hoặc kết thúc. Hãy sửa hoặc gửi sau.",
+      "pause": "Tạm dừng hàng đợi",
+      "queue": "Gửi sau tác vụ",
+      "remove": "Xóa",
+      "restored": "Đã khôi phục vào ô nhập. Hãy kiểm tra rồi gửi.",
+      "resume": "Tiếp tục hàng đợi",
+      "saveFailed": "Không lưu được tin nhắn. Bản nháp đã được giữ lại.",
+      "state": {
+        "accepted": "Đã nhận",
+        "applied": "Đang xử lý tiếp",
+        "deferred": "Chờ tiếp tục",
+        "failed": "Thất bại",
+        "queued": "Đang chờ",
+        "rejected": "Chưa gửi",
+        "sending": "Đang gửi",
+        "sent": "Đã gửi",
+        "uncertain": "Chưa xác nhận tiếp nhận"
+      },
+      "steer": "Điều chỉnh tác vụ hiện tại",
+      "title": "Tin nhắn đang chờ"
+    },
     "input": {
       "deep_research": "[to be translated]:Deep Research",
       "deep_research_tooltip": "[to be translated]:Creates one research task for your next message: plan first, then multi-step source verification and a cited report.",
@@ -990,9 +1026,11 @@
     "stageHumanWait": "[to be translated]:Waiting for user action",
     "stageInactivity": "Theo dõi tiến độ",
     "suggestion": "[to be translated]:Review completed work, then explicitly ask to continue only the unfinished part. Avoid blindly repeating submissions or generation.",
-    "summaryExecution": "[to be translated]:The cumulative 15-minute execution limit was reached. The task is paused; saved history and outputs are retained, with no automatic replay.",
+    "summaryExecution": "Tác vụ đã đạt giới hạn thực thi cục bộ và tạm dừng. Lịch sử và kết quả được giữ lại.",
+    "summaryExecutionTimed": "Tác vụ đạt giới hạn thực thi cục bộ {{seconds}} giây và tạm dừng. Lịch sử và kết quả được giữ lại.",
     "summaryHumanWait": "[to be translated]:The cumulative 30-minute user-action wait limit was reached. The task is paused; saved history and outputs are retained, with no automatic replay.",
-    "summaryInactivity": "Không ghi nhận tiến triển mới trong 15 phút. Tác vụ đã tạm dừng; lịch sử và kết quả được giữ lại để kiểm tra trước khi tiếp tục.",
+    "summaryInactivity": "Tác vụ đã tạm dừng sau một thời gian dài không có tiến triển. Lịch sử và kết quả được giữ lại; hãy kiểm tra trước khi tiếp tục.",
+    "summaryInactivityTimed": "Không ghi nhận tiến triển trong {{seconds}} giây. Tác vụ đã tạm dừng; lịch sử và kết quả được giữ lại.",
     "titleExecution": "[to be translated]:Task paused: execution time limit reached",
     "titleHumanWait": "[to be translated]:Task paused: user wait limit reached",
     "titleInactivity": "Tác vụ tạm dừng: không có tiến triển"
@@ -1464,6 +1502,19 @@
       "writing_data": "Đang ghi dữ liệu..."
     },
     "title": "Sao lưu dữ liệu"
+  },
+  "browser": {
+    "external_cancel": "Cancel",
+    "external_failed": "Could not open the system browser. Please copy the address and open it manually.",
+    "external_hint": "The system browser has separate sign-in and verification. Download files there, then attach them to the assistant to continue.",
+    "external_open": "Open in system browser",
+    "external_private_description": "This opens the page outside this private window. Your system browser may save its address and use an existing signed-in account.",
+    "external_private_title": "Open this private page in the system browser?",
+    "handoff_continue": "Continue after finishing",
+    "handoff_default": "Complete sign-in, verification or confirmation, then continue.",
+    "handoff_title": "Your browser action is needed",
+    "network_hint": "Browser follows your system proxy. If verification keeps failing, try the system browser.",
+    "verification_message": "Complete the website verification manually, then continue. If it keeps failing, open the page in your system browser."
   },
   "button": {
     "add": "Tambahkan",
@@ -6329,6 +6380,7 @@
     },
     "proxy": {
       "address": "Địa chỉ Proxy",
+      "browser_network": "This setting controls app services and API requests. The assistant browser independently follows your system proxy.",
       "bypass": "Bỏ qua các quy tắc",
       "mode": {
         "custom": "Proxy Tùy chỉnh",

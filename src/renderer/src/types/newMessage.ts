@@ -256,6 +256,7 @@ export type DeepResearchTaskMetadata = {
 }
 
 export type MessageProviderMetadata = ProviderMetadata & {
+  agentInput?: { delivery: 'steer' | 'queue'; state?: string }
   legacyContinuation?: { source_session_id: string; source_message_id: string }
   agentSessionSync?: AgentSessionSyncMetadata
   deepResearch?: DeepResearchTaskMetadata

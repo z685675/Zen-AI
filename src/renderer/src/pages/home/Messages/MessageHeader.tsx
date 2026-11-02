@@ -140,6 +140,7 @@ const MessageHeader: FC<Props> = memo(({ assistant, model, message, topic, isGro
         <InfoWrap className="message-header-info-wrap text-(--color-text-3) text-[10px]">
           <MessageTime>{formatMessageTimestamp(message)}</MessageTime>
           {message.providerMetadata?.legacyContinuation && <span>{t('assistant_transition.historical_copy')}</span>}
+          {message.providerMetadata?.agentInput?.delivery === 'steer' && <span>{t('agent.inbox.steer')}</span>}
           {isBubbleStyle && (message.usage !== undefined || message.providerMetadata?.responseTiming) && (
             <>
               |

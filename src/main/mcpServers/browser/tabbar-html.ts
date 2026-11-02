@@ -300,7 +300,8 @@ export const TAB_BAR_HTML = `<!DOCTYPE html>
       align-items: center;
       gap: 10px;
       padding: 8px 14px;
-      min-height: 48px;
+      box-sizing: border-box;
+      height: 88px;
       background: var(--bg-handoff);
       color: var(--color-handoff);
       border-top: 1px solid rgba(251, 146, 60, 0.28);
@@ -340,7 +341,12 @@ export const TAB_BAR_HTML = `<!DOCTYPE html>
       overflow: hidden;
       text-overflow: ellipsis;
     }
-    #handoff-continue-btn {
+    #handoff-help {
+      font-size: 11px;
+      line-height: 1.4;
+      opacity: 0.85;
+    }
+    #handoff-continue-btn, #handoff-external-btn {
       height: 30px;
       border: none;
       border-radius: 999px;
@@ -351,6 +357,11 @@ export const TAB_BAR_HTML = `<!DOCTYPE html>
       font-weight: 600;
       cursor: pointer;
       flex-shrink: 0;
+    }
+    #handoff-external-btn {
+      background: transparent;
+      color: var(--color-handoff);
+      border: 1px solid currentColor;
     }
     #handoff-continue-btn:hover { filter: brightness(0.96); }
   </style>
@@ -388,6 +399,9 @@ export const TAB_BAR_HTML = `<!DOCTYPE html>
     <div id="url-container">
       <input type="text" id="url-input" placeholder="Search or enter URL" spellcheck="false" />
     </div>
+    <button class="nav-btn" id="open-external-btn">
+      <svg viewBox="0 0 24 24"><path d="M14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7zM5 5h5V3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-5h-2v5H5V5z"/></svg>
+    </button>
     <div id="browser-owner-badge">Zen AI internal browser</div>
   </div>
   <div id="handoff-bar">
@@ -395,7 +409,9 @@ export const TAB_BAR_HTML = `<!DOCTYPE html>
     <div id="handoff-text">
       <div id="handoff-title">\u9700\u8981\u4f60\u63a5\u7ba1\u6d4f\u89c8\u5668</div>
       <div id="handoff-message">\u8bf7\u5b8c\u6210\u767b\u5f55\u3001\u9a8c\u8bc1\u7801\u6216\u786e\u8ba4\u64cd\u4f5c\uff0c\u5b8c\u6210\u540e\u70b9\u51fb\u7ee7\u7eed\u3002</div>
+      <div id="handoff-help"></div>
     </div>
+    <button id="handoff-external-btn"></button>
     <button id="handoff-continue-btn">\u5b8c\u6210\u540e\u7ee7\u7eed</button>
   </div>
   <script>
@@ -407,6 +423,19 @@ export const TAB_BAR_HTML = `<!DOCTYPE html>
     const handoffBar = document.getElementById('handoff-bar');
     const handoffMessage = document.getElementById('handoff-message');
     const handoffContinueBtn = document.getElementById('handoff-continue-btn');
+    const handoffHelp = document.getElementById('handoff-help');
+    let browserLabels = {};
+    let externalBrowserOpened = false;
+
+    window.setBrowserLabels = function(labels) {
+      browserLabels = labels;
+      document.getElementById('handoff-title').textContent = labels.handoff_title;
+      handoffContinueBtn.textContent = labels.handoff_continue;
+      document.getElementById('handoff-external-btn').textContent = labels.external_open;
+      document.getElementById('open-external-btn').title = labels.external_open;
+      document.getElementById('browser-owner-badge').title = labels.network_hint;
+      handoffHelp.textContent = externalBrowserOpened ? labels.external_hint : labels.network_hint;
+    };
 
     window.currentUrl = '';
     window.canGoBack = false;
@@ -550,8 +579,10 @@ export const TAB_BAR_HTML = `<!DOCTYPE html>
       window.postMessage({ channel: 'tabbar-action', payload: action }, '*');
     }
 
-    window.showHandoff = function(message) {
-      handoffMessage.textContent = message || '\u8bf7\u5b8c\u6210\u767b\u5f55\u3001\u9a8c\u8bc1\u7801\u6216\u786e\u8ba4\u64cd\u4f5c\uff0c\u5b8c\u6210\u540e\u70b9\u51fb\u7ee7\u7eed\u3002';
+    window.showHandoff = function(message, openedExternally) {
+      externalBrowserOpened = !!openedExternally;
+      handoffMessage.textContent = message || browserLabels.handoff_default || '';
+      handoffHelp.textContent = externalBrowserOpened ? browserLabels.external_hint : browserLabels.network_hint;
       handoffBar.classList.add('visible');
     };
 
@@ -561,6 +592,13 @@ export const TAB_BAR_HTML = `<!DOCTYPE html>
 
     handoffContinueBtn.addEventListener('click', function() {
       sendAction({ type: 'handoff-continue' });
+    });
+
+    document.getElementById('open-external-btn').addEventListener('click', function() {
+      sendAction({ type: 'open-external' });
+    });
+    document.getElementById('handoff-external-btn').addEventListener('click', function() {
+      sendAction({ type: 'open-external' });
     });
 
     tabsContainer.addEventListener('click', function(e) {

@@ -357,6 +357,42 @@
       "success": "Git Bash успешно обнаружен!",
       "tooltip": "Для запуска агентов в Windows требуется Git Bash. Установите его с сайта git-scm.com, если он отсутствует."
     },
+    "inbox": {
+      "attachments": "Вложения",
+      "check": "Проверить получение",
+      "continue": "Подготовить продолжение",
+      "dismiss": "Скрыть запись",
+      "dismissHint": "Скрывает только запись, не отменяя отправленное сообщение.",
+      "draftOccupied": "Сначала отправьте или сохраните текущий черновик.",
+      "edit": "Изменить",
+      "hint": {
+        "accepted": "Сохранено в текущей задаче; ожидает дальнейшей обработки.",
+        "deferred": "Задача завершена, но обработка дополнения не подтверждена. Проверьте результат перед продолжением.",
+        "failed": "Ошибка выполнения; очередь приостановлена. Проверьте историю перед повторной отправкой.",
+        "rejected": "Не отправлено. Измените или отправьте после текущей задачи.",
+        "uncertain": "Получение не подтверждено. Проверьте статус или историю перед повторной отправкой."
+      },
+      "notReady": "Задача запускается или завершается. Измените сообщение или отправьте позже.",
+      "pause": "Приостановить очередь",
+      "queue": "Отправить после задачи",
+      "remove": "Удалить",
+      "restored": "Возвращено в поле ввода. Проверьте и отправьте.",
+      "resume": "Продолжить очередь",
+      "saveFailed": "Не удалось сохранить сообщение. Черновик сохранён.",
+      "state": {
+        "accepted": "Получено",
+        "applied": "В дальнейшей обработке",
+        "deferred": "Ожидает продолжения",
+        "failed": "Ошибка",
+        "queued": "В очереди",
+        "rejected": "Не отправлено",
+        "sending": "Отправляется",
+        "sent": "Отправлено",
+        "uncertain": "Получение не подтверждено"
+      },
+      "steer": "Уточнить текущую задачу",
+      "title": "Ожидающие сообщения"
+    },
     "input": {
       "deep_research": "[to be translated]:Deep Research",
       "deep_research_tooltip": "[to be translated]:Creates one research task for your next message: plan first, then multi-step source verification and a cited report.",
@@ -990,9 +1026,11 @@
     "stageHumanWait": "[to be translated]:Waiting for user action",
     "stageInactivity": "Контроль хода задачи",
     "suggestion": "[to be translated]:Review completed work, then explicitly ask to continue only the unfinished part. Avoid blindly repeating submissions or generation.",
-    "summaryExecution": "[to be translated]:The cumulative 15-minute execution limit was reached. The task is paused; saved history and outputs are retained, with no automatic replay.",
+    "summaryExecution": "Задача достигла локального ограничения времени и приостановлена. История и результаты сохранены.",
+    "summaryExecutionTimed": "Задача достигла локального ограничения в {{seconds}} секунд и приостановлена. История и результаты сохранены.",
     "summaryHumanWait": "[to be translated]:The cumulative 30-minute user-action wait limit was reached. The task is paused; saved history and outputs are retained, with no automatic replay.",
-    "summaryInactivity": "Новых результатов не наблюдалось 15 минут. Задача приостановлена; история и результаты сохранены для проверки перед продолжением.",
+    "summaryInactivity": "Задача приостановлена из-за длительного отсутствия прогресса. История и результаты сохранены; проверьте их перед продолжением.",
+    "summaryInactivityTimed": "В течение {{seconds}} секунд прогресс не наблюдался. Задача приостановлена; история и результаты сохранены.",
     "titleExecution": "[to be translated]:Task paused: execution time limit reached",
     "titleHumanWait": "[to be translated]:Task paused: user wait limit reached",
     "titleInactivity": "Задача приостановлена: нет прогресса"
@@ -1464,6 +1502,19 @@
       "writing_data": "Запись данных..."
     },
     "title": "Резервное копирование данных"
+  },
+  "browser": {
+    "external_cancel": "Cancel",
+    "external_failed": "Could not open the system browser. Please copy the address and open it manually.",
+    "external_hint": "The system browser has separate sign-in and verification. Download files there, then attach them to the assistant to continue.",
+    "external_open": "Open in system browser",
+    "external_private_description": "This opens the page outside this private window. Your system browser may save its address and use an existing signed-in account.",
+    "external_private_title": "Open this private page in the system browser?",
+    "handoff_continue": "Continue after finishing",
+    "handoff_default": "Complete sign-in, verification or confirmation, then continue.",
+    "handoff_title": "Your browser action is needed",
+    "network_hint": "Browser follows your system proxy. If verification keeps failing, try the system browser.",
+    "verification_message": "Complete the website verification manually, then continue. If it keeps failing, open the page in your system browser."
   },
   "button": {
     "add": "Добавить",
@@ -6329,6 +6380,7 @@
     },
     "proxy": {
       "address": "Адрес прокси",
+      "browser_network": "This setting controls app services and API requests. The assistant browser independently follows your system proxy.",
       "bypass": "Правила обхода",
       "mode": {
         "custom": "Пользовательский прокси",

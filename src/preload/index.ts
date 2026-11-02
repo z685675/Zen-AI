@@ -4,6 +4,7 @@ import { electronAPI } from '@electron-toolkit/preload'
 import type { SpanEntity, TokenUsage } from '@mcp-trace/trace-core'
 import type { SpanContext } from '@opentelemetry/api'
 import type { AutomationRequest, AutomationResponse } from '@shared/agents/automation'
+import type { AgentInputReceipt, AgentRunInput, AgentRunInputStatus } from '@shared/agents/sessionInput'
 import type { GitBashPathInfo, TerminalConfig } from '@shared/config/constant'
 import type { ImageCanvasOpen, ImageCanvasProvider, ImageViewBounds } from '@shared/config/imageCanvas'
 import type { LogLevel, LogSourceWithContext } from '@shared/config/logger'
@@ -637,6 +638,12 @@ const api = {
     }) => ipcRenderer.invoke(IpcChannel.AgentToolPermission_Response, payload)
   },
   agentSessionStream: {
+    inputStatus: (sessionId: string): Promise<AgentRunInputStatus> =>
+      ipcRenderer.invoke(IpcChannel.AgentSessionInput_Status, sessionId),
+    submitInput: (input: AgentRunInput): Promise<AgentInputReceipt> =>
+      ipcRenderer.invoke(IpcChannel.AgentSessionInput_Submit, input),
+    checkInput: (sessionId: string, id: string): Promise<AgentInputReceipt> =>
+      ipcRenderer.invoke(IpcChannel.AgentSessionInput_Check, { sessionId, id }),
     subscribe: (sessionId: string) => ipcRenderer.invoke(IpcChannel.AgentSessionStream_Subscribe, { sessionId }),
     unsubscribe: (sessionId: string) => ipcRenderer.invoke(IpcChannel.AgentSessionStream_Unsubscribe, { sessionId }),
     abort: (sessionId: string) => ipcRenderer.invoke(IpcChannel.AgentSessionStream_Abort, { sessionId }),

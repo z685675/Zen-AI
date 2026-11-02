@@ -20,6 +20,30 @@ async function upstream(handler: Parameters<typeof createServer>[0]) {
   return `http://127.0.0.1:${(server.address() as { port: number }).port}/v1`
 }
 describe('native Provider byte-transparent diagnostic bridge', () => {
+  it('reports parameter progress and final byte times without changing the stream or recording argument content', async () => {
+    const body =
+      ': ping\n\ndata: {"choices":[{"delta":{"tool_calls":[{"function":{"arguments":"PRIVATE_ARGS"}}]}}]}\n\ndata: [DONE]\n\n'
+    const url = await upstream((_req, res) => {
+      res.writeHead(200, { 'Content-Type': 'text/event-stream' })
+      res.end(body)
+    })
+    const events: Array<{ event: string; details: Record<string, unknown> }> = []
+    const gateway = await createOpenCodeGateway(url, (_id, event, details) => events.push({ event, details }))
+    cleanup.push(gateway.stop)
+    const response = await fetch(gateway.baseURL + '/chat/completions', {
+      headers: { 'x-zen-runtime-token': gateway.token }
+    })
+    expect(await response.text()).toBe(body)
+    expect(events.filter((e) => e.event === 'tool-input-progress')).toHaveLength(1)
+    expect(events.find((e) => e.event === 'body-complete')?.details).toMatchObject({
+      receivedBytes: Buffer.byteLength(body),
+      toolInputCharacters: 12,
+      lastDataAt: expect.any(String),
+      lastForwardedAt: expect.any(String),
+      lastToolInputAt: expect.any(String)
+    })
+    expect(JSON.stringify(events)).not.toContain('PRIVATE_ARGS')
+  })
   it('sends the first model request directly even when the old quota endpoint times out', async () => {
     let modelCalls = 0
     const permits: string[] = []

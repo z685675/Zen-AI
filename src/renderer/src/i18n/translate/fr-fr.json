@@ -357,6 +357,42 @@
       "success": "Git Bash détecté avec succès !",
       "tooltip": "Git Bash est nécessaire pour exécuter des agents sur Windows. Installez-le depuis git-scm.com s'il n'est pas disponible."
     },
+    "inbox": {
+      "attachments": "Pièces jointes",
+      "check": "Vérifier la réception",
+      "continue": "Préparer la suite",
+      "dismiss": "Masquer la trace",
+      "dismissHint": "Masque uniquement cette trace sans annuler le message envoyé.",
+      "draftOccupied": "Envoyez ou sauvegardez le brouillon actuel au préalable.",
+      "edit": "Modifier",
+      "hint": {
+        "accepted": "Enregistré dans la tâche actuelle, en attente de traitement.",
+        "deferred": "La tâche est terminée, mais le traitement de cet ajout n’est pas confirmé. Vérifiez le résultat avant de continuer.",
+        "failed": "L’exécution a échoué et la file est suspendue. Vérifiez l’historique avant de renvoyer.",
+        "rejected": "Non transmis. Modifiez ou envoyez après la tâche en cours.",
+        "uncertain": "Réception non confirmée. Vérifiez la réception ou l’historique avant de renvoyer."
+      },
+      "notReady": "La tâche démarre ou se termine. Modifiez ou envoyez plus tard.",
+      "pause": "Suspendre la file",
+      "queue": "Envoyer après cette tâche",
+      "remove": "Retirer",
+      "restored": "Restauré dans la zone de saisie. Vérifiez puis envoyez.",
+      "resume": "Reprendre la file",
+      "saveFailed": "Impossible de sauvegarder le message. Le brouillon est conservé.",
+      "state": {
+        "accepted": "Reçu",
+        "applied": "Traitement suivant",
+        "deferred": "Suite en attente",
+        "failed": "Échec",
+        "queued": "En attente",
+        "rejected": "Non envoyé",
+        "sending": "Envoi en cours",
+        "sent": "Envoyé",
+        "uncertain": "Réception non confirmée"
+      },
+      "steer": "Ajuster la tâche en cours",
+      "title": "Messages en attente"
+    },
     "input": {
       "deep_research": "[to be translated]:Deep Research",
       "deep_research_tooltip": "[to be translated]:Creates one research task for your next message: plan first, then multi-step source verification and a cited report.",
@@ -990,9 +1026,11 @@
     "stageHumanWait": "[to be translated]:Waiting for user action",
     "stageInactivity": "Suivi de la progression",
     "suggestion": "[to be translated]:Review completed work, then explicitly ask to continue only the unfinished part. Avoid blindly repeating submissions or generation.",
-    "summaryExecution": "[to be translated]:The cumulative 15-minute execution limit was reached. The task is paused; saved history and outputs are retained, with no automatic replay.",
+    "summaryExecution": "La tâche a atteint sa limite locale et a été suspendue. L’historique et les résultats sont conservés.",
+    "summaryExecutionTimed": "La tâche a atteint sa limite locale de {{seconds}} secondes et a été suspendue. L’historique et les résultats sont conservés.",
     "summaryHumanWait": "[to be translated]:The cumulative 30-minute user-action wait limit was reached. The task is paused; saved history and outputs are retained, with no automatic replay.",
-    "summaryInactivity": "Aucun nouveau progrès observé depuis 15 minutes. La tâche est en pause ; l’historique et les résultats restent disponibles pour vérification avant de continuer.",
+    "summaryInactivity": "La tâche a été suspendue après une longue période sans progrès. L’historique et les résultats sont conservés ; vérifiez-les avant de continuer.",
+    "summaryInactivityTimed": "Aucun progrès observé pendant {{seconds}} secondes. La tâche a été suspendue ; l’historique et les résultats sont conservés.",
     "titleExecution": "[to be translated]:Task paused: execution time limit reached",
     "titleHumanWait": "[to be translated]:Task paused: user wait limit reached",
     "titleInactivity": "Tâche en pause : aucun progrès récent"
@@ -1464,6 +1502,19 @@
       "writing_data": "Écriture des données..."
     },
     "title": "Sauvegarde des données"
+  },
+  "browser": {
+    "external_cancel": "Cancel",
+    "external_failed": "Could not open the system browser. Please copy the address and open it manually.",
+    "external_hint": "The system browser has separate sign-in and verification. Download files there, then attach them to the assistant to continue.",
+    "external_open": "Open in system browser",
+    "external_private_description": "This opens the page outside this private window. Your system browser may save its address and use an existing signed-in account.",
+    "external_private_title": "Open this private page in the system browser?",
+    "handoff_continue": "Continue after finishing",
+    "handoff_default": "Complete sign-in, verification or confirmation, then continue.",
+    "handoff_title": "Your browser action is needed",
+    "network_hint": "Browser follows your system proxy. If verification keeps failing, try the system browser.",
+    "verification_message": "Complete the website verification manually, then continue. If it keeps failing, open the page in your system browser."
   },
   "button": {
     "add": "Ajouter",
@@ -6329,6 +6380,7 @@
     },
     "proxy": {
       "address": "Adresse du proxy",
+      "browser_network": "This setting controls app services and API requests. The assistant browser independently follows your system proxy.",
       "bypass": "Règles de contournement",
       "mode": {
         "custom": "Proxy personnalisé",

@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 
+vi.mock('@main/utils/locales', () => ({ t: (key: string) => key }))
+
 vi.mock('node:fs', () => ({
   default: {
     existsSync: vi.fn(() => false),
@@ -106,6 +108,7 @@ vi.mock('electron', () => {
   }
 
   const privateBrowserSession = {
+    setProxy: vi.fn(async () => {}),
     clearStorageData: vi.fn(async () => {}),
     clearCache: vi.fn(async () => {})
   }
@@ -115,6 +118,8 @@ vi.mock('electron', () => {
     BrowserView: MockBrowserView as any,
     app,
     nativeTheme,
+    shell: { openExternal: vi.fn(async () => {}) },
+    dialog: { showMessageBox: vi.fn(async () => ({ response: 0 })) },
     __mockDebugger: debuggerObj,
     __mockSendCommand: sendCommand,
     __mockWindows: windows,
@@ -135,6 +140,62 @@ describe('CdpBrowserController', () => {
   beforeEach(() => {
     // Clear mock call history
     vi.clearAllMocks()
+  })
+
+  it('prepares an independent system-proxy session before browsing and leaves the native user agent intact', async () => {
+    const electron = await import('electron')
+    const browserSession = (electron as any).__mockPrivateBrowserSession
+    let release!: () => void
+    browserSession.setProxy.mockImplementationOnce(() => new Promise<void>((resolve) => (release = resolve)))
+    const controller = new CdpBrowserController()
+    const opening = controller.open('https://example.com/')
+    await vi.waitFor(() => expect(browserSession.setProxy).toHaveBeenCalledWith({ mode: 'system' }))
+    expect(electron.session.fromPartition).toHaveBeenCalledWith('persist:default')
+    expect((electron as any).__mockViews).not.toBeUndefined()
+    const viewCount = (electron as any).__mockViews.length
+    release()
+    await opening
+    const views = (electron as any).__mockViews
+    expect(views.length).toBeGreaterThan(viewCount)
+    expect(views.at(-1).webContents.setUserAgent).not.toHaveBeenCalled()
+    await controller.execute('1+1')
+    expect(browserSession.setProxy).toHaveBeenCalledOnce()
+    await controller.dispose()
+  })
+
+  it('also gives the private browser its own system-proxy session', async () => {
+    const electron = await import('electron')
+    const controller = new CdpBrowserController()
+    await controller.open('https://example.com/', 5000, true)
+    expect(electron.session.fromPartition).toHaveBeenCalledWith('private')
+    expect((electron as any).__mockPrivateBrowserSession.setProxy).toHaveBeenCalledWith({ mode: 'system' })
+    await controller.dispose()
+  })
+
+  it('reports system-proxy setup failure and permits a later retry without loading a page on the wrong route', async () => {
+    const electron = await import('electron')
+    const controller = new CdpBrowserController()
+    const browserSession = (electron as any).__mockPrivateBrowserSession
+    browserSession.setProxy.mockRejectedValueOnce(new Error('system proxy unavailable'))
+    await expect(controller.open('https://example.com/')).rejects.toThrow('system proxy unavailable')
+    expect((controller as any).windows.size).toBe(0)
+    await expect(controller.open('https://example.com/')).resolves.toMatchObject({ tabId: expect.any(String) })
+    await controller.dispose()
+  })
+
+  it('does not let a delayed native close event tear down the replacement browser', async () => {
+    const controller = new CdpBrowserController()
+    await controller.open('https://example.com/')
+    const oldWindow = [...(controller as any).windows.values()][0].window
+    const closed = oldWindow.on.mock.calls.find(([event]: [string]) => event === 'closed')[1]
+    await controller.reset(false)
+    const reopened = await controller.open('https://example.com/')
+    const newWindow = [...(controller as any).windows.values()][0]
+    closed()
+    expect((controller as any).windows.get('default')).toBe(newWindow)
+    expect(newWindow.tabs.has(reopened.tabId)).toBe(true)
+    await expect(controller.execute('1+1', 5000, false, reopened.tabId)).resolves.toBe('ok')
+    await controller.dispose()
   })
 
   it('executes single-line code via Runtime.evaluate', async () => {
@@ -411,6 +472,118 @@ describe('CdpBrowserController', () => {
   })
 
   describe('User handoff', () => {
+    it('keeps an automatic handoff reachable after the user switches to another tab', async () => {
+      const controller = new CdpBrowserController()
+      const opened = await controller.open('https://example.com/')
+      const windowInfo = [...(controller as any).windows.values()][0]
+      const originalTab = windowInfo.tabs.get(opened.tabId)
+      originalTab.userAction = { reason: 'captcha', message: 'Verify manually', url: 'https://example.com/' }
+      ;(controller as any).pauseForUser(originalTab)
+      const other = await controller.createTab()
+      await controller.switchTab(false, other.tabId)
+      ;(controller as any).sendHandoffUpdate(windowInfo)
+      expect(windowInfo.tabBarView.webContents.executeJavaScript).toHaveBeenLastCalledWith(
+        expect.stringContaining('Verify manually')
+      )
+      ;(controller as any).handleTabBarAction(windowInfo, { type: 'handoff-continue' })
+      expect(originalTab.manualControl).toBe(false)
+      await expect(controller.execute('1+1', 5000, false, other.tabId)).resolves.toBe('ok')
+      await controller.dispose()
+    })
+
+    it('releases an explicit handoff after timeout when no automatic verification prompt remains', async () => {
+      const controller = new CdpBrowserController()
+      const opened = await controller.open('https://example.com/')
+      await expect(controller.waitForUser('Wait', undefined, 20, false, opened.tabId)).rejects.toThrow('Timed out')
+      await expect(controller.execute('1+1', 5000, false, opened.tabId)).resolves.toBe('ok')
+      await controller.dispose()
+    })
+
+    it('detaches page automation while the user verifies, preserves control through redirects, and resumes on Continue', async () => {
+      const electron = await import('electron')
+      const controller = new CdpBrowserController()
+      const { tabId } = await controller.open('https://example.com/')
+      const windowInfo = [...(controller as any).windows.values()][0]
+      const tab = windowInfo.tabs.get(tabId)
+      const wait = controller.waitForUser('Verify manually', 'captcha', 5000, false, tabId)
+      await vi.waitFor(() => expect(tab.manualControl).toBe(true))
+      expect((electron as any).__mockDebugger.detach).toHaveBeenCalled()
+      const probes = tab.view.webContents.executeJavaScript.mock.calls.length
+      ;(controller as any).clearUserActionForNavigation(tab, true)
+      ;(controller as any).scheduleUserActionDetection(windowInfo, tab)
+      await (controller as any).detectUserActionForTab(windowInfo, tab)
+      expect(tab.view.webContents.executeJavaScript.mock.calls.length).toBe(probes)
+      await expect(controller.execute('1+1', 5000, false, tabId)).rejects.toThrow('under user control')
+      await expect(controller.screenshot({}, false, tabId)).rejects.toThrow('under user control')
+      await expect(controller.open('https://other.example/')).rejects.toThrow('under user control')
+      windowInfo.lastActive = 0
+      ;(controller as any).sweepIdle()
+      expect(windowInfo.window.isDestroyed()).toBe(false)
+      ;(controller as any).handleTabBarAction(windowInfo, { type: 'handoff-continue' })
+      await expect(wait).resolves.toMatchObject({ status: 'continued' })
+      expect(tab.manualControl).toBe(false)
+      ;(electron as any).__mockDebugger.isAttached.mockReturnValueOnce(false)
+      await expect(controller.execute('1+1', 5000, false, tabId)).resolves.toBe('ok')
+      expect((electron as any).__mockDebugger.attach).toHaveBeenCalled()
+      await controller.dispose()
+    })
+
+    it('hands a challenge to the user before attempting content extraction', async () => {
+      const electron = await import('electron')
+      const controller = new CdpBrowserController()
+      // The first probe belongs to the page opened below.
+      const { tabId } = await controller.open('https://example.com/')
+      const tab = [...(controller as any).windows.values()][0].tabs.get(tabId)
+      tab.view.webContents.executeJavaScript.mockResolvedValue({
+        url: 'https://example.com/',
+        title: 'Just a moment...',
+        text: 'Verify you are human',
+        hasBrowserChallenge: true
+      })
+      ;(electron as any).__mockSendCommand.mockClear()
+      const result = await controller.fetch('https://example.com/', 'markdown', 5000, false, false, false)
+      expect(result.tabId).toBe(tabId)
+      expect(JSON.parse(result.content as string).userAction.reason).toBe('captcha')
+      expect((electron as any).__mockSendCommand).not.toHaveBeenCalled()
+      expect(tab.manualControl).toBe(true)
+      await controller.dispose()
+    })
+
+    it('opens only the current HTTP(S) page externally and reports that verification is not shared', async () => {
+      const electron = await import('electron')
+      const controller = new CdpBrowserController()
+      const { tabId } = await controller.open('https://example.com/')
+      const windowInfo = [...(controller as any).windows.values()][0]
+      const wait = controller.waitForUser('Verify', 'captcha', 5000, false, tabId)
+      await vi.waitFor(() => expect(windowInfo.handoff).toBeDefined())
+      await (controller as any).openInSystemBrowser(windowInfo)
+      expect(electron.shell.openExternal).toHaveBeenCalledWith('https://example.com/')
+      expect(windowInfo.handoff).toBeDefined()
+      ;(controller as any).handleTabBarAction(windowInfo, { type: 'handoff-continue' })
+      await expect(wait).resolves.toMatchObject({
+        status: 'continued',
+        externalBrowserOpened: true,
+        guidance: expect.stringContaining('not shared')
+      })
+      windowInfo.tabs.get(tabId).view.webContents.getURL.mockReturnValue('file:///C:/danger.exe')
+      await expect((controller as any).openInSystemBrowser(windowInfo)).rejects.toThrow('Only HTTP(S)')
+      expect(electron.shell.openExternal).toHaveBeenCalledOnce()
+      await controller.dispose()
+    })
+
+    it('requires a user choice before moving a private page into the system browser', async () => {
+      const electron = await import('electron')
+      const controller = new CdpBrowserController()
+      await controller.open('https://example.com/', 5000, true)
+      const windowInfo = [...(controller as any).windows.values()][0]
+      await (controller as any).openInSystemBrowser(windowInfo)
+      expect(electron.dialog.showMessageBox).toHaveBeenCalled()
+      expect(electron.shell.openExternal).not.toHaveBeenCalled()
+      vi.mocked(electron.dialog.showMessageBox).mockResolvedValueOnce({ response: 1, checkboxChecked: false })
+      await (controller as any).openInSystemBrowser(windowInfo)
+      expect(electron.shell.openExternal).toHaveBeenCalledOnce()
+      await controller.dispose()
+    })
     it('waits until the user continues from the visible browser', async () => {
       const controller = new CdpBrowserController()
       const waitPromise = controller.waitForUser('Please sign in, then continue.', 'login_required', 1000)

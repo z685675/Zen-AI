@@ -357,6 +357,42 @@
       "success": "Git Bash detected successfully!",
       "tooltip": "Git Bash is required to run agents on Windows. Install from git-scm.com if not available."
     },
+    "inbox": {
+      "attachments": "Attachments",
+      "check": "Check receipt",
+      "continue": "Prepare continuation",
+      "dismiss": "Hide record",
+      "dismissHint": "Only hides this record; it does not undo a submitted message.",
+      "draftOccupied": "Send or save the current draft before editing this message.",
+      "edit": "Edit",
+      "hint": {
+        "accepted": "Saved in the current task. It can take effect at a later processing step.",
+        "deferred": "The task has ended, but processing of this addition is unconfirmed. Check the result before preparing a continuation.",
+        "failed": "Execution failed and the queue is paused. Check the conversation before editing and sending again.",
+        "rejected": "The message was not submitted. Edit it or send it after the current task.",
+        "uncertain": "Delivery is unconfirmed. Check the receipt or conversation history before sending again."
+      },
+      "notReady": "The task is still starting or finishing. Edit this message or send it after the task.",
+      "pause": "Pause queue",
+      "queue": "Send after this task",
+      "remove": "Dismiss",
+      "restored": "Restored to the input box. Review it, then send.",
+      "resume": "Continue queue",
+      "saveFailed": "Could not save this message. Your draft has been kept.",
+      "state": {
+        "accepted": "Received",
+        "applied": "In follow-up processing",
+        "deferred": "Awaiting continuation",
+        "failed": "Failed",
+        "queued": "Queued",
+        "rejected": "Not sent",
+        "sending": "Sending",
+        "sent": "Sent",
+        "uncertain": "Receipt unconfirmed"
+      },
+      "steer": "Adjust current task",
+      "title": "Pending messages and task updates"
+    },
     "input": {
       "deep_research": "Deep Research",
       "deep_research_tooltip": "Creates one research task for your next message with high reasoning effort while keeping the current model: plan first, then multi-step source verification and a cited report.",
@@ -990,9 +1026,11 @@
     "stageHumanWait": "Waiting for user action",
     "stageInactivity": "Monitoring task progress",
     "suggestion": "Review completed work, then explicitly ask to continue only the unfinished part. Avoid blindly repeating submissions or generation.",
-    "summaryExecution": "The cumulative 15-minute execution limit was reached. The task is paused; saved history and outputs are retained, with no automatic replay.",
+    "summaryExecution": "The task reached its local execution limit and was paused. Saved history and results are preserved; review them before continuing.",
+    "summaryExecutionTimed": "The task reached its local execution limit of {{seconds}} seconds and was paused. Saved history and results are preserved.",
     "summaryHumanWait": "The cumulative 30-minute user-action wait limit was reached. The task is paused; saved history and outputs are retained, with no automatic replay.",
-    "summaryInactivity": "No meaningful progress has been observed for 15 minutes. The task was paused; saved history and results are preserved. You can continue after checking them.",
+    "summaryInactivity": "The task was paused after an extended period without meaningful progress. Saved history and results are preserved; review them before continuing.",
+    "summaryInactivityTimed": "No meaningful progress was observed for {{seconds}} seconds. The task was paused; saved history and results are preserved. Review them before continuing.",
     "titleExecution": "Task paused: execution time limit reached",
     "titleHumanWait": "Task paused: user wait limit reached",
     "titleInactivity": "Task paused: no recent progress"
@@ -1464,6 +1502,19 @@
       "writing_data": "Writing data..."
     },
     "title": "Data Backup"
+  },
+  "browser": {
+    "external_cancel": "Cancel",
+    "external_failed": "Could not open the system browser. Please copy the address and open it manually.",
+    "external_hint": "The system browser has separate sign-in and verification. Download files there, then attach them to the assistant to continue.",
+    "external_open": "Open in system browser",
+    "external_private_description": "This opens the page outside this private window. Your system browser may save its address and use an existing signed-in account.",
+    "external_private_title": "Open this private page in the system browser?",
+    "handoff_continue": "Continue after finishing",
+    "handoff_default": "Complete sign-in, verification or confirmation, then continue.",
+    "handoff_title": "Your browser action is needed",
+    "network_hint": "Browser follows your system proxy. If verification keeps failing, try the system browser.",
+    "verification_message": "Complete the website verification manually, then continue. If it keeps failing, open the page in your system browser."
   },
   "button": {
     "add": "Add",
@@ -6329,6 +6380,7 @@
     },
     "proxy": {
       "address": "Proxy Address",
+      "browser_network": "This setting controls app services and API requests. The assistant browser independently follows your system proxy.",
       "bypass": "Bypass Rules",
       "mode": {
         "custom": "Custom Proxy",

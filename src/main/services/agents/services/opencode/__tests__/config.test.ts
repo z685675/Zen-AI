@@ -41,9 +41,10 @@ describe('OpenCode isolated model config', () => {
       { Path: ['system', toolDir].join(path.delimiter), PATH: 'other-system', OPENAI_API_KEY: 'private' },
       path.resolve('isolated'),
       'password',
-      toolDir
+      toolDir,
+      'bundled-search'
     )
-    expect(env.PATH?.split(path.delimiter)).toEqual([toolDir, 'system', 'other-system'])
+    expect(env.PATH?.split(path.delimiter)).toEqual(['bundled-search', toolDir, 'system', 'other-system'])
     expect(env.Path).toBeUndefined()
     expect(env.OPENAI_API_KEY).toBeUndefined()
     expect(env.OPENCODE_PURE).toBe('true')

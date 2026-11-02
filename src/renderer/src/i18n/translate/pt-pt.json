@@ -357,6 +357,42 @@
       "success": "Git Bash detectado com sucesso!",
       "tooltip": "O Git Bash é necessário para executar agentes no Windows. Instale-o a partir de git-scm.com, caso não esteja disponível."
     },
+    "inbox": {
+      "attachments": "Anexos",
+      "check": "Verificar receção",
+      "continue": "Preparar continuação",
+      "dismiss": "Ocultar registo",
+      "dismissHint": "Apenas oculta o registo; não anula uma mensagem enviada.",
+      "draftOccupied": "Envie ou guarde primeiro o rascunho atual.",
+      "edit": "Editar",
+      "hint": {
+        "accepted": "Guardado na tarefa atual; a aguardar processamento.",
+        "deferred": "A tarefa terminou, mas o processamento do complemento não foi confirmado. Verifique o resultado antes de continuar.",
+        "failed": "A execução falhou e a fila está pausada. Verifique o histórico antes de reenviar.",
+        "rejected": "Não submetido. Edite ou envie após a tarefa atual.",
+        "uncertain": "Receção não confirmada. Verifique a receção ou o histórico antes de reenviar."
+      },
+      "notReady": "A tarefa está a iniciar ou a terminar. Edite ou envie mais tarde.",
+      "pause": "Pausar fila",
+      "queue": "Enviar após a tarefa",
+      "remove": "Remover",
+      "restored": "Restaurado na caixa de texto. Reveja e envie.",
+      "resume": "Continuar fila",
+      "saveFailed": "Não foi possível guardar a mensagem. O rascunho foi mantido.",
+      "state": {
+        "accepted": "Recebido",
+        "applied": "Em processamento posterior",
+        "deferred": "A aguardar continuação",
+        "failed": "Falhou",
+        "queued": "Na fila",
+        "rejected": "Não enviado",
+        "sending": "A enviar",
+        "sent": "Enviado",
+        "uncertain": "Receção não confirmada"
+      },
+      "steer": "Ajustar tarefa atual",
+      "title": "Mensagens pendentes"
+    },
     "input": {
       "deep_research": "[to be translated]:Deep Research",
       "deep_research_tooltip": "[to be translated]:Creates one research task for your next message: plan first, then multi-step source verification and a cited report.",
@@ -990,9 +1026,11 @@
     "stageHumanWait": "[to be translated]:Waiting for user action",
     "stageInactivity": "Monitorização do progresso",
     "suggestion": "[to be translated]:Review completed work, then explicitly ask to continue only the unfinished part. Avoid blindly repeating submissions or generation.",
-    "summaryExecution": "[to be translated]:The cumulative 15-minute execution limit was reached. The task is paused; saved history and outputs are retained, with no automatic replay.",
+    "summaryExecution": "A tarefa atingiu o limite de execução local e foi suspensa. O histórico e os resultados foram preservados.",
+    "summaryExecutionTimed": "A tarefa atingiu o limite local de {{seconds}} segundos e foi suspensa. O histórico e os resultados foram preservados.",
     "summaryHumanWait": "[to be translated]:The cumulative 30-minute user-action wait limit was reached. The task is paused; saved history and outputs are retained, with no automatic replay.",
-    "summaryInactivity": "Não foi observado novo progresso durante 15 minutos. A tarefa foi pausada; o histórico e os resultados guardados mantêm-se para verificação antes de continuar.",
+    "summaryInactivity": "A tarefa foi suspensa após um período prolongado sem progresso. O histórico e os resultados foram preservados; reveja-os antes de continuar.",
+    "summaryInactivityTimed": "Não foi observado progresso durante {{seconds}} segundos. A tarefa foi suspensa; o histórico e os resultados foram preservados.",
     "titleExecution": "[to be translated]:Task paused: execution time limit reached",
     "titleHumanWait": "[to be translated]:Task paused: user wait limit reached",
     "titleInactivity": "Tarefa pausada: sem progresso recente"
@@ -1464,6 +1502,19 @@
       "writing_data": "Escrevendo dados..."
     },
     "title": "Backup de Dados"
+  },
+  "browser": {
+    "external_cancel": "Cancel",
+    "external_failed": "Could not open the system browser. Please copy the address and open it manually.",
+    "external_hint": "The system browser has separate sign-in and verification. Download files there, then attach them to the assistant to continue.",
+    "external_open": "Open in system browser",
+    "external_private_description": "This opens the page outside this private window. Your system browser may save its address and use an existing signed-in account.",
+    "external_private_title": "Open this private page in the system browser?",
+    "handoff_continue": "Continue after finishing",
+    "handoff_default": "Complete sign-in, verification or confirmation, then continue.",
+    "handoff_title": "Your browser action is needed",
+    "network_hint": "Browser follows your system proxy. If verification keeps failing, try the system browser.",
+    "verification_message": "Complete the website verification manually, then continue. If it keeps failing, open the page in your system browser."
   },
   "button": {
     "add": "Adicionar",
@@ -6329,6 +6380,7 @@
     },
     "proxy": {
       "address": "Endereço do proxy",
+      "browser_network": "This setting controls app services and API requests. The assistant browser independently follows your system proxy.",
       "bypass": "Regras de Contorno",
       "mode": {
         "custom": "Proxy Personalizado",
