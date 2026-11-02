@@ -1,5 +1,5 @@
 import { type ChildProcess, execFile, spawn } from 'node:child_process'
-import { once } from 'node:events'
+import { EventEmitter, once } from 'node:events'
 import { copyFile, mkdir, mkdtemp, rm } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
@@ -9,6 +9,32 @@ import { describe, expect, it } from 'vitest'
 
 const run = promisify(execFile)
 const quote = (value: string) => value.replaceAll("'", "''")
+const hasExited = (child: ChildProcess) => child.exitCode !== null || child.signalCode !== null
+
+async function waitForExit(child: ChildProcess) {
+  if (!hasExited(child)) await once(child, 'exit', { signal: AbortSignal.timeout(5000) })
+}
+
+describe('installer fixture exit observation', () => {
+  it.each(['code', 'signal'])('waits for a deferred %s exit and recognizes it on subsequent checks', async (kind) => {
+    const child = Object.assign(new EventEmitter(), {
+      exitCode: null as number | null,
+      signalCode: null as NodeJS.Signals | null
+    }) as ChildProcess
+    let observed = false
+    const waiting = waitForExit(child).then(() => {
+      observed = true
+    })
+    await Promise.resolve()
+    expect(observed).toBe(false)
+    Object.assign(child, kind === 'code' ? { exitCode: 0 } : { signalCode: 'SIGTERM' })
+    child.emit('exit', child.exitCode, child.signalCode)
+    await waiting
+    expect(observed).toBe(true)
+    await waitForExit(child)
+    expect(child.listenerCount('exit')).toBe(0)
+  })
+})
 
 // Use real 64-bit fixture processes, including a sibling path that must survive.
 // The PowerShell wrappers restrict enumeration and termination to these fixtures;
@@ -61,13 +87,16 @@ describe.skipIf(process.platform !== 'win32' || process.arch !== 'x64')('install
       )
       if (system === 'SysWOW64') expect(result.stdout).toContain('PATH_UNAVAILABLE_REPRODUCED')
       expect(result.stdout).toContain('PASS_REAL_SCOPED_CLEANUP')
-      expect(target.exitCode).not.toBeNull()
-      expect(sibling.exitCode).toBeNull()
+      // OS termination and Node's exit event are not delivered in lockstep.
+      // Signal exits legitimately keep exitCode null, including on Windows CI.
+      await waitForExit(target)
+      expect(hasExited(target)).toBe(true)
+      expect(hasExited(sibling)).toBe(false)
     } finally {
       await Promise.all(
         children.map(async (child) => {
-          if (child.exitCode === null) {
-            const exited = once(child, 'exit')
+          if (!hasExited(child)) {
+            const exited = waitForExit(child)
             child.kill()
             await exited
           }
