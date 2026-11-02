@@ -1,0 +1,16 @@
+diff --git a/templates/nsis/installSection.nsh b/templates/nsis/installSection.nsh
+index 053772f55ca6ece52f0a34c4fa0f05c9a5f07bd2..af61665f7bdd74222022619bf4708f997edff717 100644
+--- a/templates/nsis/installSection.nsh
++++ b/templates/nsis/installSection.nsh
+@@ -49,6 +49,11 @@ ${if} $isTryToKeepShortcuts == "true"
+   ${endIf}
+ ${endif}
+ 
++; Run after directory/mode selection in both outer and elevated installers.
++!ifmacrodef customPrepareInstall
++  !insertmacro customPrepareInstall
++!endif
++
+ !insertmacro uninstallOldVersion SHELL_CONTEXT
+ !insertmacro handleUninstallResult SHELL_CONTEXT
+ 

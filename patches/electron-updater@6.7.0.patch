@@ -1,0 +1,172 @@
+diff --git a/out/BaseUpdater.d.ts b/out/BaseUpdater.d.ts
+index e5dd61ff1cee1e972b5191a9c994125f64a29231..99a78ee3bac08aab6ce2659c887dafa99aa277dc 100644
+--- a/out/BaseUpdater.d.ts
++++ b/out/BaseUpdater.d.ts
+@@ -6,11 +6,11 @@ export declare abstract class BaseUpdater extends AppUpdater {
+     protected quitAndInstallCalled: boolean;
+     private quitHandlerAdded;
+     protected constructor(options?: AllPublishOptions | null, app?: AppAdapter);
+-    quitAndInstall(isSilent?: boolean, isForceRunAfter?: boolean): void;
++    quitAndInstall(isSilent?: boolean, isForceRunAfter?: boolean): Promise<void>;
+     protected executeDownload(taskOptions: DownloadExecutorTask): Promise<Array<string>>;
+     protected get installerPath(): string | null;
+-    protected abstract doInstall(options: InstallOptions): boolean;
+-    install(isSilent?: boolean, isForceRunAfter?: boolean): boolean;
++    protected abstract doInstall(options: InstallOptions): boolean | Promise<boolean>;
++    install(isSilent?: boolean, isForceRunAfter?: boolean): boolean | Promise<boolean>;
+     protected addQuitHandler(): void;
+     protected spawnSyncLog(cmd: string, args?: string[], env?: {}): string;
+     /**
+@@ -18,7 +18,7 @@ export declare abstract class BaseUpdater extends AppUpdater {
+      *   - node 8: Throws the error
+      *   - node 10: Emit the error(Need to listen with on)
+      */
+-    protected spawnLog(cmd: string, args?: string[], env?: any, stdio?: StdioOptions): Promise<boolean>;
++    protected spawnLog(cmd: string, args?: string[], env?: any, stdio?: StdioOptions, waitForExit?: boolean): Promise<boolean>;
+ }
+ export interface InstallOptions {
+     readonly isSilent: boolean;
+diff --git a/out/BaseUpdater.js b/out/BaseUpdater.js
+index 00f99bd0743a7bae63c271fdf0af3dee062ed6f2..3763b6b18c4ed834290851a0f2464392fb8a6471 100644
+--- a/out/BaseUpdater.js
++++ b/out/BaseUpdater.js
+@@ -9,10 +9,20 @@ class BaseUpdater extends AppUpdater_1.AppUpdater {
+         this.quitAndInstallCalled = false;
+         this.quitHandlerAdded = false;
+     }
+-    quitAndInstall(isSilent = false, isForceRunAfter = false) {
++    async quitAndInstall(isSilent = false, isForceRunAfter = false) {
+         this._logger.info(`Install on explicit quitAndInstall`);
+         // If NOT in silent mode use `autoRunAppAfterInstall` to determine whether to force run the app
+-        const isInstalled = this.install(isSilent, isSilent ? isForceRunAfter : this.autoRunAppAfterInstall);
++        let isInstalled = false;
++        try {
++            // Windows launch/elevation errors arrive asynchronously. Do not
++            // announce quit until the OS has accepted the installer launch.
++            isInstalled = await this.install(isSilent, isSilent ? isForceRunAfter : this.autoRunAppAfterInstall);
++        }
++        catch (error) {
++            this.quitAndInstallCalled = false;
++            this.dispatchError(error);
++            return;
++        }
+         if (isInstalled) {
+             setImmediate(() => {
+                 // this event is normally emitted when calling quitAndInstall, this emulates that
+@@ -112,18 +122,29 @@ class BaseUpdater extends AppUpdater_1.AppUpdater {
+      */
+     // https://github.com/electron-userland/electron-builder/issues/1129
+     // Node 8 sends errors: https://nodejs.org/dist/latest-v8.x/docs/api/errors.html#errors_common_system_errors
+-    async spawnLog(cmd, args = [], env = undefined, stdio = "ignore") {
++    async spawnLog(cmd, args = [], env = undefined, stdio = "ignore", waitForExit = false) {
+         this._logger.info(`Executing: ${cmd} with args: ${args}`);
+         return new Promise((resolve, reject) => {
+             try {
+                 const params = { stdio, env, detached: true };
+                 const p = (0, child_process_1.spawn)(cmd, args, params);
+-                p.on("error", error => {
++                p.once("error", error => {
+                     reject(error);
+                 });
+-                p.unref();
+-                if (p.pid !== undefined) {
+-                    resolve(true);
++                p.once("spawn", () => {
++                    if (!waitForExit) {
++                        p.unref();
++                        resolve(true);
++                    }
++                });
++                if (waitForExit) {
++                    // elevate.exe exits after ShellExecute/UAC has either
++                    // started the real installer or been declined by the user.
++                    p.once("close", (code, signal) => {
++                        p.unref();
++                        if (code === 0) resolve(true);
++                        else reject(Object.assign(new Error(`Installer elevation failed (${code ?? signal})`), { code: "ERR_UPDATER_ELEVATION_FAILED", exitCode: code }));
++                    });
+                 }
+             }
+             catch (error) {
+diff --git a/out/NsisUpdater.d.ts b/out/NsisUpdater.d.ts
+index 3ad31c0947b098828125a3e943312fb8281d881f..fceb7fa31719d2423ba21743590619e11c47a0df 100644
+--- a/out/NsisUpdater.d.ts
++++ b/out/NsisUpdater.d.ts
+@@ -20,6 +20,6 @@ export declare class NsisUpdater extends BaseUpdater {
+     /*** @private */
+     protected doDownloadUpdate(downloadUpdateOptions: DownloadUpdateOptions): Promise<Array<string>>;
+     private verifySignature;
+-    protected doInstall(options: InstallOptions): boolean;
++    protected doInstall(options: InstallOptions): Promise<boolean>;
+     private differentialDownloadWebPackage;
+ }
+diff --git a/out/NsisUpdater.js b/out/NsisUpdater.js
+index 6fb70b4275a59741d28aecc389c2736909130a3e..ce5a101a3d8bb2d55cfc9387772324f02a641184 100644
+--- a/out/NsisUpdater.js
++++ b/out/NsisUpdater.js
+@@ -98,7 +98,7 @@ class NsisUpdater extends BaseUpdater_1.BaseUpdater {
+         }
+         return await this._verifyUpdateCodeSignature(Array.isArray(publisherName) ? publisherName : [publisherName], tempUpdateFile);
+     }
+-    doInstall(options) {
++    async doInstall(options) {
+         const installerPath = this.installerPath;
+         if (installerPath == null) {
+             this.dispatchError(new Error("No update filepath provided, can't quit and install"));
+@@ -120,31 +120,29 @@ class NsisUpdater extends BaseUpdater_1.BaseUpdater {
+             // only = form is supported
+             args.push(`--package-file=${packagePath}`);
+         }
+-        const callUsingElevation = () => {
+-            this.spawnLog(path.join(process.resourcesPath, "elevate.exe"), [installerPath].concat(args)).catch(e => this.dispatchError(e));
+-        };
++        // Preserve the parent PID marker for a later elevation fallback too.
++        const env = { ...process.env };
++        const callUsingElevation = () => this.spawnLog(path.join(process.resourcesPath, "elevate.exe"), [installerPath].concat(args), env, "ignore", true);
+         if (options.isAdminRightsRequired) {
+             this._logger.info("isAdminRightsRequired is set to true, run installer using elevate.exe");
+-            callUsingElevation();
++            await callUsingElevation();
+             return true;
+         }
+-        this.spawnLog(installerPath, args).catch((e) => {
++        try {
++            await this.spawnLog(installerPath, args, env);
++        }
++        catch (e) {
+             // https://github.com/electron-userland/electron-builder/issues/1129
+             // Node 8 sends errors: https://nodejs.org/dist/latest-v8.x/docs/api/errors.html#errors_common_system_errors
+             const errorCode = e.code;
+             this._logger.info(`Cannot run installer: error code: ${errorCode}, error message: "${e.message}", will be executed again using elevate if EACCES, and will try to use electron.shell.openItem if ENOENT`);
+             if (errorCode === "UNKNOWN" || errorCode === "EACCES") {
+-                callUsingElevation();
+-            }
+-            else if (errorCode === "ENOENT") {
+-                require("electron")
+-                    .shell.openPath(installerPath)
+-                    .catch((err) => this.dispatchError(err));
++                await callUsingElevation();
+             }
+             else {
+-                this.dispatchError(e);
++                throw e;
+             }
+-        });
++        }
+         return true;
+     }
+     async differentialDownloadWebPackage(downloadUpdateOptions, packageInfo, packagePath, provider) {
+diff --git a/out/util.js b/out/util.js
+index 9294ffd6ca8f02c2e0f90c663e7e9cdc02c1ac37..f52107493e2995320ee4efd0eb2a8c9bf03291a2 100644
+--- a/out/util.js
++++ b/out/util.js
+@@ -23,7 +23,8 @@ function newUrlFromBase(pathname, baseUrl, addRandomQueryToAvoidCaching = false)
+         result.search = search;
+     }
+     else if (addRandomQueryToAvoidCaching) {
+-        result.search = `noCache=${Date.now().toString(32)}`;
++        // use no cache header instead
++        // result.search = `noCache=${Date.now().toString(32)}`;
+     }
+     return result;
+ }

@@ -1,6 +1,6 @@
 {
   "name": "zen-ai",
-  "version": "1.1.79",
+  "version": "1.1.80",
   "private": true,
   "description": "An independent AI desktop workspace for Windows and macOS.",
   "desktopName": "ZenAI.desktop",
@@ -521,7 +521,7 @@
       "@langchain/openai@1.0.0": "patches/@langchain-openai-npm-1.0.0-474d0ad9d4.patch",
       "@tiptap/extension-drag-handle@3.2.0": "patches/@tiptap-extension-drag-handle-npm-3.2.0-5a9ebff7c9.patch",
       "antd@5.27.0": "patches/antd-npm-5.27.0-aa91c36546.patch",
-      "electron-updater@6.7.0": "patches/electron-updater-npm-6.7.0-47b11bb0d4.patch",
+      "electron-updater@6.7.0": "patches/electron-updater@6.7.0.patch",
       "atomically@1.7.0": "patches/atomically-npm-1.7.0-e742e5293b.patch",
       "file-stream-rotator@0.6.1": "patches/file-stream-rotator-npm-0.6.1-eab45fb13d.patch",
       "libsql@0.4.7": "patches/libsql-npm-0.4.7-444e260fb1.patch",
@@ -532,7 +532,8 @@
       "@ai-sdk/openai-compatible@2.0.37": "patches/@ai-sdk__openai-compatible@2.0.37.patch",
       "@ai-sdk/google@3.0.55": "patches/@ai-sdk__google@3.0.55.patch",
       "@cherrystudio/embedjs-loader-web@0.1.31": "patches/@cherrystudio__embedjs-loader-web@0.1.31.patch",
-      "@pdf-lib/fontkit@1.1.1": "patches/@pdf-lib__fontkit@1.1.1.patch"
+      "@pdf-lib/fontkit@1.1.1": "patches/@pdf-lib__fontkit@1.1.1.patch",
+      "app-builder-lib@26.8.1": "patches/app-builder-lib@26.8.1.patch"
     },
     "onlyBuiltDependencies": [
       "@j178/prek",

@@ -12,6 +12,7 @@
 !include FileFunc.nsh
 !include nsDialogs.nsh
 !include "${BUILD_RESOURCES_DIR}\installer-process.nsh"
+!include "${BUILD_RESOURCES_DIR}\installer-transaction.nsh"
 
 !ifdef BUILD_UNINSTALLER
 Var un.DeletePersonalDataCheckbox
@@ -37,40 +38,6 @@ FunctionEnd
 
 !insertmacro ZenCloseRunningProcesses ""
 
-Function prepareInstallDirForOverwrite
-  Push $0
-
-  ; Avoid relying on the old bundled uninstaller during app updates. Older
-  ; uninstallers can report "app cannot be closed" even after the app process is
-  ; gone, which blocks the new installer. User data lives outside $INSTDIR.
-  IfFileExists "$INSTDIR\Zen AI.exe" 0 done
-
-  StrCpy $0 "$PLUGINSDIR\old-install-preclean"
-  RMDir /r "$0"
-  Rename "$INSTDIR" "$0"
-  ${If} ${Errors}
-    ClearErrors
-    DetailPrint "Could not move existing ${PRODUCT_NAME} directory; trying direct cleanup..."
-    RMDir /r "$INSTDIR"
-    Sleep 500
-  ${Else}
-    RMDir /r "$0"
-  ${EndIf}
-
-  ; Only bypass the old uninstaller when the old install directory is gone.
-  IfFileExists "$INSTDIR\*.*" done 0
-  DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\${UNINSTALL_APP_KEY}" "UninstallString"
-  DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\${UNINSTALL_APP_KEY}" "QuietUninstallString"
-  UserInfo::GetAccountType
-  Pop $0
-  ${If} $0 == "admin"
-    DeleteRegValue HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${UNINSTALL_APP_KEY}" "UninstallString"
-    DeleteRegValue HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${UNINSTALL_APP_KEY}" "QuietUninstallString"
-  ${EndIf}
-
-  done:
-    Pop $0
-FunctionEnd
 !endif
 
 !ifdef BUILD_UNINSTALLER
@@ -116,9 +83,6 @@ FunctionEnd
   !else
     Call waitForUpdateParent
     Call closeRunningZenAI
-    ; The user has confirmed installation and $INSTDIR is the selected target.
-    ; Do not remove the old application while merely opening/cancelling Setup.
-    Call prepareInstallDirForOverwrite
   !endif
 !macroend
 
@@ -291,6 +255,8 @@ FunctionEnd
   WriteRegStr HKCU "Software\Classes\zenai" "URL Protocol" ""
   WriteRegStr HKCU "Software\Classes\zenai\DefaultIcon" "" "$INSTDIR\${PRODUCT_NAME}.exe,0"
   WriteRegStr HKCU "Software\Classes\zenai\shell\open\command" "" '"$INSTDIR\${PRODUCT_NAME}.exe" "%1"'
+  !insertmacro ZenRunInstallTransaction "Commit"
+  StrCpy $ZenInstallTransactionActive "0"
 !macroend
 
 !macro customUnInstall

@@ -54,6 +54,7 @@ jobs:
             --repo "${{ github.repository }}" \
             --json tagName,name,body,publishedAt,createdAt,isDraft,isPrerelease \
             > release.json
+          gh api --paginate --slurp "repos/${{ github.repository }}/releases?per_page=100" > release-history-source.json
 
       - name: Set up Node.js
         uses: actions/setup-node@v6
@@ -69,6 +70,7 @@ jobs:
       - name: Patch latest metadata with final release notes
         env:
           RELEASE_JSON_PATH: release.json
+          RELEASE_HISTORY_JSON_PATH: release-history-source.json
           RELEASE_ASSETS_DIR: release-assets
         run: node scripts/sync-release-metadata.js
 

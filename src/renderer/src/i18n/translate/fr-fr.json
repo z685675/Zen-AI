@@ -4664,8 +4664,16 @@
       },
       "label": "À propos de nous",
       "releases": {
+        "bundledNotice": "[to be translated]:These notes ship with the installer. Refresh online to get the final published wording.",
         "button": "Afficher",
-        "title": "Journal des mises à jour"
+        "current": "[to be translated]:Current version",
+        "details": "[to be translated]:Release details",
+        "localNotice": "[to be translated]:Release notes are stored locally and available offline.",
+        "offlineNotice": "[to be translated]:Unable to refresh. Showing local records.",
+        "refresh": "[to be translated]:Refresh notes",
+        "refreshedAt": "[to be translated]:Last synced: {{date}}",
+        "title": "Journal des mises à jour",
+        "versions": "[to be translated]:Versions"
       },
       "social": {
         "title": "Comptes sociaux"
@@ -4680,6 +4688,8 @@
       },
       "updateError": "Erreur lors de la mise à jour",
       "updateNotAvailable": "Votre logiciel est déjà à jour",
+      "update_installer_invalid": "[to be translated]:The installer is incomplete or failed verification. Please download it again.",
+      "update_installer_metadata_missing": "[to be translated]:Installer verification details for this version are unavailable. Please check for updates again.",
       "website": {
         "button": "Visiter le site web",
         "title": "Site web officiel"
@@ -6875,13 +6885,21 @@
   },
   "update": {
     "available": "A new version {{version}} is available. Click Check for Updates any time to download it.",
+    "downloadFailed": "[to be translated]:The download did not finish. Please try again.",
     "downloadNow": "[to be translated]:Download Now",
+    "downloadProgress": "[to be translated]:Downloading {{version}}…",
     "downloading": "Downloading version {{version}} in the background. You will be prompted when it is ready.",
     "install": "Installer",
+    "installFailed": "[to be translated]:The installer could not be started. Please try again.",
     "installNow": "Install Now",
+    "installerFolder": "[to be translated]:The installer folder is open. Double-click the DMG to finish installation.",
+    "installerOpened": "[to be translated]:The installer is open. Zen AI will exit; drag Zen AI into Applications to finish installation.",
     "later": "Plus tard",
+    "macInstallNotice": "[to be translated]:Open the downloaded DMG, then drag Zen AI into Applications to replace the current version. Zen AI will exit after the installer opens.",
     "message": "Nouvelle version {{version}} disponible, voulez-vous l'installer maintenant ?",
     "noReleaseNotes": "Aucune note de version",
+    "openInstaller": "[to be translated]:Open installer",
+    "preparingInstall": "[to be translated]:Preparing installation…",
     "releaseDate": "Release Date",
     "saveDataError": "Échec de la sauvegarde des données, veuillez réessayer",
     "title": "Mise à jour",

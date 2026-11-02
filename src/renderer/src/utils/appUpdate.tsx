@@ -178,7 +178,9 @@ function showAppUpdateModal(t: Translate, initialInfo: UpdateInfo, initialPhase:
     modal?.destroy()
   }
   const ready = (next: UpdateInfo) => {
+    if (closed) return
     info = next
+    prompt.version = next.version
     if (phase === 'installing') return
     phase = 'downloaded'
     progress = null
@@ -250,6 +252,7 @@ function showAppUpdateModal(t: Translate, initialInfo: UpdateInfo, initialPhase:
       disabled: phase === 'installing' || phase === 'downloading'
     },
     cancelButtonProps: { disabled: phase === 'installing' },
+    keyboard: phase !== 'installing',
     content: content()
   })
   function refresh() {
@@ -318,7 +321,9 @@ function showAppUpdateModal(t: Translate, initialInfo: UpdateInfo, initialPhase:
       if (phase === 'available') void download()
       else if (phase === 'downloaded') void install()
     },
-    onCancel: close,
+    onCancel: () => {
+      if (phase !== 'installing') close()
+    },
     afterClose: close
   })
   unsubscribe.push(
@@ -341,15 +346,31 @@ function showAppUpdateModal(t: Translate, initialInfo: UpdateInfo, initialPhase:
   void window.api
     .getUpdateState()
     .then((state) => {
-      if (closed || revision !== snapshotRevision || state.updateInfo?.version !== info.version) return
-      if (state.status === 'downloaded') ready(state.updateInfo)
-      else if (state.status === 'downloading' && phase !== 'installing') {
+      if (closed || revision !== snapshotRevision || phase === 'installing') return
+      if (state.updateInfo) {
+        info = state.updateInfo
+        prompt.version = info.version
+      }
+      if (state.status === 'downloaded' && state.updateInfo) ready(state.updateInfo)
+      else if (state.status === 'downloading') {
         phase = 'downloading'
         progress = state.progress
         refresh()
+      } else {
+        // The failure/metadata event may predate this dialog's subscriptions.
+        // Reconcile the snapshot instead of leaving a disabled Download button.
+        phase = 'available'
+        progress = null
+        error = state.status === 'error' ? state.message || t('update.downloadFailed') : undefined
+        refresh()
       }
     })
-    .catch(() => undefined)
+    .catch(() => {
+      if (closed || revision !== snapshotRevision || phase === 'installing') return
+      phase = 'available'
+      error = t('update.downloadFailed')
+      refresh()
+    })
 }
 
 export function showAppUpdateAvailableModal(t: Translate, info: UpdateInfo) {

@@ -89,3 +89,4 @@ resources/image-canvas/
 packages/image-canvas/*.tsbuildinfo
 # Generated image workbench resources.
 resources/image-workbench/
+resources/release-history.generated.json

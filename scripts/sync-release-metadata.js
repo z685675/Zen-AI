@@ -1,6 +1,7 @@
 const fs = require('node:fs')
 const path = require('node:path')
 const YAML = require('yaml')
+const { buildReleaseHistory } = require('./build-release-history')
 
 function requiredEnv(name) {
   const value = process.env[name]?.trim()
@@ -62,7 +63,20 @@ function main() {
   const releaseJsonPath = requiredEnv('RELEASE_JSON_PATH')
   const assetsDir = requiredEnv('RELEASE_ASSETS_DIR')
 
-  const release = normalizeRelease(readJson(path.resolve(workDir, releaseJsonPath)))
+  const selectedRelease = readJson(path.resolve(workDir, releaseJsonPath))
+  const release = normalizeRelease(selectedRelease)
+  const historyPages = readJson(path.resolve(workDir, requiredEnv('RELEASE_HISTORY_JSON_PATH')))
+  if (!Array.isArray(historyPages)) throw new Error('Invalid published release history source')
+  const history = buildReleaseHistory([...historyPages.flat(), selectedRelease])
+  if (
+    !history.entries.some((entry) => entry.version === release.tagName.replace(/^v/, '')) ||
+    selectedRelease.isDraft === true ||
+    selectedRelease.draft === true ||
+    selectedRelease.isPrerelease === true ||
+    selectedRelease.prerelease === true ||
+    !release.publishedAt
+  )
+    throw new Error('Only a published stable release can update download metadata')
   const metadataFiles = collectMetadataFiles(path.resolve(workDir, assetsDir))
 
   if (metadataFiles.length === 0) {
@@ -72,6 +86,11 @@ function main() {
   for (const filePath of metadataFiles) {
     patchMetadataFile(filePath, release)
   }
+  fs.writeFileSync(
+    path.join(path.resolve(workDir, assetsDir), 'release-history.json'),
+    `${JSON.stringify(history, null, 2)}\n`,
+    'utf8'
+  )
 
   const releaseBodyPath = writeReleaseBodyFile(workDir, release)
   console.log(`[sync-release-metadata] wrote ${path.relative(workDir, releaseBodyPath)}`)

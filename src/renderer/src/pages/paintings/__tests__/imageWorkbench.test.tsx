@@ -244,7 +244,8 @@ describe('image workbench workflows', () => {
     })
     render(<Workbench />)
     await waitFor(() => expect(screen.getByLabelText('Model')).toHaveValue(model.id))
-    const size = screen.getByLabelText('Image size')
+    // A restored model ID is visible before the catalog supplies its controls.
+    const size = await screen.findByLabelText('Image size')
     expect(size).toHaveValue(JSON.stringify(['16:9', '4096x2304', '']))
     expect(size.querySelectorAll('option')).toHaveLength(13)
     fireEvent.change(size, { target: { value: JSON.stringify(['auto', 'auto', '']) } })

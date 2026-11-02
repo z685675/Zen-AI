@@ -138,6 +138,20 @@ jobs:
         if: matrix.os == 'macos-latest'
         run: pnpm exec vitest run --project scripts scripts/__tests__/mac-bundle-links.test.ts scripts/__tests__/opencode-runtime-packaging.test.ts --pool=forks --maxWorkers=1 --no-file-parallelism
 
+      - name: Check Windows installer process cleanup
+        if: matrix.os == 'windows-2022'
+        run: pnpm exec vitest run scripts/__tests__/installer-bitness.test.ts scripts/__tests__/installer-transaction.test.ts scripts/__tests__/updater-launch.test.ts src/main/services/__tests__/installer-process.test.ts --pool=forks --maxWorkers=1 --no-file-parallelism
+
+      - name: Bundle published release history
+        # Keep the generated archive ignored so the hotpatch base checkout stays clean.
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api --paginate --slurp "repos/${{ github.repository }}/releases?per_page=100" > release-history-source.json
+          node scripts/build-release-history.js --input release-history-source.json --output resources/release-history.generated.json
+          rm release-history-source.json
+
       - name: Build Mac
         if: matrix.os == 'macos-latest'
         run: |

@@ -89,6 +89,7 @@ import { isOvmsSupported } from './services/OvmsManager'
 import powerMonitorService from './services/PowerMonitorService'
 import { proxyManager } from './services/ProxyManager'
 import { pythonService } from './services/PythonService'
+import { releaseHistoryService } from './services/ReleaseHistoryService'
 import { FileServiceManager } from './services/remotefile/FileServiceManager'
 import { remoteModelPolicyService } from './services/RemoteModelPolicyService'
 import { searchService } from './services/SearchService'
@@ -249,6 +250,10 @@ export async function registerIpc(mainWindow: BrowserWindow, app: Electron.App) 
 
   // Update
   ipcMain.handle(IpcChannel.App_GetUpdateState, () => appUpdateService.getState())
+  ipcMain.handle(IpcChannel.App_GetReleaseHistory, () => releaseHistoryService.getSnapshot())
+  ipcMain.handle(IpcChannel.App_RefreshReleaseHistory, (_, force: unknown) =>
+    releaseHistoryService.refresh(force === true)
+  )
   ipcMain.handle(IpcChannel.App_QuitAndInstall, () => appUpdateService.quitAndInstall())
   ipcMain.handle(IpcChannel.App_DownloadUpdate, () => appUpdateService.downloadUpdate())
   ipcMain.handle(IpcChannel.App_OpenDownloadedInstaller, () => appUpdateService.openDownloadedInstaller())

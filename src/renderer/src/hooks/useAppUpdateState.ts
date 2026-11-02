@@ -34,7 +34,8 @@ function mergeState(
     autoUpdateEnabled: next.autoUpdateEnabled ?? current.autoUpdateEnabled,
     currentVersion: next.currentVersion ?? current.currentVersion,
     updateInfo: next.updateInfo !== undefined ? next.updateInfo : current.updateInfo,
-    progress: next.progress !== undefined ? next.progress : current.progress
+    progress: next.progress !== undefined ? next.progress : current.progress,
+    message: next.status === 'error' ? next.message : undefined
   }
 }
 
@@ -54,11 +55,23 @@ export function useAppUpdateState() {
     let mounted = true
     let receivedEvent = false
 
-    void window.api.getUpdateState().then((nextState: AppUpdateState) => {
-      if (mounted && !receivedEvent) {
-        setState(nextState)
-      }
-    })
+    void window.api
+      .getUpdateState()
+      .then((nextState: AppUpdateState) => {
+        if (mounted && !receivedEvent) {
+          setState(nextState)
+        }
+      })
+      .catch((error: unknown) => {
+        if (mounted && !receivedEvent) {
+          setState((current) =>
+            mergeState(current, {
+              status: 'error',
+              message: error instanceof Error ? error.message : String(error)
+            })
+          )
+        }
+      })
 
     const removeAvailableListener = window.api.update.onAvailable((payload) => {
       receivedEvent = true

@@ -4664,8 +4664,16 @@
       },
       "label": "About & Feedback",
       "releases": {
+        "bundledNotice": "These notes ship with the installer. Refresh online to get the final published wording.",
         "button": "Releases",
-        "title": "Release Notes"
+        "current": "Current version",
+        "details": "Release details",
+        "localNotice": "Release notes are stored locally and available offline.",
+        "offlineNotice": "Unable to refresh. Showing local records.",
+        "refresh": "Refresh notes",
+        "refreshedAt": "Last synced: {{date}}",
+        "title": "Release Notes",
+        "versions": "Versions"
       },
       "social": {
         "title": "Social Accounts"
@@ -4680,6 +4688,8 @@
       },
       "updateError": "Update error",
       "updateNotAvailable": "You are using the latest version",
+      "update_installer_invalid": "The installer is incomplete or failed verification. Please download it again.",
+      "update_installer_metadata_missing": "Installer verification details for this version are unavailable. Please check for updates again.",
       "website": {
         "button": "Website",
         "title": "Official Website"

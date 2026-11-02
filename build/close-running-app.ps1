@@ -38,8 +38,11 @@ foreach ($target in $targets) {
     $process = Get-Process -Id $target.ProcessId -ErrorAction Stop
     $remaining = [Math]::Max(0, [int]($deadline - [DateTime]::UtcNow).TotalMilliseconds)
     if ($remaining -gt 0 -and $process.WaitForExit($remaining)) { continue }
-    # Recheck the executable before terminating, including possible PID reuse.
-    if ($process.Path -eq $target.ExecutablePath -and (Test-AppProcessPath $process.Path)) {
+    # A 32-bit PowerShell host cannot read Process.Path for a 64-bit app. CIM
+    # works across bitness; recheck path AND creation time to reject reused PIDs.
+    $current = Get-CimInstance Win32_Process -Filter ('ProcessId = {0}' -f $target.ProcessId)
+    if ($current -and $current.CreationDate -and $current.ExecutablePath -eq $target.ExecutablePath -and
+        $current.CreationDate -eq $target.CreationDate -and (Test-AppProcessPath $current.ExecutablePath)) {
       Stop-Process -Id $process.Id -Force -ErrorAction Stop
       [void]$process.WaitForExit(1000)
     }

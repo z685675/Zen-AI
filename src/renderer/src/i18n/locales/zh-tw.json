@@ -4664,8 +4664,16 @@
       },
       "label": "關於與回饋",
       "releases": {
+        "bundledNotice": "這是安裝包附帶的說明，連網重新整理後可取得正式發佈的最終內容。",
         "button": "檢視",
-        "title": "更新日誌"
+        "current": "目前版本",
+        "details": "版本更新內容",
+        "localNotice": "更新記錄保留在本機，可離線瀏覽。",
+        "offlineNotice": "暫時無法重新整理，正在顯示本機記錄。",
+        "refresh": "重新整理記錄",
+        "refreshedAt": "上次同步：{{date}}",
+        "title": "更新日誌",
+        "versions": "版本清單"
       },
       "social": {
         "title": "社交帳號"
@@ -4680,6 +4688,8 @@
       },
       "updateError": "更新錯誤",
       "updateNotAvailable": "您正在使用最新版本",
+      "update_installer_invalid": "安裝包不完整或驗證失敗，請重新下載。",
+      "update_installer_metadata_missing": "無法取得此版本安裝包的驗證資訊，請重新檢查更新。",
       "website": {
         "button": "網站",
         "title": "官方網站"

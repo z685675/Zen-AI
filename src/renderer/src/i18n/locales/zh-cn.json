@@ -4664,8 +4664,16 @@
       },
       "label": "关于我们",
       "releases": {
+        "bundledNotice": "这是安装包附带的说明，联网刷新后可获取正式发布的最终内容。",
         "button": "查看",
-        "title": "更新日志"
+        "current": "当前版本",
+        "details": "版本更新内容",
+        "localNotice": "更新记录保留在本地，可离线浏览。",
+        "offlineNotice": "暂时无法刷新，正在显示本地记录。",
+        "refresh": "刷新记录",
+        "refreshedAt": "上次同步：{{date}}",
+        "title": "更新日志",
+        "versions": "版本列表"
       },
       "social": {
         "title": "社交账号"
@@ -4680,6 +4688,8 @@
       },
       "updateError": "更新出错",
       "updateNotAvailable": "你的软件已是最新版本",
+      "update_installer_invalid": "安装包不完整或校验失败，请重新下载。",
+      "update_installer_metadata_missing": "无法获取此版本安装包的校验信息，请重新检查更新。",
       "website": {
         "button": "查看",
         "title": "官方网站"

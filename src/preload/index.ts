@@ -26,6 +26,7 @@ import type { ExternalAppInfo } from '@shared/externalApp/types'
 import type { FilePathCheck } from '@shared/filePathStatus'
 import { HOTPATCH_IPC, type HotpatchStatus } from '@shared/hotpatch'
 import { IpcChannel } from '@shared/IpcChannel'
+import type { ReleaseHistorySnapshot } from '@shared/releaseHistory'
 import type { Notification } from '@types'
 import type {
   AddMemoryOptions,
@@ -163,6 +164,11 @@ const api = {
   openWebsite: (url: string) => ipcRenderer.invoke(IpcChannel.Open_Website, url),
   checkForUpdate: () => ipcRenderer.invoke(IpcChannel.App_CheckForUpdate),
   getUpdateState: () => ipcRenderer.invoke(IpcChannel.App_GetUpdateState),
+  releaseHistory: {
+    get: (): Promise<ReleaseHistorySnapshot> => ipcRenderer.invoke(IpcChannel.App_GetReleaseHistory),
+    refresh: (force = false): Promise<ReleaseHistorySnapshot> =>
+      ipcRenderer.invoke(IpcChannel.App_RefreshReleaseHistory, force)
+  },
   downloadUpdate: () => ipcRenderer.invoke(IpcChannel.App_DownloadUpdate),
   quitAndInstallUpdate: () => ipcRenderer.invoke(IpcChannel.App_QuitAndInstall),
   openDownloadedInstaller: () => ipcRenderer.invoke(IpcChannel.App_OpenDownloadedInstaller),

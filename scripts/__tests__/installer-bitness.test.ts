@@ -1,0 +1,79 @@
+import { type ChildProcess, execFile, spawn } from 'node:child_process'
+import { once } from 'node:events'
+import { copyFile, mkdir, mkdtemp, rm } from 'node:fs/promises'
+import os from 'node:os'
+import path from 'node:path'
+import { promisify } from 'node:util'
+
+import { describe, expect, it } from 'vitest'
+
+const run = promisify(execFile)
+const quote = (value: string) => value.replaceAll("'", "''")
+
+// Use real 64-bit fixture processes, including a sibling path that must survive.
+// The PowerShell wrappers restrict enumeration and termination to these fixtures;
+// the installer script must never touch the user's running application in tests.
+describe.skipIf(process.platform !== 'win32' || process.arch !== 'x64')('installer PowerShell bitness', () => {
+  it.each(['SysWOW64', 'System32'])('closes a 64-bit fixture from %s without touching its sibling', async (system) => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), 'zen-installer-bitness-'))
+    const children: ChildProcess[] = []
+    try {
+      const targetRoot = path.join(directory, 'Zen AI')
+      const siblingRoot = path.join(directory, 'Zen AI-other')
+      for (const root of [targetRoot, siblingRoot]) {
+        await mkdir(root)
+        const executable = path.join(root, 'helper.exe')
+        await copyFile(path.join(process.env.WINDIR!, 'System32', 'cmd.exe'), executable)
+        const child = spawn(executable, ['/d', '/q', '/k'], { windowsHide: true, stdio: 'pipe' })
+        children.push(child)
+        await once(child, 'spawn')
+      }
+      const [target, sibling] = children
+      const result = await run(
+        path.join(process.env.WINDIR!, system, 'WindowsPowerShell', 'v1.0', 'powershell.exe'),
+        [
+          '-NoProfile',
+          '-NonInteractive',
+          '-Command',
+          `
+          $ErrorActionPreference = 'Stop'
+          function Get-CimInstance {
+            param([string]$ClassName, [string]$Filter)
+            $options = @{ClassName=$ClassName}
+            if ($Filter) {$options.Filter=$Filter}
+            CimCmdlets\\Get-CimInstance @options | Where-Object { $_.ProcessId -in @(${target.pid}, ${sibling.pid}) }
+          }
+          function Stop-Process {
+            param([int]$Id, [switch]$Force)
+            if ($Id -ne ${target.pid}) {throw 'Refusing to stop a process outside this test fixture'}
+            Microsoft.PowerShell.Management\\Stop-Process -Id $Id -Force
+          }
+          if ([IntPtr]::Size -eq 4) {
+            if ((Get-Process -Id ${target.pid}).Path) {throw 'Expected the cross-bitness Path limitation'}
+            Write-Output 'PATH_UNAVAILABLE_REPRODUCED'
+          }
+          . '${quote(path.resolve('build/close-running-app.ps1'))}' -InstallDirectory '${quote(targetRoot)}' -GracePeriodSeconds 0
+          if (-not (Get-Process -Id ${sibling.pid} -ErrorAction Stop)) {throw 'Sibling process was closed'}
+          Write-Output 'PASS_REAL_SCOPED_CLEANUP'
+          `
+        ],
+        { encoding: 'utf8', windowsHide: true, timeout: 15000 }
+      )
+      if (system === 'SysWOW64') expect(result.stdout).toContain('PATH_UNAVAILABLE_REPRODUCED')
+      expect(result.stdout).toContain('PASS_REAL_SCOPED_CLEANUP')
+      expect(target.exitCode).not.toBeNull()
+      expect(sibling.exitCode).toBeNull()
+    } finally {
+      await Promise.all(
+        children.map(async (child) => {
+          if (child.exitCode === null) {
+            const exited = once(child, 'exit')
+            child.kill()
+            await exited
+          }
+        })
+      )
+      await rm(directory, { recursive: true, force: true })
+    }
+  })
+})

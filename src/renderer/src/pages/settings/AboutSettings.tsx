@@ -9,7 +9,7 @@ import {
   showAppUpdateDownloadedModal,
   showAppUpdateDownloadingModal
 } from '@renderer/utils/appUpdate'
-import { APP_DOWNLOADS_URL, APP_RELEASES_URL, APP_SUPPORT_EMAIL, APP_WEBSITE_URL } from '@shared/config/constant'
+import { APP_SUPPORT_EMAIL, APP_WEBSITE_URL } from '@shared/config/constant'
 import { Avatar, Button, Row, Tag } from 'antd'
 import { ClipboardList, Download, Mail, RefreshCw } from 'lucide-react'
 import type { FC } from 'react'
@@ -19,12 +19,14 @@ import styled from 'styled-components'
 
 import { SettingContainer, SettingDivider, SettingGroup, SettingRow, SettingTitle } from '.'
 import HotpatchSettings from './HotpatchSettings'
+import ReleaseHistoryModal from './ReleaseHistoryModal'
 
 const AboutSettings: FC = () => {
   const [version, setVersion] = useState('')
   const [isPortable, setIsPortable] = useState(false)
   const [checkingUpdate, setCheckingUpdate] = useState(false)
   const [refreshingModelPolicy, setRefreshingModelPolicy] = useState(false)
+  const [releaseHistoryOpen, setReleaseHistoryOpen] = useState(false)
   const { t } = useTranslation()
   const { theme } = useTheme()
   const { updateState } = useAppUpdateState()
@@ -170,7 +172,7 @@ const AboutSettings: FC = () => {
               <Description>{t('settings.about.description')}</Description>
               <HStack alignItems="center" gap={8}>
                 <Tag
-                  onClick={() => onOpenWebsite(APP_RELEASES_URL)}
+                  onClick={() => setReleaseHistoryOpen(true)}
                   color="cyan"
                   style={{ marginTop: 8, cursor: 'pointer' }}>
                   v{version}
@@ -222,7 +224,7 @@ const AboutSettings: FC = () => {
             <Download size={18} />
             {t('settings.about.releases.title')}
           </SettingRowTitle>
-          <Button onClick={() => onOpenWebsite(APP_DOWNLOADS_URL)}>{t('settings.about.releases.button')}</Button>
+          <Button onClick={() => setReleaseHistoryOpen(true)}>{t('settings.about.releases.button')}</Button>
         </SettingRow>
         <SettingDivider />
         <SettingRow>
@@ -233,6 +235,7 @@ const AboutSettings: FC = () => {
           <ContactEmail>{APP_SUPPORT_EMAIL}</ContactEmail>
         </SettingRow>
       </SettingGroup>
+      <ReleaseHistoryModal open={releaseHistoryOpen} onClose={() => setReleaseHistoryOpen(false)} />
     </SettingContainer>
   )
 }

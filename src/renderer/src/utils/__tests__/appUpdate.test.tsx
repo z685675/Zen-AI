@@ -86,6 +86,74 @@ beforeEach(() => {
 })
 afterEach(() => closeAppUpdateModal())
 
+it('recovers a reopened downloading prompt when its error event preceded subscription', async () => {
+  getUpdateState.mockResolvedValueOnce({ status: 'error', updateInfo: info, message: '连接中断，请重试' })
+  showAppUpdateDownloadingModal(t, info)
+  await waitFor(() => expect(options.okText).toBe('立即下载'))
+  expect(options.okButtonProps).toMatchObject({ disabled: false, loading: false })
+  renderContent()
+  expect(screen.getByRole('alert')).toHaveTextContent('连接中断，请重试')
+  clickOK()
+  expect(downloadUpdate).toHaveBeenCalledOnce()
+})
+
+it('makes a failed state query recoverable instead of keeping the download spinner disabled', async () => {
+  getUpdateState.mockRejectedValueOnce(new Error('IPC unavailable'))
+  showAppUpdateDownloadingModal(t, info)
+  await waitFor(() => expect(options.okText).toBe('立即下载'))
+  expect(options.okButtonProps.disabled).toBe(false)
+  renderContent()
+  expect(screen.getByRole('alert')).toHaveTextContent('下载失败')
+})
+
+it('ignores a stale failed snapshot after a live downloaded event', async () => {
+  let finishSnapshot!: (value: any) => void
+  getUpdateState.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finishSnapshot = resolve
+      })
+  )
+  showAppUpdateDownloadingModal(t, info)
+  act(() => downloaded(info))
+  await act(async () => finishSnapshot({ status: 'error', updateInfo: info, message: 'old error' }))
+  expect(options.okText).toBe('立即安装')
+  expect(options.okButtonProps.disabled).toBe(false)
+  renderContent()
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+})
+
+it('updates the prompt identity when a snapshot restores a newer downloaded version', async () => {
+  const newer = { ...info, version: '1.1.80' }
+  getUpdateState.mockResolvedValueOnce({ status: 'downloaded', updateInfo: newer })
+  showAppUpdateDownloadingModal(t, info)
+  await waitFor(() => expect(options.okText).toBe('立即安装'))
+  showAppUpdateDownloadedModal(t, newer)
+  expect(confirm).toHaveBeenCalledOnce()
+  renderContent()
+  expect(screen.getByText(/版本 1.1.80 已下载/)).toBeInTheDocument()
+})
+
+it('keeps an installation prompt open while launch is pending, then restores cancellation after failure', async () => {
+  let finishInstall!: (value: any) => void
+  installUpdate.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finishInstall = resolve
+      })
+  )
+  showAppUpdateDownloadedModal(t, info)
+  clickOK()
+  expect(options.keyboard).toBe(false)
+  act(() => options.onCancel())
+  expect(destroy).not.toHaveBeenCalled()
+  await act(async () => finishInstall({ success: false, status: 'error', message: 'launch failed' }))
+  expect(options.keyboard).toBe(true)
+  expect(options.okText).toBe('立即安装')
+  act(() => options.onCancel())
+  expect(destroy).toHaveBeenCalledOnce()
+})
+
 it('formats the date and renders the markdown release notes', () => {
   expect(formatReleaseDate('2026-05-22T17:57:33.000Z')).not.toContain('T')
   showAppUpdateAvailableModal(t, info)
