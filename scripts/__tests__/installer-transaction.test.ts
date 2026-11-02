@@ -35,7 +35,7 @@ describe.skipIf(process.platform !== 'win32')('Windows installation recovery', (
           $fixtureRoot = '${quote(directory)}'
           $old = Join-Path $fixtureRoot 'old installation'
           $target = if ('${scenario}' -eq 'scope') { $old } else { Join-Path $fixtureRoot 'new installation' }
-          $keyRoot = 'Software\ZenAIInstallerTests\${path.basename(directory)}'
+          $keyRoot = '${'Software\\ZenAIInstallerTests\\' + path.basename(directory)}'
           $installKey = "$keyRoot\install"
           $uninstallKey = "$keyRoot\uninstall"
           $legacyKey = "$keyRoot\legacy"
@@ -96,7 +96,7 @@ describe.skipIf(process.platform !== 'win32')('Windows installation recovery', (
           String.raw`
         $ErrorActionPreference = 'Stop'
         $target = '${quote(path.join(directory, 'Zen AI'))}'
-        $keyRoot = 'Software\ZenAIInstallerTests\${path.basename(directory)}'
+        $keyRoot = '${'Software\\ZenAIInstallerTests\\' + path.basename(directory)}'
         $options = @{InstallDirectory=$target; InstallRegistryKey="$keyRoot\install"; UninstallRegistryKey="$keyRoot\uninstall"}
         try {
           New-Item -ItemType Directory -Path $target | Out-Null
