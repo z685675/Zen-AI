@@ -28,9 +28,13 @@ function Stop-ConflictingInstallation([string]$location) {
 }
 
 function Get-UninstallerPath([string]$command) {
-  if ($command -match '^"([^"]+)"') { return $Matches[1] }
-  if ($command -match '^(.+?\.exe)(?:\s|$)') { return $Matches[1] }
-  return ''
+  $executable = ''
+  if ($command -match '^"([^"]+)"') { $executable = $Matches[1] }
+  elseif ($command -match '^(.+?\.exe)(?:\s|$)') { $executable = $Matches[1] }
+  if (-not $executable) { return '' }
+  # Registry commands can contain 8.3 aliases. Use the same normalization as
+  # InstallDirectory/InstallLocation before comparing their parent directory.
+  try { return [IO.Path]::GetFullPath($executable) } catch { return '' }
 }
 
 function Assert-CompatibleInstallation {

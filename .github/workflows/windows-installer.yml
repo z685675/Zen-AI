@@ -10,6 +10,7 @@ on:
       - 'build/*.ps1'
       - 'build/*.nsh'
       - 'scripts/__tests__/installer-*.test.ts'
+      - 'scripts/__tests__/fixtures/windows-path.ts'
       - 'scripts/__tests__/updater-launch.test.ts'
       - 'src/main/services/__tests__/installer-process.test.ts'
   pull_request:
@@ -19,6 +20,7 @@ on:
       - 'build/*.ps1'
       - 'build/*.nsh'
       - 'scripts/__tests__/installer-*.test.ts'
+      - 'scripts/__tests__/fixtures/windows-path.ts'
       - 'scripts/__tests__/updater-launch.test.ts'
       - 'src/main/services/__tests__/installer-process.test.ts'
 

@@ -7,6 +7,8 @@ import { promisify } from 'node:util'
 
 import { describe, expect, it } from 'vitest'
 
+import { shortDirectory } from './fixtures/windows-path'
+
 const run = promisify(execFile)
 const quote = (value: string) => value.replaceAll("'", "''")
 const compiler = path.join(
@@ -122,11 +124,12 @@ describe.skipIf(process.platform !== 'win32')('Windows installation recovery', (
     }
   })
 
-  it.each(['Zen AI', '中文用户/中文目录/Zen AI'])(
+  it.each(['Zen AI', '中文用户/中文目录/Zen AI', 'short-path/Zen AI'])(
     'restores files and registry, commits and recovers interruptions in %s',
     async (installName) => {
       const directory = await mkdtemp(path.join(os.tmpdir(), 'zen-install-transaction-'))
       try {
+        const fixtureRoot = installName.startsWith('short-path/') ? await shortDirectory(directory) : directory
         const { stdout } = await run(
           'powershell.exe',
           [
@@ -135,7 +138,7 @@ describe.skipIf(process.platform !== 'win32')('Windows installation recovery', (
             '-Command',
             String.raw`
         $ErrorActionPreference = 'Stop'
-        $target = '${quote(path.join(directory, installName))}'
+        $target = '${quote(path.join(fixtureRoot, installName))}'
         $backup = "$target.zen-ai-previous"
         $keyRoot = '${'Software\\ZenAIInstallerTests\\' + path.basename(directory)}'
         $installKey = "$keyRoot\install"

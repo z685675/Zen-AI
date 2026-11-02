@@ -7,6 +7,8 @@ import { promisify } from 'node:util'
 
 import { describe, expect, it } from 'vitest'
 
+import { shortDirectory } from './fixtures/windows-path'
+
 const run = promisify(execFile)
 const quote = (value: string) => value.replaceAll("'", "''")
 const hasExited = (child: ChildProcess) => child.exitCode !== null || child.signalCode !== null
@@ -40,28 +42,36 @@ describe('installer fixture exit observation', () => {
 // The PowerShell wrappers restrict enumeration and termination to these fixtures;
 // the installer script must never touch the user's running application in tests.
 describe.skipIf(process.platform !== 'win32' || process.arch !== 'x64')('installer PowerShell bitness', () => {
-  it.each(['SysWOW64', 'System32'])('closes a 64-bit fixture from %s without touching its sibling', async (system) => {
-    const directory = await mkdtemp(path.join(os.tmpdir(), 'zen-installer-bitness-'))
-    const children: ChildProcess[] = []
-    try {
-      const targetRoot = path.join(directory, 'Zen AI')
-      const siblingRoot = path.join(directory, 'Zen AI-other')
-      for (const root of [targetRoot, siblingRoot]) {
-        await mkdir(root)
-        const executable = path.join(root, 'helper.exe')
-        await copyFile(path.join(process.env.WINDIR!, 'System32', 'cmd.exe'), executable)
-        const child = spawn(executable, ['/d', '/q', '/k'], { windowsHide: true, stdio: 'pipe' })
-        children.push(child)
-        await once(child, 'spawn')
-      }
-      const [target, sibling] = children
-      const result = await run(
-        path.join(process.env.WINDIR!, system, 'WindowsPowerShell', 'v1.0', 'powershell.exe'),
-        [
-          '-NoProfile',
-          '-NonInteractive',
-          '-Command',
-          `
+  it.each([
+    { system: 'SysWOW64', shortPath: false },
+    { system: 'System32', shortPath: false },
+    { system: 'SysWOW64', shortPath: true },
+    { system: 'System32', shortPath: true }
+  ])(
+    'closes a 64-bit fixture from $system (short path: $shortPath) without touching its sibling',
+    async ({ system, shortPath }) => {
+      const directory = await mkdtemp(path.join(os.tmpdir(), 'zen-installer-bitness-'))
+      const children: ChildProcess[] = []
+      try {
+        const fixtureRoot = shortPath ? await shortDirectory(directory) : directory
+        const targetRoot = path.join(fixtureRoot, 'Zen AI')
+        const siblingRoot = path.join(fixtureRoot, 'Zen AI-other')
+        for (const root of [targetRoot, siblingRoot]) {
+          await mkdir(root)
+          const executable = path.join(root, 'helper.exe')
+          await copyFile(path.join(process.env.WINDIR!, 'System32', 'cmd.exe'), executable)
+          const child = spawn(executable, ['/d', '/q', '/k'], { windowsHide: true, stdio: 'pipe' })
+          children.push(child)
+          await once(child, 'spawn')
+        }
+        const [target, sibling] = children
+        const result = await run(
+          path.join(process.env.WINDIR!, system, 'WindowsPowerShell', 'v1.0', 'powershell.exe'),
+          [
+            '-NoProfile',
+            '-NonInteractive',
+            '-Command',
+            `
           $ErrorActionPreference = 'Stop'
           function Get-CimInstance {
             param([string]$ClassName, [string]$Filter)
@@ -82,27 +92,28 @@ describe.skipIf(process.platform !== 'win32' || process.arch !== 'x64')('install
           if (-not (Get-Process -Id ${sibling.pid} -ErrorAction Stop)) {throw 'Sibling process was closed'}
           Write-Output 'PASS_REAL_SCOPED_CLEANUP'
           `
-        ],
-        { encoding: 'utf8', windowsHide: true, timeout: 15000 }
-      )
-      if (system === 'SysWOW64') expect(result.stdout).toContain('PATH_UNAVAILABLE_REPRODUCED')
-      expect(result.stdout).toContain('PASS_REAL_SCOPED_CLEANUP')
-      // OS termination and Node's exit event are not delivered in lockstep.
-      // Signal exits legitimately keep exitCode null, including on Windows CI.
-      await waitForExit(target)
-      expect(hasExited(target)).toBe(true)
-      expect(hasExited(sibling)).toBe(false)
-    } finally {
-      await Promise.all(
-        children.map(async (child) => {
-          if (!hasExited(child)) {
-            const exited = waitForExit(child)
-            child.kill()
-            await exited
-          }
-        })
-      )
-      await rm(directory, { recursive: true, force: true })
+          ],
+          { encoding: 'utf8', windowsHide: true, timeout: 15000 }
+        )
+        if (system === 'SysWOW64') expect(result.stdout).toContain('PATH_UNAVAILABLE_REPRODUCED')
+        expect(result.stdout).toContain('PASS_REAL_SCOPED_CLEANUP')
+        // OS termination and Node's exit event are not delivered in lockstep.
+        // Signal exits legitimately keep exitCode null, including on Windows CI.
+        await waitForExit(target)
+        expect(hasExited(target)).toBe(true)
+        expect(hasExited(sibling)).toBe(false)
+      } finally {
+        await Promise.all(
+          children.map(async (child) => {
+            if (!hasExited(child)) {
+              const exited = waitForExit(child)
+              child.kill()
+              await exited
+            }
+          })
+        )
+        await rm(directory, { recursive: true, force: true })
+      }
     }
-  })
+  )
 })

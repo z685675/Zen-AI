@@ -17,6 +17,10 @@ $roots = @(
 
 function Test-AppProcessPath([string]$Candidate) {
   if ([string]::IsNullOrWhiteSpace($Candidate)) { return $false }
+  # CIM can retain a launch path containing 8.3 aliases (e.g. RUNNER~1),
+  # while .NET expands the installation root to its long name. Compare both
+  # in the same form without resolving junctions or widening the root scope.
+  try { $Candidate = [IO.Path]::GetFullPath($Candidate) } catch { return $false }
   foreach ($root in $roots) {
     if ($Candidate.StartsWith($root, [StringComparison]::OrdinalIgnoreCase)) { return $true }
   }
@@ -41,7 +45,8 @@ foreach ($target in $targets) {
     # A 32-bit PowerShell host cannot read Process.Path for a 64-bit app. CIM
     # works across bitness; recheck path AND creation time to reject reused PIDs.
     $current = Get-CimInstance Win32_Process -Filter ('ProcessId = {0}' -f $target.ProcessId)
-    if ($current -and $current.CreationDate -and $current.ExecutablePath -eq $target.ExecutablePath -and
+    if ($current -and $current.CreationDate -and $current.ExecutablePath -and
+        [IO.Path]::GetFullPath($current.ExecutablePath) -eq [IO.Path]::GetFullPath($target.ExecutablePath) -and
         $current.CreationDate -eq $target.CreationDate -and (Test-AppProcessPath $current.ExecutablePath)) {
       Stop-Process -Id $process.Id -Force -ErrorAction Stop
       [void]$process.WaitForExit(1000)
