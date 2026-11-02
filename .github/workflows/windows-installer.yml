@@ -1,0 +1,75 @@
+name: Windows installer checks
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/windows-installer.yml'
+      - '.github/workflows/release.yml'
+      - 'build/*.ps1'
+      - 'build/*.nsh'
+      - 'scripts/__tests__/installer-*.test.ts'
+      - 'scripts/__tests__/updater-launch.test.ts'
+      - 'src/main/services/__tests__/installer-process.test.ts'
+  pull_request:
+    paths:
+      - '.github/workflows/windows-installer.yml'
+      - '.github/workflows/release.yml'
+      - 'build/*.ps1'
+      - 'build/*.nsh'
+      - 'scripts/__tests__/installer-*.test.ts'
+      - 'scripts/__tests__/updater-launch.test.ts'
+      - 'src/main/services/__tests__/installer-process.test.ts'
+
+permissions:
+  contents: read
+
+jobs:
+  windows-installer:
+    runs-on: windows-2022
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: '.node-version'
+      - uses: pnpm/action-setup@v5
+      - name: Get pnpm store directory
+        id: pnpm-cache
+        shell: bash
+        run: echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_OUTPUT
+      - uses: actions/cache@v5
+        with:
+          path: ${{ steps.pnpm-cache.outputs.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Check Windows installer process cleanup and recovery
+        shell: pwsh
+        run: |
+          pnpm exec vitest run scripts/__tests__/installer-bitness.test.ts scripts/__tests__/installer-transaction.test.ts scripts/__tests__/updater-launch.test.ts src/main/services/__tests__/installer-process.test.ts --pool=forks --maxWorkers=1 --no-file-parallelism --reporter=default --reporter=json --outputFile="${{ runner.temp }}/windows-installer-results.json"
+          $testExitCode = $LASTEXITCODE
+          if (Test-Path -LiteralPath '${{ runner.temp }}/windows-installer-results.json') {
+            $report = Get-Content -LiteralPath '${{ runner.temp }}/windows-installer-results.json' -Raw -Encoding UTF8 | ConvertFrom-Json
+            foreach ($file in $report.testResults) {
+              foreach ($test in $file.assertionResults) {
+                if ($test.status -ne 'failed') { continue }
+                $detail = $test.fullName + "`n" + ($test.failureMessages -join "`n")
+                if ($detail.Length -gt 16000) { $detail = $test.fullName + "`n" + $detail.Substring($detail.Length - 16000) }
+                $annotation = $detail.Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
+                Write-Output "::error title=Windows installer test::$annotation"
+                Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value ("### " + $test.fullName + "`n``````text`n" + $detail + "`n```````n") -Encoding UTF8
+              }
+            }
+          }
+          exit $testExitCode
+      - name: Preserve test details
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows-installer-results
+          path: ${{ runner.temp }}/windows-installer-results.json
+          if-no-files-found: ignore
