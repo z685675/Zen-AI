@@ -67,12 +67,23 @@ const AUTHORIZATION_PATTERN = /(authorize|授权|consent|同意访问|account ac
 
 export function detectUserAction(signals: BrowserPageSignals): DetectedUserAction | undefined {
   const searchableText = `${signals.url} ${signals.title} ${signals.text}`
+  // Challenge frames often mount after DOM ready. Recognize dedicated
+  // interstitials without treating an ordinary article mentioning CAPTCHA as one.
+  const challengeTitle = /^(?:just a moment|请稍候|請稍候|are you (?:a )?(?:human|robot))[.!?…\s]*$/i.test(
+    signals.title.trim()
+  )
+  const challengeBody =
+    signals.text.length < 3500 &&
+    /^\s*are you (?:a )?(?:human|robot)\?/i.test(signals.text) &&
+    /(?:please confirm you are a human|captcha challenge below)/i.test(signals.text)
 
   if (
-    signals.hasBrowserChallenge &&
-    /(just a moment|are you (?:a )?(?:human|robot)|verify (?:you are|that you)|checking your browser|performing security verification|security of your connection|确认您是真人|验证您是真人|请稍候|安全验证|人机验证)/i.test(
-      searchableText
-    )
+    challengeTitle ||
+    challengeBody ||
+    (signals.hasBrowserChallenge &&
+      /(just a moment|are you (?:a )?(?:human|robot)|verify (?:you are|that you)|checking your browser|performing security verification|security of your connection|确认您是真人|验证您是真人|请稍候|安全验证|人机验证)/i.test(
+        searchableText
+      ))
   ) {
     return { reason: 'captcha', message: t('browser.verification_message') }
   }

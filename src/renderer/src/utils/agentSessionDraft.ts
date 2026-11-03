@@ -2,6 +2,7 @@ import { loggerService } from '@logger'
 import { CacheService } from '@renderer/services/CacheService'
 
 const logger = loggerService.withContext('AgentSessionDraft')
+const listeners = new Map<string, Set<() => void>>()
 
 export function getAgentSessionDraftCacheKey(agentId: string, sessionId: string): string {
   return `agent-session-draft:${encodeURIComponent(agentId)}:${encodeURIComponent(sessionId)}`
@@ -20,6 +21,17 @@ export function getAgentSessionDraft(agentId: string, sessionId: string): string
   }
 }
 
+export function subscribeAgentSessionDraft(agentId: string, sessionId: string, listener: () => void): () => void {
+  const key = getAgentSessionDraftCacheKey(agentId, sessionId)
+  const sessionListeners = listeners.get(key) ?? new Set<() => void>()
+  listeners.set(key, sessionListeners)
+  sessionListeners.add(listener)
+  return () => {
+    sessionListeners.delete(listener)
+    if (sessionListeners.size === 0) listeners.delete(key)
+  }
+}
+
 export function saveAgentSessionDraft(agentId: string, sessionId: string, text: string): void {
   const key = getAgentSessionDraftCacheKey(agentId, sessionId)
   // Keep the live draft even if local storage is unavailable or full.
@@ -33,6 +45,7 @@ export function saveAgentSessionDraft(agentId: string, sessionId: string, text: 
   } catch (error) {
     logger.warn('Failed to save the local session draft', error as Error)
   }
+  for (const listener of listeners.get(key) ?? []) listener()
 }
 
 export function clearAgentSessionDraft(agentId: string, sessionId: string): void {

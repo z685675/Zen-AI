@@ -9,6 +9,8 @@ import { createContext, type ReactNode, use } from 'react'
 import { useTranslation } from 'react-i18next'
 import styled from 'styled-components'
 
+import { isBrowserHandoffResponse } from '../toolDisplay'
+
 export { default as ToolHeader, type ToolHeaderProps } from '../ToolHeader'
 
 // Streaming context - 用于传递流式状态给子组件
@@ -141,15 +143,24 @@ export function getEffectiveStatus(status: ToolStatus | undefined, isWaiting: bo
 export function ToolStatusIndicator({
   status,
   hasError = false,
-  label
+  label,
+  response
 }: {
   status: ToolStatus
   hasError?: boolean
   label?: string
+  response?: unknown
 }) {
   const { t } = useTranslation()
 
   const getStatusInfo = (): { label: string; icon: ReactNode; color: StatusColor } | null => {
+    if (status === 'done' && !hasError && isBrowserHandoffResponse(response)) {
+      return {
+        label: t('browser.handoff_title'),
+        icon: <TriangleAlert size={13} className="lucide-custom" />,
+        color: 'warning'
+      }
+    }
     switch (status) {
       case 'streaming':
         return { label: label ?? t('message.tools.streaming', 'Streaming'), icon: <LoadingIcon />, color: 'primary' }

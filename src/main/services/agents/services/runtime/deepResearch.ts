@@ -56,7 +56,7 @@ Research execution:
 - Deduplicate sources, compare independent evidence, and explicitly surface conflicts.
 - After the initial pass, identify material evidence gaps and run no more than two focused follow-up passes.
 - For a standard task, target 8-20 useful independent sources and inspect no more than 25 pages unless the user requests broader coverage.
-- Treat browser access as a bounded resource: open at most two URLs concurrently, batch larger sets, and never reopen the same URL more than once unless the first attempt returned a clear transient error.
+- Browser operations have their own bounded resource queue, independent of conversation limits. Do not resubmit a queued operation. Parallel page reads use isolated tabs; never reopen the same URL more than once unless the first attempt returned a clear transient error.
 - Prefer structured search or direct API results for machine-readable metadata such as DOI, Crossref, weather, prices, or exchange rates. Use the browser to inspect only the most relevant pages and request a focused selector or snapshot instead of full-page HTML.
 - If a browser call times out, mark that source unavailable, continue with the remaining evidence, and do not keep retrying the same page.
 - Continue past individual source failures. Explain important gaps instead of inventing support.

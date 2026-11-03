@@ -37,6 +37,62 @@ afterEach(() => {
 })
 
 describe('lazy public search', () => {
+  it('completes a burst of 16 queries through independent bounded capacity without rejecting busy searches', async () => {
+    const { searchAssistantWeb } = await import('../assistantWebSearch')
+    let active = 0
+    let peak = 0
+    mocks.call.mockImplementation(async () => {
+      active++
+      peak = Math.max(peak, active)
+      await new Promise((resolve) => setTimeout(resolve, 1))
+      active--
+      return { content: [{ type: 'text', text: 'Title: Paper\nURL: https://example.org/paper' }] }
+    })
+    const results = await Promise.all(Array.from({ length: 16 }, (_, i) => searchAssistantWeb(`query ${i}`, 1)))
+    expect(results).toHaveLength(16)
+    expect(results.every((result) => result.sources.length === 1)).toBe(true)
+    expect(peak).toBeGreaterThan(2)
+    expect(peak).toBeLessThanOrEqual(4)
+    expect(mocks.call).toHaveBeenCalledTimes(16)
+  })
+
+  it('removes a cancelled queued search before it can send query data', async () => {
+    const { searchAssistantWeb } = await import('../assistantWebSearch')
+    let release!: () => void
+    const blocker = new Promise<void>((resolve) => (release = resolve))
+    mocks.call.mockImplementation(async () => {
+      await blocker
+      return { content: [{ type: 'text', text: 'Title: Paper\nURL: https://example.org/paper' }] }
+    })
+    const running = Array.from({ length: 4 }, (_, i) => searchAssistantWeb(`running ${i}`, 1))
+    await vi.waitFor(() => expect(mocks.call).toHaveBeenCalledTimes(4))
+    const abort = new AbortController()
+    const cancelled = searchAssistantWeb('cancel this queued query', 1, abort.signal).catch((error) => error)
+    abort.abort(new Error('user stopped'))
+    expect(await cancelled).toMatchObject({ message: 'user stopped' })
+    // Cancellation returns promptly, and the queued callback is skipped later.
+    release()
+    await Promise.all(running)
+    expect(mocks.call).toHaveBeenCalledTimes(4)
+  })
+
+  it('honors real upstream rate limits for searches already waiting in the queue', async () => {
+    const { searchAssistantWeb } = await import('../assistantWebSearch')
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('limited', { status: 429 }))
+    )
+    mocks.connect.mockImplementation(async () => {
+      const item = mocks.transports.at(-1)
+      await item.options.fetch(item.url, {})
+      throw Object.assign(new Error('limited'), { code: 429 })
+    })
+    const results = await Promise.allSettled(Array.from({ length: 16 }, (_, i) => searchAssistantWeb(`query ${i}`, 1)))
+    expect(results.every((result) => result.status === 'rejected')).toBe(true)
+    expect(mocks.connect.mock.calls.length).toBeLessThanOrEqual(4)
+    expect(mocks.call).not.toHaveBeenCalled()
+  })
+
   it('module discovery does not connect, and sends only the explicit query/count on demand', async () => {
     const { searchAssistantWeb } = await import('../assistantWebSearch')
     expect(mocks.connect).not.toHaveBeenCalled()

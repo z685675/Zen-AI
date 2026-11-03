@@ -124,6 +124,7 @@ function ToolContent({
               status={status}
               hasError={hasError}
               label={getToolStatusLabel(status, getToolDisplayInfo(toolName), hasError)}
+              response={output}
             />
           </div>
         )}

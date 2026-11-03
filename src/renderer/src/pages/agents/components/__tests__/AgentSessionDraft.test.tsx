@@ -2,7 +2,6 @@ import { CacheService } from '@renderer/services/CacheService'
 import { getAgentSessionDraft } from '@renderer/utils/agentSessionDraft'
 import { shouldDiscardEmptyConversation } from '@renderer/utils/conversationDraft'
 import { act, fireEvent, render } from '@testing-library/react'
-import type * as Antd from 'antd'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
@@ -56,26 +55,6 @@ vi.mock('@renderer/services/AgentSessionInboxService', () => ({
     isPaused: () => false
   })
 }))
-vi.mock('antd', async (importOriginal) => {
-  const original = await importOriginal<typeof Antd>()
-  return {
-    ...original,
-    Dropdown: {
-      Button: ({ children, onClick, disabled, menu }: any) => (
-        <>
-          <button disabled={disabled} onClick={onClick}>
-            {children}
-          </button>
-          {menu.items.map((item: any) => (
-            <button key={item.key} disabled={item.disabled} onClick={() => menu.onClick({ key: item.key })}>
-              Choose {item.key}
-            </button>
-          ))}
-        </>
-      )
-    }
-  }
-})
 vi.mock('@renderer/store', () => ({
   useAppDispatch: () => mocks.dispatch,
   useAppSelector: (selector: any) => selector(mocks.state)
@@ -103,13 +82,13 @@ vi.mock('@renderer/pages/home/Inputbar/InputbarTools', () => ({ default: () => n
 vi.mock('@renderer/pages/home/Inputbar/components/ScrollToBottomButton', () => ({ default: () => null }))
 vi.mock('../LegacyAssistantInputbar', () => ({ default: () => null }))
 vi.mock('@renderer/pages/home/Inputbar/components/InputbarCore', () => ({
-  InputbarCore: ({ text, onTextChange, handleSendMessage, renderSendButton, sendDisabled, onPause }: any) => (
+  InputbarCore: ({ text, onTextChange, handleSendMessage, rightToolbar, onPause }: any) => (
     <>
       <textarea aria-label="Draft" value={text} onChange={(event) => onTextChange(event.target.value)} />
       <button type="button" onClick={handleSendMessage}>
         Send
       </button>
-      {renderSendButton?.(sendDisabled)}
+      {rightToolbar}
       <button onClick={onPause}>Stop</button>
     </>
   )
@@ -121,6 +100,7 @@ const agentId = 'zen-opencode-default'
 beforeEach(() => {
   vi.useFakeTimers()
   vi.clearAllMocks()
+  mocks.dispatch.mockReset()
   CacheService.clear()
   localStorage.clear()
   window.toast = { info: vi.fn(), error: vi.fn() } as any
@@ -165,23 +145,64 @@ describe('assistant draft composer', () => {
     expect(returned.getByLabelText('Draft')).toHaveValue('紧接着输入的新草稿')
   })
 
-  it('queues by default during a run and can explicitly steer the same task', async () => {
+  it('clears the remounted conversation composer after the first message is saved', async () => {
+    let finishSaving!: () => void
+    mocks.dispatch.mockReturnValueOnce(
+      new Promise<void>((resolve) => {
+        finishSaving = resolve
+      })
+    )
+    const welcome = render(<AgentSessionInputbar agentId={agentId} sessionId="first-send" variant="hero" />)
+    fireEvent.change(welcome.getByLabelText('Draft'), { target: { value: '欢迎页发送的首条消息' } })
+    await act(async () => fireEvent.click(welcome.getByText('Send')))
+    expect(mocks.sendMessage).toHaveBeenCalledTimes(1)
+    // Saving the first message replaces the welcome layout before dispatch resolves.
+    welcome.unmount()
+    const conversation = render(<AgentSessionInputbar agentId={agentId} sessionId="first-send" />)
+    await act(async () => finishSaving())
+    expect(conversation.getByLabelText('Draft')).toHaveValue('')
+    expect(getAgentSessionDraft(agentId, 'first-send')).toBe('')
+  })
+
+  it('keeps a new draft entered after navigating back while the previous send is saving', async () => {
+    let finishSaving!: () => void
+    mocks.dispatch.mockReturnValueOnce(
+      new Promise<void>((resolve) => {
+        finishSaving = resolve
+      })
+    )
+    const original = render(<AgentSessionInputbar agentId={agentId} sessionId="returning" />)
+    fireEvent.change(original.getByLabelText('Draft'), { target: { value: '正在发送的消息' } })
+    await act(async () => fireEvent.click(original.getByText('Send')))
+    original.unmount()
+    const returned = render(<AgentSessionInputbar agentId={agentId} sessionId="returning" />)
+    fireEvent.change(returned.getByLabelText('Draft'), { target: { value: '返回后输入的新草稿' } })
+    await act(async () => finishSaving())
+    expect(returned.getByLabelText('Draft')).toHaveValue('返回后输入的新草稿')
+    expect(getAgentSessionDraft(agentId, 'returning')).toBe('返回后输入的新草稿')
+    returned.unmount()
+    const reopened = render(<AgentSessionInputbar agentId={agentId} sessionId="returning" />)
+    expect(reopened.getByLabelText('Draft')).toHaveValue('返回后输入的新草稿')
+  })
+
+  it('always queues during a run without asking the user to choose a sending mode first', async () => {
     mocks.loading = true
     const view = render(<AgentSessionInputbar agentId={agentId} sessionId="running" />)
+    expect(view.queryByRole('button', { name: 'agent.inbox.queue' })).not.toBeInTheDocument()
+    expect(view.queryByRole('button', { name: 'agent.inbox.steer' })).not.toBeInTheDocument()
     fireEvent.change(view.getByLabelText('Draft'), { target: { value: '完成后再整理为表格' } })
     await act(async () => fireEvent.click(view.getByText('Send')))
     expect(mocks.addInput).toHaveBeenLastCalledWith(expect.objectContaining({ text: '完成后再整理为表格' }), 'queue')
     expect(mocks.sendMessage).not.toHaveBeenCalled()
     expect(view.getByLabelText('Draft')).toHaveValue('')
-    fireEvent.click(view.getByText('Choose steer'))
     fireEvent.change(view.getByLabelText('Draft'), { target: { value: '先查最近三年的文献' } })
     await act(async () => fireEvent.click(view.getByText('Send')))
-    expect(mocks.addInput).toHaveBeenLastCalledWith(expect.objectContaining({ text: '先查最近三年的文献' }), 'steer')
+    expect(mocks.addInput).toHaveBeenLastCalledWith(expect.objectContaining({ text: '先查最近三年的文献' }), 'queue')
     fireEvent.click(view.getByText('Stop'))
     expect(mocks.pauseQueue).toHaveBeenCalledWith('running')
   })
 
-  it('retains the draft if saving the pending message fails', async () => {
+  it('retains the draft if saving a queued message fails', async () => {
     mocks.loading = true
     mocks.addInput.mockImplementationOnce(() => {
       throw new Error('storage full')
@@ -191,6 +212,19 @@ describe('assistant draft composer', () => {
     await act(async () => fireEvent.click(view.getByText('Send')))
     expect(view.getByLabelText('Draft')).toHaveValue('请保留这条补充')
     expect(getAgentSessionDraft(agentId, 'storage-error')).toBe('请保留这条补充')
+  })
+
+  it('uses normal sending again once the current task has finished', async () => {
+    mocks.loading = true
+    const view = render(<AgentSessionInputbar agentId={agentId} sessionId="finished" />)
+    mocks.loading = false
+    view.rerender(<AgentSessionInputbar agentId={agentId} sessionId="finished" />)
+    expect(view.queryByRole('button', { name: 'agent.inbox.queue' })).not.toBeInTheDocument()
+    expect(view.queryByRole('button', { name: 'agent.inbox.steer' })).not.toBeInTheDocument()
+    fireEvent.change(view.getByLabelText('Draft'), { target: { value: '直接发起下一条消息' } })
+    await act(async () => fireEvent.click(view.getByText('Send')))
+    expect(mocks.sendMessage).toHaveBeenCalledTimes(1)
+    expect(mocks.addInput).not.toHaveBeenCalled()
   })
 
   it('queues behind an admission in progress before the loading indicator appears', async () => {

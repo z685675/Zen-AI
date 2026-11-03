@@ -1,8 +1,12 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
+import PQueue from 'p-queue'
 
 export const SEARCH_ENDPOINT = 'https://mcp.exa.ai/mcp?tools=web_search_exa'
-let active = 0
+// Network tool capacity is independent of the assistant conversation limit.
+const searchQueue = new PQueue({ concurrency: 4 })
+const MAX_QUEUED_SEARCHES = 32
+const SEARCH_QUEUE_WAIT_MS = 60_000
 let cooldownUntil = 0
 
 export function parseSearchSources(text: string) {
@@ -36,9 +40,45 @@ export async function searchAssistantWeb(query: unknown, count: unknown, callerS
     throw new Error('Search query must contain 1–1500 characters')
   if (count !== undefined && (!Number.isInteger(count) || Number(count) < 1 || Number(count) > 8))
     throw new Error('Search count must be an integer between 1 and 8')
-  if (active >= 2) throw new Error('Two searches are already running; wait for one to finish')
+  callerSignal?.throwIfAborted()
+  if (searchQueue.size >= MAX_QUEUED_SEARCHES)
+    throw new Error('Search queue is full; finish the pending searches before submitting another batch')
   if (cooldownUntil > Date.now())
     throw new Error('Search service is rate limited; use browser search or try again later')
+  const waiting = new AbortController()
+  const waitTimer = setTimeout(
+    () => waiting.abort(new Error('Search waited for capacity for 60 seconds; reduce the search batch')),
+    SEARCH_QUEUE_WAIT_MS
+  )
+  const signal = callerSignal ? AbortSignal.any([callerSignal, waiting.signal]) : waiting.signal
+  let onAbort: () => void = () => {}
+  const aborted = new Promise<never>((_, reject) => {
+    onAbort = () => reject(signal.reason)
+    signal.addEventListener('abort', onAbort, { once: true })
+  })
+  try {
+    const queued = searchQueue.add(
+      async () => {
+        clearTimeout(waitTimer)
+        signal.throwIfAborted()
+        // A previous queued request may have received a real upstream 429.
+        if (cooldownUntil > Date.now())
+          throw new Error('Search service is rate limited; use browser search or try again later')
+        return executeSearch(query, count, callerSignal)
+      },
+      { signal, throwOnTimeout: true }
+    )
+    return await Promise.race([queued, aborted])
+  } catch (error) {
+    if (signal.aborted) throw signal.reason
+    throw error
+  } finally {
+    signal.removeEventListener('abort', onAbort)
+    clearTimeout(waitTimer)
+  }
+}
+
+async function executeSearch(query: string, count: unknown, callerSignal?: AbortSignal) {
   const timeout = new AbortController()
   const timer = setTimeout(() => timeout.abort(new Error('Search timed out after 20 seconds')), 20_000)
   const signal = callerSignal ? AbortSignal.any([callerSignal, timeout.signal]) : timeout.signal
@@ -78,7 +118,6 @@ export async function searchAssistantWeb(query: unknown, count: unknown, callerS
       })
     }
   })
-  active++
   try {
     signal.throwIfAborted()
     await client.connect(transport, { signal, timeout: 20_000 })
@@ -117,6 +156,5 @@ export async function searchAssistantWeb(query: unknown, count: unknown, callerS
     clearTimeout(timer)
     timeout.abort('Search finished')
     await client.close().catch(() => undefined)
-    active--
   }
 }

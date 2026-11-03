@@ -20,7 +20,7 @@ export const ASSISTANT_PRODUCT_TOOLS: Tool[] = [
   {
     name: 'web_search',
     description:
-      'Search public webpages when the user requests research or current facts. Sends only the query to Exa public MCP (subject to its limits); never include private attachments, secrets or full conversation. Returns source extracts, not verified full pages. Use browser to verify sources and publication dates. Do not search for greetings or tasks answerable locally.',
+      'Search public webpages when the user requests research or current facts. Parallel queries are queued within independent search capacity; do not resubmit a pending query. Sends only the query to Exa public MCP (subject to its limits); never include private attachments, secrets or full conversation. Returns source extracts, not verified full pages. Use browser to verify sources and publication dates. Do not search for greetings or tasks answerable locally.',
     inputSchema: {
       type: 'object',
       properties: { query: { type: 'string', maxLength: 1500 }, count: { type: 'integer', minimum: 1, maximum: 8 } },

@@ -3,7 +3,6 @@ import { getAnthropicReasoningParams } from '@renderer/aiCore/utils/reasoning'
 import { isAssistantModelAllowed } from '@renderer/config/agentModelPolicy'
 import { isGenerateImageModel, isVisionModel } from '@renderer/config/models'
 import { useSession } from '@renderer/hooks/agents/useSession'
-import { useInputText } from '@renderer/hooks/useInputText'
 import { selectNewTopicLoading } from '@renderer/hooks/useMessageOperations'
 import { useSettings } from '@renderer/hooks/useSettings'
 import { useTextareaResize } from '@renderer/hooks/useTextareaResize'
@@ -42,7 +41,11 @@ import {
   shouldStartDeepResearchImmediately
 } from '@renderer/utils/agentDeepResearch'
 import { buildAgentSessionTopicId } from '@renderer/utils/agentSession'
-import { getAgentSessionDraft, saveAgentSessionDraft } from '@renderer/utils/agentSessionDraft'
+import {
+  getAgentSessionDraft,
+  saveAgentSessionDraft,
+  subscribeAgentSessionDraft
+} from '@renderer/utils/agentSessionDraft'
 import { getSendMessageShortcutLabel } from '@renderer/utils/input'
 import {
   createFileBlock,
@@ -59,7 +62,6 @@ import {
 } from '@renderer/utils/reasoningEffort'
 import { isAssistantExecutionAllowed } from '@shared/agents/assistantAvailability'
 import { documentExts, imageExts, textExts } from '@shared/config/constant'
-import { Dropdown } from 'antd'
 import type { FC } from 'react'
 import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -227,15 +229,24 @@ const AgentSessionInputbarInner: FC<InnerProps> = ({
   const config = getInputbarConfig(scope)
   const isHero = variant === 'hero'
 
-  // Use shared hooks for text and textarea management with draft persistence
-  const {
-    text,
-    setText,
-    isEmpty: inputEmpty
-  } = useInputText({
-    initialValue: getAgentSessionDraft(agentId, sessionId),
-    onChange: (value) => saveAgentSessionDraft(agentId, sessionId, value)
-  })
+  // The welcome and conversation layouts mount different composers. Subscribe
+  // to the same draft so completion of the original send also clears the new one.
+  const subscribeDraft = useCallback(
+    (listener: () => void) => subscribeAgentSessionDraft(agentId, sessionId, listener),
+    [agentId, sessionId]
+  )
+  const text = useSyncExternalStore(subscribeDraft, () => getAgentSessionDraft(agentId, sessionId))
+  const setText = useCallback(
+    (value: React.SetStateAction<string>) => {
+      saveAgentSessionDraft(
+        agentId,
+        sessionId,
+        typeof value === 'function' ? value(getAgentSessionDraft(agentId, sessionId)) : value
+      )
+    },
+    [agentId, sessionId]
+  )
+  const inputEmpty = text.trim().length === 0
   const {
     textareaRef,
     resize: resizeTextArea,
@@ -250,10 +261,9 @@ const AgentSessionInputbarInner: FC<InnerProps> = ({
   const { t } = useTranslation()
   const inbox = getAgentSessionInbox()
   const inboxEntries = useSyncExternalStore(inbox.subscribe, inbox.snapshot)
-  const [delivery, setDelivery] = useState<'queue' | 'steer'>('queue')
   const [submitting, setSubmitting] = useState(false)
   const submittingRef = useRef(false)
-  const composerRef = useRef({ text, files: [] as FileMetadata[] })
+  const filesRef = useRef<FileMetadata[]>([])
 
   const [reasoningEffort, setReasoningEffort] = useState<AgentReasoningEffort>(
     initialReasoningEffort ?? AGENT_DEFAULT_REASONING_EFFORT
@@ -281,7 +291,7 @@ const AgentSessionInputbarInner: FC<InnerProps> = ({
   )
 
   const { files } = useInputbarToolsState()
-  composerRef.current = { text, files }
+  filesRef.current = files
   const { setIsExpanded, setFiles } = useInputbarToolsDispatch()
   const { setCouldAddImageFile } = useInputbarToolsInternalDispatch()
 
@@ -289,9 +299,6 @@ const AgentSessionInputbarInner: FC<InnerProps> = ({
   const sessionTopicId = buildAgentSessionTopicId(sessionId)
   const topicMessages = useAppSelector((state) => selectMessagesForTopic(state, sessionTopicId))
   const loading = useAppSelector((state) => selectNewTopicLoading(state, sessionTopicId))
-  useEffect(() => {
-    if (!loading) setDelivery('queue')
-  }, [loading])
   const modelPolicy = useAppSelector((state) => state.llm.modelPolicy?.policy)
   const enableDeveloperMode = useAppSelector((state) => state.settings.enableDeveloperMode)
 
@@ -521,7 +528,7 @@ const AgentSessionInputbarInner: FC<InnerProps> = ({
             files: uploadedFiles,
             workspace: sessionData?.accessiblePaths?.[0]
           },
-          loading ? delivery : 'queue'
+          'queue'
         )
       } else {
         // Wait for persistence/queue admission, not for model completion. This
@@ -532,9 +539,10 @@ const AgentSessionInputbarInner: FC<InnerProps> = ({
       // Emit event to trigger scroll to bottom in AgentSessionMessages
       void EventEmitter.emit(EVENT_NAMES.SEND_MESSAGE, { topicId: sessionTopicId })
 
-      // Clear text and files after successful send (draft is cleared automatically via onChange)
-      if (composerRef.current.text === text) setText('')
-      if (composerRef.current.files === files) setFiles([])
+      // Check the live session draft, not the possibly unmounted composer: a
+      // user may have navigated back and started a new draft while saving.
+      if (getAgentSessionDraft(agentId, sessionId) === text) setText('')
+      if (filesRef.current === files) setFiles([])
       setDeepResearchEnabled(false)
       CacheService.remove(deepResearchCacheKey)
       // Restore focus to textarea after sending to maintain IME state (fcitx5 issue)
@@ -556,7 +564,6 @@ const AgentSessionInputbarInner: FC<InnerProps> = ({
     sessionId,
     inbox,
     loading,
-    delivery,
     sessionData,
     sessionTopicId,
     setText,
@@ -665,23 +672,14 @@ const AgentSessionInputbarInner: FC<InnerProps> = ({
       allowSendWhileLoading
       sendDisabled={sendDisabled || submitting}
       handleSendMessage={sendMessage}
-      renderSendButton={(disabled) => (
-        <Dropdown.Button
-          disabled={disabled}
-          loading={submitting}
-          onClick={() => void sendMessage()}
-          menu={{
-            items: [
-              { key: 'queue', label: t('agent.inbox.queue') },
-              { key: 'steer', label: t('agent.inbox.steer'), disabled: !loading }
-            ],
-            onClick: ({ key }) => setDelivery(key as 'queue' | 'steer')
-          }}>
-          {t(loading ? (delivery === 'queue' ? 'agent.inbox.queue' : 'agent.inbox.steer') : 'chat.input.send')}
-        </Dropdown.Button>
-      )}
       topContent={
-        <AgentSessionInboxPanel entries={inboxEntries} inbox={inbox} sessionId={sessionId} onEdit={editInboxEntry} />
+        <AgentSessionInboxPanel
+          entries={inboxEntries}
+          inbox={inbox}
+          sessionId={sessionId}
+          running={loading}
+          onEdit={editInboxEntry}
+        />
       }
       leftToolbar={leftToolbar}
       pinnedContent={

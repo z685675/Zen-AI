@@ -93,6 +93,24 @@ describe('browser user-action detection', () => {
     ).toBeUndefined()
   })
 
+  it('recognizes a dedicated challenge before its iframe has mounted', () => {
+    expect(detectUserAction({ ...baseSignals, title: '请稍候…' })).toMatchObject({ reason: 'captcha' })
+    expect(detectUserAction({ ...baseSignals, title: 'Just a moment...' })).toMatchObject({ reason: 'captcha' })
+    expect(
+      detectUserAction({
+        ...baseSignals,
+        text: 'Are you a robot?\nPlease confirm you are a human by completing the captcha challenge below.'
+      })
+    ).toMatchObject({ reason: 'captcha' })
+    expect(
+      detectUserAction({
+        ...baseSignals,
+        title: 'An article about human verification',
+        text: 'We study the question "Are you a robot?" and captcha challenge design.'
+      })
+    ).toBeUndefined()
+  })
+
   it('recognizes a Cloudflare challenge even when its checkbox is inside a cross-origin frame', () => {
     expect(
       detectUserAction({

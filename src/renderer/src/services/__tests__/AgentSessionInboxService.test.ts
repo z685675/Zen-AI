@@ -44,6 +44,136 @@ afterEach(() => {
 })
 
 describe('assistant follow-up outbox', () => {
+  it('guides the selected queued message with the original ID and attachments exactly once', async () => {
+    const { inbox, deps } = fixture()
+    vi.mocked(deps.busy).mockReturnValue(true)
+    const original = { ...payload('selected'), files: [{ id: 'attachment', path: '/paper.pdf' }] as any }
+    inbox.add(payload('first'), 'queue')
+    inbox.add(original, 'queue')
+    const promoted = inbox.guide('selected')
+    expect(await inbox.guide('selected')).toBe('unavailable')
+    expect(await promoted).toBe('submitted')
+    await inbox.flush()
+    expect(deps.steer).toHaveBeenCalledTimes(1)
+    expect(deps.steer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'selected',
+        text: original.text,
+        files: original.files,
+        args: original.args
+      })
+    )
+    expect(inbox.snapshot().map(({ id, delivery, state }) => ({ id, delivery, state }))).toEqual([
+      { id: 'first', delivery: 'queue', state: 'queued' },
+      { id: 'selected', delivery: 'steer', state: 'accepted' }
+    ])
+    expect(deps.send).not.toHaveBeenCalled()
+  })
+
+  it('retains queued work if persisting the guide action fails before submission', async () => {
+    const { inbox, deps, stored } = fixture()
+    inbox.add(payload(), 'queue')
+    vi.mocked(deps.write).mockImplementationOnce(() => {
+      throw new Error('storage full')
+    })
+    await expect(inbox.guide('one')).rejects.toThrow('storage full')
+    expect(inbox.snapshot()[0]).toMatchObject({ delivery: 'queue', state: 'queued' })
+    expect(stored()[0]).toMatchObject({ delivery: 'queue', state: 'queued' })
+    expect(deps.steer).not.toHaveBeenCalled()
+    await inbox.flush()
+    expect(deps.send).toHaveBeenCalledTimes(1)
+  })
+
+  it.each(['not_ready', 'not_running'])('keeps a definitely rejected guide queued (%s)', async (code) => {
+    const { inbox, deps } = fixture()
+    inbox.add(payload(), 'queue')
+    vi.mocked(deps.steer).mockResolvedValueOnce({ id: 'one', state: 'rejected', code } as any)
+    expect(await inbox.guide('one')).toBe('queued')
+    expect(inbox.snapshot()[0]).toMatchObject({ delivery: 'queue', state: 'queued', receipt: undefined })
+    await inbox.flush()
+    expect(deps.steer).toHaveBeenCalledTimes(1)
+    expect(deps.send).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not send the promoted entry normally when a prior queue status check finishes late', async () => {
+    const { inbox, deps } = fixture()
+    inbox.add(payload(), 'queue')
+    let finishStatus!: (value: any) => void
+    vi.mocked(deps.status).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishStatus = resolve
+        })
+    )
+    const flushing = inbox.flush()
+    expect(await inbox.guide('one')).toBe('submitted')
+    finishStatus({ active: false, ready: false })
+    await flushing
+    expect(deps.steer).toHaveBeenCalledTimes(1)
+    expect(deps.send).not.toHaveBeenCalled()
+  })
+
+  it('does not allow guiding a message already admitted through the normal queue', async () => {
+    const { inbox, deps } = fixture()
+    inbox.add(payload(), 'queue')
+    let finish!: () => void
+    vi.mocked(deps.send).mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve
+        })
+    )
+    const flushing = inbox.flush()
+    await vi.waitFor(() => expect(deps.send).toHaveBeenCalledTimes(1))
+    expect(await inbox.guide('one')).toBe('unavailable')
+    expect(deps.steer).not.toHaveBeenCalled()
+    finish()
+    await flushing
+  })
+
+  it('does not overwrite an in-flight guide when an earlier queue status check fails', async () => {
+    const { inbox, deps } = fixture()
+    inbox.add(payload(), 'queue')
+    let failStatus!: (reason: Error) => void
+    vi.mocked(deps.status).mockImplementationOnce(
+      () =>
+        new Promise((_, reject) => {
+          failStatus = reject
+        })
+    )
+    let acceptGuide!: (receipt: any) => void
+    vi.mocked(deps.steer).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          acceptGuide = resolve
+        })
+    )
+    const flushing = inbox.flush()
+    const guiding = inbox.guide('one')
+    failStatus(new Error('status response lost'))
+    await flushing
+    expect(inbox.snapshot()[0]).toMatchObject({ delivery: 'steer', state: 'sending' })
+    expect(inbox.isPaused('session')).toBe(false)
+    expect(inbox.remove('one')).toBeUndefined()
+    acceptGuide({ id: 'one', state: 'accepted' })
+    await guiding
+    expect(inbox.snapshot()[0]).toMatchObject({ delivery: 'steer', state: 'accepted' })
+    expect(deps.send).not.toHaveBeenCalled()
+    expect(deps.steer).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not return an ambiguous guide to the normal queue or automatically submit it again', async () => {
+    const { inbox, deps } = fixture()
+    inbox.add(payload(), 'queue')
+    vi.mocked(deps.steer).mockRejectedValueOnce(new Error('response lost'))
+    await inbox.guide('one')
+    await inbox.flush()
+    expect(inbox.snapshot()[0]).toMatchObject({ delivery: 'steer', state: 'uncertain' })
+    expect(await inbox.guide('one')).toBe('unavailable')
+    expect(deps.steer).toHaveBeenCalledTimes(1)
+    expect(deps.send).not.toHaveBeenCalled()
+  })
+
   it('waits for the main-process task lease and sends queued entries in order without overlap', async () => {
     const { inbox, deps } = fixture()
     inbox.add(payload('one'), 'queue')

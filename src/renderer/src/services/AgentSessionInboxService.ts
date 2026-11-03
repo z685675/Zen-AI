@@ -126,6 +126,24 @@ export class AgentSessionInbox {
     this.publish()
     return entry
   }
+  async guide(id: string): Promise<'submitted' | 'queued' | 'unavailable'> {
+    const entry = this.entries.find((item) => item.id === id && item.delivery === 'queue' && item.state === 'queued')
+    if (!entry) return 'unavailable'
+    // Claim the existing message synchronously before any status/IPC await.
+    // The queue and a second click must never submit this message as well.
+    entry.delivery = 'steer'
+    entry.state = 'sending'
+    try {
+      this.publish(true)
+    } catch (error) {
+      entry.delivery = 'queue'
+      entry.state = 'queued'
+      throw error
+    }
+    this.schedule()
+    await this.deliver(entry, true)
+    return this.entries.some((item) => item.id === id && item.delivery === 'queue') ? 'queued' : 'submitted'
+  }
   async check(id: string) {
     const entry = this.entries.find((item) => item.id === id)
     if (!entry || entry.delivery !== 'steer' || this.checking.has(id)) return
@@ -141,11 +159,19 @@ export class AgentSessionInbox {
     }
     this.publish()
   }
-  private async deliver(entry: AgentInboxEntry) {
+  private async deliver(entry: AgentInboxEntry, keepRejectedQueued = false) {
     try {
       entry.receipt = await this.deps.steer(entry)
-      entry.state = entry.receipt.state
-      if (['accepted', 'applied', 'deferred'].includes(entry.state)) await this.deps.accepted(entry)
+      if (keepRejectedQueued && entry.receipt.state === 'rejected') {
+        // Only a definite non-submission is safe to put back in the queue.
+        // Ambiguous receipts stay uncertain and are never automatically replayed.
+        entry.delivery = 'queue'
+        entry.state = 'queued'
+        entry.receipt = undefined
+      } else {
+        entry.state = entry.receipt.state
+        if (['accepted', 'applied', 'deferred'].includes(entry.state)) await this.deps.accepted(entry)
+      }
     } catch {
       entry.state = 'uncertain'
     }
@@ -166,7 +192,14 @@ export class AgentSessionInbox {
       this.processing.add(sessionId)
       try {
         const status = await this.deps.status(sessionId)
-        if (status.active || this.paused.has(sessionId) || !this.entries.includes(entry)) continue
+        if (
+          status.active ||
+          this.paused.has(sessionId) ||
+          !this.entries.includes(entry) ||
+          entry.delivery !== 'queue' ||
+          entry.state !== 'queued'
+        )
+          continue
         entry.state = 'sending'
         // Persist BEFORE the model request: a crash must never restore an
         // already dispatched item as safely queued for automatic replay.
@@ -174,8 +207,10 @@ export class AgentSessionInbox {
         await this.deps.send(entry)
         entry.state = 'sent'
       } catch {
-        entry.state = 'failed'
-        this.paused.add(sessionId)
+        if (entry.delivery === 'queue' && this.entries.includes(entry)) {
+          entry.state = 'failed'
+          this.paused.add(sessionId)
+        }
       } finally {
         this.processing.delete(sessionId)
         this.publish()

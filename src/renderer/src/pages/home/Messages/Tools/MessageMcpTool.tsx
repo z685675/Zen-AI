@@ -154,6 +154,7 @@ const MessageMcpTool: FC<Props> = ({ block }) => {
                 status={effectiveStatus}
                 hasError={hasError}
                 label={getToolStatusLabel(effectiveStatus, displayInfo, hasError)}
+                response={toolResponse.response}
               />
             )}
             {!isPending && (

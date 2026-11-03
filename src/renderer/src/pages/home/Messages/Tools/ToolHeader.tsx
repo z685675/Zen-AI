@@ -259,7 +259,12 @@ const ToolHeader: FC<ToolHeaderProps> = ({
         {stats && <Stats>{stats}</Stats>}
         {showStatus && status && (
           <StatusWrapper>
-            <ToolStatusIndicator status={status} hasError={hasError} label={mcpStatusLabel} />
+            <ToolStatusIndicator
+              status={status}
+              hasError={hasError}
+              label={mcpStatusLabel}
+              response={toolResponse?.response}
+            />
           </StatusWrapper>
         )}
       </Container>
@@ -276,7 +281,12 @@ const ToolHeader: FC<ToolHeaderProps> = ({
       {stats && <Stats>{stats}</Stats>}
       {showStatus && status && (
         <StatusWrapper>
-          <ToolStatusIndicator status={status} hasError={hasError} label={statusLabel} />
+          <ToolStatusIndicator
+            status={status}
+            hasError={hasError}
+            label={statusLabel}
+            response={toolResponse?.response}
+          />
         </StatusWrapper>
       )}
     </Container>

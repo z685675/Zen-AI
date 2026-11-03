@@ -11,6 +11,35 @@ export type ToolDisplayInfo = {
 
 const normalize = (value?: string) => (value ?? '').toLowerCase().replace(/[_\s-]/g, '')
 
+/** Read the browser wrapper, not arbitrary text inside the retrieved article. */
+export function isBrowserHandoffResponse(response: unknown): boolean {
+  let value = response
+  if (typeof value === 'string') {
+    if (value.length > 64_000) return false
+    try {
+      value = JSON.parse(value)
+    } catch {
+      return false
+    }
+  }
+  if (!value || typeof value !== 'object') return false
+  const result = value as { tabId?: unknown; userAction?: { reason?: unknown }; content?: unknown }
+  if (typeof result.tabId === 'string' && typeof result.userAction?.reason === 'string') return true
+  if (Array.isArray(result.content)) {
+    return result.content.slice(0, 8).some((item) => {
+      if (!item || typeof item !== 'object' || item.type !== 'text' || typeof item.text !== 'string') return false
+      // MCP transports can wrap the serialized browser result in text blocks.
+      try {
+        const parsed = JSON.parse(item.text)
+        return typeof parsed?.tabId === 'string' && typeof parsed?.userAction?.reason === 'string'
+      } catch {
+        return false
+      }
+    })
+  }
+  return false
+}
+
 const getMcpParts = (toolName: string) => {
   if (!toolName.startsWith('mcp__')) {
     return undefined

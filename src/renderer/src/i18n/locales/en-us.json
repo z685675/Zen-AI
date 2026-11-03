@@ -365,19 +365,25 @@
       "dismissHint": "Only hides this record; it does not undo a submitted message.",
       "draftOccupied": "Send or save the current draft before editing this message.",
       "edit": "Edit",
+      "guideIdle": "There is no running task to steer right now.",
+      "guideQueued": "The current task cannot accept guidance yet. This message remains queued.",
+      "guideSaveFailed": "Could not save the steering action. The message remains queued.",
       "hint": {
         "accepted": "Saved in the current task. It can take effect at a later processing step.",
         "deferred": "The task has ended, but processing of this addition is unconfirmed. Check the result before preparing a continuation.",
         "failed": "Execution failed and the queue is paused. Check the conversation before editing and sending again.",
         "rejected": "The message was not submitted. Edit it or send it after the current task.",
+        "steer": "Submit this queued message to the current task now to add instructions or change its subsequent direction.",
         "uncertain": "Delivery is unconfirmed. Check the receipt or conversation history before sending again."
       },
       "notReady": "The task is still starting or finishing. Edit this message or send it after the task.",
       "pause": "Pause queue",
+      "pauseHint": "Pause automatic sending of queued messages while the current task continues. Queued messages are kept for later.",
       "queue": "Send after this task",
       "remove": "Dismiss",
       "restored": "Restored to the input box. Review it, then send.",
       "resume": "Continue queue",
+      "resumeHint": "Resume processing queued messages in order, waiting for the current task to finish if it is still running.",
       "saveFailed": "Could not save this message. Your draft has been kept.",
       "state": {
         "accepted": "Received",
@@ -390,7 +396,7 @@
         "sent": "Sent",
         "uncertain": "Receipt unconfirmed"
       },
-      "steer": "Adjust current task",
+      "steer": "Steer",
       "title": "Pending messages and task updates"
     },
     "input": {

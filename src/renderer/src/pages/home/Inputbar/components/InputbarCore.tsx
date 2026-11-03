@@ -60,7 +60,6 @@ export interface InputbarCoreProps {
   onPause?: () => void
   handleSendMessage: () => void
   allowSendWhileLoading?: boolean
-  renderSendButton?: (disabled: boolean) => React.ReactNode
 
   // Toolbar sections
   leftToolbar?: React.ReactNode
@@ -120,7 +119,6 @@ export const InputbarCore: FC<InputbarCoreProps> = ({
   onPause,
   handleSendMessage,
   allowSendWhileLoading = false,
-  renderSendButton,
   leftToolbar,
   rightToolbar,
   topContent,
@@ -631,11 +629,7 @@ export const InputbarCore: FC<InputbarCoreProps> = ({
         isLoading={isTranslating}
       />
     )
-    extras.push(
-      renderSendButton?.(isSendDisabled) ?? (
-        <SendMessageButton sendMessage={handleSendMessage} disabled={isSendDisabled} />
-      )
-    )
+    extras.push(<SendMessageButton sendMessage={handleSendMessage} disabled={isSendDisabled} />)
 
     if (isLoading) {
       extras.push(
@@ -648,7 +642,7 @@ export const InputbarCore: FC<InputbarCoreProps> = ({
     }
 
     return <>{extras}</>
-  }, [text, onTranslated, isTranslating, handleSendMessage, isSendDisabled, isLoading, t, onPause, renderSendButton])
+  }, [text, onTranslated, isTranslating, handleSendMessage, isSendDisabled, isLoading, t, onPause])
 
   const quickPanelElement = config.enableQuickPanel ? <QuickPanelView setInputText={setText} /> : null
 

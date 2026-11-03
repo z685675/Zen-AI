@@ -47,6 +47,7 @@ vi.mock('electron', () => {
     goBack: vi.fn(),
     goForward: vi.fn(),
     reload: vi.fn(),
+    stop: vi.fn(),
     executeJavaScript: vi.fn(async () => null),
     setWindowOpenHandler: vi.fn()
   })
@@ -292,7 +293,83 @@ describe('CdpBrowserController', () => {
     expect(result.content).toBe('<html><body><h1>Test</h1><p>Content</p></body></html>')
   })
 
+  it('waits on the same page when DOM ready precedes the first readable body', async () => {
+    const electron = await import('electron')
+    const controller = new CdpBrowserController()
+    const sendCommand = (electron as any).__mockSendCommand
+    sendCommand.mockResolvedValueOnce({ result: { value: '' } })
+    sendCommand.mockResolvedValueOnce({ result: { value: 'Article rendered after DOM ready' } })
+    const result = await controller.fetch('https://example.com/', 'txt')
+    expect(result.content).toBe('Article rendered after DOM ready')
+    const tab = [...(controller as any).windows.values()][0].tabs.get(result.tabId)
+    expect(tab.view.webContents.loadURL).toHaveBeenCalledTimes(1)
+    await controller.dispose()
+  })
+
+  it('reports an empty body instead of a successful article retrieval', async () => {
+    const electron = await import('electron')
+    const controller = new CdpBrowserController()
+    const sendCommand = (electron as any).__mockSendCommand
+    sendCommand.mockResolvedValueOnce({ result: { value: '' } })
+    sendCommand.mockResolvedValueOnce({ result: { value: '' } })
+    await expect(controller.fetch('https://example.com/', 'txt')).rejects.toThrow('no readable content')
+    await controller.dispose()
+  })
+
+  it('hands off a late challenge found in extracted content without reporting it as article text', async () => {
+    const electron = await import('electron')
+    const controller = new CdpBrowserController()
+    const challenge = 'Are you a robot?\nPlease confirm you are a human by completing the captcha challenge below.'
+    ;(electron as any).__mockSendCommand.mockResolvedValueOnce({ result: { value: challenge } })
+    const result = await controller.fetch('https://example.com/', 'txt')
+    expect(JSON.parse(result.content as string)).toMatchObject({
+      userAction: { reason: 'captcha' },
+      guidance: 'Call wait_for_user.'
+    })
+    expect(result.content).not.toContain('captcha challenge below')
+    expect(controller.getUserAction(false, result.tabId)).toMatchObject({ reason: 'captcha' })
+    await controller.dispose()
+  })
+
   describe('Multi-tab support', () => {
+    it('isolates overlapping default opens instead of cancelling the first page navigation', async () => {
+      const controller = new CdpBrowserController()
+      const { tabId } = await controller.open('https://example.com/')
+      const windowInfo = [...(controller as any).windows.values()][0]
+      const webContents = windowInfo.tabs.get(tabId).view.webContents
+      let release!: () => void
+      const blocker = new Promise<void>((resolve) => (release = resolve))
+      webContents.loadURL.mockImplementation(() => blocker)
+      const first = controller.fetch('https://first.example/', 'txt')
+      await vi.waitFor(() => expect(webContents.loadURL).toHaveBeenCalledWith('https://first.example/'))
+      const second = controller.fetch('https://second.example/', 'txt')
+      await vi.waitFor(() => {
+        expect(windowInfo.tabs.size > 1 || webContents.loadURL.mock.calls.length > 2).toBe(true)
+      })
+      release()
+      const [one, two] = await Promise.all([first, second])
+      expect(one.tabId).toBe(tabId)
+      expect(two.tabId).not.toBe(one.tabId)
+      expect(webContents.loadURL).not.toHaveBeenCalledWith('https://second.example/')
+      await controller.dispose()
+    })
+
+    it('keeps a tab reserved until content extraction finishes', async () => {
+      const controller = new CdpBrowserController()
+      const electron = await import('electron')
+      const { tabId } = await controller.open('https://example.com/')
+      let release!: (value: any) => void
+      ;(electron as any).__mockSendCommand.mockImplementationOnce(() => new Promise((resolve) => (release = resolve)))
+      const reading = controller.fetch('https://first.example/', 'txt')
+      await vi.waitFor(() => expect(release).toBeDefined())
+      const second = await controller.open('https://second.example/')
+      release({ result: { value: 'First article body' } })
+      const first = await reading
+      expect(first).toMatchObject({ tabId, content: 'First article body' })
+      expect(second.tabId).not.toBe(tabId)
+      await controller.dispose()
+    })
+
     it('creates new tab with newTab parameter', async () => {
       const controller = new CdpBrowserController()
       const result1 = await controller.open('https://site1.com/', 5000, false, true)

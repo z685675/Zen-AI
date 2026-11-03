@@ -28,6 +28,7 @@ export class CdpBrowserController {
   private readonly idleTimeoutMs: number
   private readonly turndownService: TurndownService
   private readonly operationLimiter: BrowserOperationLimiter
+  private readonly navigationTabs = new Set<TabInfo>()
   private readonly clickedTargets = new Set<string>()
   private readonly downloadManager: BrowserDownloadManager
   private privateStorageClearPromise: Promise<void> | undefined
@@ -197,14 +198,35 @@ export class CdpBrowserController {
     }, 450)
   }
 
-  private async detectUserActionForTab(windowInfo: WindowInfo | undefined, tab: TabInfo): Promise<void> {
+  private async detectUserActionForTab(
+    windowInfo: WindowInfo | undefined,
+    tab: TabInfo,
+    contentText?: string
+  ): Promise<void> {
     if (!windowInfo || tab.view.webContents.isDestroyed() || tab.manualControl || windowInfo.handoff) return
 
     try {
-      const signals = (await tab.view.webContents.executeJavaScript(USER_ACTION_DETECTION_SCRIPT)) as BrowserPageSignals
+      let inspected: unknown
+      try {
+        inspected = await tab.view.webContents.executeJavaScript(USER_ACTION_DETECTION_SCRIPT)
+      } catch (error) {
+        if (contentText === undefined) throw error
+      }
       if (tab.view.webContents.isDestroyed() || tab.manualControl || windowInfo.handoff) return
-      if (!signals || typeof signals !== 'object') return
-      const detected = detectUserAction(signals)
+      if ((!inspected || typeof inspected !== 'object') && contentText === undefined) return
+      const signals: BrowserPageSignals = {
+        url: tab.view.webContents.getURL(),
+        title: tab.view.webContents.getTitle(),
+        text: contentText ?? '',
+        hasPasswordField: false,
+        hasLoginControl: false,
+        hasCaptchaField: false,
+        hasVerificationControl: false,
+        hasAuthorizationControl: false,
+        ...(inspected && typeof inspected === 'object' ? inspected : {})
+      }
+      const detected =
+        detectUserAction(signals) ?? (contentText ? detectUserAction({ ...signals, text: contentText }) : undefined)
       if (!detected) {
         if (tab.userAction) {
           tab.userAction = undefined
@@ -1026,13 +1048,45 @@ export class CdpBrowserController {
    */
   public async open(url: string, timeout = 10000, privateMode = false, newTab = false, showWindow = false) {
     return this.operationLimiter.run(
-      () => this.openInternal(url, timeout, privateMode, newTab, showWindow),
+      () =>
+        this.withNavigationTab(privateMode, newTab, showWindow, (target, created) =>
+          this.openInternal(url, timeout, privateMode, created, target)
+        ),
       'browser navigation'
     )
   }
 
-  private async openInternal(url: string, timeout = 10000, privateMode = false, newTab = false, showWindow = false) {
-    const { tabId: actualTabId, tab } = await this.getTab(privateMode, undefined, newTab, showWindow)
+  /** Reserve through extraction, not only loadURL: another open must not replace
+   * the page between navigation and reading its body. Sequential opens reuse it. */
+  private async withNavigationTab<T>(
+    privateMode: boolean,
+    newTab: boolean,
+    showWindow: boolean,
+    operation: (target: { tabId: string; tab: TabInfo }, created: boolean) => Promise<T>
+  ): Promise<T> {
+    let target = await this.getTab(privateMode, undefined, newTab, showWindow)
+    let created = newTab
+    if (this.navigationTabs.has(target.tab)) {
+      target = await this.getTab(privateMode, undefined, true, showWindow)
+      created = true
+    }
+    this.navigationTabs.add(target.tab)
+    try {
+      this.assertAutomationAllowed(privateMode)
+      return await operation(target, created)
+    } finally {
+      this.navigationTabs.delete(target.tab)
+    }
+  }
+
+  private async openInternal(
+    url: string,
+    timeout: number,
+    privateMode: boolean,
+    newTab: boolean,
+    target: { tabId: string; tab: TabInfo }
+  ) {
+    const { tabId: actualTabId, tab } = target
     const view = tab.view
     const windowKey = this.getWindowKey(privateMode)
 
@@ -1084,6 +1138,9 @@ export class CdpBrowserController {
     try {
       await Promise.race([view.webContents.loadURL(url), loadPromise, timeoutPromise])
     } catch (error) {
+      // A timed-out reused page must not continue navigating in the background
+      // and interfere with the next call on this tab.
+      if (!webContents.isDestroyed()) webContents.stop()
       if (newTab) {
         await this.closeTab(privateMode, actualTabId).catch((closeError) => {
           logger.debug('Failed to clean up timed out browser tab', { closeError, tabId: actualTabId })
@@ -1423,7 +1480,10 @@ export class CdpBrowserController {
     selector?: string
   ): Promise<{ tabId: string; content: string | object }> {
     return this.operationLimiter.run(
-      () => this.fetchInternal(url, format, timeout, privateMode, newTab, showWindow, selector),
+      () =>
+        this.withNavigationTab(privateMode, newTab, showWindow, (target, created) =>
+          this.fetchInternal(url, format, timeout, privateMode, created, showWindow, selector, target)
+        ),
       'browser content fetch'
     )
   }
@@ -1435,14 +1495,15 @@ export class CdpBrowserController {
     privateMode = false,
     newTab = false,
     showWindow = false,
-    selector?: string
+    selector: string | undefined,
+    target: { tabId: string; tab: TabInfo }
   ): Promise<{ tabId: string; content: string | object }> {
     let tabId: string | undefined
 
     let timeoutHandle: ReturnType<typeof setTimeout> | undefined
 
     try {
-      const opened = await this.openInternal(url, timeout, privateMode, newTab, showWindow)
+      const opened = await this.openInternal(url, timeout, privateMode, newTab, target)
       tabId = opened.tabId
       if (opened.userAction) {
         return { tabId, content: JSON.stringify({ userAction: opened.userAction, guidance: 'Call wait_for_user.' }) }
@@ -1467,7 +1528,7 @@ export class CdpBrowserController {
         expression = `${root}.outerHTML`
       }
 
-      const result = (await Promise.race([
+      let result = (await Promise.race([
         dbg.sendCommand('Runtime.evaluate', {
           expression,
           returnByValue: true
@@ -1477,7 +1538,25 @@ export class CdpBrowserController {
         })
       ])) as { result?: { value?: string } }
 
-      const rawContent = result?.result?.value ?? ''
+      let rawContent = result?.result?.value ?? ''
+      if (!rawContent.trim()) {
+        // DOM ready can precede a site's first article render. Wait once for a
+        // mutation on this same page; do not navigate or retry the source.
+        result = await dbg.sendCommand('Runtime.evaluate', {
+          expression: `new Promise((resolve) => {
+            const read = () => ${expression} || '';
+            let timer;
+            const finish = () => { observer.disconnect(); clearTimeout(timer); resolve(read()); };
+            const observer = new MutationObserver(() => { if (read().trim()) finish(); });
+            observer.observe(document.documentElement, { childList: true, subtree: true, characterData: true });
+            timer = setTimeout(finish, 3000);
+            if (read().trim()) finish();
+          })`,
+          awaitPromise: true,
+          returnByValue: true
+        })
+        rawContent = result?.result?.value ?? ''
+      }
 
       let content: string | object
       if (format === 'markdown') {
@@ -1495,6 +1574,23 @@ export class CdpBrowserController {
         }
       } else {
         content = rawContent
+      }
+
+      // A late challenge can appear after the initial navigation probe. Its
+      // text is an access state, never evidence that the article was retrieved.
+      await this.detectUserActionForTab(
+        this.windows.get(windowKey),
+        tab,
+        typeof content === 'string' ? content : rawContent
+      )
+      const userAction = this.getUserAction(privateMode, tabId)
+      if (userAction) {
+        return { tabId, content: JSON.stringify({ userAction, guidance: 'Call wait_for_user.' }) }
+      }
+      if (!rawContent.trim() || (typeof content === 'string' && !content.trim())) {
+        throw new Error(
+          'Page opened but returned no readable content. Use another source or inspect the page; do not treat it as a retrieved article.'
+        )
       }
 
       return { tabId, content }
