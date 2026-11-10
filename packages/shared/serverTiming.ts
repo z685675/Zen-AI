@@ -53,6 +53,31 @@ const numericFields = <Name extends string>(value: unknown, names: readonly Name
 }
 
 export const serverPhases = (value: unknown) => numericFields(value, phaseNames)
+export function serverToolArguments(value: unknown) {
+  return Array.isArray(value)
+    ? value.slice(0, 128).flatMap((entry) => {
+        const row = object(entry)
+        if (!['upstream-raw', 'client-forward'].includes(String(row.source))) return []
+        if (!['missing', 'limited', 'invalid-json', 'not-object', 'object', 'empty-object'].includes(String(row.state)))
+          return []
+        return [
+          {
+            source: String(row.source),
+            callId: text(row.callId),
+            tool: text(row.tool),
+            state: String(row.state),
+            bytes: number(row.bytes),
+            keys: number(row.keys),
+            complete: row.complete === true,
+            fingerprint:
+              typeof row.fingerprint === 'string' && /^[a-f0-9]{64}$/.test(row.fingerprint)
+                ? row.fingerprint
+                : undefined
+          }
+        ]
+      })
+    : []
+}
 export function serverAttemptTiming(value: unknown) {
   const source = object(value)
   const startedAt = date(source.startedAt)
@@ -61,6 +86,25 @@ export function serverAttemptTiming(value: unknown) {
     startedAt,
     milestones: numericFields(source.milestones, milestoneNames),
     droppedHttp: number(source.droppedHttp) ?? 0,
+    ...(source.toolArgumentAuditVersion === 1 ? { toolArgumentAuditVersion: 1 } : {}),
+    ...(Array.isArray(source.toolArgumentCoverage)
+      ? {
+          toolArgumentCoverage: source.toolArgumentCoverage.slice(0, 2).flatMap((entry) => {
+            const row = object(entry)
+            if (!['upstream-raw', 'client-forward'].includes(String(row.source))) return []
+            return [
+              {
+                source: String(row.source),
+                format: row.format === 'sse' ? 'sse' : 'json',
+                complete: row.complete === true,
+                limited: row.limited === true,
+                callCount: number(row.callCount)
+              }
+            ]
+          })
+        }
+      : {}),
+    ...(Array.isArray(source.toolArguments) ? { toolArguments: serverToolArguments(source.toolArguments) } : {}),
     http: Array.isArray(source.http)
       ? source.http.slice(0, 8).map((entry): ServerHTTP => {
           const fields = object(entry)

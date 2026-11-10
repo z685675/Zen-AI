@@ -111,6 +111,7 @@ export class OpenCodeUsageObserver {
       }
       this.usage = { ...this.usage, ...next }
     } catch {
+      if (this.onFrame && text.trim() && text.trim() !== '[DONE]') this.limited = true
       /* Unknown/invalid frames must never break the model stream. */
     }
   }
@@ -118,6 +119,9 @@ export class OpenCodeUsageObserver {
   finish(complete: boolean): OpenCodeUsageObservation {
     this.text(this.decoder.decode())
     if (!this.dropping && !this.contentType.includes('text/event-stream')) this.json(this.buffer)
+    // An unterminated SSE event is not dispatched by native SDKs either. Never
+    // report a fully observed argument stream when its final frame was lost.
+    if (this.contentType.includes('text/event-stream') && this.buffer.trim()) this.limited = true
     this.buffer = ''
     return { usage: { ...this.usage }, format: this.format, complete: complete && !this.limited }
   }

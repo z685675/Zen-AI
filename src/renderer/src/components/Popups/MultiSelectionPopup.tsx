@@ -1,7 +1,7 @@
 import { CopyIcon, DeleteIcon } from '@renderer/components/Icons'
 import { useChatContext } from '@renderer/hooks/useChatContext'
 import type { Topic } from '@renderer/types'
-import { DEFAULT_OPENCODE_AGENT_ID } from '@shared/config/agents'
+import { isNewAssistantAgentId } from '@shared/config/agents'
 import { Button, Tooltip } from 'antd'
 import { Save, X } from 'lucide-react'
 import type { FC } from 'react'
@@ -56,7 +56,7 @@ const MultiSelectActionPopup: FC<Props> = ({ topic }) => {
               onClick={() => handleAction('copy')}
             />
           </Tooltip>
-          {topic.assistantId !== DEFAULT_OPENCODE_AGENT_ID && (
+          {!isNewAssistantAgentId(topic.assistantId) && (
             <Tooltip title={t('common.delete')}>
               <Button
                 shape="circle"

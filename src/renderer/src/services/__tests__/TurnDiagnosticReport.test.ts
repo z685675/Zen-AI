@@ -12,6 +12,71 @@ import {
 } from '../TurnDiagnosticReport'
 
 describe('live UI commit report', () => {
+  it('keeps bounded content-free context statistics through metadata-only export', () => {
+    const result = metadataEvent({
+      at: 'now',
+      stage: 'transport',
+      event: 'context-sources',
+      details: {
+        contextAuditVersion: 1,
+        coverage: 'complete',
+        requestBytes: 1000,
+        repeatedToolJsonCharacters: 250,
+        categories: {
+          user: { items: 1, jsonCharacters: 10, jsonBytes: 30, text: 'PRIVATE' },
+          PRIVATE_CATEGORY: { items: 1 }
+        },
+        tools: { read_webpage: { items: 2, jsonCharacters: 250, jsonBytes: 300 }, PRIVATE_TOOL: { items: 3 } },
+        largest: [
+          {
+            category: 'toolResults',
+            source: 'read_webpage',
+            jsonCharacters: 200,
+            fingerprint: 'a'.repeat(64),
+            text: 'PRIVATE'
+          },
+          { category: 'toolResults', jsonCharacters: 300, fingerprint: 'PRIVATE' }
+        ],
+        rawBody: 'PRIVATE'
+      }
+    })
+    expect(result.details).toMatchObject({
+      contextAuditVersion: 1,
+      requestBytes: 1000,
+      repeatedToolJsonCharacters: 250,
+      categories: { user: { items: 1, jsonBytes: 30 } },
+      tools: { read_webpage: { items: 2 } }
+    })
+    expect(result.details?.largest).toHaveLength(1)
+    expect(JSON.stringify(result)).not.toContain('PRIVATE')
+  })
+  it('retains only safe per-call audit metadata and runtime capabilities in a metadata-only export', () => {
+    const result = metadataEvent({
+      at: '2026-11-05T00:00:00Z',
+      stage: 'transport',
+      event: 'tool-arguments',
+      details: {
+        phase: 'provider-wire',
+        auditVersion: 1,
+        toolArgumentAuditVersion: 1,
+        loopRecoveryVersion: 1,
+        nativeToolCallId: 'call-a',
+        argumentState: 'empty-object',
+        argumentFingerprint: 'keyed-digest',
+        argumentComplete: true,
+        missingRequiredKeys: 1,
+        arguments: { file_path: 'PRIVATE_PATH' },
+        body: 'PRIVATE_BODY'
+      }
+    })
+    expect(result.details).toMatchObject({
+      nativeToolCallId: 'call-a',
+      argumentComplete: true,
+      loopRecoveryVersion: 1,
+      missingRequiredKeys: 1
+    })
+    expect(JSON.stringify(result)).not.toContain('PRIVATE')
+  })
   beforeAll(async () => {
     await i18n.changeLanguage('zh-CN')
   })

@@ -11,6 +11,37 @@ export type ToolDisplayInfo = {
 
 const normalize = (value?: string) => (value ?? '').toLowerCase().replace(/[_\s-]/g, '')
 
+/** Inspect only tool envelopes, never arbitrary content retrieved from a page. */
+export function getToolAvailability(response: unknown, depth = 0): 'search_limited' | 'handoff_timed_out' | undefined {
+  if (depth > 2) return
+  let value = response
+  if (typeof value === 'string') {
+    if (value.length > 64_000) return
+    try {
+      value = JSON.parse(value)
+    } catch {
+      return
+    }
+  }
+  if (!value || typeof value !== 'object') return
+  const result = value as Record<string, unknown>
+  if (result.executed === false) {
+    if (result.status === 'unavailable' && result.service === 'Crossref') return 'search_limited'
+    if (result.status === 'unavailable' && result.service === 'Exa public MCP' && result.reason === 'rate_limit')
+      return 'search_limited'
+    if (result.status === 'timed_out' && result.service === 'Zen browser handoff') return 'handoff_timed_out'
+  }
+  if (Array.isArray(result.content)) {
+    for (const item of result.content.slice(0, 8)) {
+      if (item?.type === 'text' && typeof item.text === 'string') {
+        const availability = getToolAvailability(item.text, depth + 1)
+        if (availability) return availability
+      }
+    }
+  }
+  return
+}
+
 /** Read the browser wrapper, not arbitrary text inside the retrieved article. */
 export function isBrowserHandoffResponse(response: unknown): boolean {
   let value = response
@@ -58,6 +89,9 @@ export const getToolDisplayInfo = (toolName?: string, tool?: Pick<MCPTool, 'serv
   const name = tool?.name ?? mcpParts?.name ?? toolName ?? 'Tool'
   const normalizedServer = normalize(serverName)
   const normalizedName = normalize(name)
+  if (normalizedName === 'readpaper') {
+    return { label: '阅读论文', activeLabel: '正在阅读论文', doneLabel: '本段读取完成' }
+  }
 
   if (normalizedServer.includes('browser')) {
     if (normalizedName.includes('waitforuser')) {
@@ -111,7 +145,7 @@ export const getToolDisplayInfo = (toolName?: string, tool?: Pick<MCPTool, 'serv
     }
   }
 
-  switch (toolName) {
+  switch (normalizedName === 'readwebpage' ? AgentToolsType.WebFetch : toolName) {
     case AgentToolsType.WebSearch:
       return { label: '搜索资料', activeLabel: '正在搜索资料', doneLabel: '搜索完成' }
     case AgentToolsType.WebFetch:

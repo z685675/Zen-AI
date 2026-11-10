@@ -8,18 +8,17 @@ describe('deep research runtime protocol', () => {
     expect(withDeepResearchProtocol('Summarize this note')).toBe('Summarize this note')
   })
 
-  it('adds a bounded, cited research task protocol', () => {
-    const result = withDeepResearchProtocol('Research the personal AI assistant market', true, {
+  it('preserves the user request and attaches its research task identity', () => {
+    const content = 'Research the personal AI assistant market'
+    const result = withDeepResearchProtocol(content, true, {
       task_id: 'task-1',
       action: 'plan'
     })
 
     expect(result).toContain(`<zen-deep-research version="${DEEP_RESEARCH_PROTOCOL_VERSION}"`)
     expect(result).toContain('task-id="task-1" action="plan"')
-    expect(result).toContain('3-5 bounded research questions')
-    expect(result).toContain('evidence matrix')
+    expect(result.startsWith(`${content}\n\n`)).toBe(true)
     expect(result).toContain('clickable source URLs')
-    expect(result).toContain('no more than two focused follow-up passes')
     expect(result).toContain('does not imply a file export')
     expect(result).toContain('如果需要，我可以把以上结果整理为 Word、PPT 或 PDF')
     expect(result).toContain('Do not rerun the research')

@@ -4,7 +4,7 @@ import { AgentSettingsPopup, SessionSettingsPopup } from '@renderer/pages/settin
 import { AgentLabel, SessionLabel } from '@renderer/pages/settings/AgentSettings/shared'
 import type { AgentEntity } from '@renderer/types'
 import { isAssistantExecutionAllowed } from '@shared/agents/assistantAvailability'
-import { DEFAULT_OPENCODE_AGENT_ID } from '@shared/config/agents'
+import { isNewAssistantAgentId } from '@shared/config/agents'
 import { ChevronRight } from 'lucide-react'
 
 import SessionModelSelectButton from '../SessionModelSelectButton'
@@ -80,9 +80,7 @@ const AgentContent = ({ activeAgent }: AgentContentProps) => {
           <OpenExternalAppButton workdir={activeSession.accessible_paths[0]} className="mr-2" />
         )}
         {canExecute && <Tools />}
-        {activeAgent.id === DEFAULT_OPENCODE_AGENT_ID && activeSession && (
-          <SessionInspectionMenu session={activeSession} />
-        )}
+        {isNewAssistantAgentId(activeAgent.id) && activeSession && <SessionInspectionMenu session={activeSession} />}
       </div>
     </div>
   )

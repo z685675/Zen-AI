@@ -204,7 +204,7 @@ export const isAgentEntity = (value: unknown): value is AgentEntity => {
 }
 
 export interface ListOptions {
-  workspace?: 'legacy' | 'opencode'
+  workspace?: 'legacy' | 'opencode' | 'dsh'
   limit?: number
   offset?: number
   sortBy?: 'created_at' | 'updated_at' | 'name' | 'sort_order'

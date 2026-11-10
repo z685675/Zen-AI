@@ -28,8 +28,8 @@ const AgentTaskStatusBar: FC<Props> = ({ topicId }) => {
   const workspace = useAgentWorkspace()
   const [nativeStatus, setNativeStatus] = useState<string | undefined>()
   useEffect(() => {
-    setNativeStatus(workspace === 'opencode' ? getContextTelemetry(topicId)?.detail : undefined)
-    if (workspace !== 'opencode') return
+    setNativeStatus(workspace !== 'legacy' ? getContextTelemetry(topicId)?.detail : undefined)
+    if (workspace === 'legacy') return
     const unsubscribe = EventEmitter.on(EVENT_NAMES.CONTEXT_STATUS_UPDATED, (value: ContextTelemetry) => {
       if (value.conversationId === topicId) setNativeStatus(value.detail)
     })
@@ -155,7 +155,7 @@ const AgentTaskStatusBar: FC<Props> = ({ topicId }) => {
 
   // New assistant progress lives next to the actual reply, not the composer.
   // A manual stop already has one neutral transcript notice.
-  if (workspace === 'opencode' || wasStopped || !status || (!isRunning && !recentlyCompleted)) {
+  if (workspace !== 'legacy' || wasStopped || !status || (!isRunning && !recentlyCompleted)) {
     return null
   }
 

@@ -230,6 +230,7 @@ async function main() {
     const port = (mock.address() as { port: number }).port
     // Deliberately do not inherit proxies, credentials, MCPs, project config or user providers.
     const env = buildOpenCodeEnvironment(process.env, root, password)
+    await mkdir(env.TMPDIR!, { recursive: true })
     for (const key of Object.keys(env)) if (/^(?:https?|all)_proxy$/i.test(key)) delete env[key]
     env.NO_PROXY = '*'
     env.OPENCODE_CONFIG_CONTENT = JSON.stringify({
@@ -294,7 +295,7 @@ async function main() {
     })
     client = new OpenCodeClient(address, password, workspace)
     const health = await client.request<any>('/global/health', 'GET', undefined, controller.signal)
-    assert.equal(health.version, '1.19.4')
+    assert.equal(health.version, '1.19.5')
     assert.equal(health.version, OPENCODE_VERSION)
     assert(health.healthy)
     process.stdout.write(`NATIVE ${health.version} ${binary}\n`)

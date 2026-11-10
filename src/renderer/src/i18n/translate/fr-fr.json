@@ -365,19 +365,25 @@
       "dismissHint": "Masque uniquement cette trace sans annuler le message envoyé.",
       "draftOccupied": "Envoyez ou sauvegardez le brouillon actuel au préalable.",
       "edit": "Modifier",
+      "guideIdle": "[to be translated]:There is no running task to steer right now.",
+      "guideQueued": "[to be translated]:The current task cannot accept guidance yet. This message remains queued.",
+      "guideSaveFailed": "[to be translated]:Could not save the steering action. The message remains queued.",
       "hint": {
         "accepted": "Enregistré dans la tâche actuelle, en attente de traitement.",
         "deferred": "La tâche est terminée, mais le traitement de cet ajout n’est pas confirmé. Vérifiez le résultat avant de continuer.",
         "failed": "L’exécution a échoué et la file est suspendue. Vérifiez l’historique avant de renvoyer.",
         "rejected": "Non transmis. Modifiez ou envoyez après la tâche en cours.",
+        "steer": "[to be translated]:Submit this queued message to the current task now to add instructions or change its subsequent direction.",
         "uncertain": "Réception non confirmée. Vérifiez la réception ou l’historique avant de renvoyer."
       },
       "notReady": "La tâche démarre ou se termine. Modifiez ou envoyez plus tard.",
       "pause": "Suspendre la file",
+      "pauseHint": "[to be translated]:Pause automatic sending of queued messages while the current task continues. Queued messages are kept for later.",
       "queue": "Envoyer après cette tâche",
       "remove": "Retirer",
       "restored": "Restauré dans la zone de saisie. Vérifiez puis envoyez.",
       "resume": "Reprendre la file",
+      "resumeHint": "[to be translated]:Resume processing queued messages in order, waiting for the current task to finish if it is still running.",
       "saveFailed": "Impossible de sauvegarder le message. Le brouillon est conservé.",
       "state": {
         "accepted": "Reçu",
@@ -3135,6 +3141,7 @@
       "completed": "Terminé",
       "error": "Une erreur s'est produite",
       "groupHeader": "{{count}} appels d'outil",
+      "handoff_timed_out": "[to be translated]:Verification unfinished",
       "invoking": "En cours d'exécution",
       "labels": {
         "bash": "Bash",
@@ -3160,6 +3167,7 @@
       "preview": "Aperçu",
       "raw": "Brut",
       "runningCount": "{{count}} outils en cours d'exécution",
+      "search_limited": "[to be translated]:Search limited · not executed",
       "sections": {
         "args": "Arguments",
         "command": "Commande",
@@ -3447,9 +3455,14 @@
     "memory_notice": "Independent native memory survives model changes. Retry, branching and individual deletion are supported; direct editing and bulk deletion are not yet supported.",
     "outputting": "The model is producing output",
     "permission": {
+      "deniedDescription": "[to be translated]:The operation was not authorized and the task was interrupted. Completed work remains in this conversation.",
+      "deniedSuggestion": "[to be translated]:Review the rejected operation and provide further instructions to continue; there is no need to resubmit the entire task.",
+      "deniedTitle": "[to be translated]:Operation not authorized",
       "description": "Vérifiez l’opération et sa cible avant d’autoriser la poursuite de la tâche.",
       "details": "Détails de l’opération",
+      "loopAllow": "[to be translated]:Allow one repeat",
       "loopDescription": "L’assistant a tenté plusieurs fois la même opération. Vous pouvez autoriser une poursuite unique ou annuler cette opération.",
+      "loopSkip": "[to be translated]:Skip repeat and continue",
       "loopTitle": "Opérations répétées détectées ; tâche en pause",
       "title": "Cette tâche nécessite votre confirmation"
     },
@@ -5586,6 +5599,25 @@
         "label": "Langue cible",
         "russian": "Russe"
       }
+    },
+    "internalTesting": {
+      "deleteHistoryNotice": "[to be translated]:Delete this turn and all later turns, including the corresponding assistant context?",
+      "description": "[to be translated]:Uses the existing assistant interface with separate conversations and workspace. The runtime downloads on first use. Verify again after restarting the app.",
+      "downloadingInstaller": "[to be translated]:Preparing the download tools…",
+      "downloadingNode": "[to be translated]:Downloading the standalone runtime…",
+      "enter": "[to be translated]:Open preview assistant",
+      "entry": "[to be translated]:DSH preview assistant",
+      "installingRuntime": "[to be translated]:Downloading and installing preview components. The first installation may take a few minutes…",
+      "lock": "[to be translated]:Close preview",
+      "password": "[to be translated]:Enter the preview password",
+      "passwordIncorrect": "[to be translated]:Incorrect password. Please retry.",
+      "prepareFailed": "[to be translated]:Could not prepare the runtime. Check your connection and retry.",
+      "preparing": "[to be translated]:Preparing the preview runtime. The first download may take a few minutes…",
+      "title": "[to be translated]:Internal testing",
+      "unlock": "[to be translated]:Verify",
+      "unlocked": "[to be translated]:Unlocked",
+      "validation": "[to be translated]:Verify internal testing access",
+      "verifying": "[to be translated]:Checking the runtime…"
     },
     "launch": {
       "onboot": "Démarrer automatiquement au démarrage",

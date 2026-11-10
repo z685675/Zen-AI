@@ -6,6 +6,7 @@ import type { GetAgentSessionResponse } from '@renderer/types'
 import { AssistantMessageStatus, type Message } from '@renderer/types/newMessage'
 import { buildAgentSessionTopicId } from '@renderer/utils/agentSession'
 import type { SessionSkillInventory } from '@shared/agents/skillInventory'
+import { DEFAULT_OPENCODE_AGENT_ID } from '@shared/config/agents'
 import { Alert, Button, Dropdown, Modal, Spin, Table, Tag } from 'antd'
 import { MoreHorizontal } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
@@ -90,7 +91,9 @@ export default function SessionInspectionMenu({ session }: { session: GetAgentSe
         menu={{
           items: [
             { key: 'diagnostics', label: t('turnDiagnostics.export'), disabled: exporting },
-            { key: 'skills', label: t('assistantPeripheral.skillsTitle') }
+            ...(session.agent_id === DEFAULT_OPENCODE_AGENT_ID
+              ? [{ key: 'skills', label: t('assistantPeripheral.skillsTitle') }]
+              : [])
           ],
           onClick: ({ key }) => {
             if (key === 'skills') void inspect()

@@ -8,7 +8,7 @@ import {
 import { useAppDispatch, useAppSelector } from '@renderer/store'
 import { setActiveAgentId, setActiveSessionIdAction } from '@renderer/store/runtime'
 import type { Notification } from '@renderer/types/notification'
-import { DEFAULT_OPENCODE_AGENT_ID } from '@shared/config/agents'
+import { DEFAULT_DSH_AGENT_ID, isNewAssistantAgentId } from '@shared/config/agents'
 import type { AgentActionRequiredPayload } from '@shared/config/types'
 import { IpcChannel } from '@shared/IpcChannel'
 import { AlertCircle } from 'lucide-react'
@@ -22,6 +22,7 @@ const NavigationHandler: React.FC = () => {
   const navigate = useNavigate()
   const dispatch = useAppDispatch()
   const client = useAgentClient('opencode')
+  const dshClient = useAgentClient('dsh')
   const { t } = useTranslation()
   const showSettingsShortcutEnabled = useAppSelector(
     (state) => state.shortcuts.shortcuts.find((s) => s.key === 'show_settings')?.enabled
@@ -64,12 +65,16 @@ const NavigationHandler: React.FC = () => {
       const request = ++generation
       try {
         // Check existence before changing active selection; never recreate a deleted session.
-        await client.getSession(target.agentId, target.sessionId, { timeout: 3000 })
+        await (target.agentId === DEFAULT_DSH_AGENT_ID ? dshClient : client).getSession(
+          target.agentId,
+          target.sessionId,
+          { timeout: 3000 }
+        )
         if (request !== generation) return
         window.dispatchEvent(new Event('zen-ai:close-agent-quick-entry'))
         dispatch(setActiveAgentId(target.agentId))
         dispatch(setActiveSessionIdAction(target))
-        navigate('/new-assistant')
+        navigate(target.agentId === DEFAULT_DSH_AGENT_ID ? '/internal-assistant' : '/new-assistant')
       } catch {
         if (request === generation) window.toast?.info(t('assistantPeripheral.sessionUnavailable'))
       }
@@ -86,7 +91,7 @@ const NavigationHandler: React.FC = () => {
       removeNativeClick()
       window.removeEventListener(ASSISTANT_NOTIFICATION_OPEN, open)
     }
-  }, [client, dispatch, navigate, t])
+  }, [client, dshClient, dispatch, navigate, t])
 
   useEffect(() => {
     const pending = new Set<string>()
@@ -94,7 +99,7 @@ const NavigationHandler: React.FC = () => {
       const key = `${payload.agentId}:${payload.sessionId}:${payload.requestId ?? payload.reason}`
       if (pending.has(key)) return
       pending.add(key)
-      if (payload.agentId === DEFAULT_OPENCODE_AGENT_ID) {
+      if (isNewAssistantAgentId(payload.agentId)) {
         void notifyAssistantTask(
           { agentId: payload.agentId, sessionId: payload.sessionId },
           payload.requestId ?? key,
@@ -110,9 +115,13 @@ const NavigationHandler: React.FC = () => {
         cancelText: t('agent.actionRequired.later'),
         afterClose: () => pending.delete(key),
         onOk: async () => {
-          if (payload.agentId === DEFAULT_OPENCODE_AGENT_ID) {
+          if (isNewAssistantAgentId(payload.agentId)) {
             try {
-              await client.getSession(payload.agentId, payload.sessionId, { timeout: 3000 })
+              await (payload.agentId === DEFAULT_DSH_AGENT_ID ? dshClient : client).getSession(
+                payload.agentId,
+                payload.sessionId,
+                { timeout: 3000 }
+              )
             } catch {
               window.toast?.info(t('assistantPeripheral.sessionUnavailable'))
               return
@@ -121,13 +130,19 @@ const NavigationHandler: React.FC = () => {
           window.dispatchEvent(new Event('zen-ai:close-agent-quick-entry'))
           dispatch(setActiveAgentId(payload.agentId))
           dispatch(setActiveSessionIdAction({ agentId: payload.agentId, sessionId: payload.sessionId }))
-          navigate(payload.agentId === DEFAULT_OPENCODE_AGENT_ID ? '/new-assistant' : '/agents')
+          navigate(
+            payload.agentId === DEFAULT_DSH_AGENT_ID
+              ? '/internal-assistant'
+              : isNewAssistantAgentId(payload.agentId)
+                ? '/new-assistant'
+                : '/agents'
+          )
         }
       })
     }
 
     return window.electron.ipcRenderer.on(IpcChannel.Agent_ActionRequired, handleAgentActionRequired)
-  }, [client, dispatch, navigate, t])
+  }, [client, dshClient, dispatch, navigate, t])
 
   return null
 }

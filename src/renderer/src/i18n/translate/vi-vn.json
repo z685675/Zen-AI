@@ -365,19 +365,25 @@
       "dismissHint": "Chỉ ẩn bản ghi, không thu hồi tin nhắn đã gửi.",
       "draftOccupied": "Hãy gửi hoặc lưu bản nháp hiện tại trước.",
       "edit": "Sửa",
+      "guideIdle": "[to be translated]:There is no running task to steer right now.",
+      "guideQueued": "[to be translated]:The current task cannot accept guidance yet. This message remains queued.",
+      "guideSaveFailed": "[to be translated]:Could not save the steering action. The message remains queued.",
       "hint": {
         "accepted": "Đã lưu vào tác vụ hiện tại, đang chờ xử lý tiếp.",
         "deferred": "Tác vụ đã kết thúc nhưng chưa xác nhận phần bổ sung được xử lý. Kiểm tra kết quả trước khi tiếp tục.",
         "failed": "Thực thi thất bại và hàng đợi đã tạm dừng. Kiểm tra lịch sử trước khi gửi lại.",
         "rejected": "Chưa được gửi. Hãy sửa hoặc gửi sau tác vụ hiện tại.",
+        "steer": "[to be translated]:Submit this queued message to the current task now to add instructions or change its subsequent direction.",
         "uncertain": "Chưa xác nhận tiếp nhận. Kiểm tra trạng thái hoặc lịch sử trước khi gửi lại."
       },
       "notReady": "Tác vụ đang bắt đầu hoặc kết thúc. Hãy sửa hoặc gửi sau.",
       "pause": "Tạm dừng hàng đợi",
+      "pauseHint": "[to be translated]:Pause automatic sending of queued messages while the current task continues. Queued messages are kept for later.",
       "queue": "Gửi sau tác vụ",
       "remove": "Xóa",
       "restored": "Đã khôi phục vào ô nhập. Hãy kiểm tra rồi gửi.",
       "resume": "Tiếp tục hàng đợi",
+      "resumeHint": "[to be translated]:Resume processing queued messages in order, waiting for the current task to finish if it is still running.",
       "saveFailed": "Không lưu được tin nhắn. Bản nháp đã được giữ lại.",
       "state": {
         "accepted": "Đã nhận",
@@ -3135,6 +3141,7 @@
       "completed": "Hoàn thành",
       "error": "Đã xảy ra lỗi",
       "groupHeader": "{{count}} appels d’outil",
+      "handoff_timed_out": "[to be translated]:Verification unfinished",
       "invoking": "Invocando",
       "labels": {
         "bash": "Bash",
@@ -3160,6 +3167,7 @@
       "preview": "Voorbeeld",
       "raw": "Raw",
       "runningCount": "{{count}} công cụ đang chạy",
+      "search_limited": "[to be translated]:Search limited · not executed",
       "sections": {
         "args": "Lập luận",
         "command": "Lệnh",
@@ -3447,9 +3455,14 @@
     "memory_notice": "Independent native memory survives model changes. Retry, branching and individual deletion are supported; direct editing and bulk deletion are not yet supported.",
     "outputting": "The model is producing output",
     "permission": {
+      "deniedDescription": "[to be translated]:The operation was not authorized and the task was interrupted. Completed work remains in this conversation.",
+      "deniedSuggestion": "[to be translated]:Review the rejected operation and provide further instructions to continue; there is no need to resubmit the entire task.",
+      "deniedTitle": "[to be translated]:Operation not authorized",
       "description": "Hãy kiểm tra thao tác và đối tượng trước khi cho phép tác vụ tiếp tục.",
       "details": "Chi tiết thao tác",
+      "loopAllow": "[to be translated]:Allow one repeat",
       "loopDescription": "Trợ lý đã thử cùng một thao tác nhiều lần. Bạn có thể cho phép tiếp tục một lần hoặc hủy thao tác này.",
+      "loopSkip": "[to be translated]:Skip repeat and continue",
       "loopTitle": "Phát hiện thao tác lặp lại; tác vụ đã tạm dừng",
       "title": "Tác vụ này cần bạn xác nhận"
     },
@@ -5586,6 +5599,25 @@
         "label": "Ngôn ngữ đích",
         "russian": "Tiếng Nga"
       }
+    },
+    "internalTesting": {
+      "deleteHistoryNotice": "[to be translated]:Delete this turn and all later turns, including the corresponding assistant context?",
+      "description": "[to be translated]:Uses the existing assistant interface with separate conversations and workspace. The runtime downloads on first use. Verify again after restarting the app.",
+      "downloadingInstaller": "[to be translated]:Preparing the download tools…",
+      "downloadingNode": "[to be translated]:Downloading the standalone runtime…",
+      "enter": "[to be translated]:Open preview assistant",
+      "entry": "[to be translated]:DSH preview assistant",
+      "installingRuntime": "[to be translated]:Downloading and installing preview components. The first installation may take a few minutes…",
+      "lock": "[to be translated]:Close preview",
+      "password": "[to be translated]:Enter the preview password",
+      "passwordIncorrect": "[to be translated]:Incorrect password. Please retry.",
+      "prepareFailed": "[to be translated]:Could not prepare the runtime. Check your connection and retry.",
+      "preparing": "[to be translated]:Preparing the preview runtime. The first download may take a few minutes…",
+      "title": "[to be translated]:Internal testing",
+      "unlock": "[to be translated]:Verify",
+      "unlocked": "[to be translated]:Unlocked",
+      "validation": "[to be translated]:Verify internal testing access",
+      "verifying": "[to be translated]:Checking the runtime…"
     },
     "launch": {
       "onboot": "Tự động khởi động khi bật máy",

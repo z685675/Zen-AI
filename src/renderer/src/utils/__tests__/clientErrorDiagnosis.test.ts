@@ -27,6 +27,23 @@ const baseOptions = {
   createdAt: '2026-05-09T12:34:56+08:00'
 }
 
+it('identifies a wrapped native permission denial separately from an upstream stream error', () => {
+  const error = {
+    name: 'AI_ProviderSpecificError',
+    message: 'stream_processing_failed',
+    cause: {
+      name: 'UnknownError',
+      message: 'The user rejected permission to use this specific tool call with the following feedback: skip'
+    }
+  }
+  expect(diagnoseClientError(error)).toMatchObject({
+    category: 'runtime',
+    errorType: 'agent_permission_denied',
+    title: '操作未获授权'
+  })
+  expect(classifyError(error)).toMatchObject({ category: 'runtime', navTarget: null })
+})
+
 it('explains the daily quota without blaming channel connectivity or credentials', () => {
   const diagnosis = diagnoseClientError({
     name: 'APIError',

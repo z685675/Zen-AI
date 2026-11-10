@@ -38,6 +38,7 @@ import {
   SettingRowTitle,
   SettingTitle
 } from '.'
+import InternalTestingSettings from './InternalTestingSettings'
 
 type SpellCheckOption = { readonly value: string; readonly label: string; readonly flag: string }
 
@@ -369,6 +370,7 @@ const GeneralSettings: FC = () => {
           <Switch checked={enableDeveloperMode} onChange={setEnableDeveloperMode} />
         </SettingRow>
       </SettingGroup>
+      <InternalTestingSettings />
     </SettingContainer>
   )
 }

@@ -7,10 +7,12 @@ import { formatClientErrorDiagnosis } from '@renderer/utils/clientErrorDiagnosis
 import { createZenTraceId } from '@renderer/utils/clientErrorDiagnosis'
 import type { ErrorClassification } from '@renderer/utils/errorClassifier'
 import { attributeDiagnostic, type DiagnosticEvent, diagnosticText, sanitizeDiagnostic } from '@shared/diagnostics'
+import { buildToolArgumentReport, formatToolArgumentReport } from '@shared/toolArgumentReport'
 
 import { getContextTelemetry } from './context/ContextTelemetryService'
 import { collectBackendDiagnostic } from './DiagnosticBackendService'
 import { getDiagnosticEvidence } from './DiagnosticEvidenceService'
+import { diagnosticHistorySnapshot } from './diagnosticHistorySnapshot'
 import {
   createTurnReport,
   metadataBackend,
@@ -74,9 +76,9 @@ const sanitizeUrl = (value: string): string => {
 
 export const redactDiagnosticValue = (value: unknown): unknown => sanitizeDiagnostic(value)
 
-export const safeDiagnosticJson = (value: unknown): string => {
+export const safeDiagnosticJson = (value: unknown, maxArrayEntries = 256): string => {
   try {
-    return JSON.stringify(redactDiagnosticValue(value), null, 2)
+    return JSON.stringify(sanitizeDiagnostic(value, 0, new WeakSet(), maxArrayEntries), null, 2)
   } catch {
     return JSON.stringify({ value: diagnosticText(String(value)), serializationFailed: true }, null, 2)
   }
@@ -172,11 +174,19 @@ export const exportErrorDiagnosticPackage = async ({
   const exportedAt = new Date().toISOString()
   const packageId = diagnosis?.diagnosticId ?? createZenTraceId()
   const fileName = `zen-ai-${source}-diagnostics-${packageId}-${formatTimestampForFileName()}.zip`
+  const historical = source === 'agent' ? await diagnosticHistorySnapshot(message, blockEntities) : undefined
+  blockEntities = historical?.entities ?? blockEntities
   const assistantBlocks = collectMessageBlocks(message, blockEntities)
   const userBlocks = collectMessageBlocks(relatedUserMessage, blockEntities)
   const errorRecord = getErrorRecord(error)
   const rendererEvidence = getDiagnosticEvidence(message.id)
-  const operationId = String(rendererEvidence?.metadata.runtimeOperationId ?? errorRecord.zenDiagnosticId ?? message.id)
+  const operationId = String(
+    message.providerMetadata?.zenDiagnostic?.operationId ??
+      historical?.operationId ??
+      rendererEvidence?.metadata.runtimeOperationId ??
+      errorRecord.zenDiagnosticId ??
+      message.id
+  )
   let mainStatus = 'unavailable'
   let mainEvidence: Awaited<ReturnType<typeof window.api.file.collectDiagnosticEvidence>> | undefined
   let collectionTimer: ReturnType<typeof setTimeout> | undefined
@@ -233,6 +243,7 @@ export const exportErrorDiagnosticPackage = async ({
       ? 'persisted-operation-statistics-only'
       : 'no-operation-runtime-evidence'
   const collections = {
+    historicalBlocks: historical?.status ?? 'not-applicable',
     renderer: rendererEvidence ? 'collected' : 'unavailable-old-request-or-expired',
     main: mainStatus,
     logs: includeContent ? (mainEvidence?.logStatus ?? 'unavailable') : 'omitted-in-metadata-only-export',
@@ -346,7 +357,7 @@ export const exportErrorDiagnosticPackage = async ({
     },
     { path: 'summary.json', content: safeDiagnosticJson(summary) },
     { path: '本轮耗时报告.md', content: diagnosticText(report.summary) },
-    { path: 'performance.json', content: safeDiagnosticJson(report.performance) },
+    { path: 'performance.json', content: safeDiagnosticJson(report.performance, 2048) },
     { path: 'privacy.txt', content: privacyNotice },
     ...(diagnosis && includeContent
       ? [
@@ -406,13 +417,16 @@ export const exportErrorDiagnosticPackage = async ({
     { path: 'attribution.json', content: safeDiagnosticJson(attribution) },
     {
       path: 'timeline.json',
-      content: safeDiagnosticJson({
-        operationId,
-        messageId: message.id,
-        renderer: includeContent ? rendererEvidence : metadataEvidence(rendererEvidence),
-        main: includeContent ? mainEvidence?.evidence : metadataEvidence(mainEvidence?.evidence),
-        events
-      })
+      content: safeDiagnosticJson(
+        {
+          operationId,
+          messageId: message.id,
+          renderer: includeContent ? rendererEvidence : metadataEvidence(rendererEvidence),
+          main: includeContent ? mainEvidence?.evidence : metadataEvidence(mainEvidence?.evidence),
+          events
+        },
+        4096
+      )
     },
     { path: 'zen-api-evidence.json', content: safeDiagnosticJson(backend) },
     {
@@ -458,6 +472,19 @@ export const exportErrorDiagnosticPackage = async ({
   ]
 
   if (source === 'agent') {
+    const argumentReport = buildToolArgumentReport(
+      events,
+      backend.evidence,
+      droppedEvents,
+      mainEvidence?.evidence?.retention
+    )
+    files.push(
+      { path: 'tool-arguments.json', content: safeDiagnosticJson(argumentReport, 2048) },
+      {
+        path: '工具参数对账.txt',
+        content: formatToolArgumentReport(argumentReport).split('\n').map(diagnosticText).join('\n')
+      }
+    )
     files.push({
       path: 'opencode-runtime.json',
       content: safeDiagnosticJson({

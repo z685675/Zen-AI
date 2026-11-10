@@ -14,6 +14,7 @@ const MAX_PREVIEW_LENGTH = 2_000
 const shouldAutoApproveTools = process.env.CHERRY_AUTO_ALLOW_TOOLS === '1'
 
 type ToolPermissionBehavior = 'allow' | 'deny'
+type ToolApprovalResult = PermissionResult & { decisionSource?: RendererPermissionResultPayload['reason'] }
 
 type ToolPermissionResponsePayload = {
   requestId: string
@@ -24,7 +25,7 @@ type ToolPermissionResponsePayload = {
 }
 
 type PendingPermissionRequest = {
-  fulfill: (update: PermissionResult) => void
+  fulfill: (update: ToolApprovalResult) => void
   signal?: AbortSignal
   abortListener?: () => void
   originalInput: Record<string, unknown>
@@ -139,7 +140,7 @@ const finalizeRequest = (
     pending.signal.removeEventListener('abort', pending.abortListener)
   }
 
-  pending.fulfill(update)
+  pending.fulfill({ ...update, decisionSource: reason })
 
   const resultPayload: RendererPermissionResultPayload = {
     requestId,
@@ -223,7 +224,7 @@ export async function promptForToolApproval(
   toolName: string,
   input: Record<string, unknown>,
   options: PromptForToolApprovalOptions
-): Promise<PermissionResult> {
+): Promise<ToolApprovalResult> {
   if (shouldAutoApproveTools) {
     logger.debug('promptForToolApproval auto-approving tool for test', {
       toolName
@@ -236,14 +237,18 @@ export async function promptForToolApproval(
 
   if (options?.signal?.aborted) {
     logger.info('Skipping tool approval prompt because request signal is already aborted', { toolName })
-    return { behavior: 'deny', message: 'Tool request was cancelled before prompting the user' }
+    return {
+      behavior: 'deny',
+      message: 'Tool request was cancelled before prompting the user',
+      decisionSource: 'aborted'
+    }
   }
 
   const mainWindow = windowService.getMainWindow()
 
   if (!mainWindow) {
     logger.warn('Denying tool usage because no renderer window is available to obtain approval', { toolName })
-    return { behavior: 'deny', message: 'Unable to request approval – renderer not ready' }
+    return { behavior: 'deny', message: 'Unable to request approval – renderer not ready', decisionSource: 'no-window' }
   }
 
   const toolMetadata = builtinTools.find((tool) => tool.name === toolName || tool.id === toolName)
@@ -284,7 +289,7 @@ export async function promptForToolApproval(
     suggestionCount: sanitizedSuggestions.length
   })
 
-  return new Promise<PermissionResult>((resolve) => {
+  return new Promise<ToolApprovalResult>((resolve) => {
     const pending: PendingPermissionRequest = {
       fulfill: resolve,
       originalInput: sanitizedInput,

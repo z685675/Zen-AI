@@ -365,19 +365,25 @@
       "dismissHint": "Скрывает только запись, не отменяя отправленное сообщение.",
       "draftOccupied": "Сначала отправьте или сохраните текущий черновик.",
       "edit": "Изменить",
+      "guideIdle": "[to be translated]:There is no running task to steer right now.",
+      "guideQueued": "[to be translated]:The current task cannot accept guidance yet. This message remains queued.",
+      "guideSaveFailed": "[to be translated]:Could not save the steering action. The message remains queued.",
       "hint": {
         "accepted": "Сохранено в текущей задаче; ожидает дальнейшей обработки.",
         "deferred": "Задача завершена, но обработка дополнения не подтверждена. Проверьте результат перед продолжением.",
         "failed": "Ошибка выполнения; очередь приостановлена. Проверьте историю перед повторной отправкой.",
         "rejected": "Не отправлено. Измените или отправьте после текущей задачи.",
+        "steer": "[to be translated]:Submit this queued message to the current task now to add instructions or change its subsequent direction.",
         "uncertain": "Получение не подтверждено. Проверьте статус или историю перед повторной отправкой."
       },
       "notReady": "Задача запускается или завершается. Измените сообщение или отправьте позже.",
       "pause": "Приостановить очередь",
+      "pauseHint": "[to be translated]:Pause automatic sending of queued messages while the current task continues. Queued messages are kept for later.",
       "queue": "Отправить после задачи",
       "remove": "Удалить",
       "restored": "Возвращено в поле ввода. Проверьте и отправьте.",
       "resume": "Продолжить очередь",
+      "resumeHint": "[to be translated]:Resume processing queued messages in order, waiting for the current task to finish if it is still running.",
       "saveFailed": "Не удалось сохранить сообщение. Черновик сохранён.",
       "state": {
         "accepted": "Получено",
@@ -3135,6 +3141,7 @@
       "completed": "Завершено",
       "error": "Произошла ошибка",
       "groupHeader": "{{count}} вызовов инструментов",
+      "handoff_timed_out": "[to be translated]:Verification unfinished",
       "invoking": "Вызов",
       "labels": {
         "bash": "Баш",
@@ -3160,6 +3167,7 @@
       "preview": "Предпросмотр",
       "raw": "Исходный",
       "runningCount": "{{count}} инструментов запущено",
+      "search_limited": "[to be translated]:Search limited · not executed",
       "sections": {
         "args": "Аргументы",
         "command": "Команда",
@@ -3447,9 +3455,14 @@
     "memory_notice": "Independent native memory survives model changes. Retry, branching and individual deletion are supported; direct editing and bulk deletion are not yet supported.",
     "outputting": "The model is producing output",
     "permission": {
+      "deniedDescription": "[to be translated]:The operation was not authorized and the task was interrupted. Completed work remains in this conversation.",
+      "deniedSuggestion": "[to be translated]:Review the rejected operation and provide further instructions to continue; there is no need to resubmit the entire task.",
+      "deniedTitle": "[to be translated]:Operation not authorized",
       "description": "Проверьте операцию и её цель, прежде чем разрешить продолжение задачи.",
       "details": "Сведения об операции",
+      "loopAllow": "[to be translated]:Allow one repeat",
       "loopDescription": "Ассистент несколько раз попытался выполнить одну и ту же операцию. Можно разрешить однократное продолжение или отменить эту операцию.",
+      "loopSkip": "[to be translated]:Skip repeat and continue",
       "loopTitle": "Обнаружены повторяющиеся операции; задача приостановлена",
       "title": "Для этой задачи требуется ваше подтверждение"
     },
@@ -5586,6 +5599,25 @@
         "label": "Целевой язык",
         "russian": "Русский"
       }
+    },
+    "internalTesting": {
+      "deleteHistoryNotice": "[to be translated]:Delete this turn and all later turns, including the corresponding assistant context?",
+      "description": "[to be translated]:Uses the existing assistant interface with separate conversations and workspace. The runtime downloads on first use. Verify again after restarting the app.",
+      "downloadingInstaller": "[to be translated]:Preparing the download tools…",
+      "downloadingNode": "[to be translated]:Downloading the standalone runtime…",
+      "enter": "[to be translated]:Open preview assistant",
+      "entry": "[to be translated]:DSH preview assistant",
+      "installingRuntime": "[to be translated]:Downloading and installing preview components. The first installation may take a few minutes…",
+      "lock": "[to be translated]:Close preview",
+      "password": "[to be translated]:Enter the preview password",
+      "passwordIncorrect": "[to be translated]:Incorrect password. Please retry.",
+      "prepareFailed": "[to be translated]:Could not prepare the runtime. Check your connection and retry.",
+      "preparing": "[to be translated]:Preparing the preview runtime. The first download may take a few minutes…",
+      "title": "[to be translated]:Internal testing",
+      "unlock": "[to be translated]:Verify",
+      "unlocked": "[to be translated]:Unlocked",
+      "validation": "[to be translated]:Verify internal testing access",
+      "verifying": "[to be translated]:Checking the runtime…"
     },
     "launch": {
       "onboot": "Автозапуск при включении",

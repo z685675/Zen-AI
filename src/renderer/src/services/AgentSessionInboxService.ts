@@ -8,7 +8,7 @@ import { FILE_TYPE } from '@renderer/types'
 import { hasTopicPendingRequests, waitForTopicQueue } from '@renderer/utils/queue'
 import type { AgentInputReceipt } from '@shared/agents/sessionInput'
 import type { AgentRunInputStatus } from '@shared/agents/sessionInput'
-import { DEFAULT_OPENCODE_AGENT_ID } from '@shared/config/agents'
+import { DEFAULT_DSH_AGENT_ID, isNewAssistantAgentId } from '@shared/config/agents'
 
 import FileManager from './FileManager'
 
@@ -82,7 +82,7 @@ export class AgentSessionInbox {
   add(payload: AgentInboxPayload, delivery: 'queue' | 'steer') {
     const context = payload.args[4]
     this.entries = this.entries.filter((entry) => !['sent', 'applied'].includes(entry.state))
-    if (!context || context.agentId !== DEFAULT_OPENCODE_AGENT_ID || this.entries.length >= 50)
+    if (!context || !isNewAssistantAgentId(context.agentId) || this.entries.length >= 50)
       throw new Error('Assistant outbox is full or missing its session')
     const entry: AgentInboxEntry = {
       ...payload,
@@ -267,7 +267,7 @@ export function getAgentSessionInbox() {
                   entry.args[2] &&
                   typeof entry.args[3] === 'string' &&
                   entry.args[4]?.sessionId === entry.sessionId &&
-                  entry.args[4]?.agentId === DEFAULT_OPENCODE_AGENT_ID
+                  isNewAssistantAgentId(entry.args[4]?.agentId)
               )
               .slice(-50)
           : []
@@ -337,7 +337,9 @@ export function getAgentSessionInbox() {
         providerMetadata: {
           ...message.providerMetadata,
           agentInput: { delivery: 'steer', state: entry.state },
-          opencode: { user_message_id: entry.receipt?.nativeMessageId }
+          [entry.args[4]?.agentId === DEFAULT_DSH_AGENT_ID ? 'dsh' : 'opencode']: {
+            user_message_id: entry.receipt?.nativeMessageId
+          }
         }
       }
       await saveMessageAndBlocksToDB(topicId, updated, blocks)

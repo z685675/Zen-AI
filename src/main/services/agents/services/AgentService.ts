@@ -3,6 +3,7 @@ import { modelsService } from '@main/apiServer/services/models'
 import {
   DEFAULT_AGENT_AVATAR,
   DEFAULT_CHERRY_CLAW_AGENT_ID,
+  DEFAULT_DSH_AGENT_ID,
   DEFAULT_FUSION_AGENT_ID,
   DEFAULT_FUSION_AGENT_NAME,
   DEFAULT_OPENCODE_AGENT_AVATAR,
@@ -22,8 +23,9 @@ import type {
   UpdateAgentResponse
 } from '@types'
 import { AgentBaseSchema } from '@types'
-import { asc, count, desc, eq, min, ne } from 'drizzle-orm'
+import { and, asc, count, desc, eq, min, ne } from 'drizzle-orm'
 
+import { assertDshPreviewUnlocked } from '../../dshPreview/access'
 import { remoteModelPolicyService } from '../../RemoteModelPolicyService'
 import { BaseService } from '../BaseService'
 import { type AgentRow, agentsTable, type InsertAgentRow } from '../database/schema'
@@ -116,6 +118,7 @@ export class AgentService extends BaseService {
   }
 
   async getAgent(id: string): Promise<GetAgentResponse | null> {
+    if (id === DEFAULT_DSH_AGENT_ID) assertDshPreviewUnlocked()
     const database = await this.getDatabase()
     const result = await database.select().from(agentsTable).where(eq(agentsTable.id, id)).limit(1)
 
@@ -133,14 +136,17 @@ export class AgentService extends BaseService {
   }
 
   async listAgents(options: ListOptions = {}): Promise<{ agents: AgentEntity[]; total: number }> {
+    if (options.workspace === 'dsh') assertDshPreviewUnlocked()
     // Build query with pagination
     const database = await this.getDatabase()
     const workspaceFilter =
       options.workspace === 'opencode'
         ? eq(agentsTable.id, DEFAULT_OPENCODE_AGENT_ID)
-        : options.workspace === 'legacy'
-          ? ne(agentsTable.id, DEFAULT_OPENCODE_AGENT_ID)
-          : undefined
+        : options.workspace === 'dsh'
+          ? eq(agentsTable.id, DEFAULT_DSH_AGENT_ID)
+          : options.workspace === 'legacy'
+            ? and(ne(agentsTable.id, DEFAULT_OPENCODE_AGENT_ID), ne(agentsTable.id, DEFAULT_DSH_AGENT_ID))
+            : ne(agentsTable.id, DEFAULT_DSH_AGENT_ID)
     const totalResult = await database.select({ count: count() }).from(agentsTable).where(workspaceFilter)
 
     const sortBy = options.sortBy || 'sort_order'

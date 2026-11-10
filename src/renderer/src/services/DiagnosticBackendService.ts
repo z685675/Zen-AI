@@ -7,8 +7,9 @@ export type BackendDiagnosticCollection = {
   evidence: Array<Record<string, unknown>>
   details?: unknown
 }
+class DiagnosticBudgetError extends Error {}
 
-async function readBoundedResponse(response: Response): Promise<unknown> {
+async function readBoundedResponse(response: Response, budget: { bytes: number }): Promise<unknown> {
   if (!response.body) throw new SyntaxError('Empty API diagnostic response')
   const reader = response.body.getReader()
   const decoder = new TextDecoder()
@@ -19,9 +20,10 @@ async function readBoundedResponse(response: Response): Promise<unknown> {
       const next = await reader.read()
       if (next.done) break
       bytes += next.value.byteLength
-      if (bytes > 1024 * 1024) {
+      budget.bytes += next.value.byteLength
+      if (bytes > 1024 * 1024 || budget.bytes > 6 * 1024 * 1024) {
         void reader.cancel().catch(() => undefined)
-        throw new SyntaxError('API diagnostic response exceeded 1 MiB')
+        throw new DiagnosticBudgetError('Diagnostic collection reached its bounded response budget')
       }
       text += decoder.decode(next.value, { stream: true })
     }
@@ -72,7 +74,8 @@ export async function collectBackendDiagnostic(
     ...new Set(observed.map((item) => item.details?.requestId).filter((id): id is string => typeof id === 'string'))
   ]
   // An operation ID also covers native SDK HTTP calls for which headers are hidden.
-  const queries = [undefined, ...requestIds.slice(-6)]
+  const budget = { bytes: 0 }
+  let expectedRequests = requestIds.length
   const usedFingerprints = [
     ...new Set(
       events.map((event) => event.details?.keyFingerprint).filter((value): value is string => typeof value === 'string')
@@ -94,25 +97,24 @@ export async function collectBackendDiagnostic(
   try {
     if (!matchingKeys.length) return { status: 'provider-key-changed-or-unavailable', evidence: [] }
     for (const key of matchingKeys.slice(0, 3)) {
-      for (const requestId of queries) {
+      const query = async (requestId?: string) => {
         const url = new URL(endpoint)
         if (requestId) url.searchParams.set('request_id', requestId)
         else url.searchParams.set('operation_id', operationId)
         const response = await baseFetch(url, {
           signal: controller.signal,
+          redirect: 'error',
           headers: { Authorization: `Bearer ${key}` }
         })
         if (!response.ok) {
           responses.push({ requestId, status: response.status })
           if (response.status === 404 || response.status === 401 || response.status === 403)
-            return {
-              status: response.status === 404 ? 'api-version-unsupported' : 'api-diagnostic-access-denied',
-              evidence,
-              details: responses
-            }
-          continue
+            throw Object.assign(new Error('Diagnostic endpoint unavailable'), {
+              diagnosticStatus: response.status === 404 ? 'api-version-unsupported' : 'api-diagnostic-access-denied'
+            })
+          return
         }
-        const payload = (await readBoundedResponse(response)) as {
+        const payload = (await readBoundedResponse(response, budget)) as {
           success?: boolean
           source?: string
           available?: boolean
@@ -121,12 +123,18 @@ export async function collectBackendDiagnostic(
           evidence?: Array<Record<string, unknown>>
         }
         if (payload?.success !== true || !Array.isArray(payload.evidence))
-          return { status: 'invalid-api-diagnostic-response', evidence }
+          throw new SyntaxError('Invalid API diagnostic response')
+        if (!requestId)
+          expectedRequests = Math.max(
+            expectedRequests,
+            payload.evidence.length + Math.max(0, Number(payload.omittedRequests) || 0)
+          )
         for (const entry of payload.evidence.slice(0, 32)) {
           if (
             entry &&
             typeof entry.requestId === 'string' &&
-            !evidence.some((saved) => saved.requestId === entry.requestId)
+            !evidence.some((saved) => saved.requestId === entry.requestId) &&
+            evidence.length < 128
           )
             evidence.push(entry)
         }
@@ -138,15 +146,41 @@ export async function collectBackendDiagnostic(
           persistentStatus: payload.persistentStatus
         })
       }
+      await query()
+      // Operation queries may return only 32 records. Fetch the missing IDs,
+      // not merely the last six, with at most four read-only requests in flight.
+      const missing = requestIds.filter((id) => !evidence.some((entry) => entry.requestId === id)).slice(0, 128)
+      for (let offset = 0; offset < missing.length; offset += 4) {
+        const batch = await Promise.allSettled(missing.slice(offset, offset + 4).map(query))
+        const failed = batch.find((result) => result.status === 'rejected')
+        if (failed?.status === 'rejected') throw failed.reason
+      }
     }
-    return { status: evidence.length ? 'collected' : 'not-found-or-expired', evidence, details: responses }
+    const missingRequests = Math.max(0, expectedRequests - evidence.length)
+    responses.unshift({
+      source: 'collection-coverage',
+      status: missingRequests ? 'partial' : 'complete',
+      observedRequests: requestIds.length,
+      collectedRequests: evidence.length,
+      missingRequests
+    })
+    return {
+      status: evidence.length ? (missingRequests ? 'partially-collected' : 'collected') : 'not-found-or-expired',
+      evidence,
+      details: responses
+    }
   } catch (error) {
     return {
-      status: controller.signal.aborted
-        ? 'timed-out'
-        : error instanceof SyntaxError
-          ? 'invalid-api-diagnostic-response'
-          : 'network-unavailable',
+      status:
+        error instanceof Error && 'diagnosticStatus' in error
+          ? String(error.diagnosticStatus)
+          : controller.signal.aborted
+            ? 'timed-out'
+            : error instanceof DiagnosticBudgetError
+              ? 'collection-budget-reached'
+              : error instanceof SyntaxError
+                ? 'invalid-api-diagnostic-response'
+                : 'network-unavailable',
       evidence,
       details: { responses, error: error instanceof Error ? error.message : String(error) }
     }

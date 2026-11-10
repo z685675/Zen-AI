@@ -365,19 +365,25 @@
       "dismissHint": "Αποκρύπτει μόνο την εγγραφή, χωρίς ανάκληση απεσταλμένου μηνύματος.",
       "draftOccupied": "Στείλτε ή αποθηκεύστε πρώτα το τρέχον πρόχειρο.",
       "edit": "Επεξεργασία",
+      "guideIdle": "[to be translated]:There is no running task to steer right now.",
+      "guideQueued": "[to be translated]:The current task cannot accept guidance yet. This message remains queued.",
+      "guideSaveFailed": "[to be translated]:Could not save the steering action. The message remains queued.",
       "hint": {
         "accepted": "Αποθηκεύτηκε στην τρέχουσα εργασία και αναμένει επεξεργασία.",
         "deferred": "Η εργασία τελείωσε, αλλά η επεξεργασία της προσθήκης δεν επιβεβαιώθηκε. Ελέγξτε το αποτέλεσμα πριν συνεχίσετε.",
         "failed": "Η εκτέλεση απέτυχε και η ουρά τέθηκε σε παύση. Ελέγξτε το ιστορικό πριν ξαναστείλετε.",
         "rejected": "Δεν υποβλήθηκε. Επεξεργαστείτε ή στείλτε μετά την εργασία.",
+        "steer": "[to be translated]:Submit this queued message to the current task now to add instructions or change its subsequent direction.",
         "uncertain": "Η παραλαβή δεν επιβεβαιώθηκε. Ελέγξτε παραλαβή ή ιστορικό πριν ξαναστείλετε."
       },
       "notReady": "Η εργασία ξεκινά ή ολοκληρώνεται. Επεξεργαστείτε ή στείλτε αργότερα.",
       "pause": "Παύση ουράς",
+      "pauseHint": "[to be translated]:Pause automatic sending of queued messages while the current task continues. Queued messages are kept for later.",
       "queue": "Αποστολή μετά την εργασία",
       "remove": "Αφαίρεση",
       "restored": "Επαναφέρθηκε στο πεδίο εισαγωγής. Ελέγξτε και στείλτε.",
       "resume": "Συνέχιση ουράς",
+      "resumeHint": "[to be translated]:Resume processing queued messages in order, waiting for the current task to finish if it is still running.",
       "saveFailed": "Δεν αποθηκεύτηκε το μήνυμα. Το πρόχειρο διατηρήθηκε.",
       "state": {
         "accepted": "Παραλήφθηκε",
@@ -3135,6 +3141,7 @@
       "completed": "Ολοκληρώθηκε",
       "error": "Προέκυψε σφάλμα",
       "groupHeader": "{{count}} κλήσεις εργαλείων",
+      "handoff_timed_out": "[to be translated]:Verification unfinished",
       "invoking": "κλήση σε εξέλιξη",
       "labels": {
         "bash": "Μπας",
@@ -3160,6 +3167,7 @@
       "preview": "Προεπισκόπηση",
       "raw": "Ακατέργαστο",
       "runningCount": "{{count}} εργαλεία εκτελούνται",
+      "search_limited": "[to be translated]:Search limited · not executed",
       "sections": {
         "args": "Επιχειρήματα",
         "command": "Εντολή",
@@ -3447,9 +3455,14 @@
     "memory_notice": "Independent native memory survives model changes. Retry, branching and individual deletion are supported; direct editing and bulk deletion are not yet supported.",
     "outputting": "The model is producing output",
     "permission": {
+      "deniedDescription": "[to be translated]:The operation was not authorized and the task was interrupted. Completed work remains in this conversation.",
+      "deniedSuggestion": "[to be translated]:Review the rejected operation and provide further instructions to continue; there is no need to resubmit the entire task.",
+      "deniedTitle": "[to be translated]:Operation not authorized",
       "description": "Ελέγξτε την ενέργεια και τον στόχο της πριν επιτρέψετε τη συνέχεια της εργασίας.",
       "details": "Λεπτομέρειες ενέργειας",
+      "loopAllow": "[to be translated]:Allow one repeat",
       "loopDescription": "Ο βοηθός επιχείρησε την ίδια ενέργεια επανειλημμένα. Μπορείτε να επιτρέψετε μία συνέχεια ή να ακυρώσετε την ενέργεια.",
+      "loopSkip": "[to be translated]:Skip repeat and continue",
       "loopTitle": "Εντοπίστηκαν επαναλαμβανόμενες ενέργειες· η εργασία τέθηκε σε παύση",
       "title": "Αυτή η εργασία χρειάζεται την επιβεβαίωσή σας"
     },
@@ -5586,6 +5599,25 @@
         "label": "Γλώσσα προορισμού",
         "russian": "Ρωσικά"
       }
+    },
+    "internalTesting": {
+      "deleteHistoryNotice": "[to be translated]:Delete this turn and all later turns, including the corresponding assistant context?",
+      "description": "[to be translated]:Uses the existing assistant interface with separate conversations and workspace. The runtime downloads on first use. Verify again after restarting the app.",
+      "downloadingInstaller": "[to be translated]:Preparing the download tools…",
+      "downloadingNode": "[to be translated]:Downloading the standalone runtime…",
+      "enter": "[to be translated]:Open preview assistant",
+      "entry": "[to be translated]:DSH preview assistant",
+      "installingRuntime": "[to be translated]:Downloading and installing preview components. The first installation may take a few minutes…",
+      "lock": "[to be translated]:Close preview",
+      "password": "[to be translated]:Enter the preview password",
+      "passwordIncorrect": "[to be translated]:Incorrect password. Please retry.",
+      "prepareFailed": "[to be translated]:Could not prepare the runtime. Check your connection and retry.",
+      "preparing": "[to be translated]:Preparing the preview runtime. The first download may take a few minutes…",
+      "title": "[to be translated]:Internal testing",
+      "unlock": "[to be translated]:Verify",
+      "unlocked": "[to be translated]:Unlocked",
+      "validation": "[to be translated]:Verify internal testing access",
+      "verifying": "[to be translated]:Checking the runtime…"
     },
     "launch": {
       "onboot": "Αυτόματη εκκίνηση κατά την εκκίνηση του συστήματος",

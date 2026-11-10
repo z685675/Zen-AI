@@ -2,6 +2,7 @@ const fs = require('fs')
 const path = require('path')
 const { execFileSync } = require('child_process')
 const { copyOpenCodeRuntime, copyOpenCodeOfflineRuntime } = require('./opencode-runtime-packaging')
+const { copyDshPreviewRuntime } = require('./dsh-runtime-packaging')
 const { prepareMacBundleLinks } = require('./mac-bundle-links')
 const { copySearchBinary } = require('./ripgrep-packaging')
 
@@ -74,6 +75,7 @@ exports.default = async function (context) {
   copySearchBinary(context)
   copyOpenCodeRuntime(context)
   copyOpenCodeOfflineRuntime(context)
+  copyDshPreviewRuntime(context)
   if (platform === 'mac') {
     const links = prepareMacBundleLinks(context.packager.getResourcesDir(context.appOutDir), path.join(__dirname, '..'))
     console.log(`[after-pack] verified Mac bundle links; materialized ${links.length} resource links`)

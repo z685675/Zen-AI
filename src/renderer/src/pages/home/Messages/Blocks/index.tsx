@@ -116,7 +116,7 @@ const groupSimilarBlocks = (blocks: MessageBlock[]): (MessageBlock[] | MessageBl
 }
 
 const MessageBlockRenderer: React.FC<Props> = ({ blocks, message, isStreaming }) => {
-  const nativeProgress = useAgentWorkspace() === 'opencode'
+  const nativeProgress = useAgentWorkspace() !== 'legacy'
   // 始终调用useSelector，避免条件调用Hook
   const renderedBlocks = useSelector(
     (state: RootState) =>

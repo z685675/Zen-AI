@@ -3141,6 +3141,7 @@
       "completed": "已完成",
       "error": "发生错误",
       "groupHeader": "{{count}} 个工具调用",
+      "handoff_timed_out": "验证尚未完成",
       "invoking": "调用中",
       "labels": {
         "bash": "执行命令",
@@ -3166,6 +3167,7 @@
       "preview": "预览",
       "raw": "原始",
       "runningCount": "{{count}} 个工具运行中",
+      "search_limited": "搜索受限 · 未执行",
       "sections": {
         "args": "参数",
         "command": "命令",
@@ -3453,9 +3455,14 @@
     "memory_notice": "使用独立的原生会话记忆，换模型仍保留历史。支持重试、分支和单条删除；暂不支持直接编辑或批量删除。",
     "outputting": "模型正在输出",
     "permission": {
+      "deniedDescription": "本次操作未获授权，任务已中断。已完成的内容仍保留在会话中。",
+      "deniedSuggestion": "请检查被拒绝的操作，补充处理要求后继续；无需重新提交整个任务。",
+      "deniedTitle": "操作未获授权",
       "description": "请检查本次操作及目标，确认后任务将继续。",
       "details": "查看操作详情",
-      "loopDescription": "助手连续尝试了相同操作。你可以允许继续一次，或取消本次操作。",
+      "loopAllow": "允许重复一次",
+      "loopDescription": "助手连续尝试了相同操作。跳过后将保留已有结果，改用其他方式继续完成任务；如需结束整个任务，请使用停止按钮。",
+      "loopSkip": "跳过重复并继续",
       "loopTitle": "检测到重复操作，任务已暂停",
       "title": "任务需要你的确认"
     },
@@ -5592,6 +5599,25 @@
         "label": "目标语言",
         "russian": "俄文"
       }
+    },
+    "internalTesting": {
+      "deleteHistoryNotice": "将删除这一轮及之后的对话，并同步清除助手的对应上下文。是否继续？",
+      "description": "沿用现有助手界面，会话和工作目录独立保存。首次进入需要下载内测运行环境；重新启动软件后需再次验证。",
+      "downloadingInstaller": "正在准备下载工具…",
+      "downloadingNode": "正在下载独立运行环境…",
+      "enter": "进入内测助手",
+      "entry": "DSH 内测助手",
+      "installingRuntime": "正在下载和安装内测组件，首次安装可能需要几分钟…",
+      "lock": "关闭内测",
+      "password": "请输入内测密码",
+      "passwordIncorrect": "密码不正确，请重试。",
+      "prepareFailed": "运行环境准备失败，请检查网络后重试。",
+      "preparing": "正在准备内测运行环境，首次下载可能需要几分钟…",
+      "title": "内测功能",
+      "unlock": "验证",
+      "unlocked": "已解锁",
+      "validation": "内测功能验证",
+      "verifying": "正在检查运行环境…"
     },
     "launch": {
       "onboot": "开机自动启动",

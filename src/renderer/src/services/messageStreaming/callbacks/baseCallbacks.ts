@@ -29,7 +29,7 @@ import { createBaseMessageBlock, createErrorBlock } from '@renderer/utils/messag
 import { findAllBlocks, getMainTextContent } from '@renderer/utils/messageUtils/find'
 import { isFocused, isOnHomePage } from '@renderer/utils/window'
 import { getAgentTaskLimitDetails } from '@shared/agents/taskConcurrency'
-import { DEFAULT_OPENCODE_AGENT_ID } from '@shared/config/agents'
+import { isNewAssistantAgentId } from '@shared/config/agents'
 import type { AISDKError } from 'ai'
 
 import type { BlockManager } from '../BlockManager'
@@ -177,7 +177,7 @@ export const createBaseCallbacks = (deps: BaseCallbacksDependencies) => {
       const duration = Date.now() - startTime
       // 发送错误通知（除了中止错误）
       if (!isErrorTypeAbort && !taskLimit) {
-        if (assistant.id !== DEFAULT_OPENCODE_AGENT_ID) {
+        if (!isNewAssistantAgentId(assistant.id)) {
           const timeOut = duration > 30 * 1000
           if ((!isOnHomePage() && timeOut) || (!isFocused() && timeOut)) {
             await notificationService.send({
@@ -327,7 +327,7 @@ export const createBaseCallbacks = (deps: BaseCallbacksDependencies) => {
         .map((id) => getState().messageBlocks.entities[id])
         .filter(Boolean) as MessageBlock[]
       await saveUpdatesToDB(assistantMsgId, topicId, messageErrorUpdate, blocksToSave)
-      if (assistant.id === DEFAULT_OPENCODE_AGENT_ID && !isErrorTypeAbort && !taskLimit) {
+      if (isNewAssistantAgentId(assistant.id) && !isErrorTypeAbort && !taskLimit) {
         void notifyAssistantTask(
           { agentId: assistant.id, sessionId: extractAgentSessionIdFromTopicId(topicId) },
           assistantMsgId,
@@ -373,7 +373,7 @@ export const createBaseCallbacks = (deps: BaseCallbacksDependencies) => {
 
         const possibleBlockId = findBlockIdForCompletion(finalAssistantMsg)
 
-        if (possibleBlockId) {
+        if (possibleBlockId && getState().messageBlocks.entities[possibleBlockId]?.type !== MessageBlockType.TOOL) {
           const changes = {
             status: MessageBlockStatus.SUCCESS
           }
@@ -385,7 +385,7 @@ export const createBaseCallbacks = (deps: BaseCallbacksDependencies) => {
 
         const timeOut = duration > 30 * 1000
         // 发送长时间运行消息的成功通知
-        if (assistant.id !== DEFAULT_OPENCODE_AGENT_ID && ((!isOnHomePage() && timeOut) || (!isFocused() && timeOut))) {
+        if (!isNewAssistantAgentId(assistant.id) && ((!isOnHomePage() && timeOut) || (!isFocused() && timeOut))) {
           await notificationService.send({
             id: uuid(),
             type: 'success',
@@ -430,9 +430,12 @@ export const createBaseCallbacks = (deps: BaseCallbacksDependencies) => {
       }
 
       // Mark in_progress todos as completed since stream ended
-      const todoCleanupIds = cleanupInProgressTodos()
-      const todoBlocksToSave = todoCleanupIds
-        .map((id) => getState().messageBlocks.entities[id])
+      cleanupInProgressTodos()
+      // Persist every observed block, including completed present_files results.
+      // A terminal message is not evidence that an unfinished tool succeeded.
+      const completedState = getState()
+      const finalBlocksToSave = (completedState.messages.entities[assistantMsgId]?.blocks ?? [])
+        .map((id: string) => completedState.messageBlocks.entities[id])
         .filter(Boolean) as MessageBlock[]
 
       const messageUpdates = {
@@ -452,9 +455,9 @@ export const createBaseCallbacks = (deps: BaseCallbacksDependencies) => {
           updates: messageUpdates
         })
       )
-      await saveUpdatesToDB(assistantMsgId, topicId, messageUpdates, todoBlocksToSave)
+      await saveUpdatesToDB(assistantMsgId, topicId, messageUpdates, finalBlocksToSave)
       if (
-        assistant.id === DEFAULT_OPENCODE_AGENT_ID &&
+        isNewAssistantAgentId(assistant.id) &&
         (status === AssistantMessageStatus.SUCCESS || status === AssistantMessageStatus.ERROR)
       ) {
         void notifyAssistantTask(

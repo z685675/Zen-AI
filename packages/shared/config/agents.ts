@@ -2,6 +2,7 @@ export const DEFAULT_CHERRY_CLAW_AGENT_ID = 'cherry-claw-default'
 export const DEFAULT_CHERRY_ASSISTANT_AGENT_ID = 'cherry-assistant-default'
 export const DEFAULT_FUSION_AGENT_ID = 'lobster-fusion-default'
 export const DEFAULT_OPENCODE_AGENT_ID = 'zen-opencode-default'
+export const DEFAULT_DSH_AGENT_ID = 'zen-dsh-preview-default'
 export const DEFAULT_OPENCODE_AGENT_NAME = '智能助手'
 export const DEFAULT_OPENCODE_AGENT_AVATAR = '❤️'
 export const DEFAULT_FUSION_AGENT_NAME = '请弃用旧助手'
@@ -11,16 +12,24 @@ export const DEPRECATED_AGENT_NAME_PREFIX = '（请弃用）'
 
 export const PREFERRED_AGENT_IDS = [DEFAULT_FUSION_AGENT_ID] as const
 
-export const BUILTIN_AGENT_IDS = [DEFAULT_FUSION_AGENT_ID, DEFAULT_OPENCODE_AGENT_ID] as const
+export const BUILTIN_AGENT_IDS = [DEFAULT_FUSION_AGENT_ID, DEFAULT_OPENCODE_AGENT_ID, DEFAULT_DSH_AGENT_ID] as const
 
-export const PROTECTED_AGENT_IDS = [DEFAULT_FUSION_AGENT_ID, DEFAULT_OPENCODE_AGENT_ID] as const
+export const PROTECTED_AGENT_IDS = [DEFAULT_FUSION_AGENT_ID, DEFAULT_OPENCODE_AGENT_ID, DEFAULT_DSH_AGENT_ID] as const
 
 export function isProtectedAgentId(agentId: string | null | undefined): boolean {
   return !!agentId && PROTECTED_AGENT_IDS.includes(agentId as (typeof PROTECTED_AGENT_IDS)[number])
 }
 
 export function canCreateAgentSession(agentId: string | null | undefined): boolean {
-  return agentId === DEFAULT_OPENCODE_AGENT_ID
+  return isNewAssistantAgentId(agentId)
+}
+
+export function isNewAssistantAgentId(agentId: string | null | undefined): boolean {
+  return agentId === DEFAULT_OPENCODE_AGENT_ID || agentId === DEFAULT_DSH_AGENT_ID
+}
+
+export function getAgentWorkspaceForId(agentId: string | null | undefined): 'legacy' | 'opencode' | 'dsh' {
+  return agentId === DEFAULT_DSH_AGENT_ID ? 'dsh' : agentId === DEFAULT_OPENCODE_AGENT_ID ? 'opencode' : 'legacy'
 }
 
 export function isBuiltinAgentId(agentId: string | null | undefined): boolean {
@@ -28,7 +37,7 @@ export function isBuiltinAgentId(agentId: string | null | undefined): boolean {
 }
 
 export function getAgentAvatar(agentId: string | null | undefined, avatar?: string | null): string {
-  if (agentId === DEFAULT_OPENCODE_AGENT_ID) {
+  if (isNewAssistantAgentId(agentId)) {
     return avatar?.trim() || DEFAULT_OPENCODE_AGENT_AVATAR
   }
   if (agentId === DEFAULT_FUSION_AGENT_ID) {

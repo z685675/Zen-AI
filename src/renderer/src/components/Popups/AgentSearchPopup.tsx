@@ -55,7 +55,7 @@ export default class AgentSearchPopup {
     TopView.hide('AgentSearchPopup')
   }
 
-  static show(workspace: 'legacy' | 'opencode' = 'legacy') {
+  static show(workspace: 'legacy' | 'opencode' | 'dsh' = 'legacy') {
     return new Promise<any>((resolve) => {
       TopView.show(
         <AgentWorkspaceContext value={workspace}>

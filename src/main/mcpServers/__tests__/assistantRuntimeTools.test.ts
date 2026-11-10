@@ -6,6 +6,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import { readAssistantToolFailure } from '@shared/agents/toolFailure'
 import AdmZip from 'adm-zip'
+import { XMLParser } from 'fast-xml-parser'
 import { PDFDocument } from 'pdf-lib'
 import sharp from 'sharp'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -54,6 +55,8 @@ vi.mock('electron', () => ({
 
 import AssistantServer from '../assistant'
 import { createDocxBuffer } from '../assistantDocx'
+import * as literature from '../assistantLiterature'
+import * as officeRender from '../assistantOfficeRender'
 import type { AssistantProductOptions } from '../assistantProductTools'
 
 const tempDirs: string[] = []
@@ -80,6 +83,194 @@ afterEach(async () => {
 })
 
 describe('AssistantServer runtime tools', () => {
+  it('preserves PDF phase timings and timeout classification through the MCP error boundary', async () => {
+    const measurement = {
+      stage: 'parse' as const,
+      outcome: 'timeout' as const,
+      queue_ms: 2,
+      download_ms: 1000,
+      parse_ms: 29000,
+      total_ms: 30002,
+      source: 'download' as const
+    }
+    const read = vi
+      .spyOn(literature, 'readPaper')
+      .mockRejectedValueOnce(new literature.PaperReadError('PDF read timed out during parse', measurement))
+    const { assistant, client } = await createClient(process.cwd(), {
+      workspace: process.cwd(),
+      temporaryDirectory: process.cwd(),
+      readOnly: true
+    })
+    try {
+      const result = await client.callTool({
+        name: 'read_paper',
+        arguments: { url: 'https://papers.example/timeout.pdf' }
+      })
+      expect(result.isError).toBe(true)
+      expect(readAssistantToolFailure(result)).toMatchObject({ code: 'timeout', automatic_retry: false })
+      const content = result.content as Array<{ type: string; text: string }>
+      expect(JSON.parse(content[0].text).measurement).toEqual(measurement)
+      expect(mocks.executePython).not.toHaveBeenCalled()
+    } finally {
+      read.mockRestore()
+      await client.close()
+      await assistant.mcpServer.close()
+    }
+  })
+  it('exposes public reading in Plan mode and reports a refused source as an MCP error without Python', async () => {
+    const { assistant, client } = await createClient(process.cwd(), { workspace: process.cwd(), readOnly: true })
+    try {
+      const tools = await client.listTools()
+      expect(tools.tools.find((tool) => tool.name === 'read_webpage')?.annotations?.readOnlyHint).toBe(true)
+      const result = await client.callTool({ name: 'read_webpage', arguments: { url: 'https://127.0.0.1/private' } })
+      expect(result.isError).toBe(true)
+      expect(JSON.stringify(result.content)).toContain('Private/local')
+      expect(readAssistantToolFailure(result)).toMatchObject({ automatic_retry: false })
+      expect(mocks.executePython).not.toHaveBeenCalled()
+    } finally {
+      await client.close()
+      await assistant.mcpServer.close()
+    }
+  })
+
+  it('keeps a repairable Word on a page-count mismatch without overwriting an original or claiming delivery', async () => {
+    const root = await fs.mkdtemp(path.join(tmpdir(), 'zen-document-page-repair-'))
+    tempDirs.push(root)
+    const output = path.join(root, '方案.docx')
+    const original = await createDocxBuffer('原始方案', '用户原文', [])
+    await fs.writeFile(output, original)
+    const wrongPdf = await PDFDocument.create()
+    for (let i = 0; i < 3; i++) wrongPdf.addPage().drawText('Project execution plan with confirmed budget 8000')
+    const renderer = vi.spyOn(officeRender, 'renderOfficeBufferToPdf').mockResolvedValue({
+      status: 'rendered',
+      pdf: Buffer.from(await wrongPdf.save())
+    })
+    const approve = vi.fn(async () => true)
+    const { assistant, client } = await createClient(root, { workspace: root, approveOverwrite: approve })
+    try {
+      const failed = await client.callTool({
+        name: 'create_file',
+        arguments: {
+          file_path: output,
+          content: '执行内容',
+          expected_pages: 2,
+          overwrite: true
+        }
+      })
+      expect(failed.isError).toBe(true)
+      const data = JSON.parse((failed.content as any)[0].text)
+      expect(data).toMatchObject({ status: 'needs_revision', expected_pages: 2, actual_pages: 3 })
+      expect(data.path).toBeUndefined()
+      expect(data.files).toBeUndefined()
+      expect(data.verified).toBeUndefined()
+      expect(data.working_path).not.toBe(output)
+      expect(readAssistantToolFailure(failed)).toMatchObject({ code: 'validation', automatic_retry: false })
+      expect(approve).not.toHaveBeenCalled()
+      expect(await fs.readFile(output)).toEqual(original)
+      const workingZip = new AdmZip(await fs.readFile(data.working_path))
+      expect(workingZip.readAsText('word/document.xml')).toContain('执行内容')
+
+      const edited = await createDocxBuffer('修改后的方案', '保留的最终内容', [])
+      await fs.writeFile(data.working_path, edited)
+      const correctPdf = await PDFDocument.create()
+      for (let i = 0; i < 2; i++) correctPdf.addPage().drawText('Project execution plan with confirmed budget 8000')
+      renderer.mockResolvedValue({ status: 'rendered', pdf: Buffer.from(await correctPdf.save()) })
+      const validated = await client.callTool({
+        name: 'validate_file',
+        arguments: {
+          file_path: data.working_path,
+          expected_pages: 2
+        }
+      })
+      expect(validated.isError).not.toBe(true)
+      expect(await fs.readFile(data.working_path)).toEqual(edited)
+      expect(await fs.readFile(output)).toEqual(original)
+      const delivered = await client.callTool({
+        name: 'present_files',
+        arguments: {
+          file_paths: [data.working_path],
+          final: true
+        }
+      })
+      expect(delivered.isError).not.toBe(true)
+    } finally {
+      renderer.mockRestore()
+      await client.close()
+      await assistant.mcpServer.close()
+    }
+  })
+
+  it('validates the edited current Word without replacing it or publishing another file card', async () => {
+    const root = await fs.mkdtemp(path.join(tmpdir(), 'zen-document-validation-'))
+    tempDirs.push(root)
+    const output = path.join(root, '方案.docx')
+    const original = await createDocxBuffer('执行方案', '已修改的执行内容', [])
+    await fs.writeFile(output, original)
+    const pdf = await PDFDocument.create()
+    for (let page = 0; page < 2; page++) pdf.addPage().drawText('Project execution plan with confirmed budget 8000')
+    const renderer = vi.spyOn(officeRender, 'renderOfficeBufferToPdf').mockResolvedValue({
+      status: 'rendered',
+      pdf: Buffer.from(await pdf.save())
+    })
+    const { assistant, client } = await createClient(root)
+    try {
+      const result = await client.callTool({
+        name: 'validate_file',
+        arguments: { file_path: output, expected_pages: 2 }
+      })
+      expect(result.isError).not.toBe(true)
+      const data = JSON.parse((result.content as any)[0].text)
+      expect(data.verification.details.rendered_page_count).toBe(2)
+      expect(data.files).toBeUndefined()
+      expect(await fs.readFile(output)).toEqual(original)
+      const mismatch = await client.callTool({
+        name: 'validate_file',
+        arguments: { file_path: output, expected_pages: 1 }
+      })
+      expect(mismatch.isError).toBe(true)
+      const denied = await client.callTool({
+        name: 'validate_file',
+        arguments: { file_path: path.join(path.dirname(root), 'outside.docx') }
+      })
+      expect(denied.isError).toBe(true)
+      expect(renderer).toHaveBeenCalledTimes(2)
+    } finally {
+      renderer.mockRestore()
+      await client.close()
+      await assistant.mcpServer.close()
+    }
+  })
+
+  it('accepts exact Word pages at creation and never writes a file when that requirement fails', async () => {
+    const root = await fs.mkdtemp(path.join(tmpdir(), 'zen-document-page-count-'))
+    tempDirs.push(root)
+    const pdf = await PDFDocument.create()
+    pdf.addPage().drawText('Project execution plan with confirmed budget 8000')
+    const renderer = vi.spyOn(officeRender, 'renderOfficeBufferToPdf').mockResolvedValue({
+      status: 'rendered',
+      pdf: Buffer.from(await pdf.save())
+    })
+    const { assistant, client } = await createClient(root)
+    try {
+      const result = await client.callTool({
+        name: 'create_file',
+        arguments: { file_path: 'one.docx', content: '执行方案', expected_pages: 1 }
+      })
+      expect(result.isError).not.toBe(true)
+      expect(await fs.readFile(path.join(root, 'one.docx'))).toBeInstanceOf(Buffer)
+      const mismatch = await client.callTool({
+        name: 'create_file',
+        arguments: { file_path: 'two.docx', content: '执行方案', expected_pages: 2 }
+      })
+      expect(mismatch.isError).toBe(true)
+      await expect(fs.access(path.join(root, 'two.docx'))).rejects.toThrow()
+    } finally {
+      renderer.mockRestore()
+      await client.close()
+      await assistant.mcpServer.close()
+    }
+  })
+
   it('enforces the actual background tool allowlist even for direct hidden-tool calls', async () => {
     const root = await fs.mkdtemp(path.join(tmpdir(), 'zen-lightweight-tools-'))
     tempDirs.push(root)
@@ -208,7 +399,12 @@ describe('AssistantServer runtime tools', () => {
     const readNativeSkills = vi.fn(async () => [
       { name: 'xlsx', location: '/native/winner/SKILL.md', content: 'private body' }
     ])
-    const product: AssistantProductOptions = { workspace: root, readNativeSkills, approveOverwrite: async () => false }
+    const product: AssistantProductOptions = {
+      workspace: root,
+      temporaryDirectory: path.join(root, '.agents', '.tmp', 'session'),
+      readNativeSkills,
+      approveOverwrite: async () => false
+    }
     for (const options of [undefined, product]) {
       const { assistant, client } = await createClient(root, options)
       try {
@@ -222,6 +418,7 @@ describe('AssistantServer runtime tools', () => {
           expect(JSON.stringify(status)).not.toContain('private body')
           const environment = await client.callTool({ name: 'environment', arguments: {} })
           expect(JSON.parse((environment.content[0] as any).text).workspace).toBe(root)
+          expect(JSON.parse((environment.content[0] as any).text).temporary_directory).toBe(product.temporaryDirectory)
           expect(JSON.stringify(environment)).toContain('informational only')
         }
       } finally {
@@ -1632,7 +1829,9 @@ describe('AssistantServer runtime tools', () => {
   it('runs an authorized bundled Python script with explicit arguments', async () => {
     const root = await fs.mkdtemp(path.join(tmpdir(), 'zen-assistant-script-'))
     tempDirs.push(root)
-    const scriptPath = path.join(root, 'validate.py')
+    const scriptDirectory = path.join(root, 'skills', 'pptx', 'scripts')
+    await fs.mkdir(scriptDirectory, { recursive: true })
+    const scriptPath = path.join(scriptDirectory, 'validate.py')
     await fs.writeFile(scriptPath, 'print("ok")', 'utf8')
     mocks.executePythonScript.mockResolvedValue({
       exitCode: 0,
@@ -1652,11 +1851,74 @@ describe('AssistantServer runtime tools', () => {
         cwd: root,
         timeoutMs: undefined
       })
+      const explicit = await client.callTool({
+        name: 'python_execute',
+        arguments: { script_path: scriptPath, arguments: ['asset.pptx'], working_directory: scriptDirectory }
+      })
+      expect(explicit.isError).not.toBe(true)
+      expect(mocks.executePythonScript).toHaveBeenLastCalledWith(scriptPath, ['asset.pptx'], {
+        cwd: scriptDirectory,
+        timeoutMs: undefined
+      })
     } finally {
       await client.close()
       await assistant.mcpServer.close()
     }
   })
+
+  it.each(['corporate', 'brand', 'healthcare', 'technology'])(
+    'preserves the comparison premise in a %s presentation instead of failing its own quality gate',
+    async (style) => {
+      const root = await fs.mkdtemp(path.join(tmpdir(), 'zen-comparison-premise-'))
+      tempDirs.push(root)
+      const { assistant, client } = await createClient(root, {
+        workspace: root,
+        readNativeSkills: async () => [],
+        approveOverwrite: async () => false
+      })
+      try {
+        const output = path.join(root, 'comparison.pptx')
+        const result = await client.callTool({
+          name: 'create_file',
+          arguments: {
+            file_path: output,
+            format: 'pptx',
+            visual_style: style,
+            slides: [
+              {
+                title: '预算确认',
+                subtitle: '旧预算作废，按最终预算执行',
+                layout: 'comparison',
+                bullets: ['旧预算：6500元', '最终预算：8000元']
+              }
+            ],
+            render_validation: 'skip'
+          }
+        })
+        expect(result.isError, JSON.stringify(result)).not.toBe(true)
+        const payload = JSON.parse((result.content.find((item) => item.type === 'text') as { text: string }).text)
+        expect(payload.visual_style).toBe(style)
+        const xml = new AdmZip(await fs.readFile(output)).readAsText('ppt/slides/slide1.xml')
+        expect(xml).toContain('旧预算作废，按最终预算执行')
+        expect(xml).toContain('6500元')
+        expect(xml).toContain('8000元')
+        const parsed = new XMLParser({ ignoreAttributes: false }).parse(xml)
+        const shapes = parsed['p:sld']['p:cSld']['p:spTree']['p:sp']
+        const bounds = (name: string) => {
+          const shape = shapes.find((entry: any) => entry['p:nvSpPr']['p:cNvPr']['@_name'] === name)
+          return shape['p:spPr']['a:xfrm']
+        }
+        const premise = bounds('Comparison premise')
+        const footer = bounds('Footer')
+        expect(Number(premise['a:off']['@_y']) + Number(premise['a:ext']['@_cy'])).toBeLessThanOrEqual(
+          Number(footer['a:off']['@_y'])
+        )
+      } finally {
+        await client.close()
+        await assistant.mcpServer.close()
+      }
+    }
+  )
 
   it('renders and OCRs selected PDF pages in order', async () => {
     const root = await fs.mkdtemp(path.join(tmpdir(), 'zen-assistant-pdf-ocr-'))

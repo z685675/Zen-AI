@@ -52,7 +52,6 @@ import {
   findTranslationBlocksById,
   getMainTextContent
 } from '@renderer/utils/messageUtils/find'
-import { DEFAULT_OPENCODE_AGENT_ID } from '@shared/config/agents'
 import type { MenuProps } from 'antd'
 import { Dropdown, Popconfirm, Tooltip } from 'antd'
 import dayjs from 'dayjs'
@@ -158,7 +157,8 @@ const MessageMenubar: FC<Props> = (props) => {
   } = props
   const { t } = useTranslation()
   const { exportTurn, exporting } = useTurnDiagnosticExport()
-  const nativeMemory = useAgentWorkspace() === 'opencode'
+  const workspace = useAgentWorkspace()
+  const nativeMemory = workspace !== 'legacy'
   const legacyReadOnly = isReadOnlyLegacySession(topic.id, message.assistantId)
   const nativeBusy = useSelector((state: RootState) => Boolean(state.messages.loadingByTopic[topic.id]))
   const { notesPath } = useNotesSettings()
@@ -231,7 +231,7 @@ const MessageMenubar: FC<Props> = (props) => {
       if (nativeMemory) {
         try {
           const session = await dispatch(changeOpenCodeHistoryThunk(topic.id, message.id, 'fork'))
-          dispatch(setActiveSessionIdAction({ agentId: DEFAULT_OPENCODE_AGENT_ID, sessionId: session.id }))
+          dispatch(setActiveSessionIdAction({ agentId: session.agent_id, sessionId: session.id }))
         } catch (error) {
           logger.warn('Could not create native conversation branch', error as Error)
         }
@@ -682,7 +682,11 @@ const MessageMenubar: FC<Props> = (props) => {
                 onDelete={() => {
                   window.modal.confirm({
                     title: t('common.delete'),
-                    content: t('message.message.delete.content'),
+                    content: t(
+                      workspace === 'dsh'
+                        ? 'settings.internalTesting.deleteHistoryNotice'
+                        : 'message.message.delete.content'
+                    ),
                     centered: true,
                     okButtonProps: { danger: true },
                     onOk: () => deleteMessage(message.id, message.traceId, message.model?.name)

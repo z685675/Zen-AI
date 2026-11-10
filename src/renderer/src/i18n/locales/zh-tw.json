@@ -3141,6 +3141,7 @@
       "completed": "已完成",
       "error": "發生錯誤",
       "groupHeader": "{{count}} 次工具呼叫",
+      "handoff_timed_out": "驗證尚未完成",
       "invoking": "呼叫中",
       "labels": {
         "bash": "執行命令",
@@ -3166,6 +3167,7 @@
       "preview": "預覽",
       "raw": "原始碼",
       "runningCount": "{{count}} 個工具正在運行",
+      "search_limited": "搜尋受限 · 未執行",
       "sections": {
         "args": "參數",
         "command": "命令",
@@ -3453,9 +3455,14 @@
     "memory_notice": "使用獨立的原生會話記憶，更換模型仍保留歷史。支援重試、分支和單則刪除；暫不支援直接編輯或批次刪除。",
     "outputting": "模型正在輸出",
     "permission": {
+      "deniedDescription": "本次操作未獲授權，任務已中斷。已完成的內容仍保留在對話中。",
+      "deniedSuggestion": "請檢查被拒絕的操作，補充處理要求後繼續；無需重新提交整個任務。",
+      "deniedTitle": "操作未獲授權",
       "description": "請檢查本次操作及目標，確認後任務將繼續。",
       "details": "檢視操作詳情",
-      "loopDescription": "助手連續嘗試了相同操作。你可以允許繼續一次，或取消本次操作。",
+      "loopAllow": "允許重複一次",
+      "loopDescription": "助手連續嘗試了相同操作。跳過後將保留已有結果，改用其他方式繼續完成任務；如需結束整個任務，請使用停止按鈕。",
+      "loopSkip": "跳過重複並繼續",
       "loopTitle": "偵測到重複操作，任務已暫停",
       "title": "任務需要你的確認"
     },
@@ -5592,6 +5599,25 @@
         "label": "目標語言",
         "russian": "俄文"
       }
+    },
+    "internalTesting": {
+      "deleteHistoryNotice": "[to be translated]:Delete this turn and all later turns, including the corresponding assistant context?",
+      "description": "[to be translated]:Uses the existing assistant interface with separate conversations and workspace. The runtime downloads on first use. Verify again after restarting the app.",
+      "downloadingInstaller": "[to be translated]:Preparing the download tools…",
+      "downloadingNode": "[to be translated]:Downloading the standalone runtime…",
+      "enter": "[to be translated]:Open preview assistant",
+      "entry": "[to be translated]:DSH preview assistant",
+      "installingRuntime": "[to be translated]:Downloading and installing preview components. The first installation may take a few minutes…",
+      "lock": "[to be translated]:Close preview",
+      "password": "[to be translated]:Enter the preview password",
+      "passwordIncorrect": "[to be translated]:Incorrect password. Please retry.",
+      "prepareFailed": "[to be translated]:Could not prepare the runtime. Check your connection and retry.",
+      "preparing": "[to be translated]:Preparing the preview runtime. The first download may take a few minutes…",
+      "title": "[to be translated]:Internal testing",
+      "unlock": "[to be translated]:Verify",
+      "unlocked": "[to be translated]:Unlocked",
+      "validation": "[to be translated]:Verify internal testing access",
+      "verifying": "[to be translated]:Checking the runtime…"
     },
     "launch": {
       "onboot": "開機自動啟動",

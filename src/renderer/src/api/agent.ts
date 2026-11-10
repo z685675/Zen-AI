@@ -77,7 +77,7 @@ export class AgentApiClient {
   constructor(
     config: AxiosRequestConfig,
     apiVersion?: ApiVersion,
-    private workspace: 'legacy' | 'opencode' = 'legacy'
+    private workspace: 'legacy' | 'opencode' | 'dsh' = 'legacy'
   ) {
     if (!config.baseURL || !config.headers?.Authorization) {
       throw new Error('Please pass in baseUrl and Authroization header.')
@@ -92,7 +92,8 @@ export class AgentApiClient {
   }
 
   private get agentsBase() {
-    return `/${this.apiVersion}/${this.workspace === 'opencode' ? 'new-assistant/' : ''}agents`
+    const prefix = this.workspace === 'opencode' ? 'new-assistant/' : this.workspace === 'dsh' ? 'dsh-preview/' : ''
+    return `/${this.apiVersion}/${prefix}agents`
   }
 
   public get agentPaths() {

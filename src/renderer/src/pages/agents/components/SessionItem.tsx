@@ -23,7 +23,7 @@ import { getChannelTypeIcon } from '@renderer/utils/agentSession'
 import { buildAgentSessionTopicId } from '@renderer/utils/agentSession'
 import { exportMessagesAsMarkdown, exportMessageToNotes, messagesToMarkdown } from '@renderer/utils/export'
 import { removeSpecialCharactersForFileName } from '@renderer/utils/file'
-import { DEFAULT_OPENCODE_AGENT_ID } from '@shared/config/agents'
+import { isNewAssistantAgentId } from '@shared/config/agents'
 import type { MenuProps } from 'antd'
 import { Dropdown, Tooltip } from 'antd'
 import dayjs from 'dayjs'
@@ -252,7 +252,7 @@ const SessionItem = ({
 
   const menuItems: MenuProps['items'] = useMemo(
     () => [
-      ...(agentId !== DEFAULT_OPENCODE_AGENT_ID
+      ...(!isNewAssistantAgentId(agentId)
         ? [
             {
               label: t('assistant_transition.continue'),

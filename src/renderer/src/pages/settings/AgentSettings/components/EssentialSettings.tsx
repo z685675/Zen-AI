@@ -28,7 +28,7 @@ const EssentialSettings: FC<EssentialSettingsProps> = ({ agentBase, update, show
       {workspace === 'legacy' && <SoulModeSetting base={agentBase} update={update} />}
       {workspace === 'legacy' && <HeartbeatSetting base={agentBase} update={update} />}
       <DescriptionSetting base={agentBase} update={update} />
-      {workspace === 'opencode' && <Alert type="info" showIcon message={t('assistantProduct.searchDisclosure')} />}
+      {workspace !== 'legacy' && <Alert type="info" showIcon message={t('assistantProduct.searchDisclosure')} />}
     </SettingsContainer>
   )
 }

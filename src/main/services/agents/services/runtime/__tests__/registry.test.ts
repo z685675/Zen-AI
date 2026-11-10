@@ -1,7 +1,11 @@
-import { DEFAULT_OPENCODE_AGENT_ID } from '@shared/config/agents'
-import { describe, expect, it, vi } from 'vitest'
+import { DEFAULT_DSH_AGENT_ID, DEFAULT_OPENCODE_AGENT_ID } from '@shared/config/agents'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+const { assertDshPreviewUnlockedMock } = vi.hoisted(() => ({ assertDshPreviewUnlockedMock: vi.fn() }))
+vi.mock('../../../../dshPreview/access', () => ({ assertDshPreviewUnlocked: assertDshPreviewUnlockedMock }))
 
 vi.mock('../../opencode', () => ({ default: vi.fn().mockImplementation(() => ({ id: 'opencode-service' })) }))
+vi.mock('../../dsh', () => ({ default: vi.fn().mockImplementation(() => ({ id: 'dsh-service' })) }))
 
 vi.mock('@main/apiServer/utils', () => ({
   validateModelId: vi.fn()
@@ -15,7 +19,7 @@ vi.mock('../../codex', () => ({
   default: vi.fn().mockImplementation(() => ({ id: 'codex-service' }))
 }))
 
-import { getAgentRuntimeService, resolveAgentRuntime } from '../registry'
+import { getAgentRuntimeService, getAgentRuntimeServiceById, resolveAgentRuntime } from '../registry'
 
 const validModel = (provider: Record<string, unknown>, modelId: string) => async () => ({
   valid: true as const,
@@ -32,6 +36,39 @@ const validModel = (provider: Record<string, unknown>, modelId: string) => async
 })
 
 describe('runtime registry', () => {
+  beforeEach(() => {
+    assertDshPreviewUnlockedMock.mockReset()
+  })
+
+  it('pins the unlocked DSH workspace independently of legacy overrides and model affinity', async () => {
+    const validateModel = vi.fn()
+    const session = {
+      agent_id: DEFAULT_DSH_AGENT_ID,
+      agent_type: 'claude-code' as const,
+      model: 'gateway:gpt-6.1-sol',
+      configuration: { agent_runtime: 'codex' }
+    }
+    await expect(
+      resolveAgentRuntime(session, {
+        env: { ZEN_AGENT_RUNTIME_OVERRIDE: 'claude-code', ZEN_ENABLE_AGENT_RUNTIME_CONFIG_OVERRIDE: 'true' },
+        validateModel
+      })
+    ).resolves.toMatchObject({ runtimeId: 'dsh', candidates: ['dsh'], source: 'workspace' })
+    expect(validateModel).not.toHaveBeenCalled()
+    await expect(getAgentRuntimeService(session)).resolves.toMatchObject({ id: 'dsh-service' })
+    expect(assertDshPreviewUnlockedMock).toHaveBeenCalledTimes(3)
+  })
+
+  it('rejects a locked DSH workspace and direct service lookup before returning its runtime', async () => {
+    assertDshPreviewUnlockedMock.mockImplementation(() => {
+      throw Object.assign(new Error('Internal testing is locked'), { code: 'internal_testing_locked' })
+    })
+    await expect(
+      resolveAgentRuntime({ agent_id: DEFAULT_DSH_AGENT_ID, agent_type: 'claude-code' })
+    ).rejects.toMatchObject({ code: 'internal_testing_locked' })
+    expect(() => getAgentRuntimeServiceById('dsh')).toThrow('Internal testing is locked')
+  })
+
   it('pins the new workspace to OpenCode even when legacy overrides are enabled', async () => {
     const session = {
       agent_id: DEFAULT_OPENCODE_AGENT_ID,

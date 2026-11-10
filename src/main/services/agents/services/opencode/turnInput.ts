@@ -21,6 +21,7 @@ export class OpenCodeTurnInput {
   private accepting = false
   private entries = new Map<string, { hash: string; receipt: AgentInputReceipt; settled: Promise<void> }>()
   private latest: string
+  private continuations = new Map<string, string>()
 
   constructor(
     readonly sessionId: string,
@@ -55,6 +56,13 @@ export class OpenCodeTurnInput {
 
   get hasAdditions() {
     return this.latest !== this.turnId
+  }
+
+  continued(messageId: string) {
+    // An internal continuation includes all user additions admitted before it.
+    // Receipt application still waits for an assistant replying to that parent.
+    this.continuations.set(messageId, this.latest)
+    if (messageId > this.latest) this.latest = messageId
   }
 
   async submit(input: AgentRunInput): Promise<AgentInputReceipt> {
@@ -132,8 +140,13 @@ export class OpenCodeTurnInput {
     const ids = new Set(messages.map((message) => message.info.id))
     const delivered = new Set([...this.entries.values()].map((entry) => entry.receipt.nativeMessageId))
     const parents = messages
-      .filter((message) => message.info.role === 'assistant' && delivered.has(message.info.parentID))
-      .map((message) => message.info.parentID!)
+      .filter((message) => message.info.role === 'assistant')
+      .map((message) => {
+        let parent = message.info.parentID
+        while (parent && this.continuations.has(parent)) parent = this.continuations.get(parent)
+        return parent
+      })
+      .filter((parent): parent is string => Boolean(parent && delivered.has(parent)))
       .sort()
     const latestParent = parents.at(-1)
     for (const entry of this.entries.values()) {

@@ -81,7 +81,7 @@ const MessageItem: FC<Props> = ({
   isGroupContextMessage
 }) => {
   const { t } = useTranslation()
-  const nativeMemory = useAgentWorkspace() === 'opencode'
+  const nativeMemory = useAgentWorkspace() !== 'legacy'
   const { assistant: fallbackAssistant, setModel } = useAssistant(message.assistantId)
   const assistant = sessionAssistant ?? fallbackAssistant
   const { isMultiSelectMode } = useChatContext(topic)

@@ -19,6 +19,7 @@ type AssistantContext = {
   allowedRoots: string[]
   updatedAt: number
   product?: AssistantProductOptions
+  observeArguments?: (name: string, input: unknown, requestId: string) => void
 }
 
 type SessionEntry = {
@@ -33,7 +34,8 @@ const sessions = new Map<string, SessionEntry>()
 export function registerAssistantMcpContext(
   contextId: string,
   allowedRoots: string[],
-  product?: AssistantProductOptions
+  product?: AssistantProductOptions,
+  observeArguments?: AssistantContext['observeArguments']
 ): void {
   // A session can be invoked again after a cancelled or interrupted turn. Drop any
   // stale transport before replacing its authorization context.
@@ -41,7 +43,8 @@ export function registerAssistantMcpContext(
   contexts.set(contextId, {
     allowedRoots: [...new Set(allowedRoots.filter(Boolean).map((root) => path.resolve(root)))],
     updatedAt: Date.now(),
-    product
+    product,
+    observeArguments
   })
 }
 
@@ -129,6 +132,13 @@ router.all('/:contextId/mcp', async (req: Request, res: Response): Promise<void>
 
     for (const message of messages) {
       if (!isJSONRPCRequest(message)) continue
+      if (message.method === 'tools/call' && typeof message.params?.name === 'string') {
+        try {
+          context.observeArguments?.(message.params.name, message.params.arguments, String(message.id).slice(0, 200))
+        } catch {
+          /* Metadata collection cannot block a tool. */
+        }
+      }
       message.params ??= {}
       message.params._meta ??= {}
       message.params._meta.assistantContextId = contextId

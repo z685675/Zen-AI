@@ -40,7 +40,7 @@ Treat PDFs as source documents or final deliverables, depending on the task.
 
 - Read `references/pdf-workflows.md` for scanned PDFs, exact extraction, table-heavy PDFs, citations, or PDF-to-report workflows.
 - Use `scripts/extraction_quality_check.py` on extracted text when the document is scanned, table-heavy, long, or when exact numbers matter.
-- Run `scripts/validate_pdf.py` on every generated PDF before reporting success.
+- Reuse completed generator checks. Use `mcp__assistant__validate_file` after editing an existing PDF and `scripts/validate_pdf.py` for requirements not covered by the returned verification; do not repeat completed checks on unchanged bytes.
 - Use `assets/extraction-schema.json` when a PDF needs structured extraction with page references, key facts, tables, uncertain text, and quality notes.
 
 ## Extraction Pattern
@@ -76,6 +76,8 @@ Call `mcp__assistant__python_execute` with `script_path: "<skill-root>/scripts/e
 3. Validate structure, extractable text, expected title text, and CJK coverage:
 
 Call `mcp__assistant__python_execute` with `script_path: "<skill-root>/scripts/validate_pdf.py"` and `arguments: ["output.pdf", "--require-cjk", "--expect-text", "Zen AI", "--single-title", "--no-markdown-literals"]`.
+
+Relative file arguments resolve from the task workspace, not the Skill script directory. Preserve supplied absolute paths. Signature blanks such as `________` are valid form content; do not remove them as Markdown.
 
 4. For high-stakes output, visually inspect every page for clipping, blank pages, and table splits.
 

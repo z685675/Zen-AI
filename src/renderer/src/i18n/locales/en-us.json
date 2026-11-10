@@ -3141,6 +3141,7 @@
       "completed": "Completed",
       "error": "Error occurred",
       "groupHeader": "{{count}} tool calls",
+      "handoff_timed_out": "Verification unfinished",
       "invoking": "Invoking",
       "labels": {
         "bash": "Bash",
@@ -3166,6 +3167,7 @@
       "preview": "Preview",
       "raw": "Raw",
       "runningCount": "{{count}} tools running",
+      "search_limited": "Search limited · not executed",
       "sections": {
         "args": "Arguments",
         "command": "Command",
@@ -3453,9 +3455,14 @@
     "memory_notice": "Independent native memory survives model changes. Retry, branching and individual deletion are supported; direct editing and bulk deletion are not yet supported.",
     "outputting": "The model is producing output",
     "permission": {
+      "deniedDescription": "The operation was not authorized and the task was interrupted. Completed work remains in this conversation.",
+      "deniedSuggestion": "Review the rejected operation and provide further instructions to continue; there is no need to resubmit the entire task.",
+      "deniedTitle": "Operation not authorized",
       "description": "Review the operation and its target before allowing the task to continue.",
       "details": "Operation details",
-      "loopDescription": "The assistant attempted the same operation repeatedly. Allow one continuation or cancel this operation.",
+      "loopAllow": "Allow one repeat",
+      "loopDescription": "The assistant has repeated the same operation. Skip it to keep existing results and continue with another approach. Use Stop to end the entire task.",
+      "loopSkip": "Skip repeat and continue",
       "loopTitle": "Repeated operations detected; task paused",
       "title": "This task needs your confirmation"
     },
@@ -5592,6 +5599,25 @@
         "label": "Target language",
         "russian": "Russian"
       }
+    },
+    "internalTesting": {
+      "deleteHistoryNotice": "Delete this turn and all later turns, including the corresponding assistant context?",
+      "description": "Uses the existing assistant interface with separate conversations and workspace. The runtime downloads on first use. Verify again after restarting the app.",
+      "downloadingInstaller": "Preparing the download tools…",
+      "downloadingNode": "Downloading the standalone runtime…",
+      "enter": "Open preview assistant",
+      "entry": "DSH preview assistant",
+      "installingRuntime": "Downloading and installing preview components. The first installation may take a few minutes…",
+      "lock": "Close preview",
+      "password": "Enter the preview password",
+      "passwordIncorrect": "Incorrect password. Please retry.",
+      "prepareFailed": "Could not prepare the runtime. Check your connection and retry.",
+      "preparing": "Preparing the preview runtime. The first download may take a few minutes…",
+      "title": "Internal testing",
+      "unlock": "Verify",
+      "unlocked": "Unlocked",
+      "validation": "Verify internal testing access",
+      "verifying": "Checking the runtime…"
     },
     "launch": {
       "onboot": "Start Automatically on Boot",

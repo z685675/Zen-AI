@@ -13,6 +13,79 @@ const part = (value: Record<string, unknown>) => ({
 })
 
 describe('OpenCode event translation', () => {
+  it.each([1, 127, -1, null])(
+    'reports a completed native command with exit %s as a tool failure without ending the task',
+    (exit) => {
+      const state = new OpenCodeStreamState('native', 'zen', new Set())
+      state.consume(message({}))
+      const value = {
+        type: 'tool',
+        callID: 'command',
+        tool: 'bash',
+        state: {
+          status: 'completed',
+          input: { command: 'missing-program' },
+          output: 'The command could not be executed.',
+          metadata: { exit },
+          time: { start: 100, end: 200 }
+        }
+      }
+      const chunks = state.consume(part(value))
+      expect(chunks.map((chunk) => chunk.type)).toEqual(['tool-call', 'tool-error'])
+      expect(chunks[1]).toMatchObject({
+        toolCallId: 'zen:command',
+        error: `${exit === null ? 'Command was interrupted or timed out before an exit status was available.' : `Command exited with code ${exit}.`}\nThe command could not be executed.`,
+        providerMetadata: { opencode: { toolExitCode: exit, toolStartedAt: 100, toolFinishedAt: 200 } }
+      })
+      expect(state.consume(part(value))).toEqual([])
+      expect(
+        state.consume(part({ id: 'next', type: 'text', text: 'I will use the managed document renderer.' }))
+      ).toMatchObject([{ type: 'text-start' }, { type: 'text-delta' }])
+    }
+  )
+
+  it.each([0, undefined, '1'])(
+    'does not guess native command failures from output or an invalid exit value (%s)',
+    (exit) => {
+      const state = new OpenCodeStreamState('native', 'zen', new Set())
+      state.consume(message({}))
+      expect(
+        state
+          .consume(
+            part({
+              type: 'tool',
+              callID: 'command',
+              tool: 'bash',
+              state: {
+                status: 'completed',
+                input: {},
+                output: 'A report about errors, not a failed execution.',
+                metadata: { exit }
+              }
+            })
+          )
+          .map((chunk) => chunk.type)
+      ).toEqual(['tool-call', 'tool-result'])
+    }
+  )
+
+  it('does not interpret another tool metadata field as a shell exit code', () => {
+    const state = new OpenCodeStreamState('native', 'zen', new Set())
+    state.consume(message({}))
+    expect(
+      state
+        .consume(
+          part({
+            type: 'tool',
+            callID: 'read',
+            tool: 'read',
+            state: { status: 'completed', input: {}, output: 'File contents', metadata: { exit: 1 } }
+          })
+        )
+        .map((chunk) => chunk.type)
+    ).toEqual(['tool-call', 'tool-result'])
+  })
+
   it('does not retain native binary tool attachments or forward them as renderer/diagnostic metadata', () => {
     const state = new OpenCodeStreamState('native', 'zen', new Set())
     state.consume(message({}))

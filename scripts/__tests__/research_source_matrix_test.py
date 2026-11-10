@@ -19,6 +19,16 @@ SOURCE_MATRIX_SPEC.loader.exec_module(SOURCE_MATRIX_MODULE)
 build_matrix = SOURCE_MATRIX_MODULE.build_matrix
 
 
+class EvidenceLevelTest(unittest.TestCase):
+    def test_metadata_candidates_do_not_inflate_content_evidence_counts(self):
+        result = build_matrix(json.dumps([{"title": "Candidate", "url": "https://papers.example/a?utm_source=test", "evidence_level": "metadata"},
+                                         {"title": "Core", "url": "https://repository.example/b", "evidence_level": "full_text", "supports": ["Read result"]}]))
+        self.assertEqual(result["source_count"], 2)
+        self.assertEqual(result["unique_direct_source_count"], 1)
+        self.assertEqual(result["metadata_candidate_count"], 1)
+        self.assertEqual(result["sources"][1]["evidence_level"], "full_text")
+
+
 def source(index: int, url: str | None = None) -> dict[str, object]:
     return {
         "title": f"Source {index}",
@@ -78,6 +88,22 @@ Some sources may change.
         self.assertTrue(any("Sources or References" in error for error in result["errors"]))
         self.assertTrue(any("Limitations" in error for error in result["errors"]))
         self.assertTrue(any("no clickable source URLs" in error for error in result["errors"]))
+
+    def test_same_doi_at_different_urls_does_not_inflate_independent_source_count(self) -> None:
+        sources = [source(index) for index in range(1, 9)]
+        sources[0]["doi"] = "https://doi.org/10.1234/ABC"
+        sources[1]["doi"] = "doi:10.1234/abc"
+        result = build_matrix(json.dumps(sources), strict=True)
+        self.assertFalse(result["quality_gate"]["passed"])
+        self.assertEqual(result["unique_direct_source_count"], 7)
+        self.assertEqual(result["unique_url_count"], 8)
+        self.assertTrue(any("Duplicate DOI" in error for error in result["errors"]))
+
+    def test_invalid_doi_is_not_accepted_as_a_verified_identifier(self) -> None:
+        sources = [source(index) for index in range(1, 9)]
+        sources[0]["doi"] = "guessed-paper-id"
+        result = build_matrix(json.dumps(sources), strict=True)
+        self.assertTrue(any("Invalid DOI" in error for error in result["errors"]))
 
     def test_non_strict_mode_keeps_small_ad_hoc_usage_compatible(self) -> None:
         result = build_matrix(

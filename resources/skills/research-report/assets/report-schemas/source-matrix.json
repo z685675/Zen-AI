@@ -4,6 +4,8 @@
       "id": "S1",
       "title": "",
       "url": "",
+      "doi": null,
+      "evidence_level": "abstract",
       "date": "",
       "supports": [""],
       "confidence": "medium"

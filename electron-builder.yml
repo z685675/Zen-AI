@@ -93,6 +93,7 @@ files:
   - "!resources/image-canvas/**"
   - "resources/licenses/opencode-LICENSE.txt"
   - "!resources/opencode-runtime/**"
+  - "!resources/dsh-runtime/**"
   - "!resources/licenses/opencode*"
 asarUnpack:
   - out/proxy/**

@@ -87,7 +87,7 @@ const AgentPage = () => {
     )
   }
 
-  if (workspace === 'opencode' && !hasAvailableModels) {
+  if (workspace !== 'legacy' && !hasAvailableModels) {
     return (
       <Container>
         <Navbar>

@@ -14,7 +14,7 @@ import {
 } from '@shared/agents/assistantAvailability'
 import { serializeAgentStreamError } from '@shared/agents/streamError'
 import { getAgentTaskLimitDetails } from '@shared/agents/taskConcurrency'
-import { DEFAULT_OPENCODE_AGENT_ID } from '@shared/config/agents'
+import { isNewAssistantAgentId } from '@shared/config/agents'
 import { sanitizeDiagnostic } from '@shared/diagnostics'
 import type { Request, Response } from 'express'
 
@@ -340,7 +340,7 @@ export const deleteMessage = async (req: Request, res: Response): Promise<Respon
     const messageId = Number(messageIdParam)
 
     await verifyAgentAndSession(agentId, sessionId)
-    if (agentId === DEFAULT_OPENCODE_AGENT_ID) {
+    if (isNewAssistantAgentId(agentId)) {
       return res.status(409).json({
         error: {
           code: 'native_history_required',

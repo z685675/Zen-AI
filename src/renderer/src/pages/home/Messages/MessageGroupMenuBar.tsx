@@ -43,7 +43,7 @@ const MessageGroupMenuBar: FC<Props> = ({
   topic
 }) => {
   const { t } = useTranslation()
-  const nativeMemory = useAgentWorkspace() === 'opencode'
+  const nativeMemory = useAgentWorkspace() !== 'legacy'
   const legacyReadOnly = isReadOnlyLegacySession(topic.id, topic.assistantId)
   const { deleteGroupMessages, regenerateAssistantMessage } = useMessageOperations(topic)
   const { assistant } = useAssistant(messages[0]?.assistantId)

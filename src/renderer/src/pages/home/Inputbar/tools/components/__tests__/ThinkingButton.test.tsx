@@ -117,6 +117,7 @@ describe('ThinkingButton', () => {
     fireEvent.click(screen.getByTestId('reasoning-button'))
 
     const panel = mockOpen.mock.calls.at(-1)?.[0]
+    expect(panel.anchorElement).toBeUndefined()
     expect(panel.title).toBe('Reasoning Effort')
     expect(panel.list.map((item: { level: ThinkingOption }) => item.level)).toEqual([
       'none',
@@ -155,8 +156,11 @@ describe('ThinkingButton', () => {
       />
     )
 
-    fireEvent.click(screen.getByRole('button', { name: 'Thinking Effort: Low' }))
+    const button = screen.getByRole('button', { name: 'Thinking Effort: Low' })
+    fireEvent.click(button)
     const panel = mockOpen.mock.calls.at(-1)?.[0]
+    expect(panel.anchorElement).toBe(button)
+    expect(panel.triggerInfo).toEqual({ type: 'button' })
     expect(panel.list.map((item: { level: ThinkingOption }) => item.level)).toEqual(['low', 'medium', 'high', 'xhigh'])
 
     const xhighItem = panel.list.find((item: { level: ThinkingOption }) => item.level === 'xhigh')

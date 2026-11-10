@@ -390,7 +390,7 @@ const AgentChat = () => {
       void createDefaultSession()
     },
     {
-      enabled: workspace === 'opencode',
+      enabled: workspace !== 'legacy',
       preventDefault: true,
       enableOnFormTags: true
     }
@@ -456,7 +456,7 @@ const AgentChat = () => {
           )}
           <div className="flex h-fit w-full min-w-0">
             {!isWelcomeState && activeAgent && <AgentChatNavbar className="min-w-0" activeAgent={activeAgent} />}
-            {!isWelcomeState && workspace === 'opencode' && (
+            {!isWelcomeState && workspace !== 'legacy' && (
               <div className="flex shrink-0 items-center pr-2">
                 <SessionDeliverables key={sessionTopicId} topicId={sessionTopicId} />
               </div>
@@ -481,15 +481,15 @@ const AgentChat = () => {
                     <BrandMark>
                       <EmojiIcon emoji={brandAvatar} size={30} className="h-[30px] w-[30px]" />
                       <BrandText
-                        style={workspace === 'opencode' ? undefined : { color: 'var(--color-deprecated-assistant)' }}>
-                        {t(workspace === 'opencode' ? 'new_assistant.title' : 'agent.sidebar_title')}
+                        style={workspace !== 'legacy' ? undefined : { color: 'var(--color-deprecated-assistant)' }}>
+                        {t(workspace !== 'legacy' ? 'new_assistant.title' : 'agent.sidebar_title')}
                       </BrandText>
                     </BrandMark>
                   </BrandHeader>
                   <WelcomeTitle>
                     {t(workspace === 'legacy' ? 'assistant_transition.legacy_read_only' : 'agent.welcome.title')}
                   </WelcomeTitle>
-                  {workspace === 'opencode' && (
+                  {workspace !== 'legacy' && (
                     <CapabilityGrid>
                       {capabilityItems.map((item) => (
                         <CapabilityCard key={item.key}>
@@ -503,7 +503,7 @@ const AgentChat = () => {
                     </CapabilityGrid>
                   )}
                   <WelcomeComposer>
-                    {workspace === 'opencode' && activeSession && (
+                    {workspace !== 'legacy' && activeSession && (
                       <WelcomeModelRow>
                         <WelcomeModelLabel>{t('agent.welcome.model_label', '本次对话模型')}</WelcomeModelLabel>
                         <SessionModelSelectButton
@@ -539,7 +539,7 @@ const AgentChat = () => {
             )}
           </div>
 
-          {workspace === 'opencode' && <AgentSessionPermissions sessionId={activeSessionId} />}
+          {workspace !== 'legacy' && <AgentSessionPermissions sessionId={activeSessionId} />}
           {!isWelcomeState && workspace !== 'legacy' && (
             <SessionModelRecoveryNotice
               agentId={activeAgentId}

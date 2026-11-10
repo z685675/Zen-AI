@@ -2,7 +2,7 @@ import { loggerService } from '@logger'
 import { AgentModelValidationError, sessionService } from '@main/services/agents'
 import { broadcastSessionChanged } from '@main/services/agents/services/channels/sessionStreamIpc'
 import { legacyContinuationService } from '@main/services/agents/services/LegacyContinuationService'
-import { DEFAULT_OPENCODE_AGENT_ID } from '@shared/config/agents'
+import { DEFAULT_OPENCODE_AGENT_ID, isNewAssistantAgentId } from '@shared/config/agents'
 import type { ListAgentSessionsResponse, SearchAgentSessionsResponse, UpdateSessionResponse } from '@types'
 import { type ReplaceSessionRequest } from '@types'
 import type { Request, Response } from 'express'
@@ -59,7 +59,7 @@ export const continueInNewAssistant = async (req: Request, res: Response): Promi
 export const changeNativeHistory = async (req: Request, res: Response): Promise<Response> => {
   const { agentId, sessionId } = req.params
   const { action, messageId } = req.body ?? {}
-  if (agentId !== DEFAULT_OPENCODE_AGENT_ID || !(await sessionService.sessionExists(agentId, sessionId)))
+  if (!isNewAssistantAgentId(agentId) || !(await sessionService.sessionExists(agentId, sessionId)))
     return res.status(404).json({ error: { code: 'session_not_found', message: 'New assistant session not found' } })
   if (
     !['retry', 'delete', 'fork'].includes(action) ||
@@ -85,7 +85,7 @@ export const changeNativeHistory = async (req: Request, res: Response): Promise<
 
 export const resetNativeMemory = async (req: Request, res: Response): Promise<Response> => {
   const { agentId, sessionId } = req.params
-  if (agentId !== DEFAULT_OPENCODE_AGENT_ID || !(await sessionService.sessionExists(agentId, sessionId))) {
+  if (!isNewAssistantAgentId(agentId) || !(await sessionService.sessionExists(agentId, sessionId))) {
     return res
       .status(404)
       .json({ error: { message: 'New assistant session not found', type: 'not_found', code: 'session_not_found' } })

@@ -1,7 +1,7 @@
 import { CacheService } from '@renderer/services/CacheService'
 
 type Selection = { agentId: string; sessionId: string }
-type Workspace = 'legacy' | 'opencode'
+type Workspace = 'legacy' | 'opencode' | 'dsh'
 const key = (workspace: Workspace) => `agent-explicit-entry:${workspace}`
 
 export function markAgentEntrySelection(workspace: Workspace, selection: Selection) {

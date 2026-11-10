@@ -48,6 +48,7 @@ vi.mock('electron', () => {
     goForward: vi.fn(),
     reload: vi.fn(),
     stop: vi.fn(),
+    close: vi.fn(),
     executeJavaScript: vi.fn(async () => null),
     setWindowOpenHandler: vi.fn()
   })
@@ -203,6 +204,11 @@ describe('CdpBrowserController', () => {
     const controller = new CdpBrowserController()
     const result = await controller.execute('1+1')
     expect(result).toBe('ok')
+    const electronMock = await import('electron')
+    expect((electronMock as any).__mockSendCommand).toHaveBeenCalledWith(
+      'Runtime.evaluate',
+      expect.objectContaining({ expression: '1+1', replMode: true })
+    )
   })
 
   it('does not instantiate or clear an unused private session on close', async () => {
@@ -464,6 +470,64 @@ describe('CdpBrowserController', () => {
   })
 
   describe('Reset behavior', () => {
+    it('waits for old private tabs to close before clearing storage or creating a replacement window', async () => {
+      const controller = new CdpBrowserController()
+      const { tabId } = await controller.open('https://example.com/', 5000, true)
+      const oldWindowInfo = [...(controller as any).windows.values()][0]
+      const electron = await import('electron')
+      const contents = oldWindowInfo.tabs.get(tabId).view.webContents
+      const closed = oldWindowInfo.window.on.mock.calls.find(([event]: [string]) => event === 'closed')[1]
+      const browserSession = (electron as any).__mockPrivateBrowserSession
+      let release!: () => void
+      browserSession.clearStorageData.mockImplementationOnce(() => new Promise<void>((resolve) => (release = resolve)))
+      closed()
+      expect(contents.close).not.toHaveBeenCalled()
+      const replacement = controller.open('https://example.com/reopened', 5000, true)
+      await vi.waitFor(() => expect(browserSession.clearStorageData).toHaveBeenCalledOnce())
+      expect(contents.close).toHaveBeenCalledOnce()
+      expect((controller as any).windows.size).toBe(0)
+      release()
+      await replacement
+      await controller.dispose()
+    })
+
+    it('leaves the native navigation callback before explicitly closing a detached view, once per tab', async () => {
+      const controller = new CdpBrowserController()
+      const { tabId } = await controller.open('https://example.com/')
+      const windowInfo = [...(controller as any).windows.values()][0]
+      const view = windowInfo.tabs.get(tabId).view
+      const first = controller.reset(false, tabId)
+      const second = controller.reset(false, tabId)
+      expect(view.webContents.close).not.toHaveBeenCalled()
+      expect(windowInfo.window.close).not.toHaveBeenCalled()
+      await Promise.all([first, second])
+      expect(view.webContents.close).toHaveBeenCalledExactlyOnceWith({ waitForBeforeUnload: false })
+      expect(view.destroy).not.toHaveBeenCalled()
+      await controller.dispose()
+    })
+
+    it('preserves a replacement page when the previous navigation was aborted', async () => {
+      const controller = new CdpBrowserController()
+      const { tabId } = await controller.open('https://example.com/')
+      const contents = [...(controller as any).windows.values()][0].tabs.get(tabId).view.webContents
+      contents.loadURL.mockRejectedValueOnce(new Error('ERR_ABORTED (-3)'))
+      await expect(controller.open('https://example.com/old')).rejects.toThrow('ERR_ABORTED')
+      expect(contents.stop).not.toHaveBeenCalled()
+      await expect(controller.open('https://example.com/replacement')).resolves.toMatchObject({ tabId })
+      await controller.dispose()
+    })
+
+    it('still stops a timed-out page before allowing the same tab to be reused', async () => {
+      const controller = new CdpBrowserController()
+      const { tabId } = await controller.open('https://example.com/')
+      const contents = [...(controller as any).windows.values()][0].tabs.get(tabId).view.webContents
+      contents.loadURL.mockImplementationOnce(() => new Promise(() => {}))
+      await expect(controller.open('https://example.com/slow', 5)).rejects.toThrow('Navigation timed out')
+      expect(contents.stop).toHaveBeenCalledOnce()
+      await expect(controller.open('https://example.com/next')).resolves.toMatchObject({ tabId })
+      await controller.dispose()
+    })
+
     it('resets specific tab only', async () => {
       const controller = new CdpBrowserController()
       const result1 = await controller.open('https://site1.com/', 5000, false, true)

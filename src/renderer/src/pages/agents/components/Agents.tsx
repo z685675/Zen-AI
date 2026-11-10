@@ -38,11 +38,11 @@ const Agents = ({ onSelectItem }: AgentsProps) => {
   }
 
   const hasNonOfficialAgent =
-    workspace !== 'opencode' && (agents?.some((agent) => agent.id !== DEFAULT_FUSION_AGENT_ID) ?? false)
+    workspace === 'legacy' && (agents?.some((agent) => agent.id !== DEFAULT_FUSION_AGENT_ID) ?? false)
   const sidebarTitle = (
     <span className="min-w-0">
-      <span style={workspace === 'opencode' ? undefined : { color: 'var(--color-deprecated-assistant)' }}>
-        {t(workspace === 'opencode' ? 'new_assistant.title' : 'agent.sidebar_title')}
+      <span style={workspace !== 'legacy' ? undefined : { color: 'var(--color-deprecated-assistant)' }}>
+        {t(workspace !== 'legacy' ? 'new_assistant.title' : 'agent.sidebar_title')}
       </span>
       {hasNonOfficialAgent && (
         <span className="ml-1 font-normal text-(--color-text-secondary)">（建议删除其他非官方助手）</span>

@@ -365,19 +365,25 @@
       "dismissHint": "Apenas oculta o registo; não anula uma mensagem enviada.",
       "draftOccupied": "Envie ou guarde primeiro o rascunho atual.",
       "edit": "Editar",
+      "guideIdle": "[to be translated]:There is no running task to steer right now.",
+      "guideQueued": "[to be translated]:The current task cannot accept guidance yet. This message remains queued.",
+      "guideSaveFailed": "[to be translated]:Could not save the steering action. The message remains queued.",
       "hint": {
         "accepted": "Guardado na tarefa atual; a aguardar processamento.",
         "deferred": "A tarefa terminou, mas o processamento do complemento não foi confirmado. Verifique o resultado antes de continuar.",
         "failed": "A execução falhou e a fila está pausada. Verifique o histórico antes de reenviar.",
         "rejected": "Não submetido. Edite ou envie após a tarefa atual.",
+        "steer": "[to be translated]:Submit this queued message to the current task now to add instructions or change its subsequent direction.",
         "uncertain": "Receção não confirmada. Verifique a receção ou o histórico antes de reenviar."
       },
       "notReady": "A tarefa está a iniciar ou a terminar. Edite ou envie mais tarde.",
       "pause": "Pausar fila",
+      "pauseHint": "[to be translated]:Pause automatic sending of queued messages while the current task continues. Queued messages are kept for later.",
       "queue": "Enviar após a tarefa",
       "remove": "Remover",
       "restored": "Restaurado na caixa de texto. Reveja e envie.",
       "resume": "Continuar fila",
+      "resumeHint": "[to be translated]:Resume processing queued messages in order, waiting for the current task to finish if it is still running.",
       "saveFailed": "Não foi possível guardar a mensagem. O rascunho foi mantido.",
       "state": {
         "accepted": "Recebido",
@@ -3135,6 +3141,7 @@
       "completed": "Completo",
       "error": "Ocorreu um erro",
       "groupHeader": "{{count}} chamadas de ferramenta",
+      "handoff_timed_out": "[to be translated]:Verification unfinished",
       "invoking": "Em execução",
       "labels": {
         "bash": "Bash",
@@ -3160,6 +3167,7 @@
       "preview": "Pré-visualização",
       "raw": "Bruto",
       "runningCount": "{{count}} ferramentas em execução",
+      "search_limited": "[to be translated]:Search limited · not executed",
       "sections": {
         "args": "Argumentos",
         "command": "Comando",
@@ -3447,9 +3455,14 @@
     "memory_notice": "Independent native memory survives model changes. Retry, branching and individual deletion are supported; direct editing and bulk deletion are not yet supported.",
     "outputting": "The model is producing output",
     "permission": {
+      "deniedDescription": "[to be translated]:The operation was not authorized and the task was interrupted. Completed work remains in this conversation.",
+      "deniedSuggestion": "[to be translated]:Review the rejected operation and provide further instructions to continue; there is no need to resubmit the entire task.",
+      "deniedTitle": "[to be translated]:Operation not authorized",
       "description": "Verifique a operação e o respetivo destino antes de permitir a continuação da tarefa.",
       "details": "Detalhes da operação",
+      "loopAllow": "[to be translated]:Allow one repeat",
       "loopDescription": "O assistente tentou a mesma operação várias vezes. Pode permitir uma continuação única ou cancelar esta operação.",
+      "loopSkip": "[to be translated]:Skip repeat and continue",
       "loopTitle": "Foram detetadas operações repetidas; tarefa em pausa",
       "title": "Esta tarefa precisa da sua confirmação"
     },
@@ -5586,6 +5599,25 @@
         "label": "Língua alvo",
         "russian": "Russo"
       }
+    },
+    "internalTesting": {
+      "deleteHistoryNotice": "[to be translated]:Delete this turn and all later turns, including the corresponding assistant context?",
+      "description": "[to be translated]:Uses the existing assistant interface with separate conversations and workspace. The runtime downloads on first use. Verify again after restarting the app.",
+      "downloadingInstaller": "[to be translated]:Preparing the download tools…",
+      "downloadingNode": "[to be translated]:Downloading the standalone runtime…",
+      "enter": "[to be translated]:Open preview assistant",
+      "entry": "[to be translated]:DSH preview assistant",
+      "installingRuntime": "[to be translated]:Downloading and installing preview components. The first installation may take a few minutes…",
+      "lock": "[to be translated]:Close preview",
+      "password": "[to be translated]:Enter the preview password",
+      "passwordIncorrect": "[to be translated]:Incorrect password. Please retry.",
+      "prepareFailed": "[to be translated]:Could not prepare the runtime. Check your connection and retry.",
+      "preparing": "[to be translated]:Preparing the preview runtime. The first download may take a few minutes…",
+      "title": "[to be translated]:Internal testing",
+      "unlock": "[to be translated]:Verify",
+      "unlocked": "[to be translated]:Unlocked",
+      "validation": "[to be translated]:Verify internal testing access",
+      "verifying": "[to be translated]:Checking the runtime…"
     },
     "launch": {
       "onboot": "Iniciar automaticamente ao ligar",

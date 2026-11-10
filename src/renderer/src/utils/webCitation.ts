@@ -5,7 +5,8 @@ type ToolResponse = MCPToolResponse | NormalToolResponse
 const MAX_CITATION_RESULTS = 12
 const MAX_CITATION_CONTENT_LENGTH = 1200
 const WEB_TOOL_NAME_PATTERN =
-  /(?:builtin_web_search|web[_-]?search|web[_-]?fetch|codex\.web_search|mcp__exa__|mcp__browser__(?:open|fetch|snapshot))/i
+  /(?:builtin_web_search|web[_-]?search|web[_-]?fetch|codex\.web_search|mcp__exa__|mcp__browser__(?:open|fetch|snapshot)|(?:^|__)read_webpage$)/i
+const MANAGED_WEBPAGE_PATTERN = /^(?:mcp__assistant__)?read_webpage$/i
 const URL_PATTERN = /https?:\/\/[^\s<>"')\]]+/g
 const MARKDOWN_LINK_PATTERN = /\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g
 
@@ -23,8 +24,10 @@ function trimContent(value: unknown): string {
   return text.length > MAX_CITATION_CONTENT_LENGTH ? `${text.slice(0, MAX_CITATION_CONTENT_LENGTH)}...` : text
 }
 
-function resultFromObject(value: Record<string, unknown>): WebSearchProviderResult | undefined {
-  const rawUrl = value.url ?? value.uri ?? value.link ?? value.currentUrl ?? value.sourceUrl
+function resultFromObject(value: Record<string, unknown>, sourceOnly = false): WebSearchProviderResult | undefined {
+  const rawUrl = sourceOnly
+    ? (value.resolved_url ?? value.source_url)
+    : (value.url ?? value.uri ?? value.link ?? value.currentUrl ?? value.sourceUrl)
   if (typeof rawUrl !== 'string') return undefined
 
   const url = normalizeUrl(rawUrl)
@@ -78,27 +81,35 @@ function extractStringResults(text: string): WebSearchProviderResult[] {
   return results
 }
 
-function collectResults(value: unknown, depth = 0): WebSearchProviderResult[] {
+function collectResults(value: unknown, depth = 0, sourceOnly = false): WebSearchProviderResult[] {
   if (depth > 5 || value === null || value === undefined) return []
 
   if (typeof value === 'string') {
     const trimmed = value.trim()
     if ((trimmed.startsWith('{') || trimmed.startsWith('[')) && trimmed.length < 2_000_000) {
       try {
-        return collectResults(JSON.parse(trimmed), depth + 1)
+        return collectResults(JSON.parse(trimmed), depth + 1, sourceOnly)
       } catch {
         // The value is regular text rather than JSON.
       }
     }
-    return extractStringResults(value)
+    return sourceOnly ? [] : extractStringResults(value)
   }
 
   if (Array.isArray(value)) {
-    return value.flatMap((item) => collectResults(item, depth + 1))
+    return value.flatMap((item) => collectResults(item, depth + 1, sourceOnly))
   }
 
   if (typeof value === 'object') {
     const objectValue = value as Record<string, unknown>
+    if (sourceOnly) {
+      if (objectValue.isError || objectValue.status === 'failed') return []
+      if (['partial', 'complete'].includes(String(objectValue.status)) && typeof objectValue.text === 'string') {
+        const source = resultFromObject(objectValue, true)
+        return source ? [source] : []
+      }
+      return Object.values(objectValue).flatMap((item) => collectResults(item, depth + 1, true))
+    }
     const directResult = resultFromObject(objectValue)
     const nestedResults = Object.values(objectValue).flatMap((item) => collectResults(item, depth + 1))
     return directResult ? [directResult, ...nestedResults] : nestedResults
@@ -114,7 +125,11 @@ export function isTraceableWebTool(toolName: string): boolean {
 export function extractWebCitationResults(toolResponse: ToolResponse): WebSearchProviderResult[] {
   if (!isTraceableWebTool(toolResponse.tool.name)) return []
 
-  const results = [...collectResults(toolResponse.response), ...collectResults(toolResponse.arguments)]
+  const sourceOnly = MANAGED_WEBPAGE_PATTERN.test(toolResponse.tool.name)
+  if (sourceOnly && toolResponse.status !== 'done') return []
+  const results = sourceOnly
+    ? collectResults(toolResponse.response, 0, true)
+    : [...collectResults(toolResponse.response), ...collectResults(toolResponse.arguments)]
   const deduplicated = new Map<string, WebSearchProviderResult>()
 
   for (const result of results) {

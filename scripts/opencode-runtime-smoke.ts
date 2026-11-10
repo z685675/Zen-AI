@@ -6,6 +6,7 @@ import { createServer } from 'node:http'
 import { createRequire } from 'node:module'
 import os from 'node:os'
 import path from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { isDeepStrictEqual } from 'node:util'
 
 import { Server } from '@modelcontextprotocol/sdk/server/index.js'
@@ -21,16 +22,27 @@ import {
   OPENCODE_VERSION
 } from '../src/main/services/agents/services/opencode/config'
 import { createOpenCodeGateway } from '../src/main/services/agents/services/opencode/gateway'
+import {
+  isInvalidReadToolLoop,
+  LOOP_SUMMARY_AGENT,
+  OpenCodeLoopRecovery
+} from '../src/main/services/agents/services/opencode/loopRecovery'
 import { prepareOpenCodeOfflineConfig } from '../src/main/services/agents/services/opencode/offline'
+import { getOpenCodeTempDirectory } from '../src/main/services/agents/services/opencode/workspace'
 
 async function main() {
   const lightweight = process.argv[2] === '--lightweight'
   const permissions = process.argv[2] === '--permissions'
   const plan = process.argv[2] === '--plan'
   const reasoning = process.argv[2] === '--reasoning'
+  const completionGuardMode = process.argv[2] === '--completion-guard'
+  const invalidLoopRecoveryMode = process.argv[2] === '--invalid-loop-recovery'
+  const loopRecoveryMode = process.argv[2] === '--loop-recovery' || invalidLoopRecoveryMode
   const smokeModel = reasoning ? 'gpt-smoke' : 'zen-smoke'
   const packagedResources =
-    process.argv[2] && !lightweight && !permissions && !plan && !reasoning ? path.resolve(process.argv[2]) : undefined
+    process.argv[2] && !lightweight && !permissions && !plan && !reasoning && !loopRecoveryMode && !completionGuardMode
+      ? path.resolve(process.argv[2])
+      : undefined
   if (process.argv.length > 3) throw new Error('Usage: pnpm smoke:opencode [packaged-resources-directory]')
   const require = createRequire(__filename)
   const wrapperRequire = createRequire(require.resolve('opencode-ai/package.json'))
@@ -51,6 +63,7 @@ async function main() {
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort('smoke timeout'), 90_000)
   let requests = 0
+  let writeTarget: string | undefined
   let auditTurn = 0
   const requestAudits: Array<{ source: string | string[] | undefined; task: string | string[] | undefined }> = []
   let sawLegacyBackground = false
@@ -61,7 +74,14 @@ async function main() {
   const mcpInitialized = new Set<string>()
   const usedModels = new Set<string>()
   let reasoningVerified = false
+  let summaryTools: number | undefined
+  let sawPdfParserGuard = false
   const gateway = createServer(async (req, res) => {
+    if (req.url === '/raw-paper.pdf') {
+      res.writeHead(200, { 'Content-Type': 'text/plain' })
+      res.end('%PDF-1.7 native-fixture-binary-garbage')
+      return
+    }
     const mcpRoute = req.url?.match(/^\/v1\/(assistant|browser)\/[^/]+\/mcp$/)?.[1]
     if (mcpRoute) {
       if (req.headers.authorization !== 'Bearer local-placeholder') {
@@ -79,15 +99,29 @@ async function main() {
                 description: 'Controlled local fixture',
                 inputSchema: { type: 'object', properties: {} }
               }))
-            : [
-                {
-                  name: 'ping',
-                  description: 'Local cost-free MCP fixture',
-                  inputSchema: { type: 'object', properties: {} }
-                }
-              ]
+            : invalidLoopRecoveryMode && mcpRoute === 'assistant'
+              ? [
+                  {
+                    name: 'web_search',
+                    description: 'Read-only fixture; query required',
+                    inputSchema: {
+                      type: 'object',
+                      properties: { query: { type: 'string' } },
+                      required: ['query']
+                    }
+                  }
+                ]
+              : [
+                  {
+                    name: 'ping',
+                    description: 'Local cost-free MCP fixture',
+                    inputSchema: { type: 'object', properties: {} }
+                  }
+                ]
         }))
-        server.setRequestHandler(CallToolRequestSchema, async () => {
+        server.setRequestHandler(CallToolRequestSchema, async (request) => {
+          if (invalidLoopRecoveryMode && !request.params.arguments?.query)
+            return { isError: true, content: [{ type: 'text', text: 'invalid_input: query is required' }] }
           if (lightweight) {
             lightweightToolCalls++
             await writeFile(path.join(root, 'workspace', 'lightweight.txt'), 'controlled local output')
@@ -122,24 +156,73 @@ async function main() {
     for await (const chunk of req) chunks.push(chunk)
     const body = JSON.parse(Buffer.concat(chunks).toString())
     requests++
+    if (loopRecoveryMode) {
+      const finalizing = !body.tools?.length
+      if (finalizing) summaryTools = body.tools?.length ?? 0
+      res.writeHead(200, { 'Content-Type': 'text/event-stream' })
+      // Three identical calls in one generation trigger the native guard.
+      // Use a disposable read, never user files or a paid Provider.
+      const delta = finalizing
+        ? { content: 'Recovered review: verified local research evidence; remaining gaps are explicitly listed.' }
+        : {
+            tool_calls: Array.from({ length: invalidLoopRecoveryMode ? 4 : 3 }, (_, index) => ({
+              index,
+              id: `loop_${requests}_${index}`,
+              type: 'function',
+              function: {
+                name: invalidLoopRecoveryMode && index > 0 ? 'mcp__assistant__web_search' : 'read',
+                arguments:
+                  invalidLoopRecoveryMode && index > 0
+                    ? ''
+                    : JSON.stringify({ filePath: path.join(root, 'workspace', 'evidence.txt') })
+              }
+            }))
+          }
+      if (delta.tool_calls) {
+        for (const call of delta.tool_calls) {
+          res.write(
+            `data: ${JSON.stringify({ id: `loop_${requests}`, object: 'chat.completion.chunk', created: 1, model: smokeModel, choices: [{ index: 0, delta: { tool_calls: [call] }, finish_reason: null }] })}\n\n`
+          )
+          await new Promise((resolve) => setTimeout(resolve, 150))
+        }
+      } else
+        res.write(
+          `data: ${JSON.stringify({ id: `loop_${requests}`, object: 'chat.completion.chunk', created: 1, model: smokeModel, choices: [{ index: 0, delta, finish_reason: null }] })}\n\n`
+        )
+      res.write(
+        `data: ${JSON.stringify({ id: `loop_${requests}`, object: 'chat.completion.chunk', created: 1, model: smokeModel, choices: [{ index: 0, delta: {}, finish_reason: finalizing ? 'stop' : 'tool_calls' }], usage: { prompt_tokens: 2000, completion_tokens: 20, total_tokens: 2020 } })}\n\n`
+      )
+      res.end('data: [DONE]\n\n')
+      return
+    }
     requestAudits.push({ source: req.headers.originator, task: req.headers['x-zen-task-id'] })
     sawLegacyBackground ||= JSON.stringify(body.messages).includes('ZEN_LEGACY_BACKGROUND purple')
     usedModels.add(body.model)
     if (reasoning && body.model === smokeModel) reasoningVerified ||= body.reasoning_effort === 'high'
     if (lightweight)
       lightweightInventories.push((body.tools || []).map((tool: any) => tool.function?.name || tool.name))
-    const latestUser = body.messages.findLast((message: any) => message.role === 'user')
+    const latestUserIndex = body.messages.findLastIndex((message: any) => message.role === 'user')
+    const latestUser = body.messages[latestUserIndex]
     if (JSON.stringify(latestUser).includes('WAIT_FOR_CANCEL')) {
       res.writeHead(200, { 'Content-Type': 'text/event-stream' })
       res.flushHeaders()
       return
     }
     const compaction = JSON.stringify(body.messages).includes('context summarization agent')
-    const hasToolResult = body.messages.some((message: any) => message.role === 'tool')
-    const toolsRequested = body.messages.some(
-      (message: any) =>
-        typeof message.content === 'string' && /CREATE_SMOKE_FILE|CREATE_LIGHTWEIGHT_OUTPUT/.test(message.content)
-    )
+    const forceCompaction = completionGuardMode && !compaction && JSON.stringify(latestUser).includes('COMPACT_NOW')
+    const hasToolResult = body.messages.slice(latestUserIndex).some((message: any) => message.role === 'tool')
+    if (
+      body.messages.some(
+        (message: any) => message.role === 'tool' && JSON.stringify(message).includes('pdf_requires_parser')
+      )
+    ) {
+      if (JSON.stringify(body.messages).includes('native-fixture-binary-garbage'))
+        throw new Error('Raw PDF reached the model')
+      sawPdfParserGuard = true
+    }
+    const pdfRequested = completionGuardMode && JSON.stringify(latestUser).includes('WEBFETCH_PDF')
+    const toolsRequested =
+      pdfRequested || /CREATE_SMOKE_FILE|CREATE_LIGHTWEIGHT_OUTPUT/.test(JSON.stringify(latestUser))
     res.writeHead(200, { 'Content-Type': 'text/event-stream' })
     const delta =
       toolsRequested && !hasToolResult && !compaction
@@ -150,31 +233,40 @@ async function main() {
                 id: 'call_smoke',
                 type: 'function',
                 function: {
-                  name: lightweight
-                    ? body.tools.find((tool: any) => tool.function?.name?.endsWith('__create_file')).function.name
-                    : reasoning
-                      ? 'apply_patch'
-                      : 'write',
+                  name: pdfRequested
+                    ? 'webfetch'
+                    : lightweight
+                      ? body.tools.find((tool: any) => tool.function?.name?.endsWith('__create_file')).function.name
+                      : reasoning
+                        ? 'apply_patch'
+                        : 'write',
                   arguments: JSON.stringify(
-                    reasoning
+                    pdfRequested
                       ? {
-                          patchText: [
-                            '*** Begin Patch',
-                            `*** Add File: ${path.join(root, 'workspace', 'result.txt')}`,
-                            '+verified local tool execution',
-                            '*** End Patch'
-                          ].join('\n')
+                          url: `http://127.0.0.1:${(gateway.address() as { port: number }).port}/raw-paper.pdf`,
+                          format: 'text'
                         }
-                      : {
-                          filePath: path.join(
-                            root,
-                            'workspace',
-                            JSON.stringify(latestUser).includes('CREATE_SMOKE_FILE_APPROVAL')
-                              ? 'approval.txt'
-                              : 'result.txt'
-                          ),
-                          content: 'verified local tool execution'
-                        }
+                      : reasoning
+                        ? {
+                            patchText: [
+                              '*** Begin Patch',
+                              `*** Add File: ${path.join(root, 'workspace', 'result.txt')}`,
+                              '+verified local tool execution',
+                              '*** End Patch'
+                            ].join('\n')
+                          }
+                        : {
+                            filePath:
+                              writeTarget ??
+                              path.join(
+                                root,
+                                'workspace',
+                                JSON.stringify(latestUser).includes('CREATE_SMOKE_FILE_APPROVAL')
+                                  ? 'approval.txt'
+                                  : 'result.txt'
+                              ),
+                            content: 'verified local tool execution'
+                          }
                   )
                 }
               }
@@ -185,12 +277,20 @@ async function main() {
       `data: ${JSON.stringify({ id: 'chatcmpl_smoke', object: 'chat.completion.chunk', created: 1, model: smokeModel, choices: [{ index: 0, delta, finish_reason: null }] })}\n\n`
     )
     res.write(
-      `data: ${JSON.stringify({ id: 'chatcmpl_smoke', object: 'chat.completion.chunk', created: 1, model: smokeModel, choices: [{ index: 0, delta: {}, finish_reason: toolsRequested && !hasToolResult ? 'tool_calls' : 'stop' }], usage: { prompt_tokens: 2000, completion_tokens: 20, total_tokens: 2020 } })}\n\n`
+      `data: ${JSON.stringify({ id: 'chatcmpl_smoke', object: 'chat.completion.chunk', created: 1, model: smokeModel, choices: [{ index: 0, delta: {}, finish_reason: toolsRequested && !hasToolResult && !compaction ? 'tool_calls' : 'stop' }], usage: { prompt_tokens: forceCompaction ? 120000 : 2000, completion_tokens: 20, total_tokens: forceCompaction ? 120020 : 2020 } })}\n\n`
     )
     res.end('data: [DONE]\n\n')
   })
   const gatewayPort = await listenOnLoopback(gateway)
   await mkdir(path.join(root, 'workspace'), { recursive: true })
+  if (completionGuardMode) {
+    const plugins = path.join(root, 'workspace/.opencode/plugins')
+    await mkdir(plugins, { recursive: true })
+    await writeFile(
+      path.join(plugins, 'untrusted-probe.js'),
+      `import {writeFile} from 'node:fs/promises'; export default async()=>{await writeFile(${JSON.stringify(path.join(root, 'untrusted-plugin-ran'))}, 'unexpected');return {}}`
+    )
+  }
   await mkdir(path.join(root, 'skill'), { recursive: true })
   await writeFile(
     path.join(root, 'skill', 'SKILL.md'),
@@ -198,7 +298,7 @@ async function main() {
   )
   const smokeSession = {
     id: 'zen-local-smoke',
-    accessible_paths: [path.join(root, 'workspace')],
+    accessible_paths: [path.join(root, 'workspace'), ...(permissions ? [path.join(root, 'authorized 文件')] : [])],
     configuration: { permission_mode: plan ? 'plan' : permissions ? 'default' : 'bypassPermissions' }
   } as any
   const config = buildOpenCodeConfig({
@@ -223,7 +323,18 @@ async function main() {
     name: 'Second mock model'
   }
   const toolBinDir = path.join(root, 'tools')
-  const env = buildOpenCodeEnvironment(process.env, root, 'smoke-local-password', toolBinDir)
+  const temporaryDirectory = plan
+    ? path.join(root, 'tmp')
+    : getOpenCodeTempDirectory(smokeSession.accessible_paths[0], smokeSession.id)
+  await mkdir(temporaryDirectory, { recursive: true })
+  const env = buildOpenCodeEnvironment(
+    process.env,
+    root,
+    'smoke-local-password',
+    toolBinDir,
+    undefined,
+    temporaryDirectory
+  )
   const transportEvents: string[] = []
   const transport = await createOpenCodeGateway(config.provider['zen-selected'].options.baseURL, (_id, event) =>
     transportEvents.push(event)
@@ -232,12 +343,13 @@ async function main() {
   config.provider['zen-selected'].options.baseURL = transport.baseURL
   config.provider['zen-selected'].options.headers['x-zen-runtime-token'] = transport.token
   try {
-    await prepareOpenCodeOfflineConfig(
+    const completionPlugin = await prepareOpenCodeOfflineConfig(
       root,
       packagedResources
         ? path.join(packagedResources, 'opencode-runtime')
         : path.resolve(__dirname, '../resources/opencode-runtime')
     )
+    config.plugin = [pathToFileURL(completionPlugin).href]
   } catch (error) {
     clearTimeout(timeout)
     transport.stop()
@@ -247,11 +359,12 @@ async function main() {
   }
   env.OPENCODE_CONFIG_CONTENT = JSON.stringify(config)
   const nativeStartedAt = performance.now()
-  const child = spawn(
-    binary,
-    ['serve', '--hostname=127.0.0.1', '--port=0', '--no-mdns', '--pure', '--log-level=WARN'],
-    { cwd: path.join(root, 'workspace'), env, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] }
-  )
+  const child = spawn(binary, ['serve', '--hostname=127.0.0.1', '--port=0', '--no-mdns', '--log-level=WARN'], {
+    cwd: path.join(root, 'workspace'),
+    env,
+    windowsHide: true,
+    stdio: ['ignore', 'pipe', 'pipe']
+  })
   child.stderr.on('data', () => {})
   let client: OpenCodeClient | undefined
   try {
@@ -325,6 +438,117 @@ async function main() {
     )
       throw new Error('Native Skill inventory did not report its actual definition path')
     if (requests !== 0) throw new Error('Read-only native Skill inventory unexpectedly called a model')
+    if (loopRecoveryMode) {
+      await writeFile(path.join(root, 'workspace', 'evidence.txt'), 'Verified local research evidence DOI:TEST-7319')
+      const session = await client.request<{ id: string }>(
+        '/session',
+        'POST',
+        { title: 'Loop recovery smoke' },
+        controller.signal
+      )
+      const recovery = new OpenCodeLoopRecovery()
+      const body = {
+        agent: 'build',
+        model: { providerID: 'zen-selected', modelID: smokeModel },
+        parts: [{ type: 'text', text: 'Review existing research evidence and finish the task.' }]
+      }
+      const events = client.events(controller.signal)
+      await events.next()
+      let approvals = 0
+      let completed = false
+      let waitingGeneration = false
+      let preservedEvidence = false
+      const original = await client.request<any[]>(`/session/${session.id}/message`)
+      const previousMessages = new Set(original.map((entry) => entry.info.id))
+      await client.request(`/session/${session.id}/prompt_async`, 'POST', body, controller.signal)
+      try {
+        for await (const event of events) {
+          const props = event.properties
+          if (props.sessionID && props.sessionID !== session.id) continue
+          if (event.type === 'permission.asked' && !recovery.waiting) {
+            if (props.permission !== 'doom_loop') throw new Error(`Unexpected permission: ${props.permission}`)
+            approvals++
+            if (invalidLoopRecoveryMode && !isInvalidReadToolLoop(props.permission, props.metadata))
+              throw new Error(`Invalid-read guard did not match native metadata: ${JSON.stringify(props.metadata)}`)
+            recovery.reject(
+              props.id,
+              props.metadata?.tool,
+              props.metadata?.input,
+              invalidLoopRecoveryMode ? 'invalid-arguments' : 'user-skipped'
+            )
+            await client.request(
+              `/permission/${props.id}/reply`,
+              'POST',
+              { reply: 'reject', message: 'Skip this repeated invocation and finish the task.' },
+              controller.signal
+            )
+          }
+          if (event.type === 'session.error' && !recovery.expects(props.error))
+            throw new Error(`Unexpected native failure: ${props.error?.data?.message}`)
+          if (event.type !== 'session.status' || props.status?.type !== 'idle') continue
+          if (recovery.waiting) {
+            const result = await recovery.resume({
+              client,
+              sessionId: session.id,
+              previousMessages,
+              body,
+              signal: controller.signal,
+              onSubmitted: () => {
+                waitingGeneration = true
+              }
+            })
+            if (!result) throw new Error('Native rejection did not produce recoverable history')
+            if (result.finalizing && approvals !== (invalidLoopRecoveryMode ? 2 : 3))
+              throw new Error('Unexpected fallback budget')
+            continue
+          }
+          const history = await client.request<any[]>(`/session/${session.id}/message`)
+          const continuation = history.find((entry) => entry.info.id === recovery.latestMessageId)
+          preservedEvidence ||= JSON.stringify(continuation?.parts).includes('DOI:TEST-7319')
+          const last = history.at(-1)
+          if (
+            waitingGeneration &&
+            last?.info.parentID === recovery.latestMessageId &&
+            last.info.time?.completed &&
+            !last.info.error
+          ) {
+            if (
+              last.info.agent !== LOOP_SUMMARY_AGENT ||
+              !last.parts.some((part: any) => part.text?.includes('Recovered review:'))
+            )
+              continue
+            completed = true
+            break
+          }
+        }
+      } finally {
+        await events.return(undefined)
+      }
+      const expectedApprovals = invalidLoopRecoveryMode ? 2 : 3
+      if (
+        !completed ||
+        approvals !== expectedApprovals ||
+        summaryTools !== 0 ||
+        !preservedEvidence ||
+        Number(requests) !== expectedApprovals + 1
+      )
+        throw new Error(
+          `Recovery verification failed: completed=${completed} approvals=${approvals} tools=${summaryTools} evidence=${preservedEvidence} requests=${requests}`
+        )
+      const next = await client.request<any>(`/session/${session.id}/message`, 'POST', {
+        agent: 'build',
+        model: body.model,
+        noReply: true,
+        parts: [{ type: 'text', text: 'A normal following turn keeps Build permissions.' }]
+      })
+      if (next.info.agent !== 'build') throw new Error('Fallback leaked into following turns')
+      process.stdout.write(
+        invalidLoopRecoveryMode
+          ? 'PASS native invalid-argument recovery: correct metadata classification, one repair, tool-free finalization, retained evidence and following Build permissions; 3 local mock requests, zero paid requests.\n'
+          : 'PASS native repeated-operation recovery: three explicit rejections, same history, successful evidence retained, bounded tool-free final answer, following Build turn unchanged; 4 local mock requests, zero paid requests.\n'
+      )
+      return
+    }
     if (permissions || plan) {
       const agents = await client.request<any[]>('/agent', 'GET', undefined, controller.signal)
       const rule = (agent: string, permission: string, pattern: string) =>
@@ -350,19 +574,37 @@ async function main() {
         rule('plan', 'edit', '*') !== 'deny'
       )
         throw new Error('Native Plan/Build rules lost their execution or safety boundary')
-      // Exercise both normal Build execution and an explicitly requested
-      // one-time approval. The product no longer makes every edit ask.
-      for (const ask of [false, true]) {
-        const filename = ask ? 'approval.txt' : 'result.txt'
-        const session = await client.request<{ id: string }>(
-          '/session',
-          'POST',
-          {
-            title: ask ? 'Native explicit approval' : 'Native Build automatic write',
-            ...(ask ? { permission: [{ permission: 'edit', pattern: '*', action: 'ask' }] } : {})
-          },
-          controller.signal
-        )
+      // Exercise real native permissions, including Windows paths and a second
+      // access after a one-time approval. Never substitute a blanket allow rule.
+      await mkdir(path.join(root, 'authorized 文件'), { recursive: true })
+      await mkdir(path.join(root, 'outside'), { recursive: true })
+      const cases = [
+        { file: path.join(root, 'workspace', 'result.txt') },
+        { file: path.join(root, 'workspace', 'approval.txt'), permission: 'edit' },
+        { file: path.join(temporaryDirectory, 'sources.json') },
+        { file: path.join(root, 'authorized 文件', 'report.md') },
+        { file: path.join(root, 'outside', 'first.txt'), permission: 'external_directory' },
+        { file: path.join(root, 'outside', 'second.txt'), permission: 'external_directory' },
+        { file: path.join(root, 'outside', 'denied.txt'), permission: 'external_directory', reject: true }
+      ]
+      let externalSession: { id: string } | undefined
+      for (const sample of cases) {
+        const ask = Boolean(sample.permission)
+        writeTarget = sample.file
+        const session =
+          (sample.permission === 'external_directory' && externalSession) ||
+          (await client.request<{ id: string }>(
+            '/session',
+            'POST',
+            {
+              title: ask ? 'Native explicit approval' : 'Native Build automatic write',
+              ...(sample.permission === 'edit'
+                ? { permission: [{ permission: 'edit', pattern: '*', action: 'ask' }] }
+                : {})
+            },
+            controller.signal
+          ))
+        if (sample.permission === 'external_directory') externalSession = session
         const events = client.events(controller.signal)
         await events.next()
         const submit = client.request(
@@ -375,7 +617,7 @@ async function main() {
           },
           controller.signal
         )
-        let approved = false
+        let approvals = 0
         let output = false
         for await (const event of events) {
           const props = event.properties
@@ -389,13 +631,18 @@ async function main() {
           if (event.type === 'permission.asked') {
             if (
               !ask ||
-              props.permission !== 'edit' ||
-              path.resolve(props.metadata.filepath) !== path.join(root, 'workspace', filename) ||
+              props.permission !== sample.permission ||
+              path.resolve(props.metadata.filepath) !== sample.file ||
               !props.tool?.callID
             )
-              throw new Error('Unexpected native approval request')
-            await client.request(`/permission/${props.id}/reply`, 'POST', { reply: 'once' }, controller.signal)
-            approved = true
+              throw new Error(`Unexpected native approval request for ${sample.file}: ${JSON.stringify(props)}`)
+            await client.request(
+              `/permission/${props.id}/reply`,
+              'POST',
+              { reply: sample.reject ? 'reject' : 'once' },
+              controller.signal
+            )
+            approvals++
           }
           if (
             event.type === 'message.part.updated' &&
@@ -403,19 +650,33 @@ async function main() {
             props.part.text?.includes('local mock reply')
           )
             output = true
-          if ((!ask || approved) && output && event.type === 'session.status' && props.status.type === 'idle') break
+          if (
+            (!ask || approvals) &&
+            (output || sample.reject) &&
+            event.type === 'session.status' &&
+            props.status.type === 'idle'
+          )
+            break
         }
         await submit
-        if (
-          approved !== ask ||
-          !output ||
-          (await readFile(path.join(root, 'workspace', filename), 'utf8')) !== 'verified local tool execution'
-        )
-          throw new Error(`Native ${ask ? 'approved' : 'automatic'} write did not complete`)
+        if (approvals !== Number(ask) || (!output && !sample.reject))
+          throw new Error(`Native ${sample.file} did not complete with the expected approval count`)
+        if (sample.reject) {
+          const contents = await readFile(sample.file, 'utf8').catch((error) => {
+            if (error.code !== 'ENOENT') throw error
+            return undefined
+          })
+          if (contents !== undefined) throw new Error('Rejected external write created a file')
+        } else if ((await readFile(sample.file, 'utf8')) !== 'verified local tool execution') {
+          throw new Error(`Native ${sample.file} was not written`)
+        }
         await events.return(undefined)
+        process.stdout.write(
+          `PASS native workspace permission: ${sample.file}; approvals=${approvals}; rejected=${Boolean(sample.reject)}\n`
+        )
       }
       process.stdout.write(
-        'PASS native Build: automatic file output, sensitive reads/deletion guarded, explicit one-time approval; zero paid requests.\n'
+        'PASS native Build: workspace/temp/authorized-folder writes, outside approval and rejection, no implicit persistent grants; zero paid requests.\n'
       )
       return
     }
@@ -519,6 +780,43 @@ async function main() {
         eventsController.abort()
       }
       return Math.round(performance.now() - turnStartedAt)
+    }
+    if (completionGuardMode) {
+      await turn('COMPACT_NOW final report')
+      const done = await client.request<any[]>(`/session/${session.id}/message`, 'GET', undefined, controller.signal)
+      if (
+        Number(requests) !== 2 ||
+        !done.some((entry) => entry.info.summary) ||
+        done.some(
+          (entry) =>
+            entry.info.role === 'user' &&
+            entry.parts.some((part: any) => part.synthetic && part.text?.startsWith('Continue if'))
+        )
+      )
+        throw new Error(`Completed answer revived after compaction (${requests} model requests)`)
+      const ongoing = await client.request<{ id: string }>('/session', 'POST', {}, controller.signal)
+      const before = requests
+      await turn('CREATE_SMOKE_FILE COMPACT_NOW', smokeModel, ongoing.id)
+      const working = await client.request<any[]>(`/session/${ongoing.id}/message`, 'GET', undefined, controller.signal)
+      if (
+        requests - before < 3 ||
+        !working.some((entry) => entry.info.summary) ||
+        !working.some((entry) =>
+          entry.parts.some((part: any) => part.synthetic && part.text?.startsWith('Continue if'))
+        )
+      )
+        throw new Error('Mid-task tool compaction lost native continuation')
+      if (!(await readFile(path.join(root, 'workspace/result.txt'), 'utf8')).includes('verified local tool execution'))
+        throw new Error('Mid-task tool execution was lost')
+      if (await readFile(path.join(root, 'untrusted-plugin-ran'), 'utf8').catch(() => undefined))
+        throw new Error('Untrusted workspace plugin executed')
+      const paperSession = await client.request<{ id: string }>('/session', 'POST', {}, controller.signal)
+      await turn('WEBFETCH_PDF', smokeModel, paperSession.id)
+      if (!sawPdfParserGuard) throw new Error('Native webfetch did not route PDF bytes to the parser')
+      console.log(
+        `PASS native completion guard: final answer compacts without revival; mid-tool compaction still continues; raw PDF excluded; workspace plugin isolated (${requests} local mock requests, zero paid requests).`
+      )
+      return
     }
     const coldTurnMs = await turn('hello')
     if (!sawLegacyBackground) throw new Error('Synthetic continuation background missing from the next model request')

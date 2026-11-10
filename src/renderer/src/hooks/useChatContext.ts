@@ -6,7 +6,7 @@ import { messageBlocksSelectors } from '@renderer/store/messageBlock'
 import { selectMessagesForTopic } from '@renderer/store/newMessage'
 import { setActiveTopic, setSelectedMessageIds, toggleMultiSelectMode } from '@renderer/store/runtime'
 import type { Topic } from '@renderer/types'
-import { DEFAULT_OPENCODE_AGENT_ID } from '@shared/config/agents'
+import { isNewAssistantAgentId } from '@shared/config/agents'
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useDispatch, useSelector, useStore } from 'react-redux'
@@ -108,7 +108,7 @@ export const useChatContext = (activeTopic: Topic) => {
 
       switch (actionType) {
         case 'delete':
-          if (activeTopic.assistantId === DEFAULT_OPENCODE_AGENT_ID) {
+          if (isNewAssistantAgentId(activeTopic.assistantId)) {
             window.toast.info(t('new_assistant.memory_notice'))
             return
           }

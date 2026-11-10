@@ -5,6 +5,7 @@ import AdmZip from 'adm-zip'
 import { XMLParser } from 'fast-xml-parser'
 import { PDFArray, PDFDocument, PDFStream } from 'pdf-lib'
 
+import type { RenderValidationMode } from './assistantOfficeRender'
 import {
   type GeneratedOutputFormat,
   type GeneratedOutputVerification,
@@ -24,9 +25,13 @@ export interface PresentedOutputVerification {
   warnings: string[]
 }
 
-// The caller resolves and authorizes the canonical path. This check never
-// executes a file, installs a dependency, launches Office or calls a model.
-export async function verifyPresentedOutput(filePath: string, size: number): Promise<PresentedOutputVerification> {
+// The caller resolves and authorizes the canonical path. No dependency is
+// installed and no model is called. Only explicit render options launch Office.
+export async function verifyPresentedOutput(
+  filePath: string,
+  size: number,
+  options: { renderValidation?: RenderValidationMode; expectedPages?: number; expectedSlides?: number } = {}
+): Promise<PresentedOutputVerification> {
   const format = path.extname(filePath).slice(1).toLowerCase() as GeneratedOutputFormat
   if (!SUPPORTED_FORMATS.has(format)) {
     return existenceOnly('This file type has no built-in content validator; only its existence was checked.')
@@ -74,9 +79,9 @@ export async function verifyPresentedOutput(filePath: string, size: number): Pro
     }
   }
 
-  // Reuse format/relationship checks without adding costly rendering or a
-  // hidden LLM review. Semantic feature checks remain in the applicable Skill.
-  const verification = await verifyGeneratedOutput({ format, buffer, renderValidation: 'skip' })
+  // Presentation remains cheap; explicit validation may request actual rendering.
+  // Semantic feature checks remain in the applicable Skill.
+  const verification = await verifyGeneratedOutput({ format, buffer, renderValidation: 'skip', ...options })
   if (zip && format === 'docx') inspectDocument(zip, verification)
   if (zip && format === 'xlsx') inspectWorkbook(zip, verification)
   if (zip && format === 'pptx') inspectPresentation(zip, verification)

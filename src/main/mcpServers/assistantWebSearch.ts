@@ -4,10 +4,29 @@ import PQueue from 'p-queue'
 
 export const SEARCH_ENDPOINT = 'https://mcp.exa.ai/mcp?tools=web_search_exa'
 // Network tool capacity is independent of the assistant conversation limit.
-const searchQueue = new PQueue({ concurrency: 4 })
+const searchQueue = new PQueue({ concurrency: 4, intervalCap: 1, interval: 1000 })
 const MAX_QUEUED_SEARCHES = 32
 const SEARCH_QUEUE_WAIT_MS = 60_000
 let cooldownUntil = 0
+const coolingDown = new Error('Public search is cooling down')
+const waitingSearches = new Set<AbortController>()
+const cachedSearches = new Map<string, { until: number; result: Awaited<ReturnType<typeof executeSearch>> }>()
+class SearchRateLimitError extends Error {}
+
+function searchUnavailable(networkAttempted = false) {
+  return {
+    status: 'unavailable' as const,
+    service: 'Exa public MCP',
+    reason: 'rate_limit',
+    retry_after_ms: Math.max(0, cooldownUntil - Date.now()),
+    executed: false,
+    network_attempted: networkAttempted,
+    ...(networkAttempted ? { upstream_http_status: 429 } : {}),
+    automatic_retry: false,
+    guidance:
+      'Search is temporarily rate limited. Do not resubmit this batch or wait in a retry loop. Use sources already returned, open public source pages, or explain the remaining evidence gap.'
+  }
+}
 
 export function parseSearchSources(text: string) {
   const sources: Array<{ title: string; url: string; published: string | null; excerpt: string }> = []
@@ -41,11 +60,14 @@ export async function searchAssistantWeb(query: unknown, count: unknown, callerS
   if (count !== undefined && (!Number.isInteger(count) || Number(count) < 1 || Number(count) > 8))
     throw new Error('Search count must be an integer between 1 and 8')
   callerSignal?.throwIfAborted()
+  const cacheKey = JSON.stringify([query.trim().replace(/\s+/g, ' '), count ?? 5])
+  const cached = cachedSearches.get(cacheKey)
+  if (cached && cached.until > Date.now()) return { ...cached.result, cached: true }
+  if (cooldownUntil > Date.now()) return searchUnavailable()
   if (searchQueue.size >= MAX_QUEUED_SEARCHES)
     throw new Error('Search queue is full; finish the pending searches before submitting another batch')
-  if (cooldownUntil > Date.now())
-    throw new Error('Search service is rate limited; use browser search or try again later')
   const waiting = new AbortController()
+  waitingSearches.add(waiting)
   const waitTimer = setTimeout(
     () => waiting.abort(new Error('Search waited for capacity for 60 seconds; reduce the search batch')),
     SEARCH_QUEUE_WAIT_MS
@@ -59,26 +81,40 @@ export async function searchAssistantWeb(query: unknown, count: unknown, callerS
   try {
     const queued = searchQueue.add(
       async () => {
+        waitingSearches.delete(waiting)
         clearTimeout(waitTimer)
         signal.throwIfAborted()
         // A previous queued request may have received a real upstream 429.
-        if (cooldownUntil > Date.now())
-          throw new Error('Search service is rate limited; use browser search or try again later')
-        return executeSearch(query, count, callerSignal)
+        if (cooldownUntil > Date.now()) return searchUnavailable()
+        try {
+          const result = await executeSearch(query, count, callerSignal)
+          cachedSearches.delete(cacheKey)
+          cachedSearches.set(cacheKey, { until: Date.now() + 120_000, result })
+          while (cachedSearches.size > 64) cachedSearches.delete(cachedSearches.keys().next().value!)
+          return result
+        } catch (error) {
+          callerSignal?.throwIfAborted()
+          if (error instanceof SearchRateLimitError) return searchUnavailable(true)
+          throw error
+        }
       },
       { signal, throwOnTimeout: true }
     )
     return await Promise.race([queued, aborted])
   } catch (error) {
+    callerSignal?.throwIfAborted()
+    if (signal.reason === coolingDown) return searchUnavailable()
     if (signal.aborted) throw signal.reason
     throw error
   } finally {
+    waitingSearches.delete(waiting)
     signal.removeEventListener('abort', onAbort)
     clearTimeout(waitTimer)
   }
 }
 
 async function executeSearch(query: string, count: unknown, callerSignal?: AbortSignal) {
+  let rateLimited = false
   const timeout = new AbortController()
   const timer = setTimeout(() => timeout.abort(new Error('Search timed out after 20 seconds')), 20_000)
   const signal = callerSignal ? AbortSignal.any([callerSignal, timeout.signal]) : timeout.signal
@@ -94,11 +130,14 @@ async function executeSearch(query: string, count: unknown, callerSignal?: Abort
       // Only the selected public endpoint; never follow a redirect carrying query data.
       const response = await fetch(url, { ...init, signal, redirect: 'error' })
       if (response.status === 429) {
+        rateLimited = true
         const retry = response.headers.get('retry-after')
         const seconds =
           retry && /^\d+$/.test(retry) ? Number(retry) : retry ? (Date.parse(retry) - Date.now()) / 1000 : 60
         cooldownUntil =
           Date.now() + Math.min(300_000, Math.max(1000, Number.isFinite(seconds) ? seconds * 1000 : 60_000))
+        // Release the queued batch immediately; these queries were never sent.
+        for (const waiting of waitingSearches) waiting.abort(coolingDown)
       }
       if (!response.body) return response
       let bytes = 0
@@ -148,6 +187,7 @@ async function executeSearch(query: string, count: unknown, callerSignal?: Abort
     }
   } catch (error) {
     if (signal.aborted) throw signal.reason
+    if (rateLimited) throw new SearchRateLimitError('Public search upstream returned HTTP 429')
     // Do not log/echo query, remote response or URL credentials in service errors.
     throw new Error(
       `Web search unavailable${typeof (error as { code?: unknown })?.code === 'number' ? ` (HTTP ${(error as { code: number }).code})` : ''}; ordinary chat is unaffected. Try the browser or retry later.`

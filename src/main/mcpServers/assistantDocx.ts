@@ -5,8 +5,10 @@ import {
   ExternalHyperlink,
   HeadingLevel,
   ImageRun,
+  ImportedXmlComponent,
   LevelFormat,
   Packer,
+  PageBreak,
   Paragraph,
   type ParagraphChild,
   ShadingType,
@@ -150,6 +152,15 @@ export async function createDocxBuffer(
     sections: [{ properties: {}, children }]
   })
 
+  // Append to the generated style collection: supplying importedStyles instead
+  // replaces docx's default-style factory and loses docDefaults/heading styles.
+  const normal = new ImportedXmlComponent('w:style', {
+    'w:type': 'paragraph',
+    'w:default': '1',
+    'w:styleId': 'Normal'
+  })
+  normal.push(new ImportedXmlComponent('w:name', { 'w:val': 'Normal' }))
+  document.Styles.addChildElement(normal)
   return Buffer.from(await Packer.toBuffer(document))
 }
 
@@ -188,7 +199,13 @@ function renderMarkdownBlocks(
       }
       case 'paragraph_open': {
         const inline = tokens[index + 1]
-        blocks.push(createBodyParagraph(renderInline(inline, assets, style), listStack.at(-1), blockquoteDepth, style))
+        if (inline?.content.trim() === '<!-- pagebreak -->') {
+          blocks.push(new Paragraph({ children: [new PageBreak()] }))
+        } else {
+          blocks.push(
+            createBodyParagraph(renderInline(inline, assets, style), listStack.at(-1), blockquoteDepth, style)
+          )
+        }
         index += 2
         break
       }

@@ -25,7 +25,7 @@ Work with spreadsheets as real structured data, not prose.
 ## Runtime Contract
 
 - Use `mcp__assistant__python_execute` for substantial cleaning, joins, aggregation, statistics, or chart-data preparation.
-- Run bundled scripts with `mcp__assistant__python_execute` using the script's actual installed Skill path and `arguments`; do not probe or modify system Python.
+- Run bundled scripts with `mcp__assistant__python_execute` using the script's actual installed Skill path and `arguments`; do not probe or modify system Python. Relative file arguments resolve from the authorized task workspace, not the Skill script directory. Preserve supplied absolute paths.
 - Do not run `pip`, `uv`, or Conda from this Skill. Use only the managed package set.
 - Keep final workbook creation in `mcp__assistant__create_file` unless a requested feature is unsupported there.
 - If an unsupported advanced feature requires another approved generator, call `mcp__assistant__present_files` with every verified final workbook before replying.
@@ -93,6 +93,8 @@ Call `mcp__assistant__python_execute` with `script_path: "<skill-root>/scripts/v
 - Never report completion if `validate_xlsx.py` exits nonzero or Excel asks to repair the workbook.
 
 ## Quality Bar
+
+Reuse the generator's completed package and formula-cache checks. After editing a working copy, use `mcp__assistant__validate_file` and any still-needed feature validator. Structural checks and cached formula values do not prove recalculation or business correctness; independently reconcile requested totals and cross-sheet relationships.
 
 - Columns should have clear names and consistent types.
 - Numeric outputs should preserve units and rounding rules.

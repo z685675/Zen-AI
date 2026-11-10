@@ -42,7 +42,7 @@ describe('session-level native permissions', () => {
       </Provider>
     )
     expect(screen.getByRole('alert')).toHaveTextContent('new_assistant.permission.loopTitle')
-    fireEvent.click(screen.getByRole('button', { name: 'settings.mcp.tools.run' }))
+    fireEvent.click(screen.getByRole('button', { name: 'new_assistant.permission.loopAllow' }))
     await waitFor(() =>
       expect(window.api.agentTools.respondToPermission).toHaveBeenCalledWith({
         requestId: request.requestId,
@@ -71,7 +71,7 @@ describe('session-level native permissions', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
     result.rerender(view('session-one'))
     expect(screen.getByRole('alert')).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'common.cancel' }))
+    fireEvent.click(screen.getByRole('button', { name: 'new_assistant.permission.loopSkip' }))
     await waitFor(() =>
       expect(window.api.agentTools.respondToPermission).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -95,7 +95,9 @@ it('answers the displayed request when two permissions share the same tool call'
       <AgentSessionPermissions sessionId="session-one" />
     </Provider>
   )
-  fireEvent.click(within(screen.getAllByRole('alert')[1]).getByRole('button', { name: 'settings.mcp.tools.run' }))
+  fireEvent.click(
+    within(screen.getAllByRole('alert')[1]).getByRole('button', { name: 'new_assistant.permission.loopAllow' })
+  )
   await waitFor(() =>
     expect(window.api.agentTools.respondToPermission).toHaveBeenCalledWith(
       expect.objectContaining({

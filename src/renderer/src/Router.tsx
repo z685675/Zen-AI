@@ -12,6 +12,7 @@ import NavigationHandler from './handler/NavigationHandler'
 import { useOnboardingState } from './hooks/useOnboardingState'
 import { useNavbarPosition } from './hooks/useSettings'
 import AgentPage from './pages/agents/AgentPage'
+import DshPreviewPage from './pages/agents/DshPreviewPage'
 import AnnouncementsPage from './pages/announcements/AnnouncementsPage'
 import CodeToolsPage from './pages/code/CodeToolsPage'
 import FilesPage from './pages/files/FilesPage'
@@ -39,6 +40,7 @@ const Router: FC = () => {
         <Routes>
           <Route path="/" element={<HomePage />} />
           <Route path="/agents" element={<AgentPage />} />
+          <Route path="/internal-assistant" element={<DshPreviewPage />} />
           <Route
             path="/new-assistant"
             element={

@@ -55,7 +55,7 @@ interface MessagesProps {
 const logger = loggerService.withContext('Messages')
 
 const Messages: React.FC<MessagesProps> = ({ assistant, topic, setActiveTopic, onComponentUpdate, onFirstUpdate }) => {
-  const nativeMemory = useAgentWorkspace() === 'opencode'
+  const nativeMemory = useAgentWorkspace() !== 'legacy'
   const {
     containerRef: scrollContainerRef,
     handleScroll: handleScrollPosition,

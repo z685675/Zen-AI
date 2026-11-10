@@ -16,9 +16,9 @@ import type {
 import { removeSvgEmptyLines } from '@renderer/utils/formats'
 import { processLatexBrackets } from '@renderer/utils/markdown'
 import { isEmpty } from 'lodash'
-import { type FC, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { type FC, memo, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import ReactMarkdown, { type Components, defaultUrlTransform } from 'react-markdown'
+import ReactMarkdown, { type Components } from 'react-markdown'
 import rehypeKatex from 'rehype-katex'
 // @ts-ignore rehype-mathjax is not typed
 import rehypeMathjax from 'rehype-mathjax'
@@ -32,6 +32,7 @@ import type { Pluggable } from 'unified'
 import CodeBlock from './CodeBlock'
 import Link from './Link'
 import MarkdownSvgRenderer from './MarkdownSvgRenderer'
+import { markdownUrlTransform } from './markdownUrlTransform'
 import rehypeHeadingIds from './plugins/rehypeHeadingIds'
 import rehypeScalableSvg from './plugins/rehypeScalableSvg'
 import remarkDisableConstructs from './plugins/remarkDisableConstructs'
@@ -150,11 +151,6 @@ const Markdown: FC<Props> = ({ block, postProcess }) => {
     components.style = MarkdownShadowDOMRenderer as any
   }
 
-  const urlTransform = useCallback((value: string) => {
-    if (value.startsWith('data:image/png') || value.startsWith('data:image/jpeg')) return value
-    return defaultUrlTransform(value)
-  }, [])
-
   return (
     <div className="markdown">
       <ReactMarkdown
@@ -162,7 +158,7 @@ const Markdown: FC<Props> = ({ block, postProcess }) => {
         remarkPlugins={remarkPlugins}
         components={components}
         disallowedElements={DISALLOWED_ELEMENTS}
-        urlTransform={urlTransform}
+        urlTransform={markdownUrlTransform}
         remarkRehypeOptions={{
           footnoteLabel: t('common.footnotes'),
           footnoteLabelTagName: 'h4',

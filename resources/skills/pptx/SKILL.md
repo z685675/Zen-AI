@@ -15,105 +15,21 @@ Create presentation files that are usable, visually structured, and not just tit
 - Use rich slide fields: `title`, `subtitle`, `layout`, `takeaway`, `visual`, `bullets`, `notes`, and `image_asset_id`. Omit `accent` by default so the deck-level visual style controls a coherent palette; set it only when the user explicitly requests a particular slide color or a semantic exception is necessary.
 - Treat `visual` as internal design direction only; it is never visible fallback copy. Put user-facing supporting text in `subtitle`, `takeaway`, or `bullets`. For a real local image, pass it in `assets` as `{ id, file_path, alt_text }` and reference its ID with `image_asset_id`; the built-in generator normalizes the image, embeds the media part, and switches to the bounded `image` layout.
 - Avoid long paragraphs. Convert content into cards, process steps, comparisons, metrics, summaries, and section dividers.
-- Treat each layout as a content contract, not a decorative preference. Choose a layout only when its fields match the contracts below.
+- Treat each layout as a content contract, not a decorative preference. Choose a layout only when its fields match `references/story-and-layout.md`.
 - In the new assistant, generated slide bodies are checked for supplied visible text before writing; speaker notes and `visual` do not satisfy this check. If content is missing, split it across continuation slides or choose a fitting layout, rather than retrying the unchanged input or deleting requested points. Native-template modes retain their separate mapping validation.
 - Keep visible labels, helper copy, and fallback text in the deck's language. Never ship English generator placeholders inside an otherwise Chinese deck.
 - Do not fake a PPTX by writing text into a `.pptx` extension.
 
-## Story Architecture
+## Planning and layout references
 
-- Infer one internal argument mode before choosing layouts. Use `briefing` for status, decisions, and executive updates; `pyramid` for recommendation-first proposals; `narrative` for change, launches, and persuasive stories; `instructional` for lessons and procedures; and `showcase` for portfolios, products, places, and visual work. The user never needs to name a mode.
-- Infer one deck-level composition profile from the occasion, audience, content density, and mood. Use `structured` for reports, analysis, strategy, research, management, and dense decision material; `spatial` for architecture, places, museums, photography, portfolios, and contemplative visual stories; and `kinetic` for launches, festivals, exhibitions, campaigns, keynotes, public art, and energetic live events. Keep the profile coherent across the deck. The user never needs to name it.
-- Keep visual style and composition profile independent. An explicit `editorial` or brand style still wins palette and language selection, while the profile changes cover geometry, page chrome, statement placement, image framing, whitespace, and reading path to fit the actual occasion.
-- Keep argument mode independent from visual style. A narrative deck can be minimal, editorial, technical, or premium; a visual-style change must not silently change the reasoning order or evidence.
-- Build an internal page manifest with semantic role, main takeaway, evidence type, composition family, content density, visual role, and intentional pattern break. Do not expose this engineering vocabulary to the user.
-- Select page geometry from content requirements first, then express it through the resolved layout language. Never force every point into cards because a style happens to use colored surfaces.
-- Use the dedicated semantic layouts for complex messages: `network` for relationships or ecosystems, `matrix` for four-quadrant decisions, `schedule` for timed programs, and `route` for journeys, visitor paths, or staged spatial movement. Do not flatten these messages into generic cards or a process page.
-- For 5+ slides, review the complete storyline before generation: opening tension or decision, evidence sequence, turning point or recommendation, and closing action. Remove pages that repeat the same job.
-
-## Reference-Style Workflow
-
-- Treat natural requests such as "按这份 PPT 的风格生成", "参考第 6 页的感觉", or "做成这张截图的感觉" as an approximate reference-style request. The user does not need to know `pptx_style_reference`, `adaptive-design`, or a Skill name. Calling a file a "模板" in an otherwise style-oriented request does not by itself require mechanical page cloning. Use native reuse only when the user asks to retain masters, layouts, placeholders, editable source objects, or selected source pages.
-- Pass the authorized local reference through `pptx_style_reference: { file_path, slide_number? }` when calling `mcp__assistant__create_file`. Use `slide_number` when one page is the intended exemplar; omit it when the whole deck should inform the aggregate profile.
-- A PPTX reference leads palette, theme fonts, light/dark rhythm, media density, chart cadence, layout diversity, page archetypes, and the closest supported Zen AI layout language. `slide_number` may emphasize one page's palette and typography, but it must never replace the whole deck's light/dark and image/report rhythm. The source PPTX is read-only and the output must use a different path.
-- A screenshot reference may inherit palette, composition bias, spatial rhythm, active-content occupancy, edge/texture character, approximate image treatment, and broad visual direction. These signals must influence geometry and whitespace, not only colors. Do not claim that fonts, icons, masters, exact coordinates, or pixel geometry were recovered. Do not embed the screenshot as slide content unless the user separately asks for it.
-- Omit `visual_style` whenever `pptx_style_reference` is present. Do not infer a style from the new topic and pass it alongside the reference: topic classification such as `research` or `healthcare` must not replace the reference deck's layout language. An explicit non-`auto` `style_mode` and real user-supplied `brand_theme` colors may still refine the result.
-- Inspect the reference composition before building the deck spec. When pictures appear on many reference pages, gather or create semantically appropriate images for the new topic, pass them through `assets`, and assign `image_asset_id` across a comparable share of output slides. Use genuinely distinct media: do not assign one or two illustrations repeatedly across a photo-led deck, do not alias the same file under different asset IDs, and keep any single image at or below half of the image-led pages. Never reuse unrelated source photos merely to satisfy image density, and never put "延续参考稿图片风格" in `visual` as a substitute for an embedded image.
-- For brand, culture, showcase, event, travel, place, product-launch, and portfolio decks without a reference, plan real topic-relevant visual evidence on a meaningful share of slides whenever images would materially carry the story. Prefer distinct photos, product states, places, people, artifacts, diagrams, or generated visuals over decorative rectangles. If usable assets are genuinely unavailable, keep a graceful typographic fallback and state the limitation; do not invent a local path or claim that `visual` prose is an image.
-- Preserve evidence rhythm as well as color: include chart-oriented pages when charts are meaningful in the reference, vary semantic layouts at a comparable cadence, and retain a similar balance of dense/sparse and light/dark pages. Check `pptx-reference-composition` for PPTX references and `pptx-reference-design-language` for screenshot references before reporting success.
-- Use this workflow for visual-language inheritance and content-fit compositions. When the source is supplied through `pptx_template` but several required new-topic pages do not fit its page inventory, select `mode: "adaptive-design"`; it applies the same reference analysis and similarity gate without forcing source geometry. When the user asks to edit existing pages or keep native masters/layouts, use `edit-copy` or `new-deck` instead.
-
-## Native PPTX Template Workflow
-
-- Treat a terse request that names a source PPTX template and a new topic as complete. Do not ask the user to specify master/layout preservation, page mapping, image replacement, source protection, output naming, validation, or retry behavior.
-- For every new-topic template request, call `mcp__assistant__inspect_pptx_template` before writing the outline. This is an internal planning step, not a question for the user. Read `design_language`, `deck_targets`, and each page's archetype, arrangement, `item_capacity`, image/chart requirements, `content_density`, and body-text target range.
-- Build the new storyline independently and list the semantic role required by each page. Choose the execution strategy internally:
-  - `edit-copy`: selected-page edits where the rest of the source must remain unchanged.
-  - `new-deck`: most required pages have compatible source archetypes and native masters/layouts are part of the requested value.
-  - `adaptive-design`: the source is mainly admired for its visual language, or several required page semantics would be distorted by its fixed geometry.
-- In `adaptive-design`, preserve palette strategy, typography scale, alignment, shape language, information density, image treatment, and page rhythm through content-fit Zen AI layouts. It is not exact package reuse and must not be described as such.
-- Treat source elements as either visual identity or semantic content. Background fields, recurring rules, folios, brand markers, and stable decorative motifs normally remain identity; old titles, labels, numbers, charts, photos, and topic icons are replaceable content. When uncertain, preserve the visual grammar but replace the topic meaning.
-- Author the new topic's argument and evidence first, then map that story to compatible source pages. Never preserve the source storyline, labels, numbers, chart data, icons, or image meaning merely because their Shapes exist. Do not map pages sequentially when another source page fits the new content better.
-- Match repeated layouts deliberately: a three-column page needs three coherent items; a four-card page needs up to four; a list must stay within its capacity. Use `heading | detail` for cards/lists and `label:value` for native charts or metrics. A four-digit year such as `2027 行动` is a heading, not a metric.
-- Match information density as well as item count. For dense source pages, each repeated item should normally contain a conclusion plus evidence and an implication/action. Stay between `target_body_text_units_min` and `target_body_text_units_max`; remap or split before shrinking text. The runtime blocks severely underfilled dense pages and tells the assistant to enrich or remap internally.
-- Automatically inspect the whole source deck, choose the strategy above, infer the audience, storyline, slide count, output name, and any required source-page mapping, replace off-topic photos with distinct topic-relevant assets, keep the source read-only, validate the finished PPTX, and retry correctable failures internally before reporting completion.
-
-- Detect natural requests such as "修改这份 PPT 的第 6 页", "沿用这个 PPT 模板生成", "保持原母版和版式", or "从这份 PPT 挑几页原样组合". The user does not need to know `pptx_template`.
-- Pass the authorized source through `pptx_template: { file_path, mode }`. Never combine `pptx_template` with `pptx_style_reference`, and always write to a path different from the source.
-- Use `mode: "edit-copy"` to clone the complete source package and edit selected pages in the output copy. Set each slide's `target_slide_number`, or use a top-level `target_slide_number` for one update. Unedited slide XML remains byte-for-byte unchanged.
-- Use `mode: "new-deck"` to build a new slide sequence from source pages while preserving native masters, layouts, theme, geometry, charts, and slide relationships. Set `template_slide_number` per output slide or a top-level `source_slide_number` as the default.
-- Use `mode: "adaptive-design"` when content fit matters more than native geometry. The source remains read-only; the result reports the extracted design language, reference-composition similarity, and `exact_package_reuse: false`.
-- To replace a source page's main photo without losing its crop or bounds, pass a local topic-relevant image through `assets` and assign its ID as that slide's `image_asset_id`. The native engine replaces the largest picture shape on that source page. Do not assign an image to a page with no picture shape, and do not leave semantically unrelated source photos in a new-topic deck.
-- Set `preserve_content: true` on a `new-deck` slide when the selected source page must be copied without rewriting any slide object. Do not combine that output page with `shape_replacements`.
-- Standard title, subtitle, and body placeholders are mapped first. Named text shapes and conservative geometry fallback are used only when the source lacks standard placeholders. Use `shape_replacements` for exact text edits by `shape_name`, `find_text`, or both.
-- Native-template text edits preserve each matched shape's geometry and styling and add bounded shrink-to-fit. Existing media and unsupported objects remain in the package; do not recreate them with a generic layout.
-- Before delivery, reject and retry any result with missing first items, orphan empty cards, source-topic text or semantic icons, unchanged source chart data, clipped text, or a PowerPoint repair prompt. When a source layout cannot fit safely, remap to a compatible page or create a continuation page instead of truncating content.
-- Current boundary: one output deck uses either native page reuse or adaptive generated layouts; it does not mix independently generated pages into the source OOXML package. Arbitrary image-placeholder replacement, SmartArt mutation, animation editing, and screenshot-to-editable-object reconstruction remain unsupported. A source PPTX page can be preserved exactly; a screenshot can only guide an approximate new page. Never use the screenshot as a full-slide background and call it an editable clone.
-
-## Shared Visual Style System
-
-- The user never needs to know the Skill name or a style ID. Infer presentation intent from the natural-language request, audience, title, content, and `document_type`.
-- For an ordinary request, pass a specific `document_type` and omit `visual_style`; `create_file` resolves and reports the style automatically. Use explicit `visual_style` only when the user asks for a direction or the inferred direction would clearly be wrong.
-- Use `style_mode: "auto"` unless the user asks for `light`, `dark`, or grayscale `print`. Use `brand_theme` only with real supplied brand colors; do not invent brand hex values.
-- Brand colors override the palette but preserve the selected layout language. `custom-brand` is appropriate when brand colors are the primary direction.
-- Keep one visual language across the deck. Do not rotate unrelated blue, green, amber, and purple accents page by page. An explicit per-slide `accent` overrides the automatic deck palette and must be exceptional.
-
-Available visual styles:
-
-- Formal and business: `executive` (high-level decision), `corporate` (general company), `consulting` (strategy), `finance` (investment), `government` (public sector), `legal` (compliance).
-- Knowledge and product: `academic` (thesis), `research` (white paper), `technology` (technical/future), `product` (product design), `data` (analytics).
-- Growth and communication: `startup` (fundraising), `sales` (proposal), `brand` (campaign), `editorial` (magazine/story).
-- Education and human topics: `education`, `children`, `training`, `healthcare`, `sustainability`, `culture`, `warm`.
-- Expressive and neutral: `premium`, `creative`, `bold`, `minimal-light`, `minimal-dark`, `monochrome`, `custom-brand`.
-
-The PPTX renderer translates these styles into coordinated cover composition, page chrome, information hierarchy, whitespace, shape language, typography, background, surface, text, line, and three related accent tones. Style selection must change geometry and reading order as well as color. A palette-only variation is not a successful style change.
-
-Within the layout languages, the renderer also applies `structured`, `spatial`, or `kinetic` composition profiles. This is how two decks can share a mature editorial, brand, playful, organic, or minimal language without sharing the same cover, statement, image, and recurring-page skeleton. Do not force a launch into a report grid or make a formal annual report inherit festival-like motion merely because both topics mention culture.
-
-The renderer resolves the public styles into 14 semantic layout languages, not interchangeable skins:
-
-- `classic`: narrative lead-and-support composition, numbered navigation, open statements, and conventional evidence charts.
-- `executive`: decision rails, structured evidence rows, restrained rules, and scan-friendly status hierarchy.
-- `consulting`: numbered typographic grids, asymmetric statements, ranked dot plots, and concise thesis-first sequencing.
-- `formal`: disciplined report rules, archival image plates, aligned evidence rails, and conservative information density.
-- `technical`: framed modules, telemetry, signal bars, instrument grids, and inspectable image viewports.
-- `product`: task canvases, focus markers, annotated product imagery, lollipop charts, and workflow-oriented sequencing.
-- `data`: analytical panels, source-versus-observation image layouts, instrument charts, and dense but bounded structure.
-- `bold`: large proportional color fields, manifesto statements, high contrast, and strong scale changes.
-- `brand`: off-grid story blocks, campaign imagery, color-field charts, and distinctive branded rhythm.
-- `editorial`: folios, image spreads, typographic captions, ranked evidence, and magazine-like pacing.
-- `playful`: activity lanes, staggered sequences, friendly color tiles, bubble charts, and energetic hierarchy.
-- `organic`: soft narrative bands, portrait-led imagery, alternating rhythm, and human-centered evidence.
-- `premium`: gallery imagery, fine rules, restrained legends, luxurious whitespace, and typography-led ranking.
-- `minimal`: sparse image planes, thin markers, reduced annotation, ranked typography, and deliberate whitespace.
-
-Each language must materially change process, timeline, chart, and image composition as well as cover and content pages. A palette-only variation is a failed generation.
-
-Do not repeat the same title-plus-rectangle skeleton across styles. Cards are a content contract for parallel ideas, not the universal page container. Across a normal deck, vary open rows, split statements, comparison fields, process nodes, timelines, metrics, charts, quotes, images, and section breaks; do not use boxed cards on consecutive pages unless the pages form an intentional series.
+- Choose page structure from the message and required visible content. Read `references/story-and-layout.md` when selecting or changing layouts, story architecture, or content density; it defines each supported layout's field/capacity contract.
+- For a supplied PPTX, screenshot, or template, read `references/reference-workflows.md` before generation to choose style inheritance versus native editable-page reuse.
+- Read `references/visual-styles.md` when choosing an explicit style, composition profile, or brand treatment.
+- Load only the relevant guidance; complex/reference tasks still require the full applicable workflow.
 
 ## Runtime Contract
 
-- Run bundled scripts with `mcp__assistant__python_execute` using the script's actual installed Skill path and `arguments`; do not assume the workspace root contains `scripts/`.
+- Run bundled scripts with `mcp__assistant__python_execute` using the script's actual installed Skill path and `arguments`; do not assume the workspace root contains `scripts/`. Relative file arguments resolve from the authorized task workspace, not the Skill script directory. Preserve supplied absolute paths.
 - On Windows, read Skill Markdown or JSON with UTF-8 explicitly, for example `Get-Content -Raw -Encoding utf8`. Never infer instructions from mojibake output.
 - Do not probe `python3`, `py`, Conda, or the user's system Python.
 - Do not install packages from this Skill. Its bundled scripts use the managed standard library.
@@ -124,7 +40,7 @@ Do not repeat the same title-plus-rectangle skeleton across styles. Cards are a 
 
 - Read `references/visual-quality.md` when the user asks for a polished, mature, "good-looking", presentation-ready, commercial, pitch, report, or executive deck.
 - Use `scripts/validate_deck_spec.py` before creating decks with 5+ slides, high-stakes decks, or any deck where visual quality matters.
-- Run `scripts/validate_pptx.py --strict-visual` on every generated or modified PPTX before reporting success. A nonzero exit means the file is not deliverable.
+- Reuse completed generator checks. Run `scripts/validate_pptx.py --strict-visual` for unverified visual/feature requirements and use `mcp__assistant__validate_file` after edits to the working copy. A failed required check means the file is not deliverable.
 - Start from `assets/deck-templates/` when the deck matches a common pattern:
   - `executive-report.json` for leadership reports and decision memos.
   - `product-proposal.json` for product plans and internal proposals.
@@ -186,46 +102,6 @@ Call `mcp__assistant__python_execute` with `script_path: "<skill-root>/scripts/v
 - Missing layout/master relationships, incomplete themes, or missing master text styles are not repairable presentation content. Regenerate through `mcp__assistant__create_file`; do not delete parts or ask PowerPoint to repair the file.
 - `repair_duplicate_shape_ids.py` may recover duplicate shape IDs, negative shape extents, presentation child ordering, and shared notes-master themes into a new path, but it is not a substitute for fixing and rerunning the generator.
 - Never overwrite the only copy of a user's presentation while repairing or validating it.
-
-## Layout Guidance
-
-Use varied layouts across the deck:
-
-- `cover`: title, subtitle, context, date or speaker when known
-- `agenda`: roadmap or section list
-- `section`: chapter divider
-- `insight`: one conclusion plus evidence
-- `cards`: 3-4 parallel points
-- `process`: workflow, timeline, or staged plan
-- `timeline`: milestones, roadmap, or staged delivery over time
-- `network`: 3-6 actors, systems, or nodes connected to a shared mechanism
-- `matrix`: exactly four quadrants for prioritization or two-axis decisions
-- `schedule`: up to 6 timed sessions or program moments
-- `route`: 3-6 stops in a journey, visitor path, service path, or spatial sequence
-- `comparison`: before/after, options, competitors, pros/cons
-- `metric`: important numbers and implications
-- `chart`: compact bar-chart style data comparison
-- `image`: a bounded media region plus concise supporting evidence; requires `image_asset_id`
-- `quote`: customer proof, strong viewpoint, or memorable quote
-- `summary`: conclusions and next actions
-
-## Content-to-Layout Contracts
-
-Use CJK-equivalent length when judging density: one Chinese character counts as roughly one unit and two Latin letters or digits count as roughly one unit.
-
-- `metric`: 2-3 real numeric signals only. Write each bullet as `label: value | implication`, keep the value under 14 units, and include a number, percentage, currency, ratio, or duration. Use `cards` or `insight` for concepts and long statements.
-- `timeline`: 3-5 milestones. Write each bullet as `period | milestone: concise detail`; keep each complete milestone under 56 units. Use short nodes for compact milestones and expect a wide-row roadmap for detailed milestones.
-- `network`: 3-6 nodes. Write each bullet as `node | concise detail`; use the takeaway as the shared hub or governing mechanism.
-- `matrix`: exactly four quadrants. Write each bullet as `quadrant | concise implication`; state the two decision dimensions in the title, subtitle, or takeaway.
-- `schedule`: up to 6 sessions. Write each bullet as `time | event: concise detail` and keep chronology explicit.
-- `route`: 3-6 stops. Write each bullet as `stop | milestone: concise detail`; use this for a journey or spatial path, not merely dates.
-- `process`: 3-5 verb-led steps. Write each bullet as `step: concise detail` and keep it under 48 units.
-- `cards`: 3-4 parallel ideas. Put the short card heading before `:` and keep each complete card under 48 units.
-- `chart`: up to 6 rows in `label | value` or `label: value` form. Values must contain a number.
-- `comparison`: pair comparable dimensions and keep each point under 52 units.
-- `takeaway`: one sentence, normally under 52 units. If it needs a paragraph, move the detail to speaker notes or another slide.
-- Slide titles should normally stay under 32 units. Rewrite a long label as a sharper conclusion instead of relying on tiny type.
-- Never place raw prose into `metric`, narrow timeline nodes, or compact process boxes. Change the layout before reducing body text below a presentation-readable size.
 
 ## Quality Bar
 

@@ -23,6 +23,7 @@ import type {
   WebviewKeyEvent
 } from '@shared/config/types'
 import type { MCPServerLogEntry } from '@shared/config/types'
+import { DSH_PREVIEW_IPC, type DshPreviewStatus } from '@shared/dshPreview'
 import type { ExternalAppInfo } from '@shared/externalApp/types'
 import type { FilePathCheck } from '@shared/filePathStatus'
 import { HOTPATCH_IPC, type HotpatchStatus } from '@shared/hotpatch'
@@ -111,6 +112,18 @@ export function tracedInvoke(channel: string, spanContext: SpanContext | undefin
 
 // Custom APIs for renderer
 const api = {
+  internalTesting: {
+    status: (): Promise<DshPreviewStatus> => ipcRenderer.invoke(DSH_PREVIEW_IPC.status),
+    unlock: (password: string): Promise<{ accepted: boolean; status: DshPreviewStatus }> =>
+      ipcRenderer.invoke(DSH_PREVIEW_IPC.unlock, password),
+    lock: (): Promise<DshPreviewStatus> => ipcRenderer.invoke(DSH_PREVIEW_IPC.lock),
+    prepare: (): Promise<DshPreviewStatus> => ipcRenderer.invoke(DSH_PREVIEW_IPC.prepare),
+    onChanged: (callback: (status: DshPreviewStatus) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, status: DshPreviewStatus) => callback(status)
+      ipcRenderer.on(DSH_PREVIEW_IPC.changed, listener)
+      return () => ipcRenderer.removeListener(DSH_PREVIEW_IPC.changed, listener)
+    }
+  },
   hotpatch: {
     status: (): Promise<HotpatchStatus> => ipcRenderer.invoke(HOTPATCH_IPC.status),
     startup: (): Promise<string | null> => ipcRenderer.invoke(HOTPATCH_IPC.startup),

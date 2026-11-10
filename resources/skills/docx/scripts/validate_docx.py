@@ -24,7 +24,7 @@ FALSE_VALUES = {"0", "false", "no", "off"}
 REQUIRED_PARTS = {"[Content_Types].xml", "_rels/.rels", "word/document.xml"}
 MARKDOWN_LITERAL_PATTERNS = {
     "heading": re.compile(r"^\s{0,3}#{1,6}\s+\S"),
-    "strong_emphasis": re.compile(r"(?:\*\*|__)\S.+?(?:\*\*|__)"),
+    "strong_emphasis": re.compile(r"(?<![*_])(\*{2,}|_{2,3})(?=[^\s*_])(?:[^\n]*?[^\s*_])\1(?![*_])"),
     "fenced_code": re.compile(r"^\s*```"),
     "pipe_table_separator": re.compile(r"^\s*\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)+\|?\s*$"),
     "unordered_list_marker": re.compile(r"^\s*[-+*]\s+\S"),
@@ -455,17 +455,52 @@ def validate_docx(path: Path, allow_markdown_literals: bool = False) -> dict[str
     }
 
 
+def check_rendered_pages(docx: Path, pdf: Path | None, expected: int) -> dict[str, object]:
+    """Check an explicitly supplied fresh rendering, never DOCX cached page metadata."""
+    if pdf is None:
+        return {"pass": False, "error": "Page count requires --rendered-pdf from a fresh rendering of this DOCX; OOXML metadata cannot verify pagination."}
+    if not pdf.is_file():
+        return {"pass": False, "error": "Rendered PDF does not exist.", "file": str(pdf)}
+    if docx.is_file() and pdf.stat().st_mtime_ns < docx.stat().st_mtime_ns:
+        return {"pass": False, "error": "Rendered PDF predates this DOCX. Render the current document again."}
+    try:
+        try:
+            from pypdf import PdfReader
+            pages = len(PdfReader(str(pdf)).pages)
+        except ImportError:
+            import fitz
+            with fitz.open(str(pdf)) as document:
+                pages = document.page_count
+        return {"pass": pages == expected, "expected": expected, "actual": pages, "source": "supplied-rendered-pdf", "file": str(pdf)}
+    except Exception as exc:
+        return {"pass": False, "error": f"Cannot inspect rendered PDF: {exc}"}
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Validate a generated DOCX OOXML package.")
     parser.add_argument("docx", type=Path, help="DOCX file to validate.")
-    parser.add_argument(
+    markdown = parser.add_mutually_exclusive_group()
+    markdown.add_argument(
         "--allow-markdown-literals",
         action="store_true",
         help="Allow visible Markdown syntax when the document intentionally teaches or quotes Markdown.",
     )
+    markdown.add_argument("--no-markdown-literals", action="store_true", help="Explicit strict check (the default).")
+    parser.add_argument("--expected-pages", type=int, help="Verify pagination using --rendered-pdf, not cached DOCX properties.")
+    parser.add_argument("--rendered-pdf", type=Path, help="Fresh PDF rendered from this exact DOCX for page-count verification.")
     args = parser.parse_args()
+    if args.expected_pages is not None and args.expected_pages < 1:
+        parser.error("--expected-pages must be positive")
+    if args.rendered_pdf is not None and args.expected_pages is None:
+        parser.error("--rendered-pdf requires --expected-pages")
 
     report = validate_docx(args.docx, args.allow_markdown_literals)
+    if args.expected_pages is not None:
+        pages = check_rendered_pages(args.docx, args.rendered_pdf, args.expected_pages)
+        report["pagination"] = pages
+        if not pages["pass"]:
+            report["pass"] = False
+            report["errors"].append({"pagination_not_verified": pages})
     print(json.dumps(report, ensure_ascii=False, indent=2))
     return 0 if report["pass"] else 1
 

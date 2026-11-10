@@ -20,6 +20,7 @@ import { shutdownBrowserServers } from './mcpServers/browser/server'
 import { agentService } from './services/agents'
 import { DatabaseManager } from './services/agents/database/DatabaseManager'
 import { stopOpenCodeProcesses } from './services/agents/services/opencode/process'
+import { stopAllDshRuntimes } from './services/dshPreview/runtime'
 import { allowAssistantExit, hasAssistantTasks } from './services/AssistantExitGuard'
 import { createAsyncQuitGuard, runQuitCleanup } from './services/AsyncQuitGuard'
 import { schedulerService } from './services/agents/services/SchedulerService'
@@ -375,6 +376,7 @@ if (!app.requestSingleInstanceLock()) {
             },
             { name: 'scheduler', stop: () => schedulerService.stopAll() },
             { name: 'automation', stop: () => automationService.stop() },
+            { name: 'dsh-preview', stop: () => stopAllDshRuntimes() },
             { name: 'channels', stop: () => channelManager.stop() },
             { name: 'analytics', stop: () => analyticsService.destroy() },
             { name: 'openclaw', stop: () => openClawService.stopGateway() },

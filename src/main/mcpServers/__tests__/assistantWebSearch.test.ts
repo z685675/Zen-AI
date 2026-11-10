@@ -38,25 +38,33 @@ afterEach(() => {
 
 describe('lazy public search', () => {
   it('completes a burst of 16 queries through independent bounded capacity without rejecting busy searches', async () => {
+    vi.useFakeTimers()
     const { searchAssistantWeb } = await import('../assistantWebSearch')
     let active = 0
     let peak = 0
     mocks.call.mockImplementation(async () => {
       active++
       peak = Math.max(peak, active)
-      await new Promise((resolve) => setTimeout(resolve, 1))
+      await new Promise((resolve) => setTimeout(resolve, 3500))
       active--
       return { content: [{ type: 'text', text: 'Title: Paper\nURL: https://example.org/paper' }] }
     })
-    const results = await Promise.all(Array.from({ length: 16 }, (_, i) => searchAssistantWeb(`query ${i}`, 1)))
+    const pending = Promise.all(Array.from({ length: 16 }, (_, i) => searchAssistantWeb(`query ${i}`, 1)))
+    await vi.advanceTimersByTimeAsync(1)
+    expect(mocks.call).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(999)
+    expect(mocks.call).toHaveBeenCalledTimes(2)
+    await vi.advanceTimersByTimeAsync(20_000)
+    const results = await pending
     expect(results).toHaveLength(16)
-    expect(results.every((result) => result.sources.length === 1)).toBe(true)
+    expect(results.every((result) => result && 'sources' in result && result.sources.length === 1)).toBe(true)
     expect(peak).toBeGreaterThan(2)
     expect(peak).toBeLessThanOrEqual(4)
     expect(mocks.call).toHaveBeenCalledTimes(16)
   })
 
   it('removes a cancelled queued search before it can send query data', async () => {
+    vi.useFakeTimers()
     const { searchAssistantWeb } = await import('../assistantWebSearch')
     let release!: () => void
     const blocker = new Promise<void>((resolve) => (release = resolve))
@@ -65,13 +73,15 @@ describe('lazy public search', () => {
       return { content: [{ type: 'text', text: 'Title: Paper\nURL: https://example.org/paper' }] }
     })
     const running = Array.from({ length: 4 }, (_, i) => searchAssistantWeb(`running ${i}`, 1))
-    await vi.waitFor(() => expect(mocks.call).toHaveBeenCalledTimes(4))
+    await vi.advanceTimersByTimeAsync(3000)
+    expect(mocks.call).toHaveBeenCalledTimes(4)
     const abort = new AbortController()
     const cancelled = searchAssistantWeb('cancel this queued query', 1, abort.signal).catch((error) => error)
     abort.abort(new Error('user stopped'))
     expect(await cancelled).toMatchObject({ message: 'user stopped' })
     // Cancellation returns promptly, and the queued callback is skipped later.
     release()
+    await vi.advanceTimersByTimeAsync(1000)
     await Promise.all(running)
     expect(mocks.call).toHaveBeenCalledTimes(4)
   })
@@ -87,9 +97,12 @@ describe('lazy public search', () => {
       await item.options.fetch(item.url, {})
       throw Object.assign(new Error('limited'), { code: 429 })
     })
-    const results = await Promise.allSettled(Array.from({ length: 16 }, (_, i) => searchAssistantWeb(`query ${i}`, 1)))
-    expect(results.every((result) => result.status === 'rejected')).toBe(true)
-    expect(mocks.connect.mock.calls.length).toBeLessThanOrEqual(4)
+    const results = await Promise.all(Array.from({ length: 29 }, (_, i) => searchAssistantWeb(`query ${i}`, 1)))
+    expect(results.every((result) => result && 'status' in result && result.status === 'unavailable')).toBe(true)
+    expect(
+      results.filter((result) => result && 'network_attempted' in result && result.network_attempted)
+    ).toHaveLength(1)
+    expect(mocks.connect).toHaveBeenCalledOnce()
     expect(mocks.call).not.toHaveBeenCalled()
   })
 
@@ -102,7 +115,7 @@ describe('lazy public search', () => {
       undefined,
       expect.objectContaining({ timeout: 20_000 })
     )
-    expect(result.sources).toEqual([
+    expect(result && 'sources' in result && result.sources).toEqual([
       expect.objectContaining({ title: 'Policy', url: 'https://example.org/policy', published: '2026-10-01' })
     ])
     expect(mocks.transports[0].url.href).toBe('https://mcp.exa.ai/mcp?tools=web_search_exa')
@@ -137,9 +150,9 @@ describe('lazy public search', () => {
     const { searchAssistantWeb } = await import('../assistantWebSearch')
     mocks.call.mockResolvedValue({ content: [{ type: 'text', text: 'x'.repeat(50_000) }] })
     const result = await searchAssistantWeb('q', 1)
-    expect(result.result_text).toHaveLength(24_000)
-    expect(result.truncated).toBe(true)
-    expect(result.sources).toEqual([])
+    expect(result && 'result_text' in result && result.result_text).toHaveLength(24_000)
+    expect(result && 'truncated' in result && result.truncated).toBe(true)
+    expect(result && 'sources' in result && result.sources).toEqual([])
   })
   it('covers initialization with the total timeout and supports cancellation', async () => {
     vi.useFakeTimers()
@@ -165,9 +178,20 @@ describe('lazy public search', () => {
       await item.options.fetch(item.url, {})
       throw Object.assign(new Error('limited'), { code: 429 })
     })
-    await expect(searchAssistantWeb('q', 1)).rejects.toThrow('429')
-    await expect(searchAssistantWeb('q', 1)).rejects.toThrow('rate limited')
+    await expect(searchAssistantWeb('q', 1)).resolves.toMatchObject({
+      status: 'unavailable',
+      reason: 'rate_limit',
+      executed: false
+    })
+    await expect(searchAssistantWeb('q', 1)).resolves.toMatchObject({ status: 'unavailable', automatic_retry: false })
     expect(fetcher).toHaveBeenCalledOnce()
     expect(fetcher.mock.calls[0][1]).toMatchObject({ redirect: 'error' })
+  })
+  it('reuses a recent identical public search without resending the query', async () => {
+    const { searchAssistantWeb } = await import('../assistantWebSearch')
+    await searchAssistantWeb('public policy', 3)
+    const result = await searchAssistantWeb('public   policy', 3)
+    expect(result).toMatchObject({ cached: true })
+    expect(mocks.call).toHaveBeenCalledOnce()
   })
 })

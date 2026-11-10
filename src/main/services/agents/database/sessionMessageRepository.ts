@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 
 import { loggerService } from '@logger'
-import { DEFAULT_OPENCODE_AGENT_ID } from '@shared/config/agents'
+import { DEFAULT_DSH_AGENT_ID, isNewAssistantAgentId } from '@shared/config/agents'
 import type {
   AgentMessageAssistantPersistPayload,
   AgentMessagePersistExchangePayload,
@@ -12,11 +12,12 @@ import type {
 } from '@types'
 import { and, asc, eq, sql } from 'drizzle-orm'
 
+import { assertDshPreviewUnlocked } from '../../dshPreview/access'
 import { BaseService } from '../BaseService'
 import { repairInterruptedHistory } from '../services/interruptedHistory'
 import { hasSessionActivity } from '../services/sessionActivity'
 import type { InsertSessionMessageRow, SessionMessageRow } from './schema'
-import { sessionMessagesTable } from './schema'
+import { sessionMessagesTable, sessionsTable } from './schema'
 
 const logger = loggerService.withContext('AgentMessageRepository')
 const applicationStartedAt = Date.now()
@@ -41,6 +42,18 @@ class AgentMessageRepository extends BaseService {
     }
 
     return AgentMessageRepository.instance
+  }
+
+  private async assertSessionAccess(sessionId: string): Promise<void> {
+    // IPC carries a session ID and untrusted message payloads. Authorization
+    // follows the stored owner, never a renderer-supplied assistantId.
+    const database = await this.getDatabase()
+    const [session] = await database
+      .select({ agentId: sessionsTable.agent_id })
+      .from(sessionsTable)
+      .where(eq(sessionsTable.id, sessionId))
+      .limit(1)
+    if (session?.agentId === DEFAULT_DSH_AGENT_ID) assertDshPreviewUnlocked()
   }
 
   private serializeMessage(payload: AgentPersistedMessage): string {
@@ -110,6 +123,7 @@ class AgentMessageRepository extends BaseService {
     params: PersistUserMessageParams | PersistAssistantMessageParams
   ): Promise<AgentSessionMessageEntity> {
     const { sessionId, agentSessionId = '', payload, metadata, createdAt } = params
+    await this.assertSessionAccess(sessionId)
 
     if (!payload?.message?.role) {
       throw new Error('Message payload missing role')
@@ -124,7 +138,7 @@ class AgentMessageRepository extends BaseService {
     // Provenance, not a new DB field. Fresh pending messages must not be mistaken
     // for abandoned history when the machine's wall clock changes.
     const serializedPayload = this.serializeMessage(
-      payload.message.assistantId === DEFAULT_OPENCODE_AGENT_ID && payload.message.role === 'assistant'
+      isNewAssistantAgentId(payload.message.assistantId) && payload.message.role === 'assistant'
         ? {
             ...payload,
             message: {
@@ -214,6 +228,7 @@ class AgentMessageRepository extends BaseService {
 
   async getSessionHistory(sessionId: string): Promise<AgentPersistedMessage[]> {
     try {
+      await this.assertSessionAccess(sessionId)
       const database = await this.getDatabase()
       const rows = await database
         .select()
@@ -228,7 +243,7 @@ class AgentMessageRepository extends BaseService {
         if (deserialized?.content) {
           const original = deserialized.content as AgentPersistedMessage
           const repaired =
-            original.message?.assistantId === DEFAULT_OPENCODE_AGENT_ID && !hasSessionActivity(sessionId)
+            isNewAssistantAgentId(original.message?.assistantId) && !hasSessionActivity(sessionId)
               ? repairInterruptedHistory(original, applicationStartedAt, applicationRunId)
               : original
           if (repaired !== original) {

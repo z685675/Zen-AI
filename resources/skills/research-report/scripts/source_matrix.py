@@ -27,6 +27,10 @@ TRACKING_QUERY_KEYS = {"fbclid", "gclid", "mc_cid", "mc_eid", "ref", "source"}
 VALID_CONFIDENCE = {"high", "medium", "low", "unknown"}
 
 
+def normalized_doi(value: str) -> str:
+    return re.sub(r"^(?:https?://(?:dx\.)?doi\.org/|doi:\s*)", "", value.strip(), flags=re.IGNORECASE).lower()
+
+
 def read_text(path: str) -> str:
     return sys.stdin.read() if path == "-" else Path(path).read_text(encoding="utf-8-sig")
 
@@ -119,6 +123,8 @@ def normalize_source(item: dict[str, Any], index: int) -> dict[str, Any]:
         "title": title,
         "publisher": str(item.get("publisher") or source_title(url)).strip() or None,
         "url": url or None,
+        "doi": normalized_doi(str(item.get("doi") or "")) or None,
+        "evidence_level": item.get("evidence_level"),
         "date": str(item.get("date") or item.get("published") or "").strip() or None,
         "supports": normalize_supports(item),
         "confidence": confidence,
@@ -253,11 +259,28 @@ def build_matrix(
     if duplicate_urls:
         issue(f"Duplicate source URLs found after normalization: {len(duplicate_urls)}.")
 
-    unique_urls = set(valid_direct_urls)
+    dois = [source["doi"] for source in sources if source.get("doi")]
+    if any(not re.fullmatch(r"10\.\d{4,9}/\S+", doi) for doi in dois):
+        issue("Invalid DOI identifiers; verify source metadata instead of inventing identifiers.")
+    duplicate_dois = [doi for doi, count in Counter(dois).items() if count > 1]
+    if duplicate_dois:
+        issue(f"Duplicate DOI sources found across URL aliases: {len(duplicate_dois)}.")
+
+    metadata_urls = {canonicalize_url(s["url"]) for s in sources if s.get("evidence_level") == "metadata" and s.get("url")}
+    unique_urls = {url for url in valid_direct_urls if url not in metadata_urls}
+    source_dois = {}
+    for source in sources:
+        if not source.get("url") or not source.get("doi") or not is_valid_web_url(source["url"]):
+            continue
+        url = canonicalize_url(source["url"])
+        if url in source_dois and source_dois[url] != source["doi"]:
+            issue("Conflicting DOI identifiers for one source URL; verify metadata before merging.")
+        source_dois[url] = source["doi"]
+    unique_sources = {f"doi:{source_dois[url]}" if source_dois.get(url) else url for url in unique_urls}
     domains = [source_host(url) for url in unique_urls if source_host(url)]
     domain_counts = Counter(domains)
-    if len(unique_urls) < min_sources:
-        issue(f"Only {len(unique_urls)} unique direct sources; strict minimum is {min_sources}.")
+    if len(unique_sources) < min_sources:
+        issue(f"Only {len(unique_sources)} unique direct sources; strict minimum is {min_sources}.")
     if len(domain_counts) < min_domains:
         issue(f"Only {len(domain_counts)} source domains; strict minimum is {min_domains}.")
     if domains:
@@ -306,7 +329,10 @@ def build_matrix(
 
     return {
         "source_count": len(sources),
-        "unique_direct_source_count": len(unique_urls),
+        "evidence_level_counts": dict(Counter(s.get("evidence_level") or "unspecified" for s in sources)),
+        "metadata_candidate_count": sum(s.get("evidence_level") == "metadata" for s in sources),
+        "unique_direct_source_count": len(unique_sources),
+        "unique_url_count": len(unique_urls),
         "domain_count": len(domain_counts),
         "errors": errors,
         "warnings": warnings,

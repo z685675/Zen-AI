@@ -11,6 +11,7 @@ import {
 } from '@shared/utils/modelDailyQuotaTurn'
 
 import { OpenCodeDailyQuota } from './dailyQuota'
+import { ToolArgumentAuditScope, type ToolArgumentWireAudit } from './toolArgumentAudit'
 import { ToolInputProgress } from './toolInputProgress'
 import { OpenCodeUsageObserver } from './usageObservation'
 
@@ -28,6 +29,9 @@ export async function createOpenCodeGateway(baseURL: string, record: TransportEv
   const active = new Set<AbortController>()
   const quota = dailyModel ? new OpenCodeDailyQuota(baseURL, dailyModel) : undefined
   let operationId: string | undefined
+  const newAudit = (id: string | undefined): ToolArgumentAuditScope =>
+    new ToolArgumentAuditScope((event, details) => emit(id, event, details))
+  let audit: ToolArgumentAuditScope
   let taskId = `task_${randomUUID()}`
   const emit = (id: string | undefined, event: string, details: Record<string, unknown>) => {
     try {
@@ -36,6 +40,7 @@ export async function createOpenCodeGateway(baseURL: string, record: TransportEv
       /* Diagnostic failures never break generation. */
     }
   }
+  audit = newAudit(undefined)
   const server = createServer(async (req, res) => {
     if (req.headers['x-zen-runtime-token'] !== token) {
       res.writeHead(401).end()
@@ -45,6 +50,7 @@ export async function createOpenCodeGateway(baseURL: string, record: TransportEv
     active.add(controller)
     const id = operationId
     const transportRequestId = randomUUID()
+    const toolAudit = audit.wire(transportRequestId)
     const transport = (event: string, details: Record<string, unknown>) =>
       emit(id, event, { transportRequestId, ...details })
     const requestTaskId = taskId
@@ -105,15 +111,17 @@ export async function createOpenCodeGateway(baseURL: string, record: TransportEv
         headers,
         ...(req.method === 'GET' || req.method === 'HEAD'
           ? {}
-          : { body: Readable.toWeb(boundedBody(req)), duplex: 'half' as const }),
+          : { body: Readable.toWeb(boundedBody(req, toolAudit)), duplex: 'half' as const }),
         signal: controller.signal,
         redirect: 'manual'
       } as RequestInit)
       const requestId = response.headers.get('x-oneapi-request-id') || response.headers.get('x-request-id')
+      toolAudit.headers(requestId)
       upstreamStatus = response.status
       const toolInput = new ToolInputProgress()
       usageObserver = new OpenCodeUsageObserver(response.headers.get('content-type') ?? '', (body) => {
         if (!response.ok) return
+        toolAudit.frame(body)
         const characters = toolInput.characters(body)
         if (!characters) return
         toolInputCharacters += characters
@@ -201,12 +209,11 @@ export async function createOpenCodeGateway(baseURL: string, record: TransportEv
       else res.destroy()
     } finally {
       try {
-        if (phase === 'provider')
-          emit(
-            id,
-            'usage-observed',
-            usageObserver?.finish(bodyComplete) ?? { usage: {}, format: 'unknown', complete: false }
-          )
+        if (phase === 'provider') {
+          const observation = usageObserver?.finish(bodyComplete) ?? { usage: {}, format: 'unknown', complete: false }
+          toolAudit.finish(observation.complete)
+          emit(id, 'usage-observed', observation)
+        }
       } catch {
         /* Observations must not interrupt transport cleanup. */
       }
@@ -220,7 +227,12 @@ export async function createOpenCodeGateway(baseURL: string, record: TransportEv
     baseURL: `http://127.0.0.1:${port}${target.pathname.replace(/\/$/, '')}`,
     token,
     finishTurn: () => quota?.finish() ?? Promise.resolve(),
+    observeNativeToolArguments: (toolCallId: string, toolName: string, input: unknown) =>
+      audit.native(toolCallId, toolName, input),
+    observeExecutionArguments: (toolName: string, input: unknown, requestId: string) =>
+      audit.execution(toolName, input, requestId),
     setOperation: (value: string | undefined) => {
+      if (operationId !== value) audit = newAudit(value)
       operationId = value
       taskId = value || `task_${randomUUID()}`
     },
@@ -233,14 +245,21 @@ export async function createOpenCodeGateway(baseURL: string, record: TransportEv
   }
 }
 
-function boundedBody(req: IncomingMessage): Readable {
+function boundedBody(req: IncomingMessage, audit: ToolArgumentWireAudit): Readable {
   return Readable.from(
     (async function* () {
       let bytes = 0
-      for await (const chunk of req) {
-        bytes += chunk.length
-        if (bytes > 64 * 1024 * 1024) throw new Error('New assistant request exceeded 64 MiB safety limit')
-        yield chunk
+      let complete = false
+      try {
+        for await (const chunk of req) {
+          bytes += chunk.length
+          if (bytes > 64 * 1024 * 1024) throw new Error('New assistant request exceeded 64 MiB safety limit')
+          audit.request(chunk)
+          yield chunk
+        }
+        complete = true
+      } finally {
+        audit.requestFinished(complete)
       }
     })()
   )

@@ -1,6 +1,8 @@
 import { ensureOpenCodeAgent } from '@main/services/agents/services/opencode/builtin'
+import { assertDshPreviewUnlocked } from '@main/services/dshPreview/access'
+import { ensureDshPreviewAgent } from '@main/services/dshPreview/builtin'
 import { loggerService } from '@main/services/LoggerService'
-import { DEFAULT_OPENCODE_AGENT_ID } from '@shared/config/agents'
+import { DEFAULT_DSH_AGENT_ID, DEFAULT_OPENCODE_AGENT_ID } from '@shared/config/agents'
 import cors from 'cors'
 import express from 'express'
 import { v4 as uuidv4 } from 'uuid'
@@ -167,7 +169,13 @@ apiRouter.use(
   '/new-assistant/agents',
   async (req, res, next) => {
     res.locals.agentWorkspace = 'opencode'
-    const resource = req.path.split('/')[1]
+    let resource: string
+    try {
+      resource = decodeURIComponent(req.path.split('/')[1] ?? '')
+    } catch {
+      res.sendStatus(400)
+      return
+    }
     if (resource && !['sessions', 'reorder', DEFAULT_OPENCODE_AGENT_ID].includes(resource)) {
       res.status(404).json({
         error: {
@@ -193,7 +201,55 @@ apiRouter.use(
   },
   agentsRoutes
 )
-apiRouter.use('/agents', agentsRoutes)
+apiRouter.use(
+  '/dsh-preview/agents',
+  async (req, res, next) => {
+    try {
+      assertDshPreviewUnlocked()
+      res.locals.agentWorkspace = 'dsh'
+      const resource = decodeURIComponent(req.path.split('/')[1] ?? '')
+      if (resource && !['sessions', DEFAULT_DSH_AGENT_ID].includes(resource)) {
+        res.status(404).json({ error: { code: 'workspace_mismatch', message: 'Workspace not found' } })
+        return
+      }
+      if (req.method === 'POST' && req.path === '/') {
+        res.status(403).json({ error: { code: 'managed_agent', message: 'Managed assistant' } })
+        return
+      }
+      if (req.method === 'GET' && req.path === '/') await ensureDshPreviewAgent()
+      next()
+    } catch (error) {
+      if ((error as { code?: string }).code === 'internal_testing_locked') {
+        res.status(403).json({ error: { code: 'internal_testing_locked', message: 'Internal testing is locked' } })
+        return
+      }
+      if (error instanceof URIError) {
+        res.sendStatus(400)
+        return
+      }
+      next(error)
+    }
+  },
+  agentsRoutes
+)
+apiRouter.use(
+  '/agents',
+  (req, res, next) => {
+    let resource: string
+    try {
+      resource = decodeURIComponent(req.path.split('/')[1] ?? '')
+    } catch {
+      res.sendStatus(400)
+      return
+    }
+    if (resource === DEFAULT_DSH_AGENT_ID) {
+      res.status(404).json({ error: { code: 'workspace_mismatch', message: 'Workspace not found' } })
+      return
+    }
+    next()
+  },
+  agentsRoutes
+)
 apiRouter.use('/channels', channelsRouter)
 apiRouter.use('/tasks', tasksRouter)
 apiRouter.use('/claw', clawMcpRoutes)

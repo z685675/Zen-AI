@@ -23,6 +23,7 @@ export const QuickPanelProvider: React.FC<React.PropsWithChildren> = ({ children
   const [multiple, setMultiple] = useState<boolean>(false)
   const [manageListExternally, setManageListExternally] = useState<boolean>(false)
   const [triggerInfo, setTriggerInfo] = useState<QuickPanelTriggerInfo | undefined>()
+  const [anchorElement, setAnchorElement] = useState<HTMLElement | undefined>()
   const [filterFn, setFilterFn] = useState<QuickPanelFilterFn | undefined>()
   const [sortFn, setSortFn] = useState<QuickPanelSortFn | undefined>()
   const [onClose, setOnClose] = useState<((Options: Partial<QuickPanelCallBackOptions>) => void) | undefined>()
@@ -74,6 +75,7 @@ export const QuickPanelProvider: React.FC<React.PropsWithChildren> = ({ children
     setManageListExternally(options.manageListExternally ?? false)
     setSymbol(options.symbol)
     setTriggerInfo(options.triggerInfo)
+    setAnchorElement(options.anchorElement)
 
     setOnClose(() => options.onClose)
     setBeforeAction(() => options.beforeAction)
@@ -103,6 +105,7 @@ export const QuickPanelProvider: React.FC<React.PropsWithChildren> = ({ children
         setTitle(undefined)
         setSymbol('')
         setTriggerInfo(undefined)
+        setAnchorElement(undefined)
         setManageListExternally(false)
       }, 200)
     },
@@ -135,6 +138,7 @@ export const QuickPanelProvider: React.FC<React.PropsWithChildren> = ({ children
       multiple,
       manageListExternally,
       triggerInfo,
+      anchorElement,
       lastCloseAction,
       filterFn,
       sortFn,
@@ -157,6 +161,7 @@ export const QuickPanelProvider: React.FC<React.PropsWithChildren> = ({ children
       multiple,
       manageListExternally,
       triggerInfo,
+      anchorElement,
       lastCloseAction,
       filterFn,
       sortFn,

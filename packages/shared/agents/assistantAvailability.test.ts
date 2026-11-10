@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
 
-import { canCreateAgentSession, DEFAULT_FUSION_AGENT_ID, DEFAULT_OPENCODE_AGENT_ID } from '../config/agents'
+import {
+  canCreateAgentSession,
+  DEFAULT_DSH_AGENT_ID,
+  DEFAULT_FUSION_AGENT_ID,
+  DEFAULT_OPENCODE_AGENT_ID
+} from '../config/agents'
 import {
   assertAssistantExecutionAllowed,
   isAssistantExecutionAllowed,
@@ -16,9 +21,12 @@ describe('assistant execution product boundary', () => {
     )
   })
 
-  it('allows the new assistant without changing its runtime selection', () => {
-    expect(isAssistantExecutionAllowed(DEFAULT_OPENCODE_AGENT_ID)).toBe(true)
-    expect(canCreateAgentSession(DEFAULT_OPENCODE_AGENT_ID)).toBe(true)
-    expect(() => assertAssistantExecutionAllowed(DEFAULT_OPENCODE_AGENT_ID)).not.toThrow()
-  })
+  it.each([DEFAULT_OPENCODE_AGENT_ID, DEFAULT_DSH_AGENT_ID])(
+    'allows the native assistant identity %s without changing runtime selection or the main-process preview gate',
+    (agentId) => {
+      expect(isAssistantExecutionAllowed(agentId)).toBe(true)
+      expect(canCreateAgentSession(agentId)).toBe(true)
+      expect(() => assertAssistantExecutionAllowed(agentId)).not.toThrow()
+    }
+  )
 })

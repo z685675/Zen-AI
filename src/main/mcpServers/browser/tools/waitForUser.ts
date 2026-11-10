@@ -13,7 +13,13 @@ export const WaitForUserSchema = z.object({
     .string()
     .optional()
     .describe('Short reason for the handoff, e.g. login_required, captcha, authorization, confirmation.'),
-  timeout: z.number().optional().describe('How long to wait in milliseconds. Default: 15 minutes.'),
+  timeout: z
+    .number()
+    .finite()
+    .positive()
+    .max(30 * 60_000)
+    .optional()
+    .describe('How long to wait in milliseconds. Default: 15 minutes. Verification handoffs allow at least 5 minutes.'),
   privateMode: z
     .boolean()
     .optional()
@@ -56,14 +62,28 @@ export const waitForUserToolDefinition = {
 export async function handleWaitForUser(controller: CdpBrowserController, args: unknown) {
   try {
     const { message, reason, timeout, privateMode, tabId } = WaitForUserSchema.parse(args)
-    const result = await controller.waitForUser(message, reason, timeout, privateMode ?? false, tabId)
+    const handoff = controller.getAutomationHandoff(privateMode ?? false)
+    const waitMs = reason || handoff ? Math.max(timeout ?? 15 * 60_000, 5 * 60_000) : timeout
+    const result = await controller.waitForUser(
+      message,
+      handoff?.userAction.reason ?? reason,
+      waitMs,
+      privateMode ?? false,
+      handoff?.tabId ?? tabId
+    )
     return successResponse(JSON.stringify(result))
   } catch (error) {
     logger.error('Wait for user failed', { error })
     const message = error instanceof Error ? error.message : String(error)
     if (message.toLowerCase().includes('timed out waiting for user')) {
-      return errorResponse(
-        'Browser handoff timed out. Please start the task again, or reopen the page and complete login, verification, or confirmation before continuing.'
+      return successResponse(
+        JSON.stringify({
+          status: 'timed_out',
+          service: 'Zen browser handoff',
+          executed: false,
+          guidance:
+            'The user has not completed browser verification. This page was not retrieved. Continue independent work using accessible sources, or ask the user to finish verification and continue later. Do not restart the whole task or repeat the challenge automatically.'
+        })
       )
     }
     return errorResponse(message)

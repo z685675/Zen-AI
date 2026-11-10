@@ -7,7 +7,7 @@ import { configManager } from '@main/services/ConfigManager'
 import { getCachedModelAvailability } from '@main/services/ModelAvailabilityService'
 import { toAsarUnpackedPath } from '@main/utils'
 import { parsePluginMetadata, parseSkillMetadata } from '@main/utils/markdownParser'
-import { DEFAULT_OPENCODE_AGENT_ID } from '@shared/config/agents'
+import { DEFAULT_DSH_AGENT_ID, DEFAULT_OPENCODE_AGENT_ID, isNewAssistantAgentId } from '@shared/config/agents'
 import { isZenManagedApiHost } from '@shared/config/zenProvider'
 import type { AgentPersistedMessage, SlashCommand, UpdateSessionResponse } from '@types'
 import {
@@ -28,6 +28,7 @@ import {
   markAgentDefaultPolicyApplied,
   normalizeAgentModelIdentifier
 } from '../../../../renderer/src/config/agentModelPolicy'
+import { assertDshPreviewUnlocked } from '../../dshPreview/access'
 import { remoteModelPolicyService } from '../../RemoteModelPolicyService'
 import { BaseService } from '../BaseService'
 import {
@@ -49,8 +50,7 @@ import {
   rememberPreferredModel,
   resolveManagedSessionModel
 } from './managedModelRecovery'
-import { assertSessionNotContinuing } from './sessionActivity'
-import { hasSessionActivity } from './sessionActivity'
+import { acquireSessionActivity, assertSessionNotContinuing, hasSessionActivity } from './sessionActivity'
 import { haveSameAccessiblePaths } from './sessionWorkspace'
 
 const logger = loggerService.withContext('SessionService')
@@ -457,7 +457,7 @@ export class SessionService extends BaseService {
    * Override BaseService.listSlashCommands to merge builtin and plugin commands
    */
   async listSlashCommands(agentType: string, agentId?: string): Promise<SlashCommand[]> {
-    if (agentId === DEFAULT_OPENCODE_AGENT_ID) return []
+    if (isNewAssistantAgentId(agentId)) return []
     const commandMap = new Map<string, SlashCommand>()
     const knownDescriptions = this.getKnownSlashCommandDescriptions()
 
@@ -537,6 +537,7 @@ export class SessionService extends BaseService {
     req: Partial<CreateSessionRequest> = {},
     options?: { archived?: boolean }
   ): Promise<GetAgentSessionResponse | null> {
+    if (agentId === DEFAULT_DSH_AGENT_ID) assertDshPreviewUnlocked()
     // Validate agent exists - we'll need to import AgentService for this check
     // For now, we'll skip this validation to avoid circular dependencies
     // The database foreign key constraint will handle this
@@ -621,6 +622,7 @@ export class SessionService extends BaseService {
   }
 
   async getSession(agentId: string, id: string): Promise<GetAgentSessionResponse | null> {
+    if (agentId === DEFAULT_DSH_AGENT_ID) assertDshPreviewUnlocked()
     const database = await this.getDatabase()
     const result = await database
       .select()
@@ -667,6 +669,7 @@ export class SessionService extends BaseService {
     agentId?: string,
     options: ListOptions = {}
   ): Promise<{ sessions: AgentSessionEntity[]; total: number }> {
+    if (agentId === DEFAULT_DSH_AGENT_ID || options.workspace === 'dsh') assertDshPreviewUnlocked()
     // Build where conditions
     const whereConditions: SQL[] = []
     if (agentId) {
@@ -674,8 +677,13 @@ export class SessionService extends BaseService {
     }
     if (options.workspace === 'opencode') {
       whereConditions.push(eq(sessionsTable.agent_id, DEFAULT_OPENCODE_AGENT_ID))
+    } else if (options.workspace === 'dsh') {
+      whereConditions.push(eq(sessionsTable.agent_id, DEFAULT_DSH_AGENT_ID))
     } else if (options.workspace === 'legacy') {
       whereConditions.push(sql`${sessionsTable.agent_id} <> ${DEFAULT_OPENCODE_AGENT_ID}`)
+      whereConditions.push(sql`${sessionsTable.agent_id} <> ${DEFAULT_DSH_AGENT_ID}`)
+    } else if (agentId !== DEFAULT_DSH_AGENT_ID) {
+      whereConditions.push(sql`${sessionsTable.agent_id} <> ${DEFAULT_DSH_AGENT_ID}`)
     }
     this.appendArchivedFilter(whereConditions, options.archived)
 
@@ -1030,8 +1038,29 @@ export class SessionService extends BaseService {
   }
 
   async resetOpenCodeMemory(agentId: string, id: string): Promise<void> {
-    if (agentId !== DEFAULT_OPENCODE_AGENT_ID || !(await this.sessionExists(agentId, id)))
+    if (!isNewAssistantAgentId(agentId) || !(await this.sessionExists(agentId, id)))
       throw new Error('New assistant session not found')
+    if (agentId === DEFAULT_DSH_AGENT_ID) {
+      assertDshPreviewUnlocked()
+      const release = acquireSessionActivity(id, 'continuation')
+      try {
+        const { readDshSessionHistory, replaceDshSessionHistory, resetDshSession } = await import(
+          '../../dshPreview/runtime'
+        )
+        const previous = await readDshSessionHistory(id)
+        await resetDshSession(id)
+        try {
+          const database = await this.getDatabase()
+          await database.delete(sessionMessagesTable).where(eq(sessionMessagesTable.session_id, id))
+        } catch (error) {
+          await replaceDshSessionHistory(id, previous.events)
+          throw error
+        }
+      } finally {
+        release()
+      }
+      return
+    }
     await invalidateAutomationSession(id)
     const database = await this.getDatabase()
     const { archiveOpenCodeSession } = await import('./opencode/process')
@@ -1046,7 +1075,7 @@ export class SessionService extends BaseService {
     messageId: string,
     action: 'retry' | 'delete' | 'fork'
   ): Promise<GetAgentSessionResponse> {
-    if (agentId !== DEFAULT_OPENCODE_AGENT_ID) throw new Error('Not a new assistant session')
+    if (!isNewAssistantAgentId(agentId)) throw new Error('Not a new assistant session')
     const session = await this.getSession(agentId, id)
     if (!session) throw new Error('Session not found')
     const database = await this.getDatabase()
@@ -1059,8 +1088,10 @@ export class SessionService extends BaseService {
     if (display.some((item) => !item.message?.id || !Array.isArray(item.blocks)))
       throw new Error('Display history is invalid')
     if (!display.some((item) => item.message.id === messageId)) throw new Error('Message not found')
-    const { editNativeHistory } = await import('./opencode/history')
-    const { copyOpenCodeHistory } = await import('./opencode/process')
+    const dsh = agentId === DEFAULT_DSH_AGENT_ID
+    const { editNativeHistory } = dsh
+      ? { editNativeHistory: (await import('./dsh/history')).editDshNativeHistory }
+      : await import('./opencode/history')
     let target = session
     if (action === 'fork') {
       const created = await this.createSession(agentId, {
@@ -1072,7 +1103,20 @@ export class SessionService extends BaseService {
       target = created
     }
     try {
-      if (action === 'fork') await copyOpenCodeHistory(id, target.id)
+      if (action === 'fork') {
+        if (dsh) {
+          const { forkDshSession } = await import('../../dshPreview/runtime')
+          const release = acquireSessionActivity(id, 'continuation')
+          try {
+            await forkDshSession(id, target.id)
+          } finally {
+            release()
+          }
+        } else {
+          const { copyOpenCodeHistory } = await import('./opencode/process')
+          await copyOpenCodeHistory(id, target.id)
+        }
+      }
       await editNativeHistory(target, display, messageId, action, async (items, nativeId) => {
         const idMap = new Map<string, string>()
         if (action === 'fork') {
@@ -1116,6 +1160,7 @@ export class SessionService extends BaseService {
   }
 
   async deleteSession(agentId: string, id: string): Promise<boolean> {
+    if (agentId === DEFAULT_DSH_AGENT_ID) assertDshPreviewUnlocked()
     assertSessionNotContinuing(id)
     await invalidateAutomationSession(id)
     const database = await this.getDatabase()
@@ -1124,6 +1169,12 @@ export class SessionService extends BaseService {
         .delete(sessionsTable)
         .where(and(eq(sessionsTable.id, id), eq(sessionsTable.agent_id, agentId)))
       return result.rowsAffected > 0
+    }
+    if (agentId === DEFAULT_DSH_AGENT_ID && (await this.sessionExists(agentId, id))) {
+      if (hasSessionActivity(id)) throw new Error('Stop the task before deleting its session')
+      const { deleteDshSession } = await import('../../dshPreview/runtime')
+      await deleteDshSession(id)
+      return remove()
     }
     if (agentId === DEFAULT_OPENCODE_AGENT_ID && (await this.sessionExists(agentId, id))) {
       const { archiveOpenCodeSession } = await import('./opencode/process')

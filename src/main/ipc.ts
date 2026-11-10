@@ -67,6 +67,8 @@ import { codeToolsService } from './services/CodeToolsService'
 import { ConfigKeys, configManager } from './services/ConfigManager'
 import CopilotService from './services/CopilotService'
 import { collectMainDiagnostic } from './services/DiagnosticEvidenceService'
+import { registerDshPreviewIpc } from './services/dshPreview/ipc'
+import { stopAllDshRuntimes } from './services/dshPreview/runtime'
 import DxtService from './services/DxtService'
 import { ExportService } from './services/ExportService'
 import { externalAppsService } from './services/ExternalAppsService'
@@ -157,6 +159,7 @@ function getHardwareArch() {
 }
 
 export async function registerIpc(mainWindow: BrowserWindow, app: Electron.App) {
+  registerDshPreviewIpc(mainWindow)
   const imageCanvas = new ImageCanvasService(mainWindow)
   let canvasControl = Promise.resolve<unknown>(undefined)
   const studioSender = (event: Electron.IpcMainInvokeEvent) =>
@@ -582,6 +585,7 @@ export async function registerIpc(mainWindow: BrowserWindow, app: Electron.App) 
     app.relaunch(options)
     markRendererDataCommitted(event.sender.id)
     stopOpenCodeProcesses()
+    await stopAllDshRuntimes()
     app.exit(0)
   })
 

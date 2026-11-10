@@ -1,7 +1,7 @@
 import i18n from '@renderer/i18n'
 import store from '@renderer/store'
 import type { Message } from '@renderer/types/newMessage'
-import { DEFAULT_OPENCODE_AGENT_ID } from '@shared/config/agents'
+import { DEFAULT_DSH_AGENT_ID, isNewAssistantAgentId } from '@shared/config/agents'
 
 import { NotificationService } from './NotificationService'
 
@@ -11,7 +11,8 @@ export const ASSISTANT_NOTIFICATION_OPEN = 'zen-ai:open-assistant-notification'
 export function readAssistantNotificationTarget(value: unknown): AssistantNotificationTarget | undefined {
   const target = value as Partial<AssistantNotificationTarget> | undefined
   if (
-    target?.agentId !== DEFAULT_OPENCODE_AGENT_ID ||
+    !target?.agentId ||
+    !isNewAssistantAgentId(target.agentId) ||
     typeof target.sessionId !== 'string' ||
     !/^[a-zA-Z0-9_-]{1,128}$/.test(target.sessionId)
   )
@@ -31,7 +32,8 @@ export function isViewingAssistantConversation(target: AssistantNotificationTarg
   if (!chat) return false
   return (
     document.hasFocus() &&
-    window.location.hash.split('?')[0] === '#/new-assistant' &&
+    window.location.hash.split('?')[0] ===
+      (target.agentId === DEFAULT_DSH_AGENT_ID ? '#/internal-assistant' : '#/new-assistant') &&
     chat.activeAgentId === target.agentId &&
     chat.activeSessionIdMap[target.agentId] === target.sessionId
   )
@@ -74,12 +76,10 @@ export function permissionNotificationTarget(toolCallId?: string): AssistantNoti
   const sessionId = toolCallId?.split(':')[0]
   if (!sessionId) return
   const messages = Object.values(store.getState().messages.entities) as Array<Message | undefined>
-  if (
-    !messages.some(
-      (message) =>
-        message?.assistantId === DEFAULT_OPENCODE_AGENT_ID && message.topicId === `agent-session:${sessionId}`
-    )
+  const message = messages.find(
+    (message) =>
+      message && isNewAssistantAgentId(message.assistantId) && message.topicId === `agent-session:${sessionId}`
   )
-    return
-  return readAssistantNotificationTarget({ agentId: DEFAULT_OPENCODE_AGENT_ID, sessionId })
+  if (!message) return
+  return readAssistantNotificationTarget({ agentId: message.assistantId, sessionId })
 }

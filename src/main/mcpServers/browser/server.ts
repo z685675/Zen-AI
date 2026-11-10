@@ -4,7 +4,7 @@ import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprot
 
 import { CdpBrowserController } from './controller'
 import { toolDefinitions, toolHandlers } from './tools'
-import { errorResponse } from './tools/utils'
+import { errorResponse, successResponse } from './tools/utils'
 import { logger } from './types'
 
 const servers = new Set<BrowserServer>()
@@ -61,6 +61,10 @@ export class BrowserServer {
       // interrupting a human handoff. UI controls and shutdown remain usable.
       if (!['wait_for_user', 'list_tabs', 'list_downloads', 'wait_for_download'].includes(name)) {
         const privateMode = args && typeof args.privateMode === 'boolean' ? args.privateMode : undefined
+        const handoff =
+          this.controller.getAutomationHandoff(privateMode ?? false) ??
+          (name === 'reset' && privateMode === undefined ? this.controller.getAutomationHandoff(true) : undefined)
+        if (handoff) return successResponse(JSON.stringify(handoff))
         try {
           this.controller.assertAutomationAllowed(privateMode ?? false)
           if (name === 'reset' && privateMode === undefined) this.controller.assertAutomationAllowed(true)
@@ -68,7 +72,22 @@ export class BrowserServer {
           return errorResponse(error instanceof Error ? error : String(error))
         }
       }
-      return handler(this.controller, args)
+      try {
+        const result = await handler(this.controller, args)
+        if (result.isError && JSON.stringify(result.content).includes('Browser is under user control')) {
+          const handoff = this.controller.getAutomationHandoff(args?.privateMode === true)
+          if (handoff) return successResponse(JSON.stringify(handoff))
+        }
+        return result
+      } catch (error) {
+        const privateMode = args && typeof args.privateMode === 'boolean' ? args.privateMode : false
+        const handoff =
+          error instanceof Error && error.message.includes('Browser is under user control')
+            ? this.controller.getAutomationHandoff(privateMode)
+            : undefined
+        if (handoff) return successResponse(JSON.stringify(handoff))
+        throw error
+      }
     })
 
     servers.add(this)

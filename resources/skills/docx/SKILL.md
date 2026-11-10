@@ -40,7 +40,7 @@ Create professional documents with clear structure, readable formatting, and a r
 
 - Read `references/document-patterns.md` for reports, proposals, product plans, project plans, and long-form business documents.
 - Use `scripts/check_document_structure.py` on long drafts before creating DOCX or when the user asks for a professional document.
-- Run `scripts/validate_docx.py` on every generated `.docx` before reporting success.
+- Reuse the generator's completed structural checks. Run `scripts/validate_docx.py` for extra field/TOC checks or documents made by another generator; do not repeat completed checks on unchanged files.
 - Use `scripts/repair_docx.py` only to write a new safe copy after dynamic fields already have cached results.
 - Use `assets/document-templates/` as starting drafts for common document types:
   - `business-report.md`
@@ -48,6 +48,14 @@ Create professional documents with clear structure, readable formatting, and a r
   - `product-plan.md`
 
 ## Document Patterns
+
+### Page requirements and editing
+
+- For an exact page requirement, pass `expected_pages` and `render_validation: "required"` to `create_file` from the first generation. A standalone `<!-- pagebreak -->` line creates a native page break; do not use headings or blank paragraphs to guess pagination. Shorten or redistribute overflowing content without removing required facts.
+- After modifying a working copy, call `mcp__assistant__validate_file` with that exact `working_path` and the required `expected_pages`. It renders the current bytes using the product's installed renderer. Do not call `create_file` to validate an edited DOCX: it builds a new document and does not preserve those edits.
+- A page-count mismatch returns `status: "needs_revision"`, the actual page count, and a new `working_path` without publishing a final file card. Adjust that working file directly, validate it with the same page requirement, then present it only after it passes. Do not regenerate the same document or modify the original.
+- Use the existing render result to target the failed requirement. Keep unrelated content and formatting intact. Do not repeat unchanged generation, guess a LibreOffice path, or improvise Word COM commands. If required rendering is unavailable, disclose that the page count is unverified.
+- For advanced Python edits of imported documents, a paragraph may have no resolved style; guard `paragraph.style` before reading its name. Use managed Python and retain the working copy.
 
 - **Business report**: executive summary, background, findings, analysis, recommendations, next steps.
 - **Proposal**: context, objectives, scope, approach, timeline, deliverables, risks, pricing or resources.
@@ -72,6 +80,10 @@ When using a template asset, replace placeholders and empty table rows with user
 Validate the finished package:
 
 Call `mcp__assistant__python_execute` with `script_path: "<skill-root>/scripts/validate_docx.py"` and `arguments: ["output.docx"]`.
+
+Relative input/output paths resolve from the authorized task workspace, including when running Skill scripts. Use absolute paths unchanged when supplied by the user; do not change the working directory to the Skill folder.
+
+The default rejects visible Markdown; `--no-markdown-literals` is an explicit alias. Do not infer page counts from DOCX cached properties. For an exact page requirement, render the current DOCX with Word or LibreOffice, then pass `arguments: ["output.docx", "--expected-pages", "2", "--rendered-pdf", "rendered-output.pdf"]`. The PDF must be freshly rendered from this exact DOCX. Without that rendering, page validation reports incomplete and fails; never claim the page requirement passed.
 
 Visible Markdown syntax or a probable raw-source dump table is a blocking validation failure. Regenerate through `mcp__assistant__create_file` after correcting the input fields. Use `--allow-markdown-literals` only when the document intentionally teaches or quotes Markdown syntax.
 

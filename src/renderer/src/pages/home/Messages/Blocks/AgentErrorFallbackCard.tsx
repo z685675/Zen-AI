@@ -12,7 +12,7 @@ import { extractAgentSessionIdFromTopicId } from '@renderer/utils/agentSession'
 import { diagnoseClientError } from '@renderer/utils/clientErrorDiagnosis'
 import { classifyError } from '@renderer/utils/errorClassifier'
 import { isReadOnlyLegacySession } from '@renderer/utils/legacyMessageActions'
-import { DEFAULT_OPENCODE_AGENT_ID } from '@shared/config/agents'
+import { isNewAssistantAgentId } from '@shared/config/agents'
 import { Button } from 'antd'
 import { AlertTriangle, ChevronRight, Download, Play, RefreshCw, Wrench, X } from 'lucide-react'
 import React, { useCallback, useMemo, useState } from 'react'
@@ -164,7 +164,7 @@ const AgentErrorFallbackCard: React.FC<Props> = ({ block, message }) => {
         if (store.getState().messages.loadingByTopic[message.topicId] || continuation.submitting) return
         return dispatch(resendMessageThunk(message.topicId, relatedUserMessage, assistantForRetry))
       }
-      if (message.assistantId === DEFAULT_OPENCODE_AGENT_ID) {
+      if (isNewAssistantAgentId(message.assistantId)) {
         window.modal.confirm({
           title: t('agent.errorFallback.retry'),
           content: t('new_assistant.history.retry_notice'),

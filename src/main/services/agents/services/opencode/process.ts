@@ -2,6 +2,7 @@ import { type ChildProcess, spawn } from 'node:child_process'
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import fs from 'node:fs/promises'
 import path from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { isDeepStrictEqual } from 'node:util'
 
 import { loggerService } from '@logger'
@@ -31,6 +32,7 @@ import { resolveOpenCodeExecutable } from './executable'
 import { createOpenCodeGateway } from './gateway'
 import { prepareOpenCodeOfflineConfig } from './offline'
 import { collectRuntimeSecrets, OpenCodeStderr } from './stderr'
+import { getOpenCodeTempDirectory } from './workspace'
 
 export { resolveOpenCodeExecutable } from './executable'
 
@@ -180,48 +182,64 @@ export class OpenCodeProcess {
     this.stage('workspace')
     signal.throwIfAborted()
     await fs.access(this.directory)
+    const productConfig = config as { permission?: Record<string, unknown> }
+    const lightweight = isLightweightConfig(config)
+    const readOnly = !lightweight && productConfig.permission?.edit === 'deny'
+    // Plan must also work in a read-only workspace. Runtime housekeeping stays
+    // in the app's private data directory; only Build needs workspace scratch.
+    const temporaryDirectory = readOnly
+      ? path.join(this.root, 'tmp')
+      : getOpenCodeTempDirectory(this.directory, this.key)
     await Promise.all(
-      ['home', 'config/opencode', 'data', 'cache', 'state'].map((part) =>
-        fs.mkdir(path.join(this.root, part), { recursive: true })
-      )
+      [
+        temporaryDirectory,
+        ...['home', 'config/opencode', 'managed', 'data', 'cache', 'state'].map((part) => path.join(this.root, part))
+      ].map((directory) => fs.mkdir(directory, { recursive: true }))
     )
     signal.throwIfAborted()
     this.stage('offline-resources')
-    await prepareOpenCodeOfflineConfig(
+    const completionPlugin = await prepareOpenCodeOfflineConfig(
       this.root,
       app.isPackaged
         ? path.join(process.resourcesPath, 'opencode-runtime')
         : toAsarUnpackedPath(path.join(getResourcePath(), 'opencode-runtime'))
     )
     this.turnSignal = signal
-    const productConfig = config as { permission?: Record<string, unknown> }
-    const lightweight = isLightweightConfig(config)
     const getTurnSignal = () => this.turnSignal
-    registerAssistantMcpContext(this.key, allowedRoots, {
-      workspace: this.directory,
-      get signal() {
-        return getTurnSignal()
+    registerAssistantMcpContext(
+      this.key,
+      allowedRoots,
+      {
+        workspace: this.directory,
+        temporaryDirectory,
+        get signal() {
+          return getTurnSignal()
+        },
+        readOnly,
+        allowedTools: lightweight
+          ? ['create_file', 'read_document', 'present_files', 'ocr_file', 'web_search']
+          : undefined,
+        readNativeSkills: (requestSignal) => this.client.request('/skill', 'GET', undefined, requestSignal),
+        approveOverwrite: async (file) => {
+          if (productConfig.permission?.edit === 'deny') return false
+          // Automatic execution is not consent to replace an existing user file.
+          const { confirmAssistantFileOverwrite } = await import('./fileApproval')
+          return confirmAssistantFileOverwrite(file, this.turnSignal ?? signal)
+        },
+        onTool: (name, durationMs, failed) =>
+          recordMainDiagnostic(this.diagnosticId, 'runtime', 'product-tool-complete', {
+            runtime: 'opencode',
+            tool: name,
+            durationMs,
+            failed
+          })
       },
-      readOnly: !lightweight && productConfig.permission?.edit === 'deny',
-      allowedTools: lightweight
-        ? ['create_file', 'read_document', 'present_files', 'ocr_file', 'web_search']
-        : undefined,
-      readNativeSkills: (requestSignal) => this.client.request('/skill', 'GET', undefined, requestSignal),
-      approveOverwrite: async (file) => {
-        if (productConfig.permission?.edit === 'deny') return false
-        // Automatic execution is not consent to replace an existing user file.
-        const { confirmAssistantFileOverwrite } = await import('./fileApproval')
-        return confirmAssistantFileOverwrite(file, this.turnSignal ?? signal)
-      },
-      onTool: (name, durationMs, failed) =>
-        recordMainDiagnostic(this.diagnosticId, 'runtime', 'product-tool-complete', {
-          runtime: 'opencode',
-          tool: name,
-          durationMs,
-          failed
-        })
-    })
-    if (!lightweight) registerBrowserMcpContext(this.key)
+      (name, input, requestId) => this.gateway?.observeExecutionArguments(`mcp__assistant__${name}`, input, requestId)
+    )
+    if (!lightweight)
+      registerBrowserMcpContext(this.key, (name, input, requestId) =>
+        this.gateway?.observeExecutionArguments(`mcp__browser__${name}`, input, requestId)
+      )
     const password = randomBytes(32).toString('hex')
     const searchBinary = getRipgrepBinaryPath()
     const env = buildOpenCodeEnvironment(
@@ -229,12 +247,14 @@ export class OpenCodeProcess {
       this.root,
       password,
       await getBinaryPath(),
-      searchBinary ? path.dirname(searchBinary) : undefined
+      searchBinary ? path.dirname(searchBinary) : undefined,
+      temporaryDirectory
     )
     this.recordDiagnostic('search-tool-resolved', {
       bundledSearchAvailable: Boolean(searchBinary)
     })
     const expected = JSON.parse(JSON.stringify(config)) as Record<string, any>
+    expected.plugin = [pathToFileURL(completionPlugin).href]
     const providerOptions = expected.provider[OPENCODE_PROVIDER_ID].options
     const providerHost = providerOptions.baseURL as string
     this.stage('local-gateway')
@@ -291,7 +311,7 @@ export class OpenCodeProcess {
     this.stage('process-spawn')
     const child = spawn(
       this.executable,
-      ['serve', '--hostname=127.0.0.1', '--port=0', '--no-mdns', '--pure', '--log-level=WARN'],
+      ['serve', '--hostname=127.0.0.1', '--port=0', '--no-mdns', '--log-level=WARN'],
       {
         cwd: this.directory,
         env,
@@ -485,6 +505,14 @@ export class OpenCodeProcess {
 
   setProgressListener(listener: ((event: string, details: Record<string, unknown>) => void) | undefined) {
     this.progressListener = listener
+  }
+
+  observeToolArguments(toolCallId: string, toolName: string, input: unknown) {
+    try {
+      this.gateway?.observeNativeToolArguments(toolCallId, toolName, input)
+    } catch {
+      /* Audit failure must not interrupt the native task. */
+    }
   }
 
   stop(reason = 'requested-stop'): void {

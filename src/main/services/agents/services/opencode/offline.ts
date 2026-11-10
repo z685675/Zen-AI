@@ -2,7 +2,7 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 
 /** Prepare a real bundled installation: no runtime npm registry downloads. */
-export async function prepareOpenCodeOfflineConfig(root: string, bundle: string): Promise<void> {
+export async function prepareOpenCodeOfflineConfig(root: string, bundle: string): Promise<string> {
   const config = path.join(root, 'config', 'opencode')
   const modules = path.join(bundle, 'node_modules')
   // Fail early with an actionable dev instruction, rather than quietly doing
@@ -13,6 +13,8 @@ export async function prepareOpenCodeOfflineConfig(root: string, bundle: string)
     )
   })
   await fs.mkdir(config, { recursive: true })
+  const completionPlugin = path.join(config, 'completion-guard.mjs')
+  await fs.copyFile(path.join(bundle, 'completion-guard.mjs'), completionPlugin)
   for (const name of ['package.json', 'package-lock.json'])
     await fs.copyFile(path.join(bundle, name), path.join(config, name))
   await fs.writeFile(
@@ -25,11 +27,12 @@ export async function prepareOpenCodeOfflineConfig(root: string, bundle: string)
     throw error
   })
   if (existing?.isSymbolicLink()) {
-    if ((await fs.realpath(target).catch(() => '')) === (await fs.realpath(modules))) return
+    if ((await fs.realpath(target).catch(() => '')) === (await fs.realpath(modules))) return completionPlugin
     // Remove only our app-owned junction, never the installed dependency tree.
     await fs.unlink(target)
   } else if (existing) {
     throw new Error('Unexpected native assistant dependency directory; refusing to replace it automatically')
   }
   await fs.symlink(modules, target, process.platform === 'win32' ? 'junction' : 'dir')
+  return completionPlugin
 }

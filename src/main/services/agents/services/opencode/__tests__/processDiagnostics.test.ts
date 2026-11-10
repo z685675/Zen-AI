@@ -3,6 +3,8 @@ import { PassThrough } from 'node:stream'
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { getOpenCodeTempDirectory } from '../workspace'
+
 const mocks = vi.hoisted(() => ({
   spawn: vi.fn(),
   access: vi.fn(),
@@ -13,6 +15,8 @@ const mocks = vi.hoisted(() => ({
   request: vi.fn(),
   gateway: vi.fn(),
   gatewayStop: vi.fn(),
+  nativeArguments: vi.fn(),
+  executionArguments: vi.fn(),
   approve: vi.fn()
 }))
 vi.mock('node:child_process', () => ({ spawn: mocks.spawn }))
@@ -35,7 +39,7 @@ vi.mock('@main/apiServer/routes/browser-mcp', () => ({
   cleanupBrowserMcpContext: vi.fn(),
   touchBrowserMcpContext: () => true
 }))
-vi.mock('../offline', () => ({ prepareOpenCodeOfflineConfig: vi.fn() }))
+vi.mock('../offline', () => ({ prepareOpenCodeOfflineConfig: vi.fn(async () => '/owned/completion-guard.mjs') }))
 vi.mock('../executable', () => ({ resolveOpenCodeExecutable: mocks.resolve }))
 vi.mock('../gateway', () => ({ createOpenCodeGateway: mocks.gateway }))
 vi.mock('../fileApproval', () => ({ confirmAssistantFileOverwrite: mocks.approve }))
@@ -82,6 +86,8 @@ beforeEach(() => {
     baseURL: 'http://127.0.0.1:9876/v1',
     token: 'opaque-gateway-secret',
     stop: mocks.gatewayStop,
+    observeNativeToolArguments: mocks.nativeArguments,
+    observeExecutionArguments: mocks.executionArguments,
     setOperation: vi.fn()
   })
   mocks.spawn.mockImplementation((executable: string) => {
@@ -109,7 +115,7 @@ beforeEach(() => {
     return child
   })
   mocks.request.mockImplementation(async (route: string) => {
-    if (route === '/global/health') return { healthy: true, version: '1.19.4' }
+    if (route === '/global/health') return { healthy: true, version: '1.19.5' }
     if (route === '/config')
       return JSON.parse(mocks.spawn.mock.calls.find((call) => call[0] !== 'taskkill')![2].env.OPENCODE_CONFIG_CONTENT)
   })
@@ -128,6 +134,65 @@ const start = async (key = 'session', id = 'turn-1', signal = new AbortControlle
 }
 
 describe('OpenCode operation-scoped lifecycle evidence', () => {
+  it('observes native and both MCP boundary arguments without confusing JSON-RPC IDs with call IDs', async () => {
+    const { registerAssistantMcpContext } = await import('@main/apiServer/routes/assistant-mcp')
+    const { registerBrowserMcpContext } = await import('@main/apiServer/routes/browser-mcp')
+    const runtime = await start()
+    runtime.observeToolArguments('session:call-a', 'mcp__assistant__create_file', {})
+    expect(mocks.nativeArguments).toHaveBeenCalledWith('session:call-a', 'mcp__assistant__create_file', {})
+    vi.mocked(registerAssistantMcpContext).mock.calls.at(-1)![3]!('create_file', {}, 'rpc-a')
+    vi.mocked(registerBrowserMcpContext).mock.calls.at(-1)![1]!('navigate', { url: 'https://example.test/' }, 'rpc-b')
+    expect(mocks.executionArguments).toHaveBeenCalledWith('mcp__assistant__create_file', {}, 'rpc-a')
+    expect(mocks.executionArguments).toHaveBeenCalledWith(
+      'mcp__browser__navigate',
+      { url: 'https://example.test/' },
+      'rpc-b'
+    )
+    mocks.nativeArguments.mockImplementationOnce(() => {
+      throw new Error('observer failed')
+    })
+    expect(() => runtime.observeToolArguments('session:call-b', 'read', {})).not.toThrow()
+    runtime.release()
+  })
+  it('uses the same workspace temporary directory for native tools and product tools without expanding roots', async () => {
+    const { registerAssistantMcpContext } = await import('@main/apiServer/routes/assistant-mcp')
+    const runtime = await start()
+    const temporaryDirectory = getOpenCodeTempDirectory('/workspace', 'session')
+    const launch = mocks.spawn.mock.calls.find((call) => call[0] !== 'taskkill')![2]
+    expect(launch.cwd).toBe('/workspace')
+    expect(launch.env).toMatchObject({ TEMP: temporaryDirectory, TMP: temporaryDirectory, TMPDIR: temporaryDirectory })
+    expect(mocks.mkdir).toHaveBeenCalledWith(temporaryDirectory, { recursive: true })
+    expect(registerAssistantMcpContext).toHaveBeenCalledWith(
+      'session',
+      ['/workspace'],
+      expect.objectContaining({ workspace: '/workspace', temporaryDirectory }),
+      expect.any(Function)
+    )
+    runtime.release()
+  })
+  it('keeps runtime temporary files outside the user workspace in Plan without granting tools that private path', async () => {
+    const { registerAssistantMcpContext } = await import('@main/apiServer/routes/assistant-mcp')
+    const { getOpenCodeProcess } = await import('../process')
+    const runtime = await getOpenCodeProcess(
+      'plan-session',
+      '/workspace',
+      { ...config(), permission: { edit: 'deny' } },
+      ['/workspace'],
+      new AbortController().signal
+    )
+    const temporaryDirectory = getOpenCodeTempDirectory('/workspace', 'plan-session')
+    expect(mocks.mkdir).not.toHaveBeenCalledWith(temporaryDirectory, { recursive: true })
+    const launch = mocks.spawn.mock.calls.find((call) => call[0] !== 'taskkill')![2]
+    expect(launch.env.TMPDIR).not.toBe(temporaryDirectory)
+    expect(mocks.mkdir).toHaveBeenCalledWith(launch.env.TMPDIR, { recursive: true })
+    expect(registerAssistantMcpContext).toHaveBeenCalledWith(
+      'plan-session',
+      ['/workspace'],
+      expect.objectContaining({ readOnly: true }),
+      expect.any(Function)
+    )
+    runtime.release()
+  })
   it('waits for the previous child to exit before reopening the same native history', async () => {
     const mod = await import('../process')
     const runtime = await start()
@@ -227,8 +292,8 @@ describe('OpenCode operation-scoped lifecycle evidence', () => {
     child.stdout.write('PRIVATE_STDOUT_CONTENT\n')
     runtime.flushDiagnostic()
     expect(events('turn-1').find((event) => event[2] === 'process-health')?.[3]).toMatchObject({
-      observedVersion: '1.19.4',
-      expectedVersion: '1.19.4',
+      observedVersion: '1.19.5',
+      expectedVersion: '1.19.5',
       healthy: true
     })
     expect(

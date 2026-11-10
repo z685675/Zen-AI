@@ -15,6 +15,7 @@ const SESSION_INIT_TIMEOUT_MS = 30_000
 
 type BrowserContext = {
   updatedAt: number
+  observeArguments?: (name: string, input: unknown, requestId: string) => void
 }
 
 type SessionEntry = {
@@ -35,9 +36,12 @@ function closeSessionEntry(entry: SessionEntry): void {
   })
 }
 
-export function registerBrowserMcpContext(contextId: string): void {
+export function registerBrowserMcpContext(
+  contextId: string,
+  observeArguments?: BrowserContext['observeArguments']
+): void {
   cleanupBrowserMcpContext(contextId)
-  contexts.set(contextId, { updatedAt: Date.now() })
+  contexts.set(contextId, { updatedAt: Date.now(), observeArguments })
 }
 
 export function cleanupBrowserMcpContext(contextId: string): void {
@@ -125,6 +129,13 @@ router.all('/:contextId/mcp', async (req: Request, res: Response): Promise<void>
 
     for (const message of messages) {
       if (!isJSONRPCRequest(message)) continue
+      if (message.method === 'tools/call' && typeof message.params?.name === 'string') {
+        try {
+          context.observeArguments?.(message.params.name, message.params.arguments, String(message.id).slice(0, 200))
+        } catch {
+          /* Metadata collection cannot block a tool. */
+        }
+      }
       message.params ??= {}
       message.params._meta ??= {}
       message.params._meta.browserContextId = contextId

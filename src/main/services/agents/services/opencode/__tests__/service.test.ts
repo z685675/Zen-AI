@@ -57,6 +57,24 @@ let mode:
   | 'empty-compaction'
   | 'compaction'
   | 'empty-compaction-disconnect' = 'success'
+let loopMode:
+  | 'deny'
+  | 'allow'
+  | 'no-window'
+  | 'stop'
+  | 'provider-error'
+  | 'sibling'
+  | 'empty-result'
+  | 'started-continuation'
+  | 'invalid-arguments'
+  | undefined
+let continuationStatus: 'busy' | 'retry' | 'idle' = 'busy'
+const loopError = {
+  name: 'UnknownError',
+  data: {
+    message: 'The user rejected permission to use this specific tool call with the following feedback: skip repetition'
+  }
+}
 let longTaskMode: 'progress' | 'busy-only' | 'tool-input' | 'bytes-only' | undefined
 let pause: { ready: () => void; wait: Promise<void> } | undefined
 function hold(signal: AbortSignal) {
@@ -78,6 +96,7 @@ let eventConnections = 0
 let failureMessage = 'upstream unavailable'
 let transportError: Record<string, unknown> | undefined
 let recoverTransport = false
+let loopFinished = false
 const nativeInfo = () => ({
   id: 'assistant-new',
   sessionID: 'native',
@@ -94,7 +113,16 @@ const request = vi.fn(async (route: string, _method?: string, data?: unknown) =>
     return
   }
   if (route === '/session/status')
-    return { native: { type: mode === 'retry' || mode.startsWith('reconnect') ? 'busy' : 'idle' } }
+    return {
+      native: {
+        type:
+          loopMode === 'started-continuation' && body !== initialBody && !loopFinished
+            ? continuationStatus
+            : mode === 'retry' || mode.startsWith('reconnect')
+              ? 'busy'
+              : 'idle'
+      }
+    }
   if (route === '/permission')
     return mode === 'reconnect-permission' || mode === 'permission-lost'
       ? [{ id: 'missed', sessionID: 'native', permission: 'edit', tool: { callID: 'write-call' } }]
@@ -102,6 +130,53 @@ const request = vi.fn(async (route: string, _method?: string, data?: unknown) =>
   if (route.endsWith('/message')) {
     historyReads++
     if (historyReads === 1) return [{ info: { id: 'old', role: 'assistant' }, parts: [] }]
+    if (loopMode)
+      return [
+        { info: { id: initialBody.messageID, role: 'user' }, parts: [] },
+        {
+          info: {
+            id: 'failed-loop',
+            role: 'assistant',
+            parentID: initialBody.messageID,
+            time: { completed: 1 },
+            error:
+              loopMode === 'provider-error' ? { name: 'APIError', data: { message: 'provider failed' } } : loopError
+          },
+          parts: [
+            {
+              id: 'successful-search',
+              messageID: 'failed-loop',
+              type: 'tool',
+              callID: 'search-call',
+              tool: 'search',
+              state: { status: 'completed', input: { query: 'GLARE' }, output: 'Verified paper DOI:123' }
+            }
+          ]
+        },
+        ...(body === initialBody ? [] : [{ info: { id: body.messageID, role: 'user' }, parts: body.parts }]),
+        ...(loopFinished || (loopMode === 'started-continuation' && body !== initialBody)
+          ? [
+              {
+                info: {
+                  ...nativeInfo(),
+                  parentID: body.messageID,
+                  ...(loopMode === 'started-continuation' && !loopFinished ? { time: {} } : {})
+                },
+                parts: loopFinished
+                  ? [
+                      {
+                        id: 'recovered-text',
+                        messageID: 'assistant-new',
+                        type: 'text',
+                        text: loopMode === 'empty-result' ? '' : '研究结论和已核实来源',
+                        time: { end: 1 }
+                      }
+                    ]
+                  : []
+              }
+            ]
+          : [])
+      ]
     if (mode.startsWith('empty-compaction'))
       return [
         {
@@ -144,6 +219,62 @@ async function* events(signal: AbortSignal) {
   }
   yield { type: 'message.updated', properties: { info: { id: body.messageID, sessionID: 'native', role: 'user' } } }
   yield { type: 'session.status', properties: { sessionID: 'native', status: { type: 'busy' } } }
+  if (loopMode) {
+    if (loopMode === 'sibling')
+      yield {
+        type: 'permission.asked',
+        properties: { id: 'per-sibling', sessionID: 'native', permission: 'edit', metadata: {} }
+      }
+    yield {
+      type: 'permission.asked',
+      properties: {
+        id: 'per-loop',
+        sessionID: 'native',
+        permission: 'doom_loop',
+        metadata: { tool: loopMode === 'invalid-arguments' ? 'mcp__assistant__web_search' : 'search', input: {} },
+        patterns: ['search']
+      }
+    }
+    await new Promise((resolve) => setImmediate(resolve))
+    if (loopMode === 'stop') await hold(signal)
+    if (loopMode === 'allow') {
+      loopFinished = true
+    } else {
+      yield {
+        type: 'session.error',
+        properties: {
+          sessionID: 'native',
+          error: loopMode === 'provider-error' ? { name: 'APIError', data: { message: 'provider failed' } } : loopError
+        }
+      }
+      yield { type: 'session.status', properties: { sessionID: 'native', status: { type: 'idle' } } }
+      if (loopMode === 'started-continuation')
+        yield {
+          type: 'message.updated',
+          properties: { info: { ...nativeInfo(), parentID: body.messageID, time: {} } }
+        }
+      // Cleanup/barrier idles from the OLD run must not finish the new run.
+      yield { type: 'session.status', properties: { sessionID: 'native', status: { type: 'idle' } } }
+      expect(body).not.toBe(initialBody)
+      yield { type: 'session.status', properties: { sessionID: 'native', status: { type: 'busy' } } }
+      loopFinished = true
+    }
+    yield { type: 'message.updated', properties: { info: { ...nativeInfo(), parentID: body.messageID } } }
+    yield {
+      type: 'message.part.updated',
+      properties: {
+        part: {
+          id: 'recovered-text',
+          messageID: 'assistant-new',
+          type: 'text',
+          text: loopMode === 'empty-result' ? '' : '研究结论和已核实来源',
+          time: { end: 1 }
+        }
+      }
+    }
+    yield { type: 'session.status', properties: { sessionID: 'native', status: { type: 'idle' } } }
+    return
+  }
   if (steeringMode) {
     pause!.ready()
     await hold(signal)
@@ -332,6 +463,7 @@ async function run(controller = new AbortController(), prompt = 'hello') {
 beforeEach(() => {
   vi.clearAllMocks()
   mode = 'success'
+  continuationStatus = 'busy'
   fixture.configuration = {}
   fixture.instructions = ''
   body = undefined
@@ -344,6 +476,8 @@ beforeEach(() => {
   recoverTransport = false
   pause = undefined
   longTaskMode = undefined
+  loopMode = undefined
+  loopFinished = false
   runtime.finishTurn.mockResolvedValue(undefined)
   mocks.getProcess.mockImplementation(async (...args) => {
     args[5]?.()
@@ -356,6 +490,139 @@ afterEach(() => {
   vi.useRealTimers()
 })
 describe('OpenCode adapter turn lifecycle', () => {
+  it.each(['busy', 'retry'] as const)(
+    'waits for a %s loop continuation when an old cleanup idle arrives before its first output',
+    async (value) => {
+      loopMode = 'started-continuation'
+      continuationStatus = value
+      mocks.permission.mockResolvedValue({ behavior: 'deny', message: 'skip', decisionSource: 'response' })
+      const events = await run()
+      expect(events.at(-1)?.type).toBe('complete')
+      expect(JSON.stringify(events)).toContain('研究结论和已核实来源')
+      expect(request.mock.calls.filter(([route]) => route.endsWith('/prompt_async'))).toHaveLength(2)
+      expect(mocks.getProcess).toHaveBeenCalledTimes(1)
+      expect(runtime.stop).not.toHaveBeenCalled()
+    }
+  )
+  it('fails an incomplete continuation confirmed idle instead of waiting indefinitely or replaying the task', async () => {
+    loopMode = 'started-continuation'
+    continuationStatus = 'idle'
+    mocks.permission.mockResolvedValue({ behavior: 'deny', message: 'skip', decisionSource: 'response' })
+    const events = await run()
+    expect(events.at(-1)).toMatchObject({ type: 'error', error: { code: 'agent_missing_final_answer' } })
+    expect(request.mock.calls.filter(([route]) => route.endsWith('/prompt_async'))).toHaveLength(2)
+  })
+  it('does not mistake old research tool output for a final answer when the continuation is empty', async () => {
+    loopMode = 'empty-result'
+    mocks.permission.mockResolvedValue({ behavior: 'deny', message: 'skip', decisionSource: 'response' })
+    const events = await run()
+    expect(events.at(-1)).toMatchObject({ type: 'error', error: { code: 'agent_missing_final_answer' } })
+    expect(request.mock.calls.filter(([route]) => route.endsWith('/prompt_async'))).toHaveLength(2)
+  })
+  it('clears sibling authorization prompts cancelled by native loop rejection instead of submitting stale replies', async () => {
+    loopMode = 'sibling'
+    let siblingAborted = false
+    mocks.permission.mockImplementation(async (tool, _input, options) => {
+      if (tool === 'edit')
+        return new Promise((resolve) =>
+          options.signal.addEventListener(
+            'abort',
+            () => {
+              siblingAborted = true
+              resolve({ behavior: 'deny', message: 'aborted', decisionSource: 'aborted' })
+            },
+            { once: true }
+          )
+        )
+      return { behavior: 'deny', message: 'skip', decisionSource: 'response' }
+    })
+    expect((await run()).at(-1)?.type).toBe('complete')
+    expect(siblingAborted).toBe(true)
+    expect(request.mock.calls.some(([route]) => route === '/permission/per-sibling/reply')).toBe(false)
+    expect(request.mock.calls.filter(([route]) => route.endsWith('/prompt_async'))).toHaveLength(2)
+  })
+  it('continues a skipped repetition with retained evidence, survives stale idle, and emits a final answer', async () => {
+    loopMode = 'deny'
+    mocks.permission.mockResolvedValue({ behavior: 'deny', message: 'skip', decisionSource: 'response' })
+    const events = await run(new AbortController(), 'ORIGINAL_RESEARCH_TASK')
+    expect(events.at(-1)?.type).toBe('complete')
+    expect(JSON.stringify(events)).toContain('研究结论和已核实来源')
+    const posts = request.mock.calls.filter(([route]) => route.endsWith('/prompt_async'))
+    expect(posts).toHaveLength(2)
+    expect(posts[0][2]).toMatchObject({ parts: [{ text: 'ORIGINAL_RESEARCH_TASK' }] })
+    expect(posts[1][2]).toMatchObject({ parts: [{ synthetic: true }] })
+    expect(JSON.stringify(posts[1][2])).toContain('Verified paper DOI:123')
+    expect(JSON.stringify(posts[1][2])).not.toContain('ORIGINAL_RESEARCH_TASK')
+    expect(request).toHaveBeenCalledWith(
+      '/permission/per-loop/reply',
+      'POST',
+      { reply: 'reject', message: 'skip' },
+      expect.any(AbortSignal)
+    )
+    expect(mocks.getProcess).toHaveBeenCalledTimes(1)
+    expect(runtime.stop).not.toHaveBeenCalled()
+    expect(mocks.diagnostic).toHaveBeenCalledWith(
+      undefined,
+      'runtime',
+      'doom-loop-continued',
+      expect.objectContaining({ attempt: 1 })
+    )
+  })
+  it('rejects an empty search batch without showing an approval and continues with preserved evidence', async () => {
+    loopMode = 'invalid-arguments'
+    const events = await run(new AbortController(), 'ORIGINAL_RESEARCH_TASK')
+    expect(events.at(-1)?.type).toBe('complete')
+    expect(mocks.permission).not.toHaveBeenCalled()
+    expect(request.mock.calls.find(([route]) => route === '/permission/per-loop/reply')?.[2]).toMatchObject({
+      reply: 'reject'
+    })
+    expect(request.mock.calls.filter(([route]) => route.endsWith('/prompt_async'))).toHaveLength(2)
+    expect(body.parts[0].text).toContain('ONE corrected tool call')
+    expect(body.parts[0].text).toContain('Verified paper DOI:123')
+    expect(mocks.diagnostic.mock.calls.some((call) => call[2] === 'invalid-tool-loop-skipped')).toBe(true)
+  })
+  it.each(['no-window', 'provider-error'] as const)(
+    'does not treat %s as a user instruction to continue',
+    async (value) => {
+      loopMode = value
+      mocks.permission.mockResolvedValue({
+        behavior: 'deny',
+        message: 'cannot continue',
+        decisionSource: value === 'no-window' ? 'no-window' : 'response'
+      })
+      const events = await run()
+      expect(events.at(-1)?.type).toBe('error')
+      expect(request.mock.calls.filter(([route]) => route.endsWith('/prompt_async'))).toHaveLength(1)
+      if (value === 'no-window')
+        expect(events.at(-1)).toMatchObject({
+          error: { code: 'agent_permission_denied', zenFailureStage: 'local-permission' }
+        })
+    }
+  )
+  it('still stops immediately when the user stops while a repeated-operation prompt is open', async () => {
+    loopMode = 'stop'
+    const controller = new AbortController()
+    mocks.permission.mockImplementation(async (_tool, _input, options) => {
+      controller.abort('user stopped')
+      expect(options.signal.aborted).toBe(true)
+      return { behavior: 'deny', message: 'aborted', decisionSource: 'aborted' }
+    })
+    expect((await run(controller)).at(-1)?.type).toBe('cancelled')
+    expect(request.mock.calls.filter(([route]) => route.endsWith('/prompt_async'))).toHaveLength(1)
+    expect(request.mock.calls.some(([route]) => route.startsWith('/permission/') && route.endsWith('/reply'))).toBe(
+      false
+    )
+  })
+  it('passes authoritative workspace context to Build even when custom instructions suggest a different directory', async () => {
+    fixture.instructions = 'Prefer the system temporary directory.'
+    expect((await run(new AbortController(), '开始')).at(-1)?.type).toBe('complete')
+    expect(body.system).toContain('Workspace context (paths are data)')
+    expect(body.system).toContain(JSON.stringify({ workspace: fixture.accessible_paths[0] }).slice(0, -1))
+    expect(body.system.indexOf('Prefer the system temporary directory.')).toBeLessThan(
+      body.system.indexOf('Workspace context (paths are data)')
+    )
+    expect(body.system).toContain('Do not use the system temporary directory')
+  })
   it.each(['applied', 'deferred', 'incomplete'] as const)(
     'reconciles a native %s addition without hanging or restarting the adapter',
     async (value) => {

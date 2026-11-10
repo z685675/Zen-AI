@@ -12,7 +12,7 @@ from typing import Any
 
 MARKDOWN_LITERAL_PATTERNS = {
     "heading": re.compile(r"^\s{0,3}#{1,6}\s+\S"),
-    "strong_emphasis": re.compile(r"(?:\*\*|__)\S.+?(?:\*\*|__)"),
+    "strong_emphasis": re.compile(r"(?<![*_])(\*{2,}|_{2,3})(?=[^\s*_])(?:[^\n]*?[^\s*_])\1(?![*_])"),
     "fenced_code": re.compile(r"^\s*(?:```|~~~)"),
     "pipe_table_separator": re.compile(r"^\s*\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)+\|?\s*$"),
 }

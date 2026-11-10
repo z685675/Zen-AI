@@ -55,7 +55,7 @@
     "expected_skills": [
       "research-report"
     ],
-    "expected_behavior": "Use source-backed findings, source matrix, uncertainty notes, and actionable recommendations."
+    "expected_behavior": "Answer the decision with supported findings, option comparisons, uncertainties and concrete recommendations. Choose evidence for the topic; do not require academic papers, a source matrix or a saved full report for an ordinary in-chat investigation."
   },
   {
     "id": "academic-research",
@@ -64,7 +64,40 @@
       "academic-research",
       "research-report"
     ],
-    "expected_behavior": "Define scope and inclusion rules, deduplicate papers, build evidence cards, synthesize by research question, and preserve direct source links without inventing citations."
+    "expected_behavior": "Define scope and inclusion rules, deduplicate papers, synthesize methods/results and preserve direct source links. Use public search/reading tools first. Propose sites and reading/download scope before necessary academic browser automation; reuse existing explicit consent without repeated page approvals."
+  },
+  {
+    "id": "research-direction-without-paper-collection",
+    "prompt": "我不了解复合材料疲劳这个领域，请深度研究一下它的主要问题、常用解决思路、适用条件和研究方向，给我专业建议，不需要收集或下载论文。",
+    "expected_skills": [
+      "research-report"
+    ],
+    "expected_behavior": "Explain the field with supported analysis, competing approaches, applicability, uncertainties and next steps. Preserve technical depth; a scientific topic does not require a literature collection or academic browser automation."
+  },
+  {
+    "id": "academic-uploaded-papers",
+    "prompt": "只根据我上传的三篇PDF比较它们的方法、数据和不足，不要联网，不要下载其他论文。",
+    "expected_skills": [
+      "academic-research",
+      "pdf"
+    ],
+    "expected_behavior": "Read the supplied PDFs, preserve page provenance and evidence limits, and compare their methods/results without network calls, website approval requests or replacement downloads."
+  },
+  {
+    "id": "academic-browser-scope",
+    "prompt": "帮我从论文网站筛选近五年关于复合材料疲劳的论文，适合的网站你来推荐。先告诉我准备访问哪些网站、做什么、是否下载以及保存在哪里，等我确认。",
+    "expected_skills": [
+      "academic-research"
+    ],
+    "expected_behavior": "Propose suitable sites and bounded actions/download destination without requiring the user to choose sites. Wait before browser automation. After confirmation continue within that scope; ask only for new sites or expanded operations/downloads, with login/CAPTCHA handoff kept separate."
+  },
+  {
+    "id": "academic-browser-scope-resume",
+    "prompt": "继续刚才已经批准的网站筛选任务，仍然只阅读和总结，不下载。之前被拒绝的下载操作不要再提了。",
+    "expected_skills": [
+      "academic-research"
+    ],
+    "expected_behavior": "Reuse the confirmed task scope and existing results without repeating approvals or completed work. Keep downloads denied; a refused operation does not cancel the whole research. Disclose necessary evidence gaps and never treat a page or redirect as expanded consent."
   },
   {
     "id": "research-design",

@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import React, { useEffect } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -86,6 +86,30 @@ function OpenPanelOnMount({ list }: { list: QuickPanelListItem[] }) {
   return null
 }
 
+function PanelButtons({ list }: { list: QuickPanelListItem[] }) {
+  const panel = useQuickPanel()
+  return (
+    <>
+      <button
+        type="button"
+        onClick={(event) =>
+          panel.open({
+            title: 'Anchored',
+            list,
+            symbol: 'thinking',
+            anchorElement: event.currentTarget,
+            triggerInfo: { type: 'button' }
+          })
+        }>
+        Open button panel
+      </button>
+      <button type="button" onClick={() => panel.open({ title: 'Input', list, symbol: '/' })}>
+        Open input panel
+      </button>
+    </>
+  )
+}
+
 describe('QuickPanelView', () => {
   beforeEach(() => {
     const inputbar = document.createElement('div')
@@ -120,6 +144,28 @@ describe('QuickPanelView', () => {
     expect(panel).toHaveClass('visible')
     expect(await screen.findByText('Item 1')).toBeInTheDocument()
     expect(screen.getByText('Item 3')).toBeInTheDocument()
+  })
+
+  it('anchors button menus in a portal and restores the inputbar layout for input menus', async () => {
+    const list = createList(3)
+    const result = render(
+      <QuickPanelProvider>
+        <QuickPanelView setInputText={vi.fn()} />
+        <PanelButtons list={list} />
+      </QuickPanelProvider>
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Open button panel' }))
+    const anchored = screen.getByTestId('quick-panel')
+    expect(anchored.parentElement).toBe(document.body)
+    expect(getComputedStyle(anchored).position).toBe('fixed')
+    await waitFor(() => expect(anchored.style.visibility).not.toBe('hidden'))
+    fireEvent.click(screen.getByText('Item 1'))
+    expect(list[0].action).toHaveBeenCalledTimes(1)
+    expect(anchored).not.toHaveClass('visible')
+    fireEvent.click(screen.getByRole('button', { name: 'Open input panel' }))
+    const unanchored = screen.getByTestId('quick-panel')
+    expect(result.container.contains(unanchored)).toBe(true)
+    expect(getComputedStyle(unanchored).position).toBe('absolute')
   })
 
   it('navigates items with keyboard navigation', async () => {

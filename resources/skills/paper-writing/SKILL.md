@@ -5,7 +5,13 @@ description: Draft, structure, and revise academic papers while preserving the e
 
 # Paper Writing
 
-Turn verified research into a clear, evidence-aware manuscript. Use `$academic-research` for missing literature and `$research-report` when external claims need a source matrix. Use `$docx`, `$markdown`, or another format Skill only after the manuscript content is checked.
+Turn verified research into a clear, evidence-aware manuscript. Use `$academic-research` for needed literature checks and `$research-report` for evidence-backed analysis; a source matrix is optional for a requested audit. Use `$docx`, `$markdown`, or another format Skill only after the manuscript content is checked.
+
+Work from supplied results and papers first. An explicit writing task does not
+require another generic research plan or bulk paper collection. For necessary
+academic website automation, follow academic-research's task/site/scope consent
+workflow; reuse existing consent, confirm only added sites or expanded actions,
+and preserve the rest of the task when an operation is declined.
 
 ## Workflow
 

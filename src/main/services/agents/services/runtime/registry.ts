@@ -1,10 +1,12 @@
 import { validateModelId } from '@main/apiServer/utils'
-import { DEFAULT_OPENCODE_AGENT_ID } from '@shared/config/agents'
+import { DEFAULT_DSH_AGENT_ID, DEFAULT_OPENCODE_AGENT_ID } from '@shared/config/agents'
 import type { AgentRuntime, AgentType } from '@types'
 
+import { assertDshPreviewUnlocked } from '../../../dshPreview/access'
 import type { AgentServiceInterface } from '../../interfaces/AgentStreamInterface'
 import ClaudeCodeService from '../claudecode'
 import CodexService from '../codex'
+import DshService from '../dsh'
 import OpenCodeService from '../opencode'
 import { type AgentRuntimeCapabilities, getAgentRuntimeCapabilities } from './compatibility'
 import { isCodexRuntimeEnabled } from './features'
@@ -12,8 +14,9 @@ import { isCodexRuntimeEnabled } from './features'
 const claudeCodeService = new ClaudeCodeService()
 const codexService = new CodexService()
 const openCodeService = new OpenCodeService()
+const dshService = new DshService()
 
-export type AgentRuntimeId = AgentType | 'codex' | 'opencode'
+export type AgentRuntimeId = AgentType | 'codex' | 'opencode' | 'dsh'
 
 type RuntimeResolvableSession = {
   id?: string
@@ -89,7 +92,8 @@ export function buildAutoRuntimeResolution(params: {
   const enabledRuntimes: AgentRuntimeId[] = params.codexEnabled ? ['claude-code', 'codex'] : ['claude-code']
   const candidateOrder = [preferredRuntime, fallbackRuntime].filter((runtimeId) => enabledRuntimes.includes(runtimeId))
   const compatibleCandidates = candidateOrder.filter(
-    (runtimeId) => runtimeId !== 'opencode' && capabilities[runtimeId].state !== 'unsupported'
+    (runtimeId) =>
+      (runtimeId === 'claude-code' || runtimeId === 'codex') && capabilities[runtimeId].state !== 'unsupported'
   )
   // If both protocols are explicitly ruled out, keep the preferred runtime
   // as the sole candidate so the user receives the precise incompatibility
@@ -127,6 +131,16 @@ export async function resolveAgentRuntime(
 
   // Workspace identity is immutable. Legacy overrides/fallbacks must not
   // silently route a new-assistant conversation into a different kernel.
+  if (session.agent_id === DEFAULT_DSH_AGENT_ID) {
+    assertDshPreviewUnlocked()
+    return {
+      runtimeId: 'dsh',
+      candidates: ['dsh'],
+      configuredRuntime,
+      source: 'workspace',
+      reason: 'dsh-preview-workspace'
+    }
+  }
   if (session.agent_id === DEFAULT_OPENCODE_AGENT_ID) {
     return {
       runtimeId: 'opencode',
@@ -199,6 +213,9 @@ export function getAgentRuntimeServiceById(runtimeId: AgentRuntimeId): AgentServ
       return codexService
     case 'opencode':
       return openCodeService
+    case 'dsh':
+      assertDshPreviewUnlocked()
+      return dshService
     default:
       throw new Error(`Unsupported agent runtime: ${runtimeId}`)
   }

@@ -510,6 +510,7 @@ describe('streamCallback integration', () => {
       modelDailyQuota: { results: [result] },
       responseTiming: expect.any(Object)
     })
+    expect(save.mock.calls.at(-1)?.[3].map((block: { id: string }) => block.id)).toEqual(message.blocks)
     expect(JSON.stringify(save.mock.calls)).not.toContain('private-secret')
   })
 

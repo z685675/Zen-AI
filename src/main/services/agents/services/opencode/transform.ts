@@ -119,10 +119,18 @@ export class OpenCodeStreamState {
       const toolCallId = `${this.zenSessionId}:${part.callID}`
       const state = part.state
       if (!state || state.status === 'pending') return []
+      // Native bash uses "completed" for any exited process, including failed
+      // commands. Its numeric exit status, not words in stdout, determines the
+      // observation shown in Zen. Other tools own their metadata contracts.
+      const commandExit = part.tool === 'bash' ? state.metadata?.exit : undefined
+      // An explicit null is the native shell's interrupted/timeout result.
+      // Missing metadata on older snapshots is not evidence of a failed exit.
+      const exitCode = commandExit === null || Number.isInteger(commandExit) ? commandExit : undefined
       const toolMetadata = {
         ...metadata,
         opencode: {
           ...metadata.opencode,
+          ...(exitCode === undefined ? {} : { toolExitCode: exitCode }),
           ...(Number.isFinite(state.time?.start) ? { toolStartedAt: state.time.start } : {}),
           ...(Number.isFinite(state.time?.end) ? { toolFinishedAt: state.time.end } : {})
         }
@@ -143,15 +151,19 @@ export class OpenCodeStreamState {
         // OpenCode retains the original MCP content in tool metadata. Preserve
         // it so Zen's file cards/images do not become plain console strings.
         const output = state.metadata?.content ? { content: state.metadata.content } : state.output
+        const commandFailed = exitCode !== undefined && exitCode !== 0
         chunks.push(
-          state.status === 'error'
+          state.status === 'error' || commandFailed
             ? {
                 type: 'tool-error',
                 toolCallId,
                 toolName: part.tool,
                 input: state.input,
                 providerMetadata: toolMetadata,
-                error: state.error
+                error:
+                  state.status === 'error'
+                    ? state.error
+                    : `${exitCode === null ? 'Command was interrupted or timed out before an exit status was available.' : `Command exited with code ${exitCode}.`}${typeof state.output === 'string' && state.output ? `\n${state.output}` : ''}`
               }
             : {
                 type: 'tool-result',

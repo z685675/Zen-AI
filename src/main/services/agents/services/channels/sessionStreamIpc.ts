@@ -2,7 +2,9 @@ import { IpcChannel } from '@shared/IpcChannel'
 import { ipcMain } from 'electron'
 import * as z from 'zod'
 
+import { assertDshPreviewUnlocked } from '../../../dshPreview/access'
 import { windowService } from '../../../WindowService'
+import { checkDshRunInput, getDshRunInputStatus, ownsDshRunInput, submitDshRunInput } from '../dsh/turnInput'
 import { checkAgentRunInput, getAgentRunInputStatus, submitAgentRunInput } from '../opencode/turnInput'
 import { hasSessionActivity } from '../sessionActivity'
 import { channelMessageHandler } from './ChannelMessageHandler'
@@ -33,16 +35,26 @@ const activeSubscriptions = new Map<string, () => void>()
 export function registerSessionStreamIpc(): void {
   ipcMain.handle(IpcChannel.AgentSessionInput_Status, (_event, sessionId: unknown) => {
     const id = inputId.parse(sessionId)
-    const status = getAgentRunInputStatus(id)
+    const dsh = ownsDshRunInput(id)
+    if (dsh) assertDshPreviewUnlocked()
+    const status = dsh ? getDshRunInputStatus(id) : getAgentRunInputStatus(id)
     return { ...status, active: status.active || hasSessionActivity(id) }
   })
   ipcMain.handle(IpcChannel.AgentSessionInput_Submit, (_event, raw: unknown) => {
     const parsed = inputSchema.safeParse(raw)
     if (!parsed.success) return { id: '', state: 'rejected', code: 'invalid_input' }
+    if (ownsDshRunInput(parsed.data.sessionId)) {
+      assertDshPreviewUnlocked()
+      return submitDshRunInput(parsed.data)
+    }
     return submitAgentRunInput(parsed.data)
   })
   ipcMain.handle(IpcChannel.AgentSessionInput_Check, (_event, raw: unknown) => {
     const { sessionId, id } = z.object({ sessionId: inputId, id: inputId }).parse(raw)
+    if (ownsDshRunInput(sessionId)) {
+      assertDshPreviewUnlocked()
+      return checkDshRunInput(sessionId, id)
+    }
     return checkAgentRunInput(sessionId, id)
   })
   ipcMain.handle(IpcChannel.AgentSessionStream_Subscribe, (_event, { sessionId }: { sessionId: string }) => {

@@ -1,4 +1,5 @@
 import AdmZip from 'adm-zip'
+import { XMLParser } from 'fast-xml-parser'
 import { describe, expect, it } from 'vitest'
 
 import { createDocxBuffer } from '../assistantDocx'
@@ -6,6 +7,28 @@ import { validatePptxVisibleContent } from '../assistantOfficeQuality'
 import { createXlsxBuffer } from '../assistantXlsx'
 
 describe('new assistant Office quality', () => {
+  it('defines a default Normal style for unstyled body and table paragraphs in independent DOCX readers', async () => {
+    const zip = new AdmZip(
+      await createDocxBuffer('项目说明', '正文内容\n\n| 项目 | 金额 |\n| --- | --- |\n| 材料 | 120 |', [])
+    )
+    const styles = zip.readAsText('word/styles.xml')
+    const directStyles = new XMLParser({ ignoreAttributes: false }).parse(styles)['w:styles']['w:style']
+    const normal = directStyles.filter((style: Record<string, string>) => style['@_w:styleId'] === 'Normal')
+    expect(normal).toHaveLength(1)
+    expect(normal[0]['@_w:default']).toBe('1')
+    expect(normal[0]['@_w:type']).toBe('paragraph')
+    expect(normal[0]['w:name']['@_w:val']).toBe('Normal')
+  })
+
+  it('writes intentional page breaks as native Word elements rather than visible Markdown', async () => {
+    const zip = new AdmZip(await createDocxBuffer('两页方案', '第一页\n\n<!-- pagebreak -->\n\n第二页', []))
+    const document = zip.readAsText('word/document.xml')
+    expect(document).toContain('<w:br w:type="page"')
+    expect(document).not.toContain('pagebreak')
+    expect(document).toContain('第一页')
+    expect(document).toContain('第二页')
+  })
+
   it('requires explicit formula caches without silently substituting value or zero', () => {
     for (const result of [undefined, null, Number.NaN, Infinity, {}]) {
       expect(() =>

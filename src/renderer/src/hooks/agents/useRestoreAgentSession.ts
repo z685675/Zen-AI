@@ -37,7 +37,7 @@ export function useRestoreAgentSession(agents: GetAgentResponse[] | undefined, e
       if (
         hasSelection &&
         (consumeAgentEntrySelection(workspace, { agentId, sessionId }) ||
-          workspace === 'opencode' ||
+          workspace !== 'legacy' ||
           hasUnsentConversationDraft(getAgentSessionDraft(agentId, sessionId)))
       ) {
         // Returning to the assistant keeps the conversation the user was reading,

@@ -1,8 +1,7 @@
 diff --git a/index.js b/index.js
-index 4e8423491ab51a9eb9fee22182e4ea0fcc3d3d3b..2846c5d4354c130d478dc99565b3ecd6d85b7d2e 100644
 --- a/index.js
 +++ b/index.js
-@@ -19,7 +19,11 @@ function requireNative() {
+@@ -19,7 +19,11 @@
        break;
      }
    }
@@ -13,5 +12,74 @@ index 4e8423491ab51a9eb9fee22182e4ea0fcc3d3d3b..2846c5d4354c130d478dc99565b3ecd6
 +    return require(`@libsql/${target}`);
 +  }
  }
- 
+-
++
  const {
+@@ -53,6 +57,36 @@
+   return err;
+ }
+-
++
++// libSQL's native LibsqlConnection and its inner Connection both disconnect in
++// Drop. If the wrapper is the last connection owner, this can double-close the
++// SQLite handle during GC (Windows: 0xC0000005). Keep one unexecuted statement
++// alive while releasing the wrapper, so its independent connection owner is
++// dropped last. SELECT 1 holds no running cursor or transaction/file lock.
++// Track the native handles, never the JS Database, so abandoned transaction
++// connections can still be collected. Explicit close and GC share this path.
++const connectionLifetimes = new WeakMap();
++const liveConnections = new Set();
++
++function releaseConnection(lifetime) {
++  if (!liveConnections.has(lifetime)) return;
++  databaseClose.call(lifetime.handle);
++  liveConnections.delete(lifetime);
++}
++
++function releaseCollectedConnection(lifetime) {
++  try {
++    releaseConnection(lifetime);
++  } catch {
++    // Retain a failed native handle and its guard rather than letting GC tear
++    // it down in an unsafe order. Explicit close still propagates errors.
++  }
++}
++
++const collectedConnections = new FinalizationRegistry(releaseCollectedConnection);
++process.once("exit", () => {
++  for (const lifetime of liveConnections) releaseCollectedConnection(lifetime);
++});
++
+ /**
+  * Database represents a connection that can prepare and execute SQL statements.
+  */
+@@ -96,6 +130,14 @@
+         }
+       },
+     });
++
++    const lifetime = {
++      handle: db,
++      guard: databasePrepareSync.call(db, "SELECT 1"),
++    };
++    connectionLifetimes.set(this, lifetime);
++    liveConnections.add(lifetime);
++    collectedConnections.register(this, lifetime, this);
+   }
+-
++
+   sync() {
+@@ -248,7 +290,11 @@
+    * Closes the database connection.
+    */
+   close() {
+-    databaseClose.call(this.db);
++    const lifetime = connectionLifetimes.get(this);
++    if (!lifetime) return;
++    releaseConnection(lifetime);
++    collectedConnections.unregister(this);
++    connectionLifetimes.delete(this);
+     this.open = false;
+   }
+-
++

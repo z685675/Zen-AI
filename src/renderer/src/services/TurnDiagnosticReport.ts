@@ -23,6 +23,22 @@ const fields = new Set([
   'providerId',
   'toolName',
   'toolCallId',
+  'nativeToolCallId',
+  'executionRequestId',
+  'auditVersion',
+  'toolArgumentAuditVersion',
+  'loopRecoveryVersion',
+  'argumentState',
+  'argumentBytes',
+  'argumentKeys',
+  'argumentFingerprint',
+  'argumentFragments',
+  'argumentComplete',
+  'schemaCoverage',
+  'schemaFingerprint',
+  'requiredKeys',
+  'missingRequiredKeys',
+  'snapshotMatches',
   'elapsedMs',
   'durationMs',
   'attempt',
@@ -58,6 +74,64 @@ const fields = new Set([
   'observedActiveAt',
   'responseFinishedAt'
 ])
+
+const contextCategories = ['instructions', 'toolSchemas', 'user', 'assistant', 'toolResults', 'other']
+const contextTools = ['web_search', 'literature_search', 'read_webpage', 'read_paper', 'other']
+function contextSourceMetadata(details: Record<string, unknown> | undefined) {
+  if (details?.contextAuditVersion !== 1) return {}
+  const record = (value: unknown): Record<string, unknown> | undefined =>
+    value !== null && typeof value === 'object' && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : undefined
+  const number = (value: unknown) => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
+  const counters = (value: unknown, names: string[]) =>
+    Object.fromEntries(
+      names.flatMap((name) => {
+        const item = record(record(value)?.[name])
+        if (!item) return []
+        return [
+          [
+            name,
+            Object.fromEntries(
+              ['items', 'jsonCharacters', 'jsonBytes'].flatMap((key) => (number(item[key]) ? [[key, item[key]]] : []))
+            )
+          ]
+        ]
+      })
+    )
+  return {
+    contextAuditVersion: 1,
+    coverage: ['complete', 'limited', 'unavailable'].includes(String(details.coverage))
+      ? details.coverage
+      : 'unavailable',
+    ...Object.fromEntries(
+      ['requestBytes', 'repeatedToolJsonCharacters', 'carriedToolJsonCharacters', 'repeatedExcerptCharacters'].flatMap(
+        (key) => (number(details[key]) ? [[key, details[key]]] : [])
+      )
+    ),
+    categories: counters(details.categories, contextCategories),
+    tools: counters(details.tools, contextTools),
+    largest: (Array.isArray(details.largest) ? details.largest.slice(0, 8) : []).flatMap((item) => {
+      if (
+        !item ||
+        !contextCategories.includes(item.category) ||
+        !number(item.jsonCharacters) ||
+        typeof item.fingerprint !== 'string' ||
+        !/^[a-f0-9]{64}$/.test(item.fingerprint)
+      )
+        return []
+      return [
+        {
+          category: item.category,
+          jsonCharacters: item.jsonCharacters,
+          fingerprint: item.fingerprint,
+          ...(contextTools.includes(item.source) ? { source: item.source } : {})
+        }
+      ]
+    })
+  }
+}
+
 export function metadataEvent(event: DiagnosticEvent): DiagnosticEvent {
   return {
     at: event.at,
@@ -65,6 +139,7 @@ export function metadataEvent(event: DiagnosticEvent): DiagnosticEvent {
     event: event.event,
     details: {
       ...scalarFields(event.details, [...fields]),
+      ...(event.event === 'context-sources' ? contextSourceMetadata(event.details) : {}),
       // Retain only the error class for attribution, never its message or stack.
       ...(event.details?.error && typeof event.details.error === 'object'
         ? { error: metadataError(event.details.error) }
@@ -146,7 +221,17 @@ export function metadataBackendCollection(details: unknown) {
     ? responses
         .slice(0, 24)
         .map((entry) =>
-          scalarFields(entry, ['requestId', 'status', 'source', 'available', 'omittedRequests', 'persistentStatus'])
+          scalarFields(entry, [
+            'requestId',
+            'status',
+            'source',
+            'available',
+            'omittedRequests',
+            'persistentStatus',
+            'observedRequests',
+            'collectedRequests',
+            'missingRequests'
+          ])
         )
     : []
 }
@@ -157,7 +242,8 @@ export function metadataEvidence(evidence: DiagnosticEvidence | undefined) {
     startedAt: evidence.startedAt,
     updatedAt: evidence.updatedAt,
     events: evidence.events.map(metadataEvent),
-    droppedEvents: evidence.droppedEvents
+    droppedEvents: evidence.droppedEvents,
+    retention: evidence.retention
   }
 }
 export function metadataMessage(message?: Message) {

@@ -10,7 +10,7 @@ import { extractAgentSessionIdFromTopicId } from '@renderer/utils/agentSession'
 import { createMainTextBlock, createMessage } from '@renderer/utils/messageUtils/create'
 import { isMessageProcessing } from '@renderer/utils/messageUtils/is'
 import { normalizeAgentReasoningEffort, toAgentEffort } from '@renderer/utils/reasoningEffort'
-import { DEFAULT_OPENCODE_AGENT_ID } from '@shared/config/agents'
+import { DEFAULT_DSH_AGENT_ID, isNewAssistantAgentId } from '@shared/config/agents'
 import { useCallback, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { v4 as uuid } from 'uuid'
@@ -34,13 +34,13 @@ function isLatestTurn(message: Message) {
 /** Append a normal user turn to the SAME native session. Never rewind/retry history. */
 export function useNativeTaskContinuation(message: Message) {
   const dispatch = useAppDispatch()
-  const client = useAgentClient('opencode')
+  const client = useAgentClient(message.assistantId === DEFAULT_DSH_AGENT_ID ? 'dsh' : 'opencode')
   const { t } = useTranslation()
   const [submitting, setSubmitting] = useState(false)
   const eligible = useAppSelector((state) => {
     const messages = selectMessagesForTopic(state, message.topicId)
     return (
-      message.assistantId === DEFAULT_OPENCODE_AGENT_ID &&
+      isNewAssistantAgentId(message.assistantId) &&
       message.role === 'assistant' &&
       !message.providerMetadata?.legacyContinuation &&
       messages.at(-1)?.id === message.id &&
@@ -54,7 +54,7 @@ export function useNativeTaskContinuation(message: Message) {
     setSubmitting(true)
     try {
       const sessionId = extractAgentSessionIdFromTopicId(message.topicId)
-      const session = await client.getSession(DEFAULT_OPENCODE_AGENT_ID, sessionId, { timeout: 5000 })
+      const session = await client.getSession(message.assistantId, sessionId, { timeout: 5000 })
       if (!isLatestTurn(message)) return
       const separator = session.model.indexOf(':')
       const currentState = store.getState()
@@ -73,7 +73,7 @@ export function useNativeTaskContinuation(message: Message) {
         return
       }
       const assistant: Assistant = {
-        id: DEFAULT_OPENCODE_AGENT_ID,
+        id: message.assistantId,
         name: session.name ?? t('agent.errorFallback.assistant_name'),
         prompt: session.instructions ?? '',
         topics: [],

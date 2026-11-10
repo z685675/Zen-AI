@@ -9,6 +9,30 @@ import {
 } from '../diagnostics'
 
 describe('diagnostic privacy and limits', () => {
+  it('preserves nested serialized tool arguments through a second archive pass while redacting secrets', () => {
+    const tool = {
+      arguments: JSON.stringify({
+        queries: [{ request: { filters: { terms: ['fatigue'], api_key: 'nested-private' } } }]
+      })
+    }
+    const envelope = { archive: { diagnostic: { process: { events: [{ details: { tool } }] } } } }
+    const result = JSON.stringify(sanitizeDiagnostic(sanitizeDiagnostic(envelope)))
+    expect(result).toContain('fatigue')
+    expect(result).not.toContain('Max depth reached')
+    expect(result).not.toContain('nested-private')
+    expect(result).toContain('REDACTED')
+  })
+  it('retains compaction and stage boundaries across verbose progress floods', () => {
+    const recorder = new DiagnosticRecorder(1, 5)
+    recorder.begin('long-task')
+    recorder.record('long-task', 'runtime', 'native-compacted', { checkpoint: 1 })
+    recorder.record('long-task', 'runtime', 'task-stage', { stage: 'waiting_model' })
+    for (let index = 0; index < 100; index++) recorder.record('long-task', 'runtime', 'progress', { index })
+    recorder.record('long-task', 'runtime', 'native-compacted', { checkpoint: 2 })
+    const saved = recorder.get('long-task')!
+    expect(saved.events.filter((event) => event.event === 'native-compacted')).toHaveLength(2)
+    expect(saved.events.some((event) => event.event === 'task-stage')).toBe(true)
+  })
   it('keeps token metrics but redacts keys in objects, JSON strings, stderr and URLs', () => {
     const result = sanitizeDiagnostic({
       input_tokens: 123,
@@ -62,6 +86,58 @@ describe('diagnostic privacy and limits', () => {
     expect(recorder.get('b')?.events).toHaveLength(0)
     recorder.begin('c')
     expect(recorder.get('a')).toBeUndefined()
+  })
+
+  it('retains all 24 request boundaries and 43 tool audits across a long task with noisy progress', () => {
+    const recorder = new DiagnosticRecorder()
+    recorder.begin('long')
+    for (let i = 0; i < 43; i++) {
+      if (i < 24) {
+        for (const event of ['request-started', 'headers-received', 'first-bytes', 'body-complete'])
+          recorder.record('long', 'transport', event, { requestId: `request-${i}` })
+      }
+      for (const phase of ['provider-wire', 'native-decoded', 'mcp-execution'])
+        recorder.record('long', 'tool', 'tool-arguments', { phase, nativeToolCallId: `call-${i}` })
+      for (const phase of ['tool-call', 'tool-result'])
+        recorder.record('long', 'runtime', 'native-tool-timing', { phase, toolCallId: `call-${i}` })
+      for (let progress = 0; progress < 30; progress++)
+        recorder.record('long', progress % 2 ? 'runtime' : 'transport', 'body-progress')
+    }
+    const result = recorder.get('long')!
+    expect(result.events.filter((event) => event.event === 'headers-received')).toHaveLength(24)
+    expect(result.events.filter((event) => event.event === 'tool-arguments')).toHaveLength(43 * 3)
+    expect(result.events.filter((event) => event.event === 'native-tool-timing')).toHaveLength(43 * 2)
+    expect(result.retention).toMatchObject({ generalDroppedEvents: 1130, protectedDroppedEvents: 0 })
+    expect(result.events).toHaveLength(160 + 96 + 129 + 86)
+    expect(result.events[0].details?.requestId).toBe('request-0')
+  })
+
+  it('bounds the protected ledger independently by count and characters and reports its own loss', () => {
+    const recorder = new DiagnosticRecorder(2, 3, { events: 2, characters: 500 })
+    for (let i = 0; i < 4; i++) recorder.record('a', 'tool', 'tool-arguments', { index: i })
+    expect(recorder.get('a')?.retention).toMatchObject({ protectedDroppedEvents: 2, generalDroppedEvents: 0 })
+    expect(recorder.get('a')?.events.map((event) => event.details?.index)).toEqual([2, 3])
+    recorder.record('a', 'transport', 'request-started', { text: 'x'.repeat(600) })
+    expect(recorder.get('a')?.events).toHaveLength(0)
+    expect(recorder.get('a')?.retention?.protectedDroppedEvents).toBe(5)
+    recorder.record('a', 'runtime', 'complete')
+    expect(recorder.get('a')?.events.at(-1)?.event).toBe('complete')
+    recorder.begin('a')
+    expect(recorder.get('a')?.droppedEvents).toBe(0)
+    recorder.begin('b')
+    recorder.begin('c')
+    expect(recorder.get('a')).toBeUndefined()
+  })
+
+  it('retains bounded context source counters when noisy progress is evicted', () => {
+    const recorder = new DiagnosticRecorder(2, 3)
+    recorder.record('context', 'transport', 'context-sources', { transportRequestId: 'request', requestBytes: 123 })
+    for (let i = 0; i < 20; i++) recorder.record('context', 'transport', 'body-progress')
+    expect(recorder.get('context')?.events.find((event) => event.event === 'context-sources')?.details).toEqual({
+      transportRequestId: 'request',
+      requestBytes: 123
+    })
+    expect(recorder.get('context')?.retention?.protectedDroppedEvents).toBe(0)
   })
 })
 
@@ -142,6 +218,44 @@ describe('observed transport', () => {
 })
 
 describe('evidence-based attribution', () => {
+  it('keeps native user-denied operations local even after a successful API response, without masking later upstream failures', () => {
+    const error = {
+      name: 'AI_ProviderSpecificError',
+      cause: { name: 'UnknownError', message: 'The user rejected permission to use this specific tool call.' }
+    }
+    const events = [
+      { at: 'now', stage: 'transport', event: 'request-started', details: { traceId: 'r1' } },
+      {
+        at: 'now',
+        stage: 'transport',
+        event: 'headers-received',
+        details: { status: 200, gateway: true, traceId: 'r1' }
+      },
+      { at: 'now', stage: 'runtime', event: 'failed', details: { error } }
+    ] as any
+    expect(attributeDiagnostic(events)).toMatchObject({
+      owner: 'zen-ai',
+      stage: 'local-permission',
+      confidence: 'confirmed'
+    })
+    expect(attributeDiagnostic([], [], { code: 'agent_permission_denied' })).toMatchObject({
+      stage: 'local-permission'
+    })
+    expect(
+      attributeDiagnostic([
+        ...events,
+        {
+          at: 'later',
+          stage: 'runtime',
+          event: 'failed',
+          details: { error: { name: 'APIError', message: 'provider failed' } }
+        }
+      ]).stage
+    ).not.toBe('local-permission')
+    expect(
+      attributeDiagnostic([], [], { name: 'APIError', statusCode: 403, message: 'Permission denied' }).stage
+    ).not.toBe('local-permission')
+  })
   it('does not blame local context processing for the reported chat admission timeout', () => {
     const r = new DiagnosticRecorder()
     r.record('op', 'context', 'failed', {

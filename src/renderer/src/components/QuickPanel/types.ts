@@ -52,6 +52,8 @@ export type QuickPanelFilterFn = (
 export type QuickPanelSortFn = (items: QuickPanelListItem[], searchText: string) => QuickPanelListItem[]
 
 export type QuickPanelOpenOptions = {
+  /** Optional button anchor; input-triggered panels retain their inputbar layout. */
+  anchorElement?: HTMLElement
   /** 显示在底部左边，类似于Placeholder */
   title?: string
   /** default: [] */
@@ -120,6 +122,7 @@ export interface QuickPanelContextType {
   readonly pageSize: number
   readonly multiple: boolean
   readonly triggerInfo?: QuickPanelTriggerInfo
+  readonly anchorElement?: HTMLElement
   readonly manageListExternally?: boolean
   readonly lastCloseAction?: QuickPanelCloseAction
   readonly filterFn?: QuickPanelFilterFn

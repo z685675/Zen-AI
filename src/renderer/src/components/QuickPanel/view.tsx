@@ -9,6 +9,7 @@ import { t } from 'i18next'
 import { debounce } from 'lodash'
 import { Check } from 'lucide-react'
 import React, { use, useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import styled from 'styled-components'
 
 import { defaultFilterFn, defaultSortFn } from './defaultStrategies'
@@ -20,6 +21,7 @@ import type {
   QuickPanelOpenOptions,
   QuickPanelScrollTrigger
 } from './types'
+import { useAnchoredPanel } from './useAnchoredPanel'
 
 const ITEM_HEIGHT = 31
 
@@ -57,6 +59,8 @@ export const QuickPanelView: React.FC<Props> = ({ setInputText }) => {
   const [historyPanel, setHistoryPanel] = useState<QuickPanelOpenOptions[]>([])
 
   const bodyRef = useRef<HTMLDivElement>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const anchorStyle = useAnchoredPanel(ctx.anchorElement, containerRef, ctx.isVisible, ctx.close)
   const listRef = useRef<DynamicVirtualListRef>(null)
   const footerRef = useRef<HTMLDivElement>(null)
 
@@ -329,6 +333,8 @@ export const QuickPanelView: React.FC<Props> = ({ setInputText }) => {
             title: ctx.title,
             list: ctx.list,
             symbol: ctx.symbol,
+            anchorElement: ctx.anchorElement,
+            triggerInfo: ctx.triggerInfo,
             multiple: ctx.multiple,
             defaultIndex: index,
             pageSize: ctx.pageSize,
@@ -734,8 +740,11 @@ export const QuickPanelView: React.FC<Props> = ({ setInputText }) => {
     [index, handleItemAction]
   )
 
-  return (
+  const panel = (
     <QuickPanelContainer
+      ref={containerRef}
+      style={anchorStyle}
+      $anchored={Boolean(ctx.anchorElement)}
       $pageSize={ctx.pageSize}
       $selectedColor={selectedColor}
       $selectedColorHover={selectedColorHover}
@@ -744,6 +753,7 @@ export const QuickPanelView: React.FC<Props> = ({ setInputText }) => {
       data-testid="quick-panel">
       <QuickPanelBody
         ref={bodyRef}
+        $anchored={Boolean(ctx.anchorElement)}
         onMouseMove={() =>
           setIsMouseOver((prev) => {
             scrollTriggerRef.current = 'initial'
@@ -760,7 +770,8 @@ export const QuickPanelView: React.FC<Props> = ({ setInputText }) => {
             estimateSize={estimateSize}
             overscan={5}
             scrollerStyle={{
-              pointerEvents: isMouseOver ? 'auto' : 'none'
+              pointerEvents: isMouseOver ? 'auto' : 'none',
+              ...(ctx.anchorElement ? { maxHeight: 'calc(var(--quick-panel-max-height, 100vh) - 48px)' } : {})
             }}>
             {rowRenderer}
           </DynamicVirtualList>
@@ -802,6 +813,7 @@ export const QuickPanelView: React.FC<Props> = ({ setInputText }) => {
       </QuickPanelBody>
     </QuickPanelContainer>
   )
+  return ctx.anchorElement ? createPortal(panel, document.body) : panel
 }
 
 const QuickPanelContainer = styled.div<{
@@ -809,6 +821,7 @@ const QuickPanelContainer = styled.div<{
   $selectedColor: string
   $selectedColorHover: string
   $collapsed?: boolean
+  $anchored?: boolean
 }>`
   --focused-color: rgba(0, 0, 0, 0.06);
   --selected-color: ${(props) => props.$selectedColor};
@@ -830,18 +843,42 @@ const QuickPanelContainer = styled.div<{
     pointer-events: ${(props) => (props.$collapsed ? 'none' : 'auto')};
     max-height: ${(props) => (props.$collapsed ? 0 : props.$pageSize * ITEM_HEIGHT + 100)}px;
   }
+  ${(props) =>
+    props.$anchored &&
+    `
+    position: fixed;
+    right: auto;
+    width: min(360px, calc(100vw - 16px));
+    padding: 0;
+    transform: none;
+    transition: none;
+    z-index: 1050;
+
+    &.visible {
+      max-height: ${props.$collapsed ? '0' : 'var(--quick-panel-max-height, calc(100vh - 16px))'};
+    }
+  `}
   body[theme-mode='dark'] & {
     --focused-color: rgba(255, 255, 255, 0.1);
   }
 `
 
-const QuickPanelBody = styled.div`
+const QuickPanelBody = styled.div<{ $anchored?: boolean }>`
   border-radius: 8px 8px 0 0;
   padding: 5px 0;
   border-width: 0.5px 0.5px 0 0.5px;
   border-style: solid;
   border-color: var(--color-border);
   position: relative;
+
+  ${(props) =>
+    props.$anchored &&
+    `
+    border-width: 1px;
+    border-radius: 10px;
+    background-color: var(--color-background);
+    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.12);
+  `}
 
   &::before {
     content: '';

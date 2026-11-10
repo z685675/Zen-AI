@@ -1,6 +1,7 @@
 import i18n from '@renderer/i18n'
 import type { Message } from '@renderer/types/newMessage'
 import { diagnoseClientError } from '@renderer/utils/clientErrorDiagnosis'
+import { DiagnosticRecorder } from '@shared/diagnostics'
 import { beforeAll, describe, expect, it, vi } from 'vitest'
 
 import { buildDiagnosticArchive } from '../../../../main/utils/diagnosticArchive'
@@ -16,6 +17,100 @@ vi.mock('@renderer/store', () => ({ default: { getState: () => ({ llm: { provide
 describe('ErrorDiagnosticPackageService', () => {
   beforeAll(async () => {
     await i18n.changeLanguage('zh-CN')
+  })
+
+  it('exports a complete long-task ledger and more than 256 audit observations through the real ZIP boundary', async () => {
+    const recorder = new DiagnosticRecorder()
+    const id = 'long-audit-export'
+    recorder.record(id, 'runtime', 'transport-config', { runtime: 'opencode', toolArgumentAuditVersion: 1 })
+    recorder.record(id, 'transport', 'context-sources', {
+      contextAuditVersion: 1,
+      coverage: 'complete',
+      transportRequestId: 'transport-1',
+      requestBytes: 500000,
+      categories: { toolResults: { items: 12, jsonCharacters: 400000, jsonBytes: 450000 } },
+      tools: { read_webpage: { items: 8, jsonCharacters: 250000, jsonBytes: 300000 } }
+    })
+    for (let i = 0; i < 100; i++) {
+      for (const phase of ['provider-wire', 'native-decoded', 'mcp-execution'])
+        recorder.record(id, 'tool', 'tool-arguments', {
+          phase,
+          nativeToolCallId: `call-${i}`,
+          toolName: 'mcp__assistant__create_file',
+          argumentComplete: true,
+          argumentFingerprint: `private-keyed-fingerprint-${i}`,
+          apiKey: 'PRIVATE_KEY'
+        })
+      recorder.record(id, 'transport', 'headers-received', { requestId: `request-${i}` })
+      for (let progress = 0; progress < 10; progress++) recorder.record(id, 'transport', 'body-progress')
+    }
+    const original = window.api
+    let files: Array<{ path: string; content: string }> = []
+    Object.assign(window, {
+      api: {
+        file: {
+          collectDiagnosticEvidence: async () => ({ snapshotStatus: 'collected', evidence: recorder.get(id) }),
+          saveDiagnosticPackage: async (_name: string, entries: typeof files) => {
+            buildDiagnosticArchive(entries)
+            files = entries
+            return '/long-audit.zip'
+          }
+        }
+      }
+    })
+    try {
+      await exportErrorDiagnosticPackage({
+        source: 'agent',
+        title: 'snapshot',
+        description: 'long task',
+        privacyNotice: 'privacy',
+        includeContent: false,
+        message: { id, topicId: 'session', role: 'assistant', blocks: [], status: 'success' } as Message
+      })
+      const report = JSON.parse(files.find((file) => file.path === 'tool-arguments.json')!.content)
+      expect(report.observations).toHaveLength(300)
+      expect(report.calls).toHaveLength(100)
+      expect(report.calls.every((call) => call.finding === 'wire-and-native-consistent')).toBe(true)
+      expect(report.retention.protectedDroppedEvents).toBe(0)
+      const timeline = JSON.parse(files.find((file) => file.path === 'timeline.json')!.content)
+      expect(timeline.events.filter((event) => event.event === 'headers-received')).toHaveLength(100)
+      expect(timeline.events.find((event) => event.event === 'context-sources')?.details).toMatchObject({
+        requestBytes: 500000,
+        categories: { toolResults: { items: 12 } },
+        tools: { read_webpage: { items: 8 } }
+      })
+      expect(files.find((file) => file.path === '工具参数对账.txt')!.content).toContain('call-99')
+      expect(files.find((file) => file.path === '工具参数对账.txt')!.content).not.toContain('truncated')
+      expect(files.map((file) => file.content).join('\n')).not.toContain('PRIVATE_KEY')
+    } finally {
+      Object.assign(window, { api: original })
+    }
+  })
+  it('collects a historical operation by its persisted runtime ID after the renderer recorder expires', async () => {
+    const original = window.api
+    const collect = vi.fn(async () => ({ snapshotStatus: 'collected' }))
+    const save = vi.fn(async () => '/historical.zip')
+    Object.assign(window, { api: { file: { collectDiagnosticEvidence: collect, saveDiagnosticPackage: save } } })
+    try {
+      await exportErrorDiagnosticPackage({
+        source: 'chat',
+        title: 'snapshot',
+        description: 'history',
+        privacyNotice: 'privacy',
+        message: {
+          id: 'expired-message-recorder',
+          topicId: 'topic',
+          role: 'assistant',
+          status: 'success',
+          blocks: [],
+          providerMetadata: { zenDiagnostic: { operationId: 'zen-diag-original-operation' } }
+        } as Message
+      })
+      expect(collect).toHaveBeenCalledWith('zen-diag-original-operation')
+      expect(save).toHaveBeenCalledOnce()
+    } finally {
+      Object.assign(window, { api: original })
+    }
   })
   it.each(
     (['chat', 'agent'] as const).flatMap((source) =>
@@ -48,6 +143,13 @@ describe('ErrorDiagnosticPackageService', () => {
       })
       expect(save).toHaveBeenCalledOnce()
       expect(archive?.subarray(0, 2).toString()).toBe('PK')
+      const exportedFiles = save.mock.calls[0][1]
+      if (source === 'agent') {
+        expect(exportedFiles.find((file) => file.path === '工具参数对账.txt')?.content).toContain('逐次工具参数对账')
+        expect(JSON.parse(exportedFiles.find((file) => file.path === 'tool-arguments.json')!.content)).toMatchObject({
+          version: 1
+        })
+      } else expect(exportedFiles.find((file) => file.path === 'tool-arguments.json')).toBeUndefined()
     } finally {
       Object.assign(window, { api: original })
     }

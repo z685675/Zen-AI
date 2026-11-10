@@ -123,7 +123,7 @@ import {
 } from '@renderer/utils/reasoningEffort'
 import { createRequestLifecycle } from '@renderer/utils/requestLifecycle'
 import { assertAssistantExecutionAllowed, isAssistantExecutionAllowed } from '@shared/agents/assistantAvailability'
-import { DEFAULT_OPENCODE_AGENT_ID } from '@shared/config/agents'
+import { DEFAULT_DSH_AGENT_ID, getAgentWorkspaceForId, isNewAssistantAgentId } from '@shared/config/agents'
 import { DIAGNOSTIC_OPERATION_HEADER } from '@shared/diagnostics'
 import { IpcChannel } from '@shared/IpcChannel'
 import { defaultAppHeaders } from '@shared/utils'
@@ -364,7 +364,7 @@ const isWechatBoundAgentSession = async (
         Authorization: `Bearer ${apiServer.apiKey}`
       }
     })
-    if (agentSession.agentId === DEFAULT_OPENCODE_AGENT_ID) return false
+    if (isNewAssistantAgentId(agentSession.agentId)) return false
     const channels = await client.listChannels({ agent_id: agentSession.agentId, type: 'wechat' })
     return channels.data.some((channel) => {
       const sessionId = channel?.sessionId ?? channel?.session_id
@@ -511,7 +511,7 @@ const cleanupAgentMessageAttachments = async (
         headers: { Authorization: `Bearer ${apiServer.apiKey}` }
       },
       undefined,
-      agentId === DEFAULT_OPENCODE_AGENT_ID ? 'opencode' : 'legacy'
+      getAgentWorkspaceForId(agentId)
     )
     const session = await client.getSession(agentId, sessionId)
     const workspace = session.accessible_paths?.[0]
@@ -562,7 +562,7 @@ const persistAgentSessionAttachments = async (
         headers: { Authorization: `Bearer ${apiServer.apiKey}` }
       },
       undefined,
-      agentSession.agentId === DEFAULT_OPENCODE_AGENT_ID ? 'opencode' : 'legacy'
+      getAgentWorkspaceForId(agentSession.agentId)
     )
     const session = await client.getSession(agentSession.agentId, agentSession.sessionId)
     const workspace = session.accessible_paths?.[0]
@@ -815,7 +815,7 @@ const runAgentSessionResend = async (
   if (!agentSession) {
     throw new Error(`Agent session context not found for topic: ${topicId}`)
   }
-  if (agentSession.agentId === DEFAULT_OPENCODE_AGENT_ID) {
+  if (isNewAssistantAgentId(agentSession.agentId)) {
     await dispatch(changeOpenCodeHistoryThunk(topicId, userMessageToResend.id, 'retry'))
     agentSession = findExistingAgentSessionContext(getState(), topicId, assistant.id) ?? agentSession
     userMessageToResend = getState().messages.entities[userMessageToResend.id] ?? userMessageToResend
@@ -978,7 +978,7 @@ const resolveAgentSessionEffortForResend = async (
         }
       },
       undefined,
-      agentSession.agentId === DEFAULT_OPENCODE_AGENT_ID ? 'opencode' : 'legacy'
+      getAgentWorkspaceForId(agentSession.agentId)
     )
     const session = await client.getSession(agentSession.agentId, agentSession.sessionId)
     const reasoningEffort = normalizeAgentReasoningEffort(session.configuration?.reasoning_effort)
@@ -1022,7 +1022,7 @@ export const renameAgentSessionIfNeeded = async (
         }
       },
       undefined,
-      agentSession.agentId === DEFAULT_OPENCODE_AGENT_ID ? 'opencode' : 'legacy'
+      getAgentWorkspaceForId(agentSession.agentId)
     )
 
     let session: GetAgentSessionResponse
@@ -1229,7 +1229,12 @@ const createAgentMessageStream = async (
   }
 
   const baseURL = buildAgentBaseURL(apiServer)
-  const workspacePrefix = agentSession.agentId === DEFAULT_OPENCODE_AGENT_ID ? 'new-assistant/' : ''
+  const workspacePrefix =
+    agentSession.agentId === DEFAULT_DSH_AGENT_ID
+      ? 'dsh-preview/'
+      : isNewAssistantAgentId(agentSession.agentId)
+        ? 'new-assistant/'
+        : ''
   const url = `${baseURL}/v1/${workspacePrefix}agents/${agentSession.agentId}/sessions/${agentSession.sessionId}/messages`
   const normalizedContent = typeof content === 'string' ? content.trim() : String(content ?? '').trim()
 
@@ -1547,6 +1552,14 @@ const fetchAndProcessAgentResponseImpl = async (
   })
   recordDiagnostic(assistantMessage.id, 'preparation', 'started')
   try {
+    const providerMetadata = {
+      ...getState().messages.entities[assistantMessage.id]?.providerMetadata,
+      zenDiagnostic: { operationId: diagnosticOperationId }
+    }
+    dispatch(
+      newMessagesActions.updateMessage({ topicId, messageId: assistantMessage.id, updates: { providerMetadata } })
+    )
+    await saveUpdatesToDB(assistantMessage.id, topicId, { providerMetadata }, [])
     dispatch(newMessagesActions.setTopicLoading({ topicId, loading: true }))
 
     const blockManager = new BlockManager({
@@ -1655,25 +1668,29 @@ const fetchAndProcessAgentResponseImpl = async (
       if (typeof content !== 'object' || content === null) return
 
       const rawType = (content as { type?: string }).type
-      if (rawType === 'opencode_turn') {
+      if (rawType === 'opencode_turn' || rawType === 'dsh_turn') {
         const turn = content as { user_message_id: string; session_id: string }
         for (const id of [userMessageId, assistantMessage.id]) {
           const current = getState().messages.entities[id]
           if (!current) continue
           const providerMetadata = {
             ...current.providerMetadata,
-            opencode: { user_message_id: turn.user_message_id, session_id: turn.session_id }
+            [rawType === 'dsh_turn' ? 'dsh' : 'opencode']: {
+              user_message_id: turn.user_message_id,
+              session_id: turn.session_id
+            }
           }
           dispatch(newMessagesActions.updateMessage({ topicId, messageId: id, updates: { providerMetadata } }))
           await saveUpdatesToDB(id, topicId, { providerMetadata }, [])
         }
-      } else if (rawType === 'opencode_status') {
+      } else if (rawType === 'opencode_status' || rawType === 'dsh_status') {
         const status = (content as { status: string }).status
         const labels: Record<string, string> = {
           connecting: t('new_assistant.connecting'),
           starting: t('new_assistant.starting'),
           restoring: t('new_assistant.restoring'),
           submitting: t('new_assistant.waiting_response'),
+          busy: t('new_assistant.waiting_response'),
           waiting_model: t('new_assistant.waiting_model'),
           retrying: t('new_assistant.retrying'),
           compacting: t('new_assistant.compacting'),
@@ -1682,7 +1699,7 @@ const fetchAndProcessAgentResponseImpl = async (
         updateContextTelemetry(topicId, {
           status: status === 'idle' ? 'complete' : status === 'retrying' ? 'retrying' : 'analyzing',
           detail: labels[status],
-          lastAction: `opencode-status:${assistantMessage.id}:${status}`
+          lastAction: `${rawType}:${assistantMessage.id}:${status}`
         })
       } else if (rawType === 'context_recovery') {
         recordContextRetry(topicId, 'agent-session-recovery')
@@ -1754,7 +1771,7 @@ const fetchAndProcessAgentResponseImpl = async (
       }
 
       // Only mark as cleared if there was a previous session ID (not initial assignment)
-      sessionWasCleared = agentSession.agentId !== DEFAULT_OPENCODE_AGENT_ID && !!latestAgentSessionId
+      sessionWasCleared = !isNewAssistantAgentId(agentSession.agentId) && !!latestAgentSessionId
 
       latestAgentSessionId = sessionId
       agentSession.agentSessionId = sessionId
@@ -1822,7 +1839,7 @@ const fetchAndProcessAgentResponseImpl = async (
               }
             },
             undefined,
-            agentSession.agentId === DEFAULT_OPENCODE_AGENT_ID ? 'opencode' : 'legacy'
+            getAgentWorkspaceForId(agentSession.agentId)
           )
           const paths = client.getSessionPaths(agentSession.agentId)
           await mutate(paths.withId(agentSession.sessionId))
@@ -2038,6 +2055,12 @@ const fetchAndProcessAssistantResponseImpl = async (
   recordDiagnostic(assistantMsgId, 'preparation', 'started')
   let callbacks: StreamProcessorCallbacks = {}
   try {
+    const providerMetadata = {
+      ...getState().messages.entities[assistantMsgId]?.providerMetadata,
+      zenDiagnostic: { operationId: diagnosticOperationId }
+    }
+    dispatch(newMessagesActions.updateMessage({ topicId, messageId: assistantMsgId, updates: { providerMetadata } }))
+    await saveUpdatesToDB(assistantMsgId, topicId, { providerMetadata }, [])
     dispatch(newMessagesActions.setTopicLoading({ topicId, loading: true }))
 
     // 创建 BlockManager 实例
@@ -2113,7 +2136,7 @@ const fetchAndProcessAssistantResponseImpl = async (
             }
           },
           undefined,
-          activeAgentId === DEFAULT_OPENCODE_AGENT_ID ? 'opencode' : 'legacy'
+          getAgentWorkspaceForId(activeAgentId)
         )
         const agentData = await agentClient.getAgent(activeAgentId)
         allowedTools = agentData?.allowed_tools
@@ -2363,18 +2386,20 @@ export const changeOpenCodeHistoryThunk =
   async (dispatch: AppDispatch, getState: () => RootState) => {
     if (nativeHistoryOperations.has(topicId) || getState().messages.loadingByTopic[topicId])
       throw new Error(t('new_assistant.history.busy'))
+    const owner = selectMessagesForTopic(getState(), topicId).find((message) => message.id === messageId)?.assistantId
+    if (!owner || !isNewAssistantAgentId(owner)) throw new Error('Native assistant message not found')
     const api = getState().settings.apiServer
     const client = new AgentApiClient(
       { baseURL: buildAgentBaseURL(api), headers: { Authorization: `Bearer ${api.apiKey}` } },
       undefined,
-      'opencode'
+      getAgentWorkspaceForId(owner)
     )
     nativeHistoryOperations.add(topicId)
     dispatch(newMessagesActions.setTopicLoading({ topicId, loading: true }))
     try {
       const previousMessages = selectMessagesForTopic(getState(), topicId)
       const session = await client.changeNativeHistory(
-        DEFAULT_OPENCODE_AGENT_ID,
+        owner,
         extractAgentSessionIdFromTopicId(topicId),
         messageId,
         action
@@ -2417,7 +2442,7 @@ export const deleteSingleMessageThunk =
       logger.error(`[deleteSingleMessage] Message ${messageId} not found in topic ${topicId}.`)
       return
     }
-    if (isAgentSessionTopicId(topicId) && messageToDelete.assistantId === DEFAULT_OPENCODE_AGENT_ID) {
+    if (isAgentSessionTopicId(topicId) && isNewAssistantAgentId(messageToDelete.assistantId)) {
       await dispatch(changeOpenCodeHistoryThunk(topicId, messageId, 'delete'))
       return
     }
@@ -2463,7 +2488,7 @@ export const deleteMessageGroupThunk =
       logger.warn(`[deleteMessageGroup] No messages found with askId ${askId} in topic ${topicId}.`)
       return
     }
-    if (isAgentSessionTopicId(topicId) && messagesToDelete.some((m) => m.assistantId === DEFAULT_OPENCODE_AGENT_ID)) {
+    if (isAgentSessionTopicId(topicId) && messagesToDelete.some((m) => isNewAssistantAgentId(m.assistantId))) {
       window.toast.info(t('new_assistant.memory_notice'))
       return
     }
@@ -2495,7 +2520,7 @@ export const clearTopicMessagesThunk =
       const topicOwner =
         messageIdsToClear.map((id) => state.messages.entities[id]).find((message) => message?.topicId === topicId)
           ?.assistantId ?? ownerAgentId
-      if (isAgentSessionTopicId(topicId) && topicOwner === DEFAULT_OPENCODE_AGENT_ID) {
+      if (isAgentSessionTopicId(topicId) && isNewAssistantAgentId(topicOwner)) {
         const apiServer = state.settings.apiServer
         const sessionId = extractAgentSessionIdFromTopicId(topicId)
         if (!sessionId || !apiServer?.enabled || !apiServer.apiKey)
@@ -2503,9 +2528,9 @@ export const clearTopicMessagesThunk =
         const client = new AgentApiClient(
           { baseURL: buildAgentBaseURL(apiServer), headers: { Authorization: `Bearer ${apiServer.apiKey}` } },
           undefined,
-          'opencode'
+          getAgentWorkspaceForId(topicOwner)
         )
-        await client.resetNativeMemory(DEFAULT_OPENCODE_AGENT_ID, sessionId)
+        await client.resetNativeMemory(topicOwner, sessionId)
       }
       const blockIdsToDeleteSet = new Set<string>()
 

@@ -3,12 +3,15 @@ import { EventEmitter } from 'node:events'
 import { createStreamAbortController } from '@main/apiServer/utils/createStreamAbortController'
 import { LEGACY_ASSISTANT_READ_ONLY_CODE } from '@shared/agents/assistantAvailability'
 import { AgentTaskLimitError } from '@shared/agents/taskConcurrency'
-import { DEFAULT_OPENCODE_AGENT_ID } from '@shared/config/agents'
+import { DEFAULT_DSH_AGENT_ID, DEFAULT_OPENCODE_AGENT_ID } from '@shared/config/agents'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const { broadcastAgentActionRequiredMock } = vi.hoisted(() => ({
   broadcastAgentActionRequiredMock: vi.fn()
 }))
+
+const { assertDshPreviewUnlockedMock } = vi.hoisted(() => ({ assertDshPreviewUnlockedMock: vi.fn() }))
+vi.mock('../../../dshPreview/access', () => ({ assertDshPreviewUnlocked: assertDshPreviewUnlockedMock }))
 
 vi.mock('../agentIpc', () => ({
   broadcastAgentActionRequired: broadcastAgentActionRequiredMock
@@ -147,7 +150,7 @@ describe('SessionMessageService runtime stream lifecycle', () => {
       metadata: { rawMcpToolResponse: { status: 'error' } }
     })
   })
-  it.each([DEFAULT_OPENCODE_AGENT_ID, 'legacy-agent'])(
+  it.each([DEFAULT_OPENCODE_AGENT_ID, DEFAULT_DSH_AGENT_ID, 'legacy-agent'])(
     'protects native history at service-level deletion for %s',
     async (agentId) => {
       const service = new SessionMessageService()
@@ -158,7 +161,7 @@ describe('SessionMessageService runtime stream lifecycle', () => {
       }
       vi.spyOn(service, 'getDatabase').mockResolvedValue(database as any)
       try {
-        if (agentId === DEFAULT_OPENCODE_AGENT_ID) {
+        if (agentId !== 'legacy-agent') {
           await expect(service.deleteSessionMessage('delete-safety', 1)).rejects.toMatchObject({
             code: 'native_history_required'
           })
@@ -185,6 +188,98 @@ describe('SessionMessageService runtime stream lifecycle', () => {
   afterEach(() => {
     vi.useRealTimers()
   })
+
+  it('rejects locked DSH execution before preparation, shared admission or runtime startup', async () => {
+    assertDshPreviewUnlockedMock.mockImplementationOnce(() => {
+      throw Object.assign(new Error('Internal testing is locked'), { code: 'internal_testing_locked' })
+    })
+    const service = new SessionMessageService()
+    const start = vi.spyOn(service as any, 'startSessionMessageStream')
+    await expect(
+      service.createSessionMessage(
+        { ...session(), agent_id: DEFAULT_DSH_AGENT_ID },
+        { content: 'hello' } as any,
+        new AbortController()
+      )
+    ).rejects.toMatchObject({ code: 'internal_testing_locked' })
+    expect(start).not.toHaveBeenCalled()
+    expect(resolveAgentRuntimeMock).not.toHaveBeenCalled()
+    expect(invokeMock).not.toHaveBeenCalled()
+    expect(getEnableDeveloperModeMock).not.toHaveBeenCalled()
+  })
+
+  it('rejects locked DSH message reads by stored session ownership before loading message contents', async () => {
+    assertDshPreviewUnlockedMock.mockImplementationOnce(() => {
+      throw Object.assign(new Error('Internal testing is locked'), { code: 'internal_testing_locked' })
+    })
+    const service = new SessionMessageService()
+    const select = vi.fn(() => ({
+      from: () => ({ where: () => ({ limit: async () => [{ agentId: DEFAULT_DSH_AGENT_ID }] }) })
+    }))
+    vi.spyOn(service, 'getDatabase').mockResolvedValue({ select } as any)
+    await expect(service.listSessionMessages('dsh-owned')).rejects.toMatchObject({ code: 'internal_testing_locked' })
+    expect(select).toHaveBeenCalledOnce()
+  })
+
+  it.each([false, true])(
+    'leaves DSH history and task deadlines to the native runtime (research=%s)',
+    async (research) => {
+      const agentStream = createAgentStream()
+      resolveAgentRuntimeMock.mockResolvedValue({ runtimeId: 'dsh', candidates: ['dsh'], source: 'workspace' })
+      invokeMock.mockResolvedValue(agentStream)
+      const service = new SessionMessageService()
+      const lastSession = vi.spyOn(service as any, 'getLastAgentSessionId')
+      const result = await service.createSessionMessage(
+        { ...session(), agent_id: DEFAULT_DSH_AGENT_ID },
+        { content: 'research', deep_research: research, recovery_context: 'LEGACY_RECOVERY_SHOULD_NOT_REPLAY' } as any,
+        new AbortController()
+      )
+      const chunks = collect(result.stream)
+      agentStream.emit('data', { type: 'chunk', chunk: { type: 'start' } })
+      await vi.advanceTimersByTimeAsync(480_001)
+      expect(invokeMock.mock.calls[0][2].signal.aborted).toBe(false)
+      agentStream.emit('data', {
+        type: 'chunk',
+        chunk: { type: 'tool-call', toolCallId: 'dsh-read', toolName: 'read_file', input: { path: 'report.md' } }
+      })
+      agentStream.emit('data', {
+        type: 'chunk',
+        chunk: { type: 'tool-result', toolCallId: 'dsh-read', toolName: 'read_file', output: 'Read locally' }
+      })
+      await vi.advanceTimersByTimeAsync(180_001)
+      expect(invokeMock.mock.calls[0][2].signal.aborted).toBe(false)
+      agentStream.emit('data', { type: 'chunk', chunk: { type: 'text-delta', text: 'Done' } })
+      agentStream.emit('data', { type: 'complete' })
+      await result.completion
+      expect(await chunks).toContainEqual(expect.objectContaining({ text: 'Done' }))
+      expect(lastSession).not.toHaveBeenCalled()
+      expect(invokeMock).toHaveBeenCalledOnce()
+      expect(invokeMock.mock.calls[0][0]).not.toContain('LEGACY_RECOVERY_SHOULD_NOT_REPLAY')
+      expect(invokeMock.mock.calls[0][1]).toMatchObject({ id: session().id, agent_id: DEFAULT_DSH_AGENT_ID })
+      expect(invokeMock.mock.calls[0][3]).toBe('')
+    }
+  )
+
+  it.each(['No conversation found for session', '503 Service Unavailable'])(
+    'does not replay DSH through legacy fallback or recovery after %s',
+    async (message) => {
+      const agentStream = createAgentStream()
+      resolveAgentRuntimeMock.mockResolvedValue({ runtimeId: 'dsh', candidates: ['dsh'], source: 'workspace' })
+      invokeMock.mockResolvedValue(agentStream)
+      const result = await new SessionMessageService().createSessionMessage(
+        { ...session(), agent_id: DEFAULT_DSH_AGENT_ID },
+        { content: 'continue', recovery_context: 'Verified checkpoint' } as any,
+        new AbortController()
+      )
+      const failure = consume(result.stream).catch((error) => error)
+      const completion = result.completion.catch((error) => error)
+      agentStream.emit('data', { type: 'chunk', chunk: { type: 'start' } })
+      agentStream.emit('data', { type: 'error', error: new Error(message) })
+      await expect(failure).resolves.toMatchObject({ message })
+      await expect(completion).resolves.toMatchObject({ message })
+      expect(invokeMock).toHaveBeenCalledOnce()
+    }
+  )
 
   it('mirrors the desktop final exchange to its admission-time target with one stable turn identity', async () => {
     const agentStream = createAgentStream()
@@ -611,7 +706,7 @@ describe('SessionMessageService runtime stream lifecycle', () => {
     expect(getEnableDeveloperModeMock).not.toHaveBeenCalled()
   })
 
-  it.each(['opencode', 'codex', 'claude-code'])(
+  it.each(['opencode', 'dsh', 'codex', 'claude-code'])(
     'forwards disconnect cancellation to %s before reader cleanup removes abort listeners',
     async (runtimeId) => {
       let active = false
@@ -1097,7 +1192,7 @@ describe('SessionMessageService shared task admission', () => {
     return { finish, fail, result, start }
   }
 
-  it('reserves before asynchronous preparation across service instances and new assistant sessions', async () => {
+  it('shares admission between OpenCode and DSH before asynchronous preparation', async () => {
     const firstService = new SessionMessageService()
     const secondService = new SessionMessageService()
     const first = pendingTask(firstService)
@@ -1117,7 +1212,7 @@ describe('SessionMessageService shared task admission', () => {
     try {
       await expect(
         secondService.createSessionMessage(
-          { ...session(), id: 'admission-old' },
+          { ...session(), id: 'admission-dsh', agent_id: DEFAULT_DSH_AGENT_ID },
           { content: 'task' } as any,
           new AbortController()
         )
@@ -1130,7 +1225,7 @@ describe('SessionMessageService shared task admission', () => {
       await running.completion
     }
     const next = await secondService.createSessionMessage(
-      { ...session(), id: 'admission-old' },
+      { ...session(), id: 'admission-dsh', agent_id: DEFAULT_DSH_AGENT_ID },
       { content: 'task' } as any,
       new AbortController()
     )

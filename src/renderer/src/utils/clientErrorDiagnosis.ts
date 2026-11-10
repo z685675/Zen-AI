@@ -1,5 +1,6 @@
 import type { Model } from '@renderer/types'
 import { ERROR_I18N_KEY_STREAM_PAUSED, type SerializedError } from '@renderer/types/error'
+import { isAgentPermissionRejection } from '@shared/agents/permissionRejection'
 import { CONNECTIVITY_CHECK_REQUEST_HEADERS } from '@shared/diagnostics'
 import { getModelDailyQuotaErrorKind, MODEL_DAILY_QUOTA_MESSAGE_KEYS } from '@shared/utils/modelDailyQuota'
 import i18next from 'i18next'
@@ -365,6 +366,20 @@ export function diagnoseClientError(error?: SerializedError, options: DiagnoseOp
     }
   }
 
+  if (isAgentPermissionRejection(error)) {
+    return {
+      ...base,
+      category: 'runtime',
+      title: i18next.t('new_assistant.permission.deniedTitle'),
+      summary: i18next.t('new_assistant.permission.deniedDescription'),
+      stage: i18next.t('new_assistant.permission.title'),
+      errorType: 'agent_permission_denied',
+      serviceConnectivity: UNKNOWN,
+      serviceReceived: UNKNOWN,
+      startedGenerating: UNKNOWN,
+      suggestion: i18next.t('new_assistant.permission.deniedSuggestion')
+    }
+  }
   const deadlineKind = getAgentTaskDeadlineKind(error)
   if (deadlineKind) {
     const seconds = getAgentTaskDeadlineSeconds(error)

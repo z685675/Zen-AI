@@ -365,19 +365,25 @@
       "dismissHint": "記録を非表示にするだけで、送信済みのメッセージは取り消しません。",
       "draftOccupied": "先に現在の下書きを送信または保存してください。",
       "edit": "編集",
+      "guideIdle": "[to be translated]:There is no running task to steer right now.",
+      "guideQueued": "[to be translated]:The current task cannot accept guidance yet. This message remains queued.",
+      "guideSaveFailed": "[to be translated]:Could not save the steering action. The message remains queued.",
       "hint": {
         "accepted": "現在のタスクに保存され、後続処理を待っています。",
         "deferred": "タスクは終了しましたが、追加指示の処理は未確認です。結果を確認してから続行してください。",
         "failed": "実行に失敗し、キューは停止中です。再送信前に履歴を確認してください。",
         "rejected": "送信されていません。編集するかタスク完了後に送信してください。",
+        "steer": "[to be translated]:Submit this queued message to the current task now to add instructions or change its subsequent direction.",
         "uncertain": "受信を確認できません。再送信前に受信状況や履歴を確認してください。"
       },
       "notReady": "タスクが開始中または終了処理中です。編集するか後で送信してください。",
       "pause": "キューを一時停止",
+      "pauseHint": "[to be translated]:Pause automatic sending of queued messages while the current task continues. Queued messages are kept for later.",
       "queue": "完了後に送信",
       "remove": "削除",
       "restored": "入力欄に戻しました。確認して送信してください。",
       "resume": "キューを再開",
+      "resumeHint": "[to be translated]:Resume processing queued messages in order, waiting for the current task to finish if it is still running.",
       "saveFailed": "保存できませんでした。下書きは保持されています。",
       "state": {
         "accepted": "受信済み",
@@ -3135,6 +3141,7 @@
       "completed": "完了",
       "error": "エラーが発生しました",
       "groupHeader": "{{count}}ツール呼び出し",
+      "handoff_timed_out": "[to be translated]:Verification unfinished",
       "invoking": "呼び出し中",
       "labels": {
         "bash": "バッシュ",
@@ -3160,6 +3167,7 @@
       "preview": "プレビュー",
       "raw": "生データ",
       "runningCount": "{{count}}個のツールが実行中",
+      "search_limited": "[to be translated]:Search limited · not executed",
       "sections": {
         "args": "議論",
         "command": "コマンド",
@@ -3447,9 +3455,14 @@
     "memory_notice": "Independent native memory survives model changes. Retry, branching and individual deletion are supported; direct editing and bulk deletion are not yet supported.",
     "outputting": "The model is producing output",
     "permission": {
+      "deniedDescription": "[to be translated]:The operation was not authorized and the task was interrupted. Completed work remains in this conversation.",
+      "deniedSuggestion": "[to be translated]:Review the rejected operation and provide further instructions to continue; there is no need to resubmit the entire task.",
+      "deniedTitle": "[to be translated]:Operation not authorized",
       "description": "操作とその対象を確認してから、タスクの続行を許可してください。",
       "details": "操作の詳細",
+      "loopAllow": "[to be translated]:Allow one repeat",
       "loopDescription": "アシスタントが同じ操作を繰り返し試行しました。一度だけ続行を許可するか、この操作をキャンセルできます。",
+      "loopSkip": "[to be translated]:Skip repeat and continue",
       "loopTitle": "同じ操作の繰り返しを検出したため、タスクを一時停止しました",
       "title": "このタスクには確認が必要です"
     },
@@ -5586,6 +5599,25 @@
         "label": "目標言語",
         "russian": "ロシア語"
       }
+    },
+    "internalTesting": {
+      "deleteHistoryNotice": "[to be translated]:Delete this turn and all later turns, including the corresponding assistant context?",
+      "description": "[to be translated]:Uses the existing assistant interface with separate conversations and workspace. The runtime downloads on first use. Verify again after restarting the app.",
+      "downloadingInstaller": "[to be translated]:Preparing the download tools…",
+      "downloadingNode": "[to be translated]:Downloading the standalone runtime…",
+      "enter": "[to be translated]:Open preview assistant",
+      "entry": "[to be translated]:DSH preview assistant",
+      "installingRuntime": "[to be translated]:Downloading and installing preview components. The first installation may take a few minutes…",
+      "lock": "[to be translated]:Close preview",
+      "password": "[to be translated]:Enter the preview password",
+      "passwordIncorrect": "[to be translated]:Incorrect password. Please retry.",
+      "prepareFailed": "[to be translated]:Could not prepare the runtime. Check your connection and retry.",
+      "preparing": "[to be translated]:Preparing the preview runtime. The first download may take a few minutes…",
+      "title": "[to be translated]:Internal testing",
+      "unlock": "[to be translated]:Verify",
+      "unlocked": "[to be translated]:Unlocked",
+      "validation": "[to be translated]:Verify internal testing access",
+      "verifying": "[to be translated]:Checking the runtime…"
     },
     "launch": {
       "onboot": "起動時に自動で開始",

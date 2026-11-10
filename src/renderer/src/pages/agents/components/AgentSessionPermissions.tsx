@@ -23,7 +23,11 @@ function SessionPermission({ request }: { request: ToolPermissionEntry }) {
             <summary>{t('new_assistant.permission.details')}</summary>
             <pre className="max-h-40 overflow-auto whitespace-pre-wrap break-all">{request.inputPreview}</pre>
           </details>
-          <ToolApprovalActions {...approval} />
+          <ToolApprovalActions
+            {...approval}
+            confirmLabel={loop ? t('new_assistant.permission.loopAllow') : undefined}
+            cancelLabel={loop ? t('new_assistant.permission.loopSkip') : undefined}
+          />
         </div>
       }
     />

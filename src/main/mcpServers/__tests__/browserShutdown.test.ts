@@ -2,7 +2,11 @@ import { app } from 'electron'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const harness = vi.hoisted(() => ({
-  controllers: [] as Array<{ dispose: ReturnType<typeof vi.fn>; assertAutomationAllowed: ReturnType<typeof vi.fn> }>,
+  controllers: [] as Array<{
+    dispose: ReturnType<typeof vi.fn>
+    assertAutomationAllowed: ReturnType<typeof vi.fn>
+    getAutomationHandoff: ReturnType<typeof vi.fn>
+  }>,
   servers: [] as Array<{
     server: { onclose?: () => void; setRequestHandler: ReturnType<typeof vi.fn> }
     close: ReturnType<typeof vi.fn>
@@ -15,6 +19,7 @@ vi.mock('../browser/controller', () => ({
   CdpBrowserController: class {
     dispose = vi.fn(async () => {})
     assertAutomationAllowed = vi.fn()
+    getAutomationHandoff = vi.fn()
     constructor() {
       harness.controllers.push(this)
     }
@@ -45,12 +50,21 @@ describe('browser native session shutdown', () => {
   it('blocks agent resets and tab switches during handoff while still accepting the user-wait tool', async () => {
     const { BrowserServer } = await import('../browser/server')
     const browser = new BrowserServer()
-    harness.controllers[0].assertAutomationAllowed.mockImplementation(() => {
-      throw new Error('Browser is under user control')
+    harness.controllers[0].getAutomationHandoff.mockReturnValue({
+      status: 'awaiting_user',
+      executed: false,
+      tabId: 'tab',
+      userAction: { reason: 'captcha' }
     })
     const handler = harness.servers[0].server.setRequestHandler.mock.calls[1][1]
     for (const name of ['reset', 'switch_tab']) {
-      await expect(handler({ params: { name, arguments: {} } })).resolves.toMatchObject({ isError: true })
+      const result = await handler({ params: { name, arguments: {} } })
+      expect(result.isError).toBe(false)
+      expect(JSON.parse(result.content[0].text)).toMatchObject({
+        status: 'awaiting_user',
+        executed: false,
+        tabId: 'tab'
+      })
     }
     expect(harness.mutate).not.toHaveBeenCalled()
     await expect(handler({ params: { name: 'wait_for_user', arguments: {} } })).resolves.toMatchObject({

@@ -2,21 +2,53 @@ import { parseJSON } from '@renderer/utils/json'
 import { findCitationInChildren } from '@renderer/utils/markdown'
 import { isEmpty, omit } from 'lodash'
 import React, { useMemo } from 'react'
+import { useTranslation } from 'react-i18next'
 import type { Node } from 'unist'
 
 import CitationTooltip, { CitationSchema } from './CitationTooltip'
 import Hyperlink from './Hyperlink'
+import { localFilePath } from './localFileLink'
 
 interface LinkProps extends React.AnchorHTMLAttributes<HTMLAnchorElement> {
   node?: Omit<Node, 'type'>
 }
 
 const Link: React.FC<LinkProps> = (props) => {
+  const { t } = useTranslation()
+  const filePath = localFilePath(props.href ?? '')
   const citationData = useMemo(() => {
     const raw = parseJSON(findCitationInChildren(props.children))
     const parsed = CitationSchema.safeParse(raw)
     return parsed.success ? parsed.data : null
   }, [props.children])
+
+  if (filePath) {
+    return (
+      <a
+        {...omit(props, ['node', 'citationData', 'target'])}
+        title={filePath}
+        onClick={async (event) => {
+          event.preventDefault()
+          event.stopPropagation()
+          try {
+            const [check] = await window.api.file.checkPaths([filePath])
+            if (check?.status !== 'available') {
+              window.toast.error(
+                t(
+                  check?.status === 'missing' ? 'chat.input.tools.file_not_found' : 'chat.input.tools.open_file_error',
+                  { path: filePath }
+                )
+              )
+              return
+            }
+            await window.api.file.openPath(filePath)
+          } catch {
+            window.toast.error(t('chat.input.tools.open_file_error', { path: filePath }))
+          }
+        }}
+      />
+    )
+  }
 
   // 处理内部链接
   if (props.href?.startsWith('#')) {

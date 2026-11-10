@@ -4,10 +4,13 @@ import type { Tool } from '@modelcontextprotocol/sdk/types.js'
 import { app } from 'electron'
 
 import { backupAssistantFile, prepareAssistantFileCopy } from './assistantFileSafety'
+import { LITERATURE_TOOLS, readPaper, searchLiterature } from './assistantLiterature'
+import { READ_WEBPAGE_TOOL, readAssistantWebpage } from './assistantReadWebpage'
 import { searchAssistantWeb } from './assistantWebSearch'
 
 export type AssistantProductOptions = {
   workspace: string
+  temporaryDirectory?: string
   signal?: AbortSignal
   readOnly?: boolean
   allowedTools?: readonly string[]
@@ -17,10 +20,12 @@ export type AssistantProductOptions = {
 }
 
 export const ASSISTANT_PRODUCT_TOOLS: Tool[] = [
+  ...LITERATURE_TOOLS,
+  READ_WEBPAGE_TOOL,
   {
     name: 'web_search',
     description:
-      'Search public webpages when the user requests research or current facts. Parallel queries are queued within independent search capacity; do not resubmit a pending query. Sends only the query to Exa public MCP (subject to its limits); never include private attachments, secrets or full conversation. Returns source extracts, not verified full pages. Use browser to verify sources and publication dates. Do not search for greetings or tasks answerable locally.',
+      'Search public webpages for requested research or current facts. Start with 2–3 focused queries, review results, then search only remaining gaps; never submit dozens of speculative queries at once. Independent search capacity queues and paces calls; do not resubmit pending queries. status=unavailable means NOT searched: use existing results or public source pages, not a retry loop. Sends only query/count to Exa public MCP; never include private attachments, secrets or full conversation. Extracts are partial evidence; verify original pages/dates. Do not search for greetings or local tasks.',
     inputSchema: {
       type: 'object',
       properties: { query: { type: 'string', maxLength: 1500 }, count: { type: 'integer', minimum: 1, maximum: 8 } },
@@ -72,6 +77,13 @@ export async function callAssistantProductTool(
       ? AbortSignal.any([options.signal, requestSignal])
       : (options.signal ?? requestSignal)
   signal?.throwIfAborted()
+  if (name === 'literature_search') return searchLiterature(args, signal)
+  if (name === 'read_webpage')
+    return readAssistantWebpage(args, options.temporaryDirectory ?? options.workspace, signal)
+  if (name === 'read_paper') {
+    if (!options.temporaryDirectory) throw new Error('Assistant temporary directory is unavailable')
+    return readPaper(args, options.temporaryDirectory, signal)
+  }
   if (options.readOnly && ['prepare_file_copy', 'backup_file'].includes(name))
     throw new Error('Plan mode does not permit mutating tools')
   if (name === 'web_search') return searchAssistantWeb(args.query, args.count, signal)
@@ -83,6 +95,7 @@ export async function callAssistantProductTool(
       platform: process.platform,
       arch: process.arch,
       workspace: options.workspace,
+      ...(options.temporaryDirectory ? { temporary_directory: options.temporaryDirectory } : {}),
       authorized_folders: roots,
       system_paths: Object.fromEntries(
         (['desktop', 'documents', 'downloads', 'temp'] as const).map((key) => [key, app.getPath(key)])

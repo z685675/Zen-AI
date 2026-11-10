@@ -13,6 +13,19 @@ const event = (ms: number, stage: DiagnosticEvent['stage'], name: string, detail
 })
 
 describe('turn performance evidence', () => {
+  it('does not describe a truncated multi-request timeline as one continuous model wait', () => {
+    const report = buildTurnPerformance({
+      droppedEvents: 200,
+      events: [
+        event(0, 'runtime', 'task-stage', { stage: 'waiting_model' }),
+        event(1000, 'tool', 'tool-call', { toolCallId: 't1' }),
+        event(3000, 'transport', 'request-started', { traceId: 'second' }),
+        event(200000, 'runtime', 'task-stage', { stage: 'completed' })
+      ]
+    })
+    expect(report.intervals.find((span) => span.label === 'waiting_model')?.durationMs).toBe(1000)
+    expect(report.coverage.missing).toContain('bounded-events-truncated')
+  })
   it('separates headers, first bytes, reasoning and answer text and does not add parallel spans', () => {
     const report = buildTurnPerformance({
       startedAt: at(0),

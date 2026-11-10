@@ -28,6 +28,21 @@ const config = (id: string, type = 'new-api', endpoint?: string) =>
   })
 
 describe('OpenCode isolated model config', () => {
+  it('does not inherit system temporary directories or their differently cased aliases', () => {
+    const workspaceTemp = path.resolve('工作目录', '.agents', '.tmp', 'session')
+    const env = buildOpenCodeEnvironment(
+      { TEMP: 'global-temp', Tmp: 'other-temp', tmpdir: 'another-temp', PATH: 'system' },
+      path.resolve('isolated'),
+      'password',
+      undefined,
+      undefined,
+      workspaceTemp
+    )
+    expect(env).toMatchObject({ TEMP: workspaceTemp, TMP: workspaceTemp, TMPDIR: workspaceTemp })
+    expect(env.Tmp).toBeUndefined()
+    expect(env.tmpdir).toBeUndefined()
+    expect(Object.values(env)).not.toContain('global-temp')
+  })
   it('gives slow response headers time within a finite whole-request and idle-chunk budget', () => {
     expect(config('alias').provider['zen-selected'].options).toMatchObject({
       timeout: 600_000,
@@ -47,7 +62,7 @@ describe('OpenCode isolated model config', () => {
     expect(env.PATH?.split(path.delimiter)).toEqual(['bundled-search', toolDir, 'system', 'other-system'])
     expect(env.Path).toBeUndefined()
     expect(env.OPENAI_API_KEY).toBeUndefined()
-    expect(env.OPENCODE_PURE).toBe('true')
+    expect(env.OPENCODE_PURE).toBe('false')
   })
   it.each(['gpt-6-sol', 'claude-sonnet-5', 'gemini-3-pro', 'grok-4'])(
     'uses the gateway protocol, not model name, for %s',
@@ -100,6 +115,9 @@ describe('OpenCode isolated model config', () => {
     expect(result.permission.bash).toBe('deny')
     expect(result.permission['mcp__assistant_*']).toBe('deny')
     expect(result.permission['mcp__assistant__web_search']).toBe('allow')
+    expect(result.permission['mcp__assistant__literature_search']).toBe('allow')
+    expect(result.permission['mcp__assistant__read_paper']).toBe('allow')
+    expect(result.permission['mcp__assistant__read_webpage']).toBe('allow')
     expect(result.permission['mcp__assistant__environment']).toBe('allow')
     expect(result.permission['mcp__assistant__skill_status']).toBe('allow')
     expect(result.permission['mcp__assistant__read_document']).toBe('allow')

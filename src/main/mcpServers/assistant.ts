@@ -42,8 +42,13 @@ import {
 } from './assistantDocumentStyles'
 import { createDocxBuffer } from './assistantDocx'
 import { writeAssistantOutput } from './assistantFileSafety'
+import { PaperReadError } from './assistantLiterature'
 import { validatePptxVisibleContent } from './assistantOfficeQuality'
-import { verifyGeneratedOutput } from './assistantOutputValidation'
+import {
+  DocxPageCountMismatchError,
+  type GeneratedOutputVerification,
+  verifyGeneratedOutput
+} from './assistantOutputValidation'
 import {
   analyzePptxBuffer,
   analyzePptxStyleReference,
@@ -201,7 +206,7 @@ The output path must be inside an allowed user/workspace location. The tool crea
         minimum: 1,
         maximum: 100,
         description:
-          'PDF only. Exact required physical page count, checked before saving. Defaults to pdf_pages.length when pdf_pages is provided. With content, use a standalone <!-- pagebreak --> line for an explicit break; headings and horizontal rules do not force pages.'
+          'PDF or DOCX. Exact physical page count checked before saving. DOCX requires an installed Office renderer and cannot skip render validation. Defaults to pdf_pages.length for PDF page arrays. A standalone <!-- pagebreak --> line inserts an explicit break in PDF/DOCX; headings do not force pages.'
       },
       visual_style: {
         type: 'string',
@@ -393,6 +398,22 @@ The output path must be inside an allowed user/workspace location. The tool crea
   }
 }
 
+const VALIDATE_FILE_TOOL: Tool = {
+  name: 'validate_file',
+  description:
+    'Validate the current existing DOCX, PPTX, XLSX or PDF without regenerating, changing or publishing it. Reuse generator verification for unchanged files. After script edits, validate the returned working copy here. For exact Word page counts pass expected_pages; this requires actual Office rendering. Use render_validation: required for layout-critical DOCX/PPTX. Never guess LibreOffice paths or improvise Word COM commands. Structural/render checks do not establish factual correctness or perfect visual design. Unavailable required rendering and unmet requirements are reported as failures, not success.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      file_path: { type: 'string', description: 'Existing authorized file path; never a directory.' },
+      expected_pages: { type: 'integer', minimum: 1, maximum: 100, description: 'Exact PDF or DOCX physical pages.' },
+      expected_slides: { type: 'integer', minimum: 1, maximum: 100, description: 'Exact PPTX slide count.' },
+      render_validation: { type: 'string', enum: ['auto', 'required', 'skip'], default: 'auto' }
+    },
+    required: ['file_path']
+  }
+}
+
 const PRESENT_FILES_TOOL: Tool = {
   name: 'present_files',
   description: `Register final user-facing files that were created by a script, shell command, browser download, or advanced Skill workflow so Zen AI can show quick-open file cards.
@@ -424,6 +445,7 @@ const PYTHON_EXECUTE_TOOL: Tool = {
   name: 'python_execute',
   description: `Execute Python with Zen AI's private managed CPython runtime.
 Use it for data cleaning, analysis, chart preparation, complex transformations, and bundled Skill scripts. The runtime is isolated from the user's system Python and includes the standard productivity package set.
+For webpage reading use read_webpage, and read_paper for public PDFs. BeautifulSoup/bs4 is not bundled; custom HTML parsing can use Python's standard-library html.parser. Do not probe/install parsers or retry HTTP 403/404 through Python.
 Do not run pip, uv, conda, package installers, shell commands, desktop automation, or destructive file operations from this tool. Use create_file for ordinary Office generation and ocr_file for OCR.
 The working directory must be inside an allowed workspace/user folder. Omit working_directory to use the authorized workspace automatically. Use supplied absolute input/output paths unchanged; do not switch to the application's install directory or a parent project directory to shorten paths. If a directory is rejected, correct it or omit working_directory, never widen permissions.`,
   inputSchema: {
@@ -446,7 +468,7 @@ The working directory must be inside an allowed workspace/user folder. Omit work
       working_directory: {
         type: 'string',
         description:
-          'Optional existing absolute or workspace-relative directory inside an allowed root. Omit to use the authorized workspace (or the authorized script directory for script_path). Do not use the application/install directory or an ancestor of the workspace.'
+          'Optional existing absolute or workspace-relative directory inside an allowed root. Omit to use the authorized workspace for both inline code and script_path. Script arguments containing relative file paths resolve from that workspace. Specify a different authorized directory only when the script explicitly requires it.'
       },
       timeout_ms: {
         type: 'number',
@@ -555,6 +577,13 @@ interface PresentFilesArgs {
   file_paths?: string[]
   paths?: string[]
   final?: boolean
+}
+
+interface ValidateFileArgs {
+  file_path?: string
+  expected_pages?: number
+  expected_slides?: number
+  render_validation?: 'auto' | 'required' | 'skip'
 }
 
 interface PresentedFileResult extends Omit<PresentedOutputVerification, 'verification_scope'> {
@@ -938,6 +967,7 @@ class AssistantServer {
             }
           : CREATE_FILE_TOOL,
         PRESENT_FILES_TOOL,
+        VALIDATE_FILE_TOOL,
         this.product
           ? {
               ...PYTHON_EXECUTE_TOOL,
@@ -1016,6 +1046,9 @@ class AssistantServer {
           case 'present_files':
             result = await this.presentFiles(args as PresentFilesArgs)
             break
+          case 'validate_file':
+            result = await this.validateFile(args as ValidateFileArgs)
+            break
           case 'python_execute':
             result = await this.executePython(args as PythonExecuteArgs)
             break
@@ -1038,7 +1071,8 @@ class AssistantServer {
               text: this.product
                 ? JSON.stringify({
                     status: 'failed',
-                    failure: createAssistantToolFailure(toolName, error, this.product.signal?.aborted)
+                    failure: createAssistantToolFailure(toolName, error, this.product.signal?.aborted),
+                    ...(error instanceof PaperReadError ? { measurement: error.measurement } : {})
                   })
                 : `Error: ${message}`
             }
@@ -1129,9 +1163,10 @@ class AssistantServer {
         : path.basename(outputPath, path.extname(outputPath))
     let content = typeof args.content === 'string' ? args.content : ''
     let expectedPages = args.expected_pages
-    if ((args.pdf_pages !== undefined || expectedPages !== undefined) && format !== 'pdf') {
-      throw new McpError(ErrorCode.InvalidParams, 'pdf_pages and expected_pages are only supported for PDF output')
-    }
+    if (args.pdf_pages !== undefined && format !== 'pdf')
+      throw new McpError(ErrorCode.InvalidParams, 'pdf_pages is only supported for PDF output')
+    if (expectedPages !== undefined && format !== 'pdf' && format !== 'docx')
+      throw new McpError(ErrorCode.InvalidParams, 'expected_pages is only supported for PDF and DOCX output')
     if (expectedPages !== undefined && (!Number.isInteger(expectedPages) || expectedPages < 1 || expectedPages > 100)) {
       throw new McpError(ErrorCode.InvalidParams, 'expected_pages must be an integer from 1 to 100')
     }
@@ -1305,14 +1340,46 @@ class AssistantServer {
         productQuality: Boolean(this.product)
       })
     }
-    const verification = await verifyGeneratedOutput({
-      format,
-      buffer,
-      expectedPages,
-      expectedSlides: format === 'pptx' ? templateSummary?.outputSlides || slides.length : undefined,
-      expectedMediaAssets: usedAssets.size,
-      renderValidation: args.render_validation
-    })
+    let verification: GeneratedOutputVerification
+    try {
+      verification = await verifyGeneratedOutput({
+        format,
+        buffer,
+        expectedPages,
+        expectedSlides: format === 'pptx' ? templateSummary?.outputSlides || slides.length : undefined,
+        expectedMediaAssets: usedAssets.size,
+        renderValidation: args.render_validation
+      })
+    } catch (error) {
+      if (!this.product || !(error instanceof DocxPageCountMismatchError)) throw error
+      // Keep a repairable new working file. A failed requirement must neither
+      // replace an original (even with overwrite:true) nor publish a file card.
+      const working = await writeAssistantOutput(outputPath, buffer, this.allowedRoots, {
+        overwrite: false,
+        signal: this.product.signal
+      })
+      return {
+        isError: true,
+        content: [
+          {
+            type: 'text' as const,
+            text: JSON.stringify(
+              {
+                status: 'needs_revision',
+                working_path: working.path,
+                expected_pages: error.expectedPages,
+                actual_pages: error.actualPages,
+                failure: createAssistantToolFailure('create_file', error),
+                next_step:
+                  'Edit only this working_path to adjust pagination, preserving required facts. Validate the edited file with validate_file and expected_pages, then present_files after it passes. Do not call create_file to validate or regenerate this working file.'
+              },
+              null,
+              2
+            )
+          }
+        ]
+      }
+    }
     if (this.product) {
       if (format === 'xlsx') verification.checks.push('explicit-formula-results-and-numeric-formats')
       if (format === 'docx') verification.checks.push('word-pagination-policy')
@@ -1441,6 +1508,44 @@ class AssistantServer {
           )
         }
       ]
+    }
+  }
+
+  private async validateFile(args: ValidateFileArgs) {
+    if (typeof args.file_path !== 'string' || !args.file_path.trim())
+      throw new McpError(ErrorCode.InvalidParams, "'file_path' is required for validate_file")
+    const filePath = this.resolveInputPath(args.file_path.trim())
+    const format = path.extname(filePath).slice(1).toLowerCase()
+    if (!['docx', 'pptx', 'xlsx', 'pdf'].includes(format))
+      throw new McpError(ErrorCode.InvalidParams, 'validate_file supports DOCX, PPTX, XLSX and PDF')
+    if (args.expected_pages !== undefined && !['docx', 'pdf'].includes(format))
+      throw new McpError(ErrorCode.InvalidParams, 'expected_pages is only supported for PDF and DOCX')
+    if (args.expected_slides !== undefined && format !== 'pptx')
+      throw new McpError(ErrorCode.InvalidParams, 'expected_slides is only supported for PPTX')
+    for (const count of [args.expected_pages, args.expected_slides]) {
+      if (count !== undefined && (!Number.isInteger(count) || count < 1 || count > 100))
+        throw new McpError(ErrorCode.InvalidParams, 'Expected page/slide counts must be integers from 1 to 100')
+    }
+    if (args.render_validation && !['auto', 'required', 'skip'].includes(args.render_validation))
+      throw new McpError(ErrorCode.InvalidParams, 'Invalid render_validation mode')
+    if (format === 'xlsx' && args.render_validation === 'required')
+      throw new McpError(
+        ErrorCode.InvalidParams,
+        'XLSX validation checks structure/formula caches, not rendered layout'
+      )
+    const stat = await fsp.stat(filePath)
+    if (!stat.isFile()) throw new McpError(ErrorCode.InvalidParams, 'validate_file requires a regular file')
+    const validation = await verifyPresentedOutput(filePath, stat.size, {
+      renderValidation: args.render_validation ?? 'auto',
+      expectedPages: args.expected_pages,
+      expectedSlides: args.expected_slides
+    })
+    const after = await fsp.stat(filePath)
+    if (after.size !== stat.size || after.mtimeMs !== stat.mtimeMs)
+      throw new Error('File changed during validation; finish editing and validate again')
+    return {
+      isError: !validation.verified,
+      content: [{ type: 'text' as const, text: JSON.stringify({ file_path: filePath, ...validation }, null, 2) }]
     }
   }
 
@@ -1610,14 +1715,12 @@ class AssistantServer {
     try {
       cwd = args.working_directory
         ? this.resolveInputPath(args.working_directory, { requireDirectory: true })
-        : scriptPath
-          ? path.dirname(scriptPath)
-          : this.allowedRoots[0]
+        : this.allowedRoots[0]
     } catch (error) {
       if (!(error instanceof McpError) || error.code !== ErrorCode.InvalidParams) throw error
       throw new McpError(
         ErrorCode.InvalidParams,
-        `Invalid working_directory: ${JSON.stringify(args.working_directory)}. It must be an existing directory inside an allowed workspace/user folder, including its resolved path. Authorized workspace: ${this.allowedRoots[0] ?? '(none)'}. Omit working_directory to use the authorized workspace (or the authorized script directory for script_path); keep the supplied input/output paths absolute. No Python was executed; permissions have not been expanded.`
+        `Invalid working_directory: ${JSON.stringify(args.working_directory)}. It must be an existing directory inside an allowed workspace/user folder, including its resolved path. Authorized workspace: ${this.allowedRoots[0] ?? '(none)'}. Omit working_directory to use the authorized workspace; keep the supplied input/output paths absolute. No Python was executed; permissions have not been expanded.`
       )
     }
     if (!cwd) throw new McpError(ErrorCode.InvalidParams, 'No allowed working directory is available')
@@ -6655,6 +6758,12 @@ function createComparisonSlideXml(slide: NormalizedSlide, index: number, total: 
   const midpoint = Math.ceil(bullets.length / 2)
   const left = bullets.slice(0, midpoint)
   const right = bullets.slice(midpoint)
+  const premise = slide.subtitle || slide.takeaway
+  const premiseXml = premise
+    ? createTextBox(80, 'Comparison premise', 760000, 4300000, 7600000, 320000, [
+        { text: premise, size: 13, color: theme.ink }
+      ])
+    : ''
   if (
     ['classic', 'executive', 'consulting', 'formal', 'product', 'editorial', 'premium', 'minimal'].includes(
       theme.language
@@ -6662,6 +6771,7 @@ function createComparisonSlideXml(slide: NormalizedSlide, index: number, total: 
   ) {
     return [
       createBaseSlideChrome(slide, index, total, theme),
+      premiseXml,
       createTextBox(20, 'Comparison left heading', 830000, 1500000, 3000000, 380000, [
         { text: '当前状态', size: 17, color: theme.base, bold: true }
       ]),
@@ -6696,6 +6806,7 @@ function createComparisonSlideXml(slide: NormalizedSlide, index: number, total: 
     const rightTone = theme.tones[1]
     return [
       createBaseSlideChrome(slide, index, total, theme),
+      premiseXml,
       createRect(20, 'Comparison left color field', 520000, 1380000, 4050000, 2860000, leftTone.base),
       createTextBox(21, 'Comparison left heading', 870000, 1750000, 3200000, 380000, [
         { text: '当前状态', size: 17, color: leftTone.onBase, bold: true }
@@ -6729,6 +6840,7 @@ function createComparisonSlideXml(slide: NormalizedSlide, index: number, total: 
   if (theme.language === 'playful' || theme.language === 'organic') {
     return [
       createBaseSlideChrome(slide, index, total, theme),
+      premiseXml,
       createRect(
         20,
         'Comparison left soft field',
@@ -6781,6 +6893,7 @@ function createComparisonSlideXml(slide: NormalizedSlide, index: number, total: 
   }
   return [
     createBaseSlideChrome(slide, index, total, theme),
+    premiseXml,
     createColumnBlock(
       20,
       'Current',

@@ -22,6 +22,7 @@ import type { OpenCodeEvent } from './client'
 import { type CompactionEntry, discardEmptyNativeCompaction } from './compactionGuard'
 import { OPENCODE_PROVIDER_ID, OPENCODE_VERSION } from './config'
 import { getOpenCodeModeInstructions, OPENCODE_SYSTEM_INSTRUCTIONS } from './instructions'
+import { isInvalidReadToolLoop, isNativePermissionRejection, OpenCodeLoopRecovery } from './loopRecovery'
 import { OpenCodePerformance } from './performance'
 import { watchOpenCodePermissions } from './permissions'
 import { prepareOpenCodeRuntime } from './prepare'
@@ -30,6 +31,7 @@ import { createTaskDeadline } from './taskDeadline'
 import { type NativeMessage, OpenCodeStreamState } from './transform'
 import { newOpenCodeMessageId, OpenCodeTurnInput } from './turnInput'
 import { OpenCodeUsageTotals } from './usageObservation'
+import { getOpenCodeWorkspaceInstructions } from './workspace'
 
 const logger = loggerService.withContext('OpenCodeService')
 type Chunk = TextStreamPart<Record<string, any>>
@@ -96,6 +98,9 @@ export default class OpenCodeService implements AgentServiceInterface {
     let contextProgressCharacters = 0
     const completedCompactions = new Set<string>()
     const pendingPermissions = new Set<string>()
+    const approvalControllers = new Map<string, AbortController>()
+    const permissionTasks = new Set<Promise<void>>()
+    const loopRecovery = new OpenCodeLoopRecovery()
     const deadline = createTaskDeadline((kind) =>
       abortController.abort(
         Object.assign(
@@ -116,9 +121,10 @@ export default class OpenCodeService implements AgentServiceInterface {
     )
     const browserWaits = new Set<string>()
     const emit = (chunk: Chunk) => {
+      if (chunk.type === 'tool-call') runtime?.observeToolArguments?.(chunk.toolCallId, chunk.toolName, chunk.input)
       if (chunk.type === 'tool-call' || chunk.type === 'tool-result' || chunk.type === 'tool-error') {
         const metadata = chunk.providerMetadata?.opencode as
-          | { toolStartedAt?: number; toolFinishedAt?: number }
+          | { toolStartedAt?: number; toolFinishedAt?: number; toolExitCode?: number | null }
           | undefined
         if (metadata?.toolStartedAt !== undefined)
           recordMainDiagnostic(options?.diagnosticId, 'runtime', 'native-tool-timing', {
@@ -126,6 +132,7 @@ export default class OpenCodeService implements AgentServiceInterface {
             toolName: chunk.toolName,
             toolCallId: chunk.toolCallId,
             phase: chunk.type,
+            ...(metadata.toolExitCode === undefined ? {} : { exitCode: metadata.toolExitCode }),
             nativeStartedAt: new Date(metadata.toolStartedAt).toISOString(),
             ...(metadata.toolFinishedAt === undefined
               ? {}
@@ -217,7 +224,9 @@ export default class OpenCodeService implements AgentServiceInterface {
         apiHost: provider.apiHost,
         providerId: provider.id,
         modelId,
-        transport: 'opencode-native-provider'
+        transport: 'opencode-native-provider',
+        toolArgumentAuditVersion: 1,
+        loopRecoveryVersion: 1
       })
       runtime = await prepareOpenCodeRuntime(session, signal, {
         provider,
@@ -297,6 +306,7 @@ export default class OpenCodeService implements AgentServiceInterface {
           : [
               OPENCODE_SYSTEM_INSTRUCTIONS,
               session.instructions || '',
+              getOpenCodeWorkspaceInstructions(session),
               getOpenCodeModeInstructions(session.configuration?.permission_mode)
             ]
               .filter(Boolean)
@@ -310,8 +320,9 @@ export default class OpenCodeService implements AgentServiceInterface {
           }))
         ]
       }
-      // Exactly one submission. A transport timeout is ambiguous, so reconcile
-      // durable messages rather than resubmitting and duplicating side effects.
+      // Submit the original task exactly once. A user-directed continuation
+      // after a rejected loop gets a separate synthetic message in this history.
+      // Ambiguous transport errors never replay either submission.
       status('submitting')
       const submission = runtime.client
         .request(`/session/${nativeId}/prompt_async`, 'POST', body, signal)
@@ -331,12 +342,39 @@ export default class OpenCodeService implements AgentServiceInterface {
       const reconcile = async (atIdle = false) => {
         awaitingNativeRun = false
         await turnInput?.settle()
-        const messages = await runtime!.client.request<Array<CompactionEntry & { info: NativeMessage }>>(
+        let messages = await runtime!.client.request<Array<CompactionEntry & { info: NativeMessage }>>(
           `/session/${nativeId}/message`,
           'GET',
           undefined,
           signal
         )
+        if (atIdle && loopRecovery.waiting) {
+          turnInput?.ready(false)
+          await Promise.all(permissionTasks)
+          if (permissionError) throw permissionError
+          const recovery = await loopRecovery.resume({
+            client: runtime!.client,
+            sessionId: nativeId!,
+            previousMessages: state.previousMessages,
+            body,
+            signal,
+            onSubmitted: (id) => turnInput?.continued(id)
+          })
+          if (recovery) {
+            messages = recovery.history as typeof messages
+            transportFailure = undefined
+            status('busy')
+            recordMainDiagnostic(options?.diagnosticId, 'runtime', 'doom-loop-continued', {
+              runtime: 'opencode',
+              requestId: recovery.requestId,
+              nativeMessageId: recovery.messageId,
+              attempt: recovery.attempt,
+              reason: recovery.reason,
+              finalizing: recovery.finalizing,
+              evidenceCharacters: recovery.evidenceCharacters
+            })
+          }
+        }
         await verifyCompaction(messages, 'reconciliation', true)
         turnInput?.reconcile(messages)
         if (messages.some((item) => item.info.id === messageId)) admitted = true
@@ -349,9 +387,54 @@ export default class OpenCodeService implements AgentServiceInterface {
             for (const chunk of chunks) emit(chunk)
           }
         }
-        const failure = [...state.messages.values()].find((info) => info.error)
+        const failure = [...state.messages.values()].find(
+          (info) => info.error && !loopRecovery.recoveredMessage(info.id) && !loopRecovery.expects(info.error)
+        )
         if (failure) throw this.nativeError(failure.error)
         const latest = [...state.messages.values()].at(-1)
+        if (loopRecovery.waiting) {
+          awaitingNativeRun = true
+          return false
+        }
+        if (loopRecovery.latestMessageId && (!latest?.parentID || latest.parentID < loopRecovery.latestMessageId)) {
+          // The old processor and abort barrier both emit idle. Neither is the
+          // completion of the newly admitted continuation; wait for its output.
+          awaitingNativeRun = true
+          return false
+        }
+        if (atIdle && loopRecovery.latestMessageId) {
+          const answer = messages.find((entry) => entry.info.id === latest?.id)
+          if (
+            !latest?.time?.completed ||
+            latest.summary ||
+            !answer?.parts.some((part) => part.type === 'text' && part.text?.trim())
+          ) {
+            const nativeStatus = await runtime!.client.request<Record<string, { type: string }>>(
+              '/session/status',
+              'GET',
+              undefined,
+              signal
+            )
+            if (['busy', 'retry'].includes(nativeStatus[nativeId!]?.type)) {
+              // A continuation can persist its empty assistant placeholder
+              // before an old cleanup idle is consumed. It is still running,
+              // not an empty terminal answer; keep observing the same task.
+              awaitingNativeRun = true
+              return false
+            }
+            // Old tool output is visible too. It must not be mistaken for the
+            // requested final deliverable after an interrupted generation.
+            throw Object.assign(
+              new Error(
+                'The assistant did not provide a final answer after skipping the repeated operation; existing results were preserved'
+              ),
+              {
+                code: 'agent_missing_final_answer',
+                zenFailureStage: 'agent-runtime'
+              }
+            )
+          }
+        }
         if (atIdle && turnInput?.hasAdditions && latest?.parentID !== turnInput.latestMessageId) {
           const nativeStatus = await runtime!.client.request<Record<string, { type: string }>>(
             '/session/status',
@@ -391,7 +474,33 @@ export default class OpenCodeService implements AgentServiceInterface {
             code: 'automation_needs_desktop'
           })
         }
+        if (isInvalidReadToolLoop(props.permission, props.metadata)) {
+          loopRecovery.reject(props.id, props.metadata.tool, props.metadata.input, 'invalid-arguments')
+          turnInput?.ready(false)
+          for (const controller of approvalControllers.values())
+            controller.abort('Invalid repeated tool arguments; native generation interrupted')
+          // Reject, never grant: no malformed invocation or side effect is
+          // authorized. Native abort/idle remains the continuation barrier.
+          await runtime!.client.request(
+            `/permission/${encodeURIComponent(props.id)}/reply`,
+            'POST',
+            {
+              reply: 'reject',
+              message: 'Required read-only tool arguments are invalid; correct them before continuing.'
+            },
+            permissionSignal
+          )
+          recordMainDiagnostic(options?.diagnosticId, 'runtime', 'invalid-tool-loop-skipped', {
+            runtime: 'opencode',
+            requestId: props.id,
+            toolName: props.metadata.tool
+          })
+          return
+        }
         permissions++
+        const approvalController = new AbortController()
+        approvalControllers.set(props.id, approvalController)
+        const approvalSignal = AbortSignal.any([permissionSignal, approvalController.signal])
         deadline.wait(`permission:${props.id}`)
         status('waiting_permission')
         const permissionToolCallId = `${session.id}:${props.tool?.callID || `permission:${props.id}`}`
@@ -407,10 +516,20 @@ export default class OpenCodeService implements AgentServiceInterface {
             props.permission,
             { ...props.metadata, patterns: props.patterns },
             {
-              signal: permissionSignal,
+              signal: approvalSignal,
               toolCallId: permissionToolCallId
             }
           )
+          if (approvalSignal.aborted) return
+          if (props.permission === 'doom_loop' && result.behavior === 'deny' && result.decisionSource === 'response') {
+            loopRecovery.reject(props.id, props.metadata?.tool, props.metadata?.input)
+            turnInput?.ready(false)
+            // Native rejection clears every pending permission in this session.
+            // Remove sibling UI prompts too; never submit their aborted replies.
+            for (const [id, controller] of approvalControllers) {
+              if (id !== props.id) controller.abort('Repeated operation skipped; native generation interrupted')
+            }
+          }
           await runtime!.client.request(
             `/permission/${encodeURIComponent(props.id)}/reply`,
             'POST',
@@ -418,7 +537,7 @@ export default class OpenCodeService implements AgentServiceInterface {
               reply: result.behavior === 'allow' ? 'once' : 'reject',
               ...(result.behavior === 'deny' ? { message: result.message } : {})
             },
-            permissionSignal
+            approvalSignal
           )
           recordMainDiagnostic(options?.diagnosticId, 'runtime', 'permission-resolved', {
             runtime: 'opencode',
@@ -427,18 +546,24 @@ export default class OpenCodeService implements AgentServiceInterface {
             toolCallId: permissionToolCallId,
             behavior: result.behavior
           })
+        } catch (error) {
+          if (!approvalSignal.aborted) throw error
         } finally {
+          approvalControllers.delete(props.id)
           permissions--
           deadline.continue(`permission:${props.id}`)
           if (!permissionSignal.aborted) status(permissions > 0 ? 'waiting_permission' : 'busy')
         }
       }
       const requestPermission = (props: OpenCodeEvent['properties']) => {
-        void permission(props).catch((error) => {
+        if (loopRecovery.waiting) return
+        const task = permission(props).catch((error) => {
           if (permissionSignal.aborted) return
           permissionError = error
           eventController.abort('permission reply failed')
         })
+        permissionTasks.add(task)
+        void task.finally(() => permissionTasks.delete(task))
       }
       const handle = async (event: OpenCodeEvent) => {
         const props = event.properties
@@ -453,7 +578,11 @@ export default class OpenCodeService implements AgentServiceInterface {
           compacting = true
           status('compacting')
         }
-        if (event.type === 'session.error') throw this.nativeError(props.error)
+        if (event.type === 'session.error') {
+          if (!loopRecovery.expects(props.error)) throw this.nativeError(props.error)
+          // Wait for native idle/cleanup before continuing, not a generic retry.
+          transportFailure = undefined
+        }
         if (event.type === 'server.instance.disposed')
           throw new Error('OpenCode local instance was disposed during the task')
         if (event.type === 'permission.asked') requestPermission(props)
@@ -508,7 +637,7 @@ export default class OpenCodeService implements AgentServiceInterface {
             status('retrying')
             recordMainDiagnostic(options?.diagnosticId, 'runtime', 'native-retry', { attempt: next.attempt })
           }
-          if (next?.type === 'idle' && admitted && observedBusy && !permissions) {
+          if (next?.type === 'idle' && admitted && observedBusy && (!permissions || loopRecovery.waiting)) {
             turnInput?.ready(false)
             completed = await reconcile(true)
             if (!completed && !awaitingNativeRun)
@@ -685,7 +814,7 @@ export default class OpenCodeService implements AgentServiceInterface {
             : error instanceof Error
               ? error
               : new Error(String(error))
-        if (transportFailure) {
+        if (transportFailure && !('zenFailureStage' in failure && failure.zenFailureStage === 'local-permission')) {
           Object.assign(failure, {
             zenTransportFailure: transportFailure,
             zenRequestUrl: transportFailure.url,
@@ -725,7 +854,8 @@ export default class OpenCodeService implements AgentServiceInterface {
     return Object.assign(new Error(diagnosticText(error?.data?.message || 'OpenCode native task failed')), {
       name: error?.name || 'OpenCodeError',
       status: error?.data?.statusCode,
-      zenFailureStage: 'agent-runtime',
+      zenFailureStage: isNativePermissionRejection(error) ? 'local-permission' : 'agent-runtime',
+      ...(isNativePermissionRejection(error) ? { code: 'agent_permission_denied' } : {}),
       zenRuntimeId: 'opencode'
     })
   }

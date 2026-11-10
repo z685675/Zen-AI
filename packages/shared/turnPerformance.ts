@@ -53,6 +53,15 @@ export function buildTurnPerformance(input: {
   }
   for (const event of events) {
     const details = event.details ?? {}
+    // Old bounded exports can lose a stage transition. Concrete activity is
+    // a boundary, not evidence that a single model wait covered many tools.
+    if (
+      (nativeStage?.label === 'waiting_model' &&
+        ((event.stage === 'tool' && event.event === 'tool-call') ||
+          (event.stage === 'transport' && ['body-complete', 'failed', 'cancelled'].includes(event.event)))) ||
+      (nativeStage?.label === 'waiting_tool' && event.stage === 'transport' && event.event === 'request-started')
+    )
+      close(nativeStage, event)
     if (event.stage === 'transport') {
       const key = text(details.transportRequestId) ?? text(details.traceId)
       let span = key ? requests.get(key) : undefined

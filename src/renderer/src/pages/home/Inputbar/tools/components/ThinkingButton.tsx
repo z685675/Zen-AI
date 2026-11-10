@@ -22,7 +22,7 @@ import {
 import { Tooltip } from 'antd'
 import { ChevronDown } from 'lucide-react'
 import type { FC, ReactElement } from 'react'
-import { useCallback, useEffect, useMemo } from 'react'
+import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import styled from 'styled-components'
 
@@ -44,6 +44,7 @@ const ThinkingButton: FC<Props> = ({
 }): ReactElement => {
   const { t } = useTranslation()
   const quickPanelHook = useQuickPanel()
+  const agentButtonRef = useRef<HTMLButtonElement>(null)
   const isControlled = controlledEffort !== undefined
   const { assistant, updateAssistantSettings } = useAssistant(assistantId)
   const storedReasoningEffort = assistant.settings?.reasoning_effort
@@ -137,10 +138,13 @@ const ThinkingButton: FC<Props> = ({
   const openQuickPanel = useCallback(() => {
     quickPanelHook.open({
       title: controlLabel,
+      ...(variant === 'agent' && agentButtonRef.current
+        ? { anchorElement: agentButtonRef.current, triggerInfo: { type: 'button' as const } }
+        : {}),
       list: panelItems,
       symbol: QuickPanelReservedSymbol.Thinking
     })
-  }, [controlLabel, panelItems, quickPanelHook])
+  }, [controlLabel, panelItems, quickPanelHook, variant])
 
   const handleOpenQuickPanel = useCallback(() => {
     if (quickPanelHook.isVisible && quickPanelHook.symbol === QuickPanelReservedSymbol.Thinking) {
@@ -175,6 +179,7 @@ const ThinkingButton: FC<Props> = ({
   if (variant === 'agent') {
     return (
       <AgentEffortButton
+        ref={agentButtonRef}
         type="button"
         onClick={handleOpenQuickPanel}
         aria-label={ariaLabel}

@@ -1,8 +1,10 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import React from 'react'
+import ReactMarkdown from 'react-markdown'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import Link from '../Link'
+import { markdownUrlTransform } from '../markdownUrlTransform'
 
 const mocks = vi.hoisted(() => ({
   parseJSON: vi.fn(),
@@ -40,6 +42,53 @@ vi.mock('../Hyperlink', () => ({
 describe('Link', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+  })
+
+  it('opens all three generated Windows file links through file IPC after actual Markdown rendering', async () => {
+    const paths = ['report.md', 'sources.json', 'source-matrix.json'].map((name) => `D:/working/ZenAI/${name}`)
+    const checkPaths = vi.fn(async () => [{ status: 'available' }])
+    const openPath = vi.fn(async () => undefined)
+    const original = window.api.file
+    Object.assign(window.api, { file: { checkPaths, openPath } })
+    try {
+      render(
+        <ReactMarkdown urlTransform={markdownUrlTransform} components={{ a: Link }}>
+          {paths.map((path) => `[${path.split('/').at(-1)}](${path})`).join('\n\n')}
+        </ReactMarkdown>
+      )
+      for (const path of paths) {
+        const link = screen.getByRole('link', { name: path.split('/').at(-1) })
+        expect(link.getAttribute('href')).toBe(path)
+        fireEvent.click(link)
+        await waitFor(() => expect(openPath).toHaveBeenCalledWith(path))
+      }
+      expect(checkPaths).toHaveBeenCalledTimes(3)
+      expect(screen.queryByTestId('hyperlink')).toBeNull()
+    } finally {
+      Object.assign(window.api, { file: original })
+    }
+  })
+
+  it('gives feedback for missing files and failed application associations without navigating the browser', async () => {
+    const checkPaths = vi.fn().mockResolvedValue([{ status: 'missing' }])
+    const openPath = vi.fn().mockRejectedValue(new Error('No associated application'))
+    const original = window.api.file
+    const originalToast = window.toast
+    const toast = vi.fn()
+    Object.assign(window, { toast: { error: toast } })
+    Object.assign(window.api, { file: { checkPaths, openPath } })
+    try {
+      render(<Link href="file:///C:/Reports/report.md">Report</Link>)
+      fireEvent.click(screen.getByRole('link'))
+      await waitFor(() => expect(toast).toHaveBeenCalledTimes(1))
+      expect(openPath).not.toHaveBeenCalled()
+      checkPaths.mockResolvedValue([{ status: 'available' }])
+      fireEvent.click(screen.getByRole('link'))
+      await waitFor(() => expect(toast).toHaveBeenCalledTimes(2))
+    } finally {
+      Object.assign(window.api, { file: original })
+      Object.assign(window, { toast: originalToast })
+    }
   })
 
   it('should match snapshot', () => {

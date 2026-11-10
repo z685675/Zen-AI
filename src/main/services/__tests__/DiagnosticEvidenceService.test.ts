@@ -103,4 +103,21 @@ describe('native diagnostic snapshot collection', () => {
     expect(result.environment.osRelease).toBe('test-release')
     await expect(mod.collectMainDiagnostic('../invalid')).rejects.toThrow('Invalid')
   })
+
+  it('persists the protected middle of a long request ledger across a process restart', async () => {
+    const mod = await import('../DiagnosticEvidenceService')
+    for (let request = 0; request < 24; request++) {
+      mod.recordMainDiagnostic('long-ledger', 'transport', 'headers-received', { requestId: `request-${request}` })
+      mod.recordMainDiagnostic('long-ledger', 'tool', 'tool-arguments', { nativeToolCallId: `call-${request}` })
+      for (let i = 0; i < 30; i++) mod.recordMainDiagnostic('long-ledger', 'transport', 'body-progress')
+    }
+    mod.recordMainDiagnostic('long-ledger', 'runtime', 'complete')
+    vi.resetModules()
+    const restarted = await import('../DiagnosticEvidenceService')
+    const result = await restarted.collectMainDiagnostic('long-ledger')
+    expect(result.snapshotStatus).toBe('collected-from-disk')
+    expect(result.evidence?.events.filter((event) => event.event === 'headers-received')).toHaveLength(24)
+    expect(result.evidence?.events.filter((event) => event.event === 'tool-arguments')).toHaveLength(24)
+    expect(result.evidence?.retention).toMatchObject({ protectedDroppedEvents: 0 })
+  })
 })

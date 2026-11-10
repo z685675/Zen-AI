@@ -1,11 +1,15 @@
 ---
 name: research-design
-description: Turn a research idea into testable questions, hypotheses, variables, data requirements, experiments, metrics, risk controls, and a reproducibility checklist. Use for 研究设计、研究方案、研究计划、实验方案、实验设计、研究方法、假设检验、数据集、可复现, or research design and methodology tasks without requiring the user to name a Skill.
+description: Design empirical or scientific studies with testable hypotheses, variables, samples, experiments and validation methods. Use for 实验设计、假设检验、样本和变量设计、实证研究方案, or explicit study-methodology tasks. General project plans and direction assessment belong to research-report.
 ---
 
 # Research Design
 
-Convert an interesting idea into a feasible, testable protocol. Use `$research-report` when the design depends on current evidence or a literature review.
+Convert an empirical or scientific study idea into a feasible, testable protocol.
+Use this Skill when the task actually needs experiments, data or hypothesis
+testing. General project planning, problem diagnosis and direction assessment
+belong to `$research-report`; they do not automatically require an experiment.
+Use `$research-report` when the study design depends on current evidence.
 
 ## Workflow
 

@@ -17,6 +17,7 @@ import { modelGenerating, useRuntime } from '@renderer/hooks/useRuntime'
 import { useEnableDeveloperMode } from '@renderer/hooks/useSettings'
 import { useSettings } from '@renderer/hooks/useSettings'
 import { getSidebarIconLabel } from '@renderer/i18n/label'
+import { useDshPreviewStatus } from '@renderer/services/DshPreviewService'
 import { isEmoji } from '@renderer/utils'
 import { DEFAULT_OPENCODE_AGENT_AVATAR } from '@shared/config/agents'
 import { Avatar, Tooltip } from 'antd'
@@ -24,6 +25,7 @@ import {
   BarChart3,
   Code,
   FileSearch,
+  FlaskConical,
   Folder,
   Languages,
   LayoutGrid,
@@ -138,6 +140,7 @@ const Sidebar: FC = () => {
       <MainMenusContainer>
         <Menus onClick={hideMinappPopup}>
           <MainMenus />
+          <InternalAssistantMenu />
         </Menus>
         <SidebarOpenedMinappTabs />
         {showPinnedApps && (
@@ -248,6 +251,24 @@ const MainMenus: FC = () => {
       </SidebarMenuItem>
     )
   })
+}
+
+const InternalAssistantMenu: FC = () => {
+  const status = useDshPreviewStatus()
+  const { pathname } = useLocation()
+  const { theme } = useTheme()
+  const { t } = useTranslation()
+  const navigate = useNavigate()
+  if (!status?.unlocked) return null
+  return (
+    <SidebarMenuItem
+      active={pathname === '/internal-assistant'}
+      label={t('settings.internalTesting.entry')}
+      onClick={() => navigate(status.state === 'ready' ? '/internal-assistant' : '/settings/general')}
+      theme={theme}>
+      <FlaskConical size={18} className="icon" />
+    </SidebarMenuItem>
+  )
 }
 
 const Container = styled.div<{ $isFullscreen: boolean }>`

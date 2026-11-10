@@ -13,7 +13,7 @@ import { withoutTrailingApiVersion } from '../../../../../../packages/shared/uti
 import { getAutomationProfile, LIGHTWEIGHT_TOOLS } from '../automation/profile'
 import { getAgentProtocolBridgeTarget, modelDeclaresAnthropicProtocol } from '../runtime/protocol'
 
-export const OPENCODE_VERSION = '1.19.4'
+export const OPENCODE_VERSION = '1.19.5'
 export const OPENCODE_PROVIDER_ID = 'zen-selected'
 
 export function buildOpenCodeConfig(input: {
@@ -76,11 +76,20 @@ export function buildOpenCodeConfig(input: {
     enabled_providers: [OPENCODE_PROVIDER_ID],
     autoupdate: false,
     share: 'disabled',
-    plugin: [],
+    plugin: [] as string[],
     snapshot: false,
     lsp: false,
     formatter: false,
-    agent: { title: { disable: true } },
+    agent: {
+      title: { disable: true },
+      'zen-loop-summary': {
+        description: 'Finish an interrupted task from existing evidence',
+        hidden: true,
+        mode: 'primary',
+        steps: 1,
+        permission: { '*': 'deny' }
+      }
+    },
     instructions: [],
     skills: { paths: lightweight ? [] : input.skillPaths, urls: [] },
     // Use the native image normalizer, not a second lossy preprocessing chain.
@@ -145,6 +154,9 @@ export function buildOpenCodeConfig(input: {
       'mcp__assistant_*': readOnly ? 'deny' : 'allow',
       'mcp__browser_*': readOnly ? 'deny' : 'allow',
       mcp__assistant__web_search: 'allow',
+      mcp__assistant__literature_search: 'allow',
+      mcp__assistant__read_paper: 'allow',
+      mcp__assistant__read_webpage: 'allow',
       mcp__assistant__environment: 'allow',
       mcp__assistant__skill_status: 'allow',
       mcp__assistant__read_document: 'allow',
@@ -192,12 +204,13 @@ export function buildOpenCodeEnvironment(
   root: string,
   password: string,
   toolBinDir?: string,
-  searchBinDir?: string
+  searchBinDir?: string,
+  temporaryDirectory = path.join(root, 'tmp')
 ): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {}
   for (const [name, value] of Object.entries(base)) {
     if (
-      /^(PATH|PATHEXT|SYSTEMROOT|WINDIR|COMSPEC|TEMP|TMP|TMPDIR|PROGRAMDATA|LANG|LC_.*|HTTP_PROXY|HTTPS_PROXY|ALL_PROXY|NO_PROXY)$/i.test(
+      /^(PATH|PATHEXT|SYSTEMROOT|WINDIR|COMSPEC|PROGRAMDATA|LANG|LC_.*|HTTP_PROXY|HTTPS_PROXY|ALL_PROXY|NO_PROXY)$/i.test(
         name
       )
     )
@@ -213,6 +226,9 @@ export function buildOpenCodeEnvironment(
   }
   return {
     ...env,
+    TEMP: temporaryDirectory,
+    TMP: temporaryDirectory,
+    TMPDIR: temporaryDirectory,
     HOME: path.join(root, 'home'),
     USERPROFILE: path.join(root, 'home'),
     XDG_CONFIG_HOME: path.join(root, 'config'),
@@ -220,10 +236,13 @@ export function buildOpenCodeEnvironment(
     XDG_CACHE_HOME: path.join(root, 'cache'),
     XDG_STATE_HOME: path.join(root, 'state'),
     OPENCODE_CONFIG_DIR: path.join(root, 'config', 'opencode'),
+    OPENCODE_TEST_MANAGED_CONFIG_DIR: path.join(root, 'managed'),
     OPENCODE_DISABLE_PROJECT_CONFIG: 'true',
     OPENCODE_DISABLE_AUTOUPDATE: 'true',
     OPENCODE_DISABLE_MODELS_FETCH: 'true',
-    OPENCODE_PURE: 'true',
+    // Pure disables even our explicit local native hooks. Project config,
+    // default plugins and external discovery remain independently disabled.
+    OPENCODE_PURE: 'false',
     OPENCODE_DISABLE_DEFAULT_PLUGINS: 'true',
     OPENCODE_DISABLE_EXTERNAL_SKILLS: 'true',
     OPENCODE_DISABLE_CLAUDE_CODE: 'true',

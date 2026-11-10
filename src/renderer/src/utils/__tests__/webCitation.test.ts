@@ -8,7 +8,49 @@ describe('webCitation', () => {
     expect(isTraceableWebTool('mcp__exa__web_search_exa')).toBe(true)
     expect(isTraceableWebTool('mcp__browser__open')).toBe(true)
     expect(isTraceableWebTool('codex.web_search')).toBe(true)
+    expect(isTraceableWebTool('mcp__assistant__read_webpage')).toBe(true)
     expect(isTraceableWebTool('mcp__assistant__create_file')).toBe(false)
+  })
+
+  it('cites only a successfully extracted webpage, not unread links or the requested redirect URL', () => {
+    const response = {
+      id: 'source-read',
+      toolCallId: 'source-read',
+      status: 'done' as const,
+      tool: { name: 'mcp__assistant__read_webpage' } as any,
+      arguments: { url: 'https://example.com/old' },
+      response: {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              status: 'partial',
+              source_url: 'https://example.com/old',
+              resolved_url: 'https://example.com/current',
+              title: 'Extracted source',
+              text: 'Evidence and [unread link](https://unread.example/)'
+            })
+          }
+        ]
+      }
+    }
+    expect(extractWebCitationResults(response)).toEqual([
+      {
+        title: 'Extracted source',
+        url: 'https://example.com/current',
+        content: 'Evidence and [unread link](https://unread.example/)'
+      }
+    ])
+    expect(extractWebCitationResults({ ...response, status: 'error' })).toEqual([])
+    expect(
+      extractWebCitationResults({ ...response, response: { isError: true, content: response.response.content } })
+    ).toEqual([])
+    expect(
+      extractWebCitationResults({
+        ...response,
+        response: { status: 'failed', url: response.arguments.url, text: 'HTTP 403' }
+      })
+    ).toEqual([])
   })
 
   it('extracts structured search results', () => {
@@ -37,6 +79,22 @@ describe('webCitation', () => {
         content: 'Current information'
       }
     ])
+  })
+
+  it('preserves the primary search result URL when provider metadata contains a different source URL', () => {
+    const results = extractWebCitationResults({
+      id: 'search-metadata',
+      toolCallId: 'search-metadata',
+      status: 'done',
+      tool: { name: 'builtin_web_search' } as any,
+      arguments: {},
+      response: {
+        title: 'Original source',
+        url: 'https://example.com/article',
+        source_url: 'https://search-provider.example/metadata'
+      }
+    })
+    expect(results[0]).toMatchObject({ title: 'Original source', url: 'https://example.com/article' })
   })
 
   it('extracts and deduplicates Exa-style labeled text', () => {

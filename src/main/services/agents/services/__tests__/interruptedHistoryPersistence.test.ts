@@ -6,7 +6,14 @@ vi.mock('../../BaseService', () => ({
   BaseService: class {
     async getDatabase() {
       return {
-        select: () => ({ from: () => ({ where: () => ({ orderBy: async () => mocks.rows }) }) }),
+        select: () => ({
+          from: () => ({
+            where: () => ({
+              orderBy: async () => mocks.rows,
+              limit: async () => [{ agentId: DEFAULT_OPENCODE_AGENT_ID }]
+            })
+          })
+        }),
         update: () => ({
           set: (value: unknown) => ({
             where: async (condition: unknown) => {

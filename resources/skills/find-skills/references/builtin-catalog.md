@@ -10,9 +10,9 @@ Use this catalog before searching external marketplaces.
 | `docx` | Create and polish Word documents, reports, proposals, plans, and memos. | Document templates, structure checker, field/link validator, safe repair |
 | `pdf` | Read, summarize, extract, check, and create PDF deliverables. | CJK-safe paginated generator, table layout, extraction checker, PDF safety validator |
 | `markdown` | Create README files, specifications, knowledge pages, and portable Markdown deliverables. | UTF-8, heading, fence, table, and link validator |
-| `research-report` | Source-backed research, competitor analysis, industry briefs, and decision memos. | Source matrix script, evidence schema, report templates |
-| `academic-research` | Literature reviews, research landscapes, evidence cards, and research gaps. | Bilingual query expansion, paper deduplication, evidence-card workflow |
-| `research-design` | Testable research questions, hypotheses, experiments, metrics, and reproducibility plans. | Feasibility, risk, ethics, and pilot-design checklist |
+| `research-report` | Investigate problems and directions; provide cited analysis, option comparisons and actionable guidance. | Report templates; optional source matrix and durable evidence tracking |
+| `academic-research` | Supplied-paper analysis, scholarly literature reviews and paper-level methods, findings and gaps. | Query expansion, paper deduplication, evidence cards and academic browser scope guidance |
+| `research-design` | Empirical/scientific study design with hypotheses, experiments, samples and validation. | Feasibility, risk, ethics, and pilot-design checklist |
 | `paper-writing` | Academic paper structure, drafting, evidence-aware revision, and submission checks. | Argument map, figure/table plan, citation and placeholder checks |
 | `supervisor-review` | Advisor-style review of papers, theses, research plans, and rebuttals. | Severity-ranked review matrix and revision checklist |
 | `content-writer-cn` | Chinese copywriting for WeChat, Xiaohongshu, short video, product, and campaigns. | Platform templates, copy quality checker |

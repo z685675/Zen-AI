@@ -14,6 +14,8 @@ export interface ToolApprovalActionsProps extends ToolApprovalState, ToolApprova
   showAbort?: boolean
   /** Abort handler */
   onAbort?: () => void
+  confirmLabel?: string
+  cancelLabel?: string
 }
 
 /**
@@ -29,7 +31,9 @@ export const ToolApprovalActionsComponent: FC<ToolApprovalActionsProps> = ({
   autoApprove,
   compact = false,
   showAbort = false,
-  onAbort
+  onAbort,
+  confirmLabel,
+  cancelLabel
 }) => {
   const { t } = useTranslation()
 
@@ -73,7 +77,7 @@ export const ToolApprovalActionsComponent: FC<ToolApprovalActionsProps> = ({
         disabled={isSubmitting}
         onClick={(e) => handleClick(e, cancel)}>
         <CircleX size={compact ? 13 : 14} className="lucide-custom" />
-        {!compact && t('common.cancel')}
+        {!compact && (cancelLabel ?? t('common.cancel'))}
       </Button>
 
       {autoApprove ? (
@@ -94,12 +98,12 @@ export const ToolApprovalActionsComponent: FC<ToolApprovalActionsProps> = ({
             ]
           }}>
           <CirclePlay size={compact ? 13 : 15} className="lucide-custom" />
-          {t('settings.mcp.tools.run', 'Run')}
+          {confirmLabel ?? t('settings.mcp.tools.run', 'Run')}
         </StyledDropdownButton>
       ) : (
         <Button size="small" type="primary" disabled={isSubmitting} onClick={(e) => handleClick(e, confirm)}>
           <CirclePlay size={compact ? 13 : 15} className="lucide-custom" />
-          {t('settings.mcp.tools.run', 'Run')}
+          {confirmLabel ?? t('settings.mcp.tools.run', 'Run')}
         </Button>
       )}
     </ActionsContainer>

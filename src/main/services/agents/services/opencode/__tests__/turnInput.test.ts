@@ -25,6 +25,28 @@ function fixture() {
 afterEach(() => controllers.splice(0).forEach((controller) => controller.close()))
 
 describe('native active-task input', () => {
+  it('keeps user guidance receipts through internal continuations and distinguishes later additions', async () => {
+    const { controller, input } = fixture()
+    controller.ready(true)
+    const first = await controller.submit(input)
+    const continuation = `${first.nativeMessageId}next`
+    controller.continued(continuation)
+    controller.reconcile([
+      { info: { id: first.nativeMessageId!, role: 'user' } },
+      { info: { id: continuation, role: 'user' } },
+      { info: { id: 'assistant-recovered', role: 'assistant', parentID: continuation } }
+    ])
+    expect(await controller.check(input.id)).toMatchObject({ state: 'applied' })
+    const later = await controller.submit({ ...input, id: 'later', text: '补充最新要求' })
+    controller.reconcile(
+      [
+        { info: { id: later.nativeMessageId!, role: 'user' } },
+        { info: { id: 'assistant-recovered', role: 'assistant', parentID: continuation } }
+      ],
+      true
+    )
+    expect(await controller.check('later')).toMatchObject({ state: 'deferred' })
+  })
   it('rejects stale and starting turns without creating another native task', async () => {
     const { sessionId, request, controller, input } = fixture()
     expect(getAgentRunInputStatus(sessionId)).toMatchObject({ active: true, ready: false })

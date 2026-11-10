@@ -7,7 +7,7 @@ import { validateModelId } from '@main/apiServer/utils'
 import { configManager } from '@main/services/ConfigManager'
 import { remoteModelPolicyService } from '@main/services/RemoteModelPolicyService'
 import { getDataPath } from '@main/utils'
-import { DEFAULT_OPENCODE_AGENT_ID } from '@shared/config/agents'
+import { DEFAULT_OPENCODE_AGENT_ID, isNewAssistantAgentId } from '@shared/config/agents'
 import { AgentConfigurationSchema, type GetAgentSessionResponse, type LegacyContinuationResponse } from '@types'
 import { and, asc, eq } from 'drizzle-orm'
 
@@ -33,7 +33,7 @@ const logger = loggerService.withContext('LegacyContinuationService')
 
 export class LegacyContinuationService extends BaseService {
   async continueSession(agentId: string, sourceId: string, signal: AbortSignal): Promise<LegacyContinuationResponse> {
-    if (agentId === DEFAULT_OPENCODE_AGENT_ID) throw continuationError('continuation_not_legacy')
+    if (isNewAssistantAgentId(agentId)) throw continuationError('continuation_not_legacy')
     const release = acquireSessionActivity(sourceId, 'continuation')
     let target: GetAgentSessionResponse | null = null
     let committed = false

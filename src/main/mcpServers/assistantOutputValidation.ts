@@ -17,6 +17,17 @@ export interface GeneratedOutputVerification {
   details: Record<string, number | string | boolean>
 }
 
+export class DocxPageCountMismatchError extends Error {
+  constructor(
+    readonly expectedPages: number,
+    readonly actualPages: number,
+    message: string
+  ) {
+    super(message)
+    this.name = 'DocxPageCountMismatchError'
+  }
+}
+
 interface VerificationOptions {
   format: GeneratedOutputFormat
   buffer: Buffer
@@ -53,6 +64,15 @@ export async function verifyGeneratedOutput({
   expectedMediaAssets = 0,
   renderValidation = 'auto'
 }: VerificationOptions): Promise<GeneratedOutputVerification> {
+  if (expectedPages !== undefined) {
+    if (!Number.isInteger(expectedPages) || expectedPages < 1 || expectedPages > 100)
+      throw new Error('expectedPages must be an integer from 1 to 100')
+    if (format !== 'pdf' && format !== 'docx') throw new Error('Expected pages are supported only for PDF and DOCX')
+    if (format === 'docx') {
+      if (renderValidation === 'skip') throw new Error('Exact DOCX page counts require rendering; do not skip it')
+      renderValidation = 'required'
+    }
+  }
   const checks = ['nonempty-buffer']
   const warnings: string[] = []
   const details: Record<string, number | string | boolean> = { bytes: buffer.length }
@@ -83,12 +103,22 @@ export async function verifyGeneratedOutput({
       checks,
       warnings,
       details,
-      errors
+      errors,
+      expectedPages
     )
   }
 
   if (errors.length) {
-    throw new Error(`Generated ${format.toUpperCase()} failed delivery validation: ${errors.join('; ')}`)
+    const message = `Generated ${format.toUpperCase()} failed delivery validation: ${errors.join('; ')}`
+    if (
+      format === 'docx' &&
+      expectedPages !== undefined &&
+      typeof details.rendered_page_count === 'number' &&
+      details.rendered_page_count !== expectedPages &&
+      errors.length === 1
+    )
+      throw new DocxPageCountMismatchError(expectedPages, details.rendered_page_count, message)
+    throw new Error(message)
   }
 
   return { passed: true, checks, warnings, details }
@@ -410,7 +440,8 @@ async function validateOoxmlOutput(
   checks: string[],
   warnings: string[],
   details: Record<string, number | string | boolean>,
-  errors: string[]
+  errors: string[],
+  expectedPages?: number
 ) {
   let zip: AdmZip
   try {
@@ -471,7 +502,16 @@ async function validateOoxmlOutput(
   }
 
   if ((format === 'docx' || format === 'pptx') && errors.length === 0) {
-    await validateRenderedOfficeOutput(format, buffer, renderValidation, checks, warnings, details, errors)
+    await validateRenderedOfficeOutput(
+      format,
+      buffer,
+      renderValidation,
+      checks,
+      warnings,
+      details,
+      errors,
+      expectedPages
+    )
   }
 }
 
@@ -543,7 +583,8 @@ async function validateRenderedOfficeOutput(
   checks: string[],
   warnings: string[],
   details: Record<string, number | string | boolean>,
-  errors: string[]
+  errors: string[],
+  expectedPages?: number
 ) {
   if (mode === 'skip') {
     details.render_verification = 'skipped'
@@ -563,9 +604,21 @@ async function validateRenderedOfficeOutput(
   details.render_renderer = rendered.renderer || 'unknown'
   try {
     const document = await PDFDocument.load(rendered.pdf, { ignoreEncryption: false })
+    const pageCount = document.getPageCount()
+    details.rendered_page_count = pageCount
+    if (expectedPages !== undefined) {
+      details.expected_pages = expectedPages
+      if (pageCount !== expectedPages) {
+        errors.push(
+          `DOCX page count mismatch: expected ${expectedPages}, received ${pageCount}. Adjust the current document's layout or content density and validate_file again; do not regenerate unchanged content.`
+        )
+        return
+      }
+      checks.push('docx-exact-page-count')
+    }
     await validateRenderedPdfPages(
       rendered.pdf,
-      document.getPageCount(),
+      pageCount,
       'required',
       checks,
       warnings,

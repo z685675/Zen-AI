@@ -9,7 +9,7 @@ import { createContext, type ReactNode, use } from 'react'
 import { useTranslation } from 'react-i18next'
 import styled from 'styled-components'
 
-import { isBrowserHandoffResponse } from '../toolDisplay'
+import { getToolAvailability, isBrowserHandoffResponse } from '../toolDisplay'
 
 export { default as ToolHeader, type ToolHeaderProps } from '../ToolHeader'
 
@@ -154,6 +154,16 @@ export function ToolStatusIndicator({
   const { t } = useTranslation()
 
   const getStatusInfo = (): { label: string; icon: ReactNode; color: StatusColor } | null => {
+    const availability = status === 'done' && !hasError ? getToolAvailability(response) : undefined
+    if (availability) {
+      return {
+        label: t(
+          availability === 'search_limited' ? 'message.tools.search_limited' : 'message.tools.handoff_timed_out'
+        ),
+        icon: <TriangleAlert size={13} className="lucide-custom" />,
+        color: 'warning'
+      }
+    }
     if (status === 'done' && !hasError && isBrowserHandoffResponse(response)) {
       return {
         label: t('browser.handoff_title'),

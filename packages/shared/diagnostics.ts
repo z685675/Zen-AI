@@ -1,3 +1,4 @@
+import { isAgentPermissionRejection } from './agents/permissionRejection'
 import { getModelDailyQuotaErrorKind } from './utils/modelDailyQuota'
 
 /** Bounded, content-free request evidence shared by main and renderer. */
@@ -12,7 +13,7 @@ const credentialKey =
   /^(?:(?:.*[-_])?(?:api[-_]?key|authorization|access[-_]?token|refresh[-_]?token|secret|password|credential|cookie|set[-_]?cookie|token|permit)|x-zen-model-turn)$/i
 const credentialSuffix = /(?:apiKey|accessToken|refreshToken|password|secret|credential|authorization|cookie|permit)$/i
 
-export function diagnosticText(value: string): string {
+export function redactDiagnosticText(value: string): string {
   let text = value.replace(/\b(?:https?|wss?|socks(?:4a?|5h?)?):\/\/[^\s"'<>\\]+/gi, (raw) => {
     try {
       const url = new URL(raw)
@@ -29,17 +30,30 @@ export function diagnosticText(value: string): string {
       '$1[REDACTED]'
     )
     .replace(/\bsk-[A-Za-z0-9_-]{8,}\b/g, '[REDACTED]')
+  return text
+}
+
+export function diagnosticText(value: string): string {
+  const text = redactDiagnosticText(value)
   if (text.length <= MAX_TEXT) return text
   return `${text.slice(0, MAX_TEXT / 2)}\n...[truncated ${text.length - MAX_TEXT} characters]...\n${text.slice(-MAX_TEXT / 2)}`
 }
 
-export function sanitizeDiagnostic(value: unknown, depth = 0, seen = new WeakSet<object>()): unknown {
-  if (depth > 10) return '[Max depth reached]'
+export function sanitizeDiagnostic(
+  value: unknown,
+  depth = 0,
+  seen = new WeakSet<object>(),
+  maxArrayEntries = 256
+): unknown {
+  // Export envelopes add several levels around already sanitized tool JSON.
+  // Keep one finite recursion budget, including decoded JSON strings, so a
+  // second archive pass retains nested arguments without bypassing redaction.
+  if (depth > 24) return '[Max depth reached]'
   if (typeof value === 'string') {
     // SDK causes/request bodies frequently arrive as JSON strings.
     if (/^\s*[[{]/.test(value)) {
       try {
-        return diagnosticText(JSON.stringify(sanitizeDiagnostic(JSON.parse(value), depth + 1, seen)))
+        return diagnosticText(JSON.stringify(sanitizeDiagnostic(JSON.parse(value), depth + 1, seen, maxArrayEntries)))
       } catch {
         /* Not JSON: redact as plain text. */
       }
@@ -52,11 +66,16 @@ export function sanitizeDiagnostic(value: unknown, depth = 0, seen = new WeakSet
   seen.add(value)
   let result: unknown
   if (Array.isArray(value)) {
+    const head = Math.floor(maxArrayEntries / 4)
     const items =
-      value.length > 256
-        ? [...value.slice(0, 64), `[truncated ${value.length - 256} entries]`, ...value.slice(-192)]
+      value.length > maxArrayEntries
+        ? [
+            ...value.slice(0, head),
+            `[truncated ${value.length - maxArrayEntries} entries]`,
+            ...value.slice(-(maxArrayEntries - head))
+          ]
         : value
-    result = items.map((item) => sanitizeDiagnostic(item, depth + 1, seen))
+    result = items.map((item) => sanitizeDiagnostic(item, depth + 1, seen, maxArrayEntries))
   } else {
     const entries =
       value instanceof Error
@@ -72,7 +91,7 @@ export function sanitizeDiagnostic(value: unknown, depth = 0, seen = new WeakSet
           key === 'env_vars' ||
           /^(?:base64|imageData|fileData)$/i.test(key)
             ? '[REDACTED]'
-            : sanitizeDiagnostic(item, depth + 1, seen)
+            : sanitizeDiagnostic(item, depth + 1, seen, maxArrayEntries)
         ])
     )
   }
@@ -103,13 +122,54 @@ export type DiagnosticEvidence = {
   metadata: Record<string, unknown>
   events: DiagnosticEvent[]
   droppedEvents: number
+  retention?: {
+    generalDroppedEvents: number
+    protectedDroppedEvents: number
+    protectedEventLimit: number
+    protectedCharacterLimit: number
+  }
 }
 
+type StoredDiagnosticEvent = { order: number; value: DiagnosticEvent; characters: number }
+type StoredDiagnostic = {
+  evidence: DiagnosticEvidence
+  general: StoredDiagnosticEvent[]
+  protected: StoredDiagnosticEvent[]
+  protectedCharacters: number
+  sequence: number
+}
+const protectedTransportEvents = new Set([
+  'context-sources',
+  'request-started',
+  'headers-received',
+  'first-bytes',
+  'body-complete',
+  'failed',
+  'cancelled',
+  'quota-refused'
+])
+const protectedRuntimeEvents = new Set([
+  'task-stage',
+  'native-compacted',
+  'invalid-tool-loop-skipped',
+  'transport-config',
+  'native-tool-timing',
+  'permission-requested',
+  'permission-resolved',
+  'doom-loop-continued',
+  'complete',
+  'failed',
+  'process-error',
+  'process-exit',
+  'process-close'
+])
+
 export class DiagnosticRecorder {
-  private records = new Map<string, DiagnosticEvidence>()
+  private records = new Map<string, StoredDiagnostic>()
   constructor(
     private readonly capacity = 100,
-    private readonly maxEvents = 160
+    private readonly maxEvents = 160,
+    private readonly protectedLimits = { events: 1024, characters: 1024 * 1024 }
   ) {}
 
   begin(operationId: string, metadata: Record<string, unknown> = {}): DiagnosticEvidence {
@@ -120,10 +180,16 @@ export class DiagnosticRecorder {
       updatedAt: now,
       metadata: sanitizeDiagnostic(metadata) as Record<string, unknown>,
       events: [],
-      droppedEvents: 0
+      droppedEvents: 0,
+      retention: {
+        generalDroppedEvents: 0,
+        protectedDroppedEvents: 0,
+        protectedEventLimit: this.protectedLimits.events,
+        protectedCharacterLimit: this.protectedLimits.characters
+      }
     }
     this.records.delete(operationId)
-    this.records.set(operationId, record)
+    this.records.set(operationId, { evidence: record, general: [], protected: [], protectedCharacters: 0, sequence: 0 })
     while (this.records.size > this.capacity) this.records.delete(this.records.keys().next().value!)
     return record
   }
@@ -135,23 +201,51 @@ export class DiagnosticRecorder {
     details?: Record<string, unknown>
   ): void {
     if (!operationId) return
-    const record = this.records.get(operationId) ?? this.begin(operationId)
+    if (!this.records.has(operationId)) this.begin(operationId)
+    const stored = this.records.get(operationId)!
+    const record = stored.evidence
     record.updatedAt = new Date().toISOString()
-    record.events.push({
+    const value: DiagnosticEvent = {
       at: record.updatedAt,
       stage,
       event,
       details: sanitizeDiagnostic(details) as Record<string, unknown> | undefined
-    })
-    if (record.events.length > this.maxEvents) {
-      record.events.splice(Math.floor(this.maxEvents / 3), 1)
+    }
+    const entry = { order: stored.sequence++, value, characters: JSON.stringify(value).length }
+    // Request boundaries and content-free argument audits have their own budget.
+    // Progress/stderr floods must not erase the middle of a long task's ledger.
+    if (
+      (stage === 'transport' && protectedTransportEvents.has(event)) ||
+      event === 'tool-arguments' ||
+      (stage === 'runtime' && protectedRuntimeEvents.has(event))
+    ) {
+      stored.protected.push(entry)
+      stored.protectedCharacters += entry.characters
+      while (
+        stored.protected.length > this.protectedLimits.events ||
+        stored.protectedCharacters > this.protectedLimits.characters
+      ) {
+        stored.protectedCharacters -= stored.protected.shift()!.characters
+        record.retention!.protectedDroppedEvents++
+        record.droppedEvents++
+      }
+      return
+    }
+    stored.general.push(entry)
+    if (stored.general.length > this.maxEvents) {
+      stored.general.splice(Math.floor(this.maxEvents / 3), 1)
+      record.retention!.generalDroppedEvents++
       record.droppedEvents += 1
     }
   }
 
   get(operationId: string): DiagnosticEvidence | undefined {
-    const record = this.records.get(operationId)
-    return record ? structuredClone(record) : undefined
+    const stored = this.records.get(operationId)
+    if (!stored) return undefined
+    return structuredClone({
+      ...stored.evidence,
+      events: [...stored.general, ...stored.protected].sort((a, b) => a.order - b.order).map((entry) => entry.value)
+    })
   }
 }
 
@@ -209,6 +303,16 @@ export function attributeDiagnostic(
   // Local runtime deadlines can be wrapped in a model SDK error after HTTP
   // succeeded. Inspect only the terminal error, never a recovered earlier one.
   let terminalError: unknown = finalError?.details?.error ?? savedError
+  if (isAgentPermissionRejection(terminalError)) {
+    return {
+      owner: 'zen-ai',
+      stage: 'local-permission',
+      confidence: 'confirmed',
+      explanation:
+        '本轮因用户拒绝工具操作而中断，应检查授权后的任务衔接；这不是网关或上游网络错误。已有工具结果仍保留在会话中。',
+      evidence: [finalError ? JSON.stringify(finalError) : 'saved-message-error:agent_permission_denied']
+    }
+  }
   for (let depth = 0; depth < 4 && terminalError && typeof terminalError === 'object'; depth++) {
     const error = terminalError as Record<string, unknown>
     if (

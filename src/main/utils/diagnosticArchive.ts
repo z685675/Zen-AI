@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 
-import { diagnosticText, sanitizeDiagnostic } from '@shared/diagnostics'
+import { redactDiagnosticText, sanitizeDiagnostic } from '@shared/diagnostics'
 import AdmZip from 'adm-zip'
 
 export function buildDiagnosticArchive(files: Array<{ path: string; content: string }>): Buffer {
@@ -20,11 +20,14 @@ export function buildDiagnosticArchive(files: Array<{ path: string; content: str
     if (Buffer.byteLength(file.content, 'utf8') > 8 * 1024 * 1024) throw new Error('Diagnostic entry too large')
     let content: string
     if (file.path.endsWith('.json')) {
-      content = JSON.stringify(sanitizeDiagnostic(JSON.parse(file.content)), null, 2)
+      // The archive is already byte-bounded. Preserve the renderer's long-task
+      // ledgers while still redacting credentials at this trust boundary.
+      content = JSON.stringify(sanitizeDiagnostic(JSON.parse(file.content), 0, new WeakSet(), 4096), null, 2)
     } else {
-      content = diagnosticText(file.content)
+      content = redactDiagnosticText(file.content)
     }
     const data = Buffer.from(content, 'utf8')
+    if (data.length > 8 * 1024 * 1024) throw new Error('Diagnostic entry too large')
     total += data.length
     if (total > 20 * 1024 * 1024) throw new Error('Diagnostic package too large')
     zip.addFile(file.path, data)
@@ -34,5 +37,8 @@ export function buildDiagnosticArchive(files: Array<{ path: string; content: str
     'integrity.json',
     Buffer.from(JSON.stringify({ algorithm: 'sha256', entries, totalBytes: total }, null, 2))
   )
+  // Names are written as UTF-8 bytes. Mark both ZIP headers accordingly so
+  // readers using the standard CP437 fallback do not mangle Chinese filenames.
+  for (const entry of zip.getEntries()) entry.header.flags |= 0x800
   return zip.toBuffer()
 }

@@ -4,7 +4,7 @@ const { createRequire } = require('node:module')
 const { Arch } = require('electron-builder')
 const { verifyNativeAgentBinary } = require('./agent-runtime-packaging')
 
-const VERSION = '1.19.4'
+const VERSION = '1.19.5'
 
 function copyOpenCodeRuntime(context, rootDir = path.join(__dirname, '..')) {
   const platform = context.packager.platform.name
@@ -63,7 +63,12 @@ function copyOpenCodeOfflineRuntime(context, rootDir = path.join(__dirname, '..'
   const resources = context.packager.getResourcesDir(context.appOutDir)
   const bundle = path.join(rootDir, 'resources', 'opencode-runtime')
   const destination = path.join(resources, 'opencode-runtime')
-  for (const required of ['package.json', 'package-lock.json', 'node_modules/@opencode-ai/plugin/package.json']) {
+  for (const required of [
+    'package.json',
+    'package-lock.json',
+    'completion-guard.mjs',
+    'node_modules/@opencode-ai/plugin/package.json'
+  ]) {
     if (!fs.existsSync(path.join(bundle, required))) throw new Error(`OpenCode offline resource missing: ${required}`)
   }
   // electron-builder's dependency collector drops npm lockfiles even under

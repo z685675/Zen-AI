@@ -4,7 +4,7 @@ import { useMemo } from 'react'
 
 import { useSettings } from '../useSettings'
 
-export const useAgentClient = (workspaceOverride?: 'opencode' | 'legacy') => {
+export const useAgentClient = (workspaceOverride?: 'opencode' | 'legacy' | 'dsh') => {
   const { apiServer } = useSettings()
   const { host, port, apiKey } = apiServer
   const currentWorkspace = useAgentWorkspace()

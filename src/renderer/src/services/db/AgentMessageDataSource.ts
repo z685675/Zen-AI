@@ -62,6 +62,47 @@ const messagePersistThrottlers = new LRUCache<string, ReturnType<typeof throttle
  * Handles agent session messages through backend communication
  */
 export class AgentMessageDataSource implements MessageDataSource {
+  private readonly pendingWrites = new Map<string, Promise<void>>()
+
+  /** A slow streaming write must not overwrite the final tool results. */
+  private persistSnapshot(
+    sessionId: string,
+    agentSessionId: string,
+    message: Message,
+    blocks: MessageBlock[]
+  ): Promise<void> {
+    const previous = this.pendingWrites.get(message.id) ?? Promise.resolve()
+    const writing = previous
+      .catch(() => undefined)
+      .then(async () => {
+        const state = store.getState()
+        const current = state.messages.entities[message.id]
+        const incomingOperation = message.providerMetadata?.zenDiagnostic?.operationId
+        const currentOperation = current?.providerMetadata?.zenDiagnostic?.operationId
+        if (incomingOperation && currentOperation && incomingOperation !== currentOperation) return
+        if (current?.topicId === message.topicId && ['success', 'error', 'paused'].includes(current.status)) {
+          message = { ...message, ...current }
+          const byId = new Map(blocks.map((block) => [block.id, block]))
+          blocks = message.blocks
+            .map((id) => state.messageBlocks.entities[id] ?? byId.get(id))
+            .filter((block): block is MessageBlock => !!block)
+        }
+        await window.electron.ipcRenderer.invoke(IpcChannel.AgentMessage_PersistExchange, {
+          sessionId,
+          agentSessionId,
+          ...(message.role === 'user'
+            ? { user: { payload: { message, blocks } } }
+            : { assistant: { payload: { message, blocks } } })
+        })
+      })
+    this.pendingWrites.set(message.id, writing)
+    void writing
+      .finally(() => {
+        if (this.pendingWrites.get(message.id) === writing) this.pendingWrites.delete(message.id)
+      })
+      .catch(() => undefined)
+    return writing
+  }
   // ============ Helper Methods ============
 
   /**
@@ -78,13 +119,7 @@ export class AgentMessageDataSource implements MessageDataSource {
 
         try {
           // Persist to backend
-          await window.electron.ipcRenderer.invoke(IpcChannel.AgentMessage_PersistExchange, {
-            sessionId,
-            agentSessionId: sessionPointer,
-            ...(message.role === 'user'
-              ? { user: { payload: { message, blocks } } }
-              : { assistant: { payload: { message, blocks } } })
-          })
+          await this.persistSnapshot(sessionId, sessionPointer, message, blocks)
 
           logger.debug(`Persisted ${isComplete ? 'complete' : 'streaming'} message ${messageId} to backend`)
 
@@ -240,16 +275,7 @@ export class AgentMessageDataSource implements MessageDataSource {
           : message
 
       // Always persist immediately for visibility in UI
-      const payload: AgentPersistedMessage = {
-        message: messageWithMetadata,
-        blocks
-      }
-
-      await window.electron.ipcRenderer.invoke(IpcChannel.AgentMessage_PersistExchange, {
-        sessionId,
-        agentSessionId,
-        ...(message.role === 'user' ? { user: { payload } } : { assistant: { payload } })
-      })
+      await this.persistSnapshot(sessionId, agentSessionId, messageWithMetadata, blocks)
 
       logger.info(`Saved ${message.role} message for agent session ${sessionId}`, {
         messageId: message.id,
@@ -306,13 +332,7 @@ export class AgentMessageDataSource implements MessageDataSource {
       const agentSessionId = updatedMessage.agentSessionId ?? existingMessage.message.agentSessionId ?? ''
 
       // Save updated message back to backend
-      await window.electron.ipcRenderer.invoke(IpcChannel.AgentMessage_PersistExchange, {
-        sessionId,
-        agentSessionId,
-        ...(updatedMessage.role === 'user'
-          ? { user: { payload: { message: updatedMessage, blocks: existingMessage.blocks || [] } } }
-          : { assistant: { payload: { message: updatedMessage, blocks: existingMessage.blocks || [] } } })
-      })
+      await this.persistSnapshot(sessionId, agentSessionId, updatedMessage, existingMessage.blocks || [])
 
       const cacheEntry = streamingMessageCache.get(messageId)
       if (cacheEntry) {
@@ -442,13 +462,8 @@ export class AgentMessageDataSource implements MessageDataSource {
         }
 
         // Persist to backend
-        await window.electron.ipcRenderer.invoke(IpcChannel.AgentMessage_PersistExchange, {
-          sessionId,
-          agentSessionId,
-          ...(finalMessage.role === 'user'
-            ? { user: { payload: { message: finalMessage, blocks: finalBlocks } } }
-            : { assistant: { payload: { message: finalMessage, blocks: finalBlocks } } })
-        })
+        messagePersistThrottlers.get(messageUpdates.id)?.cancel()
+        await this.persistSnapshot(sessionId, agentSessionId, finalMessage, finalBlocks)
 
         logger.info(`Persisted complete message ${messageUpdates.id} for agent session ${sessionId}`, {
           status: finalMessage.status,
@@ -600,13 +615,7 @@ export class AgentMessageDataSource implements MessageDataSource {
             })
           }
 
-          await window.electron.ipcRenderer.invoke(IpcChannel.AgentMessage_PersistExchange, {
-            sessionId,
-            agentSessionId,
-            ...(message.role === 'user'
-              ? { user: { payload: { message, blocks: mergedBlocks } } }
-              : { assistant: { payload: { message, blocks: mergedBlocks } } })
-          })
+          await this.persistSnapshot(sessionId, agentSessionId, message, mergedBlocks)
 
           logger.debug(`Persisted block updates for message ${messageId} in agent session ${sessionId}`, {
             blockCount: mergedBlocks.length

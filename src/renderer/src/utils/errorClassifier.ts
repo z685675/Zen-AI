@@ -1,4 +1,5 @@
 import type { SerializedError } from '@renderer/types/error'
+import { isAgentPermissionRejection } from '@shared/agents/permissionRejection'
 import { getModelDailyQuotaErrorKind } from '@shared/utils/modelDailyQuota'
 
 import { isAgentRuntimeStartupError } from './agentRuntimeError'
@@ -49,6 +50,8 @@ export function classifyError(error?: SerializedError, providerId?: string): Err
       navTarget: null
     }
   const providerSuffix = providerId ? `?id=${providerId}` : ''
+  if (isAgentPermissionRejection(error))
+    return { category: 'runtime', i18nKey: 'new_assistant.permission.deniedDescription', navTarget: null }
   const deadlineKind = getAgentTaskDeadlineKind(error)
   if (deadlineKind)
     return {

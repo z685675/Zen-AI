@@ -7,7 +7,7 @@ import { assertAssistantExecutionAllowed } from '@shared/agents/assistantAvailab
 import { isOpenCodeInternalProgress } from '@shared/agents/opencodeProgress'
 import { serializeAgentStreamError } from '@shared/agents/streamError'
 import { getAgentTaskLimit } from '@shared/agents/taskConcurrency'
-import { DEFAULT_OPENCODE_AGENT_ID } from '@shared/config/agents'
+import { DEFAULT_DSH_AGENT_ID, isNewAssistantAgentId } from '@shared/config/agents'
 import { sanitizeDiagnostic } from '@shared/diagnostics'
 import type {
   AgentPersistedMessage,
@@ -21,6 +21,7 @@ import type { TextStreamPart } from 'ai'
 import { and, desc, eq, not } from 'drizzle-orm'
 import { t } from 'i18next'
 
+import { assertDshPreviewUnlocked } from '../../dshPreview/access'
 import { BaseService } from '../BaseService'
 import { sessionMessagesTable, sessionsTable } from '../database/schema'
 import { agentMessageRepository } from '../database/sessionMessageRepository'
@@ -44,7 +45,7 @@ import {
   isRuntimeProgressChunk,
   shouldFallbackRuntime
 } from './runtime/fallback'
-import { getAgentRuntimeServiceById, resolveAgentRuntime } from './runtime/registry'
+import { type AgentRuntimeId, getAgentRuntimeServiceById, resolveAgentRuntime } from './runtime/registry'
 import { findCompatibleAgentSessionId } from './runtime/resume'
 import { acquireSessionActivity, assertSessionNotContinuing } from './sessionActivity'
 
@@ -52,6 +53,7 @@ const logger = loggerService.withContext('SessionMessageService')
 const RUNTIME_START_TIMEOUT_MS = 45_000
 const RUNTIME_VISIBLE_OUTPUT_TIMEOUT_MS = 180_000
 const DEEP_RESEARCH_TASK_TIMEOUT_MS = 8 * 60 * 1000
+const ownsNativeLoop = (runtimeId: AgentRuntimeId): boolean => runtimeId === 'opencode' || runtimeId === 'dsh'
 
 const isBrowserWaitForUserTool = (toolName?: unknown): boolean => {
   return typeof toolName === 'string' && toolName.includes('browser') && toolName.includes('wait_for_user')
@@ -291,6 +293,12 @@ export class SessionMessageService extends BaseService {
   ): Promise<{ messages: AgentSessionMessageEntity[] }> {
     // Get messages with pagination
     const database = await this.getDatabase()
+    const [session] = await database
+      .select({ agentId: sessionsTable.agent_id })
+      .from(sessionsTable)
+      .where(eq(sessionsTable.id, sessionId))
+      .limit(1)
+    if (session?.agentId === DEFAULT_DSH_AGENT_ID) assertDshPreviewUnlocked()
     const baseQuery = database
       .select()
       .from(sessionMessagesTable)
@@ -317,7 +325,7 @@ export class SessionMessageService extends BaseService {
       .from(sessionsTable)
       .where(eq(sessionsTable.id, sessionId))
       .limit(1)
-    if (session?.agentId === DEFAULT_OPENCODE_AGENT_ID) {
+    if (isNewAssistantAgentId(session?.agentId)) {
       throw Object.assign(new Error('New assistant messages require a native history operation'), {
         code: 'native_history_required'
       })
@@ -337,10 +345,11 @@ export class SessionMessageService extends BaseService {
   ): Promise<SessionStreamResult> {
     abortController.signal.throwIfAborted()
     assertAssistantExecutionAllowed(session.agent_id)
+    if (session.agent_id === DEFAULT_DSH_AGENT_ID) assertDshPreviewUnlocked()
     const release = acquireSessionActivity(session.id, 'run', getAgentTaskLimit(configManager.getEnableDeveloperMode()))
     try {
       session = await prepareAutomationSession(session)
-      if (session.agent_id === DEFAULT_OPENCODE_AGENT_ID) {
+      if (isNewAssistantAgentId(session.agent_id)) {
         const inventory = await getManagedRecoveryInventory()
         const resolution = resolveManagedSessionModel(session.id, session.model, inventory)
         if (resolution.managed) {
@@ -407,8 +416,9 @@ export class SessionMessageService extends BaseService {
     let agentSessionId: string
     try {
       runtimeResolution = await resolveAgentRuntime(session)
-      agentSessionId =
-        runtimeResolution.runtimeId === 'opencode' ? '' : await this.getLastAgentSessionId(session.id, session.model)
+      agentSessionId = ownsNativeLoop(runtimeResolution.runtimeId)
+        ? ''
+        : await this.getLastAgentSessionId(session.id, session.model)
     } catch (error) {
       recordMainDiagnostic(diagnosticId, 'preparation', 'failed', { error, phase: 'runtime-resolution' })
       throw error
@@ -444,7 +454,7 @@ export class SessionMessageService extends BaseService {
     const runtimePrompt = withDeepResearchProtocol(req.content, req.deep_research, req.deep_research_task)
     const requestEffort = req.deep_research || req.deep_research_task ? 'high' : req.effort
     const initialPrompt =
-      agentSessionId || runtimeResolution.runtimeId === 'opencode'
+      agentSessionId || ownsNativeLoop(runtimeResolution.runtimeId)
         ? runtimePrompt
         : withAgentRecoveryContext(runtimePrompt, req.recovery_context)
     let agentStream: AgentStream
@@ -583,9 +593,9 @@ export class SessionMessageService extends BaseService {
           phase: 'startup' | 'visible-output' | 'continuation' | 'compacting' = 'startup'
         ) => {
           clearFirstRuntimeEventTimer()
-          // OpenCode owns the post-start progress/human-wait watchdog. Keeping
-          // this legacy 180s timer too would terminate it before its 15m budget.
-          if (activeRuntimeId === 'opencode' && phase !== 'startup') return
+          // Native runtimes own post-start progress and human-wait deadlines.
+          // The legacy 180s guard would terminate their active tasks early.
+          if (ownsNativeLoop(activeRuntimeId) && phase !== 'startup') return
           firstRuntimeEventTimer = setTimeout(async () => {
             if (finished) return
 
@@ -634,7 +644,7 @@ export class SessionMessageService extends BaseService {
           if (!req.deep_research && !req.deep_research_task) return
           // Native research can span many successful model/tool steps. Its
           // progress watchdog already bounds stalls and human handoffs.
-          if (activeRuntimeId === 'opencode') return
+          if (ownsNativeLoop(activeRuntimeId)) return
 
           deepResearchTimerRemainingMs = DEEP_RESEARCH_TASK_TIMEOUT_MS
           deepResearchTimerPaused = false
@@ -701,6 +711,7 @@ export class SessionMessageService extends BaseService {
         }
 
         const tryFallback = async (error: Error): Promise<boolean> => {
+          if (ownsNativeLoop(activeRuntimeId)) return false
           const nextCandidate = runtimeResolution.candidates[activeCandidateIndex + 1]
           const canFallback =
             runtimeResolution.source === 'auto' &&
@@ -759,7 +770,7 @@ export class SessionMessageService extends BaseService {
         }
 
         const tryContextRecovery = async (error: Error): Promise<boolean> => {
-          if (activeRuntimeId === 'opencode') return false
+          if (ownsNativeLoop(activeRuntimeId)) return false
           const canRecover =
             !runtimeCommitted &&
             !contextRecoveryAttempted &&
@@ -816,7 +827,7 @@ export class SessionMessageService extends BaseService {
         }
 
         const tryStreamRecovery = async (error: Error): Promise<boolean> => {
-          if (activeRuntimeId === 'opencode') return false
+          if (ownsNativeLoop(activeRuntimeId)) return false
           const canRecover =
             !streamRecoveryAttempted &&
             !abortController.signal.aborted &&

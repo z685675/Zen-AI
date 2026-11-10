@@ -1,3 +1,5 @@
+import { setImmediate as nextBrowserTurn } from 'node:timers/promises'
+
 import { titleBarOverlayDark, titleBarOverlayLight } from '@main/config'
 import { isMac } from '@main/constant'
 import { t } from '@main/utils/locales'
@@ -29,6 +31,7 @@ export class CdpBrowserController {
   private readonly turndownService: TurndownService
   private readonly operationLimiter: BrowserOperationLimiter
   private readonly navigationTabs = new Set<TabInfo>()
+  private readonly tabClosures = new Map<TabInfo, Promise<void>>()
   private readonly clickedTargets = new Set<string>()
   private readonly downloadManager: BrowserDownloadManager
   private privateStorageClearPromise: Promise<void> | undefined
@@ -103,6 +106,26 @@ export class CdpBrowserController {
     }
   }
 
+  public getAutomationHandoff(privateMode = false) {
+    const info = this.windows.get(this.getWindowKey(privateMode))
+    const tab =
+      (info?.handoff?.tabId ? info.tabs.get(info.handoff.tabId) : undefined) ??
+      [...(info?.tabs.values() ?? [])].find((item) => item.manualControl)
+    if (!info?.handoff && !tab) return undefined
+    const tabId = info?.handoff?.tabId ?? tab?.id
+    return {
+      status: 'awaiting_user',
+      executed: false,
+      tabId,
+      userAction: tab?.userAction ?? {
+        reason: info?.handoff?.reason ?? 'confirmation',
+        message: info?.handoff?.message ?? 'Complete the browser handoff first.'
+      },
+      guidance:
+        'Browser automation is paused for user action. Do not repeat page operations or reopen the challenge. Call wait_for_user for this tab, then inspect the page after Continue; independent non-browser work may proceed.'
+    }
+  }
+
   private async ensureAppReady() {
     if (this.disposed) throw new Error('Browser controller is closed')
     if (!app.isReady()) {
@@ -116,6 +139,7 @@ export class CdpBrowserController {
     nativeTheme.removeListener('updated', this.updateTheme)
     await Promise.allSettled([...this.windowCreation.values()])
     await this.reset()
+    await Promise.all([...this.tabClosures.values()])
   }
 
   /**
@@ -124,7 +148,7 @@ export class CdpBrowserController {
    * explicitly so reopening a private browser in the same process cannot
    * inherit cookies or localStorage from the previous private session.
    */
-  private clearPrivateBrowserStorage(): Promise<void> {
+  private clearPrivateBrowserStorage(after?: Promise<unknown>): Promise<void> {
     if (this.privateStorageClearPromise) {
       return this.privateStorageClearPromise
     }
@@ -132,6 +156,7 @@ export class CdpBrowserController {
 
     const clearPromise = (async () => {
       try {
+        await after
         const fromPartition = session?.fromPartition
         if (typeof fromPartition !== 'function') {
           return
@@ -355,32 +380,30 @@ export class CdpBrowserController {
     }
   }
 
-  private closeTabInternal(windowInfo: WindowInfo, tabId: string) {
-    try {
-      const tab = windowInfo.tabs.get(tabId)
-      if (!tab) return
+  private closeTabInternal(windowInfo: WindowInfo, tabId: string): Promise<void> {
+    const tab = windowInfo.tabs.get(tabId)
+    if (!tab) return Promise.resolve()
+    const pending = this.tabClosures.get(tab)
+    if (pending) return pending
 
-      this.clearUserActionForNavigation(tab)
-
-      if (!tab.view.webContents.isDestroyed()) {
-        if (tab.view.webContents.debugger.isAttached()) {
-          tab.view.webContents.debugger.detach()
-        }
-      }
-
-      // Remove view from window
-      if (!windowInfo.window.isDestroyed()) {
-        windowInfo.window.removeBrowserView(tab.view)
-      }
-
-      // Destroy the view using safe cast
-      const viewWithDestroy = tab.view as BrowserView & { destroy?: () => void }
-      if (viewWithDestroy.destroy) {
-        viewWithDestroy.destroy()
-      }
-    } catch (error) {
-      logger.warn('Error closing tab', { error, windowKey: windowInfo.windowKey, tabId })
-    }
+    this.clearUserActionForNavigation(tab)
+    const contents = tab.view.webContents
+    const closing = (async () => {
+      // Promise continuations can run inside Chromium navigation callbacks.
+      // Retain the view and leave that native stack before stopping/closing it.
+      await nextBrowserTurn()
+      if (!contents.isDestroyed() && contents.debugger.isAttached()) contents.debugger.detach()
+      if (!windowInfo.window.isDestroyed()) windowInfo.window.removeBrowserView(tab.view)
+      // BrowserView has no destroy() API. Explicitly close its WebContents;
+      // dropping the detached view instead leaves native teardown to GC.
+      if (!contents.isDestroyed()) contents.close({ waitForBeforeUnload: false })
+    })()
+      .catch((error) => {
+        logger.warn('Error closing tab', { error, windowKey: windowInfo.windowKey, tabId })
+      })
+      .finally(() => this.tabClosures.delete(tab))
+    this.tabClosures.set(tab, closing)
+    return closing
   }
 
   private async ensureDebuggerAttached(dbg: Electron.Debugger, sessionKey: string) {
@@ -398,7 +421,7 @@ export class CdpBrowserController {
     }
   }
 
-  private sweepIdle() {
+  private async sweepIdle() {
     const now = Date.now()
     const windowKeys = Array.from(this.windows.keys())
     for (const windowKey of windowKeys) {
@@ -408,7 +431,7 @@ export class CdpBrowserController {
       if (now - windowInfo.lastActive > this.idleTimeoutMs) {
         const tabIds = Array.from(windowInfo.tabs.keys())
         for (const tabId of tabIds) {
-          this.closeTabInternal(windowInfo, tabId)
+          await this.closeTabInternal(windowInfo, tabId)
         }
         if (!windowInfo.window.isDestroyed()) {
           windowInfo.window.close()
@@ -418,7 +441,7 @@ export class CdpBrowserController {
     }
   }
 
-  private evictIfNeeded(newWindowKey: string) {
+  private async evictIfNeeded(newWindowKey: string) {
     if (this.windows.size < this.maxWindows) return
     let lruKey: string | null = null
     let lruTime = Number.POSITIVE_INFINITY
@@ -433,7 +456,7 @@ export class CdpBrowserController {
       const windowInfo = this.windows.get(lruKey)
       if (windowInfo) {
         for (const [tabId] of windowInfo.tabs.entries()) {
-          this.closeTabInternal(windowInfo, tabId)
+          await this.closeTabInternal(windowInfo, tabId)
         }
         if (!windowInfo.window.isDestroyed()) {
           windowInfo.window.close()
@@ -755,13 +778,9 @@ export class CdpBrowserController {
       if (windowInfo) {
         this.resolveHandoff(windowInfo, 'closed')
         const tabIds = Array.from(windowInfo.tabs.keys())
-        for (const tabId of tabIds) {
-          this.closeTabInternal(windowInfo, tabId)
-        }
+        const closingTabs = Promise.all(tabIds.map((tabId) => this.closeTabInternal(windowInfo, tabId)))
+        if (privateMode) void this.clearPrivateBrowserStorage(closingTabs)
         this.windows.delete(windowKey)
-      }
-      if (privateMode) {
-        void this.clearPrivateBrowserStorage()
       }
     })
 
@@ -774,7 +793,7 @@ export class CdpBrowserController {
       await this.privateStorageClearPromise
       await this.ensureAppReady()
     }
-    this.sweepIdle()
+    await this.sweepIdle()
 
     const windowKey = this.getWindowKey(privateMode)
 
@@ -794,7 +813,7 @@ export class CdpBrowserController {
     }
 
     const creation = (async () => {
-      this.evictIfNeeded(windowKey)
+      await this.evictIfNeeded(windowKey)
       const window = await this.createBrowserWindow(windowKey, privateMode, showWindow)
       const windowInfo: WindowInfo = {
         windowKey,
@@ -1009,7 +1028,7 @@ export class CdpBrowserController {
 
     if (tabId) {
       const tab = windowInfo.tabs.get(tabId)
-      if (tab && !tab.view.webContents.isDestroyed()) {
+      if (tab && !this.tabClosures.has(tab) && !tab.view.webContents.isDestroyed()) {
         this.touchTab(windowInfo.windowKey, tabId)
         return { tabId, tab }
       }
@@ -1022,7 +1041,7 @@ export class CdpBrowserController {
     // Use active tab or create new one
     if (windowInfo.activeTabId) {
       const activeTab = windowInfo.tabs.get(windowInfo.activeTabId)
-      if (activeTab && !activeTab.view.webContents.isDestroyed()) {
+      if (activeTab && !this.tabClosures.has(activeTab) && !activeTab.view.webContents.isDestroyed()) {
         this.touchTab(windowInfo.windowKey, windowInfo.activeTabId)
         return { tabId: windowInfo.activeTabId, tab: activeTab }
       }
@@ -1098,13 +1117,15 @@ export class CdpBrowserController {
     let timeoutHandle: ReturnType<typeof setTimeout> | undefined
     let onFinish: () => void
     let onDomReady: () => void
-    let onFail: (_event: Electron.Event, code: number, desc: string) => void
+    let onFail: (_event: Electron.Event, code: number, desc: string, url: string, isMainFrame: boolean) => void
+    let onDestroyed: () => void
 
     const cleanup = () => {
       if (timeoutHandle) clearTimeout(timeoutHandle)
       webContents.removeListener('did-finish-load', onFinish)
       webContents.removeListener('did-fail-load', onFail)
       webContents.removeListener('dom-ready', onDomReady)
+      webContents.removeListener('destroyed', onDestroyed)
     }
 
     const loadPromise = new Promise<void>((resolve, reject) => {
@@ -1120,27 +1141,39 @@ export class CdpBrowserController {
         cleanup()
         resolve()
       }
-      onFail = (_event: Electron.Event, code: number, desc: string) => {
-        if (resolved) return
+      onFail = (_event: Electron.Event, code: number, desc: string, _url: string, isMainFrame: boolean) => {
+        if (resolved || isMainFrame === false) return
         resolved = true
         cleanup()
         reject(new Error(`Navigation failed (${code}): ${desc}`))
       }
+      onDestroyed = () => {
+        if (resolved) return
+        resolved = true
+        cleanup()
+        reject(new Error('Browser tab closed during navigation'))
+      }
       webContents.once('did-finish-load', onFinish)
       webContents.once('dom-ready', onDomReady)
-      webContents.once('did-fail-load', onFail)
+      webContents.on('did-fail-load', onFail)
+      webContents.once('destroyed', onDestroyed)
     })
 
+    const navigationTimeout = new Error('Navigation timed out')
     const timeoutPromise = new Promise<void>((_, reject) => {
-      timeoutHandle = setTimeout(() => reject(new Error('Navigation timed out')), timeout)
+      timeoutHandle = setTimeout(() => reject(navigationTimeout), timeout)
     })
 
     try {
       await Promise.race([view.webContents.loadURL(url), loadPromise, timeoutPromise])
     } catch (error) {
-      // A timed-out reused page must not continue navigating in the background
-      // and interfere with the next call on this tab.
-      if (!webContents.isDestroyed()) webContents.stop()
+      resolved = true
+      cleanup()
+      // A rejected load can be delivered while Chromium is starting a newer
+      // navigation. Stopping it here re-enters that callback and also cancels
+      // the replacement page. Only stop our own timed-out load, on a new turn.
+      await nextBrowserTurn()
+      if (error === navigationTimeout && !this.tabClosures.has(tab) && !webContents.isDestroyed()) webContents.stop()
       if (newTab) {
         await this.closeTab(privateMode, actualTabId).catch((closeError) => {
           logger.debug('Failed to clean up timed out browser tab', { closeError, tabId: actualTabId })
@@ -1254,6 +1287,9 @@ export class CdpBrowserController {
     let timeoutHandle: ReturnType<typeof setTimeout> | undefined
     const evalPromise = dbg.sendCommand('Runtime.evaluate', {
       expression: code,
+      // Native DevTools REPL semantics support top-level await and repeated
+      // let declarations across calls without wrapping or replaying actions.
+      replMode: true,
       awaitPromise: true,
       returnByValue: true
     })
@@ -1369,7 +1405,7 @@ export class CdpBrowserController {
       const windowKey = this.getWindowKey(privateMode)
       const windowInfo = this.windows.get(windowKey)
       if (windowInfo) {
-        this.closeTabInternal(windowInfo, tabId)
+        await this.closeTabInternal(windowInfo, tabId)
         windowInfo.tabs.delete(tabId)
 
         // If no tabs left, close the window
@@ -1411,7 +1447,7 @@ export class CdpBrowserController {
       if (windowInfo) {
         const tabIds = Array.from(windowInfo.tabs.keys())
         for (const tid of tabIds) {
-          this.closeTabInternal(windowInfo, tid)
+          await this.closeTabInternal(windowInfo, tid)
         }
         if (!windowInfo.window.isDestroyed()) {
           windowInfo.window.close()
@@ -1430,7 +1466,7 @@ export class CdpBrowserController {
     for (const windowInfo of allWindowInfos) {
       const tabIds = Array.from(windowInfo.tabs.keys())
       for (const tid of tabIds) {
-        this.closeTabInternal(windowInfo, tid)
+        await this.closeTabInternal(windowInfo, tid)
       }
       if (!windowInfo.window.isDestroyed()) {
         windowInfo.window.close()

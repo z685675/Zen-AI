@@ -13,6 +13,47 @@ const provider = {
 } as unknown as Provider
 
 describe('read-only API diagnostic collection', () => {
+  it('distinguishes a bounded collection from an invalid backend response', async () => {
+    const result = await collectBackendDiagnostic(
+      'large-op',
+      provider,
+      [],
+      async () => new Response(JSON.stringify({ success: true, evidence: [], notes: 'x'.repeat(1024 * 1024 + 1) }))
+    )
+    expect(result.status).toBe('collection-budget-reached')
+  })
+  it('fills every observed request missing from the operation result, including the middle of a long task', async () => {
+    const ids = Array.from({ length: 56 }, (_, index) => `request-${index}`)
+    const events: DiagnosticEvent[] = ids.map((requestId) => ({
+      at: 'now',
+      stage: 'transport',
+      event: 'headers-received',
+      details: { requestId }
+    }))
+    const queried: string[] = []
+    let active = 0,
+      peak = 0
+    const result = await collectBackendDiagnostic('long-op', provider, events, async (input, init) => {
+      expect(init?.redirect).toBe('error')
+      const id = new URL(String(input)).searchParams.get('request_id')
+      if (!id)
+        return new Response(
+          JSON.stringify({
+            success: true,
+            evidence: ids.slice(-32).map((requestId) => ({ requestId })),
+            omittedRequests: 24
+          })
+        )
+      queried.push(id)
+      peak = Math.max(peak, ++active)
+      await Promise.resolve()
+      active--
+      return new Response(JSON.stringify({ success: true, evidence: [{ requestId: id }] }))
+    })
+    expect(result.evidence).toHaveLength(56)
+    expect(queried).toEqual(ids.slice(0, 24))
+    expect(peak).toBeLessThanOrEqual(4)
+  })
   it('queries the configured gateway with the existing key, not a model endpoint', async () => {
     const calls: URL[] = []
     const fetcher = async (input: RequestInfo | URL, init?: RequestInit) => {

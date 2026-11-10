@@ -20,6 +20,59 @@ async function upstream(handler: Parameters<typeof createServer>[0]) {
   return `http://127.0.0.1:${(server.address() as { port: number }).port}/v1`
 }
 describe('native Provider byte-transparent diagnostic bridge', () => {
+  it('audits request schema, wire, native and MCP arguments in one private scope while forwarding exact bytes', async () => {
+    const requestBody = JSON.stringify({
+      model: 'test',
+      messages: [{ role: 'user', content: 'PRIVATE_PROMPT' }],
+      tools: [
+        {
+          type: 'function',
+          function: { name: 'mcp__assistant__create_file', parameters: { type: 'object', required: ['file_path'] } }
+        }
+      ]
+    })
+    let receivedBody = ''
+    const responseBody =
+      'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call-a","function":{"name":"mcp__assistant__create_file","arguments":"{}"}}]},"finish_reason":"tool_calls"}]}\n\ndata: [DONE]\n\n'
+    const url = await upstream(async (req, res) => {
+      for await (const chunk of req) receivedBody += chunk.toString()
+      res.writeHead(200, { 'Content-Type': 'text/event-stream', 'x-oneapi-request-id': 'server-request-a' })
+      res.end(responseBody)
+    })
+    const events: Array<{ event: string; details: Record<string, unknown> }> = []
+    const gateway = await createOpenCodeGateway(url, (_id, event, details) => events.push({ event, details }))
+    cleanup.push(gateway.stop)
+    gateway.setOperation('operation-a')
+    const response = await fetch(gateway.baseURL + '/chat/completions', {
+      method: 'POST',
+      body: requestBody,
+      headers: { 'x-zen-runtime-token': gateway.token, 'Content-Type': 'application/json' }
+    })
+    expect(await response.text()).toBe(responseBody)
+    expect(receivedBody).toBe(requestBody)
+    expect(events.find((entry) => entry.event === 'context-sources')?.details).toMatchObject({
+      requestBytes: Buffer.byteLength(requestBody),
+      contextAuditVersion: 1,
+      coverage: 'complete',
+      categories: { user: { items: 1, jsonCharacters: JSON.stringify('PRIVATE_PROMPT').length } }
+    })
+    gateway.observeNativeToolArguments('session:call-a', 'mcp__assistant__create_file', {})
+    gateway.observeExecutionArguments('mcp__assistant__create_file', {}, 'rpc-a')
+    const audit = events.filter((entry) => entry.event === 'tool-arguments').map((entry) => entry.details)
+    const wire = audit.find((entry) => entry.phase === 'provider-wire')
+    expect(wire).toMatchObject({
+      requestId: 'server-request-a',
+      requiredKeys: 1,
+      missingRequiredKeys: 1,
+      argumentComplete: true
+    })
+    expect(audit.find((entry) => entry.phase === 'native-decoded')?.argumentFingerprint).toBe(wire?.argumentFingerprint)
+    expect(audit.find((entry) => entry.phase === 'mcp-execution')?.argumentFingerprint).toBe(wire?.argumentFingerprint)
+    gateway.setOperation('operation-b')
+    gateway.observeNativeToolArguments('session:call-a', 'mcp__assistant__create_file', {})
+    expect(events.at(-1)?.details.argumentFingerprint).not.toBe(wire?.argumentFingerprint)
+    expect(JSON.stringify(events)).not.toContain('PRIVATE_PROMPT')
+  })
   it('reports parameter progress and final byte times without changing the stream or recording argument content', async () => {
     const body =
       ': ping\n\ndata: {"choices":[{"delta":{"tool_calls":[{"function":{"arguments":"PRIVATE_ARGS"}}]}}]}\n\ndata: [DONE]\n\n'
