@@ -6,6 +6,7 @@ import type {
   ThinkingOptionConfig
 } from '@renderer/types'
 import { getLowerBaseModelName, isUserSelectedModelType } from '@renderer/utils'
+import { getModelCapabilities } from '@shared/modelCapabilities'
 
 import { isEmbeddingModel, isRerankModel } from './embedding'
 import { hasLearnedModelCapabilityFailure } from './modelCapabilityMemory'
@@ -283,6 +284,15 @@ export const getModelSupportedReasoningEffortOptions = (
   model: Model | undefined | null
 ): ReasoningEffortOption[] | undefined => {
   if (!model) return undefined
+
+  const declared = getModelCapabilities(model)
+  if (declared?.reasoning === false && isUserSelectedModelType(model, 'reasoning') !== true) return undefined
+  if (declared?.reasoning_efforts) {
+    const efforts = declared.reasoning_efforts.filter((effort): effort is ReasoningEffortOption =>
+      ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'auto'].includes(effort)
+    )
+    return ['default', ...efforts]
+  }
 
   const { idResult, nameResult } = withModelIdAndNameAsId(model, _getModelSupportedReasoningEffortOptions)
   return idResult ?? nameResult
@@ -773,6 +783,9 @@ export function isReasoningModel(model?: Model): boolean {
   if (hasLearnedModelCapabilityFailure(model, 'reasoning')) {
     return false
   }
+
+  const declared = getModelCapabilities(model)?.reasoning
+  if (declared !== undefined) return declared
 
   if (isKnownReasoningModel(model)) {
     return true

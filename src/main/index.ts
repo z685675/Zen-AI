@@ -16,6 +16,7 @@ import { isDev, isLinux, isWin } from './constant'
 import process from 'node:process'
 
 import { registerIpc } from './ipc'
+import { modelCapacityService } from './services/ModelCapacityService'
 import { shutdownBrowserServers } from './mcpServers/browser/server'
 import { agentService } from './services/agents'
 import { DatabaseManager } from './services/agents/database/DatabaseManager'
@@ -203,6 +204,7 @@ if (!app.requestSingleInstanceLock()) {
     registerShortcuts(mainWindow)
 
     await registerIpc(mainWindow, app)
+    void modelCapacityService.getSnapshot()
     void remoteModelPolicyService.refresh()
     localTransferService.startDiscovery({ resetList: true })
 

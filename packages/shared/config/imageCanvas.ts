@@ -116,6 +116,44 @@ export type ImageCanvasTaskDiagnostics = {
   transport?: 'studio' | 'direct'
   generationSubmitted?: boolean
   requestFailure?: ImageCanvasRequestFailure
+  downloads?: ImageCanvasDownloadProgress[]
+}
+export type ImageCanvasDownloadAttempt = {
+  run?: number
+  attempt: number
+  offset: number
+  transferredBytes: number
+  durationMs: number
+  headersMs?: number
+  httpStatus?: number
+  edgeRequestId?: string
+  addressStrategy?: 'ipv4' | 'default'
+  route?: 'ip-direct' | 'cloudflare'
+  connectionOrigin?: string
+  policyVersion?: number
+  reason?:
+    | 'connect-timeout'
+    | 'idle-timeout'
+    | 'deadline'
+    | 'http'
+    | 'network'
+    | 'invalid-response'
+    | 'too-large'
+    | 'integrity'
+  transportCode?: string
+}
+export type ImageCanvasDownloadProgress = {
+  assetId: string
+  host?: string
+  index: number
+  count: number
+  state: 'connecting' | 'downloading' | 'reconnecting' | 'completed' | 'paused'
+  receivedBytes: number
+  totalBytes?: number
+  bytesPerSecond: number
+  resumedBytes: number
+  attempt: number
+  history: ImageCanvasDownloadAttempt[]
 }
 export type ImageCanvasServerDiagnostics = {
   jobId: string
@@ -126,7 +164,8 @@ export type ImageCanvasServerDiagnostics = {
 export type ImageCanvasProgress = (
   phase: ImageCanvasTaskPhase,
   capability?: Pick<ImageCanvasTaskDiagnostics, 'protocol' | 'capabilityRevision' | 'capabilitySource'>,
-  server?: ImageCanvasServerDiagnostics
+  server?: ImageCanvasServerDiagnostics,
+  download?: ImageCanvasDownloadProgress
 ) => void
 export type ImageCanvasTask = {
   outputSizes?: string[]

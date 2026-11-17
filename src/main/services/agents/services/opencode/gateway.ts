@@ -3,6 +3,7 @@ import { once } from 'node:events'
 import { createServer, type IncomingMessage } from 'node:http'
 import { Readable } from 'node:stream'
 
+import { isRoutableApiRequest } from '@shared/clientConnections'
 import { listenOnLoopback } from '@shared/utils/loopbackServer'
 import {
   MODEL_DAILY_QUOTA_ERROR_HEADER,
@@ -10,6 +11,8 @@ import {
   MODEL_DAILY_TURN_MODE_HEADER
 } from '@shared/utils/modelDailyQuotaTurn'
 
+import { managedApiFetch } from '../../../modelTransport/apiFetch'
+import { modelApiTransport } from '../../../modelTransport/transport'
 import { OpenCodeDailyQuota } from './dailyQuota'
 import { ToolArgumentAuditScope, type ToolArgumentWireAudit } from './toolArgumentAudit'
 import { ToolInputProgress } from './toolInputProgress'
@@ -27,7 +30,12 @@ export async function createOpenCodeGateway(baseURL: string, record: TransportEv
     throw new Error('Unsupported new assistant Provider address')
   const token = randomBytes(32).toString('hex')
   const active = new Set<AbortController>()
-  const quota = dailyModel ? new OpenCodeDailyQuota(baseURL, dailyModel) : undefined
+  const quota = dailyModel
+    ? new OpenCodeDailyQuota(baseURL, dailyModel, (input, init) => {
+        const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+        return isRoutableApiRequest(url, init?.method) ? managedApiFetch(input, init) : fetch(input, init)
+      })
+    : undefined
   let operationId: string | undefined
   const newAudit = (id: string | undefined): ToolArgumentAuditScope =>
     new ToolArgumentAuditScope((event, details) => emit(id, event, details))
@@ -106,15 +114,19 @@ export async function createOpenCodeGateway(baseURL: string, record: TransportEv
       }
       started = Date.now()
       transport('request-started', { runtime: 'opencode', url: upstream.href, method: req.method })
-      const response = await fetch(upstream, {
-        method: req.method,
-        headers,
-        ...(req.method === 'GET' || req.method === 'HEAD'
-          ? {}
-          : { body: Readable.toWeb(boundedBody(req, toolAudit)), duplex: 'half' as const }),
-        signal: controller.signal,
-        redirect: 'manual'
-      } as RequestInit)
+      const response = await modelApiTransport.fetch(
+        upstream,
+        {
+          method: req.method,
+          headers,
+          ...(req.method === 'GET' || req.method === 'HEAD'
+            ? {}
+            : { body: Readable.toWeb(boundedBody(req, toolAudit)), duplex: 'half' as const }),
+          signal: controller.signal,
+          redirect: 'manual'
+        } as RequestInit,
+        (event, details) => transport(event, { runtime: 'opencode', ...details })
+      )
       const requestId = response.headers.get('x-oneapi-request-id') || response.headers.get('x-request-id')
       toolAudit.headers(requestId)
       upstreamStatus = response.status

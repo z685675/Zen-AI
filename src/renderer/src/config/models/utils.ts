@@ -4,6 +4,7 @@ import type { Assistant, EndpointType, Model, Provider } from '@renderer/types'
 import { SystemProviderIds } from '@renderer/types'
 import type { OpenAIVerbosity, ValidOpenAIVerbosity } from '@renderer/types/aiCoreTypes'
 import { getLowerBaseModelName } from '@renderer/utils'
+import { getModelCapabilities } from '@shared/modelCapabilities'
 
 import {
   isGPT5FamilyModel,
@@ -62,6 +63,9 @@ export function isSupportTemperatureModel(model: Model | undefined | null, assis
   if (!model) {
     return false
   }
+
+  const declared = getModelCapabilities(model)?.temperature
+  if (declared !== undefined) return declared
 
   // OpenAI reasoning models (except open weight) don't support temperature
   if (isOpenAIReasoningModel(model) && !isOpenAIOpenWeightModel(model)) {

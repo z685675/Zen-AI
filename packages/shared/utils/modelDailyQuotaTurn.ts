@@ -106,7 +106,8 @@ export class ModelDailyQuotaTurn {
 
   constructor(
     baseURL: string,
-    private readonly model: string
+    private readonly model: string,
+    private readonly send: typeof fetch = (input, init) => fetch(input, init)
   ) {
     this.endpoint = new URL(baseURL)
     if (
@@ -149,7 +150,7 @@ export class ModelDailyQuotaTurn {
   }
 
   private request(body: Record<string, unknown>, authorization: string, timeoutMs = 5000) {
-    return fetch(`${this.endpoint.href}/state`, {
+    return this.send(`${this.endpoint.href}/state`, {
       method: 'POST',
       headers: { Authorization: authorization, 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -218,6 +219,7 @@ export class ModelDailyQuotaTurn {
 export class ModelDailyQuotaTask {
   private readonly turns = new Map<string, ModelDailyQuotaTurn>()
   private finishing?: Promise<ModelDailyTurnResult[]>
+  constructor(private readonly send?: typeof fetch) {}
 
   async headers(baseURL: string, model: string, key: string, signal: AbortSignal): Promise<Record<string, string>> {
     signal.throwIfAborted()
@@ -226,7 +228,7 @@ export class ModelDailyQuotaTask {
     const scope = JSON.stringify([baseURL, model, key])
     let turn = this.turns.get(scope)
     if (!turn) {
-      turn = new ModelDailyQuotaTurn(baseURL, model)
+      turn = new ModelDailyQuotaTurn(baseURL, model, this.send)
       this.turns.set(scope, turn)
     }
     const permit = await turn.getPermit(new Headers({ Authorization: `Bearer ${key}` }), signal)

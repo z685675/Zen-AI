@@ -1,6 +1,7 @@
 import type { Model } from '@renderer/types'
 import { isSystemProviderId } from '@renderer/types'
 import { getLowerBaseModelName, isUserSelectedModelType } from '@renderer/utils'
+import { getModelCapabilities } from '@shared/modelCapabilities'
 
 import { isEmbeddingModel, isRerankModel } from './embedding'
 import { hasLearnedModelCapabilityFailure } from './modelCapabilityMemory'
@@ -78,6 +79,9 @@ export function isFunctionCallingModel(model?: Model): boolean {
   if (hasLearnedModelCapabilityFailure(model, 'function_calling')) {
     return false
   }
+
+  const declared = getModelCapabilities(model)?.tools
+  if (declared !== undefined) return declared
 
   if (model.provider === 'doubao' || modelId.includes('doubao')) {
     if (FUNCTION_CALLING_REGEX.test(modelId) || FUNCTION_CALLING_REGEX.test(model.name)) {

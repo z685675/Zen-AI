@@ -8,6 +8,7 @@ import {
   convertMessagesToTextOnlyMessagesWithOptions
 } from '@renderer/aiCore/prepareParams'
 import { convertEmbeddedImagesToParts } from '@renderer/aiCore/prepareParams/fileProcessor'
+import { managedModelFetch } from '@renderer/aiCore/provider/modelTransport'
 import type { AiSdkMiddlewareConfig } from '@renderer/aiCore/types/middlewareConfig'
 import { buildProviderOptions } from '@renderer/aiCore/utils/options'
 import {
@@ -68,6 +69,7 @@ import {
   getQuickModel
 } from './AssistantService'
 import { getErrorStatusCode, orderChatApiKeys, shouldRotateChatApiKey } from './chatKeyFailover'
+import { escapeContextAttribute } from './context/ContextAttachmentExcerptService'
 import { createAttachmentReference, getCompletedAssistantResponseSourceIds } from './context/ContextAttachmentPolicy'
 import { createContextCompactionKeyFailover as createKeyFailover } from './context/ContextCompactionKeyFailover'
 import {
@@ -109,6 +111,7 @@ import {
   isContextCapacityError,
   recordAdaptiveContextFailure
 } from './context/ContextWindowService'
+import { ensureModelCapacityCatalog } from './context/ModelCapacityCatalogService'
 import { ConversationService } from './ConversationService'
 import FileManager from './FileManager'
 import { injectUserMessageWithKnowledgeSearchPrompt } from './KnowledgeService'
@@ -484,12 +487,15 @@ async function convertMessagesForCheckpoint(
   messages: Message[],
   model: Model,
   topicId: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  rereadAnsweredAttachments = false
 ): Promise<ModelMessage[]> {
   const state = store.getState()
   const ocrProvider = state.ocr.providers.find((provider) => provider.id === state.ocr.imageProviderId)
   const converted: ModelMessage[] = []
-  const answeredMessageIds = getCompletedAssistantResponseSourceIds(messages)
+  const answeredMessageIds = rereadAnsweredAttachments
+    ? new Set<string>()
+    : getCompletedAssistantResponseSourceIds(messages)
   const totalItems = messages.reduce((total, message) => {
     if (answeredMessageIds.has(message.id)) return total
     return total + findFileBlocks(message).length + findImageBlocks(message).length
@@ -536,21 +542,21 @@ async function convertMessagesForCheckpoint(
             return `<part ${locator}>\n${chunk.text}\n</part>`
           })
           .join('\n')
-        sections.push(
-          extracted
-            ? `<file name="${file.origin_name}">\n${extracted}\n</file>`
-            : `[FILE: ${file.origin_name}; extracted content was empty]`
-        )
-
         const visualEvidence = await describeDocumentVisualsForCheckpoint(fileBlock, model, topicId, signal)
-        if (visualEvidence) {
-          sections.push(
-            `<visual-evidence file="${file.origin_name.replaceAll('"', '&quot;')}">\n${visualEvidence}\n</visual-evidence>`
-          )
-        }
+        const fileEvidence = [
+          extracted,
+          visualEvidence ? `<part section="visual-evidence">\n${visualEvidence}\n</part>` : ''
+        ]
+          .filter(Boolean)
+          .join('\n')
+        sections.push(
+          `<file name="${escapeContextAttribute(file.origin_name)}" extraction="${fileEvidence ? 'complete' : 'empty'}">\n${fileEvidence}\n</file>`
+        )
       } catch (error) {
         logger.warn(`Failed to extract ${file.origin_name} for context checkpoint`, error as Error)
-        sections.push(`[FILE: ${file.origin_name}; original content retained locally]`)
+        sections.push(
+          `<file name="${escapeContextAttribute(file.origin_name)}" extraction="failed">\n[内容提取失败；原件仍保存在本地]\n</file>`
+        )
       } finally {
         processedItems += 1
         setContextProcessingStatus(topicId, 'extracting', '正在解析文件和图片', { processedItems, totalItems })
@@ -942,6 +948,7 @@ export async function fetchChatCompletion({
   allowedTools
 }: FetchChatCompletionParams) {
   const diagnosticId = requestOptions?.headers?.[DIAGNOSTIC_OPERATION_HEADER]
+  await ensureModelCapacityCatalog()
   logger.info('fetchChatCompletion called with detailed context', {
     messageCount: messages?.length || 0,
     prompt: prompt,
@@ -1029,11 +1036,12 @@ export async function fetchChatCompletion({
       estimateTextTokens(JSON.stringify(mcpTools)) +
       estimateTextTokens(JSON.stringify(allowedTools || [])) +
       2_000
+    const assistantSettings = getAssistantSettings(assistant)
     const budget = createContextBudget({
       model,
       provider: baseProvider,
       fixedInputTokens,
-      requestedOutputTokens: getAssistantSettings(assistant).maxTokens
+      requestedOutputTokens: assistantSettings.enableMaxTokens ? assistantSettings.maxTokens : undefined
     })
     activeBudget = budget
     let managedContext: ManagedContextResult
@@ -1106,8 +1114,20 @@ export async function fetchChatCompletion({
         topicId,
         budget,
         convert: (sourceMessages) => convertMessagesToSdkMessages(sourceMessages, model),
-        convertForCheckpoint: (sourceMessages) =>
-          convertMessagesForCheckpoint(sourceMessages, model, topicId, requestOptions?.signal),
+        convertForCheckpoint: (sourceMessages, options) =>
+          convertMessagesForCheckpoint(
+            sourceMessages,
+            model,
+            topicId,
+            requestOptions?.signal,
+            options?.rereadAnsweredAttachments
+          ),
+        attachmentNamesByMessage: new Map(
+          uiMessages.map((message) => [
+            message.id,
+            findFileBlocks(message).flatMap((block) => (block.file?.origin_name ? [block.file.origin_name] : []))
+          ])
+        ),
         additionalContextMessages: webPageContext ? [{ role: 'system', content: webPageContext.prompt }] : [],
         generate: generateCheckpoint,
         signal: requestOptions?.signal
@@ -1220,6 +1240,7 @@ export async function fetchChatCompletion({
         ? { includedThroughMessageId: managedContext.checkpoint.includedThroughMessageId }
         : undefined,
       usedLocalCheckpoint: managedContext.usedLocalCheckpoint,
+      attachmentCoverage: managedContext.checkpoint?.attachmentCoverage,
       contextWindowTokens: budget.contextWindowTokens,
       safeInputTokens: budget.safeInputTokens,
       inputTokensBefore: managedContext.usageBefore.totalTokens,
@@ -1234,7 +1255,7 @@ export async function fetchChatCompletion({
     completeChunk?: Chunk
   }
 
-  const quotaTask = new ModelDailyQuotaTask()
+  const quotaTask = new ModelDailyQuotaTask(managedModelFetch(fetch))
   const dailyQuotaHeaders = async (
     quotaModel: Model = model,
     quotaProvider: Provider = baseProvider,

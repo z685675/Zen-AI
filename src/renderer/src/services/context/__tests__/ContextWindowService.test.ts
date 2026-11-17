@@ -1,4 +1,6 @@
 import type { Model, Provider } from '@renderer/types'
+import { registerModelCapabilities, setProviderModelCapabilities } from '@shared/modelCapabilities'
+import { getModelCatalogCapacity } from '@shared/modelCapacity'
 import type { ModelMessage } from 'ai'
 import { beforeEach, describe, expect, it } from 'vitest'
 
@@ -35,6 +37,31 @@ Object.defineProperty(window, 'keyv', {
 })
 
 describe('ContextWindowService', () => {
+  it('uses fresh central metadata for an already selected alias and reports its source correctly', () => {
+    const selected = { ...model, provider: 'capacity-source-test', id: 'renamed-model' }
+    registerModelCapabilities(selected.provider, selected.id, {
+      context_length: 900_000,
+      max_input_tokens: 800_000,
+      max_output_tokens: 64_000,
+      source: 'override'
+    })
+    try {
+      expect(resolveModelContextProfile(selected)).toMatchObject({
+        contextWindowTokens: 900_000,
+        maxInputTokens: 800_000,
+        source: 'provider',
+        confidence: 'high'
+      })
+      registerModelCapabilities(selected.provider, selected.id, { context_length: 500_000, source: 'catalog' })
+      expect(resolveModelContextProfile(selected)).toMatchObject({
+        contextWindowTokens: 500_000,
+        source: 'builtin',
+        confidence: 'medium'
+      })
+    } finally {
+      setProviderModelCapabilities(selected.provider, [])
+    }
+  })
   beforeEach(() => {
     adaptiveStorage.clear()
   })
@@ -46,6 +73,20 @@ describe('ContextWindowService', () => {
       source: 'fallback',
       confidence: 'low'
     })
+  })
+
+  it('uses catalog context and separate input limits for known models without provider metadata', () => {
+    const selected = { ...model, id: 'gpt-6.1-sol' }
+    const capacity = getModelCatalogCapacity(selected.id)!
+    expect(resolveModelContextProfile(selected, newApiProvider)).toMatchObject({
+      contextWindowTokens: capacity.context,
+      maxInputTokens: capacity.input,
+      maxOutputTokens: capacity.output,
+      source: 'builtin'
+    })
+    const budget = createContextBudget({ model: selected, provider: newApiProvider, requestedOutputTokens: 1000 })
+    expect(budget.safeInputTokens).toBeLessThanOrEqual(capacity.input)
+    expect(budget.safeInputTokens).toBeLessThan(capacity.context - 1000)
   })
 
   it('prefers provider-reported capacities and preserves output space', () => {
@@ -61,11 +102,90 @@ describe('ContextWindowService', () => {
     )
 
     expect(profile).toEqual({
-      contextWindowTokens: 200_000,
+      contextWindowTokens: 400_000,
       maxOutputTokens: 16_000,
       source: 'provider',
       confidence: 'high'
     })
+  })
+
+  it('keeps million-token model capacities and large output limits instead of applying product ceilings', () => {
+    const budget = createContextBudget({
+      model: { ...model, contextWindowTokens: 1_000_000, maxOutputTokens: 128_000 },
+      requestedOutputTokens: 64_000,
+      fixedInputTokens: 3_000
+    })
+    expect(budget.contextWindowTokens).toBe(1_000_000)
+    expect(budget.maxOutputTokens).toBe(64_000)
+    expect(budget.safeInputTokens).toBe(839_400)
+    expect(
+      resolveModelContextProfile({ ...model, contextWindowTokens: 1_000_000, maxOutputTokens: 128_000 })
+    ).toMatchObject({ maxOutputTokens: 128_000 })
+  })
+
+  it('does not replace a reported small output limit with an 8K minimum', () => {
+    expect(resolveModelContextProfile({ ...model, contextWindowTokens: 32_000, maxOutputTokens: 2_048 })).toMatchObject(
+      { maxOutputTokens: 2_048 }
+    )
+    expect(createContextBudget({ model, requestedOutputTokens: 4_096 }).maxOutputTokens).toBe(4_096)
+  })
+
+  it('keeps input space when a unified-window model advertises output equal to context', () => {
+    const unified = { ...model, contextWindowTokens: 500_000, maxOutputTokens: 500_000 }
+    const budget = createContextBudget({ model: unified })
+    expect(budget.maxOutputTokens).toBe(32_000)
+    expect(budget.safeInputTokens).toBeGreaterThan(400_000)
+    expect(
+      createContextBudget({
+        model: { ...model, contextWindowTokens: 64_000, maxOutputTokens: 2_000 },
+        requestedOutputTokens: 8_000
+      }).maxOutputTokens
+    ).toBe(2_000)
+  })
+
+  it('keeps a large request intact when it fits the selected model rather than a 200K product ceiling', () => {
+    const messages: ModelMessage[] = [{ role: 'user', content: 'verified project record '.repeat(100_000) }]
+    const largeModel = { ...model, contextWindowTokens: 1_000_000, maxOutputTokens: 32_000 }
+    expect(estimateModelMessagesTokens(messages).totalTokens).toBeGreaterThan(200_000)
+    expect(planContextWindow(messages, createContextBudget({ model: largeModel })).action).toBe('full')
+    expect(planContextWindow(messages, createContextBudget({ model })).action).toBe('compact')
+  })
+
+  it.each([NaN, Infinity, -1, 0, Number.MAX_VALUE])(
+    'falls back to finite capacities for invalid metadata %s',
+    (value) => {
+      expect(
+        resolveModelContextProfile({ ...model, contextWindowTokens: value, maxOutputTokens: value })
+      ).toMatchObject({ contextWindowTokens: 200_000, maxOutputTokens: 32_000, source: 'fallback' })
+    }
+  )
+
+  it('can still lower a small model budget after a real context rejection', () => {
+    const smallModel = { ...model, contextWindowTokens: 16_000, maxOutputTokens: 2_000 }
+    const learned = recordAdaptiveContextFailure({
+      model: smallModel,
+      provider: newApiProvider,
+      failedInputTokens: 12_000,
+      maxOutputTokens: 2_000,
+      currentContextWindowTokens: 16_000
+    })
+    expect(learned).toBeLessThan(16_000)
+    expect(resolveModelContextProfile(smallModel, newApiProvider).contextWindowTokens).toBe(learned)
+  })
+
+  it('isolates learned channel capacity from another provider using the same model alias', () => {
+    const largeModel = { ...model, contextWindowTokens: 1_000_000, maxOutputTokens: 32_000 }
+    recordAdaptiveContextFailure({
+      model: largeModel,
+      provider: newApiProvider,
+      failedInputTokens: 500_000,
+      maxOutputTokens: 32_000,
+      currentContextWindowTokens: 1_000_000
+    })
+    expect(resolveModelContextProfile(largeModel, newApiProvider).contextWindowTokens).toBeLessThan(1_000_000)
+    expect(resolveModelContextProfile(largeModel, { ...newApiProvider, id: 'other-route' }).contextWindowTokens).toBe(
+      1_000_000
+    )
   })
 
   it('creates an approximately 140K compaction trigger for a 200K model', () => {
@@ -175,5 +295,8 @@ describe('ContextWindowService', () => {
     expect(isContextCapacityError(new Error('context_length_exceeded: maximum context length reached'))).toBe(true)
     expect(isContextCapacityError({ message: '请求超过上下文长度限制' })).toBe(true)
     expect(isContextCapacityError(new Error('401 invalid API key'))).toBe(false)
+    expect(isContextCapacityError(new Error('413 Request too large'))).toBe(false)
+    expect(isContextCapacityError(new Error('rate_limit_exceeded: too many tokens per minute'))).toBe(false)
+    expect(isContextCapacityError(new Error('max_tokens exceeds output token limit'))).toBe(false)
   })
 })

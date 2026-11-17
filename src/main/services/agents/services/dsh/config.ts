@@ -7,10 +7,12 @@ import { cleanupAssistantMcpContext, registerAssistantMcpContext } from '@main/a
 import { cleanupBrowserMcpContext, registerBrowserMcpContext } from '@main/apiServer/routes/browser-mcp'
 import { mcpApiService } from '@main/apiServer/services/mcp'
 import { recordMainDiagnostic } from '@main/services/DiagnosticEvidenceService'
+import { modelCapacityService } from '@main/services/ModelCapacityService'
 import { getDataPath } from '@main/utils'
 import { getOpenCodeAgentMode } from '@shared/agents/opencodeMode'
 import { isZenManagedApiHost } from '@shared/config/zenProvider'
 import { formatApiHost } from '@shared/utils/api'
+import { resolveModelTokenLimits } from '@shared/utils/modelTokenLimits'
 import type { GetAgentSessionResponse, Provider } from '@types'
 
 import type { DshRuntimeConfig } from '../../../dshPreview/runtime'
@@ -38,7 +40,7 @@ export function dshProviderConfig(
   const anthropic = modelDeclaresAnthropicProtocol(model) || (!endpoint && provider.type === 'anthropic')
   if (!endpoint && !anthropic)
     throw new Error(`Unsupported provider protocol for the DeepSeek Harness preview: ${provider.type}`)
-  const context = Math.min(200000, Math.max(1024, model?.contextWindowTokens || 128000))
+  const { context, output } = resolveModelTokenLimits(model ?? { id: modelId })
   return {
     api: anthropic ? 'anthropic-messages' : endpoint === 'openai-responses' ? 'openai-responses' : 'openai-completions',
     baseURL: formatApiHost(anthropic ? provider.anthropicApiHost || provider.apiHost : provider.apiHost),
@@ -46,7 +48,7 @@ export function dshProviderConfig(
     apiKey: provider.apiKey || undefined,
     headers: { ...provider.extra_headers, 'X-Zen-Session-Id': sessionId },
     contextWindow: context,
-    maxTokens: Math.min(model?.maxOutputTokens || 16000, Math.floor(context / 8))
+    maxTokens: output
   }
 }
 
@@ -65,6 +67,7 @@ export async function prepareDshConfig(
     throw new Error(
       'The DeepSeek Harness preview cannot apply legacy per-tool allowlists. Clear the tool allowlist or use the standard assistant.'
     )
+  await modelCapacityService.getSnapshot()
   const selected = dshProviderConfig(provider, modelId, session.id)
   const lastProgress = new Map<string, number>()
   const gateway = await createOpenCodeGateway(

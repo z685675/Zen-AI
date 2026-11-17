@@ -1,6 +1,7 @@
 import { getProviderByModel } from '@renderer/services/AssistantService'
 import type { Model } from '@renderer/types'
 import { getLowerBaseModelName, isUserSelectedModelType } from '@renderer/utils'
+import { getModelCapabilities } from '@shared/modelCapabilities'
 
 import { isEmbeddingModel, isRerankModel } from './embedding'
 import { hasLearnedModelCapabilityFailure } from './modelCapabilityMemory'
@@ -282,6 +283,9 @@ export function isVisionModel(model: Model): boolean {
   if (isUserSelectedModelType(model, 'vision') !== undefined) {
     return isUserSelectedModelType(model, 'vision')!
   }
+
+  const declared = getModelCapabilities(model)?.input_modalities
+  if (declared !== undefined) return declared.includes('image')
 
   if (hasLearnedModelCapabilityFailure(model, 'vision')) {
     return false

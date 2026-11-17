@@ -351,6 +351,11 @@ export class ImageCanvasTaskStore {
       this.tasks = previous
       throw error
     }
+    if (task.providerBinding && /^[a-f0-9]{64}$/.test(task.providerBinding)) {
+      const downloads = this.studioAssets.forScope(task.providerBinding).downloads
+      for (const download of task.diagnostics?.downloads || [])
+        if (/^[a-f0-9-]{32,64}$/.test(download.assetId)) downloads?.remove(download.assetId)
+    }
     for (const [ids, extension] of [
       [task.assets, 'png'],
       [[...(task.referenceAssets || []), ...(task.maskAsset ? [task.maskAsset] : [])], 'reference']
@@ -379,6 +384,9 @@ export class ImageCanvasTaskStore {
   ): Promise<void> {
     let phase = task.phase || 'preparing'
     let phaseStart = performance.now()
+    const previousDownloads = new Map(
+      task.diagnostics?.downloads?.map((download) => [download.assetId, download.history])
+    )
     this.activePhases.set(task.id, { phase, started: phaseStart })
     if (task.diagnostics) {
       task.diagnostics.attempts++
@@ -393,7 +401,18 @@ export class ImageCanvasTaskStore {
       }
       phaseStart = performance.now()
     }
-    const progress: ImageCanvasProgress = (next, capability, server) => {
+    const progress: ImageCanvasProgress = (next, capability, server, download) => {
+      if (download && task.diagnostics) {
+        const downloads = (task.diagnostics.downloads ??= [])
+        const index = downloads.findIndex((entry) => entry.assetId === download.assetId)
+        const snapshot = structuredClone(download)
+        snapshot.history = [
+          ...(previousDownloads.get(download.assetId) || []),
+          ...snapshot.history.map((attempt) => ({ ...attempt, run: task.diagnostics!.attempts }))
+        ].slice(-12)
+        if (index < 0) downloads.push(snapshot)
+        else downloads[index] = snapshot
+      }
       if (capability && task.diagnostics) Object.assign(task.diagnostics, capability)
       const changed = server && task.diagnostics && JSON.stringify(server) !== JSON.stringify(task.diagnostics.server)
       if (changed) task.diagnostics!.server = structuredClone(server)
@@ -464,6 +483,7 @@ export class ImageCanvasTaskStore {
         task.error = 'partial_image_result'
       } else {
         task.status = 'completed'
+        for (const download of task.diagnostics?.downloads || []) studioAssets?.downloads?.remove(download.assetId)
       }
     } catch (error) {
       const code = error instanceof Error ? error.message : ''

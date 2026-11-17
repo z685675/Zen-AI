@@ -304,7 +304,7 @@ describe('background Zen image jobs', () => {
     )
     await vi.advanceTimersByTimeAsync(6000)
     await expect(pending).resolves.toHaveLength(1)
-    expect(progress.mock.calls.map(([phase]) => phase)).toEqual([
+    expect(progress.mock.calls.filter(([, , , download]) => !download).map(([phase]) => phase)).toEqual([
       'queued',
       'queued',
       'generating',
@@ -464,28 +464,15 @@ describe('background Zen image jobs', () => {
     expect(request.mock.calls.every(([, init]) => init.method === 'GET')).toBe(true)
   })
 
-  it('restarts a timed-out HTTP 200 body download with a fresh timeout', async () => {
+  it('restarts a stalled HTTP 200 body download with a fresh idle timeout', async () => {
     vi.useFakeTimers()
-    const controller = new AbortController()
-    vi.spyOn(AbortSignal, 'timeout').mockReturnValueOnce(controller.signal)
     const request = vi
       .fn()
-      .mockResolvedValueOnce(
-        new Response(
-          new ReadableStream({
-            start(stream) {
-              setTimeout(() => {
-                controller.abort(new DOMException('timed out', 'TimeoutError'))
-                stream.error(controller.signal.reason)
-              }, 60000)
-            }
-          })
-        )
-      )
+      .mockResolvedValueOnce(new Response(new ReadableStream()))
       .mockResolvedValueOnce(new Response('image'))
     const remote = { origin: new URL(provider.apiHost).origin, submissionId: randomUUID() }
     const result = readStudioImages(provider, remote, request, job)
-    await vi.advanceTimersByTimeAsync(61000)
+    await vi.advanceTimersByTimeAsync(31000)
     expect(await result).toEqual([Buffer.from('image')])
     expect(request).toHaveBeenCalledTimes(2)
     expect(request.mock.calls[0][1].signal.aborted).toBe(true)

@@ -6,6 +6,7 @@ import { setDefaultModel, setQuickModel, setTranslateModel, updateProviders } fr
 import type { Assistant, Model, Provider } from '@renderer/types'
 import { isTextFallbackIdentifier, selectRecoverableModel } from '@shared/config/modelRecovery'
 import { isZenManagedApiHost } from '@shared/config/zenProvider'
+import { modelCapacityFields, setProviderModelCapabilities } from '@shared/modelCapabilities'
 
 import { modelRecoveryIntents, withAutomaticModelChange } from './modelRecoveryIntents'
 import { getProviderModelSyncFingerprint, mergeSyncedProviderModels } from './ProviderModelSyncUtils'
@@ -137,19 +138,22 @@ export async function syncManagedModelAvailability(): Promise<void> {
       await Promise.all(
         providers.map(async (provider: Provider) => {
           const fingerprint = getProviderModelSyncFingerprint(provider)
+          if (known.get(provider.id) !== fingerprint) setProviderModelCapabilities(provider.id, [])
           const snapshot = await window.api.modelPolicy.availability(provider)
           const current = store.getState().llm.providers.find((candidate) => candidate.id === provider.id)
           if (!snapshot || !current || getProviderModelSyncFingerprint(current) !== fingerprint) return
           // Old cached successes may be used in main-process admission, but a
           // failed refresh must not masquerade as a fresh supply change here.
           known.set(provider.id, fingerprint)
+          setProviderModelCapabilities(provider.id, snapshot.models)
           const fetched = snapshot.models.map(
             (model): Model => ({
               id: model.id,
               name: model.name || model.id,
               provider: provider.id,
               group: provider.id,
-              supported_endpoint_types: model.supported_endpoint_types
+              supported_endpoint_types: model.supported_endpoint_types,
+              ...modelCapacityFields(model.model_capabilities)
             })
           )
           const merged = mergeSyncedProviderModels(

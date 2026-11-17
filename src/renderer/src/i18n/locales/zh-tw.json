@@ -2397,6 +2397,12 @@
       "view_details": "查看詳情"
     },
     "errors": "錯誤",
+    "fallback": {
+      "check_results": "若已有檔案或其他結果，請先檢查後再繼續，避免重複執行。",
+      "description": "請先重試一次，或切換其他可用模型後再試。若仍無法完成，請匯出診斷包並傳送給管理員協助處理。",
+      "reply_title": "本次回覆未能完成",
+      "task_title": "本次任務未能完成"
+    },
     "finishReason": "結束原因",
     "functionality": "功能",
     "http": {

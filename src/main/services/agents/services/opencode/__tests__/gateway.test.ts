@@ -3,6 +3,7 @@ import { createServer } from 'node:http'
 import { listenOnLoopback } from '@shared/utils/loopbackServer'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import { modelApiTransport } from '../../../../modelTransport/transport'
 import { createOpenCodeGateway } from '../gateway'
 
 const cleanup: Array<() => void> = []
@@ -20,6 +21,37 @@ async function upstream(handler: Parameters<typeof createServer>[0]) {
   return `http://127.0.0.1:${(server.address() as { port: number }).port}/v1`
 }
 describe('native Provider byte-transparent diagnostic bridge', () => {
+  it('uses the shared model transport once and forwards its connection evidence without changing the response', async () => {
+    const body = 'data: {"choices":[{"delta":{"content":"hello"}}]}\n\ndata: [DONE]\n\n'
+    const url = await upstream((_req, res) => {
+      res.writeHead(200, { 'Content-Type': 'text/event-stream' })
+      res.end(body)
+    })
+    const original = modelApiTransport.fetch.bind(modelApiTransport)
+    const send = vi.spyOn(modelApiTransport, 'fetch').mockImplementation((input, init, record, native) => {
+      record?.('request-write-started', { addressFamily: 'IPv4', connectionReused: true })
+      return original(input, init, record, native)
+    })
+    const events: Array<{ event: string; details: Record<string, unknown> }> = []
+    const gateway = await createOpenCodeGateway(url, (_id, event, details) => events.push({ event, details }))
+    cleanup.push(gateway.stop)
+    const response = await fetch(gateway.baseURL + '/chat/completions', {
+      method: 'POST',
+      body: '{"stream":true}',
+      headers: { 'x-zen-runtime-token': gateway.token }
+    })
+    expect(await response.text()).toBe(body)
+    expect(send).toHaveBeenCalledOnce()
+    expect(send.mock.calls[0][1]).toMatchObject({ method: 'POST', signal: expect.any(AbortSignal), duplex: 'half' })
+    expect(events).toContainEqual({
+      event: 'request-write-started',
+      details: expect.objectContaining({
+        runtime: 'opencode',
+        addressFamily: 'IPv4',
+        connectionReused: true
+      })
+    })
+  })
   it('audits request schema, wire, native and MCP arguments in one private scope while forwarding exact bytes', async () => {
     const requestBody = JSON.stringify({
       model: 'test',

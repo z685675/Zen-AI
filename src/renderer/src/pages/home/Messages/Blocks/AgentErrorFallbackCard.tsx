@@ -10,6 +10,7 @@ import type { Assistant } from '@renderer/types'
 import type { ErrorMessageBlock, Message } from '@renderer/types/newMessage'
 import { extractAgentSessionIdFromTopicId } from '@renderer/utils/agentSession'
 import { diagnoseClientError } from '@renderer/utils/clientErrorDiagnosis'
+import { getClientErrorPresentation } from '@renderer/utils/clientErrorPresentation'
 import { classifyError } from '@renderer/utils/errorClassifier'
 import { isReadOnlyLegacySession } from '@renderer/utils/legacyMessageActions'
 import { isNewAssistantAgentId } from '@shared/config/agents'
@@ -131,6 +132,7 @@ const AgentErrorFallbackCard: React.FC<Props> = ({ block, message }) => {
   const description = dependencyIssue
     ? t('agent.errorFallback.dependency_description')
     : clientDiagnosis.summary || t('agent.errorFallback.description')
+  const presentation = getClientErrorPresentation(clientDiagnosis, 'agent')
 
   const showErrorDetail = useCallback(() => {
     showErrorDetailPopup({
@@ -268,12 +270,12 @@ const AgentErrorFallbackCard: React.FC<Props> = ({ block, message }) => {
           <AlertTriangle size={18} />
         </IconWrap>
         <TitleGroup>
-          <Title>{title}</Title>
-          <Subtitle>{t('agent.errorFallback.subtitle')}</Subtitle>
+          <Title>{presentation.title}</Title>
         </TitleGroup>
       </Header>
 
-      <Description>{description}</Description>
+      <Description>{presentation.description}</Description>
+      {presentation.resultNotice && <Description>{presentation.resultNotice}</Description>}
 
       <Actions>
         {(continuation.canContinue || continuation.submitting) && (
@@ -397,12 +399,6 @@ const Title = styled.div`
   font-size: 14px;
   font-weight: 600;
   line-height: 1.35;
-`
-
-const Subtitle = styled.div`
-  margin-top: 2px;
-  color: var(--color-text-3);
-  font-size: 12px;
 `
 
 const Description = styled.div`

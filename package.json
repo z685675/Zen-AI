@@ -58,6 +58,7 @@
     "i18n:all": "pnpm i18n:sync && pnpm i18n:translate",
     "skills:sync": "tsx scripts/skills-sync.ts",
     "skills:check": "tsx scripts/skills-check.ts",
+    "models:sync": "tsx scripts/sync-model-capacity-catalog.ts",
     "smoke:codex": "tsx scripts/codex-runtime-smoke.ts",
     "smoke:opencode": "tsx --tsconfig tsconfig.node.json scripts/opencode-runtime-smoke.ts",
     "smoke:opencode:attachments": "tsx scripts/opencode-attachment-smoke.ts",

@@ -21,6 +21,8 @@ import { promptForToolApproval } from '../claudecode/tool-permissions'
 import type { OpenCodeEvent } from './client'
 import { type CompactionEntry, discardEmptyNativeCompaction } from './compactionGuard'
 import { OPENCODE_PROVIDER_ID, OPENCODE_VERSION } from './config'
+import { resolveOpenCodeContext } from './context'
+import { prepareOpenCodeInput } from './inputMaterial'
 import { getOpenCodeModeInstructions, OPENCODE_SYSTEM_INSTRUCTIONS } from './instructions'
 import { isInvalidReadToolLoop, isNativePermissionRejection, OpenCodeLoopRecovery } from './loopRecovery'
 import { OpenCodePerformance } from './performance'
@@ -94,6 +96,9 @@ export default class OpenCodeService implements AgentServiceInterface {
     const unfinishedTools = new Set<string>()
     let currentStatus: string | undefined
     let compacting = false
+    let pendingOverflow: NativeMessage['error']
+    let overflowMessages = new Set<string>()
+    let consecutiveOverflows = 0
     let lastContextProgressLog: number | undefined
     let contextProgressCharacters = 0
     const completedCompactions = new Set<string>()
@@ -228,12 +233,18 @@ export default class OpenCodeService implements AgentServiceInterface {
         toolArgumentAuditVersion: 1,
         loopRecoveryVersion: 1
       })
+      let { usableInput } = resolveOpenCodeContext(
+        provider.models.find((model) => model.id === modelId) ?? { id: modelId }
+      )
       runtime = await prepareOpenCodeRuntime(session, signal, {
         provider,
         modelId,
         effort: options?.effort,
         diagnosticId: options?.diagnosticId,
-        onStarting: () => status('starting')
+        onStarting: () => status('starting'),
+        onInputBudget: (tokens) => {
+          usableInput = tokens
+        }
       })
       timing.preparationMs = performance.now() - startedAt
       deadline.progress()
@@ -297,22 +308,42 @@ export default class OpenCodeService implements AgentServiceInterface {
         throw new Error('OpenCode event stream handshake failed')
       const messageId = newOpenCodeMessageId()
       emit({ type: 'raw', rawValue: { type: 'opencode_turn', user_message_id: messageId, session_id: nativeId } })
+      const system = getAutomationProfile(session)
+        ? automationInstructions(getAutomationProfile(session)!)
+        : [
+            OPENCODE_SYSTEM_INSTRUCTIONS,
+            session.instructions || '',
+            getOpenCodeWorkspaceInstructions(session),
+            getOpenCodeModeInstructions(session.configuration?.permission_mode)
+          ]
+            .filter(Boolean)
+            .join('\n\n')
+      const prepareText = async (text: string) => {
+        // Lightweight automation intentionally has no native read tool.
+        if (getAutomationProfile(session)) return text
+        const prepared = await prepareOpenCodeInput({
+          text,
+          directory: runtime!.inputDirectory,
+          usableInput,
+          system,
+          signal
+        })
+        if (prepared.material)
+          recordMainDiagnostic(options?.diagnosticId, 'runtime', 'large-input-materialized', {
+            runtime: 'opencode',
+            bytes: prepared.material.bytes,
+            segments: prepared.material.segments
+          })
+        return prepared.text
+      }
+      status('submitting')
       const body = {
         messageID: messageId,
         agent: getOpenCodeAgentMode(session.configuration?.permission_mode),
         model: { providerID: OPENCODE_PROVIDER_ID, modelID: modelId },
-        system: getAutomationProfile(session)
-          ? automationInstructions(getAutomationProfile(session)!)
-          : [
-              OPENCODE_SYSTEM_INSTRUCTIONS,
-              session.instructions || '',
-              getOpenCodeWorkspaceInstructions(session),
-              getOpenCodeModeInstructions(session.configuration?.permission_mode)
-            ]
-              .filter(Boolean)
-              .join('\n\n'),
+        system,
         parts: [
-          { type: 'text', text: prompt },
+          { type: 'text', text: await prepareText(prompt) },
           ...(images || []).map((img) => ({
             type: 'file',
             mime: img.media_type,
@@ -330,14 +361,23 @@ export default class OpenCodeService implements AgentServiceInterface {
           admissionError = error
           eventController.abort('submission status uncertain')
         })
-      turnInput = new OpenCodeTurnInput(session.id, messageId, runtime.client, nativeId, body, signal, (receipt) => {
-        recordMainDiagnostic(options?.diagnosticId, 'runtime', 'user-input-received', {
-          runtime: 'opencode',
-          inputId: receipt.id,
-          state: receipt.state,
-          nativeMessageId: receipt.nativeMessageId
-        })
-      })
+      turnInput = new OpenCodeTurnInput(
+        session.id,
+        messageId,
+        runtime.client,
+        nativeId,
+        body,
+        signal,
+        (receipt) => {
+          recordMainDiagnostic(options?.diagnosticId, 'runtime', 'user-input-received', {
+            runtime: 'opencode',
+            inputId: receipt.id,
+            state: receipt.state,
+            nativeMessageId: receipt.nativeMessageId
+          })
+        },
+        prepareText
+      )
       let awaitingNativeRun = false
       const reconcile = async (atIdle = false) => {
         awaitingNativeRun = false
@@ -391,7 +431,22 @@ export default class OpenCodeService implements AgentServiceInterface {
           (info) => info.error && !loopRecovery.recoveredMessage(info.id) && !loopRecovery.expects(info.error)
         )
         if (failure) throw this.nativeError(failure.error)
-        const latest = [...state.messages.values()].at(-1)
+        // Durable history is ordered. Reconnection can insert an older summary
+        // into the stream-state map after a newer answer was already observed.
+        const latest = messages.findLast(
+          (entry) => entry.info.role === 'assistant' && !state.previousMessages.has(entry.info.id)
+        )?.info
+        if (atIdle && pendingOverflow) {
+          const answer = messages.find((entry) => entry.info.id === latest?.id)
+          if (
+            !latest?.time?.completed ||
+            latest.summary ||
+            overflowMessages.has(latest.id) ||
+            !answer?.parts.some((part) => part.type === 'text' && part.text?.trim())
+          )
+            throw this.nativeError(pendingOverflow)
+          pendingOverflow = undefined
+        }
         if (loopRecovery.waiting) {
           awaitingNativeRun = true
           return false
@@ -579,7 +634,19 @@ export default class OpenCodeService implements AgentServiceInterface {
           status('compacting')
         }
         if (event.type === 'session.error') {
-          if (!loopRecovery.expects(props.error)) throw this.nativeError(props.error)
+          if (props.error?.name === 'ContextOverflowError' && typeof props.error.data?.message === 'string') {
+            // Native 1.19.5 publishes this BEFORE starting its own compaction.
+            // Observe that same run; do not abort it or submit the task again.
+            pendingOverflow = props.error
+            overflowMessages = new Set(state.messages.keys())
+            if (++consecutiveOverflows > 3) throw this.nativeError(pendingOverflow)
+            compacting = true
+            status('compacting')
+            recordMainDiagnostic(options?.diagnosticId, 'runtime', 'native-context-recovery', {
+              runtime: 'opencode',
+              attempt: consecutiveOverflows
+            })
+          } else if (!loopRecovery.expects(props.error)) throw this.nativeError(props.error)
           // Wait for native idle/cleanup before continuing, not a generic retry.
           transportFailure = undefined
         }
@@ -667,6 +734,16 @@ export default class OpenCodeService implements AgentServiceInterface {
             (chunk) => chunk.type === 'tool-call' || chunk.type === 'text-delta' || chunk.type === 'reasoning-delta'
           )
         ) {
+          if (
+            !pendingOverflow ||
+            chunks.some((chunk) => {
+              if (chunk.type !== 'tool-call' && chunk.type !== 'text-delta' && chunk.type !== 'reasoning-delta')
+                return false
+              const message = (chunk.providerMetadata?.opencode as { message_id?: string } | undefined)?.message_id
+              return Boolean(message && !overflowMessages.has(message))
+            })
+          )
+            consecutiveOverflows = 0
           transportFailure = undefined
           clearTimeout(retryTimeout)
           retryTimeout = undefined

@@ -44,10 +44,11 @@ export {
 
 export function getContextCount(assistant: Assistant, _messages: Message[], estimatedTokens = 0) {
   const model = assistant.model || getDefaultModel()
+  const settings = getAssistantSettings(assistant)
   const budget = createContextBudget({
     model,
     provider: getAssistantProvider({ ...assistant, model }),
-    requestedOutputTokens: getAssistantSettings(assistant).maxTokens
+    requestedOutputTokens: settings.enableMaxTokens ? settings.maxTokens : undefined
   })
 
   return {

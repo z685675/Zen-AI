@@ -1,3 +1,4 @@
+import { managedModelFetch } from '@renderer/aiCore/provider/modelTransport'
 import type { Provider } from '@renderer/types'
 import { isZenManagedApiHost } from '@shared/config/zenProvider'
 import { type DiagnosticEvent, diagnosticKeyFingerprint } from '@shared/diagnostics'
@@ -38,7 +39,7 @@ export async function collectBackendDiagnostic(
   operationId: string,
   provider: Provider | undefined,
   events: DiagnosticEvent[],
-  baseFetch: typeof fetch = fetch
+  baseFetch: typeof fetch = managedModelFetch(fetch)
 ): Promise<BackendDiagnosticCollection> {
   if (!provider?.apiHost || !provider.apiKey) return { status: 'provider-or-key-unavailable', evidence: [] }
   const observed = events.filter((item) => item.stage === 'transport' && item.event === 'headers-received')

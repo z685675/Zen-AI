@@ -8,10 +8,12 @@ import {
   OPENCODE_STREAM_CHUNK_TIMEOUT_MS
 } from '../../../../../../packages/shared/agents/opencodeLimits'
 import { getOpenCodeAgentMode } from '../../../../../../packages/shared/agents/opencodeMode'
+import { getModelCapabilities } from '../../../../../../packages/shared/modelCapabilities'
 import { formatApiHost } from '../../../../../../packages/shared/utils/api'
 import { withoutTrailingApiVersion } from '../../../../../../packages/shared/utils/api/utils'
 import { getAutomationProfile, LIGHTWEIGHT_TOOLS } from '../automation/profile'
 import { getAgentProtocolBridgeTarget, modelDeclaresAnthropicProtocol } from '../runtime/protocol'
+import { resolveOpenCodeContext } from './context'
 
 export const OPENCODE_VERSION = '1.19.5'
 export const OPENCODE_PROVIDER_ID = 'zen-selected'
@@ -23,12 +25,24 @@ export function buildOpenCodeConfig(input: {
   skillPaths: string[]
   api: { host: string; port: number; apiKey: string }
   effort?: string
+  inputDirectory?: string
 }) {
   const { session, provider, modelId } = input
   const lightweight = Boolean(getAutomationProfile(session))
   const host = ['0.0.0.0', '::'].includes(input.api.host) ? '127.0.0.1' : input.api.host
   const apiBase = `http://${host.includes(':') ? `[${host}]` : host}:${input.api.port}`
   const model = provider.models.find((candidate) => candidate.id === modelId)
+  const capabilities = getModelCapabilities({ id: modelId, provider: provider.id })
+  const userVision = model?.capabilities?.find((value) => value.type === 'vision')?.isUserSelected
+  const modalities = capabilities?.input_modalities ?? ['text', 'image']
+  const inputModalities =
+    userVision === true
+      ? [...new Set([...modalities, 'image'])]
+      : userVision === false
+        ? modalities.filter((type) => type !== 'image')
+        : modalities
+  const supportsReasoning =
+    model?.capabilities?.find((value) => value.type === 'reasoning')?.isUserSelected ?? capabilities?.reasoning ?? true
   const endpoint = getAgentProtocolBridgeTarget(provider, model)
   const npm =
     modelDeclaresAnthropicProtocol(model) || (!endpoint && provider.type === 'anthropic')
@@ -38,19 +52,24 @@ export function buildOpenCodeConfig(input: {
         : endpoint === 'openai-responses'
           ? '@ai-sdk/openai'
           : '@ai-sdk/openai-compatible'
-  // Unknown aliases must still have a finite compaction budget. This is a
-  // product ceiling, not a claim that every upstream accepts 200K tokens.
-  const configuredContext = model?.contextWindowTokens
-  const context = Math.min(
-    200_000,
-    Math.max(1024, Number.isFinite(configuredContext) && configuredContext! > 0 ? configuredContext! : 128_000)
-  )
-  const configuredOutput = model?.maxOutputTokens
-  const output = Math.min(
-    Number.isFinite(configuredOutput) && configuredOutput! > 0 ? configuredOutput! : 16_000,
-    Math.floor(context / 8)
-  )
-  const allowedRoots = [...session.accessible_paths, ...input.skillPaths]
+  const {
+    context,
+    input: inputLimit,
+    output,
+    reserved,
+    usableInput
+  } = resolveOpenCodeContext({ ...model, id: modelId, provider: provider.id })
+  // v1.19.5 applies compaction.reserved only when limit.input is present.
+  // The total window also bounds input when no separate input limit is known.
+  // Reserve output plus compaction headroom, without exhausting small windows.
+  // The pinned native runtime defaults to at most 32K per generation even
+  // when model metadata permits more. Preserve that metadata, but reserve
+  // the native request budget rather than unnecessarily shrinking input.
+  const allowedRoots = [
+    ...session.accessible_paths,
+    ...input.skillPaths,
+    ...(input.inputDirectory ? [input.inputDirectory] : [])
+  ]
   const externalDirectories = Object.fromEntries(
     allowedRoots.map((root) => [path.resolve(root).replaceAll('\\', '/') + '/**', 'allow'])
   )
@@ -99,8 +118,8 @@ export function buildOpenCodeConfig(input: {
     compaction: {
       auto: true,
       prune: true,
-      reserved: Math.min(output + 8_000, Math.floor(context / 3)),
-      preserve_recent_tokens: Math.min(8_000, Math.floor(context / 4))
+      reserved,
+      preserve_recent_tokens: Math.min(8_000, Math.floor(usableInput / 4))
     },
     provider: {
       [OPENCODE_PROVIDER_ID]: {
@@ -129,12 +148,27 @@ export function buildOpenCodeConfig(input: {
           [modelId]: {
             id: modelId,
             name: model?.name || modelId,
-            attachment: true,
-            tool_call: true,
-            reasoning: true,
-            limit: { context, output },
-            modalities: { input: ['text', 'image'], output: ['text'] },
-            ...(/gpt|^o\d|codex/i.test(modelId) && input.effort ? { options: { reasoningEffort: input.effort } } : {})
+            attachment: inputModalities.some((type) => type !== 'text'),
+            tool_call:
+              model?.capabilities?.find((value) => value.type === 'function_calling')?.isUserSelected ??
+              capabilities?.tools ??
+              true,
+            reasoning: supportsReasoning,
+            ...(capabilities?.temperature !== undefined ? { temperature: capabilities.temperature } : {}),
+            ...(capabilities?.structured_output !== undefined
+              ? { structured_output: capabilities.structured_output }
+              : {}),
+            limit: { context, input: inputLimit, output },
+            modalities: {
+              input: inputModalities,
+              output: capabilities?.output_modalities ?? ['text']
+            },
+            ...(supportsReasoning &&
+            /gpt|^o\d|codex/i.test(modelId) &&
+            input.effort &&
+            (!capabilities?.reasoning_efforts || capabilities.reasoning_efforts.includes(input.effort))
+              ? { options: { reasoningEffort: input.effort } }
+              : {})
           }
         }
       }

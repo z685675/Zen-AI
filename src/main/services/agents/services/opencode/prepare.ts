@@ -3,6 +3,7 @@ import path from 'node:path'
 
 import { config as apiConfigService } from '@main/apiServer/config'
 import { validateModelId } from '@main/apiServer/utils'
+import { modelCapacityService } from '@main/services/ModelCapacityService'
 import { getDataPath, getResourcePath, toAsarUnpackedPath } from '@main/utils'
 import type { GetAgentSessionResponse, Provider } from '@types'
 
@@ -11,16 +12,25 @@ import { prepareAutomationSession } from '../automation/bridge'
 import { getAutomationProfile } from '../automation/profile'
 import { buildOpenCodeConfig } from './config'
 import { getOpenCodeProcess } from './process'
+import { getOpenCodeInputDirectory } from './workspace'
 
 export async function prepareOpenCodeRuntime(
   session: GetAgentSessionResponse,
   signal: AbortSignal,
-  options?: { provider?: Provider; modelId?: string; effort?: string; onStarting?: () => void; diagnosticId?: string }
+  options?: {
+    provider?: Provider
+    modelId?: string
+    effort?: string
+    onStarting?: () => void
+    diagnosticId?: string
+    onInputBudget?: (tokens: number) => void
+  }
 ) {
   session = await prepareAutomationSession(session)
   const model = options?.provider ? options : await validateModelId(session.model)
   if (!model.provider || !model.modelId || !session.accessible_paths[0])
     throw new Error('New assistant model/workspace unavailable')
+  await modelCapacityService.getSnapshot()
   const skillPaths: string[] = []
   if (!getAutomationProfile(session)) {
     const skills = await SkillRepository.getInstance().list()
@@ -58,8 +68,11 @@ export async function prepareOpenCodeRuntime(
     modelId: model.modelId,
     skillPaths,
     api,
-    effort: options?.effort
+    effort: options?.effort,
+    inputDirectory: getOpenCodeInputDirectory(getDataPath('OpenCode'), session.id)
   })
+  const limits = config.provider['zen-selected'].models[model.modelId].limit
+  options?.onInputBudget?.(limits.input - config.compaction.reserved)
   return getOpenCodeProcess(
     session.id,
     session.accessible_paths[0],

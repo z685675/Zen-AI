@@ -1,5 +1,7 @@
 import path from 'node:path'
 
+import { registerModelCapabilities, setProviderModelCapabilities } from '@shared/modelCapabilities'
+import { BUILTIN_MODEL_CAPACITY_CATALOG, getModelCatalogCapacity, setModelCapacityCatalog } from '@shared/modelCapacity'
 import type { GetAgentSessionResponse, Provider } from '@types'
 import { describe, expect, it } from 'vitest'
 
@@ -28,6 +30,46 @@ const config = (id: string, type = 'new-api', endpoint?: string) =>
   })
 
 describe('OpenCode isolated model config', () => {
+  it('uses central capabilities for a renamed model without guessing its family', () => {
+    registerModelCapabilities('zen', 'brand-new-alias', {
+      context_length: 1_000_000,
+      max_input_tokens: 700_000,
+      max_output_tokens: 64_000,
+      tools: false,
+      reasoning: true,
+      temperature: false,
+      input_modalities: ['text']
+    })
+    try {
+      expect(config('brand-new-alias').provider['zen-selected'].models['brand-new-alias']).toMatchObject({
+        tool_call: false,
+        reasoning: true,
+        temperature: false,
+        attachment: false,
+        limit: { context: 1_000_000, input: 700_000, output: 64_000 },
+        modalities: { input: ['text'] }
+      })
+    } finally {
+      setProviderModelCapabilities('zen', [])
+    }
+  })
+  it('allows native reads of private input material in Plan without granting its parent data directory', () => {
+    const inputDirectory = path.resolve('private-native-storage', 'session-hash', 'inputs')
+    const built = buildOpenCodeConfig({
+      session: { ...session, configuration: { permission_mode: 'plan' } },
+      provider: provider('alias'),
+      modelId: 'alias',
+      skillPaths: [],
+      inputDirectory,
+      api: { host: '127.0.0.1', port: 3000, apiKey: 'placeholder' }
+    })
+    expect(built.permission.external_directory[inputDirectory.replaceAll('\\', '/') + '/**']).toBe('allow')
+    expect(
+      built.permission.external_directory[path.dirname(inputDirectory).replaceAll('\\', '/') + '/**']
+    ).toBeUndefined()
+    expect(built.permission.edit).toBe('deny')
+    expect(built.permission.bash).toBe('deny')
+  })
   it('does not inherit system temporary directories or their differently cased aliases', () => {
     const workspaceTemp = path.resolve('工作目录', '.agents', '.tmp', 'session')
     const env = buildOpenCodeEnvironment(
@@ -95,6 +137,95 @@ describe('OpenCode isolated model config', () => {
     expect(result.agent.title.disable).toBe(true)
     expect(result.plugin).toEqual([])
     expect(result.provider['zen-selected'].options.headers.Originator).toBe('zenai_opencode')
+  })
+
+  it('uses the canonical catalog for a known model, including its separate input limit', () => {
+    const capacity = getModelCatalogCapacity('gpt-6.1-sol')!
+    const result = config('gpt-6.1-sol')
+    expect(result.provider['zen-selected'].models['gpt-6.1-sol'].limit).toEqual({
+      context: capacity.context,
+      input: capacity.input ?? capacity.context,
+      output: capacity.output
+    })
+    expect((capacity.input ?? capacity.context) - result.compaction.reserved).toBeGreaterThan(800_000)
+    expect((capacity.input ?? capacity.context) - result.compaction.reserved).toBeLessThan(capacity.input)
+  })
+
+  it('leaves usable space when input capacity is smaller than the allowed output', () => {
+    try {
+      setModelCapacityCatalog({
+        schemaVersion: 1,
+        updatedAt: new Date().toISOString(),
+        models: { 'test-lab/small-input': { context: 64_000, input: 8_000, output: 32_000 } }
+      })
+      const result = config('small-input')
+      const limits = result.provider['zen-selected'].models['small-input'].limit
+      expect(limits).toEqual({ context: 64_000, input: 8_000, output: 32_000 })
+      expect(limits.input - result.compaction.reserved).toBe(6_000)
+    } finally {
+      setModelCapacityCatalog(BUILTIN_MODEL_CAPACITY_CATALOG)
+    }
+  })
+
+  it.each(['plan', 'default'])(
+    'passes large model limits and effective native compaction reserves in %s mode',
+    (mode) => {
+      const selectedProvider = provider('large-model')
+      selectedProvider.models[0].contextWindowTokens = 1_000_000
+      selectedProvider.models[0].maxOutputTokens = 128_000
+      const result = buildOpenCodeConfig({
+        session: { ...session, configuration: { permission_mode: mode } },
+        provider: selectedProvider,
+        modelId: 'large-model',
+        skillPaths: [],
+        api: { host: '127.0.0.1', port: 1, apiKey: 'placeholder' }
+      })
+      expect(result.provider['zen-selected'].models['large-model'].limit).toEqual({
+        context: 1_000_000,
+        input: 1_000_000,
+        output: 128_000
+      })
+      // v1.19.5's input-limit branch uses reserved; a context/output-only model ignores it.
+      expect(result.compaction.reserved).toBe(40_000)
+      expect(result.compaction.auto).toBe(true)
+      expect(result.compaction.prune).toBe(true)
+    }
+  )
+
+  it.each([4_000, 16_000])('leaves usable input and bounded recent history for a small %s-token model', (context) => {
+    const selectedProvider = provider('small-model')
+    selectedProvider.models[0].contextWindowTokens = context
+    selectedProvider.models[0].maxOutputTokens = 8_000
+    const result = buildOpenCodeConfig({
+      session,
+      provider: selectedProvider,
+      modelId: 'small-model',
+      skillPaths: [],
+      api: { host: '127.0.0.1', port: 1, apiKey: 'placeholder' }
+    })
+    const limits = result.provider['zen-selected'].models['small-model'].limit
+    expect(limits.input).toBe(context)
+    expect(result.compaction.reserved).toBeGreaterThanOrEqual(limits.output)
+    expect(limits.input - result.compaction.reserved).toBeGreaterThanOrEqual(768)
+    expect(result.compaction.preserve_recent_tokens).toBeLessThan(limits.input - result.compaction.reserved)
+  })
+
+  it.each([NaN, Infinity, -1, 0, Number.MAX_VALUE])('uses finite defaults for invalid capacity %s', (value) => {
+    const selectedProvider = provider('invalid-model')
+    selectedProvider.models[0].contextWindowTokens = value
+    selectedProvider.models[0].maxOutputTokens = value
+    const result = buildOpenCodeConfig({
+      session,
+      provider: selectedProvider,
+      modelId: 'invalid-model',
+      skillPaths: [],
+      api: { host: '127.0.0.1', port: 1, apiKey: 'placeholder' }
+    })
+    expect(result.provider['zen-selected'].models['invalid-model'].limit).toEqual({
+      context: 128_000,
+      input: 128_000,
+      output: 16_000
+    })
   })
   it('retains exact Office Skill MCP names, loopback auth and disables OAuth', () => {
     const result = config('gpt-6-sol')

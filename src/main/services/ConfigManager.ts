@@ -51,6 +51,7 @@ export enum ConfigKeys {
   EnableDeveloperMode = 'enableDeveloperMode',
   ClientId = 'clientId',
   RemoteModelPolicyCache = 'remoteModelPolicyCache',
+  ClientConnectionPolicy = 'clientConnectionPolicy',
   GitBashPath = 'gitBashPath',
   GitBashPathSource = 'gitBashPathSource' // 'manual' | 'auto' | null
 }

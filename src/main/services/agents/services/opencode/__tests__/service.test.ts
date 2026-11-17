@@ -1,7 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const mocks = vi.hoisted(() => ({ getProcess: vi.fn(), permission: vi.fn(), diagnostic: vi.fn() }))
+const mocks = vi.hoisted(() => ({
+  getProcess: vi.fn(),
+  permission: vi.fn(),
+  diagnostic: vi.fn(),
+  prepareInput: vi.fn()
+}))
 vi.mock('../process', () => ({ getOpenCodeProcess: mocks.getProcess }))
+vi.mock('../inputMaterial', () => ({ prepareOpenCodeInput: mocks.prepareInput }))
+vi.mock('@main/services/ModelCapacityService', () => ({ modelCapacityService: { getSnapshot: vi.fn() } }))
 vi.mock('@main/apiServer/routes/assistant-mcp', () => ({ touchAssistantMcpContext: vi.fn() }))
 vi.mock('@main/apiServer/routes/browser-mcp', () => ({ touchBrowserMcpContext: vi.fn() }))
 vi.mock('@main/apiServer/config', () => ({
@@ -56,6 +63,12 @@ let mode:
   | 'reconnect-cancel'
   | 'empty-compaction'
   | 'compaction'
+  | 'overflow'
+  | 'overflow-failed'
+  | 'overflow-idle'
+  | 'overflow-loop'
+  | 'overflow-wait'
+  | 'overflow-reconnect'
   | 'empty-compaction-disconnect' = 'success'
 let loopMode:
   | 'deny'
@@ -75,6 +88,7 @@ const loopError = {
     message: 'The user rejected permission to use this specific tool call with the following feedback: skip repetition'
   }
 }
+const overflowError = { name: 'ContextOverflowError', data: { message: 'input exceeds model context' } }
 let longTaskMode: 'progress' | 'busy-only' | 'tool-input' | 'bytes-only' | undefined
 let pause: { ready: () => void; wait: Promise<void> } | undefined
 function hold(signal: AbortSignal) {
@@ -118,7 +132,7 @@ const request = vi.fn(async (route: string, _method?: string, data?: unknown) =>
         type:
           loopMode === 'started-continuation' && body !== initialBody && !loopFinished
             ? continuationStatus
-            : mode === 'retry' || mode.startsWith('reconnect')
+            : mode === 'retry' || mode.startsWith('reconnect') || mode === 'overflow-reconnect'
               ? 'busy'
               : 'idle'
       }
@@ -130,6 +144,37 @@ const request = vi.fn(async (route: string, _method?: string, data?: unknown) =>
   if (route.endsWith('/message')) {
     historyReads++
     if (historyReads === 1) return [{ info: { id: 'old', role: 'assistant' }, parts: [] }]
+    if (mode.startsWith('overflow'))
+      return [
+        { info: { id: body.messageID, role: 'user' }, parts: [] },
+        {
+          info: { id: 'overflow-source', role: 'assistant', time: { completed: 1 } },
+          parts: [{ id: 'old-output', type: 'text', text: 'Partial old output' }]
+        },
+        ...(mode === 'overflow-idle'
+          ? []
+          : [
+              {
+                info: {
+                  id: 'overflow-summary',
+                  role: 'assistant',
+                  summary: true,
+                  finish: mode === 'overflow-failed' ? 'error' : 'stop',
+                  time: { completed: 1 },
+                  ...(mode === 'overflow-failed' ? { error: overflowError } : {})
+                },
+                parts: [{ id: 'summary-body', type: 'text', text: 'retained context' }]
+              }
+            ]),
+        ...(['overflow', 'overflow-reconnect'].includes(mode)
+          ? [
+              {
+                info: nativeInfo(),
+                parts: [{ id: 'text1', messageID: 'assistant-new', type: 'text', text: '你好', time: { end: 1 } }]
+              }
+            ]
+          : [])
+      ]
     if (loopMode)
       return [
         { info: { id: initialBody.messageID, role: 'user' }, parts: [] },
@@ -219,6 +264,39 @@ async function* events(signal: AbortSignal) {
   }
   yield { type: 'message.updated', properties: { info: { id: body.messageID, sessionID: 'native', role: 'user' } } }
   yield { type: 'session.status', properties: { sessionID: 'native', status: { type: 'busy' } } }
+  if (mode.startsWith('overflow')) {
+    yield {
+      type: 'message.updated',
+      properties: { info: { id: 'overflow-source', sessionID: 'native', role: 'assistant', time: { completed: 1 } } }
+    }
+    yield {
+      type: 'message.part.updated',
+      properties: {
+        part: {
+          id: 'old-output',
+          messageID: 'overflow-source',
+          type: 'text',
+          text: 'Partial old output',
+          time: { end: 1 }
+        }
+      }
+    }
+    if (mode !== 'overflow-reconnect' || connection === 1)
+      yield { type: 'session.error', properties: { sessionID: 'native', error: overflowError } }
+    if (mode === 'overflow-wait') {
+      pause!.ready()
+      await hold(signal)
+    }
+    if (mode === 'overflow-reconnect' && connection === 1) throw new Error('lost event stream during recovery')
+    if (mode === 'overflow-loop')
+      for (let index = 0; index < 3; index++)
+        yield { type: 'session.error', properties: { sessionID: 'native', error: overflowError } }
+    if (['overflow-idle', 'overflow-failed'].includes(mode)) {
+      yield { type: 'session.status', properties: { sessionID: 'native', status: { type: 'idle' } } }
+      return
+    }
+    yield { type: 'session.compacted', properties: { sessionID: 'native' } }
+  }
   if (loopMode) {
     if (loopMode === 'sibling')
       yield {
@@ -462,6 +540,7 @@ async function run(controller = new AbortController(), prompt = 'hello') {
 }
 beforeEach(() => {
   vi.clearAllMocks()
+  mocks.prepareInput.mockImplementation(async ({ text }) => ({ text }))
   mode = 'success'
   continuationStatus = 'busy'
   fixture.configuration = {}
@@ -490,6 +569,72 @@ afterEach(() => {
   vi.useRealTimers()
 })
 describe('OpenCode adapter turn lifecycle', () => {
+  it.each(['overflow', 'overflow-reconnect'] as const)(
+    'allows native context recovery without resubmission (%s)',
+    async (value) => {
+      mode = value
+      const result = await run()
+      expect(result.at(-1)?.type).toBe('complete')
+      expect(request.mock.calls.filter(([route]) => route.endsWith('/prompt_async'))).toHaveLength(1)
+      expect(result.some((event: any) => event.chunk?.rawValue?.status === 'compacting')).toBe(true)
+    }
+  )
+
+  it.each(['overflow-idle', 'overflow-failed', 'overflow-loop'] as const)(
+    'surfaces terminal context failure instead of old partial output or endless recovery (%s)',
+    async (value) => {
+      mode = value
+      expect((await run()).at(-1)).toMatchObject({ type: 'error', error: { name: 'ContextOverflowError' } })
+      expect(request.mock.calls.filter(([route]) => route.endsWith('/prompt_async'))).toHaveLength(1)
+    }
+  )
+
+  it('keeps cancellation effective while native context recovery is waiting', async () => {
+    mode = 'overflow-wait'
+    let ready!: () => void
+    const waiting = new Promise<void>((resolve) => {
+      ready = resolve
+    })
+    pause = { ready, wait: new Promise(() => {}) }
+    const abort = new AbortController()
+    const result = run(abort)
+    await waiting
+    abort.abort('user-cancelled')
+    expect((await result).at(-1)?.type).toBe('cancelled')
+  })
+
+  it('does not let a recoverable context error bypass the inactivity deadline', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'performance'] })
+    mode = 'overflow-wait'
+    let ready!: () => void
+    const waiting = new Promise<void>((resolve) => {
+      ready = resolve
+    })
+    pause = { ready, wait: new Promise(() => {}) }
+    const result = run()
+    await waiting
+    await vi.advanceTimersByTimeAsync(16 * 60_000)
+    expect((await result).at(-1)).toMatchObject({ type: 'error', error: { code: 'agent_inactivity_timeout' } })
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('passes initial input through material preparation and never submits after preparation failure', async () => {
+    mocks.prepareInput.mockResolvedValue({
+      text: 'read retained material',
+      material: { bytes: 500_000, segments: 4000 }
+    })
+    const text = 'X'.repeat(500_000)
+    expect((await run(new AbortController(), text)).at(-1)?.type).toBe('complete')
+    expect(mocks.prepareInput.mock.calls[0][0].text).toBe(text)
+    expect(body.parts[0].text).toBe('read retained material')
+    request.mockClear()
+    mocks.prepareInput.mockRejectedValue(
+      Object.assign(new Error('disk full'), { code: 'agent_input_preparation_failed' })
+    )
+    expect((await run()).at(-1)).toMatchObject({ type: 'error', error: { code: 'agent_input_preparation_failed' } })
+    expect(request.mock.calls.some(([route]) => route.endsWith('/prompt_async'))).toBe(false)
+  })
+
   it.each(['busy', 'retry'] as const)(
     'waits for a %s loop continuation when an old cleanup idle arrives before its first output',
     async (value) => {

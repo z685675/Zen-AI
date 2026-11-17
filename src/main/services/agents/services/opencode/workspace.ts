@@ -12,6 +12,10 @@ export function getOpenCodeTempDirectory(workspace: string, sessionId: string): 
   return path.join(workspace, '.agents', '.tmp', key)
 }
 
+export function getOpenCodeInputDirectory(dataRoot: string, sessionId: string): string {
+  return path.join(dataRoot, createHash('sha256').update(sessionId).digest('hex'), 'inputs')
+}
+
 export function getOpenCodeWorkspaceInstructions(
   session: Pick<GetAgentSessionResponse, 'id' | 'accessible_paths'> &
     Partial<Pick<GetAgentSessionResponse, 'configuration'>>

@@ -24,6 +24,7 @@ import { MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH } from '@shared/config/constant'
 import { imageCanvasChannels } from '@shared/config/imageCanvas'
 import type { LocalTransferConnectPayload } from '@shared/config/types'
 import { IpcChannel } from '@shared/IpcChannel'
+import { MODEL_CAPACITY_IPC } from '@shared/modelCapacity'
 import { extractPdfText } from '@shared/utils/pdf'
 import type {
   AgentPersistedMessage,
@@ -81,6 +82,8 @@ import { localTransferService } from './services/LocalTransferService'
 import mcpService from './services/MCPService'
 import MemoryService from './services/memory/MemoryService'
 import { refreshModelAvailability } from './services/ModelAvailabilityService'
+import { modelCapacityService } from './services/ModelCapacityService'
+import { registerModelTransportIpc } from './services/modelTransport/ipc'
 import { openTraceWindow, setTraceWindowTitle } from './services/NodeTraceService'
 import NotificationService from './services/NotificationService'
 import * as NutstoreService from './services/NutstoreService'
@@ -159,6 +162,7 @@ function getHardwareArch() {
 }
 
 export async function registerIpc(mainWindow: BrowserWindow, app: Electron.App) {
+  registerModelTransportIpc()
   registerDshPreviewIpc(mainWindow)
   const imageCanvas = new ImageCanvasService(mainWindow)
   let canvasControl = Promise.resolve<unknown>(undefined)
@@ -393,6 +397,7 @@ export async function registerIpc(mainWindow: BrowserWindow, app: Electron.App) 
     return configManager.get(key)
   })
 
+  ipcMain.handle(MODEL_CAPACITY_IPC, () => modelCapacityService.getSnapshot())
   ipcMain.handle(IpcChannel.ModelPolicy_Get, () => remoteModelPolicyService.getSnapshot())
   ipcMain.handle(IpcChannel.ModelPolicy_Refresh, () => remoteModelPolicyService.refresh(true))
   ipcMain.handle(IpcChannel.ModelAvailability_Refresh, (_, provider: Provider) =>

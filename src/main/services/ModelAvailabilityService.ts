@@ -3,8 +3,10 @@ import { createHash } from 'node:crypto'
 import { loggerService } from '@logger'
 import { type ModelAvailabilitySnapshot, parseAvailableModels } from '@shared/config/modelAvailability'
 import { isZenManagedApiHost } from '@shared/config/zenProvider'
+import { intersectModelCapabilities, setProviderModelCapabilities } from '@shared/modelCapabilities'
 import type { Provider } from '@types'
-import { net } from 'electron'
+
+import { managedApiFetch } from './modelTransport/apiFetch'
 
 const logger = loggerService.withContext('ModelAvailabilityService')
 const snapshots = new Map<string, ModelAvailabilitySnapshot>()
@@ -46,9 +48,11 @@ export async function refreshModelAvailability(
   if (!provider.enabled || !provider.apiKey.trim()) {
     requestedSources.delete(provider.id)
     snapshots.delete(provider.id)
+    setProviderModelCapabilities(provider.id, [])
     return undefined
   }
   const fingerprint = availabilityFingerprint(provider)
+  if (requestedSources.get(provider.id) !== fingerprint) setProviderModelCapabilities(provider.id, [])
   requestedSources.set(provider.id, fingerprint)
   const cached = getCachedModelAvailability(provider)
   if (!force && cached && Date.now() - cached.fetchedAt < 60_000) return cached
@@ -68,7 +72,7 @@ export async function refreshModelAvailability(
       if (!keys.length || keys.length > 32) throw new Error('invalid_model_availability_keys')
       const modelsByKey = await Promise.all(
         keys.map(async (apiKey) => {
-          const response = await net.fetch(new URL('/api/client/models', provider.apiHost).toString(), {
+          const response = await managedApiFetch(new URL('/api/client/models', provider.apiHost).toString(), {
             headers: { Authorization: `Bearer ${apiKey}`, Accept: 'application/json' },
             signal: AbortSignal.timeout(8_000),
             redirect: 'error'
@@ -83,9 +87,16 @@ export async function refreshModelAvailability(
       const models = (modelsByKey[0] ?? []).filter((model) =>
         modelsByKey.every((list) => list.some((candidate) => candidate.id === model.id))
       )
-      const snapshot = { providerId: provider.id, fingerprint, fetchedAt: Date.now(), models }
+      const safeModels = models.map((entry) => ({
+        ...entry,
+        model_capabilities: intersectModelCapabilities(
+          modelsByKey.map((list) => list.find((m) => m.id === entry.id)?.model_capabilities)
+        )
+      }))
+      const snapshot = { providerId: provider.id, fingerprint, fetchedAt: Date.now(), models: safeModels }
       if (requestedSources.get(provider.id) !== fingerprint) return undefined
       snapshots.set(provider.id, snapshot)
+      setProviderModelCapabilities(provider.id, snapshot.models)
       return snapshot
     } catch (error) {
       logger.warn('Availability refresh failed; retaining last complete snapshot', { providerId: provider.id, error })

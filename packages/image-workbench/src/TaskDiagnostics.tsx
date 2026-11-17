@@ -1,6 +1,8 @@
 import type { ImageCanvasTask } from '@shared/config/imageCanvas'
 import { useTranslation } from 'react-i18next'
 
+import { downloadSize } from './DownloadProgress'
+
 export function TaskDiagnostics({ task }: { task: ImageCanvasTask }) {
   const { t } = useTranslation()
   const diagnostics = task.diagnostics
@@ -73,6 +75,63 @@ export function TaskDiagnostics({ task }: { task: ImageCanvasTask }) {
           </div>
         </dl>
       )}
+      {diagnostics.downloads?.map((download) => (
+        <div key={download.assetId}>
+          <p>
+            {t('downloadDiagnostics')} · {t('downloadImage', { index: download.index, count: download.count })}
+          </p>
+          <p>
+            {downloadSize(download.receivedBytes)}
+            {download.totalBytes ? ` / ${downloadSize(download.totalBytes)}` : ''}
+          </p>
+          {download.host && (
+            <p>
+              {t('downloadHost')} · {download.host}
+            </p>
+          )}
+          {download.history.map((attempt, index) => (
+            <dl key={index}>
+              <div>
+                <dt>{t('downloadAttempt', { attempt: attempt.attempt })}</dt>
+                <dd>
+                  {t('downloadAttemptValue', {
+                    offset: downloadSize(attempt.offset),
+                    bytes: downloadSize(attempt.transferredBytes),
+                    seconds: seconds(attempt.durationMs)
+                  })}
+                </dd>
+              </div>
+              {attempt.httpStatus && (
+                <div>
+                  <dt>HTTP</dt>
+                  <dd>{attempt.httpStatus}</dd>
+                </div>
+              )}
+              {attempt.headersMs !== undefined && (
+                <div>
+                  <dt>{t('downloadHeaders')}</dt>
+                  <dd>{seconds(attempt.headersMs)} s</dd>
+                </div>
+              )}
+              {attempt.edgeRequestId && (
+                <div>
+                  <dt>{t('downloadEdge')}</dt>
+                  <dd>{attempt.edgeRequestId}</dd>
+                </div>
+              )}
+              {attempt.reason && (
+                <div>
+                  <dt>{t('downloadReason')}</dt>
+                  <dd>
+                    {t('downloadReasons.' + attempt.reason)}
+                    {attempt.transportCode && ` · ${attempt.transportCode}`}
+                  </dd>
+                </div>
+              )}
+            </dl>
+          ))}
+        </div>
+      ))}
       {diagnostics.server && (
         <>
           <p>{t('serverTimingsHint')}</p>

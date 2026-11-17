@@ -32,7 +32,7 @@ import { resolveOpenCodeExecutable } from './executable'
 import { createOpenCodeGateway } from './gateway'
 import { prepareOpenCodeOfflineConfig } from './offline'
 import { collectRuntimeSecrets, OpenCodeStderr } from './stderr'
-import { getOpenCodeTempDirectory } from './workspace'
+import { getOpenCodeInputDirectory, getOpenCodeTempDirectory } from './workspace'
 
 export { resolveOpenCodeExecutable } from './executable'
 
@@ -115,6 +115,9 @@ export class OpenCodeProcess {
 
   private get root() {
     return path.join(getDataPath('OpenCode'), hash(this.key))
+  }
+  get inputDirectory() {
+    return getOpenCodeInputDirectory(getDataPath('OpenCode'), this.key)
   }
   private get bindingPath() {
     return path.join(this.root, 'binding.json')

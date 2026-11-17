@@ -5,9 +5,10 @@ import {
   type ModelPolicySnapshot,
   normalizeModelPolicy
 } from '@shared/config/modelPolicy'
-import { app, net } from 'electron'
+import { app } from 'electron'
 
 import { ConfigKeys, configManager } from './ConfigManager'
+import { managedApiFetch } from './modelTransport/apiFetch'
 
 const logger = loggerService.withContext('RemoteModelPolicyService')
 const REFRESH_MIN_INTERVAL_MS = 5 * 60 * 1000
@@ -101,7 +102,7 @@ class RemoteModelPolicyService {
       }
       if (current.etag) headers['If-None-Match'] = current.etag
 
-      const response = await net.fetch(getEndpoint(), {
+      const response = await managedApiFetch(getEndpoint(), {
         headers,
         signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
       })

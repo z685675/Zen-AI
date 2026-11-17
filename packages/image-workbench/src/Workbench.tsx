@@ -12,6 +12,7 @@ import { type ChangeEvent, type ReactNode, useCallback, useEffect, useId, useMem
 import { useTranslation } from 'react-i18next'
 
 import { blobToDataUrl } from './browserImages'
+import { DownloadProgress } from './DownloadProgress'
 import { emptyDraft, readDraft, type WorkbenchDraft, writeDraft } from './draft'
 import { dimensionKey, imageDimensionLabel, orderedImageDimensions } from './imageDimensions'
 import { MaskEditor } from './MaskEditor'
@@ -271,7 +272,7 @@ export default function Workbench() {
   const [notice, setNotice] = useState('')
   const [history, setHistory] = useState(false)
   const [configuration, setConfiguration] = useState(false)
-  const [preview, setPreview] = useState('')
+  const [preview, setPreview] = useState<{ src: string; alt: string }>()
   const [maskEditor, setMaskEditor] = useState(false)
   const [nextCursor, setNextCursor] = useState<string>()
   const [historyTotal, setHistoryTotal] = useState(0)
@@ -641,7 +642,7 @@ export default function Workbench() {
     draftRef.current = next
     setDraft(next)
     setSelectedId('')
-    setPreview('')
+    setPreview(undefined)
     setMaskEditor(false)
     setConfiguration(false)
     setMessage('')
@@ -789,7 +790,7 @@ export default function Workbench() {
               selectedTaskId={task.id}
               onSelect={setSelectedId}
               taskStatus={taskStatus}
-              onPreview={setPreview}
+              onPreview={(src) => setPreview({ src, alt: task.prompt })}
               onNotice={setNotice}
               onError={showError}
               onUseReference={(data) => {
@@ -845,6 +846,7 @@ export default function Workbench() {
                   })}
                 </p>
               )}
+              <DownloadProgress task={task} />
               <TaskDiagnostics task={task} />
               <div className="actions">
                 {task.recoverable && task.status !== 'running' && task.status !== 'completed' && (
@@ -916,9 +918,17 @@ export default function Workbench() {
           <div className="reference-grid">
             {draft.references.map((reference, index) => (
               <div className="reference" key={`${index}-${reference.slice(-24)}`}>
-                <img src={reference} alt={t('references')} />
                 <button
                   type="button"
+                  className="reference-preview"
+                  aria-label={`${t('preview')} · ${t('references')} ${index + 1}`}
+                  title={t('preview')}
+                  onClick={() => setPreview({ src: reference, alt: `${t('references')} ${index + 1}` })}>
+                  <img src={reference} alt={`${t('references')} ${index + 1}`} />
+                </button>
+                <button
+                  type="button"
+                  className="reference-remove"
                   aria-label={t('removeImage', { index: index + 1 })}
                   onClick={() =>
                     setDraft((current) => ({
@@ -1166,8 +1176,8 @@ export default function Workbench() {
         />
       )}
       {preview && (
-        <Modal title={t('preview')} onClose={() => setPreview('')}>
-          <img className="full-preview" src={preview} alt={task?.prompt || ''} />
+        <Modal title={t('preview')} onClose={() => setPreview(undefined)}>
+          <img className="full-preview" src={preview.src} alt={preview.alt} />
         </Modal>
       )}
       {maskEditor && draft.references[0] && (

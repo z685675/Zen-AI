@@ -1,3 +1,4 @@
+import { managedModelFetch } from '@renderer/aiCore/provider/modelTransport'
 import type { Provider } from '@renderer/types'
 import { isZenManagedApiHost } from '@shared/config/zenProvider'
 import * as z from 'zod'
@@ -120,7 +121,7 @@ export async function fetchUsageStatistics(
   source: UsageSource,
   query: UsageQuery,
   signal: AbortSignal,
-  baseFetch: typeof fetch = fetch
+  baseFetch: typeof fetch = managedModelFetch(fetch)
 ): Promise<UsageStatistics> {
   if (!source.supported || !source.apiKey) throw new UsageStatisticsError('unsupported')
   const controller = new AbortController()
@@ -196,7 +197,7 @@ export async function fetchModelDailyQuota(
   const url = buildUsageStatisticsUrl(source.apiHost, { start: 0, end: 0, timezone: 'Asia/Shanghai', scene: 'all' })
   url.pathname = url.pathname.replace(/\/statistics$/, '/model-daily')
   url.search = ''
-  const response = await fetch(url, {
+  const response = await managedModelFetch(fetch)(url, {
     signal: AbortSignal.any([signal, AbortSignal.timeout(15_000)]),
     headers: { Authorization: `Bearer ${source.apiKey}` },
     credentials: 'omit',

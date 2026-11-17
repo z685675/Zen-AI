@@ -1,3 +1,4 @@
+import { getModelCapabilities } from '@shared/modelCapabilities'
 import type { Provider } from '@types'
 import { describe, expect, it, vi } from 'vitest'
 
@@ -21,6 +22,31 @@ const response = (models: string[]) =>
   })
 
 describe('model availability transport (no paid requests)', () => {
+  it('limits rotating-key capabilities to what every key can use', async () => {
+    const p = provider('key-capabilities', 'first,second')
+    for (const limit of [900_000, 64_000])
+      fetcher.mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            success: true,
+            object: 'list',
+            data: [{ id: 'new-alias', model_capabilities: { context_length: limit, tools: limit > 64_000 } }]
+          }),
+          { headers: { 'X-Zen-Models-Authoritative': '1' } }
+        )
+      )
+    await refreshModelAvailability(p, true)
+    expect(getModelCapabilities({ provider: p.id, id: 'new-alias' })).toMatchObject({
+      context_length: 64_000,
+      tools: false
+    })
+    fetcher.mockRejectedValueOnce(new Error('offline'))
+    await refreshModelAvailability(p, true)
+    expect(getModelCapabilities({ provider: p.id, id: 'new-alias' })?.tools).toBe(false)
+    fetcher.mockResolvedValueOnce(response([])).mockResolvedValueOnce(response([]))
+    await refreshModelAvailability(p, true)
+    expect(getModelCapabilities({ provider: p.id, id: 'new-alias' })).toBeUndefined()
+  })
   it('keeps the last success on network/auth/format errors, but accepts real empty supply', async () => {
     const p = provider('failure-retention')
     fetcher.mockResolvedValueOnce(response(['A']))

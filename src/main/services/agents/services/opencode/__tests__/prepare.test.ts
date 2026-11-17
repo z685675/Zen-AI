@@ -20,6 +20,7 @@ vi.mock('@main/apiServer/utils', () => ({
 }))
 vi.mock('../../../skills/SkillRepository', () => ({ SkillRepository: { getInstance: () => ({ list: mocks.list }) } }))
 vi.mock('../process', () => ({ getOpenCodeProcess: mocks.process }))
+vi.mock('@main/services/ModelCapacityService', () => ({ modelCapacityService: { getSnapshot: vi.fn() } }))
 
 import { applyAutomationProfile } from '../../automation/profile'
 import { prepareOpenCodeRuntime } from '../prepare'

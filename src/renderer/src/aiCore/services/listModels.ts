@@ -2,7 +2,6 @@
  * ModelListService - Unified model listing service
  * Uses Strategy Registry pattern for provider-specific model fetching
  */
-
 import {
   createJsonErrorResponseHandler,
   createJsonResponseHandler,
@@ -14,6 +13,7 @@ import type { EndpointType, Model, Provider } from '@renderer/types'
 import { SystemProviderIds } from '@renderer/types'
 import { formatApiHost, withoutTrailingSlash } from '@renderer/utils'
 import { isAIGatewayProvider, isGeminiProvider, isOllamaProvider } from '@renderer/utils/provider'
+import { modelCapacityFields, parseModelCapabilities, registerModelCapabilities } from '@shared/modelCapabilities'
 import { defaultAppHeaders } from '@shared/utils'
 import * as z from 'zod'
 
@@ -139,13 +139,21 @@ function positiveInteger(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) && value > 0 ? Math.floor(value) : undefined
 }
 
-function capacityMetadata(input: {
-  context_length?: number
-  inputTokenLimit?: number
-  max_output?: number
-  max_output_tokens?: number
-  outputTokenLimit?: number
-}): Partial<Model> {
+function capacityMetadata(
+  input: {
+    model_capabilities?: unknown
+    id?: string
+    context_length?: number
+    inputTokenLimit?: number
+    max_output?: number
+    max_output_tokens?: number
+    outputTokenLimit?: number
+  },
+  provider?: Provider
+): Partial<Model> {
+  const capabilities = parseModelCapabilities(input.model_capabilities)
+  if (provider && input.id) registerModelCapabilities(provider.id, input.id, capabilities)
+  if (capabilities?.context_length || capabilities?.max_output_tokens) return modelCapacityFields(capabilities)
   const contextWindowTokens = positiveInteger(input.context_length ?? input.inputTokenLimit)
   const maxOutputTokens = positiveInteger(input.max_output ?? input.max_output_tokens ?? input.outputTokenLimit)
 
@@ -217,7 +225,7 @@ const geminiFetcher: ModelFetcher = {
       return toModel(id, provider, {
         name: m.displayName || id,
         description: m.description,
-        ...capacityMetadata(m)
+        ...capacityMetadata(m, provider)
       })
     })
   }
@@ -248,7 +256,7 @@ const githubFetcher: ModelFetcher = {
       })
     )
     const v1Models = v1Response.data.map((m) =>
-      toModel(m.id, provider, { owned_by: m.owned_by, ...capacityMetadata(m) })
+      toModel(m.id, provider, { owned_by: m.owned_by, ...capacityMetadata(m, provider) })
     )
     return dedup([...catalogModels, ...v1Models], (m) => m.id)
   }
@@ -286,7 +294,7 @@ const togetherFetcher: ModelFetcher = {
         name: m.display_name || m.id,
         description: m.description,
         owned_by: m.organization,
-        ...capacityMetadata(m)
+        ...capacityMetadata(m, provider)
       })
     )
   }
@@ -308,7 +316,7 @@ const newApiFetcher: ModelFetcher = {
         ...(m.supported_endpoint_types
           ? { supported_endpoint_types: m.supported_endpoint_types as EndpointType[] }
           : {}),
-        ...capacityMetadata(m)
+        ...capacityMetadata(m, provider)
       })
     )
   }
@@ -335,7 +343,7 @@ const openRouterFetcher: ModelFetcher = {
     return dedup(all, (m) => m.id).map((m) =>
       toModel(m.id, provider, {
         owned_by: m.owned_by,
-        ...capacityMetadata(m)
+        ...capacityMetadata(m, provider)
       })
     )
   }
@@ -369,7 +377,7 @@ const ppioFetcher: ModelFetcher = {
     return dedup(all, (m) => m.id).map((m) =>
       toModel(m.id, provider, {
         owned_by: m.owned_by,
-        ...capacityMetadata(m)
+        ...capacityMetadata(m, provider)
       })
     )
   }
@@ -388,7 +396,7 @@ const aiHubMixFetcher: ModelFetcher = {
       toModel(m.model_id, provider, {
         name: m.model_name || m.model_id,
         description: m.desc,
-        ...capacityMetadata(m)
+        ...capacityMetadata(m, provider)
       })
     )
   }
@@ -411,7 +419,7 @@ const openAICompatibleFetcher: ModelFetcher = {
         ...(m.supported_endpoint_types
           ? { supported_endpoint_types: m.supported_endpoint_types as EndpointType[] }
           : {}),
-        ...capacityMetadata(m)
+        ...capacityMetadata(m, provider)
       })
     )
   }

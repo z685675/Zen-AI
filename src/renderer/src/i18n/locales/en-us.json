@@ -2397,6 +2397,12 @@
       "view_details": "View Details"
     },
     "errors": "Errors",
+    "fallback": {
+      "check_results": "Check any existing files or results before continuing to avoid repeating completed actions.",
+      "description": "Please try again once, or switch to another available model and retry. If the issue persists, export the diagnostic package and send it to your administrator for assistance.",
+      "reply_title": "This reply could not be completed",
+      "task_title": "This task could not be completed"
+    },
     "finishReason": "Finish Reason",
     "functionality": "Functionality",
     "http": {

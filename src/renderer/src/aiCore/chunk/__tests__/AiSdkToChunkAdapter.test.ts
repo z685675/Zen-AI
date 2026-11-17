@@ -29,6 +29,19 @@ async function adapt(parts: unknown[]) {
 const finish = { type: 'finish', finishReason: 'stop', totalUsage: {} }
 
 describe('AI SDK response terminal state', () => {
+  it('finalizes a failed chat stream without awaiting an unsettled final text promise', async () => {
+    const chunks: Chunk[] = []
+    const adapter = new AiSdkToChunkAdapter((chunk) => chunks.push(chunk))
+    const text = new Promise<string>(() => {})
+    const fullStream = new ReadableStream({
+      start(controller) {
+        controller.error(new TypeError('network body interrupted'))
+      }
+    })
+    await expect(adapter.processStream({ fullStream, text })).resolves.toBe('')
+    expect(chunks.filter((chunk) => chunk.type === ChunkType.ERROR)).toHaveLength(1)
+    expect(chunks.some((chunk) => chunk.type === ChunkType.LLM_RESPONSE_COMPLETE)).toBe(false)
+  })
   it.each(['error-part', 'reader-rejection'])(
     'does not publish agent success before a late %s after finish',
     async (kind) => {

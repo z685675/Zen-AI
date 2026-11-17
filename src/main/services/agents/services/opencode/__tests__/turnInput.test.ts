@@ -5,7 +5,7 @@ import { checkAgentRunInput, getAgentRunInputStatus, OpenCodeTurnInput, submitAg
 
 let sequence = 0
 const controllers: OpenCodeTurnInput[] = []
-function fixture() {
+function fixture(prepareText?: (text: string) => Promise<string>) {
   const sessionId = `input-test-${++sequence}`
   const request = vi.fn().mockResolvedValue(undefined)
   const abort = new AbortController()
@@ -16,7 +16,9 @@ function fixture() {
     { request },
     'native',
     body,
-    abort.signal
+    abort.signal,
+    undefined,
+    prepareText
   )
   controllers.push(controller)
   const input: AgentRunInput = { sessionId, turnId: controller.turnId, id: 'addition', text: '改为中文回答' }
@@ -25,6 +27,32 @@ function fixture() {
 afterEach(() => controllers.splice(0).forEach((controller) => controller.close()))
 
 describe('native active-task input', () => {
+  it('prepares additions once and preserves receipt idempotency', async () => {
+    const prepare = vi.fn(async () => 'read retained input material')
+    const { controller, input, request } = fixture(prepare)
+    controller.ready(true)
+    const first = await controller.submit(input)
+    expect(await controller.submit(input)).toEqual(first)
+    expect(prepare).toHaveBeenCalledExactlyOnceWith(input.text)
+    expect(request).toHaveBeenCalledTimes(1)
+    expect(request.mock.calls[0][2].parts[0].text).toBe('read retained input material')
+  })
+
+  it('never dispatches a failed or cancelled preparation and does not mark it delivered', async () => {
+    const { controller, input, request } = fixture(async () => {
+      throw new Error('disk full')
+    })
+    controller.ready(true)
+    expect(await controller.submit(input)).toMatchObject({ state: 'rejected', code: 'invalid_input' })
+    expect(request).not.toHaveBeenCalled()
+    const cancelled = fixture(async () => {
+      cancelled.abort.abort()
+      return 'prepared'
+    })
+    cancelled.controller.ready(true)
+    expect(await cancelled.controller.submit(cancelled.input)).toMatchObject({ state: 'rejected', code: 'not_running' })
+    expect(cancelled.request).not.toHaveBeenCalled()
+  })
   it('keeps user guidance receipts through internal continuations and distinguishes later additions', async () => {
     const { controller, input } = fixture()
     controller.ready(true)
@@ -83,6 +111,7 @@ describe('native active-task input', () => {
     request.mockImplementation(() => new Promise<void>((resolve) => (complete = resolve)))
     const first = submitAgentRunInput(input)
     const second = submitAgentRunInput(input)
+    await vi.waitFor(() => expect(request).toHaveBeenCalledTimes(1))
     complete()
     expect(await first).toEqual(await second)
     expect(await submitAgentRunInput({ ...input, text: 'different task' })).toMatchObject({ code: 'invalid_input' })

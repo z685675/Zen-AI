@@ -40,6 +40,7 @@ import { getZenClientHeaders } from '../../utils/zenClientHeaders'
 import type { ProviderConfig } from '../types'
 import { COPILOT_DEFAULT_HEADERS } from './constants'
 import { getAiSdkProviderId } from './factory'
+import { managedModelFetch } from './modelTransport'
 
 const logger = loggerService.withContext('ProviderConfig')
 
@@ -184,7 +185,8 @@ function buildCommonOptions(ctx: BuilderContext) {
 }
 
 export function withZenTraceFetch(baseFetch: typeof fetch = fetch): typeof fetch {
-  const observedFetch = diagnosticFetch(baseFetch, recordDiagnostic)
+  const transportFetch = managedModelFetch(baseFetch)
+  const observedFetch = diagnosticFetch(transportFetch, recordDiagnostic)
   return async (input: RequestInfo | URL, init?: RequestInit) => {
     const traceId = createZenTraceId()
     const headers = new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined))
@@ -215,7 +217,7 @@ export function withZenTraceFetch(baseFetch: typeof fetch = fetch): typeof fetch
           ;(error as Record<string, unknown>).zenConnectivityCheck = await runClientConnectivityCheck(
             input,
             { ...init, headers },
-            baseFetch
+            transportFetch
           )
         }
       }

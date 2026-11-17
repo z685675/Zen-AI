@@ -29,6 +29,7 @@ vi.mock('@main/apiServer/routes/browser-mcp', () => ({
 }))
 vi.mock('@main/apiServer/services/mcp', () => ({ mcpApiService: { getServerInfo: mocks.server } }))
 vi.mock('@main/services/DiagnosticEvidenceService', () => ({ recordMainDiagnostic: mocks.record }))
+vi.mock('@main/services/ModelCapacityService', () => ({ modelCapacityService: { getSnapshot: vi.fn() } }))
 vi.mock('@main/utils', () => ({ getDataPath: () => '/private' }))
 vi.mock('../../../skills/SkillRepository', () => ({ SkillRepository: { getInstance: () => ({ list: mocks.list }) } }))
 vi.mock('../../opencode/fileApproval', () => ({ confirmAssistantFileOverwrite: vi.fn(async () => false) }))
@@ -125,5 +126,18 @@ describe('DSH selected provider and product capabilities', () => {
     expect(() => dshProviderConfig({ ...provider, type: 'azure-openai' }, 'custom-model', 'session')).toThrow(
       'authentication/protocol'
     )
+  })
+
+  it('preserves large model limits in the preview without a 200K or one-eighth output ceiling', () => {
+    const result = dshProviderConfig(
+      {
+        ...provider,
+        models: [{ ...provider.models[0], contextWindowTokens: 400_000, maxOutputTokens: 64_000 }]
+      },
+      'custom-model',
+      'session'
+    )
+    expect(result.contextWindow).toBe(400_000)
+    expect(result.maxTokens).toBe(64_000)
   })
 })

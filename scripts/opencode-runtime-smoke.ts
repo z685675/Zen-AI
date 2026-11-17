@@ -13,6 +13,7 @@ import { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js'
 
+import { registerModelCapabilities } from '../packages/shared/modelCapabilities'
 import { listenOnLoopback } from '../packages/shared/utils/loopbackServer'
 import { applyAutomationProfile, LIGHTWEIGHT_TOOLS } from '../src/main/services/agents/services/automation/profile'
 import { OpenCodeClient } from '../src/main/services/agents/services/opencode/client'
@@ -22,6 +23,7 @@ import {
   OPENCODE_VERSION
 } from '../src/main/services/agents/services/opencode/config'
 import { createOpenCodeGateway } from '../src/main/services/agents/services/opencode/gateway'
+import { prepareOpenCodeInput } from '../src/main/services/agents/services/opencode/inputMaterial'
 import {
   isInvalidReadToolLoop,
   LOOP_SUMMARY_AGENT,
@@ -35,12 +37,22 @@ async function main() {
   const permissions = process.argv[2] === '--permissions'
   const plan = process.argv[2] === '--plan'
   const reasoning = process.argv[2] === '--reasoning'
+  const capacity = process.argv[2] === '--capacity'
+  const contextRecoveryMode = process.argv[2] === '--context-recovery'
   const completionGuardMode = process.argv[2] === '--completion-guard'
   const invalidLoopRecoveryMode = process.argv[2] === '--invalid-loop-recovery'
   const loopRecoveryMode = process.argv[2] === '--loop-recovery' || invalidLoopRecoveryMode
   const smokeModel = reasoning ? 'gpt-smoke' : 'zen-smoke'
   const packagedResources =
-    process.argv[2] && !lightweight && !permissions && !plan && !reasoning && !loopRecoveryMode && !completionGuardMode
+    process.argv[2] &&
+    !lightweight &&
+    !permissions &&
+    !plan &&
+    !reasoning &&
+    !capacity &&
+    !contextRecoveryMode &&
+    !loopRecoveryMode &&
+    !completionGuardMode
       ? path.resolve(process.argv[2])
       : undefined
   if (process.argv.length > 3) throw new Error('Usage: pnpm smoke:opencode [packaged-resources-directory]')
@@ -74,8 +86,14 @@ async function main() {
   const mcpInitialized = new Set<string>()
   const usedModels = new Set<string>()
   let reasoningVerified = false
+  let capacityOutputVerified = false
   let summaryTools: number | undefined
   let sawPdfParserGuard = false
+  let contextStage: 'recovery' | 'failure' | 'material' | undefined
+  let contextErrors = 0
+  let nativeContextErrors = 0
+  let materialRead: { filePath: string; count: number; limit: number } | undefined
+  let materialVerified = false
   const gateway = createServer(async (req, res) => {
     if (req.url === '/raw-paper.pdf') {
       res.writeHead(200, { 'Content-Type': 'text/plain' })
@@ -155,6 +173,7 @@ async function main() {
     const chunks: Buffer[] = []
     for await (const chunk of req) chunks.push(chunk)
     const body = JSON.parse(Buffer.concat(chunks).toString())
+    if (capacity && (body.max_tokens ?? body.max_completion_tokens) === 32_000) capacityOutputVerified = true
     requests++
     if (loopRecoveryMode) {
       const finalizing = !body.tools?.length
@@ -209,8 +228,50 @@ async function main() {
       return
     }
     const compaction = JSON.stringify(body.messages).includes('context summarization agent')
+    if (contextStage === 'failure' || (contextStage === 'recovery' && contextErrors === 0)) {
+      contextErrors++
+      res.writeHead(400, { 'Content-Type': 'application/json' })
+      res.end(
+        JSON.stringify({
+          error: {
+            message: 'maximum context length exceeded',
+            type: 'invalid_request_error',
+            code: 'context_length_exceeded'
+          }
+        })
+      )
+      return
+    }
     const forceCompaction = completionGuardMode && !compaction && JSON.stringify(latestUser).includes('COMPACT_NOW')
     const hasToolResult = body.messages.slice(latestUserIndex).some((message: any) => message.role === 'tool')
+    if (contextStage === 'material') {
+      if (JSON.stringify(body.messages).includes('RAW_LARGE_MATERIAL_'.repeat(100)))
+        throw new Error('Huge original text was inlined into the model request')
+      if (hasToolResult) {
+        materialVerified =
+          JSON.stringify(body.messages).includes('END-LARGE-SUBMISSION') &&
+          JSON.stringify(body.messages).includes('USER-REQUEST-START')
+      } else {
+        res.writeHead(200, { 'Content-Type': 'text/event-stream' })
+        const tool_calls = [1, Math.max(1, materialRead!.count - materialRead!.limit + 1)].map((offset, index) => ({
+          index,
+          id: `read_material_${index}`,
+          type: 'function',
+          function: {
+            name: 'read',
+            arguments: JSON.stringify({ filePath: materialRead!.filePath, offset, limit: materialRead!.limit })
+          }
+        }))
+        res.write(
+          `data: ${JSON.stringify({ id: 'material', object: 'chat.completion.chunk', choices: [{ index: 0, delta: { tool_calls }, finish_reason: null }] })}\n\n`
+        )
+        res.write(
+          `data: ${JSON.stringify({ id: 'material', object: 'chat.completion.chunk', choices: [{ index: 0, delta: {}, finish_reason: 'tool_calls' }], usage: { prompt_tokens: 2000, completion_tokens: 20, total_tokens: 2020 } })}\n\n`
+        )
+        res.end('data: [DONE]\n\n')
+        return
+      }
+    }
     if (
       body.messages.some(
         (message: any) => message.role === 'tool' && JSON.stringify(message).includes('pdf_requires_parser')
@@ -301,6 +362,17 @@ async function main() {
     accessible_paths: [path.join(root, 'workspace'), ...(permissions ? [path.join(root, 'authorized 文件')] : [])],
     configuration: { permission_mode: plan ? 'plan' : permissions ? 'default' : 'bypassPermissions' }
   } as any
+  if (capacity)
+    registerModelCapabilities('local', smokeModel, {
+      context_length: 1_000_000,
+      max_input_tokens: 900_000,
+      max_output_tokens: 128_000,
+      tools: true,
+      reasoning: true,
+      temperature: false,
+      input_modalities: ['text', 'image'],
+      output_modalities: ['text']
+    })
   const config = buildOpenCodeConfig({
     session: lightweight
       ? applyAutomationProfile(smokeSession, { kind: 'wechat', workspace: path.join(root, 'workspace') })
@@ -310,10 +382,17 @@ async function main() {
       type: 'new-api',
       apiHost: `http://127.0.0.1:${gatewayPort}/v1`,
       apiKey: 'local-placeholder',
-      models: [{ id: smokeModel, name: 'Local smoke' }]
+      models: [
+        {
+          id: smokeModel,
+          name: 'Local smoke',
+          ...(capacity ? { contextWindowTokens: 1_000_000, maxOutputTokens: 128_000 } : {})
+        }
+      ]
     } as any,
     modelId: smokeModel,
     effort: reasoning ? 'high' : undefined,
+    inputDirectory: path.join(root, 'input-material'),
     skillPaths: [path.join(root, 'skill')],
     api: { host: '127.0.0.1', port: gatewayPort, apiKey: 'local-placeholder' }
   })
@@ -384,6 +463,11 @@ async function main() {
     if (!health.healthy || health.version !== OPENCODE_VERSION) throw new Error('Health/version mismatch')
     const startupMs = Math.round(performance.now() - nativeStartedAt)
     const effective = await client.request<any>('/config', 'GET', undefined, controller.signal)
+    for (const key of ['auto', 'prune', 'reserved', 'preserve_recent_tokens'] as const) {
+      if (effective.compaction?.[key] !== config.compaction[key]) {
+        throw new Error(`Effective native compaction config mismatch: ${key}`)
+      }
+    }
     for (const key of ['provider', 'mcp', 'permission', 'skills', 'enabled_providers', 'plugin']) {
       if (!isDeepStrictEqual(effective[key], JSON.parse(JSON.stringify(config))[key])) {
         console.log(
@@ -747,7 +831,11 @@ async function main() {
       const submit = client!.request(
         `/session/${targetSession}/prompt_async`,
         'POST',
-        { model: { providerID: 'zen-selected', modelID }, parts: [{ type: 'text', text }] },
+        {
+          agent: contextStage === 'material' ? 'plan' : undefined,
+          model: { providerID: 'zen-selected', modelID },
+          parts: [{ type: 'text', text }]
+        },
         controller.signal
       )
       let busy = false,
@@ -760,8 +848,10 @@ async function main() {
             event.properties.part?.sessionID !== targetSession
           )
             continue
-          if (event.type === 'session.error')
-            throw new Error(`Native turn error: ${JSON.stringify(event.properties.error)}`)
+          if (event.type === 'session.error') {
+            if (contextRecoveryMode && event.properties.error?.name === 'ContextOverflowError') nativeContextErrors++
+            else throw new Error(`Native turn error: ${JSON.stringify(event.properties.error)}`)
+          }
           if (event.type === 'session.status' && event.properties.status.type === 'busy') busy = true
           if (
             event.type === 'message.part.updated' &&
@@ -772,7 +862,7 @@ async function main() {
           if (busy && event.type === 'session.status' && event.properties.status.type === 'idle') break
         }
         await submit
-        if (!output) throw new Error('Missing native model output')
+        if (!output && contextStage !== 'failure') throw new Error('Missing native model output')
         const audits = requestAudits.slice(auditStart)
         if (!audits.length || audits.some((audit) => audit.source !== 'zenai_opencode' || audit.task !== taskId))
           throw new Error('Native model requests lost their Open Code source or per-turn task marker')
@@ -780,6 +870,61 @@ async function main() {
         eventsController.abort()
       }
       return Math.round(performance.now() - turnStartedAt)
+    }
+    if (contextRecoveryMode) {
+      contextStage = 'recovery'
+      await turn('NATIVE_OVERFLOW_RECOVERY: complete this request after context compaction')
+      const recovered = await client.request<any[]>(
+        `/session/${session.id}/message`,
+        'GET',
+        undefined,
+        controller.signal
+      )
+      if (
+        contextErrors !== 1 ||
+        nativeContextErrors !== 1 ||
+        !recovered.some((entry) => entry.info.summary && !entry.info.error) ||
+        recovered.at(-1)?.info.error
+      )
+        throw new Error('Native context overflow did not recover through a durable checkpoint')
+      contextStage = 'failure'
+      const failedSession = await client.request<{ id: string }>('/session', 'POST', {}, controller.signal)
+      await turn('NATIVE_OVERFLOW_FAILURE', smokeModel, failedSession.id)
+      const failed = await client.request<any[]>(
+        `/session/${failedSession.id}/message`,
+        'GET',
+        undefined,
+        controller.signal
+      )
+      if (!failed.some((entry) => entry.info.summary && entry.info.error?.name === 'ContextOverflowError'))
+        throw new Error('Native compaction overflow did not terminate with a durable error')
+      contextStage = 'material'
+      const source = 'USER-REQUEST-START\n' + 'RAW_LARGE_MATERIAL_'.repeat(30_000) + '\nEND-LARGE-SUBMISSION'
+      const prepared = await prepareOpenCodeInput({
+        text: source,
+        directory: path.join(root, 'input-material'),
+        system: '',
+        usableInput: 104_000,
+        signal: controller.signal
+      })
+      if (!prepared.material) throw new Error('Large first input was not materialized')
+      const manifest = JSON.parse(await readFile(path.join(prepared.material.directory, 'manifest.json'), 'utf8'))
+      materialRead = {
+        filePath: path.join(prepared.material.directory, 'segments.jsonl'),
+        count: manifest.segmentCount,
+        limit: manifest.readLines
+      }
+      const materialSession = await client.request<{ id: string }>('/session', 'POST', {}, controller.signal)
+      await turn(prepared.text, smokeModel, materialSession.id)
+      if (
+        !materialVerified ||
+        (await readFile(path.join(prepared.material.directory, 'original.txt'), 'utf8')) !== source
+      )
+        throw new Error('Native Plan could not retrieve the lossless large first submission')
+      process.stdout.write(
+        `PASS native context recovery: recoverable overflow compacts and resumes; failed compaction ends; large first input read in Plan from durable material (${requests} local mock requests, zero paid requests).\n`
+      )
+      return
     }
     if (completionGuardMode) {
       await turn('COMPACT_NOW final report')
@@ -963,6 +1108,8 @@ async function main() {
     process.stdout.write(
       'PASS native fork/delete/continuation: original conversation unchanged; history operations made no model calls.\n'
     )
+    if (capacity && !capacityOutputVerified)
+      throw new Error('Native output budget changed; revisit compaction reserves')
     console.log(
       `PASS OpenCode ${OPENCODE_VERSION}: health/auth/config, both HTTP MCP servers, explicit Skills, noReply, tool file verification, history, native compaction, model switch, cancellation and continuation (${requests} mock requests; zero paid requests; local startup ${startupMs}ms, first mock turn ${coldTurnMs}ms, warm mock turn ${warmTurnMs}ms).`
     )

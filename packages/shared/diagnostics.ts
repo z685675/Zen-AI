@@ -140,6 +140,14 @@ type StoredDiagnostic = {
 }
 const protectedTransportEvents = new Set([
   'context-sources',
+  'connection-strategy',
+  'connection-route',
+  'dns-resolved',
+  'connected',
+  'connection-failed',
+  'request-write-started',
+  'request-sent',
+  'connection-request-failed',
   'request-started',
   'headers-received',
   'first-bytes',

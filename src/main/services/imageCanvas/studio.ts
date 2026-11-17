@@ -15,8 +15,9 @@ import {
   validateImageCapabilities
 } from '@shared/config/imageCapabilities'
 
-import { decodeImage, geminiImageConfig, imageCanvasTimeout, type ImageFetch, limitedBytes } from './protocol'
+import { decodeImage, geminiImageConfig, imageCanvasTimeout, type ImageFetch } from './protocol'
 import type { StudioAssets } from './StudioAssetCache'
+import { downloadStudioAsset } from './studioDownload'
 import { ImageStudioRequestError, studioJson as json } from './studioRequest'
 
 export type CanvasRemoteJob = {
@@ -98,61 +99,6 @@ const studioProtocols: Record<string, ImageCanvasProtocol> = {
   gemini: 'gemini',
   seedream: 'seedream',
   chat: 'chat'
-}
-
-async function downloadAsset(request: ImageFetch, root: string, id: string, auth: Headers): Promise<Buffer> {
-  // Only retry the read of an already generated asset. Never replay a generation POST.
-  for (let attempt = 1; attempt <= 3; attempt++) {
-    const signal = AbortSignal.timeout(60000)
-    let retryable = true
-    let status: number | undefined
-    let stage = 'request'
-    const started = performance.now()
-    try {
-      const response = await request(`${root}/assets/${id}`, {
-        method: 'GET',
-        headers: auth,
-        redirect: 'error',
-        credentials: 'omit',
-        signal
-      })
-      status = response.status
-      if (!response.ok) {
-        retryable = status === 408 || status === 429 || status >= 500
-        await response.body?.cancel().catch(() => {})
-        throw new Error('studio_download_failed')
-      }
-      stage = 'body'
-      const headersReceived = performance.now()
-      const bytes = Buffer.from(await limitedBytes(response, 20 * 1024 * 1024))
-      if (!bytes.length) throw new Error('empty_response')
-      logger.info('Image asset download completed', {
-        assetId: id,
-        attempt,
-        headersMs: Math.round(headersReceived - started),
-        bodyMs: Math.round(performance.now() - headersReceived),
-        durationMs: Math.round(performance.now() - started),
-        bytes: bytes.length
-      })
-      return bytes
-    } catch (error) {
-      const tooLarge = error instanceof Error && error.message === 'response_too_large'
-      const code = tooLarge ? 'result_too_large' : 'studio_download_failed'
-      const willRetry = retryable && !tooLarge && attempt < 3
-      // Record the failing stage without logging credentials, URLs or response bodies.
-      logger.error('Image asset download failed', {
-        assetId: id,
-        attempt,
-        stage,
-        status,
-        reason: signal.aborted ? 'timeout' : code,
-        willRetry
-      })
-      if (!willRetry) throw new Error(code)
-      await new Promise((resolve) => setTimeout(resolve, attempt * 1000))
-    }
-  }
-  throw new Error('studio_download_failed')
 }
 
 async function reusableAsset(request: ImageFetch, root: string, id: string, auth: Headers): Promise<boolean> {
@@ -414,14 +360,29 @@ export async function readStudioImages(
       if (!Array.isArray(view.assets) || !view.assets.length || view.assets.length > 4)
         throw new Error('studio_invalid_result')
       report('downloading')
-      return Promise.all(
-        view.assets.map(async (id) => {
+      const downloads = await Promise.allSettled(
+        view.assets.map(async (id, index) => {
           if (!/^[a-f0-9-]{32,64}$/.test(id)) throw new Error('studio_invalid_result')
-          const bytes = await downloadAsset(request, root, id, auth)
+          const bytes = await downloadStudioAsset(
+            request,
+            root,
+            id,
+            auth,
+            (download) =>
+              progress('downloading', undefined, undefined, {
+                ...download,
+                index: index + 1,
+                count: view!.assets.length
+              }),
+            studioAssets?.downloads
+          )
           studioAssets?.remember(bytes, id)
           return bytes
         })
       )
+      const failed = downloads.find((result) => result.status === 'rejected')
+      if (failed?.status === 'rejected') throw failed.reason
+      return downloads.flatMap((result) => (result.status === 'fulfilled' ? [result.value] : []))
     }
     const failure = ['failed', 'cancelled', 'uncertain', 'storage_failed'].includes(view.job.state)
     if (failure) {

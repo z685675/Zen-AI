@@ -57,6 +57,7 @@ const mergeExistingModelMetadata = (
   const preserveUserCapacity = existingModel.contextCapacitySource === 'user'
   return {
     ...remoteModel,
+    capabilities: existingModel.capabilities ?? remoteModel.capabilities,
     endpoint_type: remoteDeclaresEndpoint
       ? (remoteModel.endpoint_type ?? existingModel.endpoint_type)
       : (existingModel.endpoint_type ?? remoteModel.endpoint_type),

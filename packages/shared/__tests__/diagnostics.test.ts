@@ -9,6 +9,25 @@ import {
 } from '../diagnostics'
 
 describe('diagnostic privacy and limits', () => {
+  it('retains model connection evidence when long task progress exceeds the general event budget', () => {
+    const recorder = new DiagnosticRecorder(1, 3)
+    const connectionEvents = [
+      'connection-strategy',
+      'dns-resolved',
+      'connected',
+      'connection-failed',
+      'request-write-started',
+      'request-sent',
+      'connection-request-failed'
+    ]
+    for (const event of connectionEvents) recorder.record('model', 'transport', event, { traceId: 'request-1' })
+    for (let index = 0; index < 600; index++) recorder.record('model', 'transport', 'body-progress', { index })
+    const evidence = recorder.get('model')!
+    expect(
+      evidence.events.filter((event) => connectionEvents.includes(event.event)).map((event) => event.event)
+    ).toEqual(connectionEvents)
+    expect(evidence.retention).toMatchObject({ generalDroppedEvents: 597, protectedDroppedEvents: 0 })
+  })
   it('preserves nested serialized tool arguments through a second archive pass while redacting secrets', () => {
     const tool = {
       arguments: JSON.stringify({

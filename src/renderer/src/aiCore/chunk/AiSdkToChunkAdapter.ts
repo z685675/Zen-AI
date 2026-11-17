@@ -83,6 +83,12 @@ export class AiSdkToChunkAdapter {
     }
     // Agent callers also need the outcome, not just a rendered error card.
     if (options?.throwOnError && this.terminalError) throw this.terminalError
+    // A broken body may leave AI SDK's final-text promise unsettled forever.
+    // The error chunk has already been emitted; let the caller finalize it.
+    if (this.terminalError) {
+      void Promise.resolve(aiSdkResult.text).catch(() => {})
+      return ''
+    }
 
     try {
       return await aiSdkResult.text

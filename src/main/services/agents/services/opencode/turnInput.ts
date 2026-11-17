@@ -30,7 +30,8 @@ export class OpenCodeTurnInput {
     private nativeSessionId: string,
     private body: Record<string, unknown>,
     private signal: AbortSignal,
-    private observe: (receipt: AgentInputReceipt) => void = () => {}
+    private observe: (receipt: AgentInputReceipt) => void = () => {},
+    private prepareText: (text: string) => Promise<string> = async (text) => text
   ) {
     // Receipts can outlive the run; do not retain the original attachment data.
     this.body = { agent: body.agent, model: body.model, system: body.system }
@@ -90,7 +91,15 @@ export class OpenCodeTurnInput {
     receipts.set(key(this.sessionId, input.id), this)
     while (receipts.size > 300) receipts.delete(receipts.keys().next().value!)
     entry.settled = (async () => {
+      let dispatched = false
       try {
+        const text = await this.prepareText(input.text)
+        if (!this.status().active) {
+          receipt.state = 'rejected'
+          receipt.code = 'not_running'
+          return
+        }
+        dispatched = true
         await this.client.request(
           `/session/${this.nativeSessionId}/prompt_async`,
           'POST',
@@ -98,7 +107,7 @@ export class OpenCodeTurnInput {
             ...this.body,
             messageID: receipt.nativeMessageId,
             parts: [
-              { type: 'text', text: input.text },
+              { type: 'text', text },
               ...(input.images ?? []).map((image) => ({
                 type: 'file',
                 mime: image.media_type,
@@ -113,7 +122,11 @@ export class OpenCodeTurnInput {
         if (receipt.nativeMessageId! > this.latest) this.latest = receipt.nativeMessageId!
       } catch {
         // POST may have reached native storage before the connection failed.
-        await this.check(input.id)
+        if (dispatched) await this.check(input.id)
+        else {
+          receipt.state = 'rejected'
+          receipt.code = 'invalid_input'
+        }
       }
       this.observe({ ...receipt })
     })()
@@ -167,6 +180,7 @@ export class OpenCodeTurnInput {
     this.open = this.accepting = false
     this.body = {}
     this.observe = () => {}
+    this.prepareText = async (text) => text
     if (turns.get(this.sessionId) === this) turns.delete(this.sessionId)
   }
 }

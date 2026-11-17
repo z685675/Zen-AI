@@ -28,6 +28,8 @@ import type { ExternalAppInfo } from '@shared/externalApp/types'
 import type { FilePathCheck } from '@shared/filePathStatus'
 import { HOTPATCH_IPC, type HotpatchStatus } from '@shared/hotpatch'
 import { IpcChannel } from '@shared/IpcChannel'
+import { MODEL_CAPACITY_IPC, type ModelCapacityCatalog } from '@shared/modelCapacity'
+import { MODEL_TRANSPORT_IPC, type ModelTransportBridge } from '@shared/modelTransport'
 import type { ReleaseHistorySnapshot } from '@shared/releaseHistory'
 import type { Notification } from '@types'
 import type {
@@ -112,6 +114,11 @@ export function tracedInvoke(channel: string, spanContext: SpanContext | undefin
 
 // Custom APIs for renderer
 const api = {
+  modelTransport: {
+    start: (request) => ipcRenderer.invoke(MODEL_TRANSPORT_IPC.start, request),
+    pull: (id) => ipcRenderer.invoke(MODEL_TRANSPORT_IPC.pull, id),
+    cancel: (id) => ipcRenderer.invoke(MODEL_TRANSPORT_IPC.cancel, id)
+  } satisfies ModelTransportBridge,
   internalTesting: {
     status: (): Promise<DshPreviewStatus> => ipcRenderer.invoke(DSH_PREVIEW_IPC.status),
     unlock: (password: string): Promise<{ accepted: boolean; status: DshPreviewStatus }> =>
@@ -454,6 +461,9 @@ const api = {
     set: (key: string, value: any, isNotify: boolean = false) =>
       ipcRenderer.invoke(IpcChannel.Config_Set, key, value, isNotify),
     get: (key: string) => ipcRenderer.invoke(IpcChannel.Config_Get, key)
+  },
+  modelCapacity: {
+    get: (): Promise<ModelCapacityCatalog> => ipcRenderer.invoke(MODEL_CAPACITY_IPC)
   },
   modelPolicy: {
     recoveryStatus: (agentId: string, sessionId: string): Promise<ModelRecoveryIntent | undefined> =>

@@ -29,7 +29,9 @@ import {
 
 import { ImageModelConfiguration } from './imageCanvas/ModelConfiguration'
 import { studioModels } from './imageCanvas/studio'
+import { createStudioDownloadFetch } from './imageCanvas/studioTransport'
 import { ImageCanvasTaskStore } from './imageCanvas/TaskStore'
+import { routeManagedFetch } from './modelTransport/apiFetch'
 
 const logger = loggerService.withContext('ImageCanvas')
 let tasks: ImageCanvasTaskStore | undefined
@@ -41,7 +43,11 @@ export class ImageCanvasService {
   private readonly page = join(__dirname, '../../resources/image-workbench/index.html')
   private configuration?: ImageModelConfiguration
   private readonly catalogs = new Map<string, { expires: number; value: Promise<ImageCanvasProvider> }>()
-  private readonly request: typeof fetch = (input, init) => net.fetch(input instanceof URL ? input.href : input, init)
+  private readonly downloadFetch: typeof fetch = createStudioDownloadFetch(
+    (input, init) => net.fetch(input instanceof URL ? input.href : input, init),
+    (url) => session.defaultSession.resolveProxy(url)
+  )
+  private readonly request: typeof fetch = routeManagedFetch(this.downloadFetch)
 
   constructor(private readonly window: BrowserWindow) {
     window.once('closed', () => {

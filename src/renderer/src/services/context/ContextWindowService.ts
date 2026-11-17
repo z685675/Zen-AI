@@ -1,19 +1,12 @@
 import type { Model, Provider } from '@renderer/types'
+import { getModelCapabilities } from '@shared/modelCapabilities'
+import { usesCatalogContext } from '@shared/modelCapacity'
+import { normalizeTokenLimit, resolveModelTokenLimits } from '@shared/utils/modelTokenLimits'
 import type { ModelMessage } from 'ai'
 import { approximateTokenSize } from 'tokenx'
 
 export const DEFAULT_CONTEXT_WINDOW_TOKENS = 200_000
-/**
- * Zen AI deliberately keeps one safe upper bound across providers. A
- * provider may advertise a larger window, but using it directly would make
- * context behavior depend on the current route and could cause a request to
- * fail after a provider/channel switch.
- */
-export const MAX_SUPPORTED_CONTEXT_WINDOW_TOKENS = 200_000
-export const DEFAULT_NEW_API_CONTEXT_WINDOW_TOKENS = MAX_SUPPORTED_CONTEXT_WINDOW_TOKENS
 export const DEFAULT_OUTPUT_RESERVE_TOKENS = 32_000
-export const MIN_OUTPUT_RESERVE_TOKENS = 8_000
-export const MAX_OUTPUT_RESERVE_TOKENS = 32_000
 export const MIN_CONTEXT_INPUT_RESERVE_TOKENS = 1_024
 export const CONTEXT_SAFETY_RATIO = 0.9
 export const CONTEXT_COMPACTION_TRIGGER_RATIO = 0.9
@@ -28,6 +21,7 @@ const ADAPTIVE_CONTEXT_TTL_MS = 30 * 24 * 60 * 60 * 1_000
 export type ModelContextProfile = {
   contextWindowTokens: number
   maxOutputTokens: number
+  maxInputTokens?: number
   source: NonNullable<Model['contextCapacitySource']>
   confidence: NonNullable<Model['contextCapacityConfidence']>
 }
@@ -56,14 +50,6 @@ export type ContextWindowPlan = {
   messagesToCompact: ModelMessage[]
 }
 
-const NEW_API_PROVIDER_IDS = new Set(['new-api', 'cherryin'])
-
-const normalizePositiveInteger = (value: unknown): number | undefined =>
-  typeof value === 'number' && Number.isFinite(value) && value > 0 ? Math.floor(value) : undefined
-
-const isNewApiLikeProvider = (provider?: Provider): boolean =>
-  !!provider && (provider.type === 'new-api' || NEW_API_PROVIDER_IDS.has(provider.id))
-
 const adaptiveContextKey = (model: Model, provider?: Provider): string =>
   `${ADAPTIVE_CONTEXT_KEY_PREFIX}${provider?.id ?? model.provider}:${model.id}`
 
@@ -80,9 +66,9 @@ export function getAdaptiveContextWindowTokens(model: Model, provider?: Provider
       window.keyv.remove(key)
       return undefined
     }
-    return normalizePositiveInteger(record.tokens)
+    return normalizeTokenLimit(record.tokens)
   }
-  return normalizePositiveInteger(stored)
+  return normalizeTokenLimit(stored)
 }
 
 export function recordAdaptiveContextFailure({
@@ -101,7 +87,7 @@ export function recordAdaptiveContextFailure({
   const previous = getAdaptiveContextWindowTokens(model, provider)
   const failedRequestCapacity = Math.max(1, failedInputTokens) + Math.max(0, maxOutputTokens)
   const learnedCapacity = Math.max(
-    MIN_ADAPTIVE_CONTEXT_WINDOW_TOKENS,
+    Math.min(MIN_ADAPTIVE_CONTEXT_WINDOW_TOKENS, Math.max(1, Math.floor(currentContextWindowTokens * 0.72))),
     Math.floor(Math.min(currentContextWindowTokens, failedRequestCapacity) * 0.72)
   )
   const nextCapacity = previous ? Math.min(previous, learnedCapacity) : learnedCapacity
@@ -151,6 +137,7 @@ export function isContextCapacityError(error: unknown): boolean {
   }
 
   const normalized = parts.join(' ').toLocaleLowerCase()
+  if (/rate_limit|tokens per minute|requests per minute|tokens per day/.test(normalized)) return false
   return [
     'context_length_exceeded',
     'context window',
@@ -158,10 +145,10 @@ export function isContextCapacityError(error: unknown): boolean {
     'maximum context',
     'max context',
     'too many tokens',
-    'token limit',
+    'input token limit',
+    'prompt token limit',
     'input is too long',
     'prompt is too long',
-    'request too large',
     '上下文过长',
     '上下文长度',
     '超过上下文',
@@ -170,37 +157,51 @@ export function isContextCapacityError(error: unknown): boolean {
 }
 
 export function resolveModelContextProfile(model: Model, provider?: Provider): ModelContextProfile {
-  const explicitContextWindow = normalizePositiveInteger(model.contextWindowTokens)
-  const configuredContextWindowTokens = Math.min(
-    MAX_SUPPORTED_CONTEXT_WINDOW_TOKENS,
-    explicitContextWindow ??
-      (isNewApiLikeProvider(provider) ? DEFAULT_NEW_API_CONTEXT_WINDOW_TOKENS : DEFAULT_CONTEXT_WINDOW_TOKENS)
-  )
+  const explicitContextWindow = normalizeTokenLimit(model.contextWindowTokens)
+  const supplied = getModelCapabilities(model)
+  const suppliedContext =
+    model.contextCapacitySource !== 'user' && model.contextCapacitySource !== 'adaptive' && supplied?.context_length
+  const {
+    context: configuredContextWindowTokens,
+    input: maxInputTokens,
+    output: maxOutputTokens
+  } = resolveModelTokenLimits(model, {
+    context: DEFAULT_CONTEXT_WINDOW_TOKENS,
+    output: DEFAULT_OUTPUT_RESERVE_TOKENS
+  })
   const adaptiveContextWindowTokens = getAdaptiveContextWindowTokens(model, provider)
   const contextWindowTokens = adaptiveContextWindowTokens
     ? Math.min(configuredContextWindowTokens, adaptiveContextWindowTokens)
     : configuredContextWindowTokens
-  const reportedOutputLimit = normalizePositiveInteger(model.maxOutputTokens)
-  const maxOutputTokens = Math.min(
-    MAX_OUTPUT_RESERVE_TOKENS,
-    Math.max(MIN_OUTPUT_RESERVE_TOKENS, reportedOutputLimit ?? DEFAULT_OUTPUT_RESERVE_TOKENS)
-  )
 
   return {
     contextWindowTokens,
     maxOutputTokens,
+    ...(maxInputTokens ? { maxInputTokens: Math.min(contextWindowTokens, maxInputTokens) } : {}),
     source:
       adaptiveContextWindowTokens && adaptiveContextWindowTokens < configuredContextWindowTokens
         ? 'adaptive'
-        : explicitContextWindow
-          ? (model.contextCapacitySource ?? 'provider')
-          : 'fallback',
+        : suppliedContext
+          ? supplied?.source === 'catalog'
+            ? 'builtin'
+            : 'provider'
+          : usesCatalogContext(model)
+            ? 'builtin'
+            : explicitContextWindow
+              ? (model.contextCapacitySource ?? 'provider')
+              : 'fallback',
     confidence:
       adaptiveContextWindowTokens && adaptiveContextWindowTokens < configuredContextWindowTokens
         ? 'medium'
-        : explicitContextWindow
-          ? (model.contextCapacityConfidence ?? 'medium')
-          : 'low'
+        : suppliedContext
+          ? supplied?.source === 'catalog'
+            ? 'medium'
+            : 'high'
+          : usesCatalogContext(model)
+            ? 'medium'
+            : explicitContextWindow
+              ? (model.contextCapacityConfidence ?? 'medium')
+              : 'low'
   }
 }
 
@@ -216,22 +217,24 @@ export function createContextBudget({
   requestedOutputTokens?: number
 }): ContextBudget {
   const profile = resolveModelContextProfile(model, provider)
-  const requestedReserve = normalizePositiveInteger(requestedOutputTokens)
-  const requestedMaxOutputTokens = requestedReserve
-    ? Math.min(MAX_OUTPUT_RESERVE_TOKENS, Math.max(MIN_OUTPUT_RESERVE_TOKENS, requestedReserve))
-    : profile.maxOutputTokens
+  // A catalog output ceiling is not a request to reserve the entire ceiling.
+  // Some unified-window models advertise output equal to their total context.
+  const requestedMaxOutputTokens =
+    normalizeTokenLimit(requestedOutputTokens) ?? Math.min(DEFAULT_OUTPUT_RESERVE_TOKENS, profile.maxOutputTokens)
   const normalizedFixedInputTokens = Math.max(0, Math.floor(fixedInputTokens))
-  // Never reserve more output than the model can expose while still leaving
-  // room for a useful input. The previous lower bound of 8K could make a
-  // 4K/8K local model report an impossible 8K safe input budget.
+  // Keep fixed input and useful message space inside the selected window,
+  // including small local models and a learned lower channel capacity.
   const maxOutputCapacity = Math.max(
     1,
     profile.contextWindowTokens - normalizedFixedInputTokens - MIN_CONTEXT_INPUT_RESERVE_TOKENS
   )
-  const maxOutputTokens = Math.min(requestedMaxOutputTokens, maxOutputCapacity)
-  const rawSafeInputTokens =
-    Math.floor((profile.contextWindowTokens - maxOutputTokens) * CONTEXT_SAFETY_RATIO) - normalizedFixedInputTokens
-  const maximumInputTokens = Math.max(0, profile.contextWindowTokens - maxOutputTokens - normalizedFixedInputTokens)
+  const maxOutputTokens = Math.min(requestedMaxOutputTokens, profile.maxOutputTokens, maxOutputCapacity)
+  const inputCapacity = Math.min(
+    profile.contextWindowTokens - maxOutputTokens,
+    profile.maxInputTokens ?? profile.contextWindowTokens
+  )
+  const rawSafeInputTokens = Math.floor(inputCapacity * CONTEXT_SAFETY_RATIO) - normalizedFixedInputTokens
+  const maximumInputTokens = Math.max(0, inputCapacity - normalizedFixedInputTokens)
   const safeInputTokens = Math.max(0, Math.min(rawSafeInputTokens, maximumInputTokens))
 
   return {

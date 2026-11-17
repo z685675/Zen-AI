@@ -1,29 +1,26 @@
 import { SettingOutlined } from '@ant-design/icons'
 import { showErrorDetailPopup } from '@renderer/components/ErrorDetailModal'
 import { useTimer } from '@renderer/hooks/useTimer'
-import { getHttpMessageLabel, getProviderLabel } from '@renderer/i18n/label'
 import type { DiagnosisResult } from '@renderer/services/ErrorDiagnosisService'
 import { exportErrorDiagnosticPackage, getDiagnosticAppInfo } from '@renderer/services/ErrorDiagnosticPackageService'
-import { getProviderById } from '@renderer/services/ProviderService'
 import { useAppDispatch, useAppSelector } from '@renderer/store'
 import { removeBlocksThunk } from '@renderer/store/thunk/messageThunk'
 import type { ErrorMessageBlock, Message } from '@renderer/types/newMessage'
 import { isUserStoppedMessage } from '@renderer/utils/agentCancellation'
 import { isAgentSessionTopicId } from '@renderer/utils/agentSession'
 import { diagnoseClientError } from '@renderer/utils/clientErrorDiagnosis'
+import { getClientErrorPresentation } from '@renderer/utils/clientErrorPresentation'
 import { classifyError } from '@renderer/utils/errorClassifier'
 import { getAgentTaskLimitDetails } from '@shared/agents/taskConcurrency'
 import { Button } from 'antd'
 import { AlertTriangle, ChevronRight, Download, X } from 'lucide-react'
 import React, { useCallback, useMemo, useState } from 'react'
-import { Trans, useTranslation } from 'react-i18next'
-import { Link, useNavigate } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
+import { useNavigate } from 'react-router-dom'
 
 import AgentErrorFallbackCard from './AgentErrorFallbackCard'
 import AgentStoppedNotice from './AgentStoppedNotice'
 import AgentTaskLimitNotice from './AgentTaskLimitNotice'
-
-const HTTP_ERROR_CODES = [400, 401, 403, 404, 429, 500, 502, 503, 504]
 
 interface Props {
   block: ErrorMessageBlock
@@ -39,52 +36,6 @@ const ErrorBlock: React.FC<Props> = ({ block, message }) => {
   }
 
   return <MessageErrorInfo block={block} message={message} />
-}
-
-const ErrorMessage: React.FC<{ block: ErrorMessageBlock }> = ({ block }) => {
-  const { t, i18n } = useTranslation()
-
-  const i18nKey = block.error && 'i18nKey' in block.error ? `error.${block.error?.i18nKey}` : ''
-  const errorKey = `error.${block.error?.message}`
-  const errorStatus =
-    block.error && ('status' in block.error || 'statusCode' in block.error)
-      ? block.error?.status || block.error?.statusCode
-      : undefined
-
-  if (i18n.exists(i18nKey)) {
-    const providerId = block.error && 'providerId' in block.error ? block.error?.providerId : undefined
-    if (providerId && typeof providerId === 'string') {
-      return (
-        <Trans
-          i18nKey={i18nKey}
-          values={{ provider: getProviderLabel(providerId) }}
-          components={{
-            provider: (
-              <Link
-                style={{ color: 'var(--color-link)' }}
-                to={`/settings/provider`}
-                state={{ provider: getProviderById(providerId) }}
-              />
-            )
-          }}
-        />
-      )
-    }
-  }
-
-  if (i18n.exists(errorKey)) {
-    return t(errorKey)
-  }
-
-  if (typeof errorStatus === 'number' && HTTP_ERROR_CODES.includes(errorStatus)) {
-    return (
-      <span>
-        {getHttpMessageLabel(errorStatus.toString())} {block.error?.message}
-      </span>
-    )
-  }
-
-  return block.error?.message || ''
 }
 
 const MessageErrorInfo: React.FC<{ block: ErrorMessageBlock; message: Message }> = ({ block, message }) => {
@@ -110,6 +61,7 @@ const MessageErrorInfo: React.FC<{ block: ErrorMessageBlock; message: Message }>
       }),
     [block.error, block.id, block.createdAt, message.model, message.id, message.createdAt]
   )
+  const presentation = getClientErrorPresentation(clientDiagnosis, 'chat')
 
   const diagnosisContext = useMemo(
     () => ({
@@ -210,19 +162,17 @@ const MessageErrorInfo: React.FC<{ block: ErrorMessageBlock; message: Message }>
           <AlertTriangle size={15} />
         </div>
         <div className="pr-5 font-semibold text-[13px] leading-[1.4]" style={{ color: 'var(--color-error)' }}>
-          {clientDiagnosis.title}
+          {presentation.title}
         </div>
       </div>
 
       {/* Description */}
-      <div
-        className="wrap-break-word ml-5.75 line-clamp-3 text-xs leading-normal [&_a]:text-(--color-link)"
-        style={{ color: 'var(--color-text-2)' }}>
-        {clientDiagnosis.summary || <ErrorMessage block={block} />}
+      <div className="wrap-break-word ml-5.75 text-xs leading-relaxed" style={{ color: 'var(--color-text-2)' }}>
+        {presentation.description}
       </div>
 
       {/* Footer */}
-      <div className="mt-2.5 ml-5.75 flex items-center gap-2">
+      <div className="mt-2.5 ml-5.75 flex flex-wrap items-center gap-2">
         {classification.navTarget && (
           <Button
             size="small"

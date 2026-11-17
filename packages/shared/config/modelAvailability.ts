@@ -1,6 +1,9 @@
+import { type ModelCapabilities, parseModelCapabilities } from '../modelCapabilities'
+
 export type AvailableModelDescriptor = {
   id: string
   name?: string
+  model_capabilities?: ModelCapabilities
   supported_endpoint_types?: Array<
     'openai' | 'openai-response' | 'anthropic' | 'gemini' | 'image-generation' | 'jina-rerank'
   >
@@ -35,6 +38,7 @@ export function parseAvailableModels(value: unknown): AvailableModelDescriptor[]
     return {
       id: model.id,
       name: typeof model.name === 'string' ? model.name : undefined,
+      model_capabilities: parseModelCapabilities(model.model_capabilities),
       supported_endpoint_types: Array.isArray(model.supported_endpoint_types)
         ? model.supported_endpoint_types.filter(
             (type): type is NonNullable<AvailableModelDescriptor['supported_endpoint_types']>[number] =>

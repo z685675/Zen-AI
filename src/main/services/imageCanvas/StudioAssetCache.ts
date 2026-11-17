@@ -4,11 +4,14 @@ import { join } from 'node:path'
 
 import { loggerService } from '@logger'
 
+import { type DownloadCheckpoints, StudioDownloadCache } from './StudioDownloadCache'
+
 export type StudioAssets = {
   find: (bytes: Buffer) => string | undefined
   remember: (bytes: Buffer, id: string) => void
   forget: (bytes: Buffer) => void
   alias: (original: Buffer, normalized: Buffer) => void
+  downloads?: DownloadCheckpoints
 }
 type Entry = { scope: string; digest: string; id: string; savedAt: number }
 const logger = loggerService.withContext('ImageCanvas')
@@ -21,8 +24,10 @@ const digest = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex
 export class StudioAssetCache {
   private entries: Entry[] = []
   private readonly path: string
+  private readonly downloads: StudioDownloadCache
 
   constructor(directory: string) {
+    this.downloads = new StudioDownloadCache(directory)
     this.path = join(directory, 'studio-assets.json')
     try {
       if (!existsSync(this.path)) return
@@ -72,6 +77,7 @@ export class StudioAssetCache {
       this.persist()
     }
     return {
+      downloads: this.downloads.forScope(scope),
       find,
       forget,
       remember,
