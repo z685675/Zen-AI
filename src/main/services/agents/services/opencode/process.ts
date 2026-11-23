@@ -27,8 +27,9 @@ import { app } from 'electron'
 import { assertAssistantDataAvailable } from '../dataOperationGate'
 import { buildOpenCodeAuditHeaders } from './audit'
 import { OpenCodeClient } from './client'
-import { buildOpenCodeEnvironment, OPENCODE_PROVIDER_ID, OPENCODE_VERSION } from './config'
+import { assistantMcpAlias, buildOpenCodeEnvironment, OPENCODE_PROVIDER_ID, OPENCODE_VERSION } from './config'
 import { resolveOpenCodeExecutable } from './executable'
+import { AssistantFileChangeStore, AssistantFileChangeTurn } from './fileChanges'
 import { createOpenCodeGateway } from './gateway'
 import { prepareOpenCodeOfflineConfig } from './offline'
 import { collectRuntimeSecrets, OpenCodeStderr } from './stderr'
@@ -123,9 +124,32 @@ export class OpenCodeProcess {
     return path.join(this.root, 'binding.json')
   }
 
-  async start(config: unknown, allowedRoots: string[], signal: AbortSignal, dailyModel?: string): Promise<void> {
+  private fileChangeTurn?: AssistantFileChangeTurn
+
+  beginFileChanges(turn: string, roots: string[], signal: AbortSignal) {
+    this.fileChangeTurn = new AssistantFileChangeTurn(
+      new AssistantFileChangeStore(getDataPath('AssistantFileChanges'), this.key),
+      turn,
+      roots,
+      signal
+    )
+  }
+
+  async finishFileChanges() {
+    const turn = this.fileChangeTurn
+    this.fileChangeTurn = undefined
+    await turn?.close()
+  }
+
+  async start(
+    config: unknown,
+    allowedRoots: string[],
+    signal: AbortSignal,
+    dailyModel?: string,
+    integrationIds: string[] = []
+  ): Promise<void> {
     try {
-      await this.startNative(config, allowedRoots, signal, dailyModel)
+      await this.startNative(config, allowedRoots, signal, dailyModel, integrationIds)
     } catch (error) {
       this.flushDiagnostic()
       this.recordDiagnostic('failed', {
@@ -180,7 +204,8 @@ export class OpenCodeProcess {
     config: unknown,
     allowedRoots: string[],
     signal: AbortSignal,
-    dailyModel?: string
+    dailyModel?: string,
+    integrationIds: string[] = []
   ): Promise<void> {
     this.stage('workspace')
     signal.throwIfAborted()
@@ -209,6 +234,7 @@ export class OpenCodeProcess {
     )
     this.turnSignal = signal
     const getTurnSignal = () => this.turnSignal
+    const fileChangeToken = randomBytes(32).toString('hex')
     registerAssistantMcpContext(
       this.key,
       allowedRoots,
@@ -219,6 +245,9 @@ export class OpenCodeProcess {
           return getTurnSignal()
         },
         readOnly,
+        onFileWrite: async (file, backup) => this.fileChangeTurn?.productWrite(file, backup),
+        onFileBackup: async (file, backup) => this.fileChangeTurn?.backedUp(file, backup),
+        onFilesPresented: async (files) => this.fileChangeTurn?.presented(files),
         allowedTools: lightweight
           ? ['create_file', 'read_document', 'present_files', 'ocr_file', 'web_search']
           : undefined,
@@ -237,7 +266,9 @@ export class OpenCodeProcess {
             failed
           })
       },
-      (name, input, requestId) => this.gateway?.observeExecutionArguments(`mcp__assistant__${name}`, input, requestId)
+      (name, input, requestId) => this.gateway?.observeExecutionArguments(`mcp__assistant__${name}`, input, requestId),
+      integrationIds,
+      !readOnly && !lightweight ? { token: fileChangeToken, current: () => this.fileChangeTurn } : undefined
     )
     if (!lightweight)
       registerBrowserMcpContext(this.key, (name, input, requestId) =>
@@ -253,11 +284,22 @@ export class OpenCodeProcess {
       searchBinary ? path.dirname(searchBinary) : undefined,
       temporaryDirectory
     )
+    if (!lightweight) env.OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS = 'true'
     this.recordDiagnostic('search-tool-resolved', {
       bundledSearchAvailable: Boolean(searchBinary)
     })
     const expected = JSON.parse(JSON.stringify(config)) as Record<string, any>
     expected.plugin = [pathToFileURL(completionPlugin).href]
+    for (const id of integrationIds) {
+      const integration = expected.mcp?.[assistantMcpAlias(id)]
+      if (integration) integration.headers['X-Zen-Assistant-Bridge-Token'] = fileChangeToken
+    }
+    const assistant = expected.mcp?.mcp__assistant_
+    if (!readOnly && !lightweight && assistant?.url && assistant.headers?.Authorization) {
+      env.ZEN_FILE_CHANGES_URL = assistant.url.replace(/\/mcp$/, '/file-changes')
+      env.ZEN_FILE_CHANGES_AUTH = assistant.headers.Authorization
+      env.ZEN_FILE_CHANGES_TOKEN = fileChangeToken
+    }
     const providerOptions = expected.provider[OPENCODE_PROVIDER_ID].options
     const providerHost = providerOptions.baseURL as string
     this.stage('local-gateway')
@@ -301,7 +343,7 @@ export class OpenCodeProcess {
       ...buildOpenCodeAuditHeaders(providerHost, auditClientId, app.getVersion(), `${process.platform}-${process.arch}`)
     }
     try {
-      this.diagnosticSecrets = [password, this.gateway.token, ...collectRuntimeSecrets(expected)]
+      this.diagnosticSecrets = [password, this.gateway.token, fileChangeToken, ...collectRuntimeSecrets(expected)]
       this.stderr = new OpenCodeStderr(this.diagnosticSecrets)
     } catch {
       // Disable stderr rather than collect it without all known credential masks.
@@ -479,6 +521,7 @@ export class OpenCodeProcess {
 
   release() {
     this.active = false
+    this.turnSignal = undefined
     if (this.closed) return
     clearTimeout(this.idleTimer)
     this.idleTimer = setTimeout(() => this.stop('idle-timeout'), 5 * 60_000)
@@ -566,7 +609,8 @@ export async function getOpenCodeProcess(
   signal: AbortSignal,
   onStarting?: () => void,
   diagnosticId?: string,
-  dailyModel?: string
+  dailyModel?: string,
+  integrationIds: string[] = []
 ): Promise<OpenCodeProcess> {
   assertAssistantDataAvailable()
   if (shuttingDown) throw new Error('Zen AI is shutting down')
@@ -606,7 +650,7 @@ export async function getOpenCodeProcess(
       processes.set(key, runtime)
       try {
         onStarting?.()
-        await runtime.start(config, roots, signal, dailyModel)
+        await runtime.start(config, roots, signal, dailyModel, integrationIds)
       } catch (error) {
         runtime.stop()
         throw error

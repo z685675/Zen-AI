@@ -10,6 +10,7 @@ import type { SidebarIcon } from '@renderer/types'
 import { DEFAULT_OPENCODE_AGENT_AVATAR } from '@shared/config/agents'
 import { message } from 'antd'
 import {
+  Activity,
   BarChart3,
   Code,
   FileSearch,
@@ -137,6 +138,7 @@ const SidebarIconsManager: FC<SidebarIconsManagerProps> = ({
         store: <Sparkle size={16} />,
         paintings: <Palette size={16} />,
         usage: <BarChart3 size={16} />,
+        model_status: <Activity size={16} />,
         new_assistant: (
           <span aria-hidden="true" className="text-base leading-none">
             {DEFAULT_OPENCODE_AGENT_AVATAR}

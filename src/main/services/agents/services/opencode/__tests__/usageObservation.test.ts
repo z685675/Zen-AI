@@ -149,4 +149,13 @@ describe('bounded, passive upstream usage observations', () => {
       usage: { input: 150, output: 30, cacheRead: 80 }
     })
   })
+  it('uses complete bridge totals for the whole task instead of adding parent counters twice', () => {
+    const totals = new OpenCodeUsageTotals()
+    const fallback = { inputTokens: 100, outputTokens: 20, totalTokens: 120 }
+    totals.observe(observe({ usage: { prompt_tokens: 100, completion_tokens: 20 } }))
+    totals.observe(observe({ usage: { prompt_tokens: 200, completion_tokens: 30 } }))
+    expect(totals.completeUsage(fallback)).toMatchObject({ inputTokens: 300, outputTokens: 50, totalTokens: 350 })
+    totals.observe({ usage: {}, complete: false, format: 'unknown' })
+    expect(totals.completeUsage(fallback)).toBe(fallback)
+  })
 })

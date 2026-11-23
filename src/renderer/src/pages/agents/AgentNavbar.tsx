@@ -4,19 +4,27 @@ import NavbarIcon from '@renderer/components/NavbarIcon'
 import AgentSearchPopup from '@renderer/components/Popups/AgentSearchPopup'
 import { useAgentWorkspace } from '@renderer/context/AgentWorkspaceProvider'
 import { useShortcut } from '@renderer/hooks/useShortcuts'
+import { useShowAssistants } from '@renderer/hooks/useStore'
 import { Tooltip } from 'antd'
 import { t } from 'i18next'
-import { Search } from 'lucide-react'
+import { PanelLeftOpen, Search } from 'lucide-react'
 
-const AgentNavbar = () => {
+const AgentNavbar = ({ showSidebarControl = false }: { showSidebarControl?: boolean }) => {
   const workspace = useAgentWorkspace()
+  const { showAssistants, setShowAssistants } = useShowAssistants()
   useShortcut('search_message', () => {
     void AgentSearchPopup.show(workspace)
   })
 
   return (
     <Navbar className="agent-navbar">
-      <NavbarCenter></NavbarCenter>
+      <NavbarCenter>
+        {showSidebarControl && !showAssistants && (
+          <NavbarIcon aria-label={t('navbar.show_sidebar')} onClick={() => setShowAssistants(true)}>
+            <PanelLeftOpen size={17} />
+          </NavbarIcon>
+        )}
+      </NavbarCenter>
       <NavbarRight
         style={{
           justifyContent: 'flex-end',

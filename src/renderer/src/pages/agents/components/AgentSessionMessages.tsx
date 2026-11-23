@@ -39,9 +39,10 @@ const AGENT_PAGE_SIZE = 5
 type Props = {
   agentId: string
   sessionId: string
+  readOnly?: boolean
 }
 
-const AgentSessionMessages = ({ agentId, sessionId }: Props) => {
+const AgentSessionMessages = ({ agentId, sessionId, readOnly = false }: Props) => {
   const { session } = useSession(agentId, sessionId)
   const sessionTopicId = useMemo(() => buildAgentSessionTopicId(sessionId), [sessionId])
   // Use the same hook as Messages.tsx for consistent behavior
@@ -88,6 +89,7 @@ const AgentSessionMessages = ({ agentId, sessionId }: Props) => {
   const exchangeDoneRef = useRef(false)
 
   useEffect(() => {
+    if (readOnly) return
     let cancelled = false
     let cleanupChunk: (() => void) | null = null
     let currentExchange: string | undefined
@@ -194,7 +196,7 @@ const AgentSessionMessages = ({ agentId, sessionId }: Props) => {
       streamCtrlRef.current = null
       void window.api.agentSessionStream.unsubscribe(sessionId)
     }
-  }, [sessionId, sessionTopicId, agentId, dispatch])
+  }, [sessionId, sessionTopicId, agentId, dispatch, readOnly])
 
   const {
     containerRef: scrollContainerRef,

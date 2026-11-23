@@ -12,8 +12,8 @@ export const ALL_SIDEBAR_ICONS: SidebarIcon[] = [
   'store',
   'minapp',
   'code_tools',
-  'agents',
-  'usage'
+  'usage',
+  'model_status'
 ]
 
 export const DEFAULT_DISABLED_SIDEBAR_ICONS: SidebarIcon[] = ['knowledge', 'openclaw', 'store', 'minapp', 'code_tools']
@@ -40,13 +40,13 @@ export const getAvailableSidebarIcons = (
   if (!legacyDisabledIcons.has('usage') && !icons.includes('usage')) icons.push('usage')
   // Apply to persisted layouts too, without resetting other entries or visibility.
   const ordered: SidebarIcon[] = icons.filter(
-    (icon) => icon !== 'new_assistant' && icon !== 'agents' && icon !== 'usage'
+    (icon) => icon !== 'new_assistant' && icon !== 'usage' && icon !== 'model_status'
   )
   if (icons.includes('new_assistant')) {
     const chatIndex = ordered.indexOf('assistants')
     ordered.splice(chatIndex < 0 ? 0 : chatIndex + 1, 0, 'new_assistant')
   }
-  if (icons.includes('agents')) ordered.push('agents')
   if (icons.includes('usage')) ordered.push('usage')
+  if (!legacyDisabledIcons.has('model_status')) ordered.push('model_status')
   return ordered
 }

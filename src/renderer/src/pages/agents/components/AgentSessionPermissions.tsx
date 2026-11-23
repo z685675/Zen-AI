@@ -1,4 +1,5 @@
 import NarrowLayout from '@renderer/pages/home/Messages/NarrowLayout'
+import { AskUserQuestionCard } from '@renderer/pages/home/Messages/Tools/AskUserQuestionCard'
 import { useAgentToolApproval } from '@renderer/pages/home/Messages/Tools/hooks/useAgentToolApproval'
 import ToolApprovalActions from '@renderer/pages/home/Messages/Tools/ToolApprovalActions'
 import { useAppSelector } from '@renderer/store'
@@ -10,6 +11,18 @@ function SessionPermission({ request }: { request: ToolPermissionEntry }) {
   const { t } = useTranslation()
   const approval = useAgentToolApproval(null, { toolCallId: request.toolCallId, requestId: request.requestId })
   const loop = request.toolName === 'doom_loop'
+  if (request.toolName === 'question')
+    return (
+      <AskUserQuestionCard
+        toolResponse={{
+          id: request.toolCallId,
+          toolCallId: request.toolCallId,
+          arguments: request.input,
+          status: 'pending',
+          tool: { id: 'question', name: 'question', description: t('agent.askUserQuestion.title'), type: 'provider' }
+        }}
+      />
+    )
   return (
     <Alert
       type="warning"

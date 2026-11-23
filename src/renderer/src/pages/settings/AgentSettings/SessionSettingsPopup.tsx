@@ -2,11 +2,13 @@ import { TopView } from '@renderer/components/TopView'
 import { AgentWorkspaceBoundary, useAgentWorkspace } from '@renderer/context/AgentWorkspaceProvider'
 import { useSession } from '@renderer/hooks/agents/useSession'
 import { useUpdateSession } from '@renderer/hooks/agents/useUpdateSession'
+import NavigationService from '@renderer/services/NavigationService'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { BaseSettingsPopup, type SettingsMenuItem, type SettingsPopupTab } from './BaseSettingsPopup'
 import AdvancedSettings from './components/AdvancedSettings'
+import AssistantMcpIntegrations from './components/AssistantMcpIntegrations'
 import EssentialSettings from './components/EssentialSettings'
 import PermissionModeSettings from './components/PermissionModeSettings'
 import PromptSettings from './components/PromptSettings'
@@ -34,6 +36,7 @@ const SessionSettingPopupContainer: React.FC<SessionSettingPopupParams> = ({ tab
       { key: 'essential', label: t('agent.settings.essential') },
       { key: 'prompt', label: t('agent.settings.prompt') },
       { key: 'permission-mode', label: t('agent.settings.permissionMode.tab', 'Permission Mode') },
+      ...(workspace === 'opencode' ? ([{ key: 'mcp', label: t('assistantMcpIntegrations.title') }] as const) : []),
       ...(workspace === 'legacy'
         ? ([
             { key: 'tools-mcp', label: t('agent.settings.toolsMcp.tab', 'Tools & MCP') },
@@ -56,6 +59,17 @@ const SessionSettingPopupContainer: React.FC<SessionSettingPopupParams> = ({ tab
         return <PermissionModeSettings agentBase={session} update={updateSession} />
       case 'tools-mcp':
         return <ToolsSettings agentBase={session} update={updateSession} />
+      case 'mcp':
+        return workspace === 'opencode' ? (
+          <AssistantMcpIntegrations
+            session={session}
+            update={updateSession}
+            onManage={() => {
+              resolve()
+              NavigationService.navigate?.('/settings/mcp')
+            }}
+          />
+        ) : null
       case 'advanced':
         return <AdvancedSettings agentBase={session} update={updateSession} />
       default:

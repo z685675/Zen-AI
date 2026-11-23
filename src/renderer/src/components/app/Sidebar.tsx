@@ -22,6 +22,7 @@ import { isEmoji } from '@renderer/utils'
 import { DEFAULT_OPENCODE_AGENT_AVATAR } from '@shared/config/agents'
 import { Avatar, Tooltip } from 'antd'
 import {
+  Activity,
   BarChart3,
   Code,
   FileSearch,
@@ -197,6 +198,7 @@ const MainMenus: FC = () => {
 
   const iconMap = {
     usage: <BarChart3 size={18} className="icon" />,
+    model_status: <Activity size={18} className="icon" />,
     assistants: <MessageSquare size={18} className="icon" />,
     agents: <MousePointerClick size={18} className="icon" />,
     store: <Sparkle size={18} className="icon" />,
@@ -217,6 +219,7 @@ const MainMenus: FC = () => {
 
   const pathMap = {
     usage: '/usage',
+    model_status: '/model-status',
     assistants: '/',
     agents: '/agents',
     store: '/store',

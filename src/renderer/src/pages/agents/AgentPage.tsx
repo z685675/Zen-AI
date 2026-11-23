@@ -1,7 +1,7 @@
 import { Navbar, NavbarCenter } from '@renderer/components/app/Navbar'
 import { ErrorBoundary } from '@renderer/components/ErrorBoundary'
 import ModelSetupGuide from '@renderer/components/ModelSetupGuide'
-import { useAgentWorkspace } from '@renderer/context/AgentWorkspaceProvider'
+import { AgentWorkspaceContext, useAgentWorkspace } from '@renderer/context/AgentWorkspaceProvider'
 import { useActiveAgent } from '@renderer/hooks/agents/useActiveAgent'
 import { useAgents } from '@renderer/hooks/agents/useAgents'
 import { useRestoreAgentSession } from '@renderer/hooks/agents/useRestoreAgentSession'
@@ -12,6 +12,7 @@ import { useShortcut } from '@renderer/hooks/useShortcuts'
 import { useShowAssistants } from '@renderer/hooks/useStore'
 import { useAppSelector } from '@renderer/store'
 import { cn } from '@renderer/utils'
+import { readLegacyConversation } from '@renderer/utils/legacyConversations'
 import { getAvailableChatModels } from '@renderer/utils/modelAvailability'
 import { getPreferredAgentId } from '@shared/config/agents'
 import { MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH, SECOND_MIN_WINDOW_WIDTH } from '@shared/config/constant'
@@ -19,14 +20,19 @@ import { AnimatePresence, motion } from 'motion/react'
 import type { PropsWithChildren } from 'react'
 import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useSearchParams } from 'react-router-dom'
 
 import AgentChat from './AgentChat'
 import AgentNavbar from './AgentNavbar'
 import AgentSidePanel from './AgentSidePanel'
+import { LegacyConversationView } from './components/LegacyConversations'
 import { AgentEmpty, AgentServerDisabled, AgentServerStopped } from './components/status'
 
 const AgentPage = () => {
   const workspace = useAgentWorkspace()
+  const [query] = useSearchParams()
+  const showHistory = workspace === 'opencode' && query.get('history') === 'legacy'
+  const historySelection = showHistory ? readLegacyConversation(query) : undefined
   const { isLeftNavbar } = useNavbarPosition()
   const { showAssistants, toggleShowAssistants } = useShowAssistants()
   const { chat } = useRuntime()
@@ -37,7 +43,7 @@ const AgentPage = () => {
   const { t } = useTranslation()
   const providers = useAppSelector((state) => state.llm.providers)
   const hasAvailableModels = getAvailableChatModels(providers).length > 0
-  useRestoreAgentSession(agents, apiServerRunning)
+  useRestoreAgentSession(agents, apiServerRunning && !showHistory)
 
   useShortcut('toggle_show_assistants', () => {
     toggleShowAssistants()
@@ -87,7 +93,7 @@ const AgentPage = () => {
     )
   }
 
-  if (workspace !== 'legacy' && !hasAvailableModels) {
+  if (workspace === 'dsh' && !hasAvailableModels) {
     return (
       <Container>
         <Navbar>
@@ -98,7 +104,7 @@ const AgentPage = () => {
     )
   }
 
-  if (agents && agents.length === 0) {
+  if (workspace !== 'opencode' && agents && agents.length === 0) {
     return (
       <Container>
         <Navbar>
@@ -111,7 +117,9 @@ const AgentPage = () => {
 
   return (
     <Container>
-      <AgentNavbar key={workspace} />
+      <AgentWorkspaceContext value={showHistory ? 'legacy' : workspace}>
+        <AgentNavbar showSidebarControl={showHistory || !hasAvailableModels || !agents?.length} />
+      </AgentWorkspaceContext>
       <div
         id={isLeftNavbar ? 'content-container' : undefined}
         className="flex min-w-0 flex-1 shrink flex-row overflow-hidden">
@@ -124,13 +132,38 @@ const AgentPage = () => {
                 exit={{ width: 0, opacity: 0 }}
                 transition={{ duration: 0.3, ease: 'easeInOut' }}
                 style={{ overflow: 'hidden' }}>
-                <AgentSidePanel onCollapse={() => toggleShowAssistants()} />
+                <AgentSidePanel
+                  onCollapse={() => toggleShowAssistants()}
+                  showHistory={showHistory}
+                  historySelection={historySelection}
+                />
               </motion.div>
             </ErrorBoundary>
           )}
         </AnimatePresence>
         <ErrorBoundary>
-          {activeAgentId && agents?.some((agent) => agent.id === activeAgentId) && <AgentChat key={workspace} />}
+          {showHistory ? (
+            historySelection ? (
+              <AgentWorkspaceContext value="legacy">
+                <LegacyConversationView
+                  key={`${historySelection.agentId}:${historySelection.sessionId}`}
+                  {...historySelection}
+                />
+              </AgentWorkspaceContext>
+            ) : (
+              <p className="m-auto text-(--color-text-secondary) text-sm">
+                {t(query.has('session') ? 'agent.session.get.error.failed' : 'assistant_transition.select_history')}
+              </p>
+            )
+          ) : workspace === 'opencode' && !hasAvailableModels ? (
+            <div className="min-w-0 flex-1 overflow-y-auto">
+              <ModelSetupGuide />
+            </div>
+          ) : agents?.length === 0 ? (
+            <AgentEmpty />
+          ) : (
+            activeAgentId && agents?.some((agent) => agent.id === activeAgentId) && <AgentChat key={workspace} />
+          )}
         </ErrorBoundary>
       </div>
     </Container>

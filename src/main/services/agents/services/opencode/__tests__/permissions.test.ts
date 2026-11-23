@@ -5,6 +5,33 @@ import { watchOpenCodePermissions } from '../permissions'
 afterEach(() => vi.useRealTimers())
 
 describe('native pending permission recovery', () => {
+  it('recovers owned child permissions and questions while excluding another conversation', async () => {
+    vi.useFakeTimers()
+    const request = vi.fn(async (path: string) =>
+      path === '/permission'
+        ? [
+            { id: 'child-permission', sessionID: 'child' },
+            { id: 'foreign', sessionID: 'other' }
+          ]
+        : [{ id: 'child-question', sessionID: 'child' }]
+    )
+    const onPermission = vi.fn()
+    const onQuestion = vi.fn()
+    const dispose = watchOpenCodePermissions({
+      client: { request } as any,
+      sessionId: 'root',
+      signal: new AbortController().signal,
+      hasUnfinishedTools: () => true,
+      ownsSession: async (id) => id === 'child',
+      onPermission,
+      onQuestion,
+      onError: vi.fn()
+    })
+    await vi.advanceTimersByTimeAsync(3000)
+    expect(onPermission).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ id: 'child-permission' }))
+    expect(onQuestion).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ id: 'child-question' }))
+    dispose()
+  })
   function fixture() {
     vi.useFakeTimers()
     const request = vi.fn().mockResolvedValue([])

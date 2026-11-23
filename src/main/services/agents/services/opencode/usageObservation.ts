@@ -1,3 +1,5 @@
+import type { LanguageModelUsage } from 'ai'
+
 import {
   isReportedTokenCount,
   type OpenCodeTurnDiagnostics,
@@ -144,6 +146,37 @@ export class OpenCodeUsageTotals {
       const total = (this.totals[field] ?? 0) + count
       if (isReportedTokenCount(total)) this.totals[field] = total
       if (field in this.reports) this.reports[field as keyof typeof this.reports]++
+    }
+  }
+
+  get hasCompleteUsage() {
+    return (
+      this.observed > 0 &&
+      this.incomplete === 0 &&
+      this.reports.input === this.observed &&
+      this.reports.output === this.observed
+    )
+  }
+
+  completeUsage(fallback: LanguageModelUsage): LanguageModelUsage {
+    // The bridge observes parent, child and compaction requests once each.
+    // Do not add these counters to native history, which would double count.
+    if (!this.hasCompleteUsage) return fallback
+    const input = this.totals.input ?? 0
+    const output = this.totals.output ?? 0
+    const read = this.totals.cacheRead ?? 0
+    const write = this.totals.cacheWrite ?? 0
+    const reasoning = this.totals.reasoning ?? 0
+    return {
+      inputTokens: input,
+      outputTokens: output,
+      totalTokens: input + output,
+      inputTokenDetails: {
+        noCacheTokens: Math.max(0, input - read - write),
+        cacheReadTokens: read,
+        cacheWriteTokens: write
+      },
+      outputTokenDetails: { textTokens: Math.max(0, output - reasoning), reasoningTokens: reasoning }
     }
   }
 

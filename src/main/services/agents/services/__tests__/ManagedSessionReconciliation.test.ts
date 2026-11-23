@@ -4,6 +4,7 @@ import path from 'node:path'
 import { type Client, createClient } from '@libsql/client'
 import { DEFAULT_OPENCODE_AGENT_ID } from '@shared/config/agents'
 import { DEFAULT_MODEL_POLICY } from '@shared/config/modelPolicy'
+import { CreateSessionRequestSchema } from '@types'
 import { drizzle } from 'drizzle-orm/libsql'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -25,11 +26,17 @@ vi.mock('../../BaseService', () => ({
     deserializeJsonFields(row: any) {
       return {
         ...row,
+        accessible_paths:
+          typeof row.accessible_paths === 'string' ? JSON.parse(row.accessible_paths) : row.accessible_paths,
         configuration: typeof row.configuration === 'string' ? JSON.parse(row.configuration) : row.configuration
       }
     }
     serializeJsonFields(row: any) {
-      return { ...row, configuration: row.configuration ? JSON.stringify(row.configuration) : null }
+      return {
+        ...row,
+        accessible_paths: row.accessible_paths ? JSON.stringify(row.accessible_paths) : null,
+        configuration: row.configuration ? JSON.stringify(row.configuration) : null
+      }
     }
     async validateAgentModels() {}
     ensurePathsExist(value: unknown) {
@@ -159,6 +166,25 @@ describe('SQLite model reconciliation at idle boundaries', () => {
     for (const suffix of ['', ':plan_model', ':small_model']) {
       expect(mocks.records[`${session!.id}${suffix}`]).toMatchObject({ preferred: 'zen:A', actual: 'zen:B' })
     }
+  })
+  it('persists a session awaiting model selection and can recover its inherited preference', async () => {
+    mocks.inventory.mockResolvedValue(supply('D'))
+    await service.reconcileManagedModels()
+    await client.execute("UPDATE agents SET plan_model='zen:removed',small_model='zen:removed'")
+    vi.spyOn(service as any, 'repairAgentAccessiblePaths').mockImplementation(async (_db, agent) => agent)
+    vi.spyOn(service, 'getSession').mockImplementation(async (_agentId, id) => ({ id, ...(await row(id)) }) as any)
+    const validate = vi.spyOn(service as any, 'validateAgentModels')
+
+    const request = CreateSessionRequestSchema.parse({ accessible_paths: [], model: '' })
+    const session = await service.createSession(DEFAULT_OPENCODE_AGENT_ID, request)
+
+    expect(session).toMatchObject({ model: '', plan_model: null, small_model: null })
+    expect(validate).not.toHaveBeenCalled()
+    expect(mocks.records[session!.id]).toMatchObject({ preferred: 'zen:A', actual: null })
+
+    mocks.inventory.mockResolvedValue(supply('A'))
+    await service.reconcileManagedModels()
+    expect((await row(session!.id)).model).toBe('zen:A')
   })
   it('applies a new admin default using the original preference, not the temporary fallback', async () => {
     mocks.inventory.mockResolvedValue(supply('B'))

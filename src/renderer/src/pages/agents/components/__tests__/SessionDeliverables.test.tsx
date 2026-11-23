@@ -22,6 +22,7 @@ vi.mock('react-i18next', async () => {
   const { default: locale } = await import('@renderer/i18n/locales/zh-cn.json')
   return {
     useTranslation: () => ({
+      i18n: { language: 'zh-CN' },
       t: (key: string, values?: Record<string, unknown>) => {
         const template = key.split('.').reduce((object: any, field) => object?.[field], locale) ?? key
         return template.replace(/\{\{(\w+)\}\}/g, (_: string, name: string) => String(values?.[name] ?? ''))
@@ -31,6 +32,7 @@ vi.mock('react-i18next', async () => {
   }
 })
 import SessionDeliverables from '../SessionDeliverables'
+import SessionFileChanges from '../SessionFileChanges'
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -65,6 +67,36 @@ beforeEach(() => {
   Object.assign(window, {
     api: { file: { openPath: mocks.open, showInFolder: mocks.reveal, checkPaths: mocks.check } },
     toast: { error: mocks.toast }
+  })
+})
+
+describe('conversation file changes', () => {
+  it('requires an idle turn and explicit confirmation before restoring, and shows conflicts', async () => {
+    const entry = {
+      id: 'change',
+      turn: 'turn',
+      path: 'C:/output/report.xlsx',
+      kind: 'modified',
+      changedAt: 1,
+      canRestore: true
+    }
+    const load = vi.fn().mockResolvedValue([entry])
+    const restore = vi.fn().mockResolvedValue('conflict')
+    const warning = vi.fn()
+    Object.assign(window.api, { agentLifecycle: { fileChanges: load, restoreFileChange: restore } })
+    Object.assign(window.toast, { warning })
+    const { rerender } = render(<SessionFileChanges sessionId="one" topicId="agent-session:one" running />)
+    fireEvent.click(screen.getByRole('button', { name: '文件变更' }))
+    const button = await screen.findByRole('button', { name: '恢复之前版本' })
+    expect(button).toBeDisabled()
+    rerender(<SessionFileChanges sessionId="one" topicId="agent-session:one" running={false} />)
+    expect(button).toBeEnabled()
+    fireEvent.click(button)
+    await waitFor(() => expect(screen.getByText('恢复到这次操作之前的版本？')).toBeVisible())
+    expect(restore).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'OK' }))
+    await waitFor(() => expect(warning).toHaveBeenCalledWith('文件随后发生了变化，已保留当前版本。'))
+    expect(restore).toHaveBeenCalledExactlyOnceWith('one', 'change')
   })
 })
 

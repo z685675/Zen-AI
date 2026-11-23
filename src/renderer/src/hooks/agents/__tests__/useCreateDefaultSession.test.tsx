@@ -1,4 +1,6 @@
-import { act, renderHook } from '@testing-library/react'
+import type { AgentBaseWithId, ApiModel, GetAgentSessionResponse } from '@renderer/types'
+import { DEFAULT_OPENCODE_AGENT_ID } from '@shared/config/agents'
+import { act, fireEvent, render, renderHook, screen } from '@testing-library/react'
 import type * as ReactI18next from 'react-i18next'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -12,9 +14,13 @@ const mocks = vi.hoisted(() => ({
   getAgent: vi.fn(),
   getModels: vi.fn(),
   modelPolicy: null as any,
+  providers: [] as { id: string; apiHost: string }[],
+  reconcileSessions: vi.fn<() => Promise<void>>(),
+  selectedModel: null as ApiModel | null,
   setActiveSessionIdAction: vi.fn((payload) => ({ type: 'runtime/setActiveSessionId', payload })),
   updateAgent: vi.fn(),
-  updateSession: vi.fn()
+  updateSession: vi.fn(),
+  updateSessionModel: vi.fn()
 }))
 
 vi.mock('@renderer/hooks/agents/useAgent', () => ({
@@ -30,11 +36,34 @@ vi.mock('@renderer/hooks/agents/useSessions', () => ({
 }))
 
 vi.mock('@renderer/hooks/agents/useUpdateSession', () => ({
-  useUpdateSession: () => ({ updateSession: mocks.updateSession })
+  useUpdateSession: () => ({ updateSession: mocks.updateSession, updateModel: mocks.updateSessionModel })
 }))
 
 vi.mock('@renderer/hooks/agents/useUpdateAgent', () => ({
   useUpdateAgent: () => ({ updateAgent: mocks.updateAgent })
+}))
+
+vi.mock('@renderer/hooks/useMessageOperations', () => ({ selectNewTopicLoading: () => false }))
+
+vi.mock('@renderer/pages/agents/components/SelectAgentBaseModelButton', () => ({
+  default: ({
+    agentBase,
+    allowReselect,
+    onSelect
+  }: {
+    agentBase: AgentBaseWithId
+    allowReselect: boolean
+    onSelect: (model: ApiModel) => Promise<void>
+  }) => (
+    <button
+      type="button"
+      onClick={() => {
+        const selected = mocks.selectedModel
+        if (selected && (allowReselect || selected.id !== agentBase.model)) void onSelect(selected)
+      }}>
+      Select model
+    </button>
+  )
 }))
 
 vi.mock('@renderer/services/db/DbService', () => ({
@@ -46,14 +75,18 @@ vi.mock('@renderer/services/db/DbService', () => ({
 vi.mock('@renderer/store', () => ({
   useAppDispatch: () => mocks.dispatch,
   useAppSelector: (selector: (state: any) => unknown) =>
-    selector({ llm: { modelPolicy: mocks.modelPolicy }, settings: { enableDeveloperMode: mocks.enableDeveloperMode } })
+    selector({
+      llm: { modelPolicy: mocks.modelPolicy, providers: mocks.providers },
+      settings: { enableDeveloperMode: mocks.enableDeveloperMode }
+    })
 }))
 
 vi.mock('@renderer/store/runtime', () => ({
   setActiveSessionIdAction: (payload: unknown) => mocks.setActiveSessionIdAction(payload)
 }))
 
-vi.mock('@shared/config/agents', () => ({
+vi.mock(import('@shared/config/agents'), async (importOriginal) => ({
+  ...(await importOriginal()),
   canCreateAgentSession: () => true
 }))
 
@@ -64,6 +97,7 @@ vi.mock('react-i18next', async (importOriginal) => ({
   })
 }))
 
+import SessionModelSelectButton from '@renderer/pages/agents/components/SessionModelSelectButton'
 import { CacheService } from '@renderer/services/CacheService'
 import { getAgentSessionDraftCacheKey } from '@renderer/utils/agentSessionDraft'
 
@@ -136,6 +170,8 @@ describe('useCreateDefaultSession', () => {
     CacheService.clear()
     mocks.agent = makeAgent({ model: 'provider:claude-opus-4-6' })
     mocks.modelPolicy = null
+    mocks.providers = []
+    mocks.selectedModel = null
     mocks.enableDeveloperMode = false
     mocks.sessions = [makeSession()]
     mocks.fetchMessages.mockResolvedValue({ messages: [], blocks: [] })
@@ -155,6 +191,118 @@ describe('useCreateDefaultSession', () => {
     mocks.createSession.mockResolvedValue(null)
     mocks.updateAgent.mockImplementation(async (form) => ({ ...makeAgent(), ...form }))
     mocks.updateSession.mockImplementation(async (form) => ({ ...mocks.sessions[0], ...form }))
+    mocks.updateSessionModel.mockImplementation(async (id, model) => makeSession({ id, model }))
+  })
+
+  it.each([false, true])(
+    'creates a session after repairing a removed default from the picker (reselect=%s)',
+    async (reselect) => {
+      const agentId = DEFAULT_OPENCODE_AGENT_ID
+      const removedModelId = 'zen:removed-model'
+      const chosen = makeModel('zen:gemini-3.8-flash-high')
+      const session = makeSession({
+        agent_id: agentId,
+        model: reselect ? chosen.id : removedModelId
+      }) as GetAgentSessionResponse
+      mocks.agent = makeAgent({ id: agentId, model: removedModelId })
+      mocks.modelPolicy = makePolicy()
+      mocks.providers = [{ id: 'zen', apiHost: 'https://zenai.925636.xyz' }]
+      mocks.selectedModel = chosen
+      mocks.sessions = []
+      mocks.getAgent.mockImplementation(async () => mocks.agent)
+      mocks.getModels.mockResolvedValue({ data: [makeModel('zen:gpt-6-luna'), chosen] })
+      mocks.updateAgent.mockImplementation(async (form) => (mocks.agent = { ...mocks.agent, ...form }))
+      mocks.createSession.mockImplementation(async (form) => makeSession({ ...form, id: 'session-2' }))
+      window.api.modelPolicy = { ...window.api.modelPolicy, reconcileSessions: mocks.reconcileSessions }
+
+      render(<SessionModelSelectButton agentId={agentId} session={session} />)
+      const { result } = renderHook(() => useCreateDefaultSession(agentId))
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Select model' }))
+      })
+
+      expect(mocks.updateSessionModel).toHaveBeenCalledTimes(reselect ? 0 : 1)
+      expect(mocks.updateAgent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: agentId,
+          model: chosen.id,
+          configuration: expect.objectContaining({ remote_default_model_policy_version: 2 })
+        }),
+        { showSuccessToast: false }
+      )
+
+      await act(async () => {
+        await result.current.createDefaultSession()
+      })
+
+      expect(mocks.reconcileSessions).toHaveBeenCalledOnce()
+      expect(mocks.createSession).toHaveBeenCalledWith(expect.objectContaining({ model: chosen.id }))
+      expect(window.toast.warning).not.toHaveBeenCalled()
+    }
+  )
+
+  it('leaves a usable assistant default in place when changing the session model', async () => {
+    const agentId = DEFAULT_OPENCODE_AGENT_ID
+    const defaultModel = makeModel('zen:gpt-6-luna')
+    const chosen = makeModel('zen:gemini-3.8-flash-high')
+    const session = makeSession({ agent_id: agentId, model: defaultModel.id }) as GetAgentSessionResponse
+    mocks.getAgent.mockResolvedValue(makeAgent({ id: agentId, model: defaultModel.id }))
+    mocks.getModels.mockResolvedValue({ data: [defaultModel, chosen] })
+    mocks.selectedModel = chosen
+
+    render(<SessionModelSelectButton agentId={agentId} session={session} />)
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Select model' }))
+    })
+
+    expect(mocks.updateSessionModel).toHaveBeenCalledWith(session.id, chosen.id, { showSuccessToast: false })
+    expect(mocks.updateAgent).not.toHaveBeenCalled()
+  })
+
+  it.each(['', 'zen:gpt-6-luna'])(
+    'opens a new conversation from an existing conversation with no model (default=%j)',
+    async (defaultModel) => {
+      const agentId = DEFAULT_OPENCODE_AGENT_ID
+      mocks.agent = makeAgent({ id: agentId, model: 'zen:removed-model' })
+      mocks.providers = [{ id: 'zen', apiHost: 'https://zenai.925636.xyz' }]
+      mocks.sessions = [makeSession({ agent_id: agentId, model: '' })]
+      mocks.fetchMessages.mockResolvedValue({ messages: [{ id: 'old-message' }], blocks: [] })
+      mocks.getAgent
+        .mockResolvedValueOnce(mocks.agent)
+        .mockResolvedValue(makeAgent({ id: agentId, model: defaultModel }))
+      mocks.createSession.mockImplementation(async (form) => makeSession({ ...form, id: 'new-session' }))
+      window.api.modelPolicy = { ...window.api.modelPolicy, reconcileSessions: mocks.reconcileSessions }
+
+      const { result } = renderHook(() => useCreateDefaultSession(agentId))
+      await act(async () => {
+        await result.current.createDefaultSession()
+      })
+
+      expect(mocks.reconcileSessions).toHaveBeenCalledOnce()
+      expect(mocks.createSession).toHaveBeenCalledWith(expect.objectContaining({ model: defaultModel }))
+      expect(mocks.updateSession).not.toHaveBeenCalled()
+      expect(mocks.updateAgent).not.toHaveBeenCalled()
+      expect(mocks.setActiveSessionIdAction).toHaveBeenCalledWith({ agentId, sessionId: 'new-session' })
+      expect(window.toast.warning).not.toHaveBeenCalled()
+    }
+  )
+
+  it('opens an unconfigured draft when no model is available without clearing the model of another empty session', async () => {
+    const agentId = DEFAULT_OPENCODE_AGENT_ID
+    mocks.agent = makeAgent({ id: agentId, model: 'provider:removed-model' })
+    mocks.getAgent.mockResolvedValue(mocks.agent)
+    mocks.getModels.mockResolvedValue({ data: [] })
+    mocks.sessions = [makeSession({ agent_id: agentId, model: 'provider:other-model' })]
+    mocks.createSession.mockImplementation(async (form) => makeSession({ ...form, id: 'new-session' }))
+
+    const { result } = renderHook(() => useCreateDefaultSession(agentId))
+    await act(async () => {
+      await result.current.createDefaultSession()
+    })
+
+    expect(mocks.createSession).toHaveBeenCalledWith(expect.objectContaining({ model: '' }))
+    expect(mocks.updateSession).not.toHaveBeenCalled()
+    expect(mocks.setActiveSessionIdAction).toHaveBeenCalledWith({ agentId, sessionId: 'new-session' })
   })
 
   it('aligns a reused empty session with the current new-conversation default model', async () => {

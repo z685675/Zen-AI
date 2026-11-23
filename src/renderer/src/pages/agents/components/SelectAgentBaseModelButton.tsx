@@ -22,6 +22,7 @@ interface Props {
   agentBase: AgentBaseWithId
   onSelect: (model: ApiModel) => Promise<void>
   isDisabled?: boolean
+  allowReselect?: boolean
   /** Custom className for the button */
   className?: string
   /** Custom inline styles for the button (merged with default styles) */
@@ -42,6 +43,7 @@ const SelectAgentBaseModelButton = ({
   agentBase: agent,
   onSelect,
   isDisabled,
+  allowReselect = false,
   className,
   buttonStyle,
   buttonSize = 'small',
@@ -70,7 +72,7 @@ const SelectAgentBaseModelButton = ({
       apiModelFilter: (candidate) => isAssistantModelAllowed(candidate, enableDeveloperMode, modelPolicy?.policy),
       modelFilter: agentModelFilter
     })
-    if (selectedModel && selectedModel.id !== agent.model) {
+    if (selectedModel && (allowReselect || selectedModel.id !== agent.model)) {
       setIsUpdating(true)
       try {
         await onSelect(selectedModel)

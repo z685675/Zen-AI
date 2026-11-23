@@ -148,7 +148,7 @@ export function buildTurnPerformance(input: {
     typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null
   const waits = intervals.filter(
     (span) =>
-      (span.kind === 'runtime-stage' && span.label === 'waiting_permission') ||
+      (span.kind === 'runtime-stage' && ['waiting_permission', 'waiting_answer'].includes(span.label)) ||
       (span.kind === 'tool' && /wait_for_user|ask_user|question/i.test(span.label))
   )
   const completed = intervals.filter((span) => span.durationMs !== null)

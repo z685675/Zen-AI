@@ -8,6 +8,7 @@ import {
 import { useAppDispatch, useAppSelector } from '@renderer/store'
 import { setActiveAgentId, setActiveSessionIdAction } from '@renderer/store/runtime'
 import type { Notification } from '@renderer/types/notification'
+import { getLegacyConversationPath } from '@renderer/utils/legacyConversations'
 import { DEFAULT_DSH_AGENT_ID, isNewAssistantAgentId } from '@shared/config/agents'
 import type { AgentActionRequiredPayload } from '@shared/config/types'
 import { IpcChannel } from '@shared/IpcChannel'
@@ -128,15 +129,13 @@ const NavigationHandler: React.FC = () => {
             }
           }
           window.dispatchEvent(new Event('zen-ai:close-agent-quick-entry'))
+          if (!isNewAssistantAgentId(payload.agentId)) {
+            navigate(getLegacyConversationPath(payload))
+            return
+          }
           dispatch(setActiveAgentId(payload.agentId))
           dispatch(setActiveSessionIdAction({ agentId: payload.agentId, sessionId: payload.sessionId }))
-          navigate(
-            payload.agentId === DEFAULT_DSH_AGENT_ID
-              ? '/internal-assistant'
-              : isNewAssistantAgentId(payload.agentId)
-                ? '/new-assistant'
-                : '/agents'
-          )
+          navigate(payload.agentId === DEFAULT_DSH_AGENT_ID ? '/internal-assistant' : '/new-assistant')
         }
       })
     }

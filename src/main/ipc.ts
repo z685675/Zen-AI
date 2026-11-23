@@ -19,6 +19,7 @@ import {
 } from '@main/utils/process'
 import { handleZoomFactor } from '@main/utils/zoom'
 import type { SpanEntity, TokenUsage } from '@mcp-trace/trace-core'
+import { DEFAULT_OPENCODE_AGENT_ID } from '@shared/config/agents'
 import type { UpgradeChannel } from '@shared/config/constant'
 import { MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH } from '@shared/config/constant'
 import { imageCanvasChannels } from '@shared/config/imageCanvas'
@@ -44,7 +45,9 @@ import fontList from 'font-list'
 import { agentMessageRepository } from './services/agents/database'
 import { bootstrapBuiltinAgents } from './services/agents/services/builtin/BuiltinAgentBootstrap'
 import { getSessionModelRecoveryIntent } from './services/agents/services/managedModelRecovery'
+import { AssistantFileChangeStore } from './services/agents/services/opencode/fileChanges'
 import { stopOpenCodeProcesses } from './services/agents/services/opencode/process'
+import { acquireSessionActivity, hasSessionActivity } from './services/agents/services/sessionActivity'
 import { sessionService } from './services/agents/services/SessionService'
 import { skillService } from './services/agents/skills/SkillService'
 import { analyticsService } from './services/AnalyticsService'
@@ -413,6 +416,38 @@ export async function registerIpc(mainWindow: BrowserWindow, app: Electron.App) 
     return intent && (intent.actual || '') === (session.model || '') ? intent : undefined
   })
   ipcMain.handle(IpcChannel.Agent_BootstrapBuiltins, () => bootstrapBuiltinAgents())
+  ipcMain.handle(IpcChannel.Agent_ProbeMcp, async (_, id: unknown) => {
+    if (typeof id !== 'string' || !id || id.length > 128) throw new Error('Invalid MCP connection')
+    return (await import('./services/agents/services/opencode/mcpIntegrations')).probeAssistantMcp(id)
+  })
+  ipcMain.handle(IpcChannel.Agent_FileChanges, async (_, sessionId: unknown) => {
+    if (typeof sessionId !== 'string' || !sessionId || sessionId.length > 128) return []
+    if (!(await sessionService.getSession(DEFAULT_OPENCODE_AGENT_ID, sessionId))) return []
+    return new AssistantFileChangeStore(getDataPath('AssistantFileChanges'), sessionId).list()
+  })
+  ipcMain.handle(IpcChannel.Agent_RestoreFileChange, async (_, sessionId: unknown, id: unknown) => {
+    if (typeof sessionId !== 'string' || !sessionId || sessionId.length > 128 || typeof id !== 'string')
+      return 'unavailable'
+    if (hasSessionActivity(sessionId)) return 'busy'
+    const release = acquireSessionActivity(sessionId, 'continuation')
+    try {
+      const current = await sessionService.getSession(DEFAULT_OPENCODE_AGENT_ID, sessionId)
+      if (!current) return 'unavailable'
+      return await new AssistantFileChangeStore(getDataPath('AssistantFileChanges'), sessionId)
+        .restore(id, current.accessible_paths, (file) => shell.trashItem(file))
+        .catch(() => 'unavailable')
+    } finally {
+      release()
+    }
+  })
+  ipcMain.handle(IpcChannel.Agent_PreviewFileChange, async (_, sessionId: unknown, id: unknown) => {
+    if (typeof sessionId !== 'string' || !sessionId || sessionId.length > 128 || typeof id !== 'string') return
+    const current = await sessionService.getSession(DEFAULT_OPENCODE_AGENT_ID, sessionId)
+    if (!current) return
+    return new AssistantFileChangeStore(getDataPath('AssistantFileChanges'), sessionId)
+      .preview(id, current.accessible_paths)
+      .catch(() => undefined)
+  })
 
   // theme
   ipcMain.handle(IpcChannel.App_SetTheme, (_, theme: ThemeMode) => {

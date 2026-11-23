@@ -3,7 +3,18 @@ import App from '@renderer/components/MinApp/MinApp'
 import { useMinapps } from '@renderer/hooks/useMinapps'
 import { useRuntime } from '@renderer/hooks/useRuntime'
 import { useSettings } from '@renderer/hooks/useSettings'
-import { BarChart3, Code, FileSearch, Folder, Languages, LayoutGrid, NotepadText, Palette, Sparkle } from 'lucide-react'
+import {
+  Activity,
+  BarChart3,
+  Code,
+  FileSearch,
+  Folder,
+  Languages,
+  LayoutGrid,
+  NotepadText,
+  Palette,
+  Sparkle
+} from 'lucide-react'
 import type { FC } from 'react'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -23,6 +34,12 @@ const LaunchpadPage: FC = () => {
       text: t('usage_statistics.title'),
       path: '/usage',
       bgColor: 'linear-gradient(135deg, #6374E9, #26AC93)'
+    },
+    {
+      icon: <Activity size={32} className="icon" />,
+      text: t('model_status.title'),
+      path: '/model-status',
+      bgColor: 'linear-gradient(135deg, #0D9488, #0EA5E9)'
     },
     {
       icon: <LayoutGrid size={32} className="icon" />,

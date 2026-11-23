@@ -30,6 +30,21 @@ const config = (id: string, type = 'new-api', endpoint?: string) =>
   })
 
 describe('OpenCode isolated model config', () => {
+  it('shares product and user requirements with children while keeping Plan and exploration read-only', () => {
+    const built = buildOpenCodeConfig({
+      session: { ...session, instructions: 'Do not install software', configuration: { permission_mode: 'plan' } },
+      provider: provider('alias'),
+      modelId: 'alias',
+      skillPaths: [],
+      api: { host: '127.0.0.1', port: 1, apiKey: 'placeholder' }
+    })
+    expect(built.agent.general.prompt).toContain('Do not install software')
+    expect(built.agent.explore.prompt).toContain('Current mode: Plan')
+    expect(built.agent.explore.permission.edit).toBe('deny')
+    expect(built.permission.task).toMatchObject({ general: 'deny', explore: 'ask' })
+    expect(built.permission.question).toBe('allow')
+    expect(buildOpenCodeEnvironment({}, 'isolated', 'placeholder').OPENCODE_ENABLE_QUESTION_TOOL).toBe('true')
+  })
   it('uses central capabilities for a renamed model without guessing its family', () => {
     registerModelCapabilities('zen', 'brand-new-alias', {
       context_length: 1_000_000,

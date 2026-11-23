@@ -46,6 +46,26 @@ beforeEach(() => {
 })
 
 describe('compact native execution activity', () => {
+  it('keeps child task progress visible outside the collapsed execution log', () => {
+    render(
+      <NativeActivity
+        blocks={[]}
+        processing
+        subagents={[
+          {
+            id: 'child-one',
+            description: 'Check product prices',
+            agent: 'general',
+            status: 'waiting_answer',
+            toolCalls: 2
+          }
+        ]}
+      />
+    )
+    expect(screen.getByText('Check product prices')).toBeInTheDocument()
+    expect(screen.getByText(/nativeSubagents.waiting_answer/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'nativeActivity.thinking' })).toHaveAttribute('aria-expanded', 'false')
+  })
   it('provides Chinese activity labels at the actual lookup path', () => {
     expect(zh.nativeActivity.thinking).toBe('思考')
     expect(zh.nativeActivity.finished).toContain('思考与执行')

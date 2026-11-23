@@ -1,6 +1,7 @@
 import { ErrorBoundary } from '@renderer/components/ErrorBoundary'
 import type { MessageBlock, ThinkingMessageBlock, ToolMessageBlock } from '@renderer/types/newMessage'
 import { MessageBlockType } from '@renderer/types/newMessage'
+import type { OpenCodeSubagentProgress } from '@shared/agents/opencodeSubagents'
 import { ChevronRight, LoaderCircle, Sparkles } from 'lucide-react'
 import { memo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -10,6 +11,7 @@ import { useToolApproval } from '../Tools/hooks/useToolApproval'
 import { getEffectiveStatus, getToolHasError } from '../Tools/MessageAgentTools/GenericTools'
 import ToolHeader from '../Tools/ToolHeader'
 import BlockErrorFallback from './BlockErrorFallback'
+import SubagentProgress from './SubagentProgress'
 import ToolBlock from './ToolBlock'
 
 export type NativeActivityBlock = ThinkingMessageBlock | ToolMessageBlock
@@ -26,6 +28,7 @@ export function collectNativeActivity(blocks: readonly MessageBlock[]): NativeAc
 /** Confirmation is outside the collapsed log and keeps the original input/risk controls. */
 function PendingApproval({ block }: { block: ToolMessageBlock }) {
   const approval = useToolApproval(block)
+  if (block.metadata?.rawMcpToolResponse?.tool.name === 'question') return null
   if (!approval.isWaiting && !approval.isSubmitting) return null
   return (
     <div data-native-approval={block.id}>
@@ -52,7 +55,15 @@ function ToolActivity({ block }: { block: ToolMessageBlock }) {
 }
 
 /** Presentation only. Does not alter native events, tools, permissions or artifacts. */
-function NativeActivity({ blocks, processing }: { blocks: NativeActivityBlock[]; processing: boolean }) {
+function NativeActivity({
+  blocks,
+  processing,
+  subagents = []
+}: {
+  blocks: NativeActivityBlock[]
+  processing: boolean
+  subagents?: OpenCodeSubagentProgress[]
+}) {
   const { t } = useTranslation()
   const [expanded, setExpanded] = useState(false)
   const tools = blocks.filter((block): block is ToolMessageBlock => block.type === MessageBlockType.TOOL)
@@ -64,6 +75,7 @@ function NativeActivity({ blocks, processing }: { blocks: NativeActivityBlock[];
     : undefined
   return (
     <Container>
+      <SubagentProgress tasks={subagents} />
       <Toggle type="button" aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>
         {processing ? <LoaderCircle size={14} className="activity-spinner" /> : <Sparkles size={14} />}
         <span>

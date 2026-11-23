@@ -162,6 +162,7 @@ import YoudaoLogo from '@renderer/assets/images/providers/netease-youdao.svg'
 import NomicLogo from '@renderer/assets/images/providers/nomic.png'
 import ZhipuProviderLogo from '@renderer/assets/images/providers/zhipu.png'
 import type { Model } from '@renderer/types'
+import { getModelCapabilities } from '@shared/modelCapabilities'
 
 export function getModelLogoById(modelId: string): string | undefined {
   // FIXME: This is always true. Either remove it or fetch it.
@@ -324,5 +325,13 @@ export function getModelLogoById(modelId: string): string | undefined {
 }
 
 export function getModelLogo(model: Model | undefined | null): string | undefined {
-  return model ? (getModelLogoById(model.id) ?? getModelLogoById(model.name)) : undefined
+  if (!model) return undefined
+  const canonical = getModelCapabilities(model)?.canonical_id
+  if (canonical) {
+    const [brand, ...parts] = canonical.split('/')
+    if (parts.length && /^[a-z0-9][a-z0-9_-]{0,63}$/i.test(brand)) {
+      return getModelLogoById(parts.join('/')) ?? `https://models.dev/logos/${brand.toLowerCase()}.svg`
+    }
+  }
+  return getModelLogoById(model.id) ?? getModelLogoById(model.name)
 }

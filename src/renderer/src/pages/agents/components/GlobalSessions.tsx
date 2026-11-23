@@ -200,6 +200,11 @@ const GlobalSessions = ({ agentsById, onSelectItem }: GlobalSessionsProps) => {
           continue
         }
 
+        if (session.agent_id === activeAgentId) {
+          if (await createDefaultSession()) onSelectItem?.()
+          return
+        }
+
         await updateSession(session.agent_id, { id: session.id })
         await setActiveAgentId(session.agent_id)
         dispatch(setActiveSessionIdAction({ agentId: session.agent_id, sessionId: session.id }))
@@ -212,7 +217,17 @@ const GlobalSessions = ({ agentsById, onSelectItem }: GlobalSessionsProps) => {
       creatingGlobalSessionRef.current = false
       setCreatingGlobalSession(false)
     }
-  }, [createDefaultSession, dispatch, onSelectItem, sessions, setActiveAgentId, t, updateSession, viewMode])
+  }, [
+    activeAgentId,
+    createDefaultSession,
+    dispatch,
+    onSelectItem,
+    sessions,
+    setActiveAgentId,
+    t,
+    updateSession,
+    viewMode
+  ])
 
   if (isLoading) {
     return (

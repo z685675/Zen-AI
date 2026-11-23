@@ -4,7 +4,7 @@ const { createRequire } = require('node:module')
 const { Arch } = require('electron-builder')
 const { verifyNativeAgentBinary } = require('./agent-runtime-packaging')
 
-const VERSION = '1.19.5'
+const VERSION = '1.19.6'
 
 function copyOpenCodeRuntime(context, rootDir = path.join(__dirname, '..')) {
   const platform = context.packager.platform.name

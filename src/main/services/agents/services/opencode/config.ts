@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import path from 'node:path'
 
 import type { GetAgentSessionResponse, Provider } from '@types'
@@ -14,9 +15,14 @@ import { withoutTrailingApiVersion } from '../../../../../../packages/shared/uti
 import { getAutomationProfile, LIGHTWEIGHT_TOOLS } from '../automation/profile'
 import { getAgentProtocolBridgeTarget, modelDeclaresAnthropicProtocol } from '../runtime/protocol'
 import { resolveOpenCodeContext } from './context'
+import { getOpenCodeSharedInstructions } from './instructions'
 
-export const OPENCODE_VERSION = '1.19.5'
+export const OPENCODE_VERSION = '1.19.6'
 export const OPENCODE_PROVIDER_ID = 'zen-selected'
+
+export function assistantMcpAlias(id: string) {
+  return `zen_external_${createHash('sha256').update(id).digest('hex').slice(0, 12)}`
+}
 
 export function buildOpenCodeConfig(input: {
   session: GetAgentSessionResponse
@@ -26,6 +32,7 @@ export function buildOpenCodeConfig(input: {
   api: { host: string; port: number; apiKey: string }
   effort?: string
   inputDirectory?: string
+  integrationIds?: string[]
 }) {
   const { session, provider, modelId } = input
   const lightweight = Boolean(getAutomationProfile(session))
@@ -74,18 +81,19 @@ export function buildOpenCodeConfig(input: {
     allowedRoots.map((root) => [path.resolve(root).replaceAll('\\', '/') + '/**', 'allow'])
   )
   const readOnly = getOpenCodeAgentMode(session.configuration?.permission_mode) === 'plan'
-  const mcp = (name: string, route: string) =>
+  const integrationIds = readOnly || lightweight ? [] : (input.integrationIds ?? [])
+  const mcp = (name: string, route: string, integrationId?: string) =>
     [
       name,
       {
         type: 'remote',
-        url: `${apiBase}/v1/${route}/${encodeURIComponent(session.id)}/mcp`,
+        url: `${apiBase}/v1/${route}/${encodeURIComponent(session.id)}${integrationId ? `/integrations/${encodeURIComponent(integrationId)}` : ''}/mcp`,
         headers: { Authorization: `Bearer ${input.api.apiKey}` },
         oauth: false,
         enabled: true,
         // Login/CAPTCHA handoff can legitimately take longer than a normal
         // file tool. The overall task deadline still bounds this wait.
-        timeout: route === 'browser' ? 15 * 60_000 : 120_000
+        timeout: route === 'browser' ? 15 * 60_000 : integrationId ? 12_000 : 120_000
       }
     ] as const
   return {
@@ -101,6 +109,18 @@ export function buildOpenCodeConfig(input: {
     formatter: false,
     agent: {
       title: { disable: true },
+      general: { prompt: getOpenCodeSharedInstructions(session), permission: { task: 'deny' } },
+      explore: {
+        prompt: `${getOpenCodeSharedInstructions(session)}\n\nYour role is exploration: inspect authorized sources and report findings with locations. Do not modify files, execute writes or create deliverables.`,
+        permission: {
+          task: 'deny',
+          edit: 'deny',
+          bash: 'deny',
+          'mcp__assistant_*': 'deny',
+          'mcp__browser_*': 'deny',
+          'zen_external_*': 'deny'
+        }
+      },
       'zen-loop-summary': {
         description: 'Finish an interrupted task from existing evidence',
         hidden: true,
@@ -177,7 +197,11 @@ export function buildOpenCodeConfig(input: {
     mcp: Object.fromEntries(
       lightweight
         ? [mcp('mcp__assistant_', 'assistant')]
-        : [mcp('mcp__assistant_', 'assistant'), mcp('mcp__browser_', 'browser')]
+        : [
+            mcp('mcp__assistant_', 'assistant'),
+            mcp('mcp__browser_', 'browser'),
+            ...integrationIds.map((id) => mcp(assistantMcpAlias(id), 'assistant', id))
+          ]
     ),
     permission: {
       // Inherit native agent defaults, including .env protection and doom-loop
@@ -187,6 +211,7 @@ export function buildOpenCodeConfig(input: {
       websearch: 'deny',
       'mcp__assistant_*': readOnly ? 'deny' : 'allow',
       'mcp__browser_*': readOnly ? 'deny' : 'allow',
+      'zen_external_*': readOnly || lightweight ? 'deny' : 'ask',
       mcp__assistant__web_search: 'allow',
       mcp__assistant__literature_search: 'allow',
       mcp__assistant__read_paper: 'allow',
@@ -213,7 +238,8 @@ export function buildOpenCodeConfig(input: {
             )
           },
       ...(readOnly ? { edit: 'deny' } : {}),
-      question: 'deny',
+      question: lightweight ? 'deny' : 'allow',
+      task: { '*': 'deny', general: readOnly ? 'deny' : 'ask', explore: 'ask' },
       ...(lightweight
         ? {
             '*': 'deny',
@@ -283,6 +309,8 @@ export function buildOpenCodeEnvironment(
     OPENCODE_DISABLE_LSP_DOWNLOAD: 'true',
     OPENCODE_DISABLE_EMBEDDED_WEB_UI: 'true',
     OPENCODE_EXPERIMENTAL: 'false',
+    OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS: 'false',
+    OPENCODE_ENABLE_QUESTION_TOOL: 'true',
     npm_config_offline: 'true',
     npm_config_audit: 'false',
     npm_config_fund: 'false',

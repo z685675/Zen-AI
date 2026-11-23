@@ -365,7 +365,8 @@ export const AskUserQuestionItemSchema = z.object({
   /** The available choices for this question (2-4 options) */
   options: z.array(AskUserQuestionOptionSchema),
   /** Set to true to allow multiple selections */
-  multiSelect: z.boolean()
+  multiSelect: z.boolean(),
+  allowCustom: z.boolean().optional()
 })
 
 export const AskUserQuestionAnswerSchema = z.record(z.string(), z.string())
@@ -387,6 +388,20 @@ export type AskUserQuestionAnswer = z.infer<typeof AskUserQuestionAnswerSchema>
  * Returns undefined if the data doesn't match the expected structure.
  */
 export function parseAskUserQuestionToolInput(value: unknown): AskUserQuestionToolInput | undefined {
+  if (value && typeof value === 'object' && 'questions' in value && Array.isArray(value.questions)) {
+    value = {
+      ...value,
+      questions: value.questions.map((q: any) =>
+        q && typeof q === 'object'
+          ? {
+              ...q,
+              multiSelect: q.multiSelect ?? q.multiple ?? false,
+              ...(q.custom === false ? { allowCustom: false } : {})
+            }
+          : q
+      )
+    }
+  }
   const result = AskUserQuestionToolInputSchema.safeParse(value)
   return result.success ? result.data : undefined
 }

@@ -45,10 +45,8 @@ beforeEach(() => {
   } as any
 })
 describe('browser action-required continuation', () => {
-  it.each([
-    [DEFAULT_OPENCODE_AGENT_ID, '/new-assistant'],
-    ['legacy-agent', '/agents']
-  ])('returns %s to its own workspace', async (agentId, route) => {
+  it('returns the current assistant to its existing conversation', async () => {
+    const agentId = DEFAULT_OPENCODE_AGENT_ID
     const view = render(<NavigationHandler />)
     mocks.listeners.get(IpcChannel.Agent_ActionRequired)!(
       {},
@@ -60,9 +58,23 @@ describe('browser action-required continuation', () => {
       agentId,
       { agentId, sessionId: 'original-session' }
     ])
-    expect(mocks.navigate).toHaveBeenCalledWith(route)
+    expect(mocks.navigate).toHaveBeenCalledWith('/new-assistant')
     view.unmount()
     expect(mocks.removers.every((remove) => remove.mock.calls.length === 1)).toBe(true)
+  })
+
+  it('opens a legacy record from an old notification without replacing the current conversation', async () => {
+    render(<NavigationHandler />)
+    mocks.listeners.get(IpcChannel.Agent_ActionRequired)!(
+      {},
+      { agentId: 'legacy-agent', sessionId: 'original-session', message: 'Ready' }
+    )
+    expect(mocks.navigate).not.toHaveBeenCalled()
+    await mocks.confirm.mock.calls[0][0].onOk()
+    expect(mocks.dispatch).not.toHaveBeenCalled()
+    expect(mocks.navigate).toHaveBeenCalledWith(
+      '/new-assistant?history=legacy&agent=legacy-agent&session=original-session'
+    )
   })
   it('does not navigate when the modal is dismissed or deferred', () => {
     const view = render(<NavigationHandler />)

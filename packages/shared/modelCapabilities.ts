@@ -77,6 +77,7 @@ export function intersectModelCapabilities(
   if (!values.length) return undefined
   const result = { ...values[0] }
   for (const value of values.slice(1)) {
+    if (result.canonical_id !== value?.canonical_id) result.canonical_id = undefined
     for (const key of ['context_length', 'max_input_tokens', 'max_output_tokens'] as const)
       result[key] = result[key] && value?.[key] ? Math.min(result[key], value[key]) : undefined
     for (const key of ['tools', 'structured_output', 'reasoning', 'temperature'] as const)

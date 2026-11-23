@@ -171,7 +171,7 @@ export function MessageAgentTools({ toolResponse }: { toolResponse: NormalToolRe
   }
 
   // AskUserQuestion uses a unified card for both pending and completed states
-  if (tool?.name === AgentToolsType.AskUserQuestion) {
+  if (tool?.name === AgentToolsType.AskUserQuestion || tool?.name === 'question') {
     const isLoading = status === 'streaming' || status === 'invoking'
     return (
       <StreamingContext value={isLoading}>

@@ -1,5 +1,6 @@
 import type { CompletionUsage } from '@cherrystudio/openai/resources'
 import type { OpenCodeTurnDiagnostics } from '@shared/agents/opencodeDiagnostics'
+import type { OpenCodeSubagentProgress } from '@shared/agents/opencodeSubagents'
 import type { ModelDailyTurnResult } from '@shared/utils/modelDailyQuotaTurn'
 import type { ProviderMetadata } from 'ai'
 
@@ -263,6 +264,7 @@ export type MessageProviderMetadata = ProviderMetadata & {
   deepResearch?: DeepResearchTaskMetadata
   responseTiming?: MessageResponseTiming
   opencodeDiagnostics?: OpenCodeTurnDiagnostics
+  opencodeSubagents?: { tasks: OpenCodeSubagentProgress[] }
   modelDailyQuota?: { results: ModelDailyTurnResult[] }
 }
 

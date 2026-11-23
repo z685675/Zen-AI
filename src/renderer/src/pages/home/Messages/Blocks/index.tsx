@@ -145,11 +145,16 @@ const MessageBlockRenderer: React.FC<Props> = ({ blocks, message, isStreaming })
 
   return (
     <AnimatePresence mode="sync">
-      {compactNative && activityBlocks.length > 0 && (
-        <AnimatedBlockWrapper key="native-activity" enableAnimation={false}>
-          <NativeActivity blocks={activityBlocks} processing={isProcessing} />
-        </AnimatedBlockWrapper>
-      )}
+      {compactNative &&
+        (activityBlocks.length > 0 || Boolean(message.providerMetadata?.opencodeSubagents?.tasks.length)) && (
+          <AnimatedBlockWrapper key="native-activity" enableAnimation={false}>
+            <NativeActivity
+              blocks={activityBlocks}
+              processing={isProcessing}
+              subagents={message.providerMetadata?.opencodeSubagents?.tasks}
+            />
+          </AnimatedBlockWrapper>
+        )}
       {groupedBlocks.map((block) => {
         if (Array.isArray(block)) {
           const groupKey = block.map((b) => b.id).join('-')

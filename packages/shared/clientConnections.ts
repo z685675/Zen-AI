@@ -73,6 +73,7 @@ export function isRoutableApiRequest(value: string, method = 'GET'): boolean {
       [
         '/api/status',
         '/api/client/models',
+        '/api/client/model-performance',
         '/api/client/model-policy',
         '/api/client/model-capacity-catalog',
         '/api/client/request-diagnostic'

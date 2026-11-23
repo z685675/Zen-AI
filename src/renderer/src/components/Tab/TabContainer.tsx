@@ -19,6 +19,7 @@ import { classNames } from '@renderer/utils'
 import { Tooltip } from 'antd'
 import type { LRUCache } from 'lru-cache'
 import {
+  Activity,
   BarChart3,
   FileSearch,
   Folder,
@@ -26,7 +27,6 @@ import {
   Languages,
   LayoutGrid,
   Megaphone,
-  MousePointerClick,
   NotepadText,
   Palette,
   Settings,
@@ -88,10 +88,10 @@ const getTabIcon = (
   switch (tabId) {
     case 'usage':
       return <BarChart3 size={14} />
+    case 'model-status':
+      return <Activity size={14} />
     case 'home':
       return <Home size={14} />
-    case 'agents':
-      return <MousePointerClick size={14} />
     case 'new-assistant':
       return <Sparkle size={14} />
     case 'announcements':
@@ -173,7 +173,7 @@ const TabsContainer: React.FC<TabsContainerProps> = ({ children }) => {
   }
 
   const shouldCreateTab = (path: string) => {
-    if (path === '/') return false
+    if (path === '/' || path === '/agents') return false
     if (path === '/settings') return false
     return !tabs.some((tab) => tab.id === getTabId(path))
   }
@@ -231,7 +231,7 @@ const TabsContainer: React.FC<TabsContainerProps> = ({ children }) => {
     navigate(tab.path)
   }
 
-  const visibleTabs = useMemo(() => tabs.filter((tab) => !specialTabs.includes(tab.id)), [tabs])
+  const visibleTabs = useMemo(() => tabs.filter((tab) => tab.id !== 'agents' && !specialTabs.includes(tab.id)), [tabs])
 
   const { onSortEnd } = useDndReorder<Tab>({
     originalList: tabs,
@@ -253,7 +253,7 @@ const TabsContainer: React.FC<TabsContainerProps> = ({ children }) => {
             onSortEnd={onSortEnd}
             className="tabs-sortable"
             renderItem={(tab: Tab) => {
-              const isClosable = tab.id !== 'home' && tab.id !== 'agents'
+              const isClosable = tab.id !== 'home'
               return (
                 <Tab
                   key={tab.id}
@@ -268,7 +268,7 @@ const TabsContainer: React.FC<TabsContainerProps> = ({ children }) => {
                   }}>
                   <TabHeader>
                     {tab.id && <TabIcon>{getTabIcon(tab.id, minapps, minAppsCache)}</TabIcon>}
-                    <TabTitle $deprecated={tab.id === 'agents'}>{getTabTitle(tab.id)}</TabTitle>
+                    <TabTitle>{getTabTitle(tab.id)}</TabTitle>
                   </TabHeader>
                   {isClosable && (
                     <CloseButton
@@ -390,8 +390,8 @@ const TabIcon = styled.span`
   flex-shrink: 0;
 `
 
-const TabTitle = styled.span<{ $deprecated?: boolean }>`
-  color: ${({ $deprecated }) => ($deprecated ? 'var(--color-deprecated-assistant)' : 'var(--color-text)')};
+const TabTitle = styled.span`
+  color: var(--color-text);
   font-size: 13px;
   display: flex;
   align-items: center;

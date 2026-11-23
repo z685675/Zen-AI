@@ -1694,7 +1694,8 @@ const fetchAndProcessAgentResponseImpl = async (
           waiting_model: t('new_assistant.waiting_model'),
           retrying: t('new_assistant.retrying'),
           compacting: t('new_assistant.compacting'),
-          waiting_permission: t('new_assistant.waiting_permission')
+          waiting_permission: t('new_assistant.waiting_permission'),
+          waiting_answer: t('nativeSubagents.waiting_answer')
         }
         updateContextTelemetry(topicId, {
           status: status === 'idle' ? 'complete' : status === 'retrying' ? 'retrying' : 'analyzing',

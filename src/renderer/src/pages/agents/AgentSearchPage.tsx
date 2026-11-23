@@ -1,4 +1,5 @@
 import { HStack } from '@renderer/components/Layout'
+import { useAgentWorkspace } from '@renderer/context/AgentWorkspaceProvider'
 import { useActiveAgent } from '@renderer/hooks/agents/useActiveAgent'
 import { useAgentClient } from '@renderer/hooks/agents/useAgentClient'
 import { useAgents } from '@renderer/hooks/agents/useAgents'
@@ -7,6 +8,7 @@ import { useAppDispatch } from '@renderer/store'
 import { setActiveSessionIdAction } from '@renderer/store/runtime'
 import type { AgentEntity, AgentSessionSearchResult } from '@renderer/types'
 import { formatErrorMessageWithPrefix } from '@renderer/utils/error'
+import { getLegacyConversationPath } from '@renderer/utils/legacyConversations'
 import type { InputRef } from 'antd'
 import { Divider, Empty, Input, Spin } from 'antd'
 import dayjs from 'dayjs'
@@ -21,6 +23,7 @@ type Props = {
 
 const AgentSearchPage = ({ onSelect }: Props) => {
   const { t } = useTranslation()
+  const workspace = useAgentWorkspace()
   const client = useAgentClient()
   const { agents } = useAgents()
   const { setActiveAgentId } = useActiveAgent()
@@ -70,6 +73,11 @@ const AgentSearchPage = ({ onSelect }: Props) => {
 
   const handleSelect = useCallback(
     async (result: AgentSessionSearchResult) => {
+      if (workspace === 'legacy') {
+        window.navigate(getLegacyConversationPath({ agentId: result.session.agent_id, sessionId: result.session.id }))
+        onSelect?.()
+        return
+      }
       await setActiveAgentId(result.session.agent_id)
       dispatch(
         setActiveSessionIdAction({
@@ -79,7 +87,7 @@ const AgentSearchPage = ({ onSelect }: Props) => {
       )
       onSelect?.()
     },
-    [dispatch, onSelect, setActiveAgentId]
+    [dispatch, onSelect, setActiveAgentId, workspace]
   )
 
   return (

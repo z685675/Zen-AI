@@ -111,6 +111,38 @@ let failureMessage = 'upstream unavailable'
 let transportError: Record<string, unknown> | undefined
 let recoverTransport = false
 let loopFinished = false
+let collaboration: 'child' | 'question' | 'question-race' | 'cancel' | 'recovery' | 'background' | undefined
+let backgroundSettled = false
+let backgroundAnswer = ''
+const backgroundPart = {
+  id: 'delegate-background-part',
+  messageID: 'assistant-new',
+  sessionID: 'native',
+  type: 'tool',
+  callID: 'delegate-background',
+  tool: 'task',
+  state: {
+    status: 'completed',
+    input: { description: 'Check source', subagent_type: 'general', background: true },
+    metadata: { sessionId: 'ses_background', background: true },
+    output: 'Background task started'
+  }
+}
+const backgroundNotice = {
+  id: 'child-result-part',
+  messageID: 'msg_ffffbackground',
+  sessionID: 'native',
+  type: 'text',
+  synthetic: true,
+  text: '<task id="ses_background" state="completed">\n<summary>Background task completed: Check source</summary>'
+}
+const childInfo = () => ({
+  id: 'child-answer',
+  sessionID: 'child-native',
+  role: 'assistant',
+  time: { completed: 1 },
+  tokens: { input: 20, output: 8, reasoning: 0, cache: { read: 0, write: 0 } }
+})
 const nativeInfo = () => ({
   id: 'assistant-new',
   sessionID: 'native',
@@ -120,6 +152,33 @@ const nativeInfo = () => ({
   tokens: { input: 10, output: 5, reasoning: 0, cache: { read: 50, write: 0 } }
 })
 const request = vi.fn(async (route: string, _method?: string, data?: unknown) => {
+  if (route === '/question/clarify/reply' && collaboration === 'question-race') {
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    return
+  }
+  if (route === '/session/child-native') return { id: 'child-native', parentID: 'native' }
+  if (route === '/session/ses_background') return { id: 'ses_background', parentID: 'native' }
+  if (route === '/session/ses_background/message') return []
+  if (route === '/session/stranger') return { id: 'stranger', parentID: 'different-conversation' }
+  if (route === '/session/child-native/message')
+    return [
+      {
+        info: childInfo(),
+        parts:
+          collaboration === 'recovery'
+            ? [
+                {
+                  id: 'missed-child-question',
+                  messageID: 'child-answer',
+                  type: 'tool',
+                  callID: 'missed-child-question-call',
+                  tool: 'question',
+                  state: { status: 'completed', input: { questions: [] }, output: 'User chose PDF' }
+                }
+              ]
+            : []
+      }
+    ]
   if (route.endsWith('/prompt_async')) {
     initialBody ??= data
     body = data
@@ -141,9 +200,27 @@ const request = vi.fn(async (route: string, _method?: string, data?: unknown) =>
     return mode === 'reconnect-permission' || mode === 'permission-lost'
       ? [{ id: 'missed', sessionID: 'native', permission: 'edit', tool: { callID: 'write-call' } }]
       : []
+  if (route === '/question') return []
   if (route.endsWith('/message')) {
     historyReads++
     if (historyReads === 1) return [{ info: { id: 'old', role: 'assistant' }, parts: [] }]
+    if (collaboration === 'background') {
+      return [
+        { info: { id: initialBody.messageID, role: 'user' }, parts: [] },
+        { info: nativeInfo(), parts: [backgroundPart] },
+        ...(backgroundSettled
+          ? [
+              { info: { id: backgroundNotice.messageID, role: 'user' }, parts: [backgroundNotice] },
+              {
+                info: { ...nativeInfo(), id: 'final', parentID: backgroundNotice.messageID },
+                parts: backgroundAnswer
+                  ? [{ type: 'text', id: 'final-text', messageID: 'final', text: backgroundAnswer, time: { end: 1 } }]
+                  : []
+              }
+            ]
+          : [])
+      ]
+    }
     if (mode.startsWith('overflow'))
       return [
         { info: { id: body.messageID, role: 'user' }, parts: [] },
@@ -264,6 +341,106 @@ async function* events(signal: AbortSignal) {
   }
   yield { type: 'message.updated', properties: { info: { id: body.messageID, sessionID: 'native', role: 'user' } } }
   yield { type: 'session.status', properties: { sessionID: 'native', status: { type: 'busy' } } }
+  if (collaboration === 'background') {
+    if (connection === 1) {
+      yield {
+        type: 'permission.asked',
+        properties: {
+          id: 'admit-background',
+          sessionID: 'native',
+          permission: 'task',
+          metadata: { description: 'Check source', subagent_type: 'general' },
+          tool: { callID: 'delegate-background' }
+        }
+      }
+      yield { type: 'message.updated', properties: { info: nativeInfo() } }
+      yield { type: 'message.part.updated', properties: { part: backgroundPart } }
+      yield { type: 'session.status', properties: { sessionID: 'native', status: { type: 'idle' } } }
+      if (mode === 'disconnect') throw new Error('Disconnected while parent waits for child')
+    }
+    backgroundSettled = true
+    yield { type: 'message.part.updated', properties: { part: backgroundNotice } }
+    yield { type: 'session.status', properties: { sessionID: 'native', status: { type: 'idle' } } }
+    return
+  }
+  if (collaboration) {
+    yield { type: 'message.updated', properties: { info: nativeInfo() } }
+    yield {
+      type: 'permission.asked',
+      properties: {
+        id: 'delegate',
+        sessionID: 'native',
+        permission: 'task',
+        metadata: { description: 'Check source', subagent_type: 'general' },
+        tool: { callID: 'delegate-call' }
+      }
+    }
+    const taskPart = {
+      id: 'delegate-part',
+      messageID: 'assistant-new',
+      sessionID: 'native',
+      type: 'tool',
+      callID: 'delegate-call',
+      tool: 'task',
+      state: {
+        status: 'running',
+        input: { description: 'Check source', subagent_type: 'general' },
+        metadata: { sessionId: 'child-native' }
+      }
+    }
+    yield { type: 'message.part.updated', properties: { part: taskPart } }
+    yield { type: 'message.updated', properties: { info: childInfo() } }
+    yield {
+      type: 'message.part.updated',
+      properties: {
+        part: {
+          id: 'child-prose',
+          messageID: 'child-answer',
+          sessionID: 'child-native',
+          type: 'text',
+          text: 'Private child answer',
+          time: { end: 1 }
+        }
+      }
+    }
+    yield {
+      type: 'permission.asked',
+      properties: { id: 'foreign', sessionID: 'stranger', permission: 'edit', metadata: {} }
+    }
+    if (collaboration === 'question' || collaboration === 'question-race' || collaboration === 'cancel') {
+      yield {
+        type: 'question.asked',
+        properties: {
+          id: 'clarify',
+          sessionID: 'child-native',
+          questions: [{ question: 'Choose format', header: 'Format', options: [{ label: 'PDF' }], multiple: false }],
+          tool: { callID: 'child-ask' }
+        }
+      }
+      if (collaboration === 'cancel') {
+        pause!.ready()
+        await hold(signal)
+      }
+    } else {
+      yield {
+        type: 'permission.asked',
+        properties: {
+          id: 'child-permission',
+          sessionID: 'child-native',
+          permission: 'edit',
+          metadata: { file: 'fixture' },
+          tool: { callID: 'child-edit' }
+        }
+      }
+    }
+    if (collaboration !== 'question-race') await new Promise<void>((resolve) => setImmediate(resolve))
+    yield {
+      type: 'message.part.updated',
+      properties: {
+        part: { ...taskPart, state: { ...taskPart.state, status: 'completed', output: 'Child findings returned' } }
+      }
+    }
+  }
   if (mode.startsWith('overflow')) {
     yield {
       type: 'message.updated',
@@ -557,6 +734,9 @@ beforeEach(() => {
   longTaskMode = undefined
   loopMode = undefined
   loopFinished = false
+  collaboration = undefined
+  backgroundSettled = false
+  backgroundAnswer = 'Integrated findings'
   runtime.finishTurn.mockResolvedValue(undefined)
   mocks.getProcess.mockImplementation(async (...args) => {
     args[5]?.()
@@ -569,6 +749,111 @@ afterEach(() => {
   vi.useRealTimers()
 })
 describe('OpenCode adapter turn lifecycle', () => {
+  it.each(['success', 'disconnect'] as const)(
+    'waits for background results through parent idle (%s)',
+    async (value) => {
+      collaboration = 'background'
+      mode = value
+      const result = await run()
+      expect(result.at(-1)?.type).toBe('complete')
+      expect(eventConnections).toBe(value === 'disconnect' ? 2 : 1)
+      expect(request.mock.calls.filter(([route]) => route.endsWith('/prompt_async'))).toHaveLength(1)
+      expect(result.some((event: any) => event.chunk?.text === 'Integrated findings')).toBe(true)
+      const progress = result.flatMap((event: any) => event.chunk?.rawValue?.tasks ?? [])
+      expect(progress).toContainEqual(expect.objectContaining({ background: true, status: 'running' }))
+      expect(progress.at(-1)).toMatchObject({ background: true, status: 'completed' })
+    }
+  )
+  it('retains background progress and reports a missing final answer after the child completes', async () => {
+    collaboration = 'background'
+    backgroundAnswer = ''
+    const result = await run()
+    const progress = result.flatMap((event: any) => event.chunk?.rawValue?.tasks ?? [])
+    expect(progress.at(-1)).toMatchObject({ background: true, status: 'completed' })
+    expect(result.at(-1)).toMatchObject({ type: 'error', error: { code: 'agent_missing_final_answer' } })
+  })
+  it('restores a missed child tool result after reconnecting without resubmitting the task', async () => {
+    collaboration = 'recovery'
+    mode = 'reconnect'
+    const result = await run()
+    expect(result.at(-1)?.type).toBe('complete')
+    expect(eventConnections).toBe(2)
+    expect(request.mock.calls.filter(([route]) => route.endsWith('/prompt_async'))).toHaveLength(1)
+    expect(
+      result.filter(
+        (event) =>
+          event.type === 'chunk' &&
+          event.chunk.type === 'tool-result' &&
+          event.chunk.toolCallId === 'zen-test:child:child-native:missed-child-question-call'
+      )
+    ).toEqual([expect.objectContaining({ chunk: expect.objectContaining({ output: 'User chose PDF' }) })])
+  })
+  it('routes child approvals, ignores another conversation and includes child usage without leaking child prose', async () => {
+    collaboration = 'child'
+    const result = await run()
+    expect(result.at(-1)?.type).toBe('complete')
+    expect(request).toHaveBeenCalledWith(
+      '/permission/delegate/reply',
+      'POST',
+      { reply: 'once' },
+      expect.any(AbortSignal)
+    )
+    expect(mocks.permission).toHaveBeenCalledExactlyOnceWith(
+      'edit',
+      expect.objectContaining({ file: 'fixture' }),
+      expect.objectContaining({ toolCallId: 'zen-test:child:child-native:child-edit' })
+    )
+    expect(request.mock.calls.some(([route]) => route === '/permission/foreign/reply')).toBe(false)
+    expect(result.some((event: any) => event.chunk?.text?.includes('Private child answer'))).toBe(false)
+    expect(result.find((event: any) => event.chunk?.type === 'finish')).toMatchObject({
+      chunk: { totalUsage: { inputTokens: 80, outputTokens: 13 } }
+    })
+    expect(
+      result.some((event: any) => event.chunk?.rawValue?.tasks?.some((task: any) => task.status === 'completed'))
+    ).toBe(true)
+  })
+  it.each(['question', 'question-race'] as const)(
+    'answers a child clarification and reconciles completion without hanging (%s)',
+    async (value) => {
+      collaboration = value
+      mocks.permission.mockResolvedValue({ behavior: 'allow', updatedInput: { nativeAnswers: [['PDF']] } })
+      expect((await run()).at(-1)?.type).toBe('complete')
+      expect(request).toHaveBeenCalledWith(
+        '/question/clarify/reply',
+        'POST',
+        { answers: [['PDF']] },
+        expect.any(AbortSignal)
+      )
+      expect(mocks.permission).toHaveBeenCalledWith(
+        'question',
+        expect.any(Object),
+        expect.objectContaining({ toolCallId: 'zen-test:child:child-native:child-ask' })
+      )
+    }
+  )
+  it('cancels a child clarification and native process without submitting a stale answer', async () => {
+    collaboration = 'cancel'
+    let ready!: () => void
+    const entered = new Promise<void>((resolve) => {
+      ready = resolve
+    })
+    pause = { ready, wait: new Promise(() => {}) }
+    mocks.permission.mockImplementation(
+      (_name, _input, options) =>
+        new Promise((resolve) => {
+          options.signal.addEventListener('abort', () => resolve({ behavior: 'deny', message: 'cancelled' }), {
+            once: true
+          })
+        })
+    )
+    const controller = new AbortController()
+    const result = run(controller)
+    await entered
+    controller.abort('user cancelled')
+    expect((await result).at(-1)?.type).toBe('cancelled')
+    expect(runtime.stop).toHaveBeenCalled()
+    expect(request.mock.calls.some(([route]) => route === '/question/clarify/reply')).toBe(false)
+  })
   it.each(['overflow', 'overflow-reconnect'] as const)(
     'allows native context recovery without resubmission (%s)',
     async (value) => {

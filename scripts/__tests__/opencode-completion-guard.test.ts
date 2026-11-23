@@ -23,6 +23,18 @@ async function evaluate(messages: unknown[], overflow = false) {
 }
 
 describe('native compaction completion guard', () => {
+  it('permits resuming an owned child and blocks task IDs from another conversation', async () => {
+    const module = await import(/* @vite-ignore */ file)
+    const get = vi.fn(async () => ({ data: { id: 'child', parentID: 'parent' } }))
+    const hooks = await module.default({ client: { session: { get } } })
+    await hooks['tool.execute.before']({ tool: 'task', sessionID: 'parent' }, { args: { task_id: 'child' } })
+    await expect(
+      hooks['tool.execute.before']({ tool: 'task', sessionID: 'other-parent' }, { args: { task_id: 'child' } })
+    ).rejects.toThrow('another conversation')
+    expect(get).toHaveBeenCalledTimes(2)
+    await hooks['tool.execute.before']({ tool: 'task', sessionID: 'parent' }, { args: {} })
+    expect(get).toHaveBeenCalledTimes(2)
+  })
   it('routes raw PDF webfetch output to the text parser and bounds oversized webpages', async () => {
     const module = await import(/* @vite-ignore */ file)
     const hooks = await module.default({ client: {} })

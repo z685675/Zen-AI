@@ -15,6 +15,12 @@ vi.mock('@renderer/store', async () => {
   return { useAppSelector: redux.useSelector, useAppDispatch: redux.useDispatch }
 })
 vi.mock('@renderer/pages/home/Messages/NarrowLayout', () => ({ default: ({ children }: any) => children }))
+vi.mock('@renderer/utils', () => ({
+  cn: (...items: unknown[]) => items.filter((item) => typeof item === 'string').join(' ')
+}))
+vi.mock('@renderer/pages/home/Messages/Tools/MessageAgentTools/GenericTools', () => ({
+  SkeletonValue: ({ value }: any) => <span>{value}</span>
+}))
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }))
 
 const request: ToolPermissionRequestPayload = {
@@ -32,6 +38,81 @@ const request: ToolPermissionRequestPayload = {
 describe('session-level native permissions', () => {
   beforeEach(() => {
     window.api.agentTools = { respondToPermission: vi.fn().mockResolvedValue({ success: true }) } as any
+  })
+  it('shows a question form instead of a generic allow button and preserves multi-select labels', async () => {
+    const store = configureStore({ reducer: { toolPermissions } })
+    store.dispatch(
+      toolPermissionsActions.requestReceived({
+        ...request,
+        toolName: 'question',
+        toolId: 'question',
+        toolCallId: 'session-one:child:child-native:ask',
+        input: {
+          questions: [
+            {
+              question: 'Choose output',
+              header: 'Output',
+              multiple: true,
+              options: [{ label: 'Word, PDF' }, { label: 'PPT' }]
+            }
+          ]
+        }
+      })
+    )
+    const view = (sessionId: string) => (
+      <Provider store={store}>
+        <AgentSessionPermissions sessionId={sessionId} />
+      </Provider>
+    )
+    const result = render(view('session-one'))
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /agent.askUserQuestion.submit/ })).toBeDisabled()
+    fireEvent.click(screen.getByText('Word, PDF'))
+    fireEvent.click(screen.getByText('PPT'))
+    fireEvent.click(screen.getByRole('button', { name: 'agent.askUserQuestion.submit' }))
+    await waitFor(() =>
+      expect(window.api.agentTools.respondToPermission).toHaveBeenCalledWith(
+        expect.objectContaining({ updatedInput: expect.objectContaining({ nativeAnswers: [['Word, PDF', 'PPT']] }) })
+      )
+    )
+    expect(screen.getByRole('button', { name: /agent.askUserQuestion.submit/ })).toBeDisabled()
+    result.rerender(view('another-session'))
+    expect(screen.queryByText('Choose output')).not.toBeInTheDocument()
+    result.rerender(view('session-one'))
+    expect(screen.getByText('Choose output')).toBeInTheDocument()
+  })
+  it('allows dismissing a native clarification and respects a question without free text', async () => {
+    const store = configureStore({ reducer: { toolPermissions } })
+    store.dispatch(
+      toolPermissionsActions.requestReceived({
+        ...request,
+        toolName: 'question',
+        toolCallId: 'session-one:ask',
+        input: {
+          questions: [
+            {
+              question: 'Choose output',
+              header: 'Output',
+              multiSelect: false,
+              allowCustom: false,
+              options: [{ label: 'PDF' }]
+            }
+          ]
+        }
+      })
+    )
+    render(
+      <Provider store={store}>
+        <AgentSessionPermissions sessionId="session-one" />
+      </Provider>
+    )
+    expect(screen.queryByText('agent.askUserQuestion.other')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'common.cancel' }))
+    await waitFor(() =>
+      expect(window.api.agentTools.respondToPermission).toHaveBeenCalledWith(
+        expect.objectContaining({ requestId: request.requestId, behavior: 'deny' })
+      )
+    )
   })
   it('lets users answer a permission without a tool block and removes it after resolution', async () => {
     const store = configureStore({ reducer: { toolPermissions } })

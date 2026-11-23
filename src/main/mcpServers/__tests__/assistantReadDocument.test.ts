@@ -29,6 +29,7 @@ vi.mock('electron', () => ({
   }
 }))
 
+import { AssistantFileChangeStore, AssistantFileChangeTurn } from '@main/services/agents/services/opencode/fileChanges'
 import { fileStorage } from '@main/services/FileStorage'
 
 import AssistantServer from '../assistant'
@@ -205,6 +206,28 @@ describe('read_document MCP', () => {
     const table = (await call({ file_path: 'report.docx', start_section: 2 })).payload
     expect(table.chunks[0].text).toBe('Cell value')
     expect(table.partial).toBe(true)
+  })
+
+  it('extracts the saved and current Word text for a restore preview', async () => {
+    const name = 'preview.docx'
+    const file = path.join(root, name)
+    const writeDocument = (text: string) =>
+      writeZip(name, {
+        'word/document.xml': `<w:document xmlns:w="w"><w:body><w:p><w:r><w:t>${text}</w:t></w:r></w:p></w:body></w:document>`
+      })
+    await writeDocument('Previous amount: 12')
+    const store = new AssistantFileChangeStore(path.join(root, 'history'), 'session')
+    const turn = new AssistantFileChangeTurn(store, 'turn', [root], new AbortController().signal)
+    await turn.begin('edit-word', [file])
+    await writeDocument('Current amount: 24')
+    await turn.finish('edit-word')
+    const [change] = await store.list()
+    await expect(store.preview(change.id, [root])).resolves.toMatchObject({
+      format: 'document',
+      before: 'Previous amount: 12',
+      current: 'Current amount: 24'
+    })
+    await turn.close()
   })
 
   it('preserves XLSX sheet, cell-range and formula evidence from the existing parser', async () => {

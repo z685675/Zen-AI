@@ -53,7 +53,7 @@ describe('continuation workspace skills', () => {
       signal,
       { diagnosticId: 'startup-turn', onStarting }
     )
-    expect(mocks.process.mock.calls[0].slice(4)).toEqual([signal, onStarting, 'startup-turn', undefined])
+    expect(mocks.process.mock.calls[0].slice(4)).toEqual([signal, onStarting, 'startup-turn', undefined, []])
   })
   it('adds builtin packaged skills without provisioning or expanding to the old agent workspace', async () => {
     await prepareOpenCodeRuntime(

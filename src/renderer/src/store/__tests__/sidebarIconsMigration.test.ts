@@ -80,8 +80,8 @@ describe('sidebar icons migration', () => {
         'notes',
         'files',
         'paintings',
-        'agents',
-        'usage'
+        'usage',
+        'model_status'
       ])
       expect(migrated.settings.sidebarIcons.disabled).toEqual([
         'minapp',
@@ -124,14 +124,7 @@ describe('sidebar icons migration', () => {
 
       const migrated: any = await migrate(state, 212)
 
-      expect(migrated.settings.sidebarIcons.visible).toEqual([
-        'assistants',
-        'translate',
-        'notes',
-        'files',
-        'paintings',
-        'agents'
-      ])
+      expect(migrated.settings.sidebarIcons.visible).toEqual(['assistants', 'translate', 'notes', 'files', 'paintings'])
       expect(migrated.settings.sidebarIcons.disabled).toEqual([
         'openclaw',
         'store',

@@ -80,16 +80,22 @@ vi.mock('@renderer/pages/home/Inputbar/context/InputbarToolsProvider', () => ({
 vi.mock('@renderer/pages/home/Inputbar/registry', () => ({ getInputbarConfig: () => ({ showTools: false }) }))
 vi.mock('@renderer/pages/home/Inputbar/InputbarTools', () => ({ default: () => null }))
 vi.mock('@renderer/pages/home/Inputbar/components/ScrollToBottomButton', () => ({ default: () => null }))
+vi.mock('@renderer/components/ModelRecoveryNotice', () => ({
+  SessionModelRecoveryNotice: ({ model }: { model?: string }) => <div role="status">{model}</div>
+}))
 vi.mock('../LegacyAssistantInputbar', () => ({ default: () => null }))
 vi.mock('@renderer/pages/home/Inputbar/components/InputbarCore', () => ({
-  InputbarCore: ({ text, onTextChange, handleSendMessage, rightToolbar, onPause }: any) => (
+  InputbarCore: ({ text, onTextChange, handleSendMessage, rightToolbar, onPause, topContent }: any) => (
     <>
+      {topContent}
       <textarea aria-label="Draft" value={text} onChange={(event) => onTextChange(event.target.value)} />
       <button type="button" onClick={handleSendMessage}>
         Send
       </button>
       {rightToolbar}
-      <button onClick={onPause}>Stop</button>
+      <button type="button" onClick={onPause}>
+        Stop
+      </button>
     </>
   )
 }))
@@ -110,6 +116,17 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers())
 
 describe('assistant draft composer', () => {
+  it('shows the current session model status directly above the conversation input', () => {
+    const view = render(<AgentSessionInputbar agentId={agentId} sessionId="one" />)
+    const status = view.getByRole('status')
+
+    expect(status).toHaveTextContent('local:test')
+    expect(status.nextElementSibling).toBe(view.getByLabelText('Draft'))
+
+    view.rerender(<AgentSessionInputbar agentId={agentId} sessionId="one" variant="hero" />)
+    expect(view.queryByRole('status')).not.toBeInTheDocument()
+  })
+
   it('keeps a typed new conversation when switching sessions and leaving the page', () => {
     const view = render(<AgentSessionInputbar agentId={agentId} sessionId="one" variant="hero" />)
     fireEvent.change(view.getByLabelText('Draft'), { target: { value: '第一份未发送的草稿' } })
@@ -228,7 +245,9 @@ describe('assistant draft composer', () => {
   })
 
   it('queues behind an admission in progress before the loading indicator appears', async () => {
-    mocks.inboxEntries = [{ sessionId: 'admitting', delivery: 'queue', state: 'sending' }]
+    mocks.inboxEntries = [
+      { id: 'queued-message', sessionId: 'admitting', delivery: 'queue', state: 'sending', files: [] }
+    ]
     const view = render(<AgentSessionInputbar agentId={agentId} sessionId="admitting" />)
     fireEvent.change(view.getByLabelText('Draft'), { target: { value: '下一步要求' } })
     await act(async () => fireEvent.click(view.getByText('Send')))

@@ -1,7 +1,6 @@
 import { loggerService } from '@logger'
 import { DEFAULT_SESSION_PAGE_SIZE } from '@renderer/api/agent'
 import EmojiIcon from '@renderer/components/EmojiIcon'
-import { SessionModelRecoveryNotice } from '@renderer/components/ModelRecoveryNotice'
 import { QuickPanelProvider } from '@renderer/components/QuickPanel'
 import { isAssistantModelAllowed, resolveAssistantFallbackModel } from '@renderer/config/agentModelPolicy'
 import { useAgentWorkspace } from '@renderer/context/AgentWorkspaceProvider'
@@ -51,6 +50,7 @@ import AgentTaskStatusBar from './components/AgentTaskStatusBar'
 import AssistantTransitionBanner from './components/AssistantTransitionBanner'
 import LegacyAssistantInputbar from './components/LegacyAssistantInputbar'
 import SessionDeliverables from './components/SessionDeliverables'
+import SessionFileChanges from './components/SessionFileChanges'
 import SessionModelSelectButton from './components/SessionModelSelectButton'
 
 type CapabilityCardItem = {
@@ -459,6 +459,14 @@ const AgentChat = () => {
             {!isWelcomeState && workspace !== 'legacy' && (
               <div className="flex shrink-0 items-center pr-2">
                 <SessionDeliverables key={sessionTopicId} topicId={sessionTopicId} />
+                {workspace === 'opencode' && activeSession && (
+                  <SessionFileChanges
+                    key={activeSession.id}
+                    sessionId={activeSession.id}
+                    topicId={sessionTopicId}
+                    running={isActiveSessionLoading}
+                  />
+                )}
               </div>
             )}
           </div>
@@ -540,13 +548,6 @@ const AgentChat = () => {
           </div>
 
           {workspace !== 'legacy' && <AgentSessionPermissions sessionId={activeSessionId} />}
-          {!isWelcomeState && workspace !== 'legacy' && (
-            <SessionModelRecoveryNotice
-              agentId={activeAgentId}
-              sessionId={activeSessionId}
-              model={activeSession?.model}
-            />
-          )}
           {!isWelcomeState && <AgentSessionInputbar agentId={activeAgentId} sessionId={activeSessionId} />}
         </div>
       </QuickPanelProvider>

@@ -1,4 +1,18 @@
+import type { GetAgentSessionResponse } from '@types'
+
 import { getOpenCodeAgentMode } from '../../../../../../packages/shared/agents/opencodeMode'
+import { getOpenCodeWorkspaceInstructions } from './workspace'
+
+export function getOpenCodeSharedInstructions(session: GetAgentSessionResponse) {
+  return [
+    OPENCODE_SYSTEM_INSTRUCTIONS,
+    session.instructions || '',
+    getOpenCodeWorkspaceInstructions(session),
+    getOpenCodeModeInstructions(session.configuration?.permission_mode)
+  ]
+    .filter(Boolean)
+    .join('\n\n')
+}
 
 export function getOpenCodeModeInstructions(permissionMode?: string | null): string {
   return getOpenCodeAgentMode(permissionMode) === 'plan'
@@ -15,6 +29,7 @@ Work honestly and proportionately:
 - Answer greetings and simple questions directly, without tools, skill discovery or environment checks. For clear requests, act on low-risk assumptions; ask only for material missing facts or consent.
 - When asked to create or edit files, actually do that work. Never invent results or completion. A tool error or incomplete check is not success. Check exit codes, fix failures and disclose unfinished work.
 - After interruption, inspect outputs and state. Complete only missing work; never replay completed writes, downloads, submissions or payments automatically.
+- Delegate independent work only; define scope, avoid duplicate edits and preserve user consent.
 
 Use the capabilities actually connected:
 - Start research with 2–3 focused searches; expand evidence gaps, never retry status=unavailable. For browser handoff, call wait_for_user with tabId and no timeout; stop operations until Continue. Use accessible alternatives if unfinished.

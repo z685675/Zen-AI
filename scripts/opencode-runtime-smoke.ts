@@ -230,13 +230,13 @@ async function main() {
     const compaction = JSON.stringify(body.messages).includes('context summarization agent')
     if (contextStage === 'failure' || (contextStage === 'recovery' && contextErrors === 0)) {
       contextErrors++
-      res.writeHead(400, { 'Content-Type': 'application/json' })
+      res.writeHead(contextRecoveryMode ? 413 : 400, { 'Content-Type': 'application/json' })
       res.end(
         JSON.stringify({
           error: {
-            message: 'maximum context length exceeded',
+            message: contextRecoveryMode ? 'Request body too large' : 'maximum context length exceeded',
             type: 'invalid_request_error',
-            code: 'context_length_exceeded'
+            code: contextRecoveryMode ? 'request_body_too_large' : 'context_length_exceeded'
           }
         })
       )

@@ -44,10 +44,11 @@ interface SessionItemProps {
   isActive?: boolean
   channelType?: string
   channelIsActive?: boolean
-  onDelete: () => void
+  onDelete?: () => void
   onTogglePinned?: () => void
   onToggleArchived?: () => void
   onPress: () => void
+  readOnly?: boolean
 }
 
 const SessionItem = ({
@@ -60,7 +61,8 @@ const SessionItem = ({
   onDelete,
   onTogglePinned,
   onToggleArchived,
-  onPress
+  onPress,
+  readOnly = false
 }: SessionItemProps) => {
   const { t } = useTranslation()
   const { chat } = useRuntime()
@@ -123,7 +125,7 @@ const SessionItem = ({
           onClick={(e: React.MouseEvent) => {
             e.stopPropagation()
             if (isConfirmingDeletion || e.ctrlKey || e.metaKey) {
-              onDelete()
+              onDelete?.()
             } else {
               startTransition(() => {
                 setIsConfirmingDeletion(true)
@@ -343,7 +345,7 @@ const SessionItem = ({
         icon: <DeleteIcon size={14} className="lucide-custom" />,
         danger: true,
         onClick: () => {
-          onDelete()
+          onDelete?.()
         }
       }
     ],
@@ -369,14 +371,31 @@ const SessionItem = ({
     ]
   )
 
+  const availableItems = readOnly
+    ? menuItems?.filter((item) => item?.key === 'continue-new' || item?.key === 'notes' || item?.key === 'export')
+    : menuItems
+
   return (
     <Dropdown
-      menu={{ items: menuItems }}
+      menu={{ items: availableItems }}
       trigger={['contextMenu']}
       popupRender={(menu) => <div onPointerDown={(e) => e.stopPropagation()}>{menu}</div>}>
       <SessionListItem
         className={classNames(isActive ? 'active' : '', singlealone ? 'singlealone' : '')}
         onClick={isEditing ? undefined : onPress}
+        role={readOnly ? 'button' : undefined}
+        tabIndex={readOnly ? 0 : undefined}
+        aria-current={readOnly && isActive ? 'true' : undefined}
+        onKeyDown={
+          readOnly
+            ? (event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault()
+                  onPress()
+                }
+              }
+            : undefined
+        }
         title={session.name ?? session.id}
         onContextMenu={() => setTargetSession(session)}
         style={{
@@ -395,10 +414,14 @@ const SessionItem = ({
           ) : (
             <>
               <SessionName
-                onDoubleClick={(e) => {
-                  e.stopPropagation()
-                  startEdit(session.name ?? '')
-                }}>
+                onDoubleClick={
+                  readOnly
+                    ? undefined
+                    : (e) => {
+                        e.stopPropagation()
+                        startEdit(session.name ?? '')
+                      }
+                }>
                 {channelIcon && <ChannelIconImg src={channelIcon} />}
                 {showOfflineBadge && <OfflineBadge>{t('agent.cherryClaw.channels.disconnected')}</OfflineBadge>}
                 {session.is_pinned && <Pin size={11} className="shrink-0 text-(--color-text-secondary)" />}
@@ -412,14 +435,14 @@ const SessionItem = ({
                   />
                 </MarqueeText>
               </SessionName>
-              <DeleteButton />
+              {onDelete && !readOnly && <DeleteButton />}
             </>
           )}
         </SessionNameContainer>
         <SessionMigrationLabel session={session} />
-        {agent && (
+        {(agent || readOnly) && (
           <SessionMeta>
-            <MetaAgentName title={agent.name}>{agent.name}</MetaAgentName>
+            {agent && <MetaAgentName title={agent.name}>{agent.name}</MetaAgentName>}
             <MetaTime>{lastUsedAt}</MetaTime>
           </SessionMeta>
         )}

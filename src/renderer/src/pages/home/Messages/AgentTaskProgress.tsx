@@ -60,7 +60,7 @@ export default function AgentTaskProgress({
   if (!visible) return null
   const elapsed = taskElapsedSeconds(message, now)
   const stage = nativeTaskStage(message, telemetry)
-  const delayed = elapsed >= 30 && stage !== 'waiting_permission' && !hasBufferedOutput
+  const delayed = elapsed >= 30 && !['waiting_permission', 'waiting_answer'].includes(stage ?? '') && !hasBufferedOutput
   return (
     <Progress role="status" aria-live="polite">
       <Row>

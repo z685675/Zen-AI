@@ -101,9 +101,18 @@ interface OptionsListProps {
   multiSelect?: boolean
   onSelect: (label: string, checked?: boolean) => void
   otherLabel: string
+  allowCustom?: boolean
 }
 
-function OptionsList({ options, selected, hasCustomInput, multiSelect, onSelect, otherLabel }: OptionsListProps) {
+function OptionsList({
+  options,
+  selected,
+  hasCustomInput,
+  multiSelect,
+  onSelect,
+  otherLabel,
+  allowCustom = true
+}: OptionsListProps) {
   const renderOptionItem = (option: { label: string; description?: string }, isOther = false) => {
     const label = isOther ? otherLabel : option.label
     const value = isOther ? OTHER_OPTION_VALUE : option.label
@@ -130,7 +139,7 @@ function OptionsList({ options, selected, hasCustomInput, multiSelect, onSelect,
   const optionItems = (
     <>
       {options.map((option) => renderOptionItem(option))}
-      {renderOptionItem({ label: '' }, true)}
+      {allowCustom && renderOptionItem({ label: '' }, true)}
     </>
   )
 
@@ -236,6 +245,7 @@ function PendingContent({
           multiSelect={question.multiSelect}
           onSelect={onSelect}
           otherLabel={t('agent.askUserQuestion.other')}
+          allowCustom={question.allowCustom}
         />
       ) : (
         <div className="space-y-2">
@@ -264,11 +274,14 @@ export function AskUserQuestionCard({ toolResponse }: { toolResponse: NormalTool
   const dispatch = useAppDispatch()
   const request = useAppSelector((state) => selectPendingPermission(state.toolPermissions, toolResponse.toolCallId))
 
-  const isPending = toolResponse.status === 'pending' && !!request
+  const isPending =
+    toolResponse.status === 'pending' &&
+    !!request &&
+    ['pending', 'submitting-allow', 'submitting-deny'].includes(request.status)
 
   // Parse from available sources - prefer request.input when pending, fall back to toolResponse.arguments
   const { questions, answers } = useMemo(() => {
-    const source = isPending ? request.input : toolResponse.arguments
+    const source = isPending ? request.input : (request?.resolvedInput ?? toolResponse.arguments)
     const parsed = parseAskUserQuestionToolInput(source)
 
     // Debug: log data source
@@ -286,7 +299,7 @@ export function AskUserQuestionCard({ toolResponse }: { toolResponse: NormalTool
       questions: parsed?.questions ?? [],
       answers: parsed?.answers ?? {}
     }
-  }, [isPending, request?.input, toolResponse.arguments, toolResponse.status])
+  }, [isPending, request?.input, request?.resolvedInput, toolResponse.arguments, toolResponse.status])
 
   const [currentIndex, setCurrentIndex] = useState(0)
   // Use question index as key to avoid collision when questions have identical text
@@ -358,9 +371,11 @@ export function AskUserQuestionCard({ toolResponse }: { toolResponse: NormalTool
     if (!request) return
 
     const collectedAnswers: Record<string, string> = {}
+    const nativeAnswers: string[][] = []
     questions.forEach((q, idx) => {
       const selected = selectedAnswers[idx] ?? []
       const custom = customInputs[idx]?.trim()
+      nativeAnswers.push(showCustomInput[idx] && custom ? (q.multiSelect ? [...selected, custom] : [custom]) : selected)
 
       if (showCustomInput[idx] && custom) {
         collectedAnswers[q.question] = q.multiSelect && selected.length > 0 ? [...selected, custom].join(', ') : custom
@@ -376,7 +391,11 @@ export function AskUserQuestionCard({ toolResponse }: { toolResponse: NormalTool
       const response = await window.api.agentTools.respondToPermission({
         requestId: request.requestId,
         behavior: 'allow' as const,
-        updatedInput: { ...request.input, answers: collectedAnswers }
+        updatedInput: {
+          ...request.input,
+          answers: collectedAnswers,
+          ...(request.toolName === 'question' ? { nativeAnswers } : {})
+        }
       })
 
       if (!response?.success) throw new Error('Response rejected by main process')
@@ -386,6 +405,24 @@ export function AskUserQuestionCard({ toolResponse }: { toolResponse: NormalTool
       dispatch(toolPermissionsActions.submissionFailed({ requestId: request.requestId }))
     }
   }, [dispatch, request, questions, selectedAnswers, customInputs, showCustomInput, t])
+
+  const handleDismiss = async () => {
+    if (!request || request.status !== 'pending') return
+    dispatch(toolPermissionsActions.submissionSent({ requestId: request.requestId, behavior: 'deny' }))
+    try {
+      const response = await window.api.agentTools.respondToPermission({
+        requestId: request.requestId,
+        behavior: 'deny',
+        message:
+          'User dismissed the clarification. Continue with available information and disclose any necessary assumptions.'
+      })
+      if (!response?.success) throw new Error('Response rejected by main process')
+    } catch (error) {
+      logger.error('Failed to dismiss question', { error })
+      dispatch(toolPermissionsActions.submissionFailed({ requestId: request.requestId }))
+      window.toast?.error?.(t('agent.toolPermission.error.sendFailed'))
+    }
+  }
 
   if (isPending && (questions.length === 0 || !currentQuestion)) {
     return (
@@ -402,7 +439,7 @@ export function AskUserQuestionCard({ toolResponse }: { toolResponse: NormalTool
       type="primary"
       icon={<Send size={16} />}
       loading={isSubmitting}
-      disabled={!allAnswered || isSubmitting}
+      disabled={!allAnswered || isSubmitting || request?.status !== 'pending'}
       onClick={handleSubmit}>
       {t('agent.askUserQuestion.submit')}
     </Button>
@@ -439,6 +476,11 @@ export function AskUserQuestionCard({ toolResponse }: { toolResponse: NormalTool
   return (
     <div className="w-full max-w-xl rounded-xl border border-default-200 bg-default-100 px-4 py-3 shadow-sm">
       <div className="flex flex-col gap-3">
+        {isPending && toolResponse.tool.name === 'question' && (
+          <Button size="small" className="self-end" disabled={request?.status !== 'pending'} onClick={handleDismiss}>
+            {t('common.cancel')}
+          </Button>
+        )}
         <CardHeader
           currentIndex={currentIndex}
           totalQuestions={totalQuestions}

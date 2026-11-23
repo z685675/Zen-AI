@@ -5,6 +5,7 @@ import { config as apiConfigService } from '@main/apiServer/config'
 import { validateModelId } from '@main/apiServer/utils'
 import { modelCapacityService } from '@main/services/ModelCapacityService'
 import { getDataPath, getResourcePath, toAsarUnpackedPath } from '@main/utils'
+import { getOpenCodeAgentMode } from '@shared/agents/opencodeMode'
 import type { GetAgentSessionResponse, Provider } from '@types'
 
 import { SkillRepository } from '../../skills/SkillRepository'
@@ -62,12 +63,20 @@ export async function prepareOpenCodeRuntime(
     }
   }
   const api = await apiConfigService.get()
+  const selected = session.configuration?.opencode_mcp_ids
+  const integrationIds =
+    selected?.length &&
+    !getAutomationProfile(session) &&
+    getOpenCodeAgentMode(session.configuration?.permission_mode) !== 'plan'
+      ? await (await import('./mcpIntegrations')).resolveAssistantMcpIds(selected)
+      : []
   const config = buildOpenCodeConfig({
     session,
     provider: model.provider,
     modelId: model.modelId,
     skillPaths,
     api,
+    integrationIds,
     effort: options?.effort,
     inputDirectory: getOpenCodeInputDirectory(getDataPath('OpenCode'), session.id)
   })
@@ -81,6 +90,7 @@ export async function prepareOpenCodeRuntime(
     signal,
     options?.onStarting,
     options?.diagnosticId,
-    model.provider.type === 'new-api' ? model.modelId : undefined
+    model.provider.type === 'new-api' ? model.modelId : undefined,
+    integrationIds
   )
 }

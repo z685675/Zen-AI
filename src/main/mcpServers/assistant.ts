@@ -1356,7 +1356,8 @@ class AssistantServer {
       // replace an original (even with overwrite:true) nor publish a file card.
       const working = await writeAssistantOutput(outputPath, buffer, this.allowedRoots, {
         overwrite: false,
-        signal: this.product.signal
+        signal: this.product.signal,
+        onWrite: this.product.onFileWrite
       })
       return {
         isError: true,
@@ -1463,7 +1464,8 @@ class AssistantServer {
       ? await writeAssistantOutput(outputPath, buffer, this.allowedRoots, {
           overwrite: args.overwrite,
           signal: this.product.signal,
-          approve: this.product.approveOverwrite
+          approve: this.product.approveOverwrite,
+          onWrite: this.product.onFileWrite
         })
       : undefined
     if (writeResult) outputPath = writeResult.path
@@ -1602,6 +1604,7 @@ class AssistantServer {
       })
     }
 
+    await this.product?.onFilesPresented?.(files.filter((file) => file.kind !== 'directory').map((file) => file.path))
     logger.info('Assistant present_files registered final outputs', {
       count: files.length,
       paths: files.map((file) => file.path)
@@ -1819,7 +1822,8 @@ class AssistantServer {
         writeResult = await writeAssistantOutput(outputPath, outputText, this.allowedRoots, {
           overwrite: args.overwrite,
           signal: this.product.signal,
-          approve: this.product.approveOverwrite
+          approve: this.product.approveOverwrite,
+          onWrite: this.product.onFileWrite
         })
         outputPath = writeResult.path
       } else {

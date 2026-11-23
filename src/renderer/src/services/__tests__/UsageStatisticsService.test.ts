@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   buildUsageStatisticsUrl,
   fetchModelDailyQuota,
+  fetchModelPerformance,
   fetchUsageStatistics,
   getCacheHitRate,
   getUsageSources,
@@ -12,6 +13,54 @@ import {
 } from '../UsageStatisticsService'
 
 afterEach(() => vi.restoreAllMocks())
+
+it('loads model status using only the chosen key and preserves models with no attempt data', async () => {
+  const dates = Array.from({ length: 7 }, (_, index) => `2026-11-${index + 10}`)
+  const history = dates.map(() => ({ succeeded: 0, failed: 0 }))
+  const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(
+    new Response(
+      JSON.stringify({
+        success: true,
+        data: { dates, models: [{ model: 'no-traffic', succeeded: 0, failed: 0, average_latency_ms: null, history }] }
+      })
+    )
+  )
+  const result = await fetchModelPerformance(
+    { ...source, apiHost: 'https://test.invalid/prefix/v1', supported: false },
+    7,
+    new AbortController().signal,
+    fetcher
+  )
+  expect(String(fetcher.mock.calls[0][0])).toBe(
+    'https://test.invalid/prefix/api/client/model-performance?days=7&mode=requests'
+  )
+  expect(fetcher.mock.calls[0][1]).toMatchObject({
+    headers: { Authorization: 'Bearer fake-secret' },
+    credentials: 'omit',
+    redirect: 'error'
+  })
+  expect(result.granularity).toBe('day')
+  expect(result.models[0].average_latency_ms).toBeNull()
+  const hourly = {
+    granularity: 'hour',
+    models: [
+      {
+        model: 'test-model',
+        succeeded: 3,
+        failed: 1,
+        average_latency_ms: 1500,
+        average_first_response_ms: 300,
+        recent_hours: [{ timestamp: 1795201200, succeeded: 3, failed: 1 }]
+      }
+    ]
+  }
+  fetcher.mockResolvedValueOnce(new Response(JSON.stringify({ success: true, data: hourly })))
+  await expect(fetchModelPerformance(source, 15, new AbortController().signal, fetcher)).resolves.toEqual(hourly)
+  fetcher.mockResolvedValueOnce(new Response('', { status: 404 }))
+  await expect(fetchModelPerformance(source, 7, new AbortController().signal, fetcher)).rejects.toMatchObject({
+    code: 'unsupported'
+  })
+})
 
 describe('personal model daily allowances', () => {
   it('queries the current day independently of historical ranges and tolerates old servers', async () => {

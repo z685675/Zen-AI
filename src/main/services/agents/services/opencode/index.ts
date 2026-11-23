@@ -23,17 +23,18 @@ import { type CompactionEntry, discardEmptyNativeCompaction } from './compaction
 import { OPENCODE_PROVIDER_ID, OPENCODE_VERSION } from './config'
 import { resolveOpenCodeContext } from './context'
 import { prepareOpenCodeInput } from './inputMaterial'
-import { getOpenCodeModeInstructions, OPENCODE_SYSTEM_INSTRUCTIONS } from './instructions'
+import { getOpenCodeSharedInstructions } from './instructions'
 import { isInvalidReadToolLoop, isNativePermissionRejection, OpenCodeLoopRecovery } from './loopRecovery'
 import { OpenCodePerformance } from './performance'
 import { watchOpenCodePermissions } from './permissions'
 import { prepareOpenCodeRuntime } from './prepare'
 import { type OpenCodeProcess } from './process'
+import { answerOpenCodeQuestion, type OpenCodeQuestion } from './questions'
+import { OpenCodeSubagents } from './subagents'
 import { createTaskDeadline } from './taskDeadline'
 import { type NativeMessage, OpenCodeStreamState } from './transform'
 import { newOpenCodeMessageId, OpenCodeTurnInput } from './turnInput'
 import { OpenCodeUsageTotals } from './usageObservation'
-import { getOpenCodeWorkspaceInstructions } from './workspace'
 
 const logger = loggerService.withContext('OpenCodeService')
 type Chunk = TextStreamPart<Record<string, any>>
@@ -80,9 +81,11 @@ export default class OpenCodeService implements AgentServiceInterface {
     const permissionSignal = AbortSignal.any([signal, eventController.signal])
     let runtime: OpenCodeProcess | undefined
     let turnInput: OpenCodeTurnInput | undefined
+    let subagents: OpenCodeSubagents | undefined
     let nativeId: string | undefined
     let completed = false
     let permissions = 0
+    let activeQuestions = 0
     let admissionError: unknown
     let permissionError: unknown
     let transportFailure: Record<string, unknown> | undefined
@@ -103,6 +106,7 @@ export default class OpenCodeService implements AgentServiceInterface {
     let contextProgressCharacters = 0
     const completedCompactions = new Set<string>()
     const pendingPermissions = new Set<string>()
+    const pendingQuestions = new Set<string>()
     const approvalControllers = new Map<string, AbortController>()
     const permissionTasks = new Set<Promise<void>>()
     const loopRecovery = new OpenCodeLoopRecovery()
@@ -198,7 +202,8 @@ export default class OpenCodeService implements AgentServiceInterface {
     const status = (value: string) => {
       // Native busy updates describe activity, not completion of the summary.
       if (compacting && (value === 'busy' || value === 'waiting_model')) value = 'compacting'
-      if (permissions > 0 && ['busy', 'waiting_model', 'compacting'].includes(value)) value = 'waiting_permission'
+      if (permissions > 0 && ['busy', 'waiting_model', 'compacting', 'waiting_permission'].includes(value))
+        value = activeQuestions > 0 ? 'waiting_answer' : 'waiting_permission'
       if (value === currentStatus) return
       currentStatus = value
       timing.changeStage(value)
@@ -273,6 +278,9 @@ export default class OpenCodeService implements AgentServiceInterface {
       })
       status('restoring')
       nativeId = await runtime.session(signal)
+      subagents = new OpenCodeSubagents(runtime.client, nativeId, session.id, signal, (tasks) =>
+        emit({ type: 'raw', rawValue: { type: 'opencode_subagents', tasks } })
+      )
       deadline.progress()
       stream.sdkSessionId = nativeId
       emit({ type: 'start' })
@@ -307,17 +315,12 @@ export default class OpenCodeService implements AgentServiceInterface {
       if (first.done || first.value.type !== 'server.connected')
         throw new Error('OpenCode event stream handshake failed')
       const messageId = newOpenCodeMessageId()
+      if (!getAutomationProfile(session) && getOpenCodeAgentMode(session.configuration?.permission_mode) !== 'plan')
+        runtime.beginFileChanges?.(messageId, session.accessible_paths, signal)
       emit({ type: 'raw', rawValue: { type: 'opencode_turn', user_message_id: messageId, session_id: nativeId } })
       const system = getAutomationProfile(session)
         ? automationInstructions(getAutomationProfile(session)!)
-        : [
-            OPENCODE_SYSTEM_INSTRUCTIONS,
-            session.instructions || '',
-            getOpenCodeWorkspaceInstructions(session),
-            getOpenCodeModeInstructions(session.configuration?.permission_mode)
-          ]
-            .filter(Boolean)
-            .join('\n\n')
+        : getOpenCodeSharedInstructions(session)
       const prepareText = async (text: string) => {
         // Lightweight automation intentionally has no native read tool.
         if (getAutomationProfile(session)) return text
@@ -422,6 +425,7 @@ export default class OpenCodeService implements AgentServiceInterface {
           for (const chunk of state.consume({ type: 'message.updated', properties: { info: message.info } }))
             emit(chunk)
           for (const part of message.parts) {
+            if (!state.previousMessages.has(message.info.id)) await subagents?.observeParent(part)
             const chunks = state.consume({ type: 'message.part.updated', properties: { part } })
             timing.chunks(chunks)
             for (const chunk of chunks) emit(chunk)
@@ -451,13 +455,18 @@ export default class OpenCodeService implements AgentServiceInterface {
           awaitingNativeRun = true
           return false
         }
+        const backgroundResult = subagents?.latestBackgroundResult
+        if (subagents?.unfinished || (backgroundResult && (!latest?.parentID || latest.parentID < backgroundResult))) {
+          awaitingNativeRun = true
+          return false
+        }
         if (loopRecovery.latestMessageId && (!latest?.parentID || latest.parentID < loopRecovery.latestMessageId)) {
           // The old processor and abort barrier both emit idle. Neither is the
           // completion of the newly admitted continuation; wait for its output.
           awaitingNativeRun = true
           return false
         }
-        if (atIdle && loopRecovery.latestMessageId) {
+        if (atIdle && (loopRecovery.latestMessageId || backgroundResult)) {
           const answer = messages.find((entry) => entry.info.id === latest?.id)
           if (
             !latest?.time?.completed ||
@@ -477,11 +486,13 @@ export default class OpenCodeService implements AgentServiceInterface {
               awaitingNativeRun = true
               return false
             }
-            // Old tool output is visible too. It must not be mistaken for the
-            // requested final deliverable after an interrupted generation.
+            // A tool result or preliminary response may already be visible.
+            // Completion still needs an answer from this continuation.
             throw Object.assign(
               new Error(
-                'The assistant did not provide a final answer after skipping the repeated operation; existing results were preserved'
+                backgroundResult
+                  ? 'The assistant did not provide a final answer after receiving the background results; existing results were preserved'
+                  : 'The assistant did not provide a final answer after skipping the repeated operation; existing results were preserved'
               ),
               {
                 code: 'agent_missing_final_answer',
@@ -490,7 +501,19 @@ export default class OpenCodeService implements AgentServiceInterface {
             )
           }
         }
-        if (atIdle && turnInput?.hasAdditions && latest?.parentID !== turnInput.latestMessageId) {
+        const followedByBackgroundResult = Boolean(
+          backgroundResult &&
+            latest?.parentID &&
+            latest.parentID >= backgroundResult &&
+            turnInput?.latestMessageId &&
+            backgroundResult > turnInput.latestMessageId
+        )
+        if (
+          atIdle &&
+          turnInput?.hasAdditions &&
+          latest?.parentID !== turnInput.latestMessageId &&
+          !followedByBackgroundResult
+        ) {
           const nativeStatus = await runtime!.client.request<Record<string, { type: string }>>(
             '/session/status',
             'GET',
@@ -512,12 +535,46 @@ export default class OpenCodeService implements AgentServiceInterface {
           admitted &&
           Boolean(latest?.time?.completed) &&
           state.hasVisibleOutput &&
-          (!turnInput?.hasAdditions || latest?.parentID === turnInput.latestMessageId)
+          (!turnInput?.hasAdditions || latest?.parentID === turnInput.latestMessageId || followedByBackgroundResult)
         )
       }
       const permission = async (props: OpenCodeEvent['properties']) => {
         if (permissionSignal.aborted || completed || pendingPermissions.has(props.id)) return
         pendingPermissions.add(props.id)
+        if (props.permission === 'task') {
+          const call = props.tool?.callID
+          const key = `${session.id}:${call}`
+          const allowed =
+            typeof call === 'string' &&
+            props.sessionID === nativeId &&
+            (await subagents?.admit(
+              key,
+              String(props.metadata?.description ?? ''),
+              String(props.metadata?.subagent_type ?? '')
+            ))
+          try {
+            await runtime!.client.request(
+              `/permission/${encodeURIComponent(props.id)}/reply`,
+              'POST',
+              {
+                reply: allowed ? 'once' : 'reject',
+                ...(!allowed
+                  ? {
+                      message:
+                        'Child task scope or per-turn admission limit does not permit this delegation. Continue with existing results or perform the remaining work directly.'
+                    }
+                  : {})
+              },
+              permissionSignal
+            )
+          } catch (error) {
+            subagents?.finish(key, 'failed')
+            if (loopRecovery.waiting && typeof error === 'object' && error && 'status' in error && error.status === 404)
+              return
+            throw error
+          }
+          return
+        }
         if (getAutomationProfile(session)) {
           await runtime!.client.request(
             `/permission/${encodeURIComponent(props.id)}/reply`,
@@ -529,8 +586,10 @@ export default class OpenCodeService implements AgentServiceInterface {
             code: 'automation_needs_desktop'
           })
         }
-        if (isInvalidReadToolLoop(props.permission, props.metadata)) {
+        if (props.sessionID === nativeId && isInvalidReadToolLoop(props.permission, props.metadata)) {
           loopRecovery.reject(props.id, props.metadata.tool, props.metadata.input, 'invalid-arguments')
+          await subagents?.cancelBackground()
+          subagents?.cancelCurrent()
           turnInput?.ready(false)
           for (const controller of approvalControllers.values())
             controller.abort('Invalid repeated tool arguments; native generation interrupted')
@@ -558,7 +617,8 @@ export default class OpenCodeService implements AgentServiceInterface {
         const approvalSignal = AbortSignal.any([permissionSignal, approvalController.signal])
         deadline.wait(`permission:${props.id}`)
         status('waiting_permission')
-        const permissionToolCallId = `${session.id}:${props.tool?.callID || `permission:${props.id}`}`
+        const permissionToolCallId = `${subagents?.toolCallPrefix(props.sessionID || nativeId!) ?? session.id}:${props.tool?.callID || `permission:${props.id}`}`
+        subagents?.waitingFor(props.sessionID, 'waiting_permission')
         recordMainDiagnostic(options?.diagnosticId, 'runtime', 'permission-requested', {
           runtime: 'opencode',
           permission: props.permission,
@@ -576,8 +636,15 @@ export default class OpenCodeService implements AgentServiceInterface {
             }
           )
           if (approvalSignal.aborted) return
-          if (props.permission === 'doom_loop' && result.behavior === 'deny' && result.decisionSource === 'response') {
+          if (
+            props.sessionID === nativeId &&
+            props.permission === 'doom_loop' &&
+            result.behavior === 'deny' &&
+            result.decisionSource === 'response'
+          ) {
             loopRecovery.reject(props.id, props.metadata?.tool, props.metadata?.input)
+            await subagents?.cancelBackground()
+            subagents?.cancelCurrent()
             turnInput?.ready(false)
             // Native rejection clears every pending permission in this session.
             // Remove sibling UI prompts too; never submit their aborted replies.
@@ -606,6 +673,7 @@ export default class OpenCodeService implements AgentServiceInterface {
         } finally {
           approvalControllers.delete(props.id)
           permissions--
+          subagents?.waitingFor(props.sessionID, 'running')
           deadline.continue(`permission:${props.id}`)
           if (!permissionSignal.aborted) status(permissions > 0 ? 'waiting_permission' : 'busy')
         }
@@ -620,10 +688,78 @@ export default class OpenCodeService implements AgentServiceInterface {
         permissionTasks.add(task)
         void task.finally(() => permissionTasks.delete(task))
       }
+      const requestQuestion = (props: OpenCodeEvent['properties']) => {
+        if (completed || permissionSignal.aborted || pendingQuestions.has(props.id)) return
+        pendingQuestions.add(props.id)
+        const key = `question:${props.id}`
+        const task = (async () => {
+          if (getAutomationProfile(session) || typeof props.tool?.callID !== 'string') {
+            await runtime!.client.request(
+              `/question/${encodeURIComponent(props.id)}/reject`,
+              'POST',
+              {},
+              permissionSignal
+            )
+            return
+          }
+          permissions++
+          activeQuestions++
+          const questionController = new AbortController()
+          approvalControllers.set(key, questionController)
+          const questionSignal = AbortSignal.any([permissionSignal, questionController.signal])
+          deadline.wait(key)
+          status('waiting_answer')
+          subagents?.waitingFor(props.sessionID, 'waiting_answer')
+          try {
+            await answerOpenCodeQuestion({
+              question: props as OpenCodeQuestion,
+              client: runtime!.client,
+              signal: questionSignal,
+              toolCallId: `${subagents?.toolCallPrefix(props.sessionID) ?? session.id}:${props.tool.callID}`,
+              ask: promptForToolApproval
+            })
+          } catch (error) {
+            if (!questionSignal.aborted) throw error
+          } finally {
+            approvalControllers.delete(key)
+            permissions--
+            activeQuestions--
+            deadline.continue(key)
+            subagents?.waitingFor(props.sessionID, 'running')
+            if (!permissionSignal.aborted) status(permissions ? 'waiting_permission' : 'busy')
+          }
+        })().catch((error) => {
+          if (!permissionSignal.aborted) {
+            permissionError = error
+            eventController.abort('question reply failed')
+          }
+        })
+        permissionTasks.add(task)
+        void task.finally(() => permissionTasks.delete(task))
+      }
       const handle = async (event: OpenCodeEvent) => {
         const props = event.properties
         const eventSession = props.sessionID || props.info?.sessionID || props.part?.sessionID
-        if (eventSession && eventSession !== nativeId) return
+        if (eventSession && eventSession !== nativeId) {
+          if (!(await subagents?.owns(eventSession))) return
+          if (event.type === 'permission.asked') requestPermission(props)
+          if (event.type === 'question.asked') requestQuestion(props)
+          const childChunks = subagents!.child(event, eventSession)
+          timing.chunks(childChunks)
+          if (
+            childChunks.some(
+              (chunk) =>
+                ['tool-call', 'tool-result', 'tool-error'].includes(chunk.type) ||
+                ((chunk.type === 'text-delta' || chunk.type === 'reasoning-delta') && chunk.text.length > 0)
+            )
+          )
+            deadline.progress()
+          for (const chunk of childChunks)
+            if (['tool-call', 'tool-result', 'tool-error'].includes(chunk.type)) emit(chunk)
+          return
+        }
+        if (event.type === 'message.part.updated' && !state.previousMessages.has(props.part?.messageID))
+          await subagents?.observeParent(props.part)
         timing.nativeEvent()
         if (event.type === 'message.updated' && props.info?.id === messageId) {
           admitted = true
@@ -653,6 +789,7 @@ export default class OpenCodeService implements AgentServiceInterface {
         if (event.type === 'server.instance.disposed')
           throw new Error('OpenCode local instance was disposed during the task')
         if (event.type === 'permission.asked') requestPermission(props)
+        if (event.type === 'question.asked') requestQuestion(props)
         if (event.type === 'session.compacted') {
           const history = await runtime!.client.request<CompactionEntry[]>(
             `/session/${nativeId}/message`,
@@ -704,7 +841,11 @@ export default class OpenCodeService implements AgentServiceInterface {
             status('retrying')
             recordMainDiagnostic(options?.diagnosticId, 'runtime', 'native-retry', { attempt: next.attempt })
           }
-          if (next?.type === 'idle' && admitted && observedBusy && (!permissions || loopRecovery.waiting)) {
+          if (next?.type === 'idle' && admitted && observedBusy) {
+            // Native completion can overtake the local HTTP acknowledgement
+            // of an answer. Settle those replies before reconciling this idle.
+            await Promise.all([...permissionTasks])
+            if (permissionError) throw permissionError
             turnInput?.ready(false)
             completed = await reconcile(true)
             if (!completed && !awaitingNativeRun)
@@ -754,8 +895,10 @@ export default class OpenCodeService implements AgentServiceInterface {
       stopPermissionWatcher = watchOpenCodePermissions({
         client: runtime.client,
         sessionId: nativeId,
+        ownsSession: (id) => subagents!.owns(id),
+        onQuestion: requestQuestion,
         signal: permissionSignal,
-        hasUnfinishedTools: () => unfinishedTools.size > 0 && permissions === 0,
+        hasUnfinishedTools: () => (unfinishedTools.size > 0 || !!subagents?.unfinished) && permissions === 0,
         onPermission: (pending) => {
           if (!pendingPermissions.has(pending.id))
             recordMainDiagnostic(options?.diagnosticId, 'runtime', 'permission-event-recovered', {
@@ -801,8 +944,8 @@ export default class OpenCodeService implements AgentServiceInterface {
           if (nativeStatus[nativeId]?.type === 'idle' || !nativeStatus[nativeId]) {
             turnInput?.ready(false)
             completed = await reconcile(true)
-            if (!completed) throw admissionError || error
-            break
+            if (completed) break
+            if (!awaitingNativeRun) throw admissionError || error
           }
           if (eventReconnects >= 2) throw error
           eventReconnects++
@@ -822,7 +965,8 @@ export default class OpenCodeService implements AgentServiceInterface {
               signal
             )
             for (const pending of waiting) {
-              if (pending.sessionID === nativeId) await handle({ type: 'permission.asked', properties: pending })
+              if (await subagents.owns(pending.sessionID))
+                await handle({ type: 'permission.asked', properties: pending })
             }
             const after = await runtime.client.request<Record<string, { type: string }>>(
               '/session/status',
@@ -853,6 +997,12 @@ export default class OpenCodeService implements AgentServiceInterface {
       if (!completed || !state.hasVisibleOutput)
         throw admissionError || new Error('The new assistant completed without a visible result')
       for (const chunk of state.closeParts()) emit(chunk)
+      if (eventReconnects > 0 || !usageTotals.hasCompleteUsage) {
+        const recovered = (await subagents?.reconcile()) ?? []
+        timing.chunks(recovered)
+        for (const chunk of recovered) emit(chunk)
+      }
+      await runtime?.finishFileChanges?.()
       const quotaResult = await runtime?.finishTurn?.()
       if (quotaResult && shouldShowModelDailyQuotaNotice(quotaResult)) {
         emit({ type: 'raw', rawValue: { type: 'model_daily_quota', results: [quotaResult] } })
@@ -861,7 +1011,7 @@ export default class OpenCodeService implements AgentServiceInterface {
       const diagnostics = publishDiagnostics('completed')
       emit({
         type: 'finish',
-        totalUsage: state.usage(),
+        totalUsage: usageTotals.completeUsage(sumUsage([state.usage(), ...(subagents?.usages() ?? [])])),
         finishReason: 'stop',
         rawFinishReason: 'opencode.session.idle'
       })
@@ -873,8 +1023,10 @@ export default class OpenCodeService implements AgentServiceInterface {
       })
       stream.emit('data', { type: 'complete' })
     } catch (error) {
+      subagents?.close(signal.aborted ? 'cancelled' : 'failed')
       runtime?.flushDiagnostic()
       runtime?.stop(signal.aborted ? 'task-aborted' : 'task-failed')
+      await runtime?.finishFileChanges?.()
       if (signal.aborted && !(signal.reason instanceof Error)) {
         const diagnostics = publishDiagnostics('cancelled')
         recordMainDiagnostic(options?.diagnosticId, 'runtime', 'complete', {
@@ -914,6 +1066,7 @@ export default class OpenCodeService implements AgentServiceInterface {
         stream.emit('data', { type: 'error', error: failure })
       }
     } finally {
+      subagents?.close(completed ? 'cancelled' : signal.aborted ? 'cancelled' : 'failed')
       turnInput?.close()
       stopPermissionWatcher?.()
       deadline.dispose()
@@ -935,5 +1088,24 @@ export default class OpenCodeService implements AgentServiceInterface {
       ...(isNativePermissionRejection(error) ? { code: 'agent_permission_denied' } : {}),
       zenRuntimeId: 'opencode'
     })
+  }
+}
+
+function sumUsage(values: ReturnType<OpenCodeStreamState['usage']>[]) {
+  const sum = (read: (value: (typeof values)[number]) => number | undefined) =>
+    values.reduce((total, value) => total + (read(value) ?? 0), 0)
+  return {
+    inputTokens: sum((value) => value.inputTokens),
+    outputTokens: sum((value) => value.outputTokens),
+    totalTokens: sum((value) => value.totalTokens),
+    inputTokenDetails: {
+      noCacheTokens: sum((value) => value.inputTokenDetails?.noCacheTokens),
+      cacheReadTokens: sum((value) => value.inputTokenDetails?.cacheReadTokens),
+      cacheWriteTokens: sum((value) => value.inputTokenDetails?.cacheWriteTokens)
+    },
+    outputTokenDetails: {
+      textTokens: sum((value) => value.outputTokenDetails?.textTokens),
+      reasoningTokens: sum((value) => value.outputTokenDetails?.reasoningTokens)
+    }
   }
 }

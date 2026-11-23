@@ -87,7 +87,7 @@ export const useCreateDefaultSession = (agentId: string | null) => {
           // WeChat and schedules share the same persisted preference/intent.
           await window.api.modelPolicy.reconcileSessions()
           const current = await client.getAgent(defaults.id)
-          return current?.model ? current : null
+          return current && (current.model || current.id === DEFAULT_OPENCODE_AGENT_ID) ? current : null
         }
         // The local endpoint can return all imported models without pagination.
         // A picker-visible model must not disappear behind an arbitrary limit.
@@ -123,7 +123,9 @@ export const useCreateDefaultSession = (agentId: string | null) => {
         }
 
         const usableModel = resolveAssistantFallbackModel(data, nextModel, policy, enableDeveloperMode)
-        if (!usableModel) return null
+        if (!usableModel) {
+          return defaults.id === DEFAULT_OPENCODE_AGENT_ID ? { ...defaults, model: '' } : null
+        }
         nextModel = usableModel.id
 
         shouldPersistDefaults ||= nextModel !== defaults.model
@@ -160,6 +162,8 @@ export const useCreateDefaultSession = (agentId: string | null) => {
 
       for (const emptyCandidate of unnamedCandidates) {
         let candidate = emptyCandidate
+        if (!defaultModel && candidate.model) continue
+
         const topicId = buildAgentSessionTopicId(candidate.id)
         const { messages } = await dbService.fetchMessages(topicId, true)
         const hasMessages = messages.length > 0

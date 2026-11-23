@@ -380,6 +380,7 @@ export class SessionMessageService extends BaseService {
             broadcastSessionChanged(session.agent_id, session.id)
           }
         }
+        if (!session.model) throw new Error(t('model_setup.no_matching_model'))
       }
       await options?.onAdmitted?.(session.model)
       const result = await this.startSessionMessageStream(session, messageData, abortController, options)

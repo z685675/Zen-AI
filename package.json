@@ -133,7 +133,7 @@
     "jsdom": "26.1.0",
     "node-stream-zip": "1.15.0",
     "officeparser": "4.2.0",
-    "opencode-ai": "1.19.5",
+    "opencode-ai": "1.19.6",
     "os-proxy-config": "1.1.2",
     "pdf-parse": "^2.4.5",
     "pptxgenjs": "4.0.1",

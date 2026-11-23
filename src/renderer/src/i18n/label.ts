@@ -140,6 +140,7 @@ export const getRestoreProgressLabel = (key: string): string => {
 }
 
 const titleKeyMap = {
+  'model-status': 'model_status.title',
   usage: 'usage_statistics.title',
   'new-assistant': 'new_assistant.title',
   announcements: 'announcements.title',
@@ -188,6 +189,7 @@ export const getThemeModeLabel = (key: string): string => {
 // } as const
 
 const sidebarIconKeyMap = {
+  model_status: 'model_status.title',
   usage: 'usage_statistics.title',
   new_assistant: 'new_assistant.title',
   assistants: 'assistants.title',

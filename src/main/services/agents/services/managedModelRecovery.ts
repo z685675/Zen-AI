@@ -52,7 +52,7 @@ export function rememberPreferredModel(slot: string, preferred: string, actual: 
   configManager.set(KEY, records)
 }
 
-export function inheritModelPreference(slot: string, source: string, actual: string): void {
+export function inheritModelPreference(slot: string, source: string, actual: string | null): void {
   const intent = readIntents()[source]
   if (intent?.actual === actual) rememberPreferredModel(slot, intent.preferred, actual)
 }

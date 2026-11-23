@@ -118,6 +118,10 @@ export enum IpcChannel {
   AgentMessage_PersistExchange = 'agent-message:persist-exchange',
   AgentMessage_GetHistory = 'agent-message:get-history',
   Agent_BootstrapBuiltins = 'agent:bootstrap-builtins',
+  Agent_FileChanges = 'agent:file-changes',
+  Agent_PreviewFileChange = 'agent:preview-file-change',
+  Agent_ProbeMcp = 'agent:probe-mcp',
+  Agent_RestoreFileChange = 'agent:restore-file-change',
 
   AgentToolPermission_Request = 'agent-tool-permission:request',
   AgentToolPermission_Response = 'agent-tool-permission:response',

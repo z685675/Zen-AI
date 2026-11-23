@@ -115,7 +115,7 @@ beforeEach(() => {
     return child
   })
   mocks.request.mockImplementation(async (route: string) => {
-    if (route === '/global/health') return { healthy: true, version: '1.19.5' }
+    if (route === '/global/health') return { healthy: true, version: '1.19.6' }
     if (route === '/config')
       return JSON.parse(mocks.spawn.mock.calls.find((call) => call[0] !== 'taskkill')![2].env.OPENCODE_CONFIG_CONTENT)
   })
@@ -166,7 +166,9 @@ describe('OpenCode operation-scoped lifecycle evidence', () => {
       'session',
       ['/workspace'],
       expect.objectContaining({ workspace: '/workspace', temporaryDirectory }),
-      expect.any(Function)
+      expect.any(Function),
+      [],
+      expect.objectContaining({ token: expect.any(String), current: expect.any(Function) })
     )
     runtime.release()
   })
@@ -189,7 +191,9 @@ describe('OpenCode operation-scoped lifecycle evidence', () => {
       'plan-session',
       ['/workspace'],
       expect.objectContaining({ readOnly: true }),
-      expect.any(Function)
+      expect.any(Function),
+      [],
+      undefined
     )
     runtime.release()
   })
@@ -292,8 +296,8 @@ describe('OpenCode operation-scoped lifecycle evidence', () => {
     child.stdout.write('PRIVATE_STDOUT_CONTENT\n')
     runtime.flushDiagnostic()
     expect(events('turn-1').find((event) => event[2] === 'process-health')?.[3]).toMatchObject({
-      observedVersion: '1.19.5',
-      expectedVersion: '1.19.5',
+      observedVersion: '1.19.6',
+      expectedVersion: '1.19.6',
       healthy: true
     })
     expect(

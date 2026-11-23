@@ -22,7 +22,7 @@ export function createInMemoryMCPServer(
   args: string[] = [],
   envs: Record<string, string> = {}
 ): Server {
-  logger.debug(`[MCP] Creating in-memory MCP server: ${name} with args: ${args} and envs: ${JSON.stringify(envs)}`)
+  logger.debug('[MCP] Creating in-memory MCP server', { name })
   switch (name) {
     case BuiltinMCPServerNames.memory: {
       const envPath = envs.MEMORY_FILE_PATH

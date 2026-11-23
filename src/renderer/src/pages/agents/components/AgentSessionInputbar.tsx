@@ -1,5 +1,6 @@
 import { loggerService } from '@logger'
 import { getAnthropicReasoningParams } from '@renderer/aiCore/utils/reasoning'
+import { SessionModelRecoveryNotice } from '@renderer/components/ModelRecoveryNotice'
 import { isAssistantModelAllowed } from '@renderer/config/agentModelPolicy'
 import { isGenerateImageModel, isVisionModel } from '@renderer/config/models'
 import { useSession } from '@renderer/hooks/agents/useSession'
@@ -46,6 +47,7 @@ import {
   saveAgentSessionDraft,
   subscribeAgentSessionDraft
 } from '@renderer/utils/agentSessionDraft'
+import { expandAssistantTaskCommand, selectAssistantTaskCommand } from '@renderer/utils/assistantTaskCommands'
 import { getSendMessageShortcutLabel } from '@renderer/utils/input'
 import {
   createFileBlock,
@@ -61,6 +63,7 @@ import {
   toAgentEffort
 } from '@renderer/utils/reasoningEffort'
 import { isAssistantExecutionAllowed } from '@shared/agents/assistantAvailability'
+import { DEFAULT_OPENCODE_AGENT_ID } from '@shared/config/agents'
 import { documentExts, imageExts, textExts } from '@shared/config/constant'
 import type { FC } from 'react'
 import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
@@ -69,6 +72,7 @@ import styled from 'styled-components'
 import { v4 as uuid } from 'uuid'
 
 import { AgentSessionInboxPanel } from './AgentSessionInbox'
+import AssistantTaskCommands from './AssistantTaskCommands'
 import LegacyAssistantInputbar from './LegacyAssistantInputbar'
 
 const logger = loggerService.withContext('AgentSessionInputbar')
@@ -187,6 +191,7 @@ const ActiveAgentSessionInputbar = ({ agentId, sessionId, variant = 'default' }:
         assistant={assistantStub}
         agentId={agentId}
         sessionId={sessionId}
+        sessionModel={session.model}
         sessionData={sessionData}
         initialReasoningEffort={initialReasoningEffort}
         initialDeepResearchEnabled={initialDeepResearchEnabled}
@@ -202,6 +207,7 @@ interface InnerProps {
   assistant: Assistant
   agentId: string
   sessionId: string
+  sessionModel?: string
   sessionData?: ToolContext['session']
   initialReasoningEffort: AgentReasoningEffort
   initialDeepResearchEnabled: boolean
@@ -218,6 +224,7 @@ const AgentSessionInputbarInner: FC<InnerProps> = ({
   assistant,
   agentId,
   sessionId,
+  sessionModel,
   sessionData,
   initialReasoningEffort,
   initialDeepResearchEnabled,
@@ -430,10 +437,13 @@ const AgentSessionInputbarInner: FC<InnerProps> = ({
       // attachments must be persisted as message blocks first. This lets the
       // request layer copy them into the workspace and extract Office/PDF text.
       const uploadedFiles = files.length > 0 ? await FileManager.uploadFiles(files) : []
-      let messageText = text
+      const expandedText = agentId === DEFAULT_OPENCODE_AGENT_ID ? await expandAssistantTaskCommand(text, t) : text
+      let messageText = expandedText
       if (uploadedFiles.length > 0) {
         const filePaths = uploadedFiles.map((file) => file.path).join('\n')
-        messageText = text ? `${text}\n\nAttached files:\n${filePaths}` : `Attached files:\n${filePaths}`
+        messageText = expandedText
+          ? `${expandedText}\n\nAttached files:\n${filePaths}`
+          : `Attached files:\n${filePaths}`
       }
 
       const mainBlock = createMainTextBlock(userMessageId, messageText, {
@@ -452,7 +462,7 @@ const AgentSessionInputbarInner: FC<InnerProps> = ({
       const userMessageBlocks: MessageBlock[] = [mainBlock, ...attachmentBlocks]
 
       // Calculate token usage for the user message
-      const usage = await estimateUserPromptUsage({ content: text })
+      const usage = await estimateUserPromptUsage({ content: expandedText })
       const now = new Date().toISOString()
       const resumableDeepResearchTask = findResumableDeepResearchTask(topicMessages)
       const deepResearchAction = deepResearchEnabled
@@ -630,9 +640,17 @@ const AgentSessionInputbarInner: FC<InnerProps> = ({
             toolOrderOverride={sessionToolOrderOverride}
           />
         )}
+        {agentId === DEFAULT_OPENCODE_AGENT_ID && (
+          <AssistantTaskCommands
+            onSelect={(command) => {
+              setText((previous) => selectAssistantTaskCommand(previous, command))
+              focusTextarea()
+            }}
+          />
+        )}
       </ToolbarGroup>
     ),
-    [config.showTools, scope, assistant, sessionToolOrderOverride, toolsSession]
+    [agentId, config.showTools, scope, assistant, sessionToolOrderOverride, toolsSession, setText, focusTextarea]
   )
   const placeholderText = useMemo(() => {
     if (isHero) {
@@ -673,13 +691,16 @@ const AgentSessionInputbarInner: FC<InnerProps> = ({
       sendDisabled={sendDisabled || submitting}
       handleSendMessage={sendMessage}
       topContent={
-        <AgentSessionInboxPanel
-          entries={inboxEntries}
-          inbox={inbox}
-          sessionId={sessionId}
-          running={loading}
-          onEdit={editInboxEntry}
-        />
+        <>
+          <AgentSessionInboxPanel
+            entries={inboxEntries}
+            inbox={inbox}
+            sessionId={sessionId}
+            running={loading}
+            onEdit={editInboxEntry}
+          />
+          {!isHero && <SessionModelRecoveryNotice agentId={agentId} sessionId={sessionId} model={sessionModel} />}
+        </>
       }
       leftToolbar={leftToolbar}
       pinnedContent={

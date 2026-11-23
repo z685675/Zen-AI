@@ -79,6 +79,7 @@ export const AgentConfigurationSchema = z
     permission_mode: PermissionModeSchema.optional().default('default'), // Permission mode, default to 'default'
     agent_runtime: AgentRuntimeSchema.optional(), // Internal runtime override; missing/auto keeps current default routing.
     reasoning_effort: z.enum(['low', 'medium', 'high', 'xhigh']).optional(),
+    opencode_mcp_ids: z.array(z.string().min(1).max(128)).max(8).optional(),
     max_turns: z.number().optional().default(100), // Maximum number of interaction turns, default to 100
     env_vars: z.record(z.string(), z.string()).optional().default({}), // Custom environment variables for the agent runtime
 
@@ -538,7 +539,11 @@ const sessionCreatableSchema = AgentBaseSchema.extend({
   model: z.string().min(1, 'Model is required')
 })
 
-export const CreateSessionRequestSchema = sessionCreatableSchema
+export const CreateSessionRequestSchema = AgentBaseSchema.extend({
+  model: AgentBaseSchema.shape.model.describe(
+    'Model ID, or an empty string when an OpenCode session still needs a model'
+  )
+})
 
 export const UpdateSessionRequestSchema = sessionCreatableSchema.partial().extend({
   is_pinned: z.boolean().optional(),

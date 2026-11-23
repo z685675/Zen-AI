@@ -559,11 +559,17 @@ export class SessionService extends BaseService {
       ...req
     }
 
-    await this.validateAgentModels(agent.type, {
-      model: sessionData.model,
-      plan_model: sessionData.plan_model,
-      small_model: sessionData.small_model
-    })
+    if (agentId === DEFAULT_OPENCODE_AGENT_ID && req.model === '') {
+      // A draft can await a model selection even if its inherited model fields are stale.
+      sessionData.plan_model = undefined
+      sessionData.small_model = undefined
+    } else {
+      await this.validateAgentModels(agent.type, {
+        model: sessionData.model,
+        plan_model: sessionData.plan_model,
+        small_model: sessionData.small_model
+      })
+    }
 
     if (sessionData.accessible_paths !== undefined) {
       sessionData.accessible_paths = this.ensurePathsExist(sessionData.accessible_paths)
@@ -579,7 +585,7 @@ export class SessionService extends BaseService {
       description: serializedData.description || null,
       accessible_paths: serializedData.accessible_paths || null,
       instructions: serializedData.instructions || null,
-      model: serializedData.model || null,
+      model: serializedData.model,
       plan_model: serializedData.plan_model || null,
       small_model: serializedData.small_model || null,
       mcps: serializedData.mcps || null,
@@ -612,9 +618,9 @@ export class SessionService extends BaseService {
     if (agentId === DEFAULT_OPENCODE_AGENT_ID) {
       for (const field of this.modelFields) {
         const actual = session[field]
-        if (actual && actual === agent[field]) {
+        if (typeof actual === 'string' && actual === agent[field]) {
           const suffix = field === 'model' ? '' : `:${field}`
-          inheritModelPreference(`${session.id}${suffix}`, `agent:${agentId}${suffix}`, actual)
+          inheritModelPreference(`${session.id}${suffix}`, `agent:${agentId}${suffix}`, actual || null)
         }
       }
     }

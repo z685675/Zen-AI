@@ -3,6 +3,11 @@ import type { TokenUsageData } from '@cherrystudio/analytics-client'
 import { electronAPI } from '@electron-toolkit/preload'
 import type { SpanEntity, TokenUsage } from '@mcp-trace/trace-core'
 import type { SpanContext } from '@opentelemetry/api'
+import type {
+  AssistantFileChange,
+  AssistantFilePreview,
+  AssistantFileRestoreResult
+} from '@shared/agents/assistantFileChanges'
 import type { AutomationRequest, AutomationResponse } from '@shared/agents/automation'
 import type { AgentInputReceipt, AgentRunInput, AgentRunInputStatus } from '@shared/agents/sessionInput'
 import type { GitBashPathInfo, TerminalConfig } from '@shared/config/constant'
@@ -475,7 +480,14 @@ const api = {
       ipcRenderer.invoke(IpcChannel.ModelAvailability_Refresh, provider)
   },
   agentLifecycle: {
-    bootstrapBuiltins: (): Promise<void> => ipcRenderer.invoke(IpcChannel.Agent_BootstrapBuiltins)
+    bootstrapBuiltins: (): Promise<void> => ipcRenderer.invoke(IpcChannel.Agent_BootstrapBuiltins),
+    probeMcp: (id: string): Promise<string[]> => ipcRenderer.invoke(IpcChannel.Agent_ProbeMcp, id),
+    fileChanges: (sessionId: string): Promise<AssistantFileChange[]> =>
+      ipcRenderer.invoke(IpcChannel.Agent_FileChanges, sessionId),
+    previewFileChange: (sessionId: string, changeId: string): Promise<AssistantFilePreview | undefined> =>
+      ipcRenderer.invoke(IpcChannel.Agent_PreviewFileChange, sessionId, changeId),
+    restoreFileChange: (sessionId: string, changeId: string): Promise<AssistantFileRestoreResult> =>
+      ipcRenderer.invoke(IpcChannel.Agent_RestoreFileChange, sessionId, changeId)
   },
   miniWindow: {
     show: () => ipcRenderer.invoke(IpcChannel.MiniWindow_Show),

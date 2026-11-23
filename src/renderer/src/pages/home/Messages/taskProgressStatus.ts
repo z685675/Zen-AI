@@ -14,7 +14,8 @@ const STAGE_LABELS: Record<string, string> = {
   waiting_model: 'new_assistant.waiting_model',
   retrying: 'new_assistant.retrying',
   compacting: 'new_assistant.compacting',
-  waiting_permission: 'new_assistant.waiting_permission'
+  waiting_permission: 'new_assistant.waiting_permission',
+  waiting_answer: 'nativeSubagents.waiting_answer'
 }
 
 export function nativeTaskStage(message: Message, telemetry?: ContextTelemetry): string | undefined {

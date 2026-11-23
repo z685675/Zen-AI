@@ -78,13 +78,17 @@ export function getUsageSources(providers: Provider[]): UsageSource[] {
   })
 }
 
-export function buildUsageStatisticsUrl(apiHost: string, query: UsageQuery): URL {
+function buildGatewayApiUrl(apiHost: string, endpoint: string): URL {
   const host = new URL(apiHost.replace(/#$/, ''))
   if (!['http:', 'https:'].includes(host.protocol) || host.username || host.password || host.search || host.hash) {
     throw new UsageStatisticsError('unsupported')
   }
   const prefix = host.pathname.replace(/\/(?:v1|v1beta)\/?$/, '').replace(/\/$/, '')
-  const url = new URL(`${prefix}/api/usage/token/statistics`, host.origin)
+  return new URL(`${prefix}${endpoint}`, host.origin)
+}
+
+export function buildUsageStatisticsUrl(apiHost: string, query: UsageQuery): URL {
+  const url = buildGatewayApiUrl(apiHost, '/api/usage/token/statistics')
   url.search = new URLSearchParams({
     start_timestamp: String(query.start),
     end_timestamp: String(query.end),
@@ -207,4 +211,74 @@ export async function fetchModelDailyQuota(
   if ([404, 405].includes(response.status)) return undefined
   if (!response.ok) throw new UsageStatisticsError('unavailable')
   return z.object({ success: z.literal(true), data: modelDailyQuotaSchema }).parse(await readResponse(response)).data
+}
+
+export type ModelPerformanceWindow = 7 | 15 | 30
+
+const performanceCounts = z.object({ succeeded: counter, failed: counter })
+const performanceModel = performanceCounts.extend({
+  model: z.string().min(1).max(512),
+  average_latency_ms: counter.nullable()
+})
+const hourlyPerformanceSnapshot = z.object({
+  granularity: z.literal('hour'),
+  models: z.array(
+    performanceModel.extend({
+      average_first_response_ms: counter.nullable(),
+      recent_hours: z.array(performanceCounts.extend({ timestamp: counter })).max(24)
+    })
+  )
+})
+const legacyPerformanceSnapshot = z
+  .object({
+    granularity: z.undefined(),
+    dates: z.array(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)).max(30),
+    models: z.array(performanceModel.extend({ history: z.array(performanceCounts).max(30) }))
+  })
+  .transform((snapshot) => ({ ...snapshot, granularity: 'day' as const }))
+const performanceSnapshot = z.union([hourlyPerformanceSnapshot, legacyPerformanceSnapshot])
+
+export type ModelPerformanceSnapshot = z.infer<typeof performanceSnapshot>
+
+export async function fetchModelPerformance(
+  source: UsageSource,
+  days: ModelPerformanceWindow,
+  signal: AbortSignal,
+  baseFetch: typeof fetch = managedModelFetch(fetch)
+): Promise<ModelPerformanceSnapshot> {
+  if (!source.apiKey) throw new UsageStatisticsError('unsupported')
+  const url = buildGatewayApiUrl(source.apiHost, '/api/client/model-performance')
+  url.searchParams.set('days', String(days))
+  url.searchParams.set('mode', 'requests')
+  const timeout = AbortSignal.timeout(15_000)
+  try {
+    const response = await baseFetch(url, {
+      signal: AbortSignal.any([signal, timeout]),
+      headers: { Authorization: `Bearer ${source.apiKey}` },
+      credentials: 'omit',
+      redirect: 'error',
+      cache: 'no-store'
+    })
+    if (response.status === 404 || response.status === 405) throw new UsageStatisticsError('unsupported')
+    if (response.status === 401 || response.status === 403) throw new UsageStatisticsError('unauthorized')
+    if (!response.ok) throw new UsageStatisticsError('unavailable')
+    if (response.headers.get('content-type')?.includes('text/html')) throw new UsageStatisticsError('unsupported')
+    const result = z
+      .object({ success: z.literal(true), data: performanceSnapshot })
+      .safeParse(await readResponse(response))
+    if (!result.success) throw new UsageStatisticsError('invalid_response')
+    const snapshot = result.data.data
+    if (
+      snapshot.granularity === 'day' &&
+      (snapshot.dates.length !== days || snapshot.models.some((row) => row.history.length !== days))
+    ) {
+      throw new UsageStatisticsError('invalid_response')
+    }
+    return snapshot
+  } catch (error) {
+    if (signal.aborted) throw signal.reason
+    if (timeout.aborted) throw new UsageStatisticsError('timeout')
+    if (error instanceof UsageStatisticsError) throw error
+    throw new UsageStatisticsError(error instanceof SyntaxError ? 'invalid_response' : 'unavailable')
+  }
 }

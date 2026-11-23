@@ -3,7 +3,7 @@ import path from 'node:path'
 import type { Tool } from '@modelcontextprotocol/sdk/types.js'
 import { app } from 'electron'
 
-import { backupAssistantFile, prepareAssistantFileCopy } from './assistantFileSafety'
+import { type AssistantFileWriteObserver, backupAssistantFile, prepareAssistantFileCopy } from './assistantFileSafety'
 import { LITERATURE_TOOLS, readPaper, searchLiterature } from './assistantLiterature'
 import { READ_WEBPAGE_TOOL, readAssistantWebpage } from './assistantReadWebpage'
 import { searchAssistantWeb } from './assistantWebSearch'
@@ -15,6 +15,9 @@ export type AssistantProductOptions = {
   readOnly?: boolean
   allowedTools?: readonly string[]
   onTool?: (name: string, durationMs: number, failed: boolean) => void
+  onFileWrite?: AssistantFileWriteObserver
+  onFileBackup?: (file: string, backup: string) => Promise<void>
+  onFilesPresented?: (files: string[]) => Promise<void>
   readNativeSkills: (signal?: AbortSignal) => Promise<Array<{ name: string; description?: string; location?: string }>>
   approveOverwrite: (file: string) => Promise<boolean>
 }
@@ -114,7 +117,9 @@ export async function callAssistantProductTool(
   if (name === 'backup_file') {
     if (typeof args.file_path !== 'string' || !args.file_path.trim()) throw new Error('A file_path is required')
     const file = path.resolve(options.workspace, args.file_path)
-    return { status: 'backup-created', ...(await backupAssistantFile(file, roots, signal)) }
+    const backup = await backupAssistantFile(file, roots, signal)
+    await options.onFileBackup?.(file, backup.backup_path).catch(() => undefined)
+    return { status: 'backup-created', ...backup }
   }
   if (name === 'prepare_file_copy') {
     if (typeof args.file_path !== 'string' || !args.file_path.trim()) throw new Error('A file_path is required')
@@ -128,7 +133,7 @@ export async function callAssistantProductTool(
         ? args.output_path
         : path.join('outputs', `${parsed.name}-edited${parsed.ext}`)
     )
-    return prepareAssistantFileCopy(file, output, roots, signal)
+    return prepareAssistantFileCopy(file, output, roots, signal, options.onFileWrite)
   }
   throw new Error(`Unknown product tool: ${name}`)
 }

@@ -1,22 +1,28 @@
+import { AgentWorkspaceContext, useAgentWorkspace } from '@renderer/context/AgentWorkspaceProvider'
 import { useAgents } from '@renderer/hooks/agents/useAgents'
 import { cn } from '@renderer/utils'
+import { LEGACY_CONVERSATIONS_PATH, type LegacyConversation } from '@renderer/utils/legacyConversations'
 import { Tooltip } from 'antd'
-import { PanelLeftClose } from 'lucide-react'
+import { ChevronDown, ChevronRight, Folder, FolderOpen, PanelLeftClose } from 'lucide-react'
 import type { PropsWithChildren } from 'react'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import Agents from './components/Agents'
 import GlobalSessions from './components/GlobalSessions'
+import { LegacyConversationList } from './components/LegacyConversations'
 
 interface AgentSidePanelProps {
   onSelectItem?: () => void
   onCollapse?: () => void
+  showHistory?: boolean
+  historySelection?: LegacyConversation
 }
 
-const AgentSidePanel = ({ onSelectItem, onCollapse }: AgentSidePanelProps) => {
+const AgentSidePanel = ({ onSelectItem, onCollapse, showHistory = false, historySelection }: AgentSidePanelProps) => {
   const { agents } = useAgents()
   const { t } = useTranslation()
+  const workspace = useAgentWorkspace()
 
   const agentsById = useMemo(() => {
     return Object.fromEntries((agents ?? []).map((agent) => [agent.id, agent]))
@@ -42,13 +48,32 @@ const AgentSidePanel = ({ onSelectItem, onCollapse }: AgentSidePanelProps) => {
         </Tooltip>
       </div>
       <SectionShell className="max-h-[34%] min-h-[180px]" tone="agents">
-        <Agents onSelectItem={onSelectItem} />
+        <Agents onSelectItem={showHistory ? () => window.navigate('/new-assistant') : onSelectItem} />
       </SectionShell>
 
       <div className="h-3 shrink-0" />
 
       <SectionShell className="min-h-0 flex-1" tone="sessions">
-        <GlobalSessions agentsById={agentsById} onSelectItem={onSelectItem} />
+        {workspace === 'opencode' && (
+          <button
+            type="button"
+            onClick={() => window.navigate(showHistory ? '/new-assistant' : LEGACY_CONVERSATIONS_PATH)}
+            aria-expanded={showHistory}
+            className="mx-2.5 mt-2 flex shrink-0 items-center gap-2 rounded-md border-0 bg-transparent px-2 py-2 font-medium text-(--color-text) text-xs hover:bg-(--color-list-item-hover)">
+            {showHistory ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+            {showHistory ? <FolderOpen size={16} /> : <Folder size={16} />}
+            {t('assistant_transition.legacy_history')}
+          </button>
+        )}
+        {showHistory ? (
+          <AgentWorkspaceContext value="legacy">
+            <LegacyConversationList selection={historySelection} />
+          </AgentWorkspaceContext>
+        ) : (
+          <div className="min-h-0 flex-1">
+            <GlobalSessions agentsById={agentsById} onSelectItem={onSelectItem} />
+          </div>
+        )}
       </SectionShell>
     </div>
   )

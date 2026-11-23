@@ -1,7 +1,60 @@
+import path from 'node:path'
+
+const fileTools = new Set(['write', 'edit', 'multiedit', 'apply_patch'])
+
+function editedFiles(tool, args, directory) {
+  if (['write', 'edit', 'multiedit'].includes(tool) && typeof args?.filePath === 'string')
+    return [path.resolve(directory, args.filePath)]
+  if (tool !== 'apply_patch' || typeof args?.patchText !== 'string') return []
+  const headers = /^\*\*\* (?:Add File:|Update File:|Delete File:|Move to:) (.+)$/gm
+  return Array.from(args.patchText.matchAll(headers), (match) => path.resolve(directory, match[1].trim())).slice(0, 32)
+}
+
 // Product-owned native plugin. Keep compaction/replay in OpenCode's own loop.
-export default async function completionGuard({ client }) {
+export default async function completionGuard({ client, directory }) {
+  const url = process.env.ZEN_FILE_CHANGES_URL
+  const auth = process.env.ZEN_FILE_CHANGES_AUTH
+  const token = process.env.ZEN_FILE_CHANGES_TOKEN
+  const turnSystems = new Map()
+  const notifyChange = async (action, callId, files) => {
+    if (!url || !token || !auth) return false
+    try {
+      const result = await fetch(url, {
+        method: 'POST',
+        headers: { Authorization: auth, 'Content-Type': 'application/json', 'X-Zen-File-Change-Token': token },
+        body: JSON.stringify({ action, callId, files }),
+        signal: AbortSignal.timeout(5000)
+      })
+      return result.ok
+    } catch {
+      return false
+    }
+  }
   return {
+    'chat.message': async ({ sessionID }, { message, parts }) => {
+      if (message.system && turnSystems.size < 32) turnSystems.set(sessionID, message.system)
+      if (
+        !message.system &&
+        parts.some((part) => part.type === 'text' && part.synthetic && /^<task id="ses_[\w-]+" state="(?:completed|error)">\s*<summary>Background task (?:completed|failed):/.test(part.text))
+      ) {
+        message.system = turnSystems.get(sessionID)
+      }
+    },
+    'tool.execute.before': async (input, output) => {
+      if (url && directory && typeof input.callID === 'string') {
+        const files = editedFiles(input.tool, output.args, directory)
+        const call = `${input.sessionID}:${input.callID}`
+        if (files.length) await notifyChange('begin', call, files)
+      }
+      if (input.tool !== 'task' || typeof output.args?.task_id !== 'string') return
+      const response = await client.session.get({ path: { id: output.args.task_id }, signal: AbortSignal.timeout(3000) })
+      if (response.data?.parentID !== input.sessionID) {
+        throw new Error('This child task belongs to another conversation. Start a new child with a complete description instead of resuming that task_id.')
+      }
+    },
     'tool.execute.after': async (input, output) => {
+      const call = `${input.sessionID}:${input.callID}`
+      if (url && fileTools.has(input.tool) && typeof input.callID === 'string') await notifyChange('finish', call)
       if (input.tool !== 'webfetch' || typeof output.output !== 'string') return
       if (/^\s*%PDF-\d/.test(output.output)) {
         output.output = JSON.stringify({

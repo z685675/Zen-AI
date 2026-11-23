@@ -210,8 +210,7 @@ const agentsRouter: express.Router = express.Router()
  *           properties:
  *             model:
  *               type: string
- *               minLength: 1
- *               description: Main model ID (required)
+ *               description: Model ID, or an empty string when an OpenCode session still needs a model
  *           required:
  *             - model
  *

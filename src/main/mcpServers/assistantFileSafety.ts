@@ -92,6 +92,71 @@ async function verifiedCopy(file: string, target: string, signal?: AbortSignal) 
   }
 }
 
+export async function assistantFileHash(file: string, signal?: AbortSignal) {
+  const before = await existingFile(file)
+  if (!before) return null
+  if (before.size > MAX_BACKUP_BYTES) throw new Error('File exceeds the verified-copy limit')
+  const hash = await digest(file, signal)
+  if (!unchanged(before, await fs.lstat(file))) throw new Error('File changed during verification')
+  return hash
+}
+
+export async function snapshotAssistantFile(file: string, target: string, signal?: AbortSignal) {
+  await verifiedCopy(file, target, signal)
+  return digest(target, signal)
+}
+
+export function restoreAssistantFile(
+  file: string,
+  copy: string,
+  roots: string[],
+  expected: { before: string; after: string | null; canonicalPath: string }
+) {
+  return exclusive(file, async () => {
+    const checkTarget = async () => {
+      await assertSafeOutput(file, roots)
+      return path.join(await fs.realpath(path.dirname(file)), path.basename(file)) === expected.canonicalPath
+    }
+    if (!(await checkTarget())) return false
+    if ((await assistantFileHash(file)) !== expected.after) return false
+    const stage = path.join(path.dirname(file), `.zen-restore-${randomUUID()}.tmp`)
+    try {
+      if ((await snapshotAssistantFile(copy, stage)) !== expected.before) return false
+      if (expected.after !== null) {
+        // Retain the current version as well, so a mistaken recovery is reversible.
+        await backup(file, roots)
+        if (!(await checkTarget())) return false
+        if ((await assistantFileHash(file)) !== expected.after) return false
+        await fs.rename(stage, file)
+      } else {
+        if (!(await checkTarget())) return false
+        // An intervening writer must win when restoring a deleted file.
+        await fs.link(stage, file)
+      }
+      return true
+    } finally {
+      await fs.unlink(stage).catch(() => undefined)
+    }
+  })
+}
+
+export function undoAssistantFileCreation(
+  file: string,
+  roots: string[],
+  canonical: string,
+  expectedHash: string,
+  trash: (file: string) => Promise<void>
+) {
+  return exclusive(file, async () => {
+    await assertSafeOutput(file, roots)
+    if ((await assistantFileHash(file)) !== expectedHash || (await fs.realpath(file)) !== canonical) return false
+    await trash(file)
+    return true
+  })
+}
+
+export type AssistantFileWriteObserver = (file: string, backup?: string) => Promise<void>
+
 async function backup(file: string, roots: string[], signal?: AbortSignal) {
   signal?.throwIfAborted()
   await assertSafeOutput(file, roots)
@@ -121,7 +186,12 @@ export function writeAssistantFile(
   file: string,
   data: Buffer | string,
   roots: string[],
-  options: { overwrite?: boolean; signal?: AbortSignal; approve?: (file: string) => Promise<boolean> } = {}
+  options: {
+    overwrite?: boolean
+    signal?: AbortSignal
+    approve?: (file: string) => Promise<boolean>
+    onWrite?: AssistantFileWriteObserver
+  } = {}
 ) {
   return exclusive(file, async () => {
     options.signal?.throwIfAborted()
@@ -159,6 +229,7 @@ export function writeAssistantFile(
     } finally {
       await fs.unlink(stage).catch(() => undefined)
     }
+    await options.onWrite?.(file, backupPath).catch(() => undefined)
     return { backup_path: backupPath, write_mode: before ? 'replaced-with-backup' : 'new-file' }
   })
 }
@@ -205,11 +276,19 @@ export async function writeAssistantOutput(
   options: Parameters<typeof writeAssistantFile>[3] = {}
 ) {
   if (options.overwrite === true) return { ...(await writeAssistantFile(file, data, roots, options)), path: file }
-  return publishNewFile(file, roots, (stage) => fs.writeFile(stage, data, { flag: 'wx' }), options.signal)
+  const result = await publishNewFile(file, roots, (stage) => fs.writeFile(stage, data, { flag: 'wx' }), options.signal)
+  await options.onWrite?.(result.path).catch(() => undefined)
+  return result
 }
 
 /** Independent bytes, not a hard link to the source. Native tools may safely edit the returned working copy. */
-export async function prepareAssistantFileCopy(file: string, output: string, roots: string[], signal?: AbortSignal) {
+export async function prepareAssistantFileCopy(
+  file: string,
+  output: string,
+  roots: string[],
+  signal?: AbortSignal,
+  onWrite?: AssistantFileWriteObserver
+) {
   signal?.throwIfAborted()
   await assertSafeOutput(file, roots)
   const before = await existingFile(file)
@@ -227,5 +306,6 @@ export async function prepareAssistantFileCopy(file: string, output: string, roo
     },
     signal
   )
+  await onWrite?.(result.path).catch(() => undefined)
   return { status: 'working-copy-created', source_path: file, working_path: result.path, original_preserved: true }
 }
