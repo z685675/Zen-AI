@@ -88,6 +88,33 @@ describe('atomic patch selection and startup recovery', () => {
     await state.beginBoot(false)
     expect((await state.failStartup('missing-chunk'))?.patchId).toBe('patch.1')
   })
+  it('falls back through the previous good snapshot after repeated interrupted boots', async () => {
+    const state = await store()
+    const fixture = signingFixture()
+    for (let sequence = 1; sequence <= 2; sequence++) {
+      const policy = makePolicy()
+      policy.policySequence = sequence
+      policy.target!.patchId = `patch.${sequence}`
+      const raw = fixture.encode('policy', policy)
+      await state.acceptPolicy(policy, raw)
+      await state.stage(policy, raw)
+      await state.healthy((await state.beginBoot(true)).challenge!)
+    }
+
+    const restart = async () => {
+      const reopened = await HotpatchStateStore.load(state.root, base.baseBuildId)
+      return (await reopened.beginBoot(false)).target?.patchId ?? 'builtin'
+    }
+    expect(await restart()).toBe('patch.2')
+    expect(await restart()).toBe('patch.2')
+    expect(await restart()).toBe('patch.1')
+    expect(await restart()).toBe('patch.1')
+    expect(await restart()).toBe('builtin')
+
+    const recovered = await HotpatchStateStore.load(state.root, base.baseBuildId)
+    expect(recovered.snapshot.quarantined.map(({ target }) => target.patchId)).toEqual(['patch.2', 'patch.1'])
+  })
+
   it('does not call a user-interrupted trial permanently bad or retry it in a loop', async () => {
     const state = await store(),
       policy = makePolicy(),

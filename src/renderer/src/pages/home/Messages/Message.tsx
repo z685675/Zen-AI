@@ -270,10 +270,10 @@ const MessageItem: FC<Props> = ({
           }
         />
         {canCollapse && (
-          <MessageCollapseBar>
+          <MessageCollapseBar className="message-collapse-bar">
             <CollapseButton
               type="button"
-              aria-label={isCollapsed ? '展开此消息' : '收起此消息'}
+              aria-label={t(isCollapsed ? 'common.expand' : 'common.collapse')}
               aria-expanded={!isCollapsed}
               onPointerDown={(event) => event.stopPropagation()}
               onClick={(event) => {
@@ -282,7 +282,7 @@ const MessageItem: FC<Props> = ({
                 handleCollapseToggle()
               }}>
               {isCollapsed ? <ChevronDown size={15} /> : <ChevronUp size={15} />}
-              <span>{isCollapsed ? '展开此消息' : '收起此消息'}</span>
+              <span>{t(isCollapsed ? 'common.expand' : 'common.collapse')}</span>
             </CollapseButton>
           </MessageCollapseBar>
         )}
@@ -305,7 +305,10 @@ const MessageItem: FC<Props> = ({
               className={classNames('message-content-container', { collapsed: canCollapse && isCollapsed })}
               style={{
                 fontFamily: messageFont === 'serif' ? 'var(--font-family-serif)' : 'var(--font-family)',
-                fontSize: conversationFontSize,
+                fontSize:
+                  conversationFontSize === 12
+                    ? 'var(--zen-reading-size)'
+                    : `calc(var(--zen-reading-size) + ${conversationFontSize - 12}px)`,
                 overflowY: 'visible'
               }}>
               <MessageErrorBoundary messageId={message.id}>

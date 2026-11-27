@@ -2,6 +2,7 @@ import type { Model } from '@renderer/types'
 import { ERROR_I18N_KEY_STREAM_PAUSED, type SerializedError } from '@renderer/types/error'
 import { isAgentPermissionRejection } from '@shared/agents/permissionRejection'
 import { CONNECTIVITY_CHECK_REQUEST_HEADERS } from '@shared/diagnostics'
+import { discardResponseBody } from '@shared/modelTransport'
 import { getModelDailyQuotaErrorKind, MODEL_DAILY_QUOTA_MESSAGE_KEYS } from '@shared/utils/modelDailyQuota'
 import i18next from 'i18next'
 
@@ -226,7 +227,10 @@ async function probeUrl(
 
   const startedAt = Date.now()
   const controller = new AbortController()
-  const timer = window.setTimeout(() => controller.abort(), CONNECTIVITY_CHECK_TIMEOUT_MS)
+  const timer = window.setTimeout(
+    () => controller.abort(new DOMException('Connectivity check timed out', 'TimeoutError')),
+    CONNECTIVITY_CHECK_TIMEOUT_MS
+  )
 
   try {
     const response = await baseFetch(url, {
@@ -235,6 +239,7 @@ async function probeUrl(
       cache: 'no-store',
       signal: controller.signal
     })
+    discardResponseBody(response)
     return {
       ok: response.ok,
       reachable: true,

@@ -1,65 +1,91 @@
+import { EventEmitter } from 'node:events'
+
+import { IpcChannel } from '@shared/IpcChannel'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const mockCacheRemove = vi.fn()
-const mockExecuteJavaScript = vi.fn().mockResolvedValue(undefined)
-const mockGetMainWindow = vi.fn(() => ({
-  webContents: {
-    executeJavaScript: mockExecuteJavaScript
-  }
+const mocks = vi.hoisted(() => ({
+  remove: vi.fn(),
+  handlers: new Map<string, (event: unknown) => void>()
 }))
 
 vi.mock('electron', () => ({
   ipcMain: {
-    handle: vi.fn((_channel: string, handler: () => void) => {
-      handler()
-    })
+    handle: vi.fn((channel, handler) => mocks.handlers.set(channel, handler))
   }
 }))
 
 vi.mock('@logger', () => ({
   loggerService: {
-    withContext: () => ({
-      debug: vi.fn(),
-      info: vi.fn(),
-      warn: vi.fn(),
-      error: vi.fn()
-    })
+    withContext: () => ({ error: vi.fn() })
   }
 }))
 
 vi.mock('../CacheService', () => ({
-  CacheService: {
-    remove: (...args: unknown[]) => mockCacheRemove(...args)
-  }
-}))
-
-vi.mock('../WindowService', () => ({
-  windowService: {
-    getMainWindow: () => mockGetMainWindow()
-  }
+  CacheService: { remove: mocks.remove }
 }))
 
 import { invalidateApiServerProvidersCacheForAction, reduxService } from '../ReduxService'
 
-describe('ReduxService provider cache invalidation', () => {
+const createContents = () =>
+  Object.assign(new EventEmitter(), {
+    mainFrame: {},
+    isDestroyed: () => false,
+    executeJavaScript: vi.fn().mockResolvedValue(undefined)
+  })
+const signalReady = (sender: ReturnType<typeof createContents>, senderFrame = sender.mainFrame) =>
+  mocks.handlers.get(IpcChannel.ReduxStoreReady)!({ sender, senderFrame })
+
+describe('ReduxService', () => {
+  let contents: ReturnType<typeof createContents>
+
   beforeEach(() => {
     vi.clearAllMocks()
+    contents = createContents()
+    reduxService.bindWindow({ webContents: contents } as unknown as Electron.BrowserWindow)
   })
 
-  it('clears the API server provider cache for provider mutations', async () => {
+  it('clears the API server provider cache for provider mutations dispatched by the main process', async () => {
+    signalReady(contents)
     await reduxService.dispatch({ type: 'llm/updateProvider', payload: { id: 'openai', apiKey: 'new-key' } })
-
-    expect(mockExecuteJavaScript).toHaveBeenCalled()
-    expect(mockCacheRemove).toHaveBeenCalledWith('api-server:providers')
+    expect(contents.executeJavaScript).toHaveBeenCalled()
+    expect(mocks.remove).toHaveBeenCalledWith('api-server:providers')
   })
 
-  it('does not clear the API server provider cache for unrelated actions', () => {
+  it('leaves the provider cache intact for unrelated actions', () => {
     invalidateApiServerProvidersCacheForAction('llm/setDefaultModel')
-
-    expect(mockCacheRemove).not.toHaveBeenCalled()
+    expect(mocks.remove).not.toHaveBeenCalled()
   })
 
-  it('exposes renderer store readiness to startup services', async () => {
+  it('waits for rehydration in the current main frame', async () => {
+    const ready = vi.fn()
+    const startup = reduxService.waitUntilReady().then(ready)
+    signalReady(createContents())
+    signalReady(contents, {})
+    await Promise.resolve()
+    expect(ready).not.toHaveBeenCalled()
+    signalReady(contents)
+    await startup
+    expect(ready).toHaveBeenCalledOnce()
+  })
+
+  it('waits again after a reload or window replacement', async () => {
+    signalReady(contents)
+    contents.emit('did-start-navigation', { isMainFrame: true, isSameDocument: true })
     await expect(reduxService.waitUntilReady()).resolves.toBeUndefined()
+    contents.emit('did-start-navigation', { isMainFrame: true, isSameDocument: false })
+    const ready = vi.fn()
+    const reinstated = reduxService.waitUntilReady().then(ready)
+
+    const replacement = createContents()
+    reduxService.bindWindow({ webContents: replacement } as unknown as Electron.BrowserWindow)
+    signalReady(contents)
+    await Promise.resolve()
+    expect(ready).not.toHaveBeenCalled()
+    signalReady(replacement)
+    await reinstated
+    await reduxService.getState()
+    expect(ready).toHaveBeenCalledOnce()
+    expect(contents.executeJavaScript).not.toHaveBeenCalled()
+    expect(replacement.executeJavaScript).toHaveBeenCalledOnce()
   })
 })

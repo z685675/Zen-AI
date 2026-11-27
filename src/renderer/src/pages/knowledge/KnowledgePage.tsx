@@ -102,7 +102,7 @@ const KnowledgePage: FC = () => {
   return (
     <Container>
       <Navbar>
-        <NavbarCenter style={{ borderRight: 'none' }}>{t('knowledge.title')}</NavbarCenter>
+        <NavbarCenter style={{ borderRight: 'none' }} />
       </Navbar>
       <ContentContainer id="content-container">
         <KnowledgeSideNav>

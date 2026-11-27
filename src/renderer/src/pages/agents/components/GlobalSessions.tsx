@@ -1,10 +1,12 @@
 import AddButton from '@renderer/components/AddButton'
 import DraggableVirtualList, { type DraggableVirtualListRef } from '@renderer/components/DraggableList/virtual-list'
+import { useSidebarCreateAction, useSidebarShell } from '@renderer/context/SidebarSlotProvider'
 import { useActiveAgent } from '@renderer/hooks/agents/useActiveAgent'
 import { useAgentClient } from '@renderer/hooks/agents/useAgentClient'
 import { useAllSessions } from '@renderer/hooks/agents/useAllSessions'
 import { useCreateDefaultSession } from '@renderer/hooks/agents/useCreateDefaultSession'
 import { useRuntime } from '@renderer/hooks/useRuntime'
+import { useShortcutDisplay } from '@renderer/hooks/useShortcuts'
 import { DbService } from '@renderer/services/db/DbService'
 import store, { useAppDispatch } from '@renderer/store'
 import { selectMessagesForTopic } from '@renderer/store/newMessage'
@@ -12,10 +14,10 @@ import { setActiveSessionIdAction } from '@renderer/store/runtime'
 import type { AgentEntity } from '@renderer/types'
 import { buildAgentSessionTopicId } from '@renderer/utils/agentSession'
 import { isUnnamedAgentSessionName } from '@renderer/utils/agentSessionTitle'
-import { Spin } from 'antd'
+import { Spin, Tooltip } from 'antd'
 import { throttle } from 'lodash'
-import { Archive, ArrowLeft } from 'lucide-react'
-import type { ButtonHTMLAttributes, PropsWithChildren } from 'react'
+import { Archive, ArrowLeft, Plus } from 'lucide-react'
+import type { ButtonHTMLAttributes, PropsWithChildren, ReactNode } from 'react'
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import styled from 'styled-components'
@@ -25,6 +27,8 @@ import SessionItem from './SessionItem'
 interface GlobalSessionsProps {
   agentsById: Record<string, AgentEntity>
   onSelectItem?: () => void
+  legacyFolder?: ReactNode
+  isViewingLegacy?: boolean
 }
 
 const LOAD_MORE_THRESHOLD = 100
@@ -32,9 +36,13 @@ const SCROLL_THROTTLE_DELAY = 150
 type SessionViewMode = 'active' | 'archived'
 const dbService = DbService.getInstance()
 
-const GlobalSessions = ({ agentsById, onSelectItem }: GlobalSessionsProps) => {
+const GlobalSessions = ({ agentsById, onSelectItem, legacyFolder, isViewingLegacy = false }: GlobalSessionsProps) => {
   const { t } = useTranslation()
-  const [viewMode, setViewMode] = useState<SessionViewMode>('active')
+  const inSidebar = Boolean(useSidebarShell())
+  const newTaskShortcut = useShortcutDisplay('new_topic')
+  const [sessionViewMode, setViewMode] = useState<SessionViewMode>('active')
+  const viewMode = isViewingLegacy ? 'active' : sessionViewMode
+  const folderInList = viewMode === 'active' ? legacyFolder : undefined
   const archivedFilter = viewMode === 'archived' ? 'only' : 'exclude'
   const { sessions, isLoading, error, hasMore, loadMore, isLoadingMore, deleteSession, updateSession } = useAllSessions(
     {
@@ -74,12 +82,16 @@ const GlobalSessions = ({ agentsById, onSelectItem }: GlobalSessionsProps) => {
   isLoadingMoreRef.current = isLoadingMore
   loadMoreRef.current = loadMore
 
+  const showSessionRows = !isLoading && !error && sessions.length > 0
+  useEffect(() => {
+    if (isViewingLegacy) listRef.current?.scrollToOffset(0)
+  }, [isViewingLegacy])
+
   const handleScroll = useMemo(
     () =>
       throttle(() => {
         const scrollElement = listRef.current?.scrollElement()
         if (!scrollElement) return
-
         const { scrollTop, scrollHeight, clientHeight } = scrollElement
         if (
           scrollHeight - scrollTop - clientHeight < LOAD_MORE_THRESHOLD &&
@@ -93,6 +105,7 @@ const GlobalSessions = ({ agentsById, onSelectItem }: GlobalSessionsProps) => {
   )
 
   useEffect(() => {
+    if (!showSessionRows) return
     const scrollElement = listRef.current?.scrollElement()
     if (!scrollElement) return
 
@@ -101,7 +114,7 @@ const GlobalSessions = ({ agentsById, onSelectItem }: GlobalSessionsProps) => {
       handleScroll.cancel()
       scrollElement.removeEventListener('scroll', handleScroll)
     }
-  }, [handleScroll])
+  }, [handleScroll, showSessionRows])
 
   const handlePress = useCallback(
     (agentId: string, sessionId: string) => {
@@ -173,7 +186,7 @@ const GlobalSessions = ({ agentsById, onSelectItem }: GlobalSessionsProps) => {
 
     creatingGlobalSessionRef.current = true
     setCreatingGlobalSession(true)
-    if (viewMode !== 'active') {
+    if (sessionViewMode !== 'active') {
       setViewMode('active')
     }
 
@@ -212,7 +225,7 @@ const GlobalSessions = ({ agentsById, onSelectItem }: GlobalSessionsProps) => {
         return
       }
 
-      await createDefaultSession()
+      if (await createDefaultSession()) onSelectItem?.()
     } finally {
       creatingGlobalSessionRef.current = false
       setCreatingGlobalSession(false)
@@ -226,10 +239,17 @@ const GlobalSessions = ({ agentsById, onSelectItem }: GlobalSessionsProps) => {
     setActiveAgentId,
     t,
     updateSession,
-    viewMode
+    sessionViewMode
   ])
 
-  if (isLoading) {
+  useSidebarCreateAction(
+    () => {
+      void handleCreateSession()
+    },
+    Boolean(activeAgentId && canCreateSession && !isLoading)
+  )
+
+  if (isLoading && !folderInList) {
     return (
       <div className="flex h-full items-center justify-center">
         <Spin />
@@ -237,7 +257,7 @@ const GlobalSessions = ({ agentsById, onSelectItem }: GlobalSessionsProps) => {
     )
   }
 
-  if (error) {
+  if (error && !folderInList) {
     return (
       <div className="flex h-full items-center justify-center p-4 text-(--color-error) text-[13px]">
         {t('agent.session.get.error.failed')}
@@ -245,34 +265,65 @@ const GlobalSessions = ({ agentsById, onSelectItem }: GlobalSessionsProps) => {
     )
   }
 
-  if (sessions.length === 0) {
+  const renderHeaderRow = () => (
+    <HeaderRow>
+      {viewMode === 'archived' ? (
+        <HeaderButton type="button" onClick={() => setViewMode('active')}>
+          <ArrowLeft size={14} />
+          {t('common.back')}
+        </HeaderButton>
+      ) : (
+        <>
+          {inSidebar ? (
+            <span className="pl-1 font-semibold text-(--zen-text-1) text-[13.5px] tracking-[-0.01em]">
+              {t('common.agent_one')}
+            </span>
+          ) : activeAgentId && canCreateSession ? (
+            <InlineAddButton
+              onClick={() => void handleCreateSession()}
+              disabled={creatingSession || creatingGlobalSession}>
+              {t('agent.session.add.title')}
+            </InlineAddButton>
+          ) : (
+            <HeaderSpacer />
+          )}
+          <div className="flex shrink-0 items-center gap-1.5">
+            {inSidebar && activeAgentId && canCreateSession && (
+              <Tooltip
+                title={newTaskShortcut ? `${t('app_shell.new_task')} · ${newTaskShortcut}` : t('app_shell.new_task')}
+                mouseEnterDelay={0.5}>
+                <button
+                  type="button"
+                  className="zen-section-create-pill"
+                  aria-label={t('app_shell.new_task')}
+                  disabled={creatingSession || creatingGlobalSession}
+                  onClick={() => void handleCreateSession()}>
+                  <Plus size={13} strokeWidth={2.3} />
+                  <span>{t('common.new')}</span>
+                </button>
+              </Tooltip>
+            )}
+            <Tooltip title={t('agent.session.archive.title')} mouseEnterDelay={0.5}>
+              <HeaderIconButton
+                type="button"
+                aria-label={t('agent.session.archive.title')}
+                onClick={() => {
+                  if (isViewingLegacy) onSelectItem?.()
+                  setViewMode('archived')
+                }}>
+                <Archive size={14} />
+              </HeaderIconButton>
+            </Tooltip>
+          </div>
+        </>
+      )}
+    </HeaderRow>
+  )
+
+  if (sessions.length === 0 && !folderInList) {
     return (
       <div className="flex h-full flex-col">
-        <HeaderRow>
-          {viewMode === 'archived' ? (
-            <HeaderButton type="button" onClick={() => setViewMode('active')}>
-              <ArrowLeft size={14} />
-              {t('common.back')}
-            </HeaderButton>
-          ) : (
-            <>
-              {activeAgentId && canCreateSession && (
-                <InlineAddButton
-                  onClick={() => void handleCreateSession()}
-                  disabled={creatingSession || creatingGlobalSession}>
-                  {t('agent.session.add.title')}
-                </InlineAddButton>
-              )}
-              {(!activeAgentId || !canCreateSession) && <HeaderSpacer />}
-            </>
-          )}
-          {viewMode === 'active' && (
-            <HeaderButton type="button" onClick={() => setViewMode('archived')}>
-              <Archive size={14} />
-              {t('agent.session.archive.title')}
-            </HeaderButton>
-          )}
-        </HeaderRow>
+        {renderHeaderRow()}
         <div className="flex flex-1 items-center justify-center px-4 text-(--color-text-secondary) text-[13px]">
           {viewMode === 'archived' ? t('agent.session.archive.empty') : t('history.no_history')}
         </div>
@@ -282,41 +333,34 @@ const GlobalSessions = ({ agentsById, onSelectItem }: GlobalSessionsProps) => {
 
   return (
     <div className="flex h-full flex-col">
-      <HeaderRow>
-        {viewMode === 'archived' ? (
-          <HeaderButton type="button" onClick={() => setViewMode('active')}>
-            <ArrowLeft size={14} />
-            {t('common.back')}
-          </HeaderButton>
-        ) : (
-          <>
-            {activeAgentId && canCreateSession && (
-              <InlineAddButton
-                onClick={() => void handleCreateSession()}
-                disabled={creatingSession || creatingGlobalSession}>
-                {t('agent.session.add.title')}
-              </InlineAddButton>
-            )}
-            {(!activeAgentId || !canCreateSession) && <HeaderSpacer />}
-          </>
-        )}
-        {viewMode === 'active' && (
-          <HeaderButton type="button" onClick={() => setViewMode('archived')}>
-            <Archive size={14} />
-            {t('agent.session.archive.title')}
-          </HeaderButton>
-        )}
-      </HeaderRow>
+      {renderHeaderRow()}
       <DraggableVirtualList
         ref={listRef}
         className="sessions-tab flex min-h-0 flex-1 flex-col"
-        itemStyle={{ marginBottom: 8 }}
-        list={sessions}
-        estimateSize={() => 14 * 4}
-        scrollerStyle={{ overflowX: 'hidden', padding: '2px 10px 12px' }}
+        itemStyle={{ marginBottom: 4 }}
+        list={showSessionRows ? sessions : []}
+        estimateSize={() => 54}
+        scrollerStyle={{ overflowX: 'hidden', padding: '4px 10px 14px' }}
         disabled
         itemKey={(index) => sessions[index]?.id ?? index}
-        header={null}>
+        header={
+          folderInList && (
+            <>
+              {folderInList}
+              {!showSessionRows && (
+                <div className="px-2 py-2 text-(--zen-text-3) text-[12px]">
+                  {isLoading ? (
+                    <Spin size="small" />
+                  ) : error ? (
+                    <span role="alert">{t('agent.session.get.error.failed')}</span>
+                  ) : (
+                    t('history.no_history')
+                  )}
+                </div>
+              )}
+            </>
+          )
+        }>
         {(session) => {
           const agent =
             agentsById[session.agent_id] ??
@@ -334,7 +378,11 @@ const GlobalSessions = ({ agentsById, onSelectItem }: GlobalSessionsProps) => {
               session={session}
               agent={agent}
               agentId={session.agent_id}
-              isActive={activeAgentId === session.agent_id && activeSessionIdMap[session.agent_id] === session.id}
+              isActive={
+                !isViewingLegacy &&
+                activeAgentId === session.agent_id &&
+                activeSessionIdMap[session.agent_id] === session.id
+              }
               channelType={channelMap[session.id]?.type}
               channelIsActive={channelMap[session.id]?.isActive}
               onDelete={() => {
@@ -363,13 +411,22 @@ const GlobalSessions = ({ agentsById, onSelectItem }: GlobalSessionsProps) => {
 }
 
 const HeaderRow = ({ children }: PropsWithChildren) => (
-  <div className="flex items-center justify-between gap-3 px-3 pt-2 pb-1">{children}</div>
+  <div className="flex items-center justify-between gap-2 px-3 pt-3 pb-1.5">{children}</div>
 )
 
 const HeaderButton = ({ children, ...props }: ButtonHTMLAttributes<HTMLButtonElement>) => (
   <button
     type="button"
-    className="flex items-center gap-1 rounded-md border-0 bg-transparent px-1.5 py-1 text-(--color-text-secondary) text-[12px] transition-colors hover:bg-(--color-list-item-hover) hover:text-(--color-text)"
+    className="flex items-center gap-1 rounded-(--zen-radius-sm) border-0 bg-transparent px-2 py-1 text-(--zen-text-3) text-[11.5px] transition-colors hover:bg-(--zen-bg-hover) hover:text-(--zen-text-1)"
+    {...props}>
+    {children}
+  </button>
+)
+
+const HeaderIconButton = ({ children, ...props }: ButtonHTMLAttributes<HTMLButtonElement>) => (
+  <button
+    type="button"
+    className="flex h-[26px] w-[26px] items-center justify-center rounded-(--zen-radius-sm) border-0 bg-transparent text-(--zen-text-3) transition-colors hover:bg-(--zen-bg-hover) hover:text-(--zen-text-1)"
     {...props}>
     {children}
   </button>

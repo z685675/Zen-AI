@@ -142,7 +142,7 @@ export default function UsagePage() {
   return (
     <Page>
       <Navbar>
-        <NavbarCenter>{t('usage_statistics.title')}</NavbarCenter>
+        <NavbarCenter />
       </Navbar>
       <Content>
         <Header>
@@ -239,41 +239,55 @@ export default function UsagePage() {
         ) : null}
         {stats && !loading ? (
           <>
-            <Cards>
-              {showImageUsage ? (
-                <Metric>
+            <div className="zen-metric-grid">
+              {showImageUsage && isImageOnlyUsage(stats.summary) ? (
+                <div className="zen-metric-card">
                   <MetricLabel>{t('usage_statistics.image_requests')}</MetricLabel>
                   <MetricValue>{format(stats.summary.image_request_count ?? 0)}</MetricValue>
                   <MetricHint>{t('usage_statistics.image_requests_hint')}</MetricHint>
-                </Metric>
+                </div>
               ) : null}
               {!showImageUsage || !isImageOnlyUsage(stats.summary) ? (
                 <>
-                  <Metric>
+                  <div className="zen-metric-card">
                     <MetricLabel>{t('usage_statistics.input')}</MetricLabel>
                     <MetricValue>{format(stats.summary.input_tokens)}</MetricValue>
-                    <MetricHint>Token</MetricHint>
-                  </Metric>
-                  <Metric>
+                  </div>
+                  <div className="zen-metric-card">
                     <MetricLabel>{t('usage_statistics.output')}</MetricLabel>
                     <MetricValue>{format(stats.summary.output_tokens)}</MetricValue>
-                    <MetricHint>Token</MetricHint>
-                  </Metric>
-                  <Metric>
+                  </div>
+                  <div className="zen-metric-card">
                     <MetricLabel>{t('usage_statistics.cache')}</MetricLabel>
                     <MetricValue>{cacheDisplay(stats.summary)}</MetricValue>
                     <MetricHint>{t('usage_statistics.cache_subset')}</MetricHint>
-                  </Metric>
-                  <Metric>
-                    <MetricLabel>{t('usage_statistics.cache_rate')}</MetricLabel>
-                    <Tooltip title={t('usage_statistics.rate_hint')}>
-                      <MetricValue>{rateDisplay(stats.summary)}</MetricValue>
-                    </Tooltip>
-                    <MetricHint>{t('usage_statistics.cache_read')}</MetricHint>
-                  </Metric>
+                    {showImageUsage && (
+                      <Tooltip title={t('usage_statistics.rate_hint')}>
+                        <MetricHint>
+                          {t('usage_statistics.cache_rate')} ·{' '}
+                          <span className="font-mono tabular-nums">{rateDisplay(stats.summary)}</span>
+                        </MetricHint>
+                      </Tooltip>
+                    )}
+                  </div>
+                  {showImageUsage ? (
+                    <div className="zen-metric-card">
+                      <MetricLabel>{t('usage_statistics.image_requests')}</MetricLabel>
+                      <MetricValue>{format(stats.summary.image_request_count ?? 0)}</MetricValue>
+                      <MetricHint>{t('usage_statistics.image_requests_hint')}</MetricHint>
+                    </div>
+                  ) : (
+                    <div className="zen-metric-card">
+                      <MetricLabel>{t('usage_statistics.cache_rate')}</MetricLabel>
+                      <Tooltip title={t('usage_statistics.rate_hint')}>
+                        <MetricValue>{rateDisplay(stats.summary)}</MetricValue>
+                      </Tooltip>
+                      <MetricHint>{t('usage_statistics.cache_read')}</MetricHint>
+                    </div>
+                  )}
                 </>
               ) : null}
-            </Cards>
+            </div>
             {stats.summary.request_count === 0 ? (
               <EmptyBlock>
                 <Empty description={t('usage_statistics.empty')} />
@@ -316,6 +330,7 @@ export default function UsagePage() {
                     />
                   </SectionHeader>
                   <Table
+                    className="zen-metrics-table"
                     size="middle"
                     rowKey="model"
                     dataSource={models}
@@ -339,12 +354,10 @@ const Content = styled.div`flex: 1; overflow: auto; padding: 28px 32px 40px; wid
 const Header = styled.div`display: flex; justify-content: space-between; gap: 16px; align-items: center; margin-bottom: 24px;`
 const Heading = styled.h1`font-size: 24px; font-weight: 600; display: flex; align-items: center; gap: 10px; margin: 0; svg { color: var(--color-primary); }`
 const Subtitle = styled.p`color: var(--color-text-2); margin: 8px 0 0; font-size: 13px;`
-const Panel = styled.section`border: 1px solid var(--color-border); border-radius: 16px; padding: 20px; margin-bottom: 20px; background: var(--color-background-soft); min-width: 0;`
+const Panel = styled.section`border: 1px solid var(--zen-border); border-radius: var(--zen-radius-md); padding: 16px; margin-bottom: 16px; background: var(--zen-bg-elevated); min-width: 0;`
 const Filters = styled.div`display: flex; flex-wrap: wrap; gap: 12px; align-items: center; & + & { margin-top: 14px; }`
-const Cards = styled.div`display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin: 24px 0; @media (max-width: 1000px) { grid-template-columns: repeat(2, minmax(0, 1fr)); }`
-const Metric = styled.div`border: 1px solid var(--color-border); border-radius: 16px; padding: 20px; background: var(--color-background-soft); min-width: 0;`
 const MetricLabel = styled.div`font-size: 13px; color: var(--color-text-2); margin-bottom: 12px;`
-const MetricValue = styled.div`font-size: clamp(20px, 2.1vw, 30px); font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: -0.5px; overflow-wrap: anywhere;`
+const MetricValue = styled.div`font-family: var(--code-font-family); font-size: clamp(19px, 2.1vw, 27px); font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: -0.5px; overflow-wrap: anywhere;`
 const MetricHint = styled.div`font-size: 11px; color: var(--color-text-3); margin-top: 8px;`
 const SectionHeader = styled.div`display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-bottom: 16px; h3 { margin: 0; font-size: 15px; font-weight: 600; }`
 const EmptyBlock = styled.div`padding: 64px 20px; text-align: center;`

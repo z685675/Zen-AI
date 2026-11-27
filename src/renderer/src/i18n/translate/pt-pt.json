@@ -930,6 +930,20 @@
     "zoomIn": "Ampliar",
     "zoomOut": "Reduzir Zoom"
   },
+  "app_shell": {
+    "chat_welcome": "Iniciar uma conversa",
+    "chat_welcome_subtitle": "Faça perguntas, escreva, traduza ou explore novas ideias a qualquer momento, com toda a atenção nas suas ideias",
+    "conversations": "Conversas",
+    "image_workbench": "Área de trabalho de imagens",
+    "mcp": "MCP",
+    "more_tools": "Mais ferramentas",
+    "navigation": "Navegação principal",
+    "new_conversation": "Nova conversa",
+    "new_task": "Nova tarefa",
+    "recent": "Tarefas e conversas recentes",
+    "today_requests": "Hoje · {{count}} pedidos",
+    "toggle_appearance": "Alternar entre aparência clara e escura"
+  },
   "assistantDataSafety": {
     "busy": "[to be translated]:Stop active assistant tasks first, then back up, restore or reset data. A data operation may also still be in progress."
   },
@@ -1141,6 +1155,9 @@
     "continuation_too_large": "[to be translated]:History is too large. Export a backup and provide the needed background in a new conversation.",
     "continuation_workspace_missing": "[to be translated]:The original workspace is missing or inaccessible. Check permissions and retry.",
     "continue": "[to be translated]:Continue in new assistant",
+    "delete_legacy_folder": "Eliminar pasta de conversas antigas",
+    "delete_legacy_folder_confirm": "Todas as conversas antigas, incluindo as arquivadas, serão eliminadas permanentemente. Esta ação não pode ser desfeita.",
+    "delete_legacy_folder_failed": "Não foi possível eliminar algumas conversas antigas. Tente novamente.",
     "historical_copy": "[to be translated]:History copy",
     "legacy_automation_disabled": "O assistente antigo já não é mantido. As integrações externas, incluindo WeChat, e as tarefas agendadas estão desativadas, mesmo no modo de programador. As definições e o histórico são preservados. Só serão reabertas quando o novo assistente as suportar.",
     "legacy_read_only": "O assistente antigo foi desativado. Utilize o novo assistente.",
@@ -1608,6 +1625,7 @@
         "cache_value": "[to be translated]:{{hits}} hits / {{total}} parses",
         "compressions": "[to be translated]:History compactions",
         "error": "[to be translated]:Resource preparation failed",
+        "local_checkpoint_fallback": "O modelo remoto de contexto está temporariamente indisponível. O processamento continua a partir de um ponto de restauro local.",
         "managed": "[to be translated]:Resources and history managed",
         "managed_resources": "[to be translated]:{{count}} resources managed",
         "note": "[to be translated]:This shows resource, history, and capacity handling. It does not mean the model is still responding.",
@@ -1798,6 +1816,13 @@
       "prev": "Mensagem anterior",
       "top": "Voltar ao topo"
     },
+    "quick_roles": {
+      "add": "Adicionar função",
+      "add_to_favorites": "Adicionar uma função aos favoritos",
+      "empty": "Ainda não foram adicionados cartões de funções",
+      "expand_settings": "Mostrar as definições da função",
+      "mine": "As minhas funções"
+    },
     "resend": "Reenviar",
     "save": {
       "file": {
@@ -1959,6 +1984,12 @@
         "md": "Copiar como Markdown",
         "plain_text": "Copiar como texto simples (remover Markdown)",
         "title": "Copiar"
+      },
+      "date_group": {
+        "earlier": "Anteriores",
+        "last_seven_days": "Últimos 7 dias",
+        "pinned": "Afixados",
+        "today": "Hoje"
       },
       "delete": {
         "shortcut": "Pressione {{key}} para deletar diretamente"
@@ -2216,6 +2247,7 @@
     "models": "Modelos",
     "more": "Mais",
     "name": "Nome",
+    "new": "Novo",
     "next_match": "Próxima partida",
     "no_results": "Nenhum resultado",
     "none": "Nenhum",
@@ -2235,6 +2267,7 @@
     "prompt": "Prompt",
     "provider": "Fornecedor",
     "reasoning_content": "Pensamento profundo concluído",
+    "recently_deleted": "Eliminados recentemente",
     "refresh": "Atualizar",
     "regenerate": "Regenerar",
     "remove_image": "Remover imagem",
@@ -3166,6 +3199,11 @@
       "pending": "Pendente",
       "preview": "Pré-visualização",
       "raw": "Bruto",
+      "read_paper": {
+        "active": "A ler o artigo",
+        "done": "Secção lida",
+        "label": "Ler artigo"
+      },
       "runningCount": "{{count}} ferramentas em execução",
       "search_limited": "[to be translated]:Search limited · not executed",
       "sections": {
@@ -3360,6 +3398,9 @@
     "no_matching_model": "[to be translated]:No available model matches the remote configuration. Import a Provider or choose a model manually.",
     "open_settings": "[to be translated]:Open Model Settings",
     "title": "[to be translated]:No model configured"
+  },
+  "model_status": {
+    "failures": "Falhas"
   },
   "models": {
     "add_parameter": "Adicionar parâmetro",
@@ -6533,6 +6574,24 @@
       "color_primary": "Cor Temática",
       "dark": "Escuro",
       "light": "Claro",
+      "mode": "Modo de aparência",
+      "preset": {
+        "codex": {
+          "description": "Espaço de trabalho monocromático",
+          "name": "Codex Workbench"
+        },
+        "font": "Usar a fonte do estilo selecionado",
+        "title": "Estilo visual",
+        "zen-paper": {
+          "description": "Tons quentes de papel",
+          "name": "Zen Paper"
+        }
+      },
+      "route_transition": {
+        "crossfade": "Dissolver",
+        "instant": "Mudança imediata",
+        "title": "Transições de página"
+      },
       "system": "Sistema",
       "title": "Tema",
       "window": {

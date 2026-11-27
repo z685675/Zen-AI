@@ -17,12 +17,14 @@ const OnboardingPage: FC<OnboardingPageProps> = ({ onComplete }) => {
   const [cherryInLoggedIn, setCherryInLoggedIn] = useState(false)
 
   return (
-    <div className="flex h-screen w-screen flex-col">
+    <div
+      className="flex h-screen w-screen flex-col"
+      style={{ background: 'var(--zen-window-canvas)', color: 'var(--zen-text-1)' }}>
       <div className="drag flex w-full shrink-0 items-center justify-end" style={{ height: 'var(--navbar-height)' }}>
         <WindowControls />
       </div>
-      <div className="flex flex-1 px-2 pb-2">
-        <div className="relative flex flex-1 overflow-hidden rounded-xl bg-(--color-background)">
+      <div className="flex flex-1 px-4 pb-4">
+        <div className="relative flex flex-1 overflow-hidden rounded-2xl">
           <SkipButton onSkip={onComplete} />
           {step === 'welcome' && <WelcomePage setStep={setStep} setCherryInLoggedIn={setCherryInLoggedIn} />}
           {step === 'select-model' && (

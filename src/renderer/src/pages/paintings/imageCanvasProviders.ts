@@ -1,6 +1,7 @@
 import { isImageGenerationEndpointModel } from '@renderer/config/models'
 import type { Provider } from '@renderer/types'
 import type { ImageCanvasProtocol, ImageCanvasProvider } from '@shared/config/imageCanvas'
+import { isVideoEndpointModel } from '@shared/config/videoGeneration'
 
 export function imageCanvasProviders(providers: Provider[]): ImageCanvasProvider[] {
   return providers
@@ -35,6 +36,9 @@ export function imageCanvasProviders(providers: Provider[]): ImageCanvasProvider
         apiHost: provider.apiHost,
         apiKey: provider.apiKey,
         headers: provider.extra_headers,
+        ...(!nativeGemini && {
+          videoModels: provider.models.filter(isVideoEndpointModel).map(({ id, name }) => ({ id, name: name || id }))
+        }),
         models: provider.models
           .filter(
             (model) =>
@@ -57,5 +61,8 @@ export function imageCanvasProviders(providers: Provider[]): ImageCanvasProvider
           }))
       }
     })
-    .filter((provider): provider is ImageCanvasProvider => !!provider && provider.models.length > 0)
+    .filter(
+      (provider): provider is ImageCanvasProvider =>
+        !!provider && !!(provider.models.length || provider.videoModels?.length)
+    )
 }

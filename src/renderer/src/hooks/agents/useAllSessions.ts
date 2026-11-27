@@ -11,6 +11,7 @@ import { useSessionChanged } from './useSessionChanged'
 
 type UseAllSessionsOptions = {
   archived?: ListOptions['archived']
+  enabled?: boolean
 }
 
 export const useAllSessions = (options: UseAllSessionsOptions = {}, pageSize = DEFAULT_SESSION_PAGE_SIZE) => {
@@ -19,7 +20,7 @@ export const useAllSessions = (options: UseAllSessionsOptions = {}, pageSize = D
   const archived = options.archived ?? 'exclude'
 
   const getKey = (pageIndex: number, previousPageData: ListAgentSessionsResponse | null) => {
-    if (previousPageData && previousPageData.data.length < pageSize) return null
+    if (options.enabled === false || (previousPageData && previousPageData.data.length < pageSize)) return null
     return [client.allSessionsPath, archived, pageIndex, pageSize]
   }
 

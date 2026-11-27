@@ -176,7 +176,7 @@ export class AppUpdateService {
   private openInstallerPromise: Promise<AppUpdateInstallResult> | undefined
 
   constructor(
-    private readonly mainWindow: BrowserWindow,
+    private mainWindow: BrowserWindow | null,
     private readonly currentVersion: string,
     private readonly shouldAutoDownload: () => boolean
   ) {
@@ -193,6 +193,13 @@ export class AppUpdateService {
     }
     this.configureUpdater()
     this.registerUpdaterEvents()
+  }
+
+  bindWindow(window: BrowserWindow): void {
+    this.mainWindow = window
+    window.once('closed', () => {
+      if (this.mainWindow === window) this.mainWindow = null
+    })
   }
 
   scheduleStartupCheck(delayMs = 5000) {
@@ -255,9 +262,9 @@ export class AppUpdateService {
       }
     }
     this.currentSource = source
-    autoUpdater.autoDownload = isMac ? false : source === 'manual' ? false : this.shouldAutoDownload()
     const cachedUpdateInfo = this.downloadedUpdateInfo
     const pendingUpdateInfo = this.downloadedUpdateReady ? this.getReadyPendingUpdateInfo() : null
+    autoUpdater.autoDownload = !isMac && source === 'auto' && this.shouldAutoDownload() && !pendingUpdateInfo
     this.setState({
       status: 'checking',
       source,
@@ -281,6 +288,12 @@ export class AppUpdateService {
     try {
       this.checking = true
       const result = await autoUpdater.checkForUpdates()
+      void result?.downloadPromise?.catch((error) => {
+        this.downloading = false
+        if (this.currentState.status !== 'error') {
+          this.handleUpdateError(source, error instanceof Error ? error.message : String(error))
+        }
+      })
       const updateInfo = this.normalizeUpdateInfo(result?.updateInfo)
       const hasNewerServerUpdate = this.isNewerUpdate(updateInfo.version, pendingUpdateInfo?.version)
 
@@ -339,8 +352,10 @@ export class AppUpdateService {
         progress: this.progressInfo
       })
 
-      if (isMac && source === 'auto' && this.shouldAutoDownload()) {
-        void this.downloadUpdate('auto')
+      if ((isMac || pendingUpdateInfo) && source === 'auto' && this.shouldAutoDownload()) {
+        void this.downloadUpdate('auto').catch((error) =>
+          this.handleUpdateError(source, error instanceof Error ? error.message : String(error))
+        )
       }
 
       return {
@@ -521,9 +536,6 @@ export class AppUpdateService {
 
     let installUpdateInfo = updateInfo
 
-    if (!(await allowAssistantExit())) return { success: false, status: 'cancelled', message: '', updateInfo }
-    mark('exit-confirmed')
-
     if (!this.downloadedUpdateReady) {
       mark('preparing-package')
       const readyResult = await this.ensureDownloadedUpdateReady(updateInfo)
@@ -554,12 +566,17 @@ export class AppUpdateService {
     mark('package-ready')
 
     try {
+      const macInstallerPath = isMac ? await this.prepareMacManualInstaller(installUpdateInfo) : undefined
+      if (!(await allowAssistantExit())) {
+        return { success: false, status: 'cancelled', message: '', updateInfo: installUpdateInfo }
+      }
+      mark('exit-confirmed')
       app.isInstallingUpdate = true
       app.isQuitting = true
       logger.info('Quitting and installing downloaded app update', { version: installUpdateInfo.version })
 
-      if (isMac) {
-        const installerPath = await this.prepareMacManualInstaller(installUpdateInfo)
+      if (macInstallerPath) {
+        const installerPath = macInstallerPath
         const openResult = await this.openMacManualInstaller(installerPath)
         if (openResult.fallbackToFolder) {
           app.isInstallingUpdate = false
@@ -816,9 +833,9 @@ export class AppUpdateService {
     })
 
     autoUpdater.on('error', (error) => {
+      if (app.isInstallingUpdate) return
       this.checking = false
       this.downloading = false
-      this.downloadedUpdateReady = false
       this.progressInfo = null
       this.handleUpdateError(this.currentSource, error instanceof Error ? error.message : String(error))
     })
@@ -1391,7 +1408,7 @@ export class AppUpdateService {
   }
 
   private sendEvent(channel: IpcChannel, payload: unknown) {
-    if (!this.mainWindow.isDestroyed()) {
+    if (this.mainWindow && !this.mainWindow.isDestroyed()) {
       this.mainWindow.webContents.send(channel, payload)
     }
   }

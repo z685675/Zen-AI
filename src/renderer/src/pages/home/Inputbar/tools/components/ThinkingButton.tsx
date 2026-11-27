@@ -245,26 +245,25 @@ const AgentEffortButton = styled.button`
   align-items: center;
   flex-shrink: 0;
   gap: 6px;
-  height: 34px;
+  height: 32px;
   padding: 0 11px;
-  border: 1px solid var(--color-border);
-  border-radius: 999px;
-  background: var(--color-background);
-  color: var(--color-text);
+  border: 0;
+  border-radius: var(--zen-radius-pill);
+  background: var(--zen-glass-pill);
+  box-shadow: var(--zen-shadow-pill);
+  color: var(--zen-text-1);
   font-size: 12px;
   transition:
-    border-color 0.18s ease,
-    background-color 0.18s ease,
-    box-shadow 0.18s ease;
+    background 160ms ease,
+    box-shadow 180ms ease;
 
   .icon {
     flex-shrink: 0;
   }
 
   &:hover {
-    background: var(--color-background-soft);
-    border-color: var(--color-primary-soft);
-    box-shadow: 0 4px 10px rgba(15, 23, 42, 0.06);
+    background: var(--zen-glass-pill-hover);
+    box-shadow: var(--zen-shadow-pill-hover);
   }
 `
 

@@ -21,6 +21,7 @@ import { setActiveSessionIdAction } from '@renderer/store/runtime'
 import type { AgentConfiguration, AgentEntity, CreateSessionForm } from '@renderer/types'
 import { buildAgentSessionTopicId } from '@renderer/utils/agentSession'
 import { isUnnamedAgentSessionName } from '@renderer/utils/agentSessionTitle'
+import { markLocallyVerifiedEmptyConversation } from '@renderer/utils/conversationDraft'
 import { AGENT_DEFAULT_REASONING_EFFORT, getAgentSessionReasoningEffortCacheKey } from '@renderer/utils/reasoningEffort'
 import { canCreateAgentSession, DEFAULT_OPENCODE_AGENT_ID } from '@shared/config/agents'
 import { isZenManagedApiHost } from '@shared/config/zenProvider'
@@ -193,6 +194,7 @@ export const useCreateDefaultSession = (agentId: string | null) => {
           AGENT_DEFAULT_REASONING_EFFORT,
           SESSION_PREFERENCE_CACHE_TTL
         )
+        markLocallyVerifiedEmptyConversation(topicId)
         dispatch(setActiveSessionIdAction({ agentId, sessionId: candidate.id }))
         return candidate
       }
@@ -238,6 +240,7 @@ export const useCreateDefaultSession = (agentId: string | null) => {
       const created = await createSession(session)
 
       if (created) {
+        markLocallyVerifiedEmptyConversation(buildAgentSessionTopicId(created.id))
         dispatch(setActiveSessionIdAction({ agentId, sessionId: created.id }))
       }
 

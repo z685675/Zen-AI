@@ -2,6 +2,10 @@ import { loggerService } from '@logger'
 import { AgentModelValidationError, agentService, sessionService } from '@main/services/agents'
 import { channelManager } from '@main/services/agents/services/channels'
 import { schedulerService } from '@main/services/agents/services/SchedulerService'
+import {
+  LEGACY_ASSISTANT_READ_ONLY_CODE,
+  LEGACY_ASSISTANT_READ_ONLY_MESSAGE
+} from '@shared/agents/assistantAvailability'
 import { isProtectedAgentId } from '@shared/config/agents'
 import type { AgentEntity, CherryClawConfiguration, ListAgentsResponse } from '@types'
 import { type ReplaceAgentRequest, type UpdateAgentRequest } from '@types'
@@ -89,105 +93,10 @@ async function syncAgentSessionsAfterAgentUpdate(
   await Promise.all(syncJobs)
 }
 
-/**
- * @swagger
- * /v1/agents:
- *   post:
- *     summary: Create a new agent
- *     description: Creates a new autonomous agent with the specified configuration and automatically
- *       provisions an initial session that mirrors the agent's settings.
- *     tags: [Agents]
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             $ref: '#/components/schemas/CreateAgentRequest'
- *     responses:
- *       201:
- *         description: Agent created successfully
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/AgentEntity'
- *       400:
- *         description: Validation error
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Error'
- *       500:
- *         description: Internal server error
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Error'
- */
-export const createAgent = async (req: Request, res: Response): Promise<Response> => {
-  try {
-    logger.debug('Creating agent')
-    logger.debug('Agent payload', { body: req.body })
-
-    const agent = await agentService.createAgent(req.body)
-
-    try {
-      logger.info('Agent created', { agentId: agent.id })
-      logger.debug('Creating default session for agent', { agentId: agent.id })
-
-      await sessionService.createSession(agent.id, {})
-      logger.info('Default session created for agent', { agentId: agent.id })
-
-      // Create heartbeat task if heartbeat is enabled
-      const createConfig = getCherryClawConfig(agent)
-      if (createConfig.heartbeat_enabled) {
-        await schedulerService.ensureHeartbeatTask(agent.id, createConfig.heartbeat_interval ?? 30)
-      }
-
-      return res.status(201).json(agent)
-    } catch (sessionError: any) {
-      logger.error('Failed to create default session for new agent, rolling back agent creation', {
-        agentId: agent.id,
-        error: sessionError
-      })
-
-      try {
-        await agentService.deleteAgent(agent.id)
-      } catch (rollbackError: any) {
-        logger.error('Failed to roll back agent after session creation failure', {
-          agentId: agent.id,
-          error: rollbackError
-        })
-      }
-
-      return res.status(500).json({
-        error: {
-          message: `Failed to create default session for agent: ${sessionError.message}`,
-          type: 'internal_error',
-          code: 'agent_session_creation_failed'
-        }
-      })
-    }
-  } catch (error: any) {
-    if (error instanceof AgentModelValidationError) {
-      logger.warn('Agent model validation error during create', {
-        agentType: error.context.agentType,
-        field: error.context.field,
-        model: error.context.model,
-        detail: error.detail
-      })
-      return res.status(400).json(modelValidationErrorBody(error))
-    }
-
-    logger.error('Error creating agent', { error })
-    return res.status(500).json({
-      error: {
-        message: `Failed to create agent: ${error.message}`,
-        type: 'internal_error',
-        code: 'agent_creation_failed'
-      }
-    })
-  }
-}
+export const createAgent = (_req: Request, res: Response): Response =>
+  res.status(410).json({
+    error: { code: LEGACY_ASSISTANT_READ_ONLY_CODE, type: 'read_only', message: LEGACY_ASSISTANT_READ_ONLY_MESSAGE }
+  })
 
 /**
  * @swagger

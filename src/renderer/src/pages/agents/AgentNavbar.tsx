@@ -1,49 +1,30 @@
-import { Navbar, NavbarCenter, NavbarRight } from '@renderer/components/app/Navbar'
-import { HStack } from '@renderer/components/Layout'
+import { Navbar, NavbarCenter } from '@renderer/components/app/Navbar'
 import NavbarIcon from '@renderer/components/NavbarIcon'
 import AgentSearchPopup from '@renderer/components/Popups/AgentSearchPopup'
 import { useAgentWorkspace } from '@renderer/context/AgentWorkspaceProvider'
 import { useShortcut } from '@renderer/hooks/useShortcuts'
-import { useShowAssistants } from '@renderer/hooks/useStore'
 import { Tooltip } from 'antd'
-import { t } from 'i18next'
-import { PanelLeftOpen, Search } from 'lucide-react'
+import { Search } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 
-const AgentNavbar = ({ showSidebarControl = false }: { showSidebarControl?: boolean }) => {
+export default function AgentNavbar() {
   const workspace = useAgentWorkspace()
-  const { showAssistants, setShowAssistants } = useShowAssistants()
-  useShortcut('search_message', () => {
+  const { t } = useTranslation()
+  const title = workspace === 'legacy' ? t('assistant_transition.legacy_history') : t('common.agent_one')
+  const searchLabel = t('agent.session.search.placeholder')
+  const search = () => {
     void AgentSearchPopup.show(workspace)
-  })
+  }
+  useShortcut('search_message', search)
 
   return (
-    <Navbar className="agent-navbar">
-      <NavbarCenter>
-        {showSidebarControl && !showAssistants && (
-          <NavbarIcon aria-label={t('navbar.show_sidebar')} onClick={() => setShowAssistants(true)}>
-            <PanelLeftOpen size={17} />
-          </NavbarIcon>
-        )}
-      </NavbarCenter>
-      <NavbarRight
-        style={{
-          justifyContent: 'flex-end',
-          flex: 'none',
-          position: 'relative',
-          paddingRight: '15px',
-          minWidth: 'auto'
-        }}
-        className="agent-navbar-right">
-        <HStack alignItems="center" gap={6}>
-          <Tooltip title={t('agent.session.search.placeholder')} mouseEnterDelay={0.8}>
-            <NavbarIcon className="max-[1000px]:hidden" onClick={() => AgentSearchPopup.show(workspace)}>
-              <Search size={18} />
-            </NavbarIcon>
-          </Tooltip>
-        </HStack>
-      </NavbarRight>
+    <Navbar>
+      <NavbarCenter>{title}</NavbarCenter>
+      <Tooltip title={searchLabel}>
+        <NavbarIcon onClick={search} aria-label={searchLabel}>
+          <Search size={16} />
+        </NavbarIcon>
+      </Tooltip>
     </Navbar>
   )
 }
-
-export default AgentNavbar

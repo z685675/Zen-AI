@@ -41,6 +41,7 @@ export default function ModelDailyQuota(props: { source?: UsageSource; revision:
       </Typography.Title>
       <Typography.Paragraph type="secondary">{t('model_daily_quota.hint')}</Typography.Paragraph>
       <Table
+        className="zen-metrics-table"
         size="small"
         rowKey="model"
         pagination={false}

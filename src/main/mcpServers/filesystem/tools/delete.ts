@@ -33,7 +33,7 @@ export async function handleDeleteTool(args: unknown, baseDir: string) {
   }
 
   const targetPath = parsed.data.path
-  const validPath = await validatePath(targetPath, baseDir)
+  const validPath = await validatePath(targetPath, baseDir, { allowRoot: false })
   const recursive = parsed.data.recursive || false
 
   // Check if path exists and get stats

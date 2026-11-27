@@ -30,11 +30,11 @@ export function managedModelFetch(
       finished = true
       signal?.removeEventListener('abort', abort)
     }
-    const cancel = () => void bridge.cancel(id).catch(() => {})
+    const cancel = (reason?: 'timeout') => (reason ? bridge.cancel(id, reason) : bridge.cancel(id)).catch(() => {})
     const abort = () => {
       if (finished) return
       finish()
-      cancel()
+      void cancel(signal?.reason?.name === 'TimeoutError' ? 'timeout' : undefined)
       streamController?.error(signal?.reason ?? new DOMException('Aborted', 'AbortError'))
     }
     signal?.addEventListener('abort', abort, { once: true })
@@ -66,13 +66,13 @@ export function managedModelFetch(
                 } catch (error) {
                   if (finished) return
                   finish()
-                  cancel()
+                  void cancel()
                   controller.error(error)
                 }
               },
               cancel() {
                 finish()
-                cancel()
+                return cancel()
               }
             },
             { highWaterMark: 0 }
@@ -85,8 +85,10 @@ export function managedModelFetch(
         headers: response.headers
       })
     } catch (error) {
-      finish()
-      cancel()
+      if (!finished) {
+        finish()
+        void cancel()
+      }
       throw error
     }
   }

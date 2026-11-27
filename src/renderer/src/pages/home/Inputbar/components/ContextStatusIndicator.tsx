@@ -93,9 +93,7 @@ const ContextStatusIndicator: FC<Props> = ({ conversationId }) => {
     return `${Math.min(telemetry.processedItems, telemetry.totalItems)}/${telemetry.totalItems}`
   }, [telemetry])
 
-  const localCheckpointNotice = t('chat.input.context_manager.local_checkpoint_fallback', {
-    defaultValue: '远程整理模型暂不可用，已使用本地 checkpoint 继续处理'
-  })
+  const localCheckpointNotice = t('chat.input.context_manager.local_checkpoint_fallback')
 
   const statusText = telemetry
     ? isActive

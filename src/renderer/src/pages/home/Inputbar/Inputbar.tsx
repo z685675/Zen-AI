@@ -1,4 +1,5 @@
 import { loggerService } from '@logger'
+import { TopicModelRecoveryNotice } from '@renderer/components/ModelRecoveryNotice'
 import { isAssistantModelIdentifierBlocked } from '@renderer/config/agentModelPolicy'
 import { chatModelFilter, isMandatoryWebSearchModel, isVisionModel, isVisionModels } from '@renderer/config/models'
 import { useAssistant, useDefaultModel } from '@renderer/hooks/useAssistant'
@@ -198,8 +199,8 @@ const InputbarInner: FC<InputbarInnerProps> = ({
     customHeight,
     setCustomHeight
   } = useTextareaResize({
-    maxHeight: 500,
-    minHeight: 30
+    maxHeight: 220,
+    minHeight: 44
   })
 
   const { assistant: storedAssistant, updateAssistant, updateTopic } = useAssistant(initialAssistant.id)
@@ -608,8 +609,16 @@ const InputbarInner: FC<InputbarInnerProps> = ({
         toolOrderOverride={
           isHero
             ? {
-                visible: ['attachment', 'thinking', 'web_search', 'knowledge_base', 'mcp_tools', 'generate_image'],
-                hidden: ['new_topic', 'quick_phrases', 'clear_topic', 'toggle_expand', 'new_context']
+                visible: [
+                  'attachment',
+                  'quick_phrases',
+                  'thinking',
+                  'web_search',
+                  'knowledge_base',
+                  'mcp_tools',
+                  'generate_image'
+                ],
+                hidden: ['new_topic', 'clear_topic', 'toggle_expand', 'new_context']
               }
             : {
                 visible: [],
@@ -653,6 +662,7 @@ const InputbarInner: FC<InputbarInnerProps> = ({
       leftToolbar={leftToolbar}
       rightToolbar={rightToolbar}
       topContent={topContent}
+      statusContent={<TopicModelRecoveryNotice key={topic.id} topicId={topic.id} />}
       pinnedContent={
         isHero ? undefined : (
           <>

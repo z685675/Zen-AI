@@ -9,6 +9,7 @@ import {
   setModelCapacityCatalog,
   validateModelCapacityCatalog
 } from '@shared/modelCapacity'
+import { discardResponseBody } from '@shared/modelTransport'
 import { app } from 'electron'
 
 import { managedApiFetch } from './modelTransport/apiFetch'
@@ -63,9 +64,14 @@ export class ModelCapacityService {
           headers: { Accept: 'application/json' },
           signal: AbortSignal.timeout(10_000)
         })
-        if (!response.ok) throw new Error(`Model capacity catalog HTTP ${response.status}`)
-        if (Number(response.headers.get('content-length')) > MAX_CATALOG_BYTES)
+        if (!response.ok) {
+          discardResponseBody(response)
+          throw new Error(`Model capacity catalog HTTP ${response.status}`)
+        }
+        if (Number(response.headers.get('content-length')) > MAX_CATALOG_BYTES) {
+          discardResponseBody(response)
           throw new Error('Model capacity catalog is too large')
+        }
         const text = await response.text()
         if (Buffer.byteLength(text) > MAX_CATALOG_BYTES) throw new Error('Model capacity catalog is too large')
         const next: unknown = JSON.parse(text)

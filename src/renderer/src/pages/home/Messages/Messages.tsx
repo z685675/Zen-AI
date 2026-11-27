@@ -62,17 +62,18 @@ const Messages: React.FC<MessagesProps> = ({ assistant, topic, setActiveTopic, o
     getStoredPosition,
     restorePosition
   } = useScrollPosition(`topic-${topic.id}`)
-  const [displayMessages, setDisplayMessages] = useState<Message[]>([])
-  const [hasMore, setHasMore] = useState(false)
-  const [isLoadingMore, setIsLoadingMore] = useState(false)
-  const [isProcessingContext, setIsProcessingContext] = useState(false)
-
   const { addTopic, removeTopic } = useAssistant(assistant.id)
   const { showPrompt, messageNavigation } = useSettings()
   const { t } = useTranslation()
   const dispatch = useAppDispatch()
   const messages = useTopicMessages(topic.id)
   const { displayCount, clearTopicMessages, deleteMessage, createTopicBranch } = useMessageOperations(topic)
+  const [displayMessages, setDisplayMessages] = useState<Message[]>(() =>
+    computeDisplayMessages(messages, 0, displayCount)
+  )
+  const [hasMore, setHasMore] = useState(() => messages.length > displayCount)
+  const [isLoadingMore, setIsLoadingMore] = useState(false)
+  const [isProcessingContext, setIsProcessingContext] = useState(false)
 
   const { isMultiSelectMode, handleSelectMessage } = useChatContext(topic)
 
@@ -402,8 +403,9 @@ const Messages: React.FC<MessagesProps> = ({ assistant, topic, setActiveTopic, o
       key={assistant.id}
       onScroll={handleScrollPosition}>
       <NarrowLayout
+        reading
         reserveNavigationSpace={messageNavigation === 'anchor'}
-        style={{ display: 'flex', flexDirection: 'column-reverse' }}>
+        style={{ display: 'flex', flexDirection: 'column-reverse', flex: '1 0 auto', justifyContent: 'flex-end' }}>
         <InfiniteScroll
           dataLength={displayMessages.length}
           next={loadMoreMessages}
@@ -413,7 +415,7 @@ const Messages: React.FC<MessagesProps> = ({ assistant, topic, setActiveTopic, o
           inverse
           style={{ overflow: 'visible' }}>
           <ContextMenu>
-            <ScrollContainer>
+            <ScrollContainer $hasPrompt={showPrompt}>
               {groupedMessages.map(([key, groupMessages]) => (
                 <Fragment key={key}>
                   {branchDividerText &&
@@ -473,7 +475,7 @@ const Messages: React.FC<MessagesProps> = ({ assistant, topic, setActiveTopic, o
   )
 }
 
-const computeDisplayMessages = (messages: Message[], startIndex: number, displayCount: number) => {
+function computeDisplayMessages(messages: Message[], startIndex: number, displayCount: number) {
   // 如果剩余消息数量小于 displayCount，直接返回所有剩余消息的倒序切片
   if (messages.length - startIndex <= displayCount) {
     const result: Message[] = []
@@ -515,7 +517,7 @@ const LoaderContainer = styled.div`
   justify-content: center;
   padding: 10px;
   width: 100%;
-  background: var(--color-background);
+  background: transparent;
   pointer-events: none;
 `
 

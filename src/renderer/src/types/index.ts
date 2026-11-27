@@ -322,6 +322,7 @@ export const EndPointTypeSchema = z.enum([
   'anthropic',
   'gemini',
   'image-generation',
+  'openai-video',
   'jina-rerank'
 ])
 export type EndpointType = z.infer<typeof EndPointTypeSchema>

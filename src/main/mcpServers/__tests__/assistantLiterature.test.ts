@@ -24,6 +24,13 @@ import { readAssistantDocument } from '../assistantReadDocument'
 beforeEach(() => vi.mocked(readAssistantDocument).mockClear())
 afterEach(() => vi.restoreAllMocks())
 
+async function removePaperFixture(root: string) {
+  if (path.dirname(root) !== os.tmpdir() || !path.basename(root).startsWith('zen-paper-test-')) {
+    throw new Error('Unexpected fixture')
+  }
+  await fs.rm(root, { recursive: true, force: true })
+}
+
 describe('bounded literature acquisition', () => {
   it('batches discovery, deduplicates DOI aliases and separates missing abstracts from full text', async () => {
     const request = vi.fn(
@@ -104,9 +111,7 @@ describe('bounded literature acquisition', () => {
       const calls = vi.mocked(readAssistantDocument).mock.calls
       expect(calls.at(-1)![0].file_path).toBe(calls.at(-2)![0].file_path)
     } finally {
-      if (path.dirname(root) !== os.tmpdir() || !path.basename(root).startsWith('zen-paper-test-'))
-        throw new Error('Unexpected fixture')
-      await fs.rm(root, { recursive: true, force: true })
+      await removePaperFixture(root)
     }
   })
   it('reads a public PDF behind virtual DNS only after independent public verification', async () => {
@@ -133,9 +138,7 @@ describe('bounded literature acquisition', () => {
       expect(result.evidence_level).toBe('full_text_excerpt')
       expect(request).toHaveBeenCalledTimes(3)
     } finally {
-      if (path.dirname(root) !== os.tmpdir() || !path.basename(root).startsWith('zen-paper-test-'))
-        throw new Error('Unexpected fixture')
-      await fs.rm(root, { recursive: true, force: true })
+      await removePaperFixture(root)
     }
   })
 
@@ -188,9 +191,7 @@ describe('bounded literature acquisition', () => {
         })
         expect(request).toHaveBeenCalledOnce()
       } finally {
-        if (path.dirname(root) !== os.tmpdir() || !path.basename(root).startsWith('zen-paper-test-'))
-          throw new Error('Unexpected fixture')
-        await fs.rm(root, { recursive: true, force: true })
+        await removePaperFixture(root)
       }
     }
   )
@@ -226,9 +227,7 @@ describe('bounded literature acquisition', () => {
       )
       expect(next.measurement.outcome).toBe('completed')
     } finally {
-      if (path.dirname(root) !== os.tmpdir() || !path.basename(root).startsWith('zen-paper-test-'))
-        throw new Error('Unexpected fixture')
-      await fs.rm(root, { recursive: true, force: true })
+      await removePaperFixture(root)
     }
   })
 
@@ -274,9 +273,7 @@ describe('bounded literature acquisition', () => {
     } finally {
       release()
       await Promise.all(active)
-      if (path.dirname(root) !== os.tmpdir() || !path.basename(root).startsWith('zen-paper-test-'))
-        throw new Error('Unexpected fixture')
-      await fs.rm(root, { recursive: true, force: true })
+      await removePaperFixture(root)
     }
   })
 

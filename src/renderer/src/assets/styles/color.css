@@ -1,149 +1,572 @@
-:root {
-  --color-white: #ffffff;
-  --color-white-soft: rgba(255, 255, 255, 0.8);
-  --color-white-mute: rgba(255, 255, 255, 0.94);
+/* ==========================================================================
+   Zen AI Visual System: Two Liquid Glass Palettes (Pure Glass & Warm Silk)
+   Calibrated Apple Luminance Hierarchy:
+   1. Calm uniform canvas (zero glare spots)
+   2. Quiet peripheral frosted sidebar island (softer than focal controls)
+   3. Clean, high-legibility milky frosted glass on focal composer & capsules
+   ========================================================================== */
 
+:root {
+  --zen-radius-sm: 10px;
+  --zen-radius-md: 14px;
+  --zen-radius-lg: 16px;
+  --zen-radius-xl: 18px;
+  --zen-radius-pill: 9999px;
+  --zen-reading-width: 820px;
+  --zen-composer-width: 880px;
+  --zen-reading-size: 14px;
+  --zen-reading-line-height: 1.7;
+  --zen-body-line-height: 1.65;
+}
+
+/* ---------- Preset 1 (Default): Pure Glass (纯净玻璃 · Light) ---------- */
+:root,
+[theme-mode='light'],
+body[data-theme-preset='codex'][theme-mode='light'] {
+  color-scheme: light;
+  /* High-key snow-white luminous canvas (R=G=B, zero cyan, airy watery glass depth) */
+  --zen-window-canvas:
+    radial-gradient(960px 640px at 56% 6%, rgba(255, 255, 255, 1), transparent 72%),
+    radial-gradient(660px 500px at 10% 90%, rgba(238, 238, 238, 0.56), transparent 70%),
+    radial-gradient(640px 480px at 92% 88%, rgba(240, 240, 240, 0.48), transparent 70%),
+    linear-gradient(180deg, #fcfcfc 0%, #f6f6f6 56%, #f8f8f8 100%);
+  --zen-veil-top: linear-gradient(
+    180deg,
+    rgba(252, 252, 252, 0.42) 0%,
+    rgba(252, 252, 252, 0.12) 58%,
+    transparent 100%
+  );
+  --zen-veil-bottom: linear-gradient(
+    0deg,
+    rgba(248, 248, 248, 0.48) 0%,
+    rgba(248, 248, 248, 0.16) 56%,
+    transparent 100%
+  );
+
+  --zen-bg-frame: #f7f7f7;
+  --zen-bg-sidebar: rgba(255, 255, 255, 0.74);
+  --zen-bg-canvas: #f8f8f8;
+  --zen-bg-elevated: #ffffff;
+  --zen-bg-subtle: rgba(0, 0, 0, 0.036);
+  --zen-bg-hover: rgba(0, 0, 0, 0.035);
+  --zen-bg-active: rgba(255, 255, 255, 0.94);
+  --zen-border: rgba(0, 0, 0, 0.048);
+  --zen-border-strong: rgba(0, 0, 0, 0.095);
+  --zen-text-1: #171719;
+  --zen-text-2: #4a4a4f;
+  --zen-text-3: #6e6e73;
+  --zen-accent: #1c1c1e;
+  --zen-accent-fg: #ffffff;
+  --zen-accent-soft: rgba(0, 0, 0, 0.048);
+  --zen-user-bubble: #f2f2f2;
+  --zen-user-bubble-bg: linear-gradient(160deg, rgba(255, 255, 255, 0.94) 0%, rgba(246, 246, 246, 0.8) 100%);
+  --zen-code-bg: rgba(255, 255, 255, 0.72);
+  --zen-composer-bg: rgba(255, 255, 255, 0.74);
+
+  /* Water-like Crystalline Liquid Glass — bright specular crest, airy clear trough, luminous rebound */
+  --zen-glass-rail: linear-gradient(
+    162deg,
+    rgba(255, 255, 255, 0.88) 0%,
+    rgba(255, 255, 255, 0.54) 48%,
+    rgba(255, 255, 255, 0.78) 100%
+  );
+  --zen-glass-pill: linear-gradient(
+    162deg,
+    rgba(255, 255, 255, 0.94) 0%,
+    rgba(255, 255, 255, 0.68) 50%,
+    rgba(255, 255, 255, 0.86) 100%
+  );
+  --zen-glass-pill-hover: linear-gradient(
+    162deg,
+    rgba(255, 255, 255, 0.99) 0%,
+    rgba(255, 255, 255, 0.84) 50%,
+    rgba(255, 255, 255, 0.95) 100%
+  );
+  --zen-glass-card: linear-gradient(
+    160deg,
+    rgba(255, 255, 255, 0.9) 0%,
+    rgba(255, 255, 255, 0.6) 48%,
+    rgba(255, 255, 255, 0.8) 100%
+  );
+  --zen-glass-active: linear-gradient(162deg, rgba(255, 255, 255, 0.98) 0%, rgba(255, 255, 255, 0.82) 100%);
+  /* Composer: crystalline water-sheer translucency when idle, high-opacity frost when typing */
+  --zen-glass-composer: linear-gradient(
+    164deg,
+    rgba(255, 255, 255, 0.86) 0%,
+    rgba(255, 255, 255, 0.58) 46%,
+    rgba(255, 255, 255, 0.78) 100%
+  );
+  --zen-glass-composer-solid: linear-gradient(
+    164deg,
+    rgba(255, 255, 255, 0.98) 0%,
+    rgba(252, 252, 252, 0.95) 50%,
+    rgba(255, 255, 255, 0.97) 100%
+  );
+
+  /* Crystalline Liquid Fresnel Rims + Feather-Light Floating Halo */
+  --zen-shadow-rail:
+    inset 0 2px 2px rgba(255, 255, 255, 1),
+    inset 1px 0 1.5px rgba(255, 255, 255, 0.85),
+    inset 0 -1px 1.5px rgba(255, 255, 255, 0.6),
+    0 0 0 0.5px rgba(255, 255, 255, 0.96),
+    0 0 0 1px rgba(0, 0, 0, 0.032),
+    0 14px 38px -12px rgba(0, 0, 0, 0.068);
+  --zen-shadow-pill:
+    inset 0 1.5px 2px rgba(255, 255, 255, 1),
+    inset 0 -0.5px 1px rgba(255, 255, 255, 0.68),
+    0 0 0 0.5px rgba(255, 255, 255, 0.96),
+    0 0 0 1px rgba(0, 0, 0, 0.038),
+    0 6px 18px -5px rgba(0, 0, 0, 0.058),
+    0 1px 2px rgba(0, 0, 0, 0.026);
+  --zen-shadow-pill-hover:
+    inset 0 2px 2px rgba(255, 255, 255, 1),
+    inset 0 -0.5px 1px rgba(255, 255, 255, 0.78),
+    0 0 0 0.5px rgba(255, 255, 255, 1),
+    0 0 0 1px rgba(0, 0, 0, 0.058),
+    0 10px 26px -6px rgba(0, 0, 0, 0.082),
+    0 2px 4px rgba(0, 0, 0, 0.034);
+  --zen-shadow-card:
+    inset 0 1.5px 2px rgba(255, 255, 255, 1),
+    inset 0 -0.5px 1px rgba(255, 255, 255, 0.58),
+    0 0 0 0.5px rgba(255, 255, 255, 0.95),
+    0 0 0 1px rgba(0, 0, 0, 0.034),
+    0 10px 28px -10px rgba(0, 0, 0, 0.056);
+  --zen-shadow-active:
+    inset 0 1.5px 1.5px rgba(255, 255, 255, 1), 0 0 0 0.5px rgba(255, 255, 255, 0.96), 0 0 0 1px rgba(0, 0, 0, 0.036), 0
+    4px 14px -4px rgba(0, 0, 0, 0.055);
+  --zen-composer-ring:
+    inset 0 2px 2px rgba(255, 255, 255, 1),
+    inset 1px 0 1.5px rgba(255, 255, 255, 0.86),
+    inset 0 -1px 1.5px rgba(255, 255, 255, 0.62),
+    0 0 0 0.5px rgba(255, 255, 255, 0.98),
+    0 0 0 1px rgba(0, 0, 0, 0.042),
+    0 16px 44px -10px rgba(0, 0, 0, 0.078),
+    0 3px 10px -2px rgba(0, 0, 0, 0.032);
+  --zen-composer-ring-focus:
+    inset 0 2px 2px rgba(255, 255, 255, 1), 0 0 0 1px rgba(255, 255, 255, 1), 0 0 0 3.5px rgba(0, 0, 0, 0.042), 0 20px
+    52px -10px rgba(0, 0, 0, 0.105);
+
+  --zen-success: #10b981;
+  --zen-success-soft: rgba(16, 185, 129, 0.12);
+  --zen-warning: #d97706;
+  --zen-danger: #e11d48;
+  --zen-link: #007aff;
+}
+
+/* ---------- Preset 1 (Default): Pure Glass (纯净深空玻璃 · Dark) ---------- */
+[theme-mode='dark'],
+body[data-theme-preset='codex'][theme-mode='dark'] {
+  color-scheme: dark;
+  --zen-window-canvas:
+    radial-gradient(840px 560px at 58% 10%, rgba(255, 255, 255, 0.048), transparent 68%),
+    radial-gradient(620px 480px at 14% 88%, rgba(255, 255, 255, 0.022), transparent 70%),
+    linear-gradient(180deg, #161618 0%, #111113 58%, #141416 100%);
+  --zen-veil-top: linear-gradient(180deg, rgba(20, 20, 22, 0.56) 0%, rgba(20, 20, 22, 0.2) 60%, transparent 100%);
+  --zen-veil-bottom: linear-gradient(0deg, rgba(17, 17, 19, 0.64) 0%, rgba(17, 17, 19, 0.24) 56%, transparent 100%);
+
+  --zen-bg-frame: #131315;
+  --zen-bg-sidebar: rgba(28, 28, 31, 0.72);
+  --zen-bg-canvas: #141416;
+  --zen-bg-elevated: #212125;
+  --zen-bg-subtle: rgba(255, 255, 255, 0.062);
+  --zen-bg-hover: rgba(255, 255, 255, 0.058);
+  --zen-bg-active: rgba(255, 255, 255, 0.11);
+  --zen-border: rgba(255, 255, 255, 0.08);
+  --zen-border-strong: rgba(255, 255, 255, 0.15);
+  --zen-text-1: #f5f5f7;
+  --zen-text-2: #b8b8bf;
+  --zen-text-3: #8e8e96;
+  --zen-accent: #f2f2f5;
+  --zen-accent-fg: #141416;
+  --zen-accent-soft: rgba(255, 255, 255, 0.09);
+  --zen-user-bubble: #232327;
+  --zen-user-bubble-bg: rgba(38, 38, 43, 0.82);
+  --zen-code-bg: rgba(14, 14, 16, 0.68);
+  --zen-composer-bg: rgba(34, 34, 38, 0.76);
+
+  --zen-glass-rail: linear-gradient(
+    168deg,
+    rgba(36, 36, 41, 0.64) 0%,
+    rgba(24, 24, 28, 0.48) 54%,
+    rgba(30, 30, 34, 0.58) 100%
+  );
+  --zen-glass-pill: linear-gradient(
+    168deg,
+    rgba(48, 48, 54, 0.72) 0%,
+    rgba(36, 36, 41, 0.56) 56%,
+    rgba(42, 42, 48, 0.64) 100%
+  );
+  --zen-glass-pill-hover: linear-gradient(168deg, rgba(58, 58, 65, 0.84) 0%, rgba(46, 46, 52, 0.72) 100%);
+  --zen-glass-card: linear-gradient(
+    165deg,
+    rgba(42, 42, 48, 0.66) 0%,
+    rgba(30, 30, 35, 0.5) 56%,
+    rgba(36, 36, 41, 0.6) 100%
+  );
+  --zen-glass-active: linear-gradient(168deg, rgba(56, 56, 63, 0.8) 0%, rgba(44, 44, 50, 0.66) 100%);
+  --zen-glass-composer: linear-gradient(
+    170deg,
+    rgba(44, 44, 50, 0.66) 0%,
+    rgba(32, 32, 37, 0.52) 54%,
+    rgba(38, 38, 43, 0.6) 100%
+  );
+  --zen-glass-composer-solid: linear-gradient(
+    170deg,
+    rgba(38, 38, 44, 0.96) 0%,
+    rgba(28, 28, 33, 0.93) 54%,
+    rgba(34, 34, 39, 0.95) 100%
+  );
+
+  --zen-shadow-rail:
+    inset 0 1px 0.5px rgba(255, 255, 255, 0.14),
+    inset 1px 0 0.5px rgba(255, 255, 255, 0.06),
+    0 0 0 0.5px rgba(255, 255, 255, 0.09),
+    0 14px 36px -14px rgba(0, 0, 0, 0.52);
+  --zen-shadow-pill:
+    inset 0 1px 0.5px rgba(255, 255, 255, 0.16), 0 0 0 0.5px rgba(255, 255, 255, 0.11), 0 6px 18px -6px
+    rgba(0, 0, 0, 0.44);
+  --zen-shadow-pill-hover:
+    inset 0 1px 0.5px rgba(255, 255, 255, 0.22), 0 0 0 0.5px rgba(255, 255, 255, 0.17), 0 10px 24px -6px
+    rgba(0, 0, 0, 0.54);
+  --zen-shadow-card:
+    inset 0 1px 0.5px rgba(255, 255, 255, 0.13), 0 0 0 0.5px rgba(255, 255, 255, 0.09), 0 10px 28px -10px
+    rgba(0, 0, 0, 0.44);
+  --zen-shadow-active:
+    inset 0 1px 0.5px rgba(255, 255, 255, 0.16), 0 0 0 0.5px rgba(255, 255, 255, 0.11), 0 4px 12px -4px
+    rgba(0, 0, 0, 0.38);
+  --zen-composer-ring:
+    inset 0 1px 0.5px rgba(255, 255, 255, 0.16),
+    inset 1px 0 0.5px rgba(255, 255, 255, 0.07),
+    0 0 0 0.5px rgba(255, 255, 255, 0.12),
+    0 16px 40px -10px rgba(0, 0, 0, 0.58);
+  --zen-composer-ring-focus:
+    inset 0 1px 0.5px rgba(255, 255, 255, 0.22), 0 0 0 1px rgba(255, 255, 255, 0.2), 0 0 0 3.5px
+    rgba(255, 255, 255, 0.055), 0 20px 48px -10px rgba(0, 0, 0, 0.68);
+
+  --zen-success: #30d158;
+  --zen-success-soft: rgba(48, 209, 88, 0.16);
+  --zen-warning: #ff9f0a;
+  --zen-danger: #ff453a;
+  --zen-link: #409cff;
+}
+
+/* ---------- Preset 2: Warm Silk (羊脂暖杏 · Light) ---------- */
+body[data-theme-preset='zen-paper'][theme-mode='light'] {
+  color-scheme: light;
+  --zen-window-canvas:
+    radial-gradient(960px 640px at 56% 6%, rgba(255, 254, 250, 1), transparent 72%),
+    radial-gradient(660px 500px at 10% 90%, rgba(241, 233, 220, 0.58), transparent 70%),
+    radial-gradient(640px 480px at 92% 88%, rgba(243, 236, 224, 0.5), transparent 70%),
+    linear-gradient(180deg, #fcf9f3 0%, #f5efe4 56%, #f8f3ea 100%);
+  --zen-veil-top: linear-gradient(
+    180deg,
+    rgba(252, 249, 243, 0.42) 0%,
+    rgba(252, 249, 243, 0.12) 58%,
+    transparent 100%
+  );
+  --zen-veil-bottom: linear-gradient(
+    0deg,
+    rgba(246, 240, 230, 0.48) 0%,
+    rgba(246, 240, 230, 0.16) 56%,
+    transparent 100%
+  );
+
+  --zen-bg-frame: #f7f2e9;
+  --zen-bg-sidebar: rgba(255, 253, 249, 0.76);
+  --zen-bg-canvas: #f8f4ec;
+  --zen-bg-elevated: #fffdf9;
+  --zen-bg-subtle: rgba(58, 45, 28, 0.038);
+  --zen-bg-hover: rgba(58, 45, 28, 0.036);
+  --zen-bg-active: rgba(255, 254, 251, 0.94);
+  --zen-border: rgba(58, 45, 28, 0.052);
+  --zen-border-strong: rgba(58, 45, 28, 0.1);
+  --zen-text-1: #1e1b16;
+  --zen-text-2: #524b41;
+  --zen-text-3: #746b5e;
+  --zen-accent: #24201a;
+  --zen-accent-fg: #fefcf8;
+  --zen-accent-soft: rgba(58, 45, 28, 0.05);
+  --zen-user-bubble: #f1eadf;
+  --zen-user-bubble-bg: linear-gradient(160deg, rgba(255, 254, 250, 0.94) 0%, rgba(244, 237, 226, 0.8) 100%);
+  --zen-code-bg: rgba(255, 253, 248, 0.72);
+  --zen-composer-bg: rgba(255, 254, 250, 0.76);
+
+  --zen-glass-rail: linear-gradient(
+    162deg,
+    rgba(255, 254, 250, 0.88) 0%,
+    rgba(255, 253, 248, 0.56) 48%,
+    rgba(255, 254, 250, 0.78) 100%
+  );
+  --zen-glass-pill: linear-gradient(
+    162deg,
+    rgba(255, 254, 251, 0.94) 0%,
+    rgba(255, 253, 248, 0.7) 50%,
+    rgba(255, 254, 250, 0.86) 100%
+  );
+  --zen-glass-pill-hover: linear-gradient(
+    162deg,
+    rgba(255, 255, 253, 0.99) 0%,
+    rgba(255, 253, 249, 0.85) 50%,
+    rgba(255, 254, 251, 0.96) 100%
+  );
+  --zen-glass-card: linear-gradient(
+    160deg,
+    rgba(255, 254, 250, 0.9) 0%,
+    rgba(255, 252, 247, 0.62) 48%,
+    rgba(255, 254, 250, 0.82) 100%
+  );
+  --zen-glass-active: linear-gradient(162deg, rgba(255, 255, 252, 0.98) 0%, rgba(255, 253, 249, 0.84) 100%);
+  --zen-glass-composer: linear-gradient(
+    164deg,
+    rgba(255, 254, 251, 0.88) 0%,
+    rgba(255, 253, 248, 0.6) 46%,
+    rgba(255, 254, 250, 0.8) 100%
+  );
+  --zen-glass-composer-solid: linear-gradient(
+    164deg,
+    rgba(255, 254, 252, 0.98) 0%,
+    rgba(253, 251, 246, 0.95) 50%,
+    rgba(255, 254, 251, 0.97) 100%
+  );
+
+  --zen-shadow-rail:
+    inset 0 2px 2px rgba(255, 255, 252, 1),
+    inset 1px 0 1.5px rgba(255, 254, 250, 0.85),
+    inset 0 -1px 1.5px rgba(255, 254, 250, 0.6),
+    0 0 0 0.5px rgba(255, 254, 250, 0.96),
+    0 0 0 1px rgba(58, 45, 28, 0.036),
+    0 14px 38px -12px rgba(55, 42, 24, 0.072);
+  --zen-shadow-pill:
+    inset 0 1.5px 2px rgba(255, 255, 252, 1),
+    inset 0 -0.5px 1px rgba(255, 254, 250, 0.68),
+    0 0 0 0.5px rgba(255, 254, 250, 0.96),
+    0 0 0 1px rgba(58, 45, 28, 0.042),
+    0 6px 18px -5px rgba(55, 42, 24, 0.062),
+    0 1px 2px rgba(55, 42, 24, 0.028);
+  --zen-shadow-pill-hover:
+    inset 0 2px 2px rgba(255, 255, 252, 1),
+    inset 0 -0.5px 1px rgba(255, 254, 250, 0.78),
+    0 0 0 0.5px rgba(255, 255, 252, 1),
+    0 0 0 1px rgba(58, 45, 28, 0.064),
+    0 10px 26px -6px rgba(55, 42, 24, 0.088),
+    0 2px 4px rgba(55, 42, 24, 0.036);
+  --zen-shadow-card:
+    inset 0 1.5px 2px rgba(255, 255, 252, 1),
+    inset 0 -0.5px 1px rgba(255, 254, 250, 0.58),
+    0 0 0 0.5px rgba(255, 254, 250, 0.95),
+    0 0 0 1px rgba(58, 45, 28, 0.038),
+    0 10px 28px -10px rgba(55, 42, 24, 0.062);
+  --zen-shadow-active:
+    inset 0 1.5px 1.5px rgba(255, 255, 252, 1), 0 0 0 0.5px rgba(255, 254, 250, 0.96), 0 0 0 1px rgba(58, 45, 28, 0.04),
+    0 4px 14px -4px rgba(55, 42, 24, 0.06);
+  --zen-composer-ring:
+    inset 0 2px 2px rgba(255, 255, 252, 1),
+    inset 1px 0 1.5px rgba(255, 254, 250, 0.86),
+    inset 0 -1px 1.5px rgba(255, 254, 250, 0.62),
+    0 0 0 0.5px rgba(255, 255, 252, 0.98),
+    0 0 0 1px rgba(58, 45, 28, 0.046),
+    0 16px 44px -10px rgba(55, 42, 24, 0.084),
+    0 3px 10px -2px rgba(55, 42, 24, 0.035);
+  --zen-composer-ring-focus:
+    inset 0 2px 2px rgba(255, 255, 252, 1), 0 0 0 1px rgba(255, 255, 252, 1), 0 0 0 3.5px rgba(58, 45, 28, 0.048), 0
+    20px 52px -10px rgba(55, 42, 24, 0.112);
+
+  --zen-success: #0fa974;
+  --zen-success-soft: rgba(15, 169, 116, 0.12);
+  --zen-warning: #c87a19;
+  --zen-danger: #cf3d44;
+  --zen-link: #256e5c;
+}
+
+/* ---------- Preset 2: Warm Silk (温润暖曜石 · Dark) ---------- */
+body[data-theme-preset='zen-paper'][theme-mode='dark'] {
+  color-scheme: dark;
+  --zen-window-canvas:
+    radial-gradient(840px 560px at 58% 10%, rgba(255, 246, 232, 0.048), transparent 68%),
+    radial-gradient(620px 480px at 14% 88%, rgba(255, 246, 232, 0.022), transparent 70%),
+    linear-gradient(180deg, #1a1815 0%, #141210 58%, #171512 100%);
+  --zen-veil-top: linear-gradient(180deg, rgba(24, 22, 19, 0.56) 0%, rgba(24, 22, 19, 0.2) 60%, transparent 100%);
+  --zen-veil-bottom: linear-gradient(0deg, rgba(20, 18, 16, 0.64) 0%, rgba(20, 18, 16, 0.24) 56%, transparent 100%);
+
+  --zen-bg-frame: #161412;
+  --zen-bg-sidebar: rgba(34, 31, 27, 0.72);
+  --zen-bg-canvas: #171512;
+  --zen-bg-elevated: #26231f;
+  --zen-bg-subtle: rgba(255, 246, 232, 0.062);
+  --zen-bg-hover: rgba(255, 246, 232, 0.058);
+  --zen-bg-active: rgba(255, 246, 232, 0.11);
+  --zen-border: rgba(255, 246, 232, 0.082);
+  --zen-border-strong: rgba(255, 246, 232, 0.155);
+  --zen-text-1: #f5f1e9;
+  --zen-text-2: #bfb7aa;
+  --zen-text-3: #988f81;
+  --zen-accent: #f4f0e8;
+  --zen-accent-fg: #181613;
+  --zen-accent-soft: rgba(255, 246, 232, 0.09);
+  --zen-user-bubble: #292520;
+  --zen-user-bubble-bg: rgba(44, 40, 35, 0.82);
+  --zen-code-bg: rgba(16, 14, 12, 0.68);
+  --zen-composer-bg: rgba(40, 36, 31, 0.76);
+
+  --zen-glass-rail: linear-gradient(
+    168deg,
+    rgba(41, 37, 32, 0.64) 0%,
+    rgba(28, 25, 22, 0.48) 54%,
+    rgba(35, 31, 27, 0.58) 100%
+  );
+  --zen-glass-pill: linear-gradient(
+    168deg,
+    rgba(54, 49, 43, 0.72) 0%,
+    rgba(41, 37, 32, 0.56) 56%,
+    rgba(48, 43, 38, 0.64) 100%
+  );
+  --zen-glass-pill-hover: linear-gradient(168deg, rgba(64, 58, 51, 0.84) 0%, rgba(50, 45, 40, 0.72) 100%);
+  --zen-glass-card: linear-gradient(
+    165deg,
+    rgba(47, 42, 37, 0.66) 0%,
+    rgba(35, 31, 27, 0.5) 56%,
+    rgba(41, 37, 32, 0.6) 100%
+  );
+  --zen-glass-active: linear-gradient(168deg, rgba(62, 56, 49, 0.8) 0%, rgba(49, 44, 38, 0.66) 100%);
+  --zen-glass-composer: linear-gradient(
+    170deg,
+    rgba(49, 44, 38, 0.66) 0%,
+    rgba(36, 32, 28, 0.52) 54%,
+    rgba(43, 39, 34, 0.6) 100%
+  );
+  --zen-glass-composer-solid: linear-gradient(
+    170deg,
+    rgba(44, 40, 35, 0.96) 0%,
+    rgba(33, 30, 26, 0.93) 54%,
+    rgba(39, 35, 31, 0.95) 100%
+  );
+
+  --zen-shadow-rail:
+    inset 0 1px 0.5px rgba(255, 248, 236, 0.14),
+    inset 1px 0 0.5px rgba(255, 248, 236, 0.06),
+    0 0 0 0.5px rgba(255, 248, 236, 0.09),
+    0 14px 36px -14px rgba(0, 0, 0, 0.54);
+  --zen-shadow-pill:
+    inset 0 1px 0.5px rgba(255, 248, 236, 0.16), 0 0 0 0.5px rgba(255, 248, 236, 0.11), 0 6px 18px -6px
+    rgba(0, 0, 0, 0.46);
+  --zen-shadow-pill-hover:
+    inset 0 1px 0.5px rgba(255, 248, 236, 0.22), 0 0 0 0.5px rgba(255, 248, 236, 0.17), 0 10px 24px -6px
+    rgba(0, 0, 0, 0.56);
+  --zen-shadow-card:
+    inset 0 1px 0.5px rgba(255, 248, 236, 0.13), 0 0 0 0.5px rgba(255, 248, 236, 0.09), 0 10px 28px -10px
+    rgba(0, 0, 0, 0.46);
+  --zen-shadow-active:
+    inset 0 1px 0.5px rgba(255, 248, 236, 0.16), 0 0 0 0.5px rgba(255, 248, 236, 0.11), 0 4px 12px -4px
+    rgba(0, 0, 0, 0.4);
+  --zen-composer-ring:
+    inset 0 1px 0.5px rgba(255, 248, 236, 0.16),
+    inset 1px 0 0.5px rgba(255, 248, 236, 0.07),
+    0 0 0 0.5px rgba(255, 248, 236, 0.12),
+    0 16px 40px -10px rgba(0, 0, 0, 0.6);
+  --zen-composer-ring-focus:
+    inset 0 1px 0.5px rgba(255, 248, 236, 0.22), 0 0 0 1px rgba(255, 248, 236, 0.2), 0 0 0 3.5px
+    rgba(255, 246, 232, 0.055), 0 20px 48px -10px rgba(0, 0, 0, 0.7);
+
+  --zen-success: #34d399;
+  --zen-success-soft: rgba(52, 211, 153, 0.16);
+  --zen-warning: #e6a84c;
+  --zen-danger: #e4635c;
+  --zen-link: #6ec8ae;
+}
+
+/* ---------- Legacy & Semantic Token Bridge ---------- */
+:root,
+[theme-mode] {
+  --color-white: #ffffff;
+  --color-white-soft: var(--zen-bg-hover);
+  --color-white-mute: var(--zen-bg-subtle);
   --color-black: #181818;
   --color-black-soft: #222222;
   --color-black-mute: #333333;
+  --color-gray-1: var(--zen-text-3);
+  --color-gray-2: color-mix(in srgb, var(--zen-text-3) 76%, var(--zen-bg-canvas));
+  --color-gray-3: color-mix(in srgb, var(--zen-text-3) 50%, var(--zen-bg-canvas));
 
-  --color-gray-1: #515c67;
-  --color-gray-2: #414853;
-  --color-gray-3: #32363f;
+  --color-text: var(--zen-text-1);
+  --color-text-1: var(--zen-text-1);
+  --color-text-2: var(--zen-text-2);
+  --color-text-3: var(--zen-text-3);
+  --color-text-secondary: var(--zen-text-2);
+  --color-icon: var(--zen-text-2);
+  --color-icon-white: var(--zen-text-1);
 
-  --color-text-1: rgba(255, 255, 245, 0.9);
-  --color-text-2: rgba(235, 235, 245, 0.6);
-  --color-text-3: rgba(235, 235, 245, 0.38);
+  --color-background: var(--zen-bg-canvas);
+  --color-background-soft: var(--zen-bg-elevated);
+  --color-background-mute: var(--zen-bg-subtle);
+  --color-background-opacity: var(--zen-bg-subtle);
+  --color-group-background: var(--zen-bg-elevated);
+  --color-border: var(--zen-border);
+  --color-border-soft: var(--zen-border);
+  --color-border-mute: var(--zen-bg-hover);
+  --color-frame-border: var(--zen-border);
+  --color-hover: var(--zen-bg-hover);
+  --color-active: var(--zen-bg-active);
 
-  --color-background: var(--color-black);
-  --color-background-soft: var(--color-black-soft);
-  --color-background-mute: var(--color-black-mute);
-  --color-background-opacity: rgba(34, 34, 34, 0.7);
-  --inner-glow-opacity: 0.3; /* For the glassmorphism effect in the dropdown menu */
+  --color-primary: var(--zen-accent);
+  --color-primary-foreground: var(--zen-accent-fg);
+  --color-primary-soft: color-mix(in srgb, var(--color-primary) 60%, transparent);
+  --color-primary-mute: var(--zen-accent-soft);
+  --color-error: var(--zen-danger);
+  --color-deprecated-assistant: var(--zen-warning);
+  --color-link: var(--zen-link);
+  --color-code-background: var(--zen-code-bg);
+  --color-inline-code-background: var(--zen-bg-subtle);
+  --color-inline-code-text: var(--zen-text-1);
+  --color-reference: var(--zen-bg-active);
+  --color-reference-text: var(--zen-text-1);
+  --color-reference-background: var(--zen-bg-elevated);
+  --color-list-item: var(--zen-bg-active);
+  --color-list-item-hover: var(--zen-bg-hover);
+  --list-item-border-radius: var(--zen-radius-sm);
 
-  --color-primary: #00b96b;
-  --color-primary-soft: #00b96b99;
-  --color-primary-mute: #00b96b33;
+  --color-highlight: #181818;
+  --color-background-highlight: #ffe97e;
+  --color-background-highlight-accent: #ffb873;
+  --color-status-success: var(--zen-success);
+  --color-status-error: var(--zen-danger);
+  --color-status-warning: var(--zen-warning);
 
-  --color-text: var(--color-text-1);
-  --color-text-secondary: rgba(235, 235, 245, 0.7);
-  --color-icon: #ffffff99;
-  --color-icon-white: #ffffff;
-  --color-border: #ffffff19;
-  --color-border-soft: #ffffff10;
-  --color-border-mute: #ffffff05;
-  --color-error: #ff4d50;
-  --color-deprecated-assistant: #ffc53d;
-  --color-link: #338cff;
-  --color-code-background: #323232;
-  --color-inline-code-background: #323232;
-  --color-inline-code-text: rgb(218, 97, 92);
-  --color-hover: rgba(40, 40, 40, 1);
-  --color-active: rgba(55, 55, 55, 1);
-  --color-frame-border: #333;
-  --color-group-background: var(--color-background-soft);
-
-  --color-reference: #404040;
-  --color-reference-text: #ffffff;
-  --color-reference-background: #0b0e12;
-
-  --color-list-item: rgba(255, 255, 255, 0.1);
-  --color-list-item-hover: rgba(255, 255, 255, 0.05);
-
-  --modal-background: #111111;
-
-  --color-highlight: rgba(0, 0, 0, 1);
-  --color-background-highlight: rgba(255, 255, 0, 0.9);
-  --color-background-highlight-accent: rgba(255, 150, 50, 0.9);
-
-  --navbar-background-mac: rgba(20, 20, 20, 0.55);
-  --navbar-background: #1f1f1f;
-
-  --chat-background: transparent;
-  --chat-background-user: rgba(255, 255, 255, 0.08);
-  --chat-background-assistant: transparent;
-  --chat-text-user: var(--color-black);
-
-  --list-item-border-radius: 10px;
-
-  --color-status-success: green;
-  --color-status-error: var(--color-error);
-  --color-status-warning: #faad14;
-}
-
-[theme-mode='light'] {
-  --color-white: #ffffff;
-  --color-white-soft: rgba(0, 0, 0, 0.04);
-  --color-white-mute: #eee;
-
-  --color-black: #1b1b1f;
-  --color-black-soft: #262626;
-  --color-black-mute: #363636;
-
-  --color-gray-1: #8e8e93;
-  --color-gray-2: #aeaeb2;
-  --color-gray-3: #c7c7cc;
-
-  --color-text-1: rgba(0, 0, 0, 1);
-  --color-text-2: rgba(0, 0, 0, 0.6);
-  --color-text-3: rgba(0, 0, 0, 0.38);
-
-  --color-background: var(--color-white);
-  --color-background-soft: var(--color-white-soft);
-  --color-background-mute: var(--color-white-mute);
-  --color-background-opacity: rgba(243, 243, 243, 1);
   --inner-glow-opacity: 0.1;
-
-  --color-primary: #00b96b;
-  --color-primary-soft: #00b96b99;
-  --color-primary-mute: #00b96b33;
-
-  --color-text: var(--color-text-1);
-  --color-text-secondary: rgba(0, 0, 0, 0.75);
-  --color-icon: #00000099;
-  --color-icon-white: #000000;
-  --color-border: #00000019;
-  --color-border-soft: #00000010;
-  --color-border-mute: #00000005;
-  --color-error: #ff4d50;
-  --color-deprecated-assistant: #9a6700;
-  --color-link: #1677ff;
-  --color-code-background: #e3e3e3;
-  --color-inline-code-background: rgba(0, 0, 0, 0.06);
-  --color-inline-code-text: rgba(235, 87, 87);
-  --color-hover: var(--color-white-mute);
-  --color-active: var(--color-white-soft);
-  --color-frame-border: #ddd;
-  --color-group-background: var(--color-white);
-
-  --color-reference: #cfe1ff;
-  --color-reference-text: #000000;
-  --color-reference-background: #f1f7ff;
-
-  --color-list-item: #fff;
-  --color-list-item-hover: #fafafa;
-
-  --modal-background: var(--color-white);
-
-  --color-highlight: initial;
-  --color-background-highlight: rgba(255, 255, 0, 0.5);
-  --color-background-highlight-accent: rgba(255, 150, 50, 0.5);
-
-  --navbar-background-mac: rgba(255, 255, 255, 0.55);
-  --navbar-background: rgba(244, 244, 244);
-
+  --modal-background: var(--zen-bg-elevated);
+  --navbar-background: transparent;
+  --navbar-background-mac: transparent;
   --chat-background: transparent;
-  --chat-background-user: rgba(0, 0, 0, 0.045);
+  --chat-background-user: var(--zen-user-bubble);
   --chat-background-assistant: transparent;
-  --chat-text-user: var(--color-text);
+  --chat-text-user: var(--zen-text-1);
 }
 
-[navbar-position='left'][theme-mode='light'] {
-  --color-list-item: #eee;
-  --color-list-item-hover: #f5f5f5;
-}
-
-[navbar-position='left'][theme-mode='dark'] {
-  --color-list-item: #252525;
-  --color-list-item-hover: #1e1e1e;
+body[theme-mode] {
+  --background: var(--zen-bg-canvas);
+  --foreground: var(--zen-text-1);
+  --card: var(--zen-bg-elevated);
+  --card-foreground: var(--zen-text-1);
+  --popover: var(--zen-bg-elevated);
+  --popover-foreground: var(--zen-text-1);
+  --primary: var(--color-primary);
+  --primary-foreground: var(--color-primary-foreground);
+  --secondary: var(--zen-bg-subtle);
+  --secondary-foreground: var(--zen-text-1);
+  --muted: var(--zen-bg-subtle);
+  --muted-foreground: var(--zen-text-2);
+  --accent: var(--zen-bg-active);
+  --accent-foreground: var(--zen-text-1);
+  --destructive: var(--zen-danger);
+  --border: var(--zen-border);
+  --input: var(--zen-border-strong);
+  --ring: var(--zen-text-2);
+  --sidebar: var(--zen-bg-sidebar);
+  --sidebar-foreground: var(--zen-text-1);
+  --sidebar-primary: var(--color-primary);
+  --sidebar-primary-foreground: var(--color-primary-foreground);
+  --sidebar-accent: var(--zen-bg-active);
+  --sidebar-accent-foreground: var(--zen-text-1);
+  --sidebar-border: var(--zen-border);
+  --sidebar-ring: var(--zen-text-2);
+  --icon: var(--zen-text-2);
 }

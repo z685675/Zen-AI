@@ -9,6 +9,7 @@ const ApiEndpointTypeSchema = z.enum([
   'anthropic',
   'gemini',
   'image-generation',
+  'openai-video',
   'jina-rerank'
 ])
 

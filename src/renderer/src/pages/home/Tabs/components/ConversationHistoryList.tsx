@@ -1,4 +1,3 @@
-import AddButton from '@renderer/components/AddButton'
 import { Sortable } from '@renderer/components/dnd'
 import { CopyIcon, DeleteIcon, EditIcon } from '@renderer/components/Icons'
 import ObsidianExportPopup from '@renderer/components/Popups/ObsidianExportPopup'
@@ -10,6 +9,7 @@ import { useAssistants } from '@renderer/hooks/useAssistant'
 import { useNotesSettings } from '@renderer/hooks/useNotesSettings'
 import { modelGenerating } from '@renderer/hooks/useRuntime'
 import { useSettings } from '@renderer/hooks/useSettings'
+import { useShortcutDisplay } from '@renderer/hooks/useShortcuts'
 import { finishTopicRenaming, startTopicRenaming, TopicManager } from '@renderer/hooks/useTopic'
 import { fetchMessagesSummary } from '@renderer/services/ApiService'
 import { CacheService } from '@renderer/services/CacheService'
@@ -68,6 +68,7 @@ import {
   PackagePlus,
   PinIcon,
   PinOffIcon,
+  Plus,
   RotateCcw,
   Save,
   Sparkles,
@@ -100,7 +101,8 @@ const ConversationHistoryList: FC<Props> = ({ activeTopic, setActiveTopic, onCre
   const exportMenuOptions = useAppSelector((state) => state.settings.exportMenuOptions)
   const { assistants } = useAssistants()
   const { notesPath } = useNotesSettings()
-  const { pinTopicsToTop, setTopicPosition } = useSettings()
+  const { setTopicPosition } = useSettings()
+  const newTopicShortcut = useShortcutDisplay('new_topic')
   const [deletingTopicId, setDeletingTopicId] = useState<string | null>(null)
   const deleteTimerRef = useRef<NodeJS.Timeout | null>(null)
   const [nonEmptyTopicIds, setNonEmptyTopicIds] = useState<string[]>([])
@@ -158,6 +160,34 @@ const ConversationHistoryList: FC<Props> = ({ activeTopic, setActiveTopic, onCre
     () => sortedTopics.filter((topic) => !topicFolderMap.has(topic.id)),
     [sortedTopics, topicFolderMap]
   )
+
+  const groupedRootTopics = useMemo(() => {
+    const startOfToday = dayjs().startOf('day')
+    const sevenDaysAgo = startOfToday.subtract(6, 'day')
+    const buckets: Array<{ key: string; label: string; topics: Topic[] }> = [
+      { key: 'pinned', label: t('chat.topics.date_group.pinned'), topics: [] },
+      { key: 'today', label: t('chat.topics.date_group.today'), topics: [] },
+      { key: 'recent', label: t('chat.topics.date_group.last_seven_days'), topics: [] },
+      { key: 'earlier', label: t('chat.topics.date_group.earlier'), topics: [] }
+    ]
+
+    for (const topic of rootTopics) {
+      if (topic.pinned) {
+        buckets[0].topics.push(topic)
+        continue
+      }
+      const updated = dayjs(topic.updatedAt || topic.createdAt)
+      if (!updated.isValid() || updated.isSame(startOfToday) || updated.isAfter(startOfToday)) {
+        buckets[1].topics.push(topic)
+      } else if (updated.isSame(sevenDaysAgo) || updated.isAfter(sevenDaysAgo)) {
+        buckets[2].topics.push(topic)
+      } else {
+        buckets[3].topics.push(topic)
+      }
+    }
+
+    return buckets.filter((bucket) => bucket.topics.length > 0)
+  }, [rootTopics, t])
 
   const deletedFolderTopicsMap = useMemo(() => {
     const map = new Map<string, RecycleBinTopicItem[]>()
@@ -519,25 +549,22 @@ const ConversationHistoryList: FC<Props> = ({ activeTopic, setActiveTopic, onCre
         return
       }
 
-      if (pinTopicsToTop) {
-        let reorderedTopics = assistant.topics
+      let reorderedTopics = assistant.topics
 
-        if (topic.pinned) {
-          const pinnedTopics = assistant.topics.filter((item) => item.pinned)
-          const unpinnedTopics = assistant.topics.filter((item) => !item.pinned)
-          reorderedTopics = [...pinnedTopics.filter((item) => item.id !== topic.id), topic, ...unpinnedTopics]
-        } else {
-          const pinnedTopics = assistant.topics.filter((item) => item.pinned)
-          const unpinnedTopics = assistant.topics.filter((item) => !item.pinned)
-          reorderedTopics = [topic, ...pinnedTopics, ...unpinnedTopics.filter((item) => item.id !== topic.id)]
-        }
-
-        dispatch(updateTopicsAction({ assistantId: assistant.id, topics: reorderedTopics }))
+      if (topic.pinned) {
+        const pinnedTopics = assistant.topics.filter((item) => item.pinned)
+        const unpinnedTopics = assistant.topics.filter((item) => !item.pinned)
+        reorderedTopics = [...pinnedTopics.filter((item) => item.id !== topic.id), topic, ...unpinnedTopics]
+      } else {
+        const pinnedTopics = assistant.topics.filter((item) => item.pinned)
+        const unpinnedTopics = assistant.topics.filter((item) => !item.pinned)
+        reorderedTopics = [topic, ...pinnedTopics, ...unpinnedTopics.filter((item) => item.id !== topic.id)]
       }
 
+      dispatch(updateTopicsAction({ assistantId: assistant.id, topics: reorderedTopics }))
       patchTopic({ ...topic, pinned: !topic.pinned })
     },
-    [dispatch, getAssistantByTopic, patchTopic, pinTopicsToTop]
+    [dispatch, getAssistantByTopic, patchTopic]
   )
 
   const buildMenuItems = useCallback(
@@ -873,7 +900,11 @@ const ConversationHistoryList: FC<Props> = ({ activeTopic, setActiveTopic, onCre
               setActiveTopic(topic)
             }}>
             <ConversationHeader>
-              <ConversationTitle title={topic.name}>{topic.name}</ConversationTitle>
+              <ConversationTitle
+                title={`${topic.name} · ${assistant?.name || t('chat.default.name')} · ${dayjs(topic.createdAt || topic.updatedAt).format('YYYY/MM/DD HH:mm')}`}>
+                {topic.name}
+              </ConversationTitle>
+              <ConversationTime>{dayjs(topic.createdAt || topic.updatedAt).format('MM/DD')}</ConversationTime>
               {!topic.pinned ? (
                 <Tooltip
                   placement="bottom"
@@ -907,10 +938,6 @@ const ConversationHistoryList: FC<Props> = ({ activeTopic, setActiveTopic, onCre
                 </PinnedMark>
               )}
             </ConversationHeader>
-            <ConversationMeta>
-              <span>{assistant?.name || '榛樿鍔╂墜'}</span>
-              <span>{dayjs(topic.updatedAt || topic.createdAt).format('YYYY/MM/DD HH:mm')}</span>
-            </ConversationMeta>
           </ConversationItem>
         </Dropdown>
       )
@@ -955,12 +982,30 @@ const ConversationHistoryList: FC<Props> = ({ activeTopic, setActiveTopic, onCre
     <Container>
       <Header>
         <HeaderRow>
-          <AddButton onClick={onCreateConversation}>新建对话</AddButton>
-          <Tooltip title="新建文件夹" mouseEnterDelay={0.5}>
-            <HeaderIconButton onClick={() => void handleCreateFolder()}>
-              <FolderPlus size={14} />
-            </HeaderIconButton>
-          </Tooltip>
+          <SectionHeading>{t('app_shell.conversations')}</SectionHeading>
+          <HeaderActions>
+            <Tooltip
+              title={
+                newTopicShortcut
+                  ? `${t('app_shell.new_conversation')} · ${newTopicShortcut}`
+                  : t('app_shell.new_conversation')
+              }
+              mouseEnterDelay={0.5}>
+              <button
+                type="button"
+                className="zen-section-create-pill"
+                aria-label={t('app_shell.new_conversation')}
+                onClick={onCreateConversation}>
+                <Plus size={13} strokeWidth={2.3} />
+                <span>{t('common.new')}</span>
+              </button>
+            </Tooltip>
+            <Tooltip title="新建文件夹" mouseEnterDelay={0.5}>
+              <HeaderIconButton onClick={() => void handleCreateFolder()}>
+                <FolderPlus size={14} />
+              </HeaderIconButton>
+            </Tooltip>
+          </HeaderActions>
         </HeaderRow>
       </Header>
       <List>
@@ -979,18 +1024,27 @@ const ConversationHistoryList: FC<Props> = ({ activeTopic, setActiveTopic, onCre
             renderItem={(item: FolderWithTopics, { dragging }) => renderFolderSection(item, dragging)}
           />
         )}
-        {rootTopics.map((topic) => renderTopicItem(topic))}
+        {groupedRootTopics.map((group) => (
+          <DateGroup key={group.key}>
+            <DateGroupLabel>{group.label}</DateGroupLabel>
+            {group.topics.map((topic) => renderTopicItem(topic))}
+          </DateGroup>
+        ))}
         {sortedTopics.length === 0 && groupedFolders.length === 0 && <EmptyState>还没有历史对话</EmptyState>}
       </List>
       {(recentDeletedTopics.length > 0 || recentDeletedFolders.length > 0) && (
         <Footer>
           <RecycleBinEntryButton type="button" onClick={() => setIsRecycleBinOpen(true)}>
-            最近删除 ({recentDeletedTopics.length + recentDeletedFolders.length})
+            <RecycleBinEntryLabel>
+              <Trash2 size={13} />
+              <span>{t('common.recently_deleted')}</span>
+            </RecycleBinEntryLabel>
+            <RecycleBinEntryCount>{recentDeletedTopics.length + recentDeletedFolders.length}</RecycleBinEntryCount>
           </RecycleBinEntryButton>
         </Footer>
       )}
       <Modal
-        title="最近删除"
+        title={t('common.recently_deleted')}
         open={isRecycleBinOpen}
         onCancel={() => {
           setIsRecycleBinOpen(false)
@@ -1186,46 +1240,82 @@ const Container = styled.div`
 `
 
 const Header = styled.div`
-  padding: 12px 10px 8px;
+  padding: 12px 10px 6px;
 `
 
 const HeaderRow = styled.div`
   display: flex;
   align-items: center;
-  gap: 6px;
+  justify-content: space-between;
+  gap: 8px;
+`
+
+const HeaderActions = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+`
+
+const SectionHeading = styled.h2`
+  margin: 0;
+  padding-left: 8px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--zen-text-1);
+  letter-spacing: -0.01em;
+`
+
+const DateGroup = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+
+  & + & {
+    margin-top: 8px;
+  }
+`
+
+const DateGroupLabel = styled.div`
+  padding: 4px 10px 3px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--zen-text-3);
+  letter-spacing: 0.01em;
 `
 
 const HeaderIconButton = styled.div`
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
-  min-width: 32px;
-  min-height: 32px;
-  border-radius: var(--list-item-border-radius);
+  width: 26px;
+  height: 26px;
+  min-width: 26px;
+  min-height: 26px;
+  border-radius: var(--zen-radius-sm);
   cursor: pointer;
-  color: var(--color-text-2);
-  transition: all 0.2s;
+  color: var(--zen-text-3);
+  transition: background-color 150ms ease, color 150ms ease;
 
   &:hover {
-    background-color: var(--color-background-mute);
-    color: var(--color-text-1);
+    background-color: var(--zen-bg-hover);
+    color: var(--zen-text-1);
   }
 `
 
 const List = styled(Scrollbar)`
   display: flex;
   flex: 1;
+  min-height: 0;
   flex-direction: column;
-  gap: 8px;
-  padding: 0 10px 12px;
+  gap: 4px;
+  padding: 4px 10px 14px;
 `
 
 const FolderSection = styled.div`
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
   width: 100%;
 
   &.dragging {
@@ -1235,15 +1325,18 @@ const FolderSection = styled.div`
 
 const FolderRow = styled.div`
   width: 100%;
-  border-radius: 14px;
+  border-radius: var(--zen-radius-sm);
   padding: 8px 10px;
   cursor: grab;
-  background: var(--color-background-soft);
-  transition: background-color 0.18s ease;
+  background: transparent;
+  transition: background-color 150ms ease;
 
-  &:hover,
+  &:hover {
+    background: var(--zen-bg-hover);
+  }
+
   &.active {
-    background: var(--color-list-item);
+    background: var(--zen-bg-active);
   }
 
   &:active {
@@ -1269,7 +1362,7 @@ const FolderTitle = styled.div`
   min-width: 0;
   font-size: 12px;
   font-weight: 600;
-  color: #3f4a59;
+  color: var(--zen-text-1);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1282,27 +1375,37 @@ const FolderCount = styled.div`
 `
 
 const Footer = styled.div`
-  padding: 0 10px 12px;
-  border-top: 0.5px solid var(--color-border);
+  flex: none;
+  padding: 8px 10px 10px;
 `
 
 const ConversationItem = styled.div`
   width: 100%;
   border: none;
   background: transparent;
-  border-radius: 14px;
-  padding: 10px 12px;
+  border-radius: var(--zen-radius-sm);
+  padding: 6.5px 10px;
   cursor: pointer;
   text-align: left;
-  transition: background-color 0.18s ease;
+  transition:
+    background 150ms ease,
+    box-shadow 160ms ease;
 
   .menu {
     opacity: 0;
   }
 
-  &:hover,
+  &:hover {
+    background: var(--zen-bg-hover);
+
+    .menu {
+      opacity: 1;
+    }
+  }
+
   &.active {
-    background: var(--color-list-item);
+    background: var(--zen-glass-active);
+    box-shadow: var(--zen-shadow-active);
 
     .menu {
       opacity: 1;
@@ -1310,47 +1413,36 @@ const ConversationItem = styled.div`
   }
 
   &.nested {
-    margin-left: 14px;
-    width: calc(100% - 14px);
+    margin-left: 12px;
+    width: calc(100% - 12px);
   }
 `
 
 const ConversationHeader = styled.div`
   display: flex;
-  align-items: flex-start;
-  gap: 8px;
+  align-items: center;
+  gap: 6px;
+  min-height: 20px;
 `
 
 const ConversationTitle = styled.div`
   flex: 1;
   min-width: 0;
-  font-size: 12px;
-  font-weight: 600;
-  color: #3f4a59;
+  font-size: 13px;
+  font-weight: 450;
+  line-height: 1.45;
+  color: var(--zen-text-1);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 `
 
-const ConversationMeta = styled.div`
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-top: 6px;
-  font-size: 10px;
-  color: var(--color-text-3);
-
-  span:first-child {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  span:last-child {
-    flex-shrink: 0;
-  }
+const ConversationTime = styled.span`
+  flex-shrink: 0;
+  font-family: var(--code-font-family);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--zen-text-3);
 `
 
 const DeleteButton = styled.div`
@@ -1372,6 +1464,7 @@ const PinnedMark = styled.div`
   justify-content: center;
   width: 18px;
   height: 18px;
+  opacity: 1 !important;
 `
 
 const EmptyState = styled.div`
@@ -1385,20 +1478,61 @@ const RecycleBinEntryButton = styled.button`
   width: 100%;
   display: flex;
   align-items: center;
-  justify-content: center;
-  padding: 8px 10px;
+  justify-content: space-between;
+  gap: 8px;
+  height: 32px;
+  padding: 0 10px;
   border: none;
-  border-radius: 12px;
-  background: var(--color-background-soft);
-  color: var(--color-text-2);
+  border-radius: var(--zen-radius-sm);
+  background: var(--zen-bg-subtle);
+  color: var(--zen-text-2);
   cursor: pointer;
   font-size: 12px;
   font-weight: 500;
+  transition:
+    background 150ms ease,
+    color 150ms ease,
+    box-shadow 160ms ease;
 
   &:hover {
-    background: var(--color-background-mute);
-    color: var(--color-text);
+    background: var(--zen-glass-active);
+    box-shadow: var(--zen-shadow-active);
+    color: var(--zen-text-1);
   }
+`
+
+const RecycleBinEntryLabel = styled.span`
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+
+  svg {
+    flex: none;
+    color: var(--zen-text-3);
+    transition: color 150ms ease;
+  }
+
+  ${RecycleBinEntryButton}:hover & svg {
+    color: var(--zen-text-2);
+  }
+`
+
+const RecycleBinEntryCount = styled.span`
+  flex: none;
+  min-width: 18px;
+  padding: 1px 6px;
+  border-radius: var(--zen-radius-pill);
+  background: var(--zen-bg-hover);
+  color: var(--zen-text-3);
+  font-family: var(--code-font-family);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.4;
+  text-align: center;
 `
 
 const RecycleBinModalList = styled.div`
@@ -1455,8 +1589,8 @@ const RecentDeletedSelector = styled.button`
   flex-shrink: 0;
   border: 1px solid rgba(15, 23, 42, 0.15);
   border-radius: 6px;
-  background: #ffffff;
-  color: #16a34a;
+  background: var(--zen-bg-elevated);
+  color: var(--zen-success);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1478,7 +1612,7 @@ const RecentDeletedMeta = styled.div`
 const RecentDeletedName = styled.div`
   font-size: 13px;
   font-weight: 500;
-  color: #3f4a59;
+  color: var(--zen-text-1);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

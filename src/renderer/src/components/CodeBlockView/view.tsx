@@ -269,6 +269,7 @@ export const CodeBlockView: React.FC<Props> = memo(({ children, language, onSave
       ) : (
         <CodeViewer
           className="source-view"
+          fontSize={13}
           value={children}
           language={language}
           onHeightChange={handleHeightChange}
@@ -344,16 +345,14 @@ export const CodeBlockView: React.FC<Props> = memo(({ children, language, onSave
 const CodeBlockWrapper = styled.div<{ $isInSpecialView: boolean }>`
   position: relative;
   width: 100%;
-  /* FIXME: 最小宽度用于解决两个问题。
-   * 一是 CodeViewer 在气泡样式下的用户消息中无法撑开气泡，
-   * 二是 代码块内容过少时 toolbar 会和 title 重叠。
-   */
-  min-width: 35ch;
-
+  max-width: 100%;
+  min-width: 0;
+  border: 1px solid var(--zen-border);
+  border-radius: var(--zen-radius-md);
   .code-toolbar {
-    background-color: ${(props) => (props.$isInSpecialView ? 'transparent' : 'var(--color-background-mute)')};
-    border-radius: ${(props) => (props.$isInSpecialView ? '0' : '4px')};
-    opacity: 0;
+    background-color: var(--zen-bg-elevated);
+    border-radius: var(--zen-radius-sm);
+    opacity: ${(props) => (props.$isInSpecialView ? 0 : 1)};
     transition: opacity 0.2s ease;
     transform: translateZ(0);
     will-change: opacity;
@@ -361,26 +360,32 @@ const CodeBlockWrapper = styled.div<{ $isInSpecialView: boolean }>`
       opacity: 1;
     }
   }
-  &:hover {
+  &:hover, &:focus-within {
     .code-toolbar {
       opacity: 1;
     }
+  }
+
+  .code-viewer {
+    background-color: var(--zen-code-bg) !important;
   }
 `
 
 const CodeHeader = styled.div<{ $isInSpecialView?: boolean }>`
   display: flex;
   align-items: center;
-  color: var(--color-text);
-  font-size: 14px;
+  color: var(--zen-text-2);
+  font-family: var(--code-font-family);
+  font-size: 12px;
   line-height: 1;
-  font-weight: bold;
+  font-weight: 500;
   padding: 0 10px;
-  border-top-left-radius: 8px;
-  border-top-right-radius: 8px;
+  border-top-left-radius: var(--zen-radius-md);
+  border-top-right-radius: var(--zen-radius-md);
+  border-bottom: 1px solid var(--zen-border);
   margin-top: ${(props) => (props.$isInSpecialView ? '6px' : '0')};
-  height: ${(props) => (props.$isInSpecialView ? '16px' : '34px')};
-  background-color: ${(props) => (props.$isInSpecialView ? 'transparent' : 'var(--color-background-mute)')};
+  height: ${(props) => (props.$isInSpecialView ? '16px' : '32px')};
+  background-color: ${(props) => (props.$isInSpecialView ? 'transparent' : 'var(--zen-bg-elevated)')};
 `
 
 const SplitViewWrapper = styled.div<{ $isSpecialView: boolean; $isSplitView: boolean }>`

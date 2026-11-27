@@ -11,7 +11,13 @@ import type {
 import type { AutomationRequest, AutomationResponse } from '@shared/agents/automation'
 import type { AgentInputReceipt, AgentRunInput, AgentRunInputStatus } from '@shared/agents/sessionInput'
 import type { GitBashPathInfo, TerminalConfig } from '@shared/config/constant'
-import type { ImageCanvasOpen, ImageCanvasProvider, ImageViewBounds } from '@shared/config/imageCanvas'
+import type {
+  ImageCanvasAppearance,
+  ImageCanvasOpen,
+  ImageCanvasProvider,
+  ImageViewBounds,
+  LegacyImageRecord
+} from '@shared/config/imageCanvas'
 import type { LogLevel, LogSourceWithContext } from '@shared/config/logger'
 import type { ModelAvailabilitySnapshot } from '@shared/config/modelAvailability'
 import type { ModelPolicySnapshot } from '@shared/config/modelPolicy'
@@ -122,7 +128,7 @@ const api = {
   modelTransport: {
     start: (request) => ipcRenderer.invoke(MODEL_TRANSPORT_IPC.start, request),
     pull: (id) => ipcRenderer.invoke(MODEL_TRANSPORT_IPC.pull, id),
-    cancel: (id) => ipcRenderer.invoke(MODEL_TRANSPORT_IPC.cancel, id)
+    cancel: (id, reason) => ipcRenderer.invoke(MODEL_TRANSPORT_IPC.cancel, id, reason)
   } satisfies ModelTransportBridge,
   internalTesting: {
     status: (): Promise<DshPreviewStatus> => ipcRenderer.invoke(DSH_PREVIEW_IPC.status),
@@ -149,6 +155,10 @@ const api = {
       ipcRenderer.invoke('image-canvas:control', 'open', input),
     sync: (providers: ImageCanvasProvider[]): Promise<void> =>
       ipcRenderer.invoke('image-canvas:control', 'sync', providers),
+    setAppearance: (appearance: ImageCanvasAppearance): Promise<void> =>
+      ipcRenderer.invoke('image-canvas:control', 'appearance', appearance),
+    importLegacy: (records: LegacyImageRecord[]): Promise<number> =>
+      ipcRenderer.invoke('image-canvas:control', 'import-legacy', records),
     resize: (bounds: ImageViewBounds): Promise<void> => ipcRenderer.invoke('image-canvas:control', 'resize', bounds),
     setVisible: (visible: boolean): Promise<void> => ipcRenderer.invoke('image-canvas:control', 'visible', visible),
     close: (): Promise<void> => ipcRenderer.invoke('image-canvas:control', 'close')

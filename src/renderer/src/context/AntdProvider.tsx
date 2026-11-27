@@ -1,4 +1,6 @@
 import { useSettings } from '@renderer/hooks/useSettings'
+import { getCustomPrimary, getPrimaryForeground } from '@renderer/hooks/useUserTheme'
+import type { UiThemePreset } from '@renderer/services/UiThemePresetService'
 import type { LanguageVarious } from '@renderer/types'
 import { ConfigProvider, theme } from 'antd'
 import deDE from 'antd/locale/de_DE'
@@ -14,14 +16,90 @@ import zhCN from 'antd/locale/zh_CN'
 import zhTW from 'antd/locale/zh_TW'
 import type { FC, PropsWithChildren } from 'react'
 
-import { useTheme } from './ThemeProvider'
+import { type ResolvedThemeMode, useTheme } from './ThemeProvider'
+
+export const THEME_PRESET_ANTD_TOKENS = {
+  codex: {
+    light: {
+      frame: '#f7f7f7',
+      sidebar: '#ffffff',
+      canvas: '#f9f9f9',
+      elevated: '#ffffff',
+      subtle: '#f2f2f2',
+      border: '#ececec',
+      borderStrong: '#dcdcdc',
+      accent: '#1c1c1e',
+      accentText: '#ffffff',
+      text: '#171719',
+      textSecondary: '#4a4a4f',
+      textTertiary: '#6e6e73',
+      textQuaternary: '#86868b'
+    },
+    dark: {
+      frame: '#131315',
+      sidebar: '#1e1e21',
+      canvas: '#151517',
+      elevated: '#222226',
+      subtle: '#2a2a2f',
+      border: '#323238',
+      borderStrong: '#44444d',
+      accent: '#f5f5f7',
+      accentText: '#141416',
+      text: '#f5f5f7',
+      textSecondary: '#b8b8bf',
+      textTertiary: '#8e8e96',
+      textQuaternary: '#787880'
+    }
+  },
+  'zen-paper': {
+    light: {
+      frame: '#f4eee4',
+      sidebar: '#fffdf9',
+      canvas: '#faf6ef',
+      elevated: '#fffdf9',
+      subtle: '#efe7dc',
+      border: '#e2d8ca',
+      borderStrong: '#cfc2b0',
+      accent: '#24201a',
+      accentText: '#fefcf8',
+      text: '#1e1b16',
+      textSecondary: '#524b41',
+      textTertiary: '#746b5e',
+      textQuaternary: '#8c8375'
+    },
+    dark: {
+      frame: '#161412',
+      sidebar: '#221f1c',
+      canvas: '#181613',
+      elevated: '#272420',
+      subtle: '#312d28',
+      border: '#3b362f',
+      borderStrong: '#4e473e',
+      accent: '#f4f0e8',
+      accentText: '#181613',
+      text: '#f5f1e9',
+      textSecondary: '#bfb7aa',
+      textTertiary: '#988f81',
+      textQuaternary: '#80786b'
+    }
+  }
+} satisfies Record<UiThemePreset, Record<ResolvedThemeMode, Record<string, string>>>
 
 const AntdProvider: FC<PropsWithChildren> = ({ children }) => {
   const {
     language,
     userTheme: { colorPrimary }
   } = useSettings()
-  const { theme: _theme } = useTheme()
+  const { preset, theme: mode } = useTheme()
+  const palette = THEME_PRESET_ANTD_TOKENS[preset][mode]
+  const customPrimary = getCustomPrimary(colorPrimary)
+  const primaryColor = customPrimary ? getPrimaryForeground(customPrimary) : palette.accentText
+  const fieldTokens = {
+    controlHeight: 32,
+    colorBorder: palette.border,
+    hoverBorderColor: palette.borderStrong,
+    activeBorderColor: palette.borderStrong
+  }
 
   return (
     <ConfigProvider
@@ -29,7 +107,7 @@ const AntdProvider: FC<PropsWithChildren> = ({ children }) => {
       theme={{
         cssVar: true,
         hashed: false,
-        algorithm: [_theme === 'dark' ? theme.darkAlgorithm : theme.defaultAlgorithm],
+        algorithm: [mode === 'dark' ? theme.darkAlgorithm : theme.defaultAlgorithm],
         components: {
           Menu: {
             activeBarBorderWidth: 0,
@@ -41,20 +119,22 @@ const AntdProvider: FC<PropsWithChildren> = ({ children }) => {
             defaultShadow: 'none',
             dangerShadow: 'none',
             primaryShadow: 'none',
-            controlHeight: 30,
-            paddingInline: 10
+            primaryColor,
+            controlHeight: 32,
+            borderRadius: 10,
+            paddingInline: 12
           },
           Input: {
-            controlHeight: 30,
-            colorBorder: 'var(--color-border)'
+            ...fieldTokens,
+            activeShadow: 'none'
           },
           InputNumber: {
-            controlHeight: 30,
-            colorBorder: 'var(--color-border)'
+            ...fieldTokens,
+            activeShadow: 'none'
           },
           Select: {
-            controlHeight: 30,
-            colorBorder: 'var(--color-border)'
+            ...fieldTokens,
+            activeOutlineColor: 'transparent'
           },
           Collapse: {
             headerBg: 'transparent'
@@ -66,9 +146,10 @@ const AntdProvider: FC<PropsWithChildren> = ({ children }) => {
             fontFamily: 'var(--code-font-family)'
           },
           Segmented: {
-            itemActiveBg: 'var(--color-background-soft)',
-            itemHoverBg: 'var(--color-background-soft)',
-            trackBg: 'rgba(153,153,153,0.15)'
+            itemActiveBg: palette.canvas,
+            itemSelectedBg: palette.canvas,
+            itemHoverBg: palette.elevated,
+            trackBg: palette.subtle
           },
           Switch: {
             colorTextQuaternary: 'rgba(153,153,153,0.20)',
@@ -81,23 +162,22 @@ const AntdProvider: FC<PropsWithChildren> = ({ children }) => {
           },
           Dropdown: {
             controlPaddingHorizontal: 8,
-            borderRadiusLG: 10,
-            borderRadiusSM: 8,
-            paddingXS: 4
+            borderRadiusLG: 14,
+            borderRadiusSM: 10,
+            paddingXS: 5
           },
           Popover: {
-            borderRadiusLG: 10
+            borderRadiusLG: 14
           },
           Slider: {
             handleLineWidth: 1.5,
             handleSize: 15,
             handleSizeHover: 15,
             dotSize: 7,
-            railSize: 5,
-            colorBgElevated: '#ffffff'
+            railSize: 5
           },
           Modal: {
-            colorBgElevated: 'var(--modal-background)'
+            colorBgElevated: palette.elevated
           },
           Divider: {
             colorSplit: 'rgba(128,128,128,0.15)'
@@ -109,10 +189,26 @@ const AntdProvider: FC<PropsWithChildren> = ({ children }) => {
           }
         },
         token: {
-          colorPrimary: colorPrimary,
+          colorPrimary: customPrimary?.hex() ?? palette.accent,
+          colorTextLightSolid: primaryColor,
+          colorTextBase: palette.text,
+          colorText: palette.text,
+          colorTextSecondary: palette.textSecondary,
+          colorTextTertiary: palette.textTertiary,
+          colorTextQuaternary: palette.textQuaternary,
+          colorTextDescription: palette.textSecondary,
+          colorTextPlaceholder: palette.textTertiary,
+          colorTextDisabled: palette.textQuaternary,
+          colorBgBase: palette.canvas,
+          colorBgContainer: palette.canvas,
+          colorBgElevated: palette.elevated,
+          colorBorder: palette.border,
+          colorBorderSecondary: palette.border,
+          borderRadius: 10,
           fontFamily: 'var(--font-family)',
-          colorBgMask: _theme === 'dark' ? 'rgba(0,0,0,0.7)' : 'rgba(255,255,255,0.8)',
-          motionDurationMid: '100ms'
+          colorBgMask: mode === 'dark' ? 'rgba(0,0,0,0.6)' : 'rgba(0,0,0,0.24)',
+          motionDurationMid: '180ms',
+          motionEaseOut: 'cubic-bezier(0.22, 1, 0.36, 1)'
         }
       }}>
       {children}

@@ -13,18 +13,6 @@ import { Readable } from 'stream'
 
 const logger = loggerService.withContext('S3Storage')
 
-/**
- * 将可读流转换为 Buffer
- */
-function streamToBuffer(stream: Readable): Promise<Buffer> {
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = []
-    stream.on('data', (chunk) => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)))
-    stream.on('error', reject)
-    stream.on('end', () => resolve(Buffer.concat(chunks)))
-  })
-}
-
 // 需要使用 Virtual Host-Style 的服务商域名后缀白名单
 const VIRTUAL_HOST_SUFFIXES = ['aliyuncs.com', 'myqcloud.com', 'volces.com']
 
@@ -71,7 +59,6 @@ export default class S3Storage {
     this.root = root?.replace(/^\/+/g, '').replace(/\/+$/g, '') || ''
 
     this.putFileContents = this.putFileContents.bind(this)
-    this.getFileContents = this.getFileContents.bind(this)
     this.deleteFile = this.deleteFile.bind(this)
     this.listFiles = this.listFiles.bind(this)
     this.checkConnection = this.checkConnection.bind(this)
@@ -103,13 +90,15 @@ export default class S3Storage {
     }
   }
 
-  async getFileContents(key: string): Promise<Buffer> {
+  async openReadStream(key: string, abortSignal: AbortSignal): Promise<Readable> {
     try {
-      const res = await this.client.send(new GetObjectCommand({ Bucket: this.bucket, Key: this.buildKey(key) }))
+      const res = await this.client.send(new GetObjectCommand({ Bucket: this.bucket, Key: this.buildKey(key) }), {
+        abortSignal
+      })
       if (!res.Body || !(res.Body instanceof Readable)) {
         throw new Error('Empty body received from S3')
       }
-      return await streamToBuffer(res.Body as Readable)
+      return res.Body
     } catch (error) {
       logger.error('[S3Storage] Error getting object:', error as Error)
       throw error

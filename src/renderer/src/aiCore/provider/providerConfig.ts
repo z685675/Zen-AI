@@ -13,7 +13,7 @@ import { getProviderByModel } from '@renderer/services/AssistantService'
 import { recordDiagnostic } from '@renderer/services/DiagnosticEvidenceService'
 import { getProviderById } from '@renderer/services/ProviderService'
 import store from '@renderer/store'
-import { type Model, type Provider, SystemProviderIds } from '@renderer/types'
+import { type EndpointType, type Model, type Provider, SystemProviderIds } from '@renderer/types'
 import {
   formatApiHost,
   formatOllamaApiHost,
@@ -31,6 +31,7 @@ import {
   isSupportStreamOptionsProvider,
   isVertexProvider
 } from '@renderer/utils/provider'
+import { isVideoOnlyEndpointModel } from '@shared/config/videoGeneration'
 import { diagnosticFetch } from '@shared/diagnostics'
 import { defaultAppHeaders } from '@shared/utils'
 import { cloneDeep, isEmpty } from 'lodash'
@@ -53,7 +54,7 @@ interface BaseConfig {
 
 interface BuilderContext {
   actualProvider: Provider
-  model: Model
+  model: Omit<Model, 'endpoint_type'> & { endpoint_type?: Exclude<EndpointType, 'openai-video'> }
   baseConfig: BaseConfig
   endpoint?: string
   aiSdkProviderId: AppProviderId
@@ -117,12 +118,15 @@ export function providerToAiSdkConfig(
   actualProvider: Provider,
   model: Model
 ): ProviderConfig | Promise<ProviderConfig> {
+  const endpointType = model.endpoint_type
+  if (endpointType === 'openai-video' || isVideoOnlyEndpointModel(model))
+    throw new Error('Open Video Generation to use this model.')
   const aiSdkProviderId = getAiSdkProviderId(actualProvider, model)
   const { baseURL, endpoint } = routeToEndpoint(actualProvider.apiHost)
 
   const ctx: BuilderContext = {
     actualProvider,
-    model,
+    model: { ...model, endpoint_type: endpointType },
     baseConfig: { baseURL, apiKey: actualProvider.apiKey },
     endpoint,
     aiSdkProviderId

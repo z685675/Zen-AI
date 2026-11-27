@@ -1,4 +1,5 @@
 import { useSettings } from '@renderer/hooks/useSettings'
+import { cn } from '@renderer/utils'
 import type { FC, HTMLAttributes } from 'react'
 import styled from 'styled-components'
 
@@ -6,14 +7,22 @@ interface Props extends HTMLAttributes<HTMLDivElement> {
   children: React.ReactNode
   contentMaxWidth?: string
   reserveNavigationSpace?: boolean
+  reading?: boolean
 }
 
-const NarrowLayout: FC<Props> = ({ children, contentMaxWidth, reserveNavigationSpace = false, ...props }) => {
+const NarrowLayout: FC<Props> = ({
+  children,
+  contentMaxWidth,
+  reserveNavigationSpace = false,
+  reading = false,
+  className,
+  ...props
+}) => {
   const { narrowMode } = useSettings()
 
   return (
     <Container
-      className={`narrow-mode ${narrowMode ? 'active' : ''}`}
+      className={cn('narrow-mode', { active: narrowMode, 'reading-column': reading }, className)}
       $contentMaxWidth={contentMaxWidth}
       $reserveNavigationSpace={reserveNavigationSpace}
       {...props}>
@@ -35,6 +44,12 @@ const Container = styled.div<{ $contentMaxWidth?: string; $reserveNavigationSpac
 
   &.active {
     max-width: ${({ $contentMaxWidth }) => $contentMaxWidth ?? '800px'};
+  }
+
+  &.reading-column {
+    max-width: ${({ $contentMaxWidth }) => $contentMaxWidth ?? 'calc(var(--zen-reading-width) + 64px)'};
+    padding-inline: 32px;
+    transition: none;
   }
 `
 

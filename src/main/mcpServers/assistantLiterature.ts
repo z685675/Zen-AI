@@ -393,7 +393,7 @@ async function readPaperInternal(
   cached.readers++
   try {
     observe('parse', source)
-    const { url: _url, ...reading } = args
+    const { url, ...reading } = args
     const result = await readAssistantDocument(
       { ...reading, file_path: file },
       (candidate) => {
@@ -404,7 +404,7 @@ async function readPaperInternal(
     )
     return {
       ...result,
-      source_url: args.url,
+      source_url: url,
       continuation: result.next_cursor
         ? 'Call read_paper with the same url and cursor copied exactly from next_cursor. It may resume within a page; do not replace it with start_page, repeat that page from its beginning, or infer unseen content.'
         : null,

@@ -1,8 +1,8 @@
 !ifndef ZEN_INSTALL_TRANSACTION_INCLUDED
 !define ZEN_INSTALL_TRANSACTION_INCLUDED
-!ifndef BUILD_UNINSTALLER
 ; Callbacks compile before multiUser.nsh; use the identical registry key default.
 !define /ifndef INSTALL_REGISTRY_KEY "Software\${APP_GUID}"
+!ifndef BUILD_UNINSTALLER
 Var ZenInstallTransactionActive
 Var ZenInstallScope
 !ifdef UNINSTALL_REGISTRY_KEY_2

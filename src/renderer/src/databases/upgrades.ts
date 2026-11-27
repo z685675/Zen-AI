@@ -16,7 +16,7 @@
  */
 import { loggerService } from '@logger'
 import { LanguagesEnum } from '@renderer/config/translate'
-import type { LegacyMessage as OldMessage, Topic, TranslateLanguageCode } from '@renderer/types'
+import type { FileMetadata, LegacyMessage as OldMessage, Topic, TranslateLanguageCode } from '@renderer/types'
 import { FILE_TYPE, WEB_SEARCH_SOURCE } from '@renderer/types' // Import FileTypes enum
 import type {
   BaseMessageBlock,
@@ -24,9 +24,9 @@ import type {
   Message as NewMessage,
   MessageBlock
 } from '@renderer/types/newMessage'
-import { AssistantMessageStatus, MessageBlockStatus } from '@renderer/types/newMessage'
-import { migrateInternalDataPathsDeep } from '@shared/utils/internalDataPathMigration'
-import type { Transaction } from 'dexie'
+import { AssistantMessageStatus, MessageBlockStatus, MessageBlockType } from '@renderer/types/newMessage'
+import { migrateInternalDataPath } from '@shared/utils/internalDataPathMigration'
+import { Dexie, type Transaction } from 'dexie'
 import { isEmpty } from 'lodash'
 
 import {
@@ -415,51 +415,92 @@ export async function upgradeToV8(tx: Transaction): Promise<void> {
   logger.info('DB migration to version 8 finished.')
 }
 
-export async function upgradeToV11(tx: Transaction): Promise<void> {
-  logger.info('DB migration to version 11 started: migrating restored internal data paths')
+export async function upgradeToV13(tx: Transaction): Promise<void> {
+  // The IPC response arrives outside IndexedDB's transaction.
+  const { appDataPath } = await Dexie.waitFor(window.api.getAppInfo())
+  await migrateRestoredInternalPaths(tx, appDataPath)
+}
+
+export async function migrateRestoredInternalPaths(tx: Transaction, appDataPath: string): Promise<void> {
+  if (!appDataPath) return
+  const profileKey = 'internalDataPathProfile'
+  const settings = tx.table<{ id: string; value: unknown }>('settings')
+  if ((await settings.get(profileKey))?.value === appDataPath) return
 
   try {
-    const appInfo = await window.api.getAppInfo()
-    const currentUserDataPath = appInfo.appDataPath
-    let updatedFiles = 0
-    let updatedBlocks = 0
-    let updatedTopics = 0
+    function migrateField<T extends object, K extends keyof T>(record: T | null | undefined, field: K): boolean {
+      if (!record) return false
+      const value = record[field]
+      if (typeof value !== 'string') return false
+      const result = migrateInternalDataPath(value, appDataPath)
+      if (result.changed) Object.assign(record, { [field]: result.value })
+      return result.changed
+    }
 
-    await tx
-      .table('files')
-      .toCollection()
-      .each(async (file) => {
-        const result = migrateInternalDataPathsDeep(file, currentUserDataPath)
-        if (result.changed) {
-          await tx.table('files').put(result.value)
-          updatedFiles += 1
+    function migrateImages(images: string[] | undefined): boolean {
+      let changed = false
+      if (!Array.isArray(images)) return changed
+      for (let i = 0; i < images.length; i++) changed = migrateField(images, i) || changed
+      return changed
+    }
+
+    function migrateBlock(block: MessageBlock): boolean {
+      switch (block.type) {
+        case MessageBlockType.FILE:
+          return migrateField(block.file, 'path')
+        case MessageBlockType.IMAGE: {
+          const fileChanged = migrateField(block.file, 'path')
+          const urlChanged = migrateField(block, 'url')
+          const generated = block.metadata?.generateImageResponse
+          return (generated?.type === 'url' && migrateImages(generated.images)) || urlChanged || fileChanged
         }
-      })
-
-    await tx
-      .table('message_blocks')
-      .toCollection()
-      .each(async (block) => {
-        const result = migrateInternalDataPathsDeep(block, currentUserDataPath)
-        if (result.changed) {
-          await tx.table('message_blocks').put(result.value)
-          updatedBlocks += 1
+        case MessageBlockType.VIDEO: {
+          const urlChanged = migrateField(block, 'url')
+          return migrateField(block, 'filePath') || urlChanged
         }
-      })
+        default:
+          return false
+      }
+    }
 
-    await tx
-      .table('topics')
-      .toCollection()
-      .each(async (topic) => {
-        const result = migrateInternalDataPathsDeep(topic, currentUserDataPath)
-        if (result.changed) {
-          await tx.table('topics').put(result.value)
-          updatedTopics += 1
-        }
-      })
+    function migrateTopic(topic: { messages?: Array<Pick<OldMessage, 'files' | 'images' | 'metadata'>> }): boolean {
+      // Older backups can still contain inline attachments. Current messages reference block IDs.
+      let changed = false
+      if (!Array.isArray(topic.messages)) return changed
+      for (const message of topic.messages) {
+        if (!message) continue
+        if (Array.isArray(message.files))
+          for (const file of message.files) changed = migrateField(file, 'path') || changed
+        changed = migrateImages(message.images) || changed
+        const generated = message.metadata?.generateImage
+        if (generated?.type === 'url') changed = migrateImages(generated.images) || changed
+      }
+      return changed
+    }
 
-    logger.info('DB migration to version 11 finished', { updatedFiles, updatedBlocks, updatedTopics })
+    async function migrateTable<T>(
+      tableName: 'files' | 'message_blocks' | 'topics',
+      migrateRecord: (record: T) => boolean
+    ): Promise<number> {
+      let updated = 0
+      await tx
+        .table<T>(tableName)
+        .toCollection()
+        .modify((record) => {
+          if (!migrateRecord(record)) return false
+          updated += 1
+          return true
+        })
+      return updated
+    }
+
+    const updatedFiles = await migrateTable<FileMetadata>('files', (file) => migrateField(file, 'path'))
+    const updatedBlocks = await migrateTable('message_blocks', migrateBlock)
+    const updatedTopics = await migrateTable('topics', migrateTopic)
+    await settings.put({ id: profileKey, value: appDataPath })
+    logger.info('Migrated restored internal data paths', { updatedFiles, updatedBlocks, updatedTopics })
   } catch (error) {
-    logger.error('DB migration to version 11 error', error as Error)
+    logger.error('Failed to migrate restored internal data paths', error as Error)
+    throw error
   }
 }

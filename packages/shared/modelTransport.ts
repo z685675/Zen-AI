@@ -49,7 +49,11 @@ export type ModelTransportChunk = { done: false; value: Uint8Array } | { done: t
 export interface ModelTransportBridge {
   start(request: ModelTransportRequest): Promise<ModelTransportStart>
   pull(id: string): Promise<ModelTransportChunk>
-  cancel(id: string): Promise<void>
+  cancel(id: string, reason?: 'timeout'): Promise<void>
+}
+
+export function discardResponseBody(response: Response): void {
+  void response.body?.cancel().catch(() => {})
 }
 
 export function transportError(error: unknown): ModelTransportError {

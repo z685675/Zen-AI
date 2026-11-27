@@ -4,13 +4,12 @@ import type { FC } from 'react'
 import { useMemo } from 'react'
 import { HashRouter, Navigate, Route, Routes } from 'react-router-dom'
 
-import Sidebar from './components/app/Sidebar'
+import { AppShell } from './components/app/AppShell'
 import { ErrorBoundary } from './components/ErrorBoundary'
-import TabsContainer from './components/Tab/TabContainer'
 import { AgentWorkspaceContext } from './context/AgentWorkspaceProvider'
+import { SidebarSlotProvider } from './context/SidebarSlotProvider'
 import NavigationHandler from './handler/NavigationHandler'
 import { useOnboardingState } from './hooks/useOnboardingState'
-import { useNavbarPosition } from './hooks/useSettings'
 import AgentPage from './pages/agents/AgentPage'
 import DshPreviewPage from './pages/agents/DshPreviewPage'
 import AnnouncementsPage from './pages/announcements/AnnouncementsPage'
@@ -34,7 +33,6 @@ import { LEGACY_CONVERSATIONS_PATH } from './utils/legacyConversations'
 
 const Router: FC = () => {
   const { onboardingCompleted, completeOnboarding } = useOnboardingState()
-  const { navbarPosition } = useNavbarPosition()
 
   const routes = useMemo(() => {
     return (
@@ -75,20 +73,12 @@ const Router: FC = () => {
     return <OnboardingPage onComplete={completeOnboarding} />
   }
 
-  if (navbarPosition === 'left') {
-    return (
-      <HashRouter>
-        <Sidebar />
-        {routes}
-        <NavigationHandler />
-      </HashRouter>
-    )
-  }
-
   return (
     <HashRouter>
-      <NavigationHandler />
-      <TabsContainer>{routes}</TabsContainer>
+      <SidebarSlotProvider>
+        <AppShell>{routes}</AppShell>
+        <NavigationHandler />
+      </SidebarSlotProvider>
     </HashRouter>
   )
 }

@@ -56,7 +56,9 @@ const ModelEditContent: FC<ModelEditContentProps & ModalProps> = ({ provider, mo
   const isDedicatedImageModel = isDedicatedImageGenerationModel(model)
   const availableEndpointTypeOptions = isNewApiProvider(provider)
     ? endpointTypeOptions
-    : endpointTypeOptions.filter((option) => ['openai', 'openai-response', 'image-generation'].includes(option.value))
+    : endpointTypeOptions.filter((option) =>
+        ['openai', 'openai-response', 'image-generation', 'openai-video'].includes(option.value)
+      )
   const labelWidth = useDynamicLabelWidth([t('settings.models.add.endpoint_type.label')])
 
   // 自动保存函数

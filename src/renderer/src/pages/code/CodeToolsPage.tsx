@@ -358,7 +358,7 @@ const CodeToolsPage: FC = () => {
   return (
     <Container>
       <Navbar>
-        <NavbarCenter style={{ borderRight: 'none' }}>{t('code.title')}</NavbarCenter>
+        <NavbarCenter style={{ borderRight: 'none' }} />
       </Navbar>
       <ContentContainer id="content-container">
         <MainContent>

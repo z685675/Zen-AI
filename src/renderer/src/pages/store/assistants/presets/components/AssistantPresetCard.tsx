@@ -263,15 +263,16 @@ const QuickDeckButton = styled(Button)`
 `
 
 const HeaderInfoEmoji = styled.div`
-  width: 45px;
-  height: 45px;
-  border-radius: var(--list-item-border-radius);
-  font-size: 26px;
+  width: 42px;
+  height: 42px;
+  border-radius: var(--zen-radius-sm);
+  font-size: 24px;
   line-height: 1;
   flex-shrink: 0;
   opacity: 1;
   transition: opacity 0.2s ease;
-  background-color: var(--color-background-soft);
+  background: var(--zen-glass-pill);
+  box-shadow: var(--zen-shadow-active);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -283,26 +284,24 @@ const MenuButton = styled(Button)`
 `
 
 const AgentCardContainer = styled.div`
-  border-radius: var(--list-item-border-radius);
+  border-radius: var(--zen-radius-md);
   cursor: pointer;
-  border: 0.5px solid var(--color-border);
+  border: 0;
+  background: var(--zen-glass-card);
+  backdrop-filter: blur(22px) saturate(160%);
+  -webkit-backdrop-filter: blur(22px) saturate(160%);
   padding: 16px;
   overflow: hidden;
+  box-shadow: var(--zen-shadow-card);
   transition:
-    box-shadow 0.2s ease,
-    background-color 0.2s ease,
-    transform 0.2s ease;
-
-  --shadow-color: rgba(0, 0, 0, 0.05);
-  box-shadow:
-    0 5px 7px -3px var(--color-border-soft),
-    0 2px 3px -4px var(--color-border-soft);
+    box-shadow 180ms ease,
+    background 160ms ease,
+    transform 150ms ease;
 
   &:hover {
-    box-shadow:
-      0 10px 15px -3px var(--color-border-soft),
-      0 4px 6px -4px var(--color-border-soft);
-    transform: translateY(-2px);
+    background: var(--zen-glass-pill-hover);
+    box-shadow: var(--zen-shadow-pill-hover);
+    transform: translateY(-1px);
 
     ${AgentCardHeaderInfoAction} ${HeaderInfoEmoji} {
       opacity: 0;
@@ -311,10 +310,6 @@ const AgentCardContainer = styled.div`
     ${AgentCardHeaderInfoAction} ${MenuButton} {
       opacity: 1;
     }
-  }
-
-  body[theme-mode='dark'] & {
-    --shadow-color: rgba(255, 255, 255, 0.02);
   }
 `
 
@@ -340,13 +335,13 @@ const AgentCardBackground = styled.div`
   position: absolute;
   top: 0;
   right: -50px;
-  font-size: 200px;
+  font-size: 180px;
   display: flex;
   align-items: center;
   justify-content: center;
   pointer-events: none;
-  opacity: 0.1;
-  filter: blur(20px);
+  opacity: 0.05;
+  filter: blur(24px);
   border-radius: 99px;
   overflow: hidden;
 `
@@ -367,9 +362,10 @@ const AgentCardHeaderInfo = styled.div`
 `
 
 const AgentCardHeaderInfoTitle = styled.div`
-  font-size: 16px;
-  line-height: 1.2;
+  font-size: 15px;
+  line-height: 1.25;
   font-weight: 600;
+  color: var(--zen-text-1);
   overflow: hidden;
   display: -webkit-box;
   -webkit-line-clamp: 1;
@@ -388,20 +384,20 @@ const CardInfo = styled.div`
   flex: 1;
   display: flex;
   flex-direction: column;
-  margin-top: 16px;
-  background-color: var(--color-background-soft);
-  padding: 8px;
-  border-radius: 10px;
+  margin-top: 12px;
+  background: var(--zen-bg-subtle);
+  padding: 9px 11px;
+  border-radius: var(--zen-radius-sm);
 `
 
 const AgentPrompt = styled.div`
   font-size: 12px;
   display: -webkit-box;
-  line-height: 1.4;
+  line-height: 1.55;
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
-  color: var(--color-text-2);
+  color: var(--zen-text-2);
 `
 
 export default memo(AssistantPresetCard)

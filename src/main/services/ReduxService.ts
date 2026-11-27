@@ -16,10 +16,9 @@
  */
 import { loggerService } from '@logger'
 import { IpcChannel } from '@shared/IpcChannel'
-import { ipcMain } from 'electron'
+import { type BrowserWindow, ipcMain, type WebContents } from 'electron'
 
 import { CacheService } from './CacheService'
-import { windowService } from './WindowService'
 
 type StoreValue = any
 
@@ -42,43 +41,61 @@ export const invalidateApiServerProvidersCacheForAction = (actionType: string): 
 }
 
 export class ReduxService {
+  private contents?: WebContents
   private isReady = false
-  private resolveReady!: () => void
-  private readyPromise = new Promise<void>((r) => (this.resolveReady = r))
+  private readiness = Promise.withResolvers<void>()
 
   constructor() {
-    ipcMain.handle(IpcChannel.ReduxStoreReady, () => {
+    ipcMain.handle(IpcChannel.ReduxStoreReady, (event) => {
+      if (event.sender !== this.contents || event.senderFrame !== event.sender.mainFrame || this.isReady) return
       this.isReady = true
-      this.resolveReady()
+      this.readiness.resolve()
     })
+  }
+
+  bindWindow(window: BrowserWindow): void {
+    const contents = window.webContents
+    if (this.contents === contents) return
+    this.resetReadiness()
+    this.contents = contents
+
+    const reset = () => {
+      if (this.contents === contents) this.resetReadiness()
+    }
+    contents.on('did-start-navigation', (event) => {
+      if (event.isMainFrame && !event.isSameDocument) reset()
+    })
+    contents.on('render-process-gone', reset)
+    contents.once('destroyed', () => {
+      if (this.contents !== contents) return
+      reset()
+      this.contents = undefined
+    })
+  }
+
+  private resetReadiness(): void {
+    if (!this.isReady) return
+    this.isReady = false
+    this.readiness = Promise.withResolvers<void>()
   }
 
   async waitUntilReady(): Promise<void> {
-    if (this.isReady) return
-    await this.readyPromise
+    while (!this.isReady) await this.readiness.promise
   }
 
-  private async waitForStoreReady(): Promise<void> {
-    if (this.isReady) return
-
-    let timer: ReturnType<typeof setTimeout>
-    const timeout = new Promise<never>((_, reject) => {
-      timer = setTimeout(() => reject(new Error('Timeout waiting for Redux store to be ready')), STORE_READY_TIMEOUT)
-    })
-
-    await Promise.race([this.waitUntilReady(), timeout]).finally(() => clearTimeout(timer))
-  }
-
-  private async getWebContents(): Promise<Electron.WebContents> {
-    await this.waitForStoreReady()
-
-    const mainWindow = windowService.getMainWindow()
-
-    if (!mainWindow) {
-      throw new Error('Main window is not available')
+  private async getWebContents(): Promise<WebContents> {
+    if (!this.isReady) {
+      let timer: ReturnType<typeof setTimeout>
+      const timeout = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error('Timeout waiting for Redux store to be ready')), STORE_READY_TIMEOUT)
+      })
+      await Promise.race([this.waitUntilReady(), timeout]).finally(() => clearTimeout(timer))
     }
 
-    return mainWindow.webContents
+    if (!this.isReady || !this.contents || this.contents.isDestroyed()) {
+      throw new Error('Main window is not available')
+    }
+    return this.contents
   }
 
   // Select state from renderer process

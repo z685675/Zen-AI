@@ -105,7 +105,20 @@ function isolatedPage(options: { pause?: boolean; pending?: string; collapsed?: 
       return callback()
     }),
     locator: vi.fn((selector: string) => {
-      if (selector === '#inputbar button:has(svg.lucide-circle-pause)') return pause
+      if (selector === '#inputbar') {
+        return {
+          getByRole: (role: string, options: { name: RegExp }) => {
+            if (
+              role !== 'button' ||
+              !options.name.test('暂停') ||
+              !options.name.test('Pause') ||
+              options.name.test('Send')
+            )
+              throw new Error('Unexpected pause locator')
+            return pause
+          }
+        }
+      }
       const escaped = options.pending?.replace(
         /[^a-zA-Z0-9_-]/gu,
         (value) => `\\${value.codePointAt(0)!.toString(16)} `

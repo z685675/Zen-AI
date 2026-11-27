@@ -47,9 +47,9 @@ const SelectAgentBaseModelButton = ({
   className,
   buttonStyle,
   buttonSize = 'small',
-  avatarSize = 20,
-  fontSize = 12,
-  iconSize = 14,
+  avatarSize = 16,
+  fontSize = 12.5,
+  iconSize = 13,
   containerClassName
 }: Props) => {
   const { t } = useTranslation()
@@ -86,9 +86,14 @@ const SelectAgentBaseModelButton = ({
 
   // Merge default styles with custom styles
   const mergedStyle: CSSProperties = {
-    borderRadius: 20,
+    borderRadius: 'var(--zen-radius-pill)',
+    height: 35,
     fontSize,
-    padding: 2,
+    padding: '0 14px 0 11px',
+    background: 'var(--zen-glass-pill)',
+    backdropFilter: 'blur(28px) saturate(170%)',
+    border: 'none',
+    boxShadow: 'var(--zen-shadow-pill)',
     ...buttonStyle
   }
 
@@ -101,14 +106,15 @@ const SelectAgentBaseModelButton = ({
       onClick={onSelectModel}
       disabled={isDisabled || isUpdating}
       loading={isUpdating}>
-      <div className={containerClassName || 'flex w-full items-center gap-1.5'}>
-        <div className="flex flex-1 items-center gap-1.5 overflow-x-hidden">
+      <div className={containerClassName || 'flex max-w-[260px] items-center gap-2'}>
+        <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-hidden">
           <ModelAvatar model={model ? apiModelAdapter(model) : undefined} size={avatarSize} />
-          <span className="truncate text-(--color-text)">
-            {model ? model.name : t('button.select_model')} {providerName ? ' | ' + providerName : ''}
+          <span className="truncate font-medium text-(--zen-text-1)">
+            {model ? model.name : t('button.select_model')}
+            {providerName ? <span className="font-normal text-(--zen-text-3)"> · {providerName}</span> : null}
           </span>
         </div>
-        <ChevronsUpDown size={iconSize} color="var(--color-icon)" />
+        <ChevronsUpDown size={iconSize} color="var(--zen-text-3)" />
       </div>
     </Button>
   )

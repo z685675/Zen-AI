@@ -224,20 +224,21 @@ export function fitCheckpointAttachments(
   const files = readCheckpointAttachments(source)
   if (!files.length) return undefined
   const limit = Math.max(0, Math.floor(maxTokens))
+  const attachmentLabel = '附件：'
   let outside = source
-  for (const file of files) outside = outside.replace(file.raw, `[附件：${file.name}]`)
+  for (const file of files) outside = outside.replace(file.raw, `[${attachmentLabel}${file.name}]`)
   outside = boundText(outside, Math.min(2_000, Math.floor(limit * 0.12)))
   const notice =
     '[附件覆盖记录：以下逐文件保留原文或节选；节选不等于全文。未展示的内容仍在本地原件中，不能据此称用户未提供文件。]'
   const parts = files.map((file) => (file.unavailable ? [] : splitParts(file.body)))
   const demands = parts.map((items) => items.reduce((total, part) => total + part.tokens, 0))
   const terms = queryTerms(query)
-  let contentBudget =
-    limit -
-    approximateTokenSize(
-      `${outside}\n${notice}\n${files.map((file) => `<file name="${escapeContextAttribute(file.name)}" selection="metadata-only">\n[原文保存在本地；当前额度仅容纳文件标识]\n</file>`).join('\n')}`
-    ) -
-    128
+  const metadataOnlyNotice = '[原文保存在本地；当前额度仅容纳文件标识]'
+  const fileIdentifiers = files.map(
+    (file) =>
+      `<file name="${escapeContextAttribute(file.name)}" selection="metadata-only">\n${metadataOnlyNotice}\n</file>`
+  )
+  let contentBudget = limit - approximateTokenSize([outside, notice, ...fileIdentifiers].join('\n')) - 128
 
   for (let attempt = 0; attempt < 5; attempt += 1) {
     const allowances = allocateBudgets(demands, contentBudget)

@@ -930,6 +930,29 @@
     "zoomIn": "放大",
     "zoomOut": "縮小"
   },
+  "app_shell": {
+    "chat_welcome": "從一次更輕鬆的對話開始",
+    "chat_welcome_subtitle": "隨時提問、寫作、翻譯或腦力激盪，讓注意力完全留在想法本身",
+    "conversations": "對話記錄",
+    "image_workbench": "圖片工作台",
+    "mcp": "MCP",
+    "model_degraded": "模型降級",
+    "model_failed": "模型異常",
+    "model_healthy": "模型正常",
+    "more_tools": "更多工具",
+    "my_usage": "我的用量",
+    "navigation": "主導覽",
+    "new_conversation": "新增對話",
+    "new_task": "新增任務",
+    "recent": "近期任務與對話",
+    "sidebar_placement_desc": "自訂各導覽項目要顯示在側邊欄外層、收進「更多工具」，或隱藏。",
+    "sidebar_placement_hidden": "隱藏",
+    "sidebar_placement_more": "更多工具",
+    "sidebar_placement_primary": "外層顯示",
+    "today_count": "今日 {{count}} 次",
+    "today_requests": "今日 · {{count}} 次請求",
+    "toggle_appearance": "切換淺色或深色外觀"
+  },
   "assistantDataSafety": {
     "busy": "智慧助手任務或資料操作尚未結束，請先停止任務，或等待資料操作完成後再進行備份、還原或清空。"
   },
@@ -1190,6 +1213,9 @@
     "continuation_too_large": "历史记录过大，请先导出备份，再在新版提供必要的背景。",
     "continuation_workspace_missing": "原工作目录不存在或不可访问，请检查目录权限后重试。",
     "continue": "在新版繼續",
+    "delete_legacy_folder": "刪除舊對話資料夾",
+    "delete_legacy_folder_confirm": "這會永久刪除所有舊對話，包括已封存的對話。此操作無法復原。",
+    "delete_legacy_folder_failed": "仍有舊對話未能刪除，請重試。",
     "historical_copy": "歷史副本",
     "legacy_automation_disabled": "棄用助手已停止維護，微信等外部接入與定時任務已關閉。既有設定與歷史記錄保留，待新版助手支援後再開放；開發者模式也無法啟用。",
     "legacy_history": "舊對話",
@@ -1661,6 +1687,7 @@
         "cache_value": "{{hits}} 次命中 / {{total}} 次解析",
         "compressions": "歷史整理",
         "error": "資料準備失敗",
+        "local_checkpoint_fallback": "遠端整理模型暫時無法使用，已改用本機檢查點繼續處理",
         "managed": "資料與歷史已管理",
         "managed_resources": "已管理 {{count}} 份資料",
         "note": "這裡只顯示資料、歷史與容量處理，不代表模型仍在回答。",
@@ -1851,6 +1878,13 @@
       "prev": "上一條訊息",
       "top": "回到頂端"
     },
+    "quick_roles": {
+      "add": "新增角色",
+      "add_to_favorites": "新增常用角色",
+      "empty": "尚未新增角色卡片",
+      "expand_settings": "展開設定",
+      "mine": "我的"
+    },
     "resend": "重新傳送",
     "save": {
       "file": {
@@ -2012,6 +2046,12 @@
         "md": "複製為 Markdown",
         "plain_text": "複製為純文字（移除 Markdown）",
         "title": "複製"
+      },
+      "date_group": {
+        "earlier": "更早",
+        "last_seven_days": "近 7 天",
+        "pinned": "釘選",
+        "today": "今天"
       },
       "delete": {
         "shortcut": "按住 {{key}} 可直接刪除"
@@ -2269,6 +2309,7 @@
     "models": "模型",
     "more": "更多",
     "name": "名稱",
+    "new": "新增",
     "next_match": "下一場比賽",
     "no_results": "沒有結果",
     "none": "無",
@@ -2288,6 +2329,7 @@
     "prompt": "提示詞",
     "provider": "供應商",
     "reasoning_content": "已深度思考",
+    "recently_deleted": "最近刪除",
     "refresh": "重新整理",
     "regenerate": "重新產生",
     "remove_image": "移除圖片",
@@ -2349,7 +2391,8 @@
     "image-generation": "影像產生（OpenAI）",
     "jina-rerank": "Jina Rerank",
     "openai": "OpenAI",
-    "openai-response": "OpenAI-Response"
+    "openai-response": "OpenAI-Response",
+    "openai-video": "OpenAI 相容影片生成"
   },
   "error": {
     "availableProviders": "可用供應商",
@@ -2643,6 +2686,7 @@
     "split": "分割畫面"
   },
   "image_studio": {
+    "legacy_import_incomplete": "部分舊本機圖片無法讀取。可用作品已匯入，原始檔案仍保留。",
     "local": "本地图片",
     "opening": "正在打开图片工作台……",
     "reconnect": "重新连接",
@@ -3225,6 +3269,11 @@
       "pending": "等待中",
       "preview": "預覽",
       "raw": "原始碼",
+      "read_paper": {
+        "active": "正在閱讀論文",
+        "done": "本段讀取完成",
+        "label": "閱讀論文"
+      },
       "runningCount": "{{count}} 個工具正在運行",
       "search_limited": "搜尋受限 · 未執行",
       "sections": {
@@ -3428,6 +3477,7 @@
     "degraded": "降級",
     "description": "依所選金鑰目前可呼叫的模型及管道顯示閘道統計，包含切換管道重試。資料自閘道升級後開始收集。",
     "empty": "沒有符合條件的模型",
+    "failures": "失敗次數",
     "first_response_latency": "平均首次回應耗時",
     "high_failure_rate": "失敗率高",
     "history": "每日趨勢",
@@ -4173,7 +4223,7 @@
       "realistic": "寫實"
     },
     "text_desc_required": "請先輸入圖片描述",
-    "title": "繪圖",
+    "title": "圖片/影片",
     "top_up": "儲值",
     "translating": "翻譯中...",
     "uploaded_input": "已上傳輸入",
@@ -6633,6 +6683,24 @@
       "color_primary": "主題顏色",
       "dark": "深色",
       "light": "淺色",
+      "mode": "外觀模式",
+      "preset": {
+        "codex": {
+          "description": "純淨多層白階輕透玻璃",
+          "name": "純淨玻璃"
+        },
+        "font": "跟隨目前主題推薦字型",
+        "title": "視覺風格",
+        "zen-paper": {
+          "description": "溫潤羊脂暖杏輕透玻璃",
+          "name": "羊脂暖杏"
+        }
+      },
+      "route_transition": {
+        "crossfade": "淡入淡出",
+        "instant": "直接切換",
+        "title": "頁面切換動畫"
+      },
       "system": "系統",
       "title": "主題",
       "window": {
@@ -6868,7 +6936,7 @@
     "memories": "記憶",
     "notes": "筆記",
     "openclaw": "OpenClaw",
-    "paintings": "繪畫",
+    "paintings": "圖片/影片",
     "settings": "設定",
     "store": "助手庫",
     "translate": "翻譯"

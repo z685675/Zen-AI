@@ -4,6 +4,8 @@ import { loggerService } from '@logger'
 import { type ModelAvailabilitySnapshot, parseAvailableModels } from '@shared/config/modelAvailability'
 import { isZenManagedApiHost } from '@shared/config/zenProvider'
 import { intersectModelCapabilities, setProviderModelCapabilities } from '@shared/modelCapabilities'
+import { discardResponseBody } from '@shared/modelTransport'
+import { splitApiKeyString } from '@shared/utils/apiKeys'
 import type { Provider } from '@types'
 
 import { managedApiFetch } from './modelTransport/apiFetch'
@@ -61,28 +63,26 @@ export async function refreshModelAvailability(
   if (existing) return existing
   const task = (async () => {
     try {
-      const keys = [
-        ...new Set(
-          provider.apiKey
-            .split(/(?<!\\),|\r?\n/)
-            .map((key) => key.trim().replace(/\\,/g, ','))
-            .filter(Boolean)
-        )
-      ]
+      const keys = [...new Set(splitApiKeyString(provider.apiKey))]
       if (!keys.length || keys.length > 32) throw new Error('invalid_model_availability_keys')
-      const modelsByKey = await Promise.all(
+      const results = await Promise.all(
         keys.map(async (apiKey) => {
           const response = await managedApiFetch(new URL('/api/client/models', provider.apiHost).toString(), {
             headers: { Authorization: `Bearer ${apiKey}`, Accept: 'application/json' },
             signal: AbortSignal.timeout(8_000),
             redirect: 'error'
           })
-          if (!response.ok || response.headers.get('X-Zen-Models-Authoritative') !== '1')
+          if (!response.ok || response.headers.get('X-Zen-Models-Authoritative') !== '1') {
+            discardResponseBody(response)
+            if (response.status === 401) return null
             throw new Error(`model_availability_http_${response.status}`)
+          }
           return parseAvailableModels(await response.json())
         })
       )
-      // Rotation must be safe for every configured key, not grant the union of
+      const modelsByKey = results.filter((models) => models !== null)
+      if (!modelsByKey.length) throw new Error('model_availability_no_authorized_keys')
+      // Rotation must be safe for every authorized key, not grant the union of
       // permissions and fail when the next request happens to choose another key.
       const models = (modelsByKey[0] ?? []).filter((model) =>
         modelsByKey.every((list) => list.some((candidate) => candidate.id === model.id))

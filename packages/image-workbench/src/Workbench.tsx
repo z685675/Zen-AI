@@ -16,6 +16,7 @@ import { DownloadProgress } from './DownloadProgress'
 import { emptyDraft, readDraft, type WorkbenchDraft, writeDraft } from './draft'
 import { dimensionKey, imageDimensionLabel, orderedImageDimensions } from './imageDimensions'
 import { MaskEditor } from './MaskEditor'
+import { PromptEditorModal } from './PromptEditorModal'
 import { ResultGallery } from './ResultGallery'
 import { TaskDiagnostics } from './TaskDiagnostics'
 
@@ -30,18 +31,20 @@ export function FieldSelect({
   value,
   options,
   onChange,
-  disabled
+  disabled,
+  className = 'field'
 }: {
   label: string
   value: string
   options: Array<{ value: string; label: string }>
   onChange: (value: string) => void
   disabled?: boolean
+  className?: string
 }) {
   const { t } = useTranslation()
   const unavailable = value && !options.some((option) => option.value === value)
   return (
-    <label className="field">
+    <label className={className}>
       <span>{label}</span>
       <select
         aria-label={label}
@@ -257,7 +260,7 @@ function Modal({ title, children, onClose }: { title: string; children: ReactNod
   )
 }
 
-export default function Workbench() {
+export default function Workbench({ onUseVideo }: { onUseVideo?: (data: string) => void } = {}) {
   const { t, i18n } = useTranslation()
   const bridge = window.imageCanvas
   const [catalog, setCatalog] = useState<ImageCanvasCatalog>([])
@@ -274,6 +277,7 @@ export default function Workbench() {
   const [configuration, setConfiguration] = useState(false)
   const [preview, setPreview] = useState<{ src: string; alt: string }>()
   const [maskEditor, setMaskEditor] = useState(false)
+  const [promptEditorOpen, setPromptEditorOpen] = useState(false)
   const [nextCursor, setNextCursor] = useState<string>()
   const [historyTotal, setHistoryTotal] = useState(0)
   const [loadingHistory, setLoadingHistory] = useState(false)
@@ -581,6 +585,11 @@ export default function Workbench() {
   }
   const reuse = async (value: ImageCanvasTask) => {
     if (!bridge) return
+    if (value.importedLegacy) {
+      ++draftVersion.current
+      setDraft((current) => ({ ...current, prompt: value.prompt }))
+      return
+    }
     const version = ++draftVersion.current
     try {
       const references = await Promise.all((value.referenceAssets || []).map((id) => bridge.asset(id)))
@@ -694,9 +703,24 @@ export default function Workbench() {
         }
       }}>
       <header className="topbar">
-        <div>
+        <div className="topbar-left">
           <h1>{t('title')}</h1>
-          <span className="muted">{t('subtitle')}</span>
+          <div className="topbar-selectors">
+            <FieldSelect
+              className="topbar-select"
+              label={t('provider')}
+              value={draft.providerId}
+              options={catalog.map((item) => ({ value: item.id, label: item.name }))}
+              onChange={(id) => chooseModel(id, catalog.find((item) => item.id === id)?.models[0]?.id || '')}
+            />
+            <FieldSelect
+              className="topbar-select topbar-select-model"
+              label={t('model')}
+              value={draft.modelId}
+              options={provider?.models.map((item) => ({ value: item.id, label: item.name })) || []}
+              onChange={(id) => chooseModel(draft.providerId, id)}
+            />
+          </div>
         </div>
         <div className="actions">
           <button
@@ -753,8 +777,10 @@ export default function Workbench() {
                     <small>
                       {[
                         ...new Set(
-                          value.tasks.map(
-                            (task) => `${task.providerName || task.providerId} · ${task.modelName || task.modelId}`
+                          value.tasks.map((task) =>
+                            task.importedLegacy
+                              ? t('legacyImage')
+                              : `${task.providerName || task.providerId} · ${task.modelName || task.modelId}`
                           )
                         )
                       ].join(' / ')}
@@ -790,9 +816,16 @@ export default function Workbench() {
               selectedTaskId={task.id}
               onSelect={setSelectedId}
               taskStatus={taskStatus}
+              onRecover={(id, assetId) => {
+                void bridge
+                  .recover(id, assetId)
+                  .then((value) => setTasks((items) => items.map((item) => (item.id === value.id ? value : item))))
+                  .catch(showError)
+              }}
               onPreview={(src) => setPreview({ src, alt: task.prompt })}
               onNotice={setNotice}
               onError={showError}
+              onUseVideo={onUseVideo}
               onUseReference={(data) => {
                 if (draft.references.length >= 4) {
                   showError(new Error('image_reference_or_count_unsupported'))
@@ -849,21 +882,6 @@ export default function Workbench() {
               <DownloadProgress task={task} />
               <TaskDiagnostics task={task} />
               <div className="actions">
-                {task.recoverable && task.status !== 'running' && task.status !== 'completed' && (
-                  <button
-                    type="button"
-                    className="primary"
-                    onClick={() =>
-                      void bridge
-                        ?.recover(task.id)
-                        .then((value) =>
-                          setTasks((items) => items.map((item) => (item.id === value.id ? value : item)))
-                        )
-                        .catch(showError)
-                    }>
-                    {t('recover')}
-                  </button>
-                )}
                 <button type="button" aria-describedby="image-reuse-hint" onClick={() => void reuse(task)}>
                   {t('reuse')}
                 </button>
@@ -883,27 +901,6 @@ export default function Workbench() {
           <div className="mode-line">
             <span className="mode-badge">{t(draft.references.length ? 'imageMode' : 'textMode')}</span>
           </div>
-          <label className="field prompt-field">
-            <span>{t('prompt')}</span>
-            <textarea
-              ref={promptInput}
-              value={draft.prompt}
-              maxLength={32000}
-              placeholder={t('promptPlaceholder')}
-              onChange={(event) => setDraft((current) => ({ ...current, prompt: event.target.value }))}
-              onKeyDown={(event) => {
-                if (
-                  (event.ctrlKey || event.metaKey) &&
-                  event.key === 'Enter' &&
-                  !event.nativeEvent.isComposing &&
-                  !event.repeat
-                ) {
-                  event.preventDefault()
-                  void generate()
-                }
-              }}
-            />
-          </label>
           <div className="reference-header">
             <strong>{t('references')}</strong>
             <small className="muted">
@@ -971,20 +968,40 @@ export default function Workbench() {
             hidden
             onChange={onFiles}
           />
-          <div className="settings-grid">
-            <FieldSelect
-              label={t('provider')}
-              value={draft.providerId}
-              options={catalog.map((item) => ({ value: item.id, label: item.name }))}
-              onChange={(id) => chooseModel(id, catalog.find((item) => item.id === id)?.models[0]?.id || '')}
+          <div className="field prompt-field">
+            <div className="prompt-header">
+              <label htmlFor="image-prompt">{t('prompt')}</label>
+              <button
+                type="button"
+                className={`prompt-expand-btn${draft.prompt.length > 90 || draft.prompt.includes('\n') ? ' emphasized' : ''}`}
+                title={t('expandPrompt')}
+                onClick={() => setPromptEditorOpen(true)}>
+                <span aria-hidden="true">⤢</span>
+                <span>{t('expandPrompt')}</span>
+              </button>
+            </div>
+            <textarea
+              id="image-prompt"
+              ref={promptInput}
+              value={draft.prompt}
+              maxLength={32000}
+              placeholder={t('promptPlaceholder')}
+              onChange={(event) => setDraft((current) => ({ ...current, prompt: event.target.value }))}
+              onKeyDown={(event) => {
+                if (
+                  (event.ctrlKey || event.metaKey) &&
+                  event.key === 'Enter' &&
+                  !event.nativeEvent.isComposing &&
+                  !event.repeat
+                ) {
+                  event.preventDefault()
+                  void generate()
+                }
+              }}
             />
-            <FieldSelect
-              label={t('model')}
-              value={draft.modelId}
-              options={provider?.models.map((item) => ({ value: item.id, label: item.name })) || []}
-              onChange={(id) => chooseModel(draft.providerId, id)}
-            />
-            {capabilities && (
+          </div>
+          {capabilities && (
+            <div className="settings-grid">
               <div className="image-size-field">
                 <FieldSelect
                   label={t('imageSize')}
@@ -996,8 +1013,8 @@ export default function Workbench() {
                   onChange={(value) => setDraft((current) => ({ ...current, dimension: value }))}
                 />
               </div>
-            )}
-          </div>
+            </div>
+          )}
           {capabilities && (
             <small className="muted">
               {t(capabilities.source)} ·{' '}
@@ -1191,6 +1208,16 @@ export default function Workbench() {
             }}
           />
         </Modal>
+      )}
+      {promptEditorOpen && (
+        <PromptEditorModal
+          value={draft.prompt}
+          maxLength={32000}
+          placeholder={t('promptPlaceholder')}
+          onChange={(value) => setDraft((current) => ({ ...current, prompt: value }))}
+          onSubmit={valid ? () => void generate() : undefined}
+          onClose={() => setPromptEditorOpen(false)}
+        />
       )}
     </div>
   )

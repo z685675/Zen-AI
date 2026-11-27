@@ -23,7 +23,7 @@ import {
 } from 'lucide-react'
 import type { FC } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Link, Route, Routes, useLocation } from 'react-router-dom'
+import { Link, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import styled from 'styled-components'
 
 import AboutSettings from './AboutSettings'
@@ -55,7 +55,7 @@ const SettingsPage: FC = () => {
   return (
     <Container>
       <Navbar>
-        <NavbarCenter style={{ borderRight: 'none' }}>{t('settings.title')}</NavbarCenter>
+        <NavbarCenter style={{ borderRight: 'none' }} />
       </Navbar>
       <ContentContainer id="content-container">
         <SettingMenus>
@@ -174,6 +174,7 @@ const SettingsPage: FC = () => {
         </SettingMenus>
         <SettingContent>
           <Routes>
+            <Route index element={<Navigate to="provider" replace />} />
             <Route path="provider" element={<ProviderList />} />
             <Route path="model" element={<ModelSettings />} />
             <Route path="websearch/*" element={<WebSearchSettings />} />
@@ -205,24 +206,30 @@ const Container = styled.div`
   display: flex;
   flex-direction: column;
   flex: 1;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
 `
 
 const ContentContainer = styled.div`
   display: flex;
   flex: 1;
+  min-width: 0;
+  min-height: 0;
   flex-direction: row;
-  height: calc(100vh - var(--navbar-height));
-  padding: 1px 0;
+  height: 100%;
+  overflow: hidden;
 `
 
 const SettingMenus = styled(Scrollbar)`
   display: flex;
   flex-direction: column;
   min-width: var(--settings-width);
-  border-right: 0.5px solid var(--color-border);
-  padding: 10px;
+  border-right: 0.5px solid var(--zen-border);
+  padding: 14px 12px;
   user-select: none;
-  gap: 5px;
+  gap: 3px;
 `
 
 const MenuItemLink = styled(Link)`
@@ -234,24 +241,31 @@ const MenuItem = styled.li`
   display: flex;
   flex-direction: row;
   align-items: center;
-  gap: 8px;
-  padding: 6px 10px;
+  gap: 10px;
+  padding: 8px 12px;
   width: 100%;
   cursor: pointer;
-  border-radius: var(--list-item-border-radius);
+  border-radius: var(--zen-radius-sm);
+  font-size: 13.5px;
   font-weight: 500;
-  transition: all 0.2s ease-in-out;
-  border: 0.5px solid transparent;
+  color: var(--zen-text-2);
+  transition:
+    background 150ms ease,
+    box-shadow 160ms ease,
+    color 150ms ease;
+  border: 0;
   .anticon {
     font-size: 16px;
     opacity: 0.8;
   }
   &:hover {
-    background: var(--color-background-soft);
+    color: var(--zen-text-1);
+    background: var(--zen-bg-hover);
   }
   &.active {
-    background: var(--color-background-soft);
-    border: 0.5px solid var(--color-border);
+    color: var(--zen-text-1);
+    background: var(--zen-glass-active);
+    box-shadow: var(--zen-shadow-active);
   }
 `
 

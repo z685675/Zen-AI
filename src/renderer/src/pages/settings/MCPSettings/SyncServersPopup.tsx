@@ -335,7 +335,7 @@ const StepSection = styled.div`
 
 const StepNumber = styled.div`
   background-color: var(--color-primary);
-  color: white;
+  color: var(--color-primary-foreground);
   width: 24px;
   height: 24px;
   border-radius: 50%;

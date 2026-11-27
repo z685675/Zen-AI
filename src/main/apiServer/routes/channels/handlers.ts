@@ -40,7 +40,7 @@ export const listChannels = async (req: Request, res: Response): Promise<Respons
     const type = req.query.type as string | undefined
 
     logger.debug('Listing channels', { agentId, type })
-    const channels = await channelService.listChannels({ agentId, type })
+    const channels = await channelService.listChannels({ agentId, type, legacyOnly: true })
 
     return res.json({ data: channels, total: channels.length })
   } catch (error: any) {
@@ -55,7 +55,7 @@ export const getChannel = async (req: Request, res: Response): Promise<Response>
   const { channelId } = req.params
   try {
     logger.debug('Getting channel', { channelId })
-    const channel = await channelService.getChannel(channelId)
+    const channel = await channelService.getChannel(channelId, true)
 
     if (!channel) {
       return res.status(404).json({
@@ -114,14 +114,12 @@ export const deleteChannel = async (req: Request, res: Response): Promise<Respon
   try {
     logger.debug('Deleting channel', { channelId })
 
-    const channel = await channelService.getChannel(channelId)
-    if (!channel) {
+    const deleted = await channelService.deleteChannel(channelId, true)
+    if (!deleted) {
       return res.status(404).json({
         error: { message: 'Channel not found', type: 'not_found', code: 'channel_not_found' }
       })
     }
-
-    await channelService.deleteChannel(channelId)
 
     await channelManager.disconnectChannel(channelId)
 

@@ -4,12 +4,9 @@ import type { NextFunction, Request, Response } from 'express'
 import { config } from '../config'
 
 const isValidToken = (token: string, apiKey: string): boolean => {
-  if (token.length !== apiKey.length) {
-    return false
-  }
   const tokenBuf = Buffer.from(token)
   const keyBuf = Buffer.from(apiKey)
-  return crypto.timingSafeEqual(tokenBuf, keyBuf)
+  return tokenBuf.length === keyBuf.length && crypto.timingSafeEqual(tokenBuf, keyBuf)
 }
 
 export const authMiddleware = async (req: Request, res: Response, next: NextFunction) => {

@@ -2,6 +2,7 @@ import { managedModelFetch } from '@renderer/aiCore/provider/modelTransport'
 import type { Provider } from '@renderer/types'
 import { isZenManagedApiHost } from '@shared/config/zenProvider'
 import { type DiagnosticEvent, diagnosticKeyFingerprint } from '@shared/diagnostics'
+import { discardResponseBody } from '@shared/modelTransport'
 
 export type BackendDiagnosticCollection = {
   status: string
@@ -68,7 +69,10 @@ export async function collectBackendDiagnostic(
   }
 
   const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), 5_000)
+  const timer = setTimeout(
+    () => controller.abort(new DOMException('Diagnostic request timed out', 'TimeoutError')),
+    5_000
+  )
   const evidence: Array<Record<string, unknown>> = []
   const responses: Array<Record<string, unknown>> = []
   const requestIds = [
@@ -108,6 +112,7 @@ export async function collectBackendDiagnostic(
           headers: { Authorization: `Bearer ${key}` }
         })
         if (!response.ok) {
+          discardResponseBody(response)
           responses.push({ requestId, status: response.status })
           if (response.status === 404 || response.status === 401 || response.status === 403)
             throw Object.assign(new Error('Diagnostic endpoint unavailable'), {

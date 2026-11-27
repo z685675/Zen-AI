@@ -262,7 +262,7 @@ const AgentSessionInputbarInner: FC<InnerProps> = ({
     isExpanded: textareaIsExpanded,
     customHeight,
     setCustomHeight
-  } = useTextareaResize({ maxHeight: 500, minHeight: 30 })
+  } = useTextareaResize({ maxHeight: 220, minHeight: 44 })
   const { sendMessageShortcut, apiServer } = useSettings()
 
   const { t } = useTranslation()
@@ -622,8 +622,8 @@ const AgentSessionInputbarInner: FC<InnerProps> = ({
   }, [deepResearchEnabled, handleDeepResearchChange, handleReasoningEffortChange, sessionData, reasoningEffort])
   const sessionToolOrderOverride = useMemo<ToolOrderConfig>(
     () => ({
-      visible: ['permission_mode', 'thinking', 'deep_research', 'session_more'],
-      hidden: ['create_session', 'attachment', 'resource_panel', 'toggle_expand']
+      visible: ['attachment', 'permission_mode', 'thinking', 'deep_research', 'session_more'],
+      hidden: ['create_session', 'resource_panel', 'toggle_expand']
     }),
     []
   )
@@ -691,16 +691,18 @@ const AgentSessionInputbarInner: FC<InnerProps> = ({
       sendDisabled={sendDisabled || submitting}
       handleSendMessage={sendMessage}
       topContent={
-        <>
-          <AgentSessionInboxPanel
-            entries={inboxEntries}
-            inbox={inbox}
-            sessionId={sessionId}
-            running={loading}
-            onEdit={editInboxEntry}
-          />
-          {!isHero && <SessionModelRecoveryNotice agentId={agentId} sessionId={sessionId} model={sessionModel} />}
-        </>
+        <AgentSessionInboxPanel
+          entries={inboxEntries}
+          inbox={inbox}
+          sessionId={sessionId}
+          running={loading}
+          onEdit={editInboxEntry}
+        />
+      }
+      statusContent={
+        !isHero && (
+          <SessionModelRecoveryNotice key={sessionId} agentId={agentId} sessionId={sessionId} model={sessionModel} />
+        )
       }
       leftToolbar={leftToolbar}
       pinnedContent={
@@ -712,7 +714,6 @@ const AgentSessionInputbarInner: FC<InnerProps> = ({
       }
       forceEnableQuickPanelTriggers
       enableRootMenuTrigger={false}
-      layoutMaxWidth={isHero ? '1040px' : '960px'}
       minimal={isHero}
     />
   )
@@ -722,7 +723,7 @@ const ToolbarGroup = styled.div`
   display: flex;
   flex-direction: row;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
 `
 
 export default AgentSessionInputbar

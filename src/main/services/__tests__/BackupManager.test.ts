@@ -1,3 +1,5 @@
+import { Readable, Writable } from 'node:stream'
+
 import type * as PathModule from 'path'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -45,7 +47,6 @@ const {
   mockCommitted,
   mockStage,
   mockExtract,
-  mockZipClose,
   mockRelaunch,
   mockExit
 } = vi.hoisted(() => ({
@@ -53,7 +54,6 @@ const {
   mockCommitted: vi.fn(),
   mockStage: vi.fn(),
   mockExtract: vi.fn(),
-  mockZipClose: vi.fn(),
   mockRelaunch: vi.fn(),
   mockExit: vi.fn(),
   mockBackupPathMigrationService: {
@@ -106,6 +106,7 @@ vi.mock('fs-extra', () => ({
   pathExists: vi.fn(),
   remove: vi.fn(),
   ensureDir: vi.fn(),
+  mkdtemp: vi.fn(),
   copy: vi.fn(),
   rename: vi.fn(),
   readdir: vi.fn(),
@@ -143,12 +144,9 @@ vi.mock('archiver', () => ({
   default: vi.fn()
 }))
 
-vi.mock('node-stream-zip', () => ({
-  default: {
-    async: vi.fn(function () {
-      return { extract: mockExtract, close: mockZipClose }
-    })
-  }
+vi.mock('../BackupArchive', async (importOriginal) => ({
+  ...(await importOriginal<typeof BackupArchiveModule>()),
+  extractBackupArchive: mockExtract
 }))
 vi.mock('../AssistantDataOperationService', () => ({
   withAssistantDataOperation: mockDataGuard,
@@ -162,7 +160,10 @@ vi.mock('../SelectionService', () => ({ default: { quit: vi.fn() } }))
 import { APP_NAME, APP_TEMP_DIR_NAME } from '@shared/config/constant'
 import * as fs from 'fs-extra'
 
+import type * as BackupArchiveModule from '../BackupArchive'
 import BackupManager from '../BackupManager'
+import S3Storage from '../S3Storage'
+import WebDav from '../WebDav'
 
 const lanTransferTempDir = `/tmp/${APP_TEMP_DIR_NAME}/lan-transfer`
 
@@ -403,6 +404,15 @@ describe('BackupManager.handleStartupRestore', () => {
       removeWeChatCredentials: true
     })
   })
+  it('parks restored data after an unsuccessful migration and restores the original paths', async () => {
+    vi.mocked(fs.pathExists).mockImplementation(async (file) => file === '/mock/data.restore' || file === '/mock/data')
+    mockBackupPathMigrationService.migrateRestoredInternalPaths.mockRejectedValueOnce(new Error('migration failed'))
+    await BackupManager.handleStartupRestore()
+    expect(fs.rename).toHaveBeenCalledWith('/mock/data', expect.stringContaining('/mock/data.restore.failed-'))
+    expect(fs.rename).toHaveBeenCalledWith(expect.stringContaining('/mock/data.before-restore-'), '/mock/data')
+    expect(fs.remove).not.toHaveBeenCalled()
+  })
+
   it('returns a saved original directory after a failed startup swap instead of deleting history', async () => {
     vi.mocked(fs.pathExists).mockResolvedValue(true as never)
     vi.mocked(fs.rename).mockImplementation(async (source) => {
@@ -428,7 +438,6 @@ describe('BackupManager protected restore staging', () => {
     mockDataGuard.mockImplementation(async (_kind, work) => work())
     mockStage.mockResolvedValue(undefined)
     mockExtract.mockResolvedValue(undefined)
-    mockZipClose.mockResolvedValue(undefined)
     mockRelaunch.mockReset()
     vi.mocked(fs.pathExists).mockResolvedValue(true as never)
     vi.mocked(fs.remove).mockResolvedValue(undefined as never)
@@ -456,7 +465,7 @@ describe('BackupManager protected restore staging', () => {
       mode === 'slim'
     )
     expect(fs.remove).not.toHaveBeenCalledWith('/mock/userData/Data')
-    expect(mockZipClose).toHaveBeenCalledOnce()
+    expect(mockExtract).toHaveBeenCalledOnce()
     expect(mockRelaunch.mock.invocationCallOrder[0]).toBeLessThan(mockCommitted.mock.invocationCallOrder[0])
     expect(mockExit).toHaveBeenCalledExactlyOnceWith(0)
   })
@@ -473,10 +482,35 @@ describe('BackupManager protected restore staging', () => {
     expect(mockCommitted).not.toHaveBeenCalled()
     expect(mockExit).not.toHaveBeenCalled()
   })
-  it('closes the zip on extraction failure without preparing restore markers', async () => {
+  it('uses an exclusive generated local download path for a nested S3 object key', async () => {
+    const directory = '/tmp/private-restore-fixture'
+    const openReadStream = vi.fn(async () => Readable.from([Buffer.from('fixture')]))
+    vi.mocked(S3Storage).mockImplementationOnce(function () {
+      return { openReadStream } as unknown as S3Storage
+    })
+    vi.mocked(fs.mkdtemp).mockResolvedValueOnce(directory as never)
+    vi.mocked(fs.createWriteStream).mockReturnValueOnce(
+      new Writable({ write: (_chunk, _encoding, done) => done() }) as unknown as ReturnType<typeof fs.createWriteStream>
+    )
+    await new BackupManager().restoreFromS3({} as never, { fileName: 'backups/archive.zip' } as never)
+    expect(openReadStream).toHaveBeenCalledWith('backups/archive.zip', expect.any(AbortSignal))
+    expect(fs.createWriteStream).toHaveBeenCalledWith(directory + '/backup.zip', { flags: 'wx', mode: 0o600 })
+    expect(mockExtract).toHaveBeenCalledWith(directory + '/backup.zip', expect.any(String))
+    expect(fs.remove).toHaveBeenCalledWith(directory)
+  })
+
+  it('rejects a WebDAV name containing path components before opening it', async () => {
+    await expect(
+      new BackupManager().restoreFromWebdav({} as never, { fileName: 'folder/backup.zip' } as never)
+    ).rejects.toThrow('Invalid WebDAV backup file name')
+    expect(WebDav).not.toHaveBeenCalled()
+    expect(fs.createWriteStream).not.toHaveBeenCalled()
+  })
+
+  it('discards extracted staging without preparing restore markers when extraction fails', async () => {
     mockExtract.mockRejectedValueOnce(new Error('invalid zip'))
     await expect(new BackupManager().restore({} as any, '/backup.zip')).rejects.toThrow('invalid zip')
-    expect(mockZipClose).toHaveBeenCalledOnce()
+    expect(mockExtract).toHaveBeenCalledOnce()
     expect(mockStage).not.toHaveBeenCalled()
     expect(mockRelaunch).not.toHaveBeenCalled()
     expect(fs.remove).not.toHaveBeenCalledWith('/mock/userData/Data.restore')

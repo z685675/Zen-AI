@@ -175,24 +175,20 @@ const AssistantPresetsPage: FC = () => {
   return (
     <Container>
       <Navbar>
-        <NavbarCenter style={{ borderRight: 'none', justifyContent: 'space-between' }}>
-          {t('assistants.presets.title')}
-          <Input
+        <NavbarCenter style={{ borderRight: 'none', justifyContent: 'flex-start' }}>
+          <TitleSearchInput
             placeholder={t('common.search')}
             className="nodrag"
-            style={{ width: '30%', height: 28, borderRadius: 15, paddingLeft: 12 }}
             size="small"
-            variant="filled"
             allowClear
             onClear={handleSearchClear}
-            suffix={<Search size={14} color="var(--color-icon)" onClick={handleSearch} />}
+            prefix={<Search size={13.5} strokeWidth={1.75} color="var(--zen-text-3)" onClick={handleSearch} />}
             value={searchInput}
             maxLength={50}
             onChange={handleSearchInputChange}
             onPressEnter={handleSearch}
             onBlur={handleSearchInputBlur}
           />
-          <div style={{ width: 80 }} />
         </NavbarCenter>
       </Navbar>
 
@@ -243,17 +239,16 @@ const AssistantPresetsPage: FC = () => {
                 </CustomTag>
               }
             </AgentsListTitle>
-            <Flex gap={2}>
+            <HeaderActions>
               {isSearchExpanded ? (
-                <Input
+                <TitleSearchInput
                   placeholder={t('common.search')}
                   className="nodrag"
-                  style={{ width: 200, height: 28, borderRadius: 15, paddingLeft: 12 }}
+                  style={{ width: 200 }}
                   size="small"
-                  variant="filled"
                   allowClear
                   onClear={handleSearchClear}
-                  suffix={<Search size={14} color="var(--color-icon)" onClick={handleSearchIconClick} />}
+                  suffix={<Search size={13} color="var(--zen-text-3)" onClick={handleSearchIconClick} />}
                   value={searchInput}
                   maxLength={50}
                   onChange={handleSearchInputChange}
@@ -263,24 +258,21 @@ const AssistantPresetsPage: FC = () => {
                 />
               ) : (
                 isTopNavbar && (
-                  <Button
-                    type="text"
-                    onClick={handleSearchIconClick}
-                    icon={<Search size={18} color="var(--color-icon)" />}>
+                  <Button shape="round" size="small" onClick={handleSearchIconClick} icon={<Search size={14} />}>
                     {t('common.search')}
                   </Button>
                 )
               )}
-              <Button type="text" onClick={handleImportAgent} icon={<Import size={18} color="var(--color-icon)" />}>
+              <Button shape="round" size="small" onClick={handleImportAgent} icon={<Import size={14} />}>
                 {t('assistants.presets.import.title')}
               </Button>
-              <Button type="text" onClick={handleManageAgents} icon={<Settings2 size={18} color="var(--color-icon)" />}>
+              <Button shape="round" size="small" onClick={handleManageAgents} icon={<Settings2 size={14} />}>
                 {t('assistants.presets.manage.title')}
               </Button>
-              <Button type="text" onClick={handleAddAgent} icon={<Plus size={18} color="var(--color-icon)" />}>
+              <Button type="primary" shape="round" size="small" onClick={handleAddAgent} icon={<Plus size={14} />}>
                 {t('assistants.presets.add.title')}
               </Button>
-            </Flex>
+            </HeaderActions>
           </AgentsListHeader>
 
           {filteredPresets.length > 0 ? (
@@ -311,18 +303,44 @@ const Container = styled.div`
   flex: 1;
   flex-direction: column;
   height: 100%;
+  background: transparent;
+`
+
+const TitleSearchInput = styled(Input)`
+  &&& {
+    width: min(300px, 34%);
+    height: 30px;
+    padding: 0 12px;
+    border: 0;
+    border-radius: var(--zen-radius-pill);
+    background: var(--zen-glass-pill);
+    backdrop-filter: blur(24px) saturate(160%);
+    box-shadow: var(--zen-shadow-pill);
+    color: var(--zen-text-1);
+
+    &:hover,
+    &.ant-input-affix-wrapper-focused {
+      background: var(--zen-glass-pill-hover);
+      box-shadow: var(--zen-shadow-pill-hover);
+    }
+
+    input {
+      background: transparent;
+      color: var(--zen-text-1);
+      font-size: 12.5px;
+    }
+  }
 `
 
 const AgentsGroupList = styled(Scrollbar)`
-  min-width: 160px;
+  min-width: 176px;
   height: calc(100vh - var(--navbar-height));
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 12px 0;
-  border-right: 0.5px solid var(--color-border);
-  border-top-left-radius: inherit;
-  border-bottom-left-radius: inherit;
+  gap: 4px;
+  padding: 12px 6px;
+  background: var(--zen-bg-subtle);
+  border-right: 0.5px solid var(--zen-border);
   -ms-overflow-style: none;
   scrollbar-width: none;
   &::-webkit-scrollbar {
@@ -333,11 +351,13 @@ const AgentsGroupList = styled(Scrollbar)`
 const Main = styled.div`
   flex: 1;
   display: flex;
+  min-height: 0;
 `
 
 const AgentsListContainer = styled.div`
   height: calc(100vh - var(--navbar-height));
   flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
 `
@@ -346,14 +366,27 @@ const AgentsListHeader = styled.div`
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 16px 12px;
+  gap: 12px;
+  padding: 14px 20px 10px;
+`
+
+const HeaderActions = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+
+  .ant-btn {
+    height: 30px;
+    font-size: 12.5px;
+  }
 `
 
 const AgentsListTitle = styled.div`
-  font-size: 16px;
-  line-height: 18px;
-  font-weight: 500;
-  color: var(--color-text-1);
+  font-size: 17px;
+  line-height: 20px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  color: var(--zen-text-1);
   display: flex;
   align-items: center;
   gap: 8px;
@@ -361,11 +394,11 @@ const AgentsListTitle = styled.div`
 
 const AgentsList = styled(Scrollbar)`
   flex: 1;
-  padding: 8px 16px 16px;
+  padding: 6px 20px 24px;
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  grid-auto-rows: 160px;
-  gap: 16px;
+  grid-auto-rows: 172px;
+  gap: 14px;
 `
 
 const EmptyView = styled.div`
@@ -374,8 +407,8 @@ const EmptyView = styled.div`
   flex: 1;
   justify-content: center;
   align-items: center;
-  font-size: 16px;
-  color: var(--color-text-secondary);
+  font-size: 14px;
+  color: var(--zen-text-3);
 `
 
 export default AssistantPresetsPage

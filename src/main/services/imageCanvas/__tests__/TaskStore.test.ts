@@ -41,6 +41,28 @@ const input = (): ImageCanvasRequest => ({
 })
 
 describe('durable image canvas tasks', () => {
+  it('imports legacy prompts and images, retries unavailable files, and does not restore a deleted record', async () => {
+    const path = directory()
+    const request = vi.fn()
+    const png = await sharp({ create: { width: 4, height: 4, channels: 3, background: 'blue' } })
+      .png()
+      .toBuffer()
+    const record = { id: 'old', prompt: 'old prompt', assets: [{ name: 'first.png' }, { name: 'second.png' }] }
+    const read = vi.fn().mockResolvedValueOnce(png).mockRejectedValueOnce(new Error('missing')).mockResolvedValue(png)
+    const store = new ImageCanvasTaskStore(path, request)
+    expect(await store.importLegacy(record, read)).toBe(1)
+    const restored = new ImageCanvasTaskStore(path, request)
+    expect(await restored.importLegacy(record, read)).toBe(0)
+    const [task] = restored.history()
+    expect(task).toMatchObject({ importedLegacy: true, prompt: record.prompt, status: 'completed' })
+    expect(task.assets).toHaveLength(2)
+    expect((await restored.asset(task.assets[0])).startsWith('data:image/png;base64,')).toBe(true)
+    expect(read).toHaveBeenCalledTimes(3)
+    restored.remove(task.id)
+    expect(await new ImageCanvasTaskStore(path, request).importLegacy(record, read)).toBe(0)
+    expect(new ImageCanvasTaskStore(path, request).history()).toEqual([])
+    expect(request).not.toHaveBeenCalled()
+  })
   it('reuses a generated result as a reference after restart without uploading the normalized PNG', async () => {
     const zen = { ...provider, apiHost: 'https://zenai.925636.xyz' }
     const png = await sharp({ create: { width: 32, height: 32, channels: 3, background: 'blue' } })
@@ -423,7 +445,20 @@ describe('durable image canvas tasks', () => {
     await vi.waitFor(() => expect(store.task(payload.id)?.status).toBe('completed'))
     expect(request.mock.calls.every(([, init]) => !init.method || init.method === 'GET')).toBe(true)
     expect(readFileSync(join(path, 'tasks.json'), 'utf8')).not.toContain(provider.apiKey)
-    expect(await store.asset(store.task(payload.id)!.assets[0])).toMatch(/^data:image\/png;base64,/)
+    const localAssetId = store.task(payload.id)!.assets[0]
+    const saved = await store.asset(localAssetId)
+    expect(saved).toMatch(/^data:image\/png;base64,/)
+
+    writeFileSync(join(path, `${localAssetId}.png`), 'unreadable')
+    const zen = { ...provider, apiHost: 'https://zenai.925636.xyz' }
+    expect(() => store.recover(zen, payload.id, randomUUID())).toThrow('asset_unavailable')
+    request.mockClear()
+    expect(store.recover(zen, payload.id, localAssetId).status).toBe('running')
+    await vi.waitFor(() => expect(store.task(payload.id)?.status).toBe('completed'))
+    expect(request).toHaveBeenCalled()
+    expect(request.mock.calls.every(([, init]) => !init.method || init.method === 'GET')).toBe(true)
+    expect(store.task(payload.id)?.assets).toEqual([localAssetId])
+    expect(await store.asset(localAssetId)).toBe(saved)
   })
   it('persists reusable parameters and references and removes only the selected record', async () => {
     const png = await sharp({ create: { width: 3, height: 3, channels: 3, background: 'green' } })

@@ -1,9 +1,11 @@
 import { ErrorBoundary } from '@renderer/components/ErrorBoundary'
+import { createModelLatencyFormatter } from '@renderer/pages/model-status/modelLatency'
 import type { MessageBlock, ThinkingMessageBlock, ToolMessageBlock } from '@renderer/types/newMessage'
 import { MessageBlockType } from '@renderer/types/newMessage'
 import type { OpenCodeSubagentProgress } from '@shared/agents/opencodeSubagents'
-import { ChevronRight, LoaderCircle, Sparkles } from 'lucide-react'
-import { memo, useState } from 'react'
+import { ChevronRight, Sparkles } from 'lucide-react'
+import { AnimatePresence, motion } from 'motion/react'
+import { memo, useEffect, useId, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import styled from 'styled-components'
 
@@ -37,15 +39,21 @@ function PendingApproval({ block }: { block: ToolMessageBlock }) {
   )
 }
 
-function ToolActivity({ block }: { block: ToolMessageBlock }) {
+function ToolActivity({ block, formatDuration }: { block: ToolMessageBlock; formatDuration: (ms: number) => string }) {
   const approval = useToolApproval(block)
   const response = block.metadata?.rawMcpToolResponse
   const status = getEffectiveStatus(response?.status, approval.isWaiting, getToolHasError(response))
+  const duration = Date.parse(block.updatedAt ?? '') - Date.parse(block.createdAt)
   if (approval.isWaiting || approval.isSubmitting) return null
   return (
     <details data-native-tool={block.id}>
       <summary>
-        <ToolHeader block={block} variant="collapse-label" status={status} />
+        <ToolHeader
+          block={block}
+          variant="collapse-label"
+          status={status}
+          stats={duration > 0 && <Duration>{formatDuration(duration)}</Duration>}
+        />
       </summary>
       <DetailBody>
         <ToolBlock block={block} />
@@ -58,45 +66,89 @@ function ToolActivity({ block }: { block: ToolMessageBlock }) {
 function NativeActivity({
   blocks,
   processing,
-  subagents = []
+  subagents = [],
+  elapsedMs
 }: {
   blocks: NativeActivityBlock[]
   processing: boolean
   subagents?: OpenCodeSubagentProgress[]
+  elapsedMs?: number
 }) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const [expanded, setExpanded] = useState(false)
+  const [now, setNow] = useState(Date.now)
+  const timelineId = useId()
+  const durationParts = useMemo(() => createModelLatencyFormatter(i18n?.language ?? 'en'), [i18n?.language])
+  const formatDuration = (ms: number) =>
+    durationParts(ms)
+      .map(({ value }) => value)
+      .join('')
   const tools = blocks.filter((block): block is ToolMessageBlock => block.type === MessageBlockType.TOOL)
   const failures = tools.filter((block) => getToolHasError(block.metadata?.rawMcpToolResponse)).length
+  const started = Math.min(...blocks.map((block) => Date.parse(block.createdAt)).filter(Number.isFinite))
+  const ended = Math.max(...blocks.map((block) => Date.parse(block.updatedAt ?? '')).filter(Number.isFinite))
+  const elapsed = processing && Number.isFinite(started) ? Math.max(0, now - started) : (elapsedMs ?? ended - started)
+  const tone = processing ? 'running' : failures ? 'error' : 'success'
+  const summary = tools.length
+    ? t(processing ? 'nativeActivity.running' : 'nativeActivity.finished', { count: tools.length })
+    : !subagents.length
+      ? t('nativeActivity.thinking')
+      : ''
+  const helpers = subagents.length ? `${t('nativeSubagents.title')} · ${subagents.length}` : ''
   const currentTool = processing
     ? tools.findLast((block) =>
         ['pending', 'invoking', 'streaming'].includes(block.metadata?.rawMcpToolResponse?.status ?? '')
       )
     : undefined
+  useEffect(() => {
+    if (!processing || !Number.isFinite(started)) return
+    const interval = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(interval)
+  }, [processing, started])
+
   return (
     <Container>
-      <SubagentProgress tasks={subagents} />
-      <Toggle type="button" aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>
-        {processing ? <LoaderCircle size={14} className="activity-spinner" /> : <Sparkles size={14} />}
-        <span>
-          {t(
-            tools.length === 0
-              ? 'nativeActivity.thinking'
-              : processing
-                ? 'nativeActivity.running'
-                : 'nativeActivity.finished',
-            { count: tools.length }
-          )}
-        </span>
+      <Toggle type="button" aria-expanded={expanded} aria-controls={timelineId} onClick={() => setExpanded(!expanded)}>
+        <StatusDot data-tone={tone} aria-hidden="true" />
+        <Summary>
+          {[summary, helpers, failures ? t('nativeActivity.failures', { count: failures }) : '']
+            .filter(Boolean)
+            .join(' · ')}
+        </Summary>
+        {Number.isFinite(elapsed) && elapsed >= 0 && <Duration>{formatDuration(elapsed)}</Duration>}
         <ChevronRight size={13} style={{ transform: expanded ? 'rotate(90deg)' : undefined }} />
       </Toggle>
-      {currentTool && (
-        <Current>
-          <ToolHeader block={currentTool} variant="collapse-label" />
-        </Current>
-      )}
-      {failures > 0 && <Hint>{t('nativeActivity.failures', { count: failures })}</Hint>}
-      {/* Always mounted, including before the user opens the execution log. */}
+      <AnimatePresence initial={false}>
+        {expanded && (
+          <Timeline
+            id={timelineId}
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.16 }}>
+            <SubagentProgress tasks={subagents} />
+            {currentTool && (
+              <div className="py-1">
+                <ToolHeader block={currentTool} variant="collapse-label" />
+              </div>
+            )}
+            {blocks.map((block) => (
+              <ErrorBoundary key={block.id} fallbackComponent={BlockErrorFallback}>
+                {block.type === MessageBlockType.TOOL ? (
+                  <ToolActivity block={block} formatDuration={formatDuration} />
+                ) : block.content ? (
+                  <details>
+                    <summary>
+                      <Sparkles size={13} /> {t('nativeActivity.thinking')}
+                    </summary>
+                    <ThinkingText>{block.content}</ThinkingText>
+                  </details>
+                ) : null}
+              </ErrorBoundary>
+            ))}
+          </Timeline>
+        )}
+      </AnimatePresence>
       {tools
         .filter((block) => !['done', 'error', 'cancelled'].includes(block.metadata?.rawMcpToolResponse?.status ?? ''))
         .map((block) => (
@@ -104,84 +156,125 @@ function NativeActivity({
             <PendingApproval block={block} />
           </ErrorBoundary>
         ))}
-      {expanded && (
-        <Timeline>
-          {blocks.map((block) => (
-            <ErrorBoundary key={block.id} fallbackComponent={BlockErrorFallback}>
-              {block.type === MessageBlockType.TOOL ? (
-                <ToolActivity block={block} />
-              ) : block.content ? (
-                <details>
-                  <summary>
-                    <Sparkles size={13} /> {t('nativeActivity.thinking')}
-                  </summary>
-                  <ThinkingText>{block.content}</ThinkingText>
-                </details>
-              ) : null}
-            </ErrorBoundary>
-          ))}
-        </Timeline>
-      )}
     </Container>
   )
 }
 export default memo(NativeActivity)
 
 const Container = styled.div`
-  margin: 6px 0 12px;
-  color: var(--color-text-2);
+  margin: 8px 0 12px;
+  overflow: hidden;
+  color: var(--zen-text-2);
+  background: var(--zen-bg-elevated);
+  border: 1px solid var(--zen-border);
+  border-radius: var(--zen-radius-md);
   font-size: 12px;
-  @keyframes native-activity-spin { to { transform: rotate(360deg); } }
-  .activity-spinner { animation: native-activity-spin 1.5s linear infinite; }
-  @media (prefers-reduced-motion: reduce) { .activity-spinner { animation: none; } }
+
+  > [data-native-approval] {
+    padding: 0 10px 8px;
+  }
 `
+
 const Toggle = styled.button`
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  gap: 7px;
+  width: 100%;
+  height: 30px;
+  gap: 8px;
   border: 0;
   background: transparent;
   color: inherit;
   font: inherit;
-  padding: 5px 0;
+  padding: 0 9px;
   cursor: pointer;
-  &:hover { color: var(--color-text-1); }
+
+  &:hover {
+    background: var(--zen-bg-hover);
+    color: var(--zen-text-1);
+  }
+
+  &:focus-visible {
+    outline: 1px solid var(--zen-border-strong);
+    outline-offset: -1px;
+  }
+
+  svg {
+    flex: none;
+    transition: transform 160ms ease-out;
+  }
 `
-const Current = styled.div`
-  margin: 2px 0 2px 20px;
-  max-width: 100%;
-  overflow-wrap: anywhere;
+
+const StatusDot = styled.span`
+  flex: 0 0 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--zen-success);
+
+  &[data-tone='running'] {
+    background: var(--zen-warning);
+  }
+
+  &[data-tone='error'] {
+    background: var(--zen-danger);
+  }
 `
-const Hint = styled.div`
-  margin: 2px 0 4px 20px;
-  color: var(--color-text-3);
+
+const Summary = styled.span`
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: start;
 `
-const Timeline = styled.div`
-  margin: 6px 0 0 7px;
-  padding-left: 14px;
-  border-left: 1px solid var(--color-border);
-  > details { margin: 5px 0; }
+
+const Duration = styled.span`
+  flex: none;
+  color: var(--zen-text-2);
+  font-family: var(--code-font-family);
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+`
+
+const Timeline = styled(motion.div)`
+  overflow: hidden;
+  padding: 0 10px;
+  border-top: 1px solid var(--zen-border);
+
+  > details:not(:last-child) {
+    border-bottom: 1px solid var(--zen-border);
+  }
+
   summary {
-    cursor: pointer;
-    padding: 4px 0;
     display: flex;
     align-items: center;
     gap: 6px;
+    min-height: 30px;
+    cursor: pointer;
   }
-  summary::before { content: '›'; color: var(--color-text-3); }
-  details[open] > summary::before { transform: rotate(90deg); }
+
+  summary::before {
+    content: '›';
+    color: var(--zen-text-3);
+  }
+
+  details[open] > summary::before {
+    transform: rotate(90deg);
+  }
 `
+
 const DetailBody = styled.div`
-  margin: 5px 0 8px;
+  margin: 4px 0 8px 12px;
   max-height: 400px;
   overflow: auto;
 `
+
 const ThinkingText = styled.pre`
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
   max-height: 300px;
   overflow: auto;
+  padding: 8px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: var(--zen-code-bg);
   font: inherit;
-  line-height: 1.65;
-  color: var(--color-text-2);
+  line-height: var(--zen-reading-line-height);
 `

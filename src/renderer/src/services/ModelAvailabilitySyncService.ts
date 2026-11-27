@@ -5,12 +5,13 @@ import { updateAssistants, updateDefaultAssistant } from '@renderer/store/assist
 import { setDefaultModel, setQuickModel, setTranslateModel, updateProviders } from '@renderer/store/llm'
 import type { Assistant, Model, Provider } from '@renderer/types'
 import { isTextFallbackIdentifier, selectRecoverableModel } from '@shared/config/modelRecovery'
+import { isVideoOnlyEndpointModel } from '@shared/config/videoGeneration'
 import { isZenManagedApiHost } from '@shared/config/zenProvider'
 import { modelCapacityFields, setProviderModelCapabilities } from '@shared/modelCapabilities'
 
 import { modelRecoveryIntents, withAutomaticModelChange } from './modelRecoveryIntents'
 import { getProviderModelSyncFingerprint, mergeSyncedProviderModels } from './ProviderModelSyncUtils'
-import { refreshRemoteModelPolicy } from './RemoteModelPolicyService'
+import { reconcileRemoteModelPolicyDefaults, refreshRemoteModelPolicy } from './RemoteModelPolicyService'
 
 const logger = loggerService.withContext('ModelAvailabilitySync')
 const known = new Map<string, string>()
@@ -62,10 +63,11 @@ export function reconcileManagedModelReferences(): void {
           isTextFallbackIdentifier(model.id) &&
           model.endpoint_type !== 'image-generation' &&
           model.endpoint_type !== 'jina-rerank' &&
+          !isVideoOnlyEndpointModel(model) &&
           !isAssistantModelIdentifierBlocked(model.id, policy)
       )
       // Non-text selections are managed by their own feature, never by this chain.
-      if (current && !isTextFallbackIdentifier(current.id)) return current
+      if (current && (isVideoOnlyEndpointModel(current) || !isTextFallbackIdentifier(current.id))) return current
       const result = selectRecoverableModel({
         current: modelKey(current),
         preferred: defaultId ? `${provider.id}:${defaultId}` : undefined,
@@ -139,7 +141,10 @@ export async function syncManagedModelAvailability(): Promise<void> {
         providers.map(async (provider: Provider) => {
           const fingerprint = getProviderModelSyncFingerprint(provider)
           if (known.get(provider.id) !== fingerprint) setProviderModelCapabilities(provider.id, [])
-          const snapshot = await window.api.modelPolicy.availability(provider)
+          const snapshot = await window.api.modelPolicy.availability(provider).catch((error) => {
+            logger.warn('Could not sync model availability', { providerId: provider.id, error })
+            return undefined
+          })
           const current = store.getState().llm.providers.find((candidate) => candidate.id === provider.id)
           if (!snapshot || !current || getProviderModelSyncFingerprint(current) !== fingerprint) return
           // Old cached successes may be used in main-process admission, but a
@@ -175,6 +180,7 @@ export async function syncManagedModelAvailability(): Promise<void> {
           )
         })
       )
+      reconcileRemoteModelPolicyDefaults()
       reconcileManagedModelReferences()
       await window.api.modelPolicy.reconcileSessions()
     } while (resync)

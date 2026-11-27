@@ -72,12 +72,12 @@ const OpenExternalAppButton = ({ workdir, className }: OpenExternalAppButtonProp
   }
 
   return (
-    <Space.Compact className={className}>
+    <Space.Compact size="small" className={className}>
       <Tooltip title={t('common.open_in', { name: selectedEditor.name })} mouseEnterDelay={0.5}>
-        <Button onClick={() => openInEditor(selectedEditor)} icon={getEditorIcon(selectedEditor)} />
+        <Button size="small" onClick={() => openInEditor(selectedEditor)} icon={getEditorIcon(selectedEditor)} />
       </Tooltip>
       <Dropdown menu={menuProps} placement="bottomRight">
-        <Button icon={<DownOutlined />} />
+        <Button size="small" icon={<DownOutlined />} />
       </Dropdown>
     </Space.Compact>
   )

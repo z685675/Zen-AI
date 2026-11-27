@@ -57,46 +57,23 @@ export default function AgentQuickEntries() {
 
 const QuickEntrySection = styled.div`
   width: 100%;
-  max-width: 1040px;
-  margin-top: 56px;
-  padding: 18px 20px 20px;
-  border-radius: 28px;
-  background: rgba(255, 255, 255, 0.78);
-  border: 1px solid rgba(255, 255, 255, 0.76);
-  box-shadow:
-    0 16px 40px rgba(15, 23, 42, 0.05),
-    0 1px 0 rgba(255, 255, 255, 0.88) inset;
-  backdrop-filter: blur(14px);
-
-  @media (max-height: 880px) {
-    margin-top: 24px;
-    padding: 12px 16px 14px;
-    border-radius: 24px;
-  }
+  margin-top: 28px;
 `
 
 const QuickEntryLabel = styled.div`
-  margin-bottom: 14px;
+  margin-bottom: 12px;
   font-size: 12px;
-  font-weight: 600;
-  color: #7d8794;
-  letter-spacing: 0.04em;
-
-  @media (max-height: 880px) {
-    margin-bottom: 10px;
-  }
+  font-weight: 500;
+  color: var(--zen-text-3);
+  letter-spacing: 0.02em;
 `
 
 const QuickEntryGrid = styled.div`
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 14px;
+  gap: 12px;
 
-  @media (max-width: 1040px) {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  @media (max-width: 820px) {
+  @media (max-width: 720px) {
     grid-template-columns: 1fr;
   }
 `
@@ -104,53 +81,43 @@ const QuickEntryGrid = styled.div`
 const QuickEntryButton = styled.button`
   display: flex;
   align-items: flex-start;
-  gap: 14px;
-  min-height: 92px;
-  padding: 18px 18px;
-  border: 1px solid rgba(245, 223, 226, 0.7);
-  border-radius: 22px;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(255, 250, 247, 0.9)),
-    linear-gradient(135deg, rgba(255, 235, 239, 0.24), rgba(255, 245, 228, 0.24));
-  box-shadow:
-    0 12px 28px rgba(15, 23, 42, 0.04),
-    0 1px 0 rgba(255, 255, 255, 0.92) inset;
+  gap: 12px;
+  min-height: 74px;
+  padding: 14px 16px;
+  border: 0;
+  border-radius: var(--zen-radius-md);
+  background: var(--zen-glass-card);
+  backdrop-filter: blur(24px) saturate(160%);
+  box-shadow: var(--zen-shadow-card);
   cursor: pointer;
   text-align: left;
   transition:
-    transform 0.16s ease,
-    box-shadow 0.16s ease,
-    border-color 0.16s ease,
-    background 0.16s ease;
+    background 160ms ease,
+    box-shadow 180ms ease,
+    transform 160ms cubic-bezier(0.22, 1, 0.36, 1);
 
   &:hover {
+    background: var(--zen-glass-pill-hover);
+    box-shadow: var(--zen-shadow-pill-hover);
     transform: translateY(-1px);
-    border-color: rgba(244, 114, 125, 0.28);
-    box-shadow:
-      0 18px 34px rgba(15, 23, 42, 0.06),
-      0 1px 0 rgba(255, 255, 255, 0.94) inset;
-    background:
-      linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(255, 248, 244, 0.94)),
-      linear-gradient(135deg, rgba(255, 235, 239, 0.28), rgba(255, 245, 228, 0.28));
-  }
-
-  @media (max-height: 880px) {
-    min-height: 76px;
-    padding: 13px 16px;
   }
 `
 
 const QuickEntryIcon = styled.div`
-  width: 46px;
-  height: 46px;
-  min-width: 46px;
-  border-radius: 15px;
+  width: 34px;
+  height: 34px;
+  min-width: 34px;
+  border-radius: var(--zen-radius-sm);
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, rgba(255, 235, 239, 0.98), rgba(255, 245, 228, 0.98));
-  color: #e25d74;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.86);
+  background: var(--zen-bg-subtle);
+  color: var(--zen-text-2);
+
+  svg {
+    width: 16px;
+    height: 16px;
+  }
 `
 
 const QuickEntryBody = styled.div`
@@ -161,14 +128,15 @@ const QuickEntryBody = styled.div`
 `
 
 const QuickEntryTitle = styled.div`
-  font-size: 15px;
-  font-weight: 600;
-  color: #303642;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.4;
+  color: var(--zen-text-1);
 `
 
 const QuickEntryDescription = styled.div`
-  margin-top: 5px;
+  margin-top: 4px;
   font-size: 12px;
-  line-height: 1.55;
-  color: #7f8896;
+  line-height: 1.5;
+  color: var(--zen-text-2);
 `

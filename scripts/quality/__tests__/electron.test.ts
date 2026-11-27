@@ -10,7 +10,13 @@ function pageWith(reply: { status: string; text: string; error?: string }) {
     innerText: vi.fn(async () => reply.text),
     first: () => element,
     last: () => element,
-    filter: () => element
+    filter: () => element,
+    getByRole: (role: string, { name }: { name: RegExp }) => {
+      if (role !== 'button' || !name.test('发送') || !name.test('Send') || name.test('Pause')) {
+        throw new Error('Unexpected send locator')
+      }
+      return element
+    }
   }
   return {
     evaluate: vi

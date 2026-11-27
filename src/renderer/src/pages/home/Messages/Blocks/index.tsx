@@ -5,6 +5,7 @@ import type { RootState } from '@renderer/store'
 import { messageBlocksSelectors } from '@renderer/store/messageBlock'
 import type { ImageMessageBlock, Message, MessageBlock } from '@renderer/types/newMessage'
 import { MessageBlockStatus, MessageBlockType } from '@renderer/types/newMessage'
+import { getMessageTimingStats } from '@renderer/utils/messageTiming'
 import { isMainTextBlock, isMessageProcessing, isToolBlock, isVideoBlock } from '@renderer/utils/messageUtils/is'
 import { AnimatePresence, motion, type Variants } from 'motion/react'
 import React, { useMemo } from 'react'
@@ -151,6 +152,7 @@ const MessageBlockRenderer: React.FC<Props> = ({ blocks, message, isStreaming })
             <NativeActivity
               blocks={activityBlocks}
               processing={isProcessing}
+              elapsedMs={getMessageTimingStats(message).elapsedMs}
               subagents={message.providerMetadata?.opencodeSubagents?.tasks}
             />
           </AnimatedBlockWrapper>

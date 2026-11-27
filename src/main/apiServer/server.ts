@@ -42,6 +42,11 @@ export class ApiServer {
 
     // Load config
     const { port, host } = await config.load()
+    if (host !== '127.0.0.1' && host !== '::1' && host !== 'localhost') {
+      throw new Error('API server host must be a loopback address')
+    }
+
+    const bindHost = host === 'localhost' ? '127.0.0.1' : host
 
     // Create server with Express app
     const server = createServer(app)
@@ -50,8 +55,8 @@ export class ApiServer {
 
     // Start server
     return new Promise((resolve, reject) => {
-      server.listen(port, host, () => {
-        logger.info('API server started', { host, port })
+      server.listen(port, bindHost, () => {
+        logger.info('API server started', { host: bindHost, port })
 
         // Notify renderer that API server is ready
         const mainWindow = windowService.getMainWindow()

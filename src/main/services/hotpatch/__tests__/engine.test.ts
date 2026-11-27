@@ -170,6 +170,27 @@ describe('offline end-to-end signed patch lifecycle', () => {
     expect(test.store.snapshot.active?.patchId).toBe('patch.1')
     expect((await test.engine.select()).snapshot).toBeUndefined()
   })
+  it('replays an accepted builtin rollback after expiration and interrupted startup', async () => {
+    const test = await fixture()
+    const signal = new AbortController().signal
+    await test.engine.check(signal)
+    const firstBoot = await test.engine.select()
+    await test.store.healthy(firstBoot.challenge!)
+
+    test.policy.policySequence = 2
+    test.policy.action = 'rollback'
+    test.policy.target = null
+    test.setPolicy()
+    expect(await test.engine.check(signal)).toBe(true)
+    await test.store.beginBoot(false)
+
+    test.setTime((test.policy.expiresAt + 1) * 1000)
+    expect((await test.engine.select()).snapshot).toBeUndefined()
+    expect(test.store.snapshot.lastGood).toBeNull()
+    expect(test.store.snapshot.pending).toBeNull()
+    expect(test.store.snapshot.highestSequence).toBe(2)
+  })
+
   it('keeps an excluded client on builtin without downloading artifacts', async () => {
     const test = await fixture()
     test.policy.rollout.basisPoints = 0

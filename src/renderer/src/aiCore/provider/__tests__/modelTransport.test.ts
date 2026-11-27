@@ -105,6 +105,15 @@ describe('AI chat streaming transport', () => {
     expect(api.cancel).toHaveBeenCalledWith(api.start.mock.calls[1][0].id)
   })
 
+  it('sends the timeout category across IPC when the caller deadline expires', async () => {
+    const api = bridge()
+    const controller = new AbortController()
+    const response = await managedModelFetch(vi.fn(), () => api)(url, { ...options, signal: controller.signal })
+    controller.abort(new DOMException('deadline reached', 'TimeoutError'))
+    await expect(response.text()).rejects.toMatchObject({ name: 'TimeoutError' })
+    expect(api.cancel).toHaveBeenCalledExactlyOnceWith(api.start.mock.calls[0][0].id, 'timeout')
+  })
+
   it('does not apply image timeouts while a complex model is still reasoning', async () => {
     vi.useFakeTimers()
     const api = bridge()

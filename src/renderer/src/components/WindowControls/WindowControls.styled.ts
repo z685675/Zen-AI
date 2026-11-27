@@ -17,7 +17,7 @@ export const ControlButton = styled.button<{ $isClose?: boolean }>`
   height: var(--navbar-height);
   border: none;
   background: transparent;
-  color: var(--color-text);
+  color: var(--zen-text-2);
   cursor: pointer;
   outline: none;
   transition:
@@ -28,16 +28,17 @@ export const ControlButton = styled.button<{ $isClose?: boolean }>`
   border-radius: 0;
 
   &:hover {
-    background: ${(props) => (props.$isClose ? '#e81123' : 'rgba(128, 128, 128, 0.3)')};
+    background: ${(props) => (props.$isClose ? '#ef4444' : 'var(--zen-bg-hover)')};
     color: ${(props) => (props.$isClose ? '#ffffff' : 'var(--color-text)')};
   }
 
   &:active {
-    background: ${(props) => (props.$isClose ? '#c50e1f' : 'rgba(128, 128, 128, 0.4)')};
+    background: ${(props) => (props.$isClose ? '#c50e1f' : 'var(--zen-bg-active)')};
     color: ${(props) => (props.$isClose ? '#ffffff' : 'var(--color-text)')};
   }
 
   svg {
     pointer-events: none;
+    color: inherit;
   }
 `

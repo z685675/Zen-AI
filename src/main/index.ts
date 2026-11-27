@@ -49,7 +49,8 @@ import {
 } from './services/ProtocolClient'
 import { importProviderFromFile, isProviderImportFilePath } from './services/urlschema/provider-import'
 import selectionService, { initSelectionService } from './services/SelectionService'
-import { registerShortcuts } from './services/ShortcutService'
+import { registerShortcuts, unregisterAllShortcuts } from './services/ShortcutService'
+import storeSyncService from './services/StoreSyncService'
 import { TrayService } from './services/TrayService'
 import { versionService } from './services/VersionService'
 import { windowService } from './services/WindowService'
@@ -112,15 +113,39 @@ app.commandLine.appendSwitch(
   'enable-features',
   'DocumentPolicyIncludeJSCallStacksInCrashReports,EarlyEstablishGpuChannel,EstablishGpuChannelAsync'
 )
+const configuredHeaderSessions = new WeakSet<Electron.Session>()
 app.on('web-contents-created', (_, webContents) => {
-  webContents.session.webRequest.onHeadersReceived((details, callback) => {
-    callback({
-      responseHeaders: {
-        ...details.responseHeaders,
-        'Document-Policy': ['include-js-call-stacks-in-crash-reports']
+  const session = webContents.session
+  if (!configuredHeaderSessions.has(session)) {
+    configuredHeaderSessions.add(session)
+    session.webRequest.onHeadersReceived((details, callback) => {
+      const headers = { ...details.responseHeaders }
+      const guest = details.webContents
+      const owner = windowService.getMainWindow()
+      if (
+        !hotpatchService.secure &&
+        guest?.getType() === 'webview' &&
+        owner &&
+        !owner.isDestroyed() &&
+        guest.hostWebContents === owner.webContents
+      ) {
+        for (const name of Object.keys(headers))
+          if (name.toLowerCase() === 'x-frame-options' || name.toLowerCase() === 'content-security-policy') {
+            delete headers[name]
+          }
       }
+      const existing = Object.keys(headers).find((name) => name.toLowerCase() === 'document-policy')
+      const policy = 'include-js-call-stacks-in-crash-reports'
+      if (existing) {
+        if (!headers[existing].some((value) => value.includes(policy))) {
+          headers[existing] = [...headers[existing], policy]
+        }
+      } else {
+        headers['Document-Policy'] = [policy]
+      }
+      callback({ responseHeaders: headers })
     })
-  })
+  }
 
   webContents.on('unresponsive', async () => {
     // Interrupt execution and collect call stack from unresponsive renderer
@@ -173,17 +198,27 @@ if (!app.requestSingleInstanceLock()) {
 
     await hotpatchService.prepare()
 
-    const mainWindow = windowService.createMainWindow()
-    hotpatchService.bindWindow(mainWindow)
+    nodeTraceService.init()
+    powerMonitorService.init()
+    analyticsService.init()
+
+    const bindWindowIpc = await registerIpc(app)
+    registerSessionStreamIpc()
+    windowService.setMainWindowInitializer((window) => {
+      hotpatchService.bindWindow(window)
+      reduxService.bindWindow(window)
+      storeSyncService.bindMainWindow(window)
+      bindWindowIpc(window)
+      registerShortcuts(window)
+      window.once('closed', unregisterAllShortcuts)
+      replaceDevtoolsFont(window)
+    })
+    windowService.createMainWindow()
 
     new TrayService()
 
     // Setup macOS application menu
     appMenuService?.setupApplicationMenu()
-
-    nodeTraceService.init()
-    powerMonitorService.init()
-    analyticsService.init()
 
     // Extract bundled rtk binary to the dedicated app bin directory on first run.
     extractRtkBinaries().catch((error) => {
@@ -192,23 +227,11 @@ if (!app.requestSingleInstanceLock()) {
       })
     })
 
-    app.on('activate', function () {
-      const mainWindow = windowService.getMainWindow()
-      if (!mainWindow || mainWindow.isDestroyed()) {
-        windowService.createMainWindow()
-      } else {
-        windowService.showMainWindow()
-      }
-    })
+    app.on('activate', () => windowService.showMainWindow())
 
-    registerShortcuts(mainWindow)
-
-    await registerIpc(mainWindow, app)
     void modelCapacityService.getSnapshot()
     void remoteModelPolicyService.refresh()
     localTransferService.startDiscovery({ resetList: true })
-
-    replaceDevtoolsFont(mainWindow)
 
     // Setup deep link for AppImage on Linux
     await setupAppImageDeepLink()
@@ -257,9 +280,6 @@ if (!app.requestSingleInstanceLock()) {
 
         // Pause legacy schedules/heartbeats. No automatic runs while integrations are retired.
         await schedulerService.restoreSchedulers()
-
-        // Register IPC handlers for session stream before starting channels
-        registerSessionStreamIpc()
 
         // Disconnect/disable legacy adapters, preserving settings, credentials and history.
         await channelManager.start()
@@ -335,7 +355,9 @@ if (!app.requestSingleInstanceLock()) {
     }
     if (quitResourcesStopped) return
     quitResourcesStopped = true
-    stopOpenCodeProcesses()
+    void stopOpenCodeProcesses().catch(() => {
+      // The same shutdown promise is observed by the asynchronous quit guard.
+    })
     app.isQuitting = true
     app.isInstallingUpdate = app.isInstallingUpdate ?? false
 
@@ -376,6 +398,7 @@ if (!app.requestSingleInstanceLock()) {
                 }
               }
             },
+            { name: 'opencode', stop: stopOpenCodeProcesses },
             { name: 'scheduler', stop: () => schedulerService.stopAll() },
             { name: 'automation', stop: () => automationService.stop() },
             { name: 'dsh-preview', stop: () => stopAllDshRuntimes() },

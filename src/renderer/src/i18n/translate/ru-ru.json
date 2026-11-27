@@ -930,6 +930,20 @@
     "zoomIn": "Увеличить",
     "zoomOut": "Отдалить"
   },
+  "app_shell": {
+    "chat_welcome": "Начните разговор",
+    "chat_welcome_subtitle": "Задавайте вопросы, пишите, переводите или придумывайте новое в любое время, сосредоточившись на самих идеях",
+    "conversations": "Диалоги",
+    "image_workbench": "Рабочая область изображений",
+    "mcp": "MCP",
+    "more_tools": "Другие инструменты",
+    "navigation": "Главная навигация",
+    "new_conversation": "Новый диалог",
+    "new_task": "Новая задача",
+    "recent": "Недавние задачи и диалоги",
+    "today_requests": "Сегодня · запросов: {{count}}",
+    "toggle_appearance": "Переключить светлую или тёмную тему"
+  },
   "assistantDataSafety": {
     "busy": "[to be translated]:Stop active assistant tasks first, then back up, restore or reset data. A data operation may also still be in progress."
   },
@@ -1141,6 +1155,9 @@
     "continuation_too_large": "[to be translated]:History is too large. Export a backup and provide the needed background in a new conversation.",
     "continuation_workspace_missing": "[to be translated]:The original workspace is missing or inaccessible. Check permissions and retry.",
     "continue": "[to be translated]:Continue in new assistant",
+    "delete_legacy_folder": "Удалить папку старых диалогов",
+    "delete_legacy_folder_confirm": "Все старые диалоги, в том числе архивные, будут удалены без возможности восстановления.",
+    "delete_legacy_folder_failed": "Не удалось удалить некоторые старые диалоги. Попробуйте ещё раз.",
     "historical_copy": "[to be translated]:History copy",
     "legacy_automation_disabled": "Устаревший помощник больше не поддерживается. Внешние интеграции, включая WeChat, и задания по расписанию отключены, в том числе в режиме разработчика. Настройки и история сохранены. Функции вернутся после их внедрения в новом помощнике.",
     "legacy_read_only": "Старый помощник отключён. Переключитесь на нового помощника.",
@@ -1608,6 +1625,7 @@
         "cache_value": "[to be translated]:{{hits}} hits / {{total}} parses",
         "compressions": "[to be translated]:History compactions",
         "error": "[to be translated]:Resource preparation failed",
+        "local_checkpoint_fallback": "Удалённая модель для обработки контекста временно недоступна. Обработка продолжится с локальной контрольной точки.",
         "managed": "[to be translated]:Resources and history managed",
         "managed_resources": "[to be translated]:{{count}} resources managed",
         "note": "[to be translated]:This shows resource, history, and capacity handling. It does not mean the model is still responding.",
@@ -1798,6 +1816,13 @@
       "prev": "Предыдущее сообщение",
       "top": "Вернуться наверх"
     },
+    "quick_roles": {
+      "add": "Добавить роль",
+      "add_to_favorites": "Добавить роль в избранное",
+      "empty": "Карточки ролей ещё не добавлены",
+      "expand_settings": "Показать настройки роли",
+      "mine": "Мои роли"
+    },
     "resend": "Переотправить",
     "save": {
       "file": {
@@ -1959,6 +1984,12 @@
         "md": "Скопировать как Markdown",
         "plain_text": "Копировать как обычный текст (удалить Markdown)",
         "title": "Скопировать"
+      },
+      "date_group": {
+        "earlier": "Ранее",
+        "last_seven_days": "Последние 7 дней",
+        "pinned": "Закреплённые",
+        "today": "Сегодня"
       },
       "delete": {
         "shortcut": "Удерживайте {{key}} для мгновенного удаления"
@@ -2216,6 +2247,7 @@
     "models": "Модели",
     "more": "Ещё",
     "name": "Имя",
+    "new": "Создать",
     "next_match": "Следующий матч",
     "no_results": "Результатов не найдено",
     "none": "без",
@@ -2235,6 +2267,7 @@
     "prompt": "Промпт",
     "provider": "Провайдер",
     "reasoning_content": "Глубокий анализ",
+    "recently_deleted": "Недавно удалённые",
     "refresh": "Обновить",
     "regenerate": "Пересоздать",
     "remove_image": "Удалить изображение",
@@ -3166,6 +3199,11 @@
       "pending": "Ожидание",
       "preview": "Предпросмотр",
       "raw": "Исходный",
+      "read_paper": {
+        "active": "Чтение статьи",
+        "done": "Раздел прочитан",
+        "label": "Читать статью"
+      },
       "runningCount": "{{count}} инструментов запущено",
       "search_limited": "[to be translated]:Search limited · not executed",
       "sections": {
@@ -3360,6 +3398,9 @@
     "no_matching_model": "[to be translated]:No available model matches the remote configuration. Import a Provider or choose a model manually.",
     "open_settings": "[to be translated]:Open Model Settings",
     "title": "[to be translated]:No model configured"
+  },
+  "model_status": {
+    "failures": "Ошибки"
   },
   "models": {
     "add_parameter": "Добавить параметр",
@@ -6533,6 +6574,24 @@
       "color_primary": "Цвет темы",
       "dark": "Темная",
       "light": "Светлая",
+      "mode": "Режим оформления",
+      "preset": {
+        "codex": {
+          "description": "Монохромное рабочее пространство",
+          "name": "Codex Workbench"
+        },
+        "font": "Использовать шрифт выбранного стиля",
+        "title": "Стиль оформления",
+        "zen-paper": {
+          "description": "Тёплые оттенки бумаги",
+          "name": "Zen Paper"
+        }
+      },
+      "route_transition": {
+        "crossfade": "Плавный переход",
+        "instant": "Мгновенное переключение",
+        "title": "Переходы между страницами"
+      },
       "system": "Системная",
       "title": "Тема",
       "window": {

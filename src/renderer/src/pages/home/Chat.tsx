@@ -1,32 +1,33 @@
 import { loggerService } from '@logger'
+import ModelStatusPills from '@renderer/components/app/ModelStatusPills'
 import type { ContentSearchRef } from '@renderer/components/ContentSearch'
 import { ContentSearch } from '@renderer/components/ContentSearch'
-import { HStack } from '@renderer/components/Layout'
-import { TopicModelRecoveryNotice } from '@renderer/components/ModelRecoveryNotice'
 import ModelSetupGuide from '@renderer/components/ModelSetupGuide'
 import MultiSelectActionPopup from '@renderer/components/Popups/MultiSelectionPopup'
 import PromptPopup from '@renderer/components/Popups/PromptPopup'
 import { SelectChatModelPopup } from '@renderer/components/Popups/SelectModelPopup'
 import { QuickPanelProvider } from '@renderer/components/QuickPanel'
 import { chatModelFilter } from '@renderer/config/models'
+import { useSidebarActiveModel } from '@renderer/context/SidebarSlotProvider'
 import { useAssistant, useDefaultModel } from '@renderer/hooks/useAssistant'
 import { useChatContext } from '@renderer/hooks/useChatContext'
 import { useTopicMessages } from '@renderer/hooks/useMessageOperations'
-import { useNavbarPosition, useSettings } from '@renderer/hooks/useSettings'
+import { useSettings } from '@renderer/hooks/useSettings'
 import { useShortcut } from '@renderer/hooks/useShortcuts'
-import { useShowTopics } from '@renderer/hooks/useStore'
 import { useTimer } from '@renderer/hooks/useTimer'
 import { EVENT_NAMES, EventEmitter } from '@renderer/services/EventService'
 import { modelRecoveryIntents } from '@renderer/services/modelRecoveryIntents'
 import { useAppSelector } from '@renderer/store'
 import type { Assistant, Topic } from '@renderer/types'
 import { classNames } from '@renderer/utils'
+import {
+  consumeLocallyVerifiedEmptyConversation,
+  isLocallyVerifiedEmptyConversation
+} from '@renderer/utils/conversationDraft'
 import { getTopicConversationModel, shouldPersistConversationModelAsDefault } from '@renderer/utils/conversationModel'
 import { getAvailableChatModels } from '@renderer/utils/modelAvailability'
-import { Flex, Tooltip } from 'antd'
+import { Flex } from 'antd'
 import { debounce } from 'lodash'
-import { PanelLeftOpen } from 'lucide-react'
-import { AnimatePresence, motion } from 'motion/react'
 import type { FC } from 'react'
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useHotkeys } from 'react-hotkeys-hook'
@@ -35,13 +36,13 @@ import styled from 'styled-components'
 
 import AssistantSwitchButton from './components/AssistantSwitchButton'
 import ChatNavbar from './components/ChatNavBar'
+import Tools from './components/ChatNavBar/Tools'
 import QuickAssistantDeck from './components/QuickAssistantDeck'
 import SelectModelButton from './components/SelectModelButton'
 import type { ProviderActionHandlers } from './Inputbar/Inputbar'
 import Inputbar from './Inputbar/Inputbar'
 import ChatNavigation from './Messages/ChatNavigation'
 import Messages from './Messages/Messages'
-import Tabs from './Tabs'
 
 const logger = loggerService.withContext('Chat')
 
@@ -52,8 +53,6 @@ interface Props {
   setActiveTopic: (topic: Topic) => void
   setActiveAssistant: (assistant: Assistant) => void
   onCreateConversation: () => Promise<void>
-  isConversationHistoryVisible: boolean
-  onShowConversationHistory: () => void
 }
 
 const Chat: FC<Props> = ({
@@ -62,28 +61,33 @@ const Chat: FC<Props> = ({
   activeTopic,
   setActiveTopic,
   setActiveAssistant,
-  onCreateConversation,
-  isConversationHistoryVisible,
-  onShowConversationHistory
+  onCreateConversation
 }) => {
   const { assistant: storedAssistant, updateTopic } = useAssistant(activeAssistant.id)
   const { setDefaultModel } = useDefaultModel()
   const { t } = useTranslation()
-  const { topicPosition, messageStyle, messageNavigation } = useSettings()
-  const { showTopics } = useShowTopics()
+  const { messageStyle, messageNavigation } = useSettings()
   const quickAssistantIds = useAppSelector((state) => state.assistants.quickAssistantIds ?? [])
   const { isMultiSelectMode } = useChatContext(activeTopic)
-  const { isTopNavbar } = useNavbarPosition()
   const messages = useTopicMessages(activeTopic.id)
   const hasLoadedTopicMessages = useAppSelector((state) => !!state.messages.loadedByTopic[activeTopic.id])
   const isLoadingTopicMessages = useAppSelector((state) => !!state.messages.loadingByTopic[activeTopic.id])
   const providers = useAppSelector((state) => state.llm.providers)
   const hasAvailableChatModels = useMemo(() => getAvailableChatModels(providers).length > 0, [providers])
   const isBlankConversation = shouldPersistConversationModelAsDefault(hasLoadedTopicMessages, messages.length)
-  // Keep an empty topic on the welcome layout while its messages are being
-  // loaded. This avoids a one-frame switch to the blank chat layout when a
-  // quick assistant role is selected from the home page.
-  const isWelcomeState = messages.length === 0 && (!hasLoadedTopicMessages || !isLoadingTopicMessages)
+  // Only render the welcome screen for topics known to be empty (either newly
+  // created/verified empty drafts or topics whose messages finished loading with
+  // 0 items). Unloaded historical topics stay in the active chat shell while
+  // IndexedDB loads so switching history never flashes the welcome screen.
+  const isKnownEmptyDraft = isLocallyVerifiedEmptyConversation(activeTopic.id)
+  const isWelcomeState =
+    messages.length === 0 && (isKnownEmptyDraft || (hasLoadedTopicMessages && !isLoadingTopicMessages))
+
+  useEffect(() => {
+    if (messages.length > 0 && isLocallyVerifiedEmptyConversation(activeTopic.id)) {
+      consumeLocallyVerifiedEmptyConversation(activeTopic.id)
+    }
+  }, [activeTopic.id, messages.length])
   const assistant = useMemo(
     () => ({ ...storedAssistant, model: getTopicConversationModel(activeTopic, storedAssistant) }),
     [activeTopic, storedAssistant]
@@ -118,6 +122,22 @@ const Chat: FC<Props> = ({
 
   const mainRef = React.useRef<HTMLDivElement>(null)
   const contentSearchRef = React.useRef<ContentSearchRef>(null)
+  const floatingDockRef = useRef<HTMLDivElement>(null)
+  const [composerInset, setComposerInset] = useState(152)
+
+  useEffect(() => {
+    const dock = floatingDockRef.current
+    if (!dock || isWelcomeState) return
+    const update = () => {
+      const next = Math.max(128, Math.round(dock.getBoundingClientRect().height + 14))
+      setComposerInset((prev) => (Math.abs(prev - next) > 2 ? next : prev))
+    }
+    update()
+    if (typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(update)
+    observer.observe(dock)
+    return () => observer.disconnect()
+  }, [isWelcomeState])
   const welcomeInputActionsRef = useRef<ProviderActionHandlers>({
     resizeTextArea: () => {},
     addNewTopic: () => {},
@@ -243,139 +263,154 @@ const Chat: FC<Props> = ({
     firstUpdateOrNoFirstUpdateHandler()
   }, [firstUpdateOrNoFirstUpdateHandler, setTimeoutTimer])
 
-  const mainHeight = isTopNavbar ? 'calc(100vh - var(--navbar-height) - 6px)' : 'calc(100vh - var(--navbar-height))'
+  const currentConversationModel = useMemo(
+    () => getTopicConversationModel(activeTopic, storedAssistant),
+    [activeTopic, storedAssistant]
+  )
+  useSidebarActiveModel(
+    currentConversationModel
+      ? {
+          id: currentConversationModel.id,
+          name: currentConversationModel.name,
+          provider: currentConversationModel.provider
+        }
+      : undefined
+  )
 
   return (
     <Container id="chat" className={classNames([messageStyle, { 'multi-select-mode': isMultiSelectMode }])}>
-      <HStack>
-        <motion.div
-          layout
-          transition={{ duration: 0.3, ease: 'easeInOut' }}
-          style={{ flex: 1, display: 'flex', minWidth: 0, overflow: 'hidden' }}>
-          <Main
-            ref={mainRef}
-            id="chat-main"
-            vertical
-            flex={1}
-            justify="space-between"
-            style={{ height: mainHeight, width: '100%' }}>
-            <QuickPanelProvider>
-              {!isWelcomeState && (
-                <ChatNavbar
-                  assistants={selectableAssistants}
-                  activeAssistant={activeAssistant}
-                  activeTopic={activeTopic}
-                  setActiveTopic={setActiveTopic}
-                  setActiveAssistant={setActiveAssistant}
-                  position="left"
-                  showConversationHistoryToggle={!isConversationHistoryVisible}
-                  onShowConversationHistory={onShowConversationHistory}
-                />
-              )}
-              {isWelcomeState ? (
-                <WelcomeState>
-                  {!isConversationHistoryVisible && (
-                    <Tooltip title={t('navbar.show_sidebar')} mouseEnterDelay={0.5}>
-                      <WelcomeSidebarToggle
-                        type="button"
-                        aria-label={t('navbar.show_sidebar')}
-                        onClick={onShowConversationHistory}>
-                        <PanelLeftOpen size={17} />
-                      </WelcomeSidebarToggle>
-                    </Tooltip>
-                  )}
-                  {hasAvailableChatModels ? (
-                    <WelcomeInner>
-                      <WelcomeTitle>从一次更轻松的对话开始</WelcomeTitle>
-                      <WelcomeDescription>{t('chat.welcome.description')}</WelcomeDescription>
-                      <WelcomeMeta>
-                        <AssistantSwitchButton
-                          assistant={assistant}
-                          assistants={selectableAssistants}
-                          onSelectAssistant={setActiveAssistant}
-                        />
-                        <SelectModelButton
-                          assistant={assistant}
-                          topic={activeTopic}
-                          onTopicChange={setActiveTopic}
-                          persistAsDefault={isBlankConversation}
-                        />
-                      </WelcomeMeta>
-                      <WelcomeComposer>
-                        <Inputbar
-                          assistant={assistant}
-                          topic={activeTopic}
-                          onTopicChange={setActiveTopic}
-                          variant="hero"
-                          actionsRef={welcomeInputActionsRef}
-                          onCreateConversation={onCreateConversation}
-                        />
-                      </WelcomeComposer>
-                      <QuickAssistantDeck
-                        assistants={assistants}
-                        activeAssistant={assistant}
+      <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
+        <Main
+          ref={mainRef}
+          id="chat-main"
+          vertical
+          flex={1}
+          justify="space-between"
+          style={{ height: '100%', width: '100%', minHeight: 0, overflow: 'hidden' }}>
+          <QuickPanelProvider>
+            <ChatNavbar />
+            {isWelcomeState ? (
+              <WelcomeState className="zen-view-enter">
+                {hasAvailableChatModels ? (
+                  <WelcomeInner>
+                    <WelcomeTitle>{t('app_shell.chat_welcome')}</WelcomeTitle>
+                    <WelcomeSubtitle>{t('app_shell.chat_welcome_subtitle')}</WelcomeSubtitle>
+                    <WelcomeSelectors>
+                      <AssistantSwitchButton
+                        assistant={assistant}
+                        assistants={selectableAssistants}
                         onSelectAssistant={setActiveAssistant}
                       />
-                    </WelcomeInner>
-                  ) : (
-                    <ModelSetupGuide />
-                  )}
-                </WelcomeState>
-              ) : (
+                      <SelectModelButton
+                        assistant={assistant}
+                        topic={activeTopic}
+                        onTopicChange={setActiveTopic}
+                        persistAsDefault={isBlankConversation}
+                      />
+                      <ModelStatusPills
+                        activeModel={
+                          currentConversationModel
+                            ? {
+                                id: currentConversationModel.id,
+                                name: currentConversationModel.name,
+                                provider: currentConversationModel.provider
+                              }
+                            : undefined
+                        }
+                      />
+                    </WelcomeSelectors>
+                    <WelcomeComposer>
+                      <Inputbar
+                        assistant={assistant}
+                        topic={activeTopic}
+                        onTopicChange={setActiveTopic}
+                        variant="hero"
+                        actionsRef={welcomeInputActionsRef}
+                        onCreateConversation={onCreateConversation}
+                      />
+                    </WelcomeComposer>
+                    <QuickAssistantDeck
+                      assistants={assistants}
+                      activeAssistant={assistant}
+                      onSelectAssistant={setActiveAssistant}
+                    />
+                  </WelcomeInner>
+                ) : (
+                  <ModelSetupGuide />
+                )}
+              </WelcomeState>
+            ) : (
+              <div
+                className="relative flex min-h-0 flex-1 flex-col overflow-hidden"
+                style={{ '--zen-composer-inset': `${composerInset}px` } as React.CSSProperties}>
+                <WorkspaceTopBar>
+                  <WorkspaceSelectors>
+                    <AssistantSwitchButton
+                      assistant={assistant}
+                      assistants={selectableAssistants}
+                      onSelectAssistant={setActiveAssistant}
+                    />
+                    <SelectModelButton
+                      assistant={assistant}
+                      topic={activeTopic}
+                      onTopicChange={setActiveTopic}
+                      persistAsDefault={isBlankConversation}
+                    />
+                    <ModelStatusPills
+                      activeModel={
+                        currentConversationModel
+                          ? {
+                              id: currentConversationModel.id,
+                              name: currentConversationModel.name,
+                              provider: currentConversationModel.provider
+                            }
+                          : undefined
+                      }
+                    />
+                  </WorkspaceSelectors>
+                  <WorkspaceToolsSlot>
+                    <Tools assistant={assistant} />
+                  </WorkspaceToolsSlot>
+                </WorkspaceTopBar>
                 <div
-                  className="flex flex-1 flex-col justify-between"
-                  style={{ height: `calc(${mainHeight} - var(--navbar-height))` }}>
+                  key={activeTopic.id}
+                  className={classNames(
+                    'flex min-h-0 flex-1 flex-col overflow-hidden',
+                    hasLoadedTopicMessages || messages.length > 0 ? 'zen-content-enter' : 'opacity-0'
+                  )}>
                   <Messages
-                    key={activeTopic.id}
                     assistant={assistant}
                     topic={activeTopic}
                     setActiveTopic={setActiveTopic}
                     onComponentUpdate={messagesComponentUpdateHandler}
                     onFirstUpdate={messagesComponentFirstUpdateHandler}
                   />
-                  <ContentSearch
-                    ref={contentSearchRef}
-                    searchTarget={mainRef as React.RefObject<HTMLElement>}
-                    filter={contentSearchFilter}
-                    includeUser={filterIncludeUser}
-                    onIncludeUserChange={userOutlinedItemClickHandler}
-                  />
-                  {messageNavigation === 'buttons' && <ChatNavigation containerId="messages" />}
-                  {!hasAvailableChatModels && <ModelSetupGuide compact />}
-                  <TopicModelRecoveryNotice topicId={activeTopic.id} />
-                  <Inputbar
-                    assistant={assistant}
-                    topic={activeTopic}
-                    onTopicChange={setActiveTopic}
-                    onCreateConversation={onCreateConversation}
-                  />
-                  {isMultiSelectMode && <MultiSelectActionPopup topic={activeTopic} />}
                 </div>
-              )}
-            </QuickPanelProvider>
-          </Main>
-        </motion.div>
-        <AnimatePresence initial={false}>
-          {topicPosition === 'right' && showTopics && (
-            <motion.div
-              key="right-tabs"
-              initial={{ width: 0, opacity: 0 }}
-              animate={{ width: 'var(--assistants-width)', opacity: 1 }}
-              exit={{ width: 0, opacity: 0 }}
-              transition={{ duration: 0.3, ease: 'easeInOut' }}
-              style={{ overflow: 'hidden' }}>
-              <Tabs
-                assistants={selectableAssistants}
-                activeAssistant={assistant}
-                activeTopic={activeTopic}
-                setActiveAssistant={setActiveAssistant}
-                setActiveTopic={setActiveTopic}
-                position="right"
-              />
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </HStack>
+                <ContentSearch
+                  ref={contentSearchRef}
+                  searchTarget={mainRef as React.RefObject<HTMLElement>}
+                  filter={contentSearchFilter}
+                  includeUser={filterIncludeUser}
+                  onIncludeUserChange={userOutlinedItemClickHandler}
+                />
+                {messageNavigation === 'buttons' && <ChatNavigation containerId="messages" />}
+                <FloatingComposerDock ref={floatingDockRef}>
+                  <FloatingComposerInner>
+                    {!hasAvailableChatModels && <ModelSetupGuide compact />}
+                    <Inputbar
+                      assistant={assistant}
+                      topic={activeTopic}
+                      onTopicChange={setActiveTopic}
+                      onCreateConversation={onCreateConversation}
+                    />
+                    {isMultiSelectMode && <MultiSelectActionPopup topic={activeTopic} />}
+                  </FloatingComposerInner>
+                </FloatingComposerDock>
+              </div>
+            )}
+          </QuickPanelProvider>
+        </Main>
+      </div>
     </Container>
   )
 }
@@ -383,99 +418,118 @@ const Chat: FC<Props> = ({
 const Container = styled.div`
   display: flex;
   flex-direction: column;
-  height: calc(100vh - var(--navbar-height));
   flex: 1;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
   overflow: hidden;
-  background: #ffffff;
-
-  [navbar-position='top'] & {
-    height: calc(100vh - var(--navbar-height) - 6px);
-    background-color: #ffffff;
-    border-top-left-radius: 10px;
-    border-bottom-left-radius: 10px;
-  }
+  background: transparent;
 `
 
 const Main = styled(Flex)`
-  [navbar-position='left'] & {
-    height: calc(100vh - var(--navbar-height));
-  }
-
-  transform: translateZ(0);
   position: relative;
+  min-height: 0;
+  overflow: hidden;
+`
+
+const WorkspaceTopBar = styled.div`
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 24px 18px;
+  background: var(--zen-veil-top);
+  pointer-events: none;
+`
+
+const WorkspaceSelectors = styled.div`
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  min-width: 0;
+  pointer-events: auto;
+`
+
+const WorkspaceToolsSlot = styled.div`
+  display: flex;
+  align-items: center;
+  pointer-events: auto;
+`
+
+const FloatingComposerDock = styled.div`
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 20;
+  padding-top: 22px;
+  background: var(--zen-veil-bottom);
+  pointer-events: none;
+`
+
+const FloatingComposerInner = styled.div`
+  pointer-events: auto;
+`
+
+const WelcomeSelectors = styled.div`
+  width: calc(100% + 64px);
+  max-width: var(--zen-composer-width);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 22px;
 `
 
 const WelcomeState = styled.div`
   display: flex;
   flex: 1;
-  align-items: center;
+  min-height: 0;
   justify-content: center;
-  padding: 40px 26px 30px;
+  padding: 48px 36px 56px;
   position: relative;
-`
-
-const WelcomeSidebarToggle = styled.button`
-  position: absolute;
-  top: 12px;
-  left: 12px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 30px;
-  height: 30px;
-  padding: 0;
-  border: none;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--color-text-2);
-  cursor: pointer;
-
-  &:hover {
-    background: var(--color-background-mute);
-    color: var(--color-text);
-  }
+  overflow-x: hidden;
+  overflow-y: auto;
 `
 
 const WelcomeInner = styled.div`
   width: 100%;
-  max-width: 1140px;
+  max-width: 760px;
+  margin: auto 0;
   display: flex;
   flex-direction: column;
   align-items: center;
 `
 
-const WelcomeMeta = styled.div`
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-top: 14px;
-  flex-wrap: wrap;
-  justify-content: center;
-`
-
 const WelcomeTitle = styled.h1`
   margin: 0;
-  font-size: 26px;
-  line-height: 1.2;
+  font-size: 28px;
+  line-height: 1.25;
   font-weight: 500;
-  color: #333333;
+  color: var(--zen-text-1);
   text-align: center;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.025em;
 `
 
-const WelcomeDescription = styled.p`
-  margin: 12px 0 0;
-  max-width: 720px;
-  font-size: 13px;
-  line-height: 1.7;
-  color: #8f959e;
+const WelcomeSubtitle = styled.p`
+  margin: 8px 0 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--zen-text-3);
   text-align: center;
 `
 
 const WelcomeComposer = styled.div`
-  width: 100%;
-  max-width: 1100px;
-  margin-top: 10px;
+  width: calc(100% + 64px);
+  margin-inline: -32px;
+  margin-top: 18px;
 `
 
 export default Chat

@@ -1,7 +1,7 @@
 import { loggerService } from '@logger'
 import { assertLegacyAutomationEnabled } from '@shared/agents/legacyAutomation'
-import { DEFAULT_OPENCODE_AGENT_ID } from '@shared/config/agents'
-import { and, eq, inArray, isNull, ne, or } from 'drizzle-orm'
+import { DEFAULT_OPENCODE_AGENT_ID, NEW_ASSISTANT_AGENT_IDS } from '@shared/config/agents'
+import { and, eq, inArray, isNull, ne, notInArray, or } from 'drizzle-orm'
 
 import { BaseService } from '../BaseService'
 import {
@@ -13,6 +13,8 @@ import {
 } from '../database/schema'
 
 const logger = loggerService.withContext('ChannelService')
+
+const legacyChannel = or(isNull(channelsTable.agentId), notInArray(channelsTable.agentId, [...NEW_ASSISTANT_AGENT_IDS]))
 
 export class ChannelService extends BaseService {
   private static instance: ChannelService | null = null
@@ -54,9 +56,13 @@ export class ChannelService extends BaseService {
     return result[0]
   }
 
-  async getChannel(id: string): Promise<ChannelRow | null> {
+  async getChannel(id: string, legacyOnly = false): Promise<ChannelRow | null> {
     const database = await this.getDatabase()
-    const result = await database.select().from(channelsTable).where(eq(channelsTable.id, id)).limit(1)
+    const result = await database
+      .select()
+      .from(channelsTable)
+      .where(and(eq(channelsTable.id, id), legacyOnly ? legacyChannel : undefined))
+      .limit(1)
     return result[0] ?? null
   }
 
@@ -66,18 +72,15 @@ export class ChannelService extends BaseService {
     return result[0] ?? null
   }
 
-  async listChannels(filters?: { agentId?: string; type?: string }): Promise<ChannelRow[]> {
+  async listChannels(filters?: { agentId?: string; type?: string; legacyOnly?: boolean }): Promise<ChannelRow[]> {
     const database = await this.getDatabase()
 
     const agentCond = filters?.agentId ? eq(channelsTable.agentId, filters.agentId) : undefined
     const typeCond = filters?.type ? eq(channelsTable.type, filters.type) : undefined
-    const where = agentCond && typeCond ? and(agentCond, typeCond) : (agentCond ?? typeCond)
-
-    if (where) {
-      return database.select().from(channelsTable).where(where)
-    }
-
-    return database.select().from(channelsTable)
+    return database
+      .select()
+      .from(channelsTable)
+      .where(and(agentCond, typeCond, filters?.legacyOnly ? legacyChannel : undefined))
   }
 
   /**
@@ -112,9 +115,12 @@ export class ChannelService extends BaseService {
     return result[0]
   }
 
-  async deleteChannel(id: string): Promise<boolean> {
+  async deleteChannel(id: string, legacyOnly = false): Promise<boolean> {
     const database = await this.getDatabase()
-    const result = await database.delete(channelsTable).where(eq(channelsTable.id, id)).returning()
+    const result = await database
+      .delete(channelsTable)
+      .where(and(eq(channelsTable.id, id), legacyOnly ? legacyChannel : undefined))
+      .returning()
     if (result.length > 0) {
       logger.info('Channel deleted', { channelId: id })
     }

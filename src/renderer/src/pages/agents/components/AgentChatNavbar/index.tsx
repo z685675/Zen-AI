@@ -2,44 +2,52 @@ import { NavbarHeader } from '@renderer/components/app/Navbar'
 import NavbarIcon from '@renderer/components/NavbarIcon'
 import AgentSearchPopup from '@renderer/components/Popups/AgentSearchPopup'
 import { useAgentWorkspace } from '@renderer/context/AgentWorkspaceProvider'
+import { useActiveAgent } from '@renderer/hooks/agents/useActiveAgent'
+import { useAgents } from '@renderer/hooks/agents/useAgents'
+import { useEnableDeveloperMode } from '@renderer/hooks/useSettings'
 import { useShortcut } from '@renderer/hooks/useShortcuts'
-import { useShowAssistants } from '@renderer/hooks/useStore'
 import type { AgentEntity } from '@renderer/types'
-import { cn } from '@renderer/utils'
-import { Tooltip } from 'antd'
-import { PanelLeftOpen } from 'lucide-react'
+import { Select, Tooltip } from 'antd'
+import { Search } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import AgentContent from './AgentContent'
 
 interface Props {
   activeAgent: AgentEntity
-  className?: string
 }
 
-const AgentChatNavbar = ({ activeAgent, className }: Props) => {
+export default function AgentChatNavbar({ activeAgent }: Props) {
   const workspace = useAgentWorkspace()
-  const { showAssistants, setShowAssistants } = useShowAssistants()
   const { t } = useTranslation()
-
-  useShortcut('search_message', () => {
+  const { enableDeveloperMode } = useEnableDeveloperMode()
+  const { agents } = useAgents()
+  const { setActiveAgentId } = useActiveAgent()
+  const searchLabel = t('agent.session.search.placeholder')
+  const search = () => {
     void AgentSearchPopup.show(workspace)
-  })
+  }
+  useShortcut('search_message', search)
 
   return (
-    <NavbarHeader className={cn('agent-navbar h-(--navbar-height)', className)}>
-      <div className="flex h-full min-w-0 flex-1 shrink items-center overflow-auto">
-        {!showAssistants && (
-          <Tooltip title={t('navbar.show_sidebar')} mouseEnterDelay={0.5}>
-            <NavbarIcon aria-label={t('navbar.show_sidebar')} onClick={() => setShowAssistants(true)}>
-              <PanelLeftOpen size={17} />
-            </NavbarIcon>
-          </Tooltip>
-        )}
-        <AgentContent activeAgent={activeAgent} />
-      </div>
+    <NavbarHeader className="min-w-0 gap-2">
+      {enableDeveloperMode && agents && agents.length > 1 && (
+        <Select
+          size="small"
+          aria-label={t('common.agent_one')}
+          value={activeAgent.id}
+          options={agents.map(({ id, name }) => ({ value: id, label: name }))}
+          onChange={(id) => {
+            void setActiveAgentId(id)
+          }}
+        />
+      )}
+      <AgentContent />
+      <Tooltip title={searchLabel}>
+        <NavbarIcon onClick={search} aria-label={searchLabel}>
+          <Search size={16} />
+        </NavbarIcon>
+      </Tooltip>
     </NavbarHeader>
   )
 }
-
-export default AgentChatNavbar

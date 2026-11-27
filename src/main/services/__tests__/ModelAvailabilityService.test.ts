@@ -66,6 +66,21 @@ describe('model availability transport (no paid requests)', () => {
     fetcher.mockResolvedValueOnce(response([]))
     expect((await refreshModelAvailability(p, true))?.models).toEqual([])
   })
+  it('uses the intersection of authorized keys when one configured key has expired', async () => {
+    const p = provider('expired-key', 'first\\,part\r\nexpired,third')
+    fetcher
+      .mockResolvedValueOnce(response(['A', 'B']))
+      .mockResolvedValueOnce(new Response('{}', { status: 401 }))
+      .mockResolvedValueOnce(response(['B', 'C']))
+    const snapshot = await refreshModelAvailability(p, true)
+    expect(snapshot?.models.map((model) => model.id)).toEqual(['B'])
+    expect(fetcher.mock.calls.slice(-3).map(([, options]) => options.headers.Authorization)).toEqual([
+      'Bearer first,part',
+      'Bearer expired',
+      'Bearer third'
+    ])
+  })
+
   it('intersects rotating key permissions without sending model completions', async () => {
     const p = provider('key-scope', 'first,second')
     fetcher.mockResolvedValueOnce(response(['A', 'B'])).mockResolvedValueOnce(response(['B', 'C']))

@@ -3,6 +3,7 @@ export const DEFAULT_CHERRY_ASSISTANT_AGENT_ID = 'cherry-assistant-default'
 export const DEFAULT_FUSION_AGENT_ID = 'lobster-fusion-default'
 export const DEFAULT_OPENCODE_AGENT_ID = 'zen-opencode-default'
 export const DEFAULT_DSH_AGENT_ID = 'zen-dsh-preview-default'
+export const NEW_ASSISTANT_AGENT_IDS = [DEFAULT_OPENCODE_AGENT_ID, DEFAULT_DSH_AGENT_ID] as const
 export const DEFAULT_OPENCODE_AGENT_NAME = '智能助手'
 export const DEFAULT_OPENCODE_AGENT_AVATAR = '❤️'
 export const DEFAULT_FUSION_AGENT_NAME = '请弃用旧助手'
@@ -25,7 +26,7 @@ export function canCreateAgentSession(agentId: string | null | undefined): boole
 }
 
 export function isNewAssistantAgentId(agentId: string | null | undefined): boolean {
-  return agentId === DEFAULT_OPENCODE_AGENT_ID || agentId === DEFAULT_DSH_AGENT_ID
+  return NEW_ASSISTANT_AGENT_IDS.some((id) => id === agentId)
 }
 
 export function getAgentWorkspaceForId(agentId: string | null | undefined): 'legacy' | 'opencode' | 'dsh' {

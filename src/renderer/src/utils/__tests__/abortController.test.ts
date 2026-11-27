@@ -84,7 +84,7 @@ describe('abortController', () => {
       addAbortController('', fn)
       removeAbortController('', fn)
 
-      expect(abortMap.get('')).toEqual([])
+      expect(abortMap.has('')).toBe(false)
     })
 
     it('ignores non-existent ids', () => {
@@ -105,7 +105,7 @@ describe('abortController', () => {
 
       expect(fn1).toHaveBeenCalledTimes(1)
       expect(fn2).toHaveBeenCalledTimes(1)
-      expect(abortMap.get('test-id')).toEqual([])
+      expect(abortMap.has('test-id')).toBe(false)
     })
 
     it('ignores non-existent ids', () => {
@@ -116,11 +116,11 @@ describe('abortController', () => {
       expect(() => abortCompletion('')).not.toThrow()
     })
 
-    it('keeps empty arrays untouched', () => {
+    it('cleans up an already empty entry', () => {
       abortMap.set('test-id', [])
 
       expect(() => abortCompletion('test-id')).not.toThrow()
-      expect(abortMap.has('test-id')).toBe(true)
+      expect(abortMap.has('test-id')).toBe(false)
     })
   })
 

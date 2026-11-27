@@ -16,7 +16,10 @@ vi.mock('@renderer/store', () => ({
     }
   }
 }))
-vi.mock('../RemoteModelPolicyService', () => ({ refreshRemoteModelPolicy: vi.fn() }))
+vi.mock('../RemoteModelPolicyService', () => ({
+  refreshRemoteModelPolicy: vi.fn(),
+  reconcileRemoteModelPolicyDefaults: vi.fn()
+}))
 
 import { reconcileManagedModelReferences, syncManagedModelAvailability } from '../ModelAvailabilitySyncService'
 import { modelRecoveryIntents } from '../modelRecoveryIntents'

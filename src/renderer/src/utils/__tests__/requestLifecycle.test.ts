@@ -17,7 +17,7 @@ describe('request lifecycle', () => {
     lifecycle.dispose()
 
     expect(lifecycle.isActive()).toBe(false)
-    expect(abortMap.get('user-1')).toEqual([])
+    expect(abortMap.has('user-1')).toBe(false)
   })
 
   it('invalidates an older request without removing the newer request', () => {

@@ -7,7 +7,7 @@ const logger = loggerService.withContext('URLSchema:handleNavigateProtocolUrl')
 
 // Allowed route prefixes to prevent arbitrary navigation
 const ALLOWED_ROUTES = [
-  '/settings/',
+  '/settings',
   '/agents',
   '/knowledge',
   '/openclaw',
@@ -34,7 +34,11 @@ export function handleNavigateProtocolUrl(url: URL) {
   const targetPath = url.pathname || '/'
   const normalizedPath = targetPath.startsWith('/') ? targetPath : `/${targetPath}`
 
-  if (!ALLOWED_ROUTES.some((route) => normalizedPath === route || normalizedPath.startsWith(route))) {
+  if (
+    !ALLOWED_ROUTES.some(
+      (route) => normalizedPath === route || (route !== '/' && normalizedPath.startsWith(route + '/'))
+    )
+  ) {
     logger.warn(`Blocked navigation to disallowed route: ${normalizedPath}`)
     return
   }
@@ -50,9 +54,9 @@ export function handleNavigateProtocolUrl(url: URL) {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents
       .executeJavaScript(`typeof window.navigate === 'function'`)
-      .then((hasNavigate) => {
+      .then(async (hasNavigate) => {
         if (hasNavigate) {
-          void mainWindow.webContents.executeJavaScript(`window.navigate('${fullPath}')`)
+          await mainWindow.webContents.executeJavaScript(`window.navigate(${JSON.stringify(fullPath)})`)
           if (isMac) {
             windowService.showMainWindow()
           }

@@ -30,7 +30,10 @@ import { BrowserWindow, ipcMain } from 'electron'
  */
 export class StoreSyncService {
   private static instance: StoreSyncService
-  private windowIds: number[] = []
+  private windowIds = new Set<number>()
+  private watchedWindows = new WeakSet<BrowserWindow>()
+  private mainWindow: BrowserWindow | null = null
+  private pendingMainActions: StoreSyncAction[] = []
   private isIpcHandlerRegistered = false
 
   private constructor() {
@@ -47,22 +50,30 @@ export class StoreSyncService {
     return StoreSyncService.instance
   }
 
-  /**
-   * Subscribe a window to store sync
-   * @param windowId ID of the window to subscribe
-   */
-  public subscribe(windowId: number): void {
-    if (!this.windowIds.includes(windowId)) {
-      this.windowIds.push(windowId)
-    }
+  private subscribe(window: BrowserWindow): StoreSyncAction[] {
+    this.watchWindow(window)
+    this.windowIds.add(window.id)
+    return this.mainWindow === window ? this.pendingMainActions.splice(0) : []
   }
 
-  /**
-   * Unsubscribe a window from store sync
-   * @param windowId ID of the window to unsubscribe
-   */
-  public unsubscribe(windowId: number): void {
-    this.windowIds = this.windowIds.filter((id) => id !== windowId)
+  private watchWindow(window: BrowserWindow): void {
+    if (this.watchedWindows.has(window)) return
+    this.watchedWindows.add(window)
+    const id = window.id
+    const reset = () => this.windowIds.delete(id)
+    window.webContents.on('did-start-navigation', (event) => {
+      if (event.isMainFrame && !event.isSameDocument) reset()
+    })
+    window.webContents.on('render-process-gone', reset)
+    window.once('closed', () => {
+      reset()
+      if (this.mainWindow === window) this.mainWindow = null
+    })
+  }
+
+  public bindMainWindow(window: BrowserWindow): void {
+    this.mainWindow = window
+    this.watchWindow(window)
   }
 
   /**
@@ -89,24 +100,27 @@ export class StoreSyncService {
   public registerIpcHandler(): void {
     if (this.isIpcHandlerRegistered) return
 
+    const getSenderWindow = (event: Electron.IpcMainInvokeEvent) => {
+      if (event.senderFrame !== event.sender.mainFrame) return null
+      const window = BrowserWindow.fromWebContents(event.sender)
+      return window?.webContents === event.sender ? window : null
+    }
+
     ipcMain.handle(IpcChannel.StoreSync_Subscribe, (event) => {
-      const windowId = BrowserWindow.fromWebContents(event.sender)?.id
-      if (windowId) {
-        this.subscribe(windowId)
-      }
+      const window = getSenderWindow(event)
+      return window ? this.subscribe(window) : []
     })
 
     ipcMain.handle(IpcChannel.StoreSync_Unsubscribe, (event) => {
-      const windowId = BrowserWindow.fromWebContents(event.sender)?.id
+      const windowId = getSenderWindow(event)?.id
       if (windowId) {
-        this.unsubscribe(windowId)
+        this.windowIds.delete(windowId)
       }
     })
 
     ipcMain.handle(IpcChannel.StoreSync_OnUpdate, (event, action: StoreSyncAction) => {
-      const sourceWindowId = BrowserWindow.fromWebContents(event.sender)?.id
-
-      if (!sourceWindowId) return
+      const sourceWindowId = getSenderWindow(event)?.id
+      if (!sourceWindowId || typeof action?.type !== 'string' || action.meta?.fromSync) return
 
       // Broadcast the action to all other windows
       this.broadcastToOtherWindows(sourceWindowId, action)
@@ -131,14 +145,18 @@ export class StoreSyncService {
       }
     }
 
-    // Send to all windows except the source
+    // Retain changes from secondary renderers while the persistence owner is unavailable.
+    if (!this.mainWindow || (sourceWindowId !== this.mainWindow.id && !this.windowIds.has(this.mainWindow.id))) {
+      this.pendingMainActions.push(syncAction)
+    }
+
     this.windowIds.forEach((windowId) => {
       if (windowId !== sourceWindowId) {
         const targetWindow = BrowserWindow.fromId(windowId)
         if (targetWindow && !targetWindow.isDestroyed()) {
           targetWindow.webContents.send(IpcChannel.StoreSync_BroadcastSync, syncAction)
         } else {
-          this.unsubscribe(windowId)
+          this.windowIds.delete(windowId)
         }
       }
     })

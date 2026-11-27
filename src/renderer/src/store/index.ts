@@ -43,6 +43,7 @@ import nutstore from './nutstore'
 import ocr from './ocr'
 import openclaw from './openclaw'
 import paintings from './paintings'
+import { isPrimaryStoreWindow, readOnlyPersistStorage } from './persistence'
 import preprocess from './preprocess'
 import runtime from './runtime'
 import selectionStore from './selectionStore'
@@ -84,30 +85,25 @@ const rootReducer = combineReducers({
   toolPermissions
 })
 
+const primaryStoreWindow = isPrimaryStoreWindow(window.location.pathname)
+const persistenceBlacklist = ['runtime', 'messages', 'messageBlocks', 'tabs', 'toolPermissions']
+
 const persistedReducer = persistReducer(
   {
     key: APP_PERSIST_KEY,
-    storage,
+    storage: primaryStoreWindow ? storage : readOnlyPersistStorage(storage),
     version: 228,
-    blacklist: ['runtime', 'messages', 'messageBlocks', 'tabs', 'toolPermissions'],
+    blacklist: persistenceBlacklist,
     migrate
   },
   rootReducer
 )
 
-/**
- * Configures the store sync service to synchronize specific state slices across all windows.
- * For detailed implementation, see @renderer/services/StoreSyncService.ts
- *
- * Usage:
- * - 'xxxx/' - Synchronizes the entire state slice
- * - 'xxxx/sliceName' - Synchronizes a specific slice within the state
- *
- * To listen for store changes in a window:
- * Call storeSyncService.subscribe() in the window's entryPoint.tsx
- */
+// All persisted slices can be edited through the single persistence owner.
 storeSyncService.setOptions({
-  syncList: ['assistants/', 'settings/', 'llm/', 'selectionStore/', 'note/']
+  syncList: Object.keys(rootReducer(undefined, { type: '@@store/init' }))
+    .filter((slice) => !persistenceBlacklist.includes(slice))
+    .map((slice) => `${slice === 'minapps' ? 'minApps' : slice}/`)
 })
 
 const store = configureStore({
@@ -126,7 +122,16 @@ const store = configureStore({
 export type RootState = ReturnType<typeof rootReducer>
 export type AppDispatch = typeof store.dispatch
 
+window.store = store
+storeSyncService.subscribe()
+
 export const persistor = persistStore(store, undefined, () => {
+  void storeSyncService.finishRehydration().then(() => {
+    if (primaryStoreWindow) onPrimaryStoreReady()
+  })
+})
+
+function onPrimaryStoreReady(): void {
   // Initialize notes path after rehydration if empty
   const state = store.getState()
   if (!state.note.notesPath) {
@@ -145,12 +150,11 @@ export const persistor = persistStore(store, undefined, () => {
   // Notify main process that Redux store is ready
   void window.electron?.ipcRenderer?.invoke(IpcChannel.ReduxStoreReady)
   logger.info('Redux store ready, notified main process')
-})
+}
 
 export const useAppDispatch = useDispatch.withTypes<AppDispatch>()
 export const useAppSelector = useSelector.withTypes<RootState>()
 export const useAppStore = useStore.withTypes<typeof store>()
-window.store = store
 
 export async function handleSaveData() {
   logger.info('Flushing redux persistor data')

@@ -21,12 +21,12 @@ import { EVENT_NAMES, EventEmitter } from '@renderer/services/EventService'
 import { checkModelWithAnyKey } from '@renderer/services/HealthCheckService'
 import { modelRecoveryIntents } from '@renderer/services/modelRecoveryIntents'
 import store, { type RootState } from '@renderer/store'
-import { applyRemoteModelPolicy, setModelPolicy } from '@renderer/store/llm'
+import { applyRemoteModelPolicy, type RemoteModelPolicyProgress, setModelPolicy } from '@renderer/store/llm'
 import type { Model } from '@renderer/types'
-import { splitApiKeyString } from '@renderer/utils/api'
 import { getLowerBaseModelName } from '@renderer/utils/naming'
 import type { ModelPolicySnapshot } from '@shared/config/modelPolicy'
 import { isZenContextCompactionApiHost } from '@shared/config/zenProvider'
+import { splitApiKeyString } from '@shared/utils/apiKeys'
 
 import { getProviderContextHealthFingerprint } from './ProviderModelSyncUtils'
 
@@ -80,7 +80,7 @@ const refresh = async (): Promise<void> => {
 }
 
 const canReplaceDefault = (
-  current: Model | undefined,
+  current: Pick<Model, 'id'> | undefined,
   previousTarget: string | undefined,
   overwriteUserChoice: boolean
 ): boolean => {
@@ -90,9 +90,15 @@ const canReplaceDefault = (
   return Boolean(previousTarget && currentId === getLowerBaseModelName(previousTarget.trim()))
 }
 
-const preferredBeforeOutage = (slot: string, current: Model | undefined): Model | undefined => {
+const preferredBeforeOutage = (
+  slot: string,
+  current: Model | undefined
+): Pick<Model, 'id' | 'provider'> | undefined => {
   const preferred = modelRecoveryIntents.get(`global:${slot}`)?.preferred
-  return current && preferred ? { ...current, id: preferred.slice(preferred.indexOf(':') + 1) } : current
+  const separator = preferred?.indexOf(':') ?? -1
+  return preferred && separator >= 0
+    ? { provider: preferred.slice(0, separator), id: preferred.slice(separator + 1) }
+    : current
 }
 
 /**
@@ -203,66 +209,49 @@ const scheduleContextModelProbes = (snapshot: ModelPolicySnapshot): void => {
 
 const applyRemoteDefaults = (state: RootState, snapshot: ModelPolicySnapshot): void => {
   if (snapshot.source === 'builtin') return
-  const previous = state.llm.modelPolicy?.policy
+  const { llm } = state
   const policy = snapshot.policy
-  // A remote policy is a release-level preference. Once that policy version
-  // has been applied, refreshing the same version (or reconciling after a
-  // Provider model sync) must not take a model chosen by the user back again.
-  // `overwriteUserChoice` therefore only has an effect when a new policy
-  // version is first applied.
-  const isNewPolicyVersion = state.llm.remoteModelPolicyVersion !== snapshot.version
-  const allowReleaseOverwrite = policy.rules.overwriteUserChoice && isNewPolicyVersion
-  const defaultModel = resolveRemoteDefaultModel(state.llm.providers, policy.defaults.chat, state.llm.defaultModel)
-  const quickModel = resolveRemoteDefaultModel(state.llm.providers, policy.defaults.quick, state.llm.quickModel)
-  const translateModel = resolveRemoteDefaultModel(
-    state.llm.providers,
-    policy.defaults.translate,
-    state.llm.translateModel
-  )
+  const previous = llm.modelPolicy?.policy
+  const newVersion = llm.remoteModelPolicyVersion !== snapshot.version
+  const progress =
+    llm.remoteModelPolicyProgress?.version === snapshot.version ? llm.remoteModelPolicyProgress : undefined
+  const pending: RemoteModelPolicyProgress['pending'] = {}
+  const defaults: Partial<Record<'defaultModel' | 'quickModel' | 'translateModel', Model>> = {}
 
-  const nextDefaultModel =
-    defaultModel &&
-    canReplaceDefault(
-      isNewPolicyVersion ? preferredBeforeOutage('chat', state.llm.defaultModel) : state.llm.defaultModel,
-      previous?.defaults.chat,
-      allowReleaseOverwrite
-    )
-      ? defaultModel
-      : undefined
-  const nextQuickModel =
-    quickModel &&
-    canReplaceDefault(
-      isNewPolicyVersion ? preferredBeforeOutage('quick', state.llm.quickModel) : state.llm.quickModel,
-      previous?.defaults.quick,
-      allowReleaseOverwrite
-    )
-      ? quickModel
-      : undefined
-  const nextTranslateModel =
-    translateModel &&
-    canReplaceDefault(
-      isNewPolicyVersion ? preferredBeforeOutage('translate', state.llm.translateModel) : state.llm.translateModel,
-      previous?.defaults.translate,
-      allowReleaseOverwrite
-    )
-      ? translateModel
-      : undefined
+  for (const [slot, field] of [
+    ['chat', 'defaultModel'],
+    ['quick', 'quickModel'],
+    ['translate', 'translateModel']
+  ] as const) {
+    const current = llm[field]
+    const preferred = newVersion ? preferredBeforeOutage(slot, current) : current
+    const selection = preferred ? JSON.stringify([preferred.provider, preferred.id]) : null
+    const target = policy.defaults[slot]
+    if (!target) continue
+    const replace = progress
+      ? progress.pending[slot] === selection
+      : canReplaceDefault(preferred, previous?.defaults[slot], newVersion && policy.rules.overwriteUserChoice)
+    if (!replace) continue
 
-  const isDifferentModel = (current: Model | undefined, next: Model | undefined) =>
-    Boolean(next && (current?.id !== next.id || current.provider !== next.provider))
+    const model = resolveRemoteDefaultModel(llm.providers, target, current)
+    if (!model) {
+      if (newVersion) pending[slot] = selection
+      continue
+    }
+    if (model.id !== current?.id || model.provider !== current.provider) defaults[field] = model
+  }
 
+  const nextProgress = Object.keys(pending).length ? { version: snapshot.version, pending } : undefined
   if (
-    state.llm.remoteModelPolicyVersion !== snapshot.version ||
-    isDifferentModel(state.llm.defaultModel, nextDefaultModel) ||
-    isDifferentModel(state.llm.quickModel, nextQuickModel) ||
-    isDifferentModel(state.llm.translateModel, nextTranslateModel)
+    Object.keys(defaults).length ||
+    (newVersion && !nextProgress) ||
+    JSON.stringify(llm.remoteModelPolicyProgress) !== JSON.stringify(nextProgress)
   ) {
     store.dispatch(
       applyRemoteModelPolicy({
-        defaultModel: nextDefaultModel,
-        quickModel: nextQuickModel,
-        translateModel: nextTranslateModel,
-        version: snapshot.version
+        ...defaults,
+        version: nextProgress ? undefined : snapshot.version,
+        progress: nextProgress
       })
     )
   }

@@ -24,7 +24,7 @@ type InstallFailureResult = {
   installerPath?: string
 }
 
-const LARGE_MODAL_WIDTH = 'min(80vw, calc(100vw - 32px))'
+const LARGE_MODAL_WIDTH = 'min(80vw, calc(100vw - 48px))'
 
 export function formatReleaseDate(value?: string) {
   if (!value) {
@@ -54,41 +54,76 @@ const updateContainerStyle: CSSProperties = {
   flexDirection: 'column',
   minHeight: 0,
   height: '100%',
-  gap: 12,
-  lineHeight: 1.6
+  gap: 14,
+  lineHeight: 1.65,
+  color: 'var(--zen-text-1)'
 }
 
 const largeModalBodyStyle: CSSProperties = {
-  height: 'min(80vh, 720px)',
+  height: 'min(80vh, calc(100dvh - 48px))',
   maxHeight: 'calc(100dvh - 48px)',
   overflow: 'hidden'
+}
+
+const updateMetaBarStyle: CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  flexWrap: 'wrap',
+  gap: 10
+}
+
+const versionPillStyle: CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 6,
+  height: 26,
+  padding: '0 11px',
+  borderRadius: 'var(--zen-radius-pill)',
+  background: 'var(--zen-glass-pill)',
+  boxShadow: 'var(--zen-shadow-active)',
+  color: 'var(--zen-text-1)',
+  fontSize: 12,
+  fontWeight: 600,
+  fontFamily: 'var(--code-font-family)',
+  fontVariantNumeric: 'tabular-nums'
+}
+
+const releaseDateTextStyle: CSSProperties = {
+  fontSize: 12,
+  color: 'var(--zen-text-3)',
+  fontFamily: 'var(--code-font-family)',
+  fontVariantNumeric: 'tabular-nums'
 }
 
 const releaseNotesStyle: CSSProperties = {
   flex: '1 1 auto',
   minHeight: 0,
   overflowY: 'auto',
-  padding: '12px 14px',
-  border: '1px solid var(--color-border)',
-  borderRadius: 8,
-  background: 'var(--color-background-soft)'
+  padding: '18px 22px',
+  border: 0,
+  borderRadius: 'var(--zen-radius-md)',
+  background: 'var(--zen-glass-card)',
+  boxShadow: 'var(--zen-shadow-card)',
+  color: 'var(--zen-text-2)'
 }
 
 const manualInstallNoticeStyle: CSSProperties = {
-  padding: '12px 14px',
-  borderRadius: 10,
-  border: '1px solid rgba(250, 173, 20, 0.28)',
-  background: 'rgba(250, 173, 20, 0.1)',
-  color: 'var(--color-text)',
-  lineHeight: 1.7
+  padding: '12px 16px',
+  borderRadius: 'var(--zen-radius-md)',
+  border: '0.5px solid color-mix(in srgb, var(--zen-warning) 30%, transparent)',
+  background: 'color-mix(in srgb, var(--zen-warning) 9%, transparent)',
+  color: 'var(--zen-text-1)',
+  fontSize: 13,
+  lineHeight: 1.65
 }
 
 const installStatusStyle: CSSProperties = {
-  padding: '10px 12px',
-  borderRadius: 8,
-  border: '1px solid rgba(22, 119, 255, 0.25)',
-  background: 'rgba(22, 119, 255, 0.08)',
-  color: 'var(--color-text)',
+  padding: '12px 16px',
+  borderRadius: 'var(--zen-radius-md)',
+  border: '0.5px solid color-mix(in srgb, var(--zen-link) 24%, transparent)',
+  background: 'color-mix(in srgb, var(--zen-link) 8%, transparent)',
+  color: 'var(--zen-text-1)',
+  fontSize: 13,
   fontWeight: 500
 }
 
@@ -125,15 +160,20 @@ function renderUpdateContent(t: Translate, updateInfo: UpdateInfo, messageKey: s
 
   return (
     <div style={updateContainerStyle}>
-      <div style={{ fontWeight: 500 }}>{t(messageKey, { version: updateInfo.version })}</div>
-      <div>
-        <strong>{t('update.version')}:</strong> {updateInfo.version}
+      <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--zen-text-1)' }}>
+        {t(messageKey, { version: updateInfo.version })}
       </div>
-      {releaseDate && (
-        <div>
-          <strong>{t('update.releaseDate')}:</strong> {releaseDate}
-        </div>
-      )}
+      <div style={updateMetaBarStyle}>
+        <span style={versionPillStyle}>
+          <span>{t('update.version')}:</span>
+          <span>{updateInfo.version}</span>
+        </span>
+        {releaseDate && (
+          <span style={releaseDateTextStyle}>
+            {t('update.releaseDate')}: {releaseDate}
+          </span>
+        )}
+      </div>
       {renderReleaseNotes(releaseNotes)}
     </div>
   )
@@ -307,6 +347,7 @@ function showAppUpdateModal(t: Translate, initialInfo: UpdateInfo, initialPhase:
   }
   const modal = window.modal.confirm({
     title: t('update.title'),
+    icon: null,
     cancelText: t('update.later'),
     centered: true,
     width: LARGE_MODAL_WIDTH,

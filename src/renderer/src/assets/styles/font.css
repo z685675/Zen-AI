@@ -1,25 +1,22 @@
+@import '../fonts/presets/presets.css';
+
 :root {
-  --font-family:
-    var(--user-font-family), 'HarmonyOS Sans SC', 'HarmonyOS Sans', Ubuntu, -apple-system, BlinkMacSystemFont,
-    'Segoe UI', system-ui, Roboto, Oxygen, Cantarell, 'Open Sans', 'Helvetica Neue', Arial, 'Noto Sans', sans-serif,
-    'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
-
-  --font-family-serif:
-    var(--user-font-family), 'HarmonyOS Sans SC', 'HarmonyOS Sans', serif, -apple-system, BlinkMacSystemFont,
-    'Segoe UI', system-ui, Ubuntu, Roboto, Oxygen, Cantarell, 'Open Sans', 'Helvetica Neue', Arial, 'Noto Sans',
-    'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
-
-  --code-font-family: var(--user-code-font-family), 'Cascadia Code', 'Fira Code', 'Consolas', Menlo, Courier, monospace;
+  --zen-ui-font: 'Geist';
+  --zen-code-font: 'Geist Mono';
+  --zen-cjk-fonts: 'PingFang SC', 'Hiragino Sans GB', 'MiSans', 'Microsoft YaHei UI', 'HarmonyOS Sans SC';
+  --zen-mono-fallback: 'JetBrains Mono', 'Cascadia Code', 'SF Mono', Consolas;
 }
 
-/* Windows系统专用字体配置 */
-body[os='windows'] {
+:root,
+body {
   --font-family:
-    var(--user-font-family), 'HarmonyOS Sans SC', 'HarmonyOS Sans', 'Twemoji Country Flags', Ubuntu, -apple-system,
-    BlinkMacSystemFont, 'Segoe UI', system-ui, Roboto, Oxygen, Cantarell, 'Open Sans', 'Helvetica Neue', Arial,
-    'Noto Sans', sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
-
+    var(--user-font-family, var(--zen-ui-font)), var(--zen-ui-font), var(--zen-cjk-fonts),
+    var(--zen-flag-font, system-ui), system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji';
+  --font-family-serif: var(--user-font-family, 'Hiragino Mincho ProN'), 'Songti SC', SimSun, serif;
   --code-font-family:
-    var(--user-code-font-family), 'Cascadia Code', 'Fira Code', 'Consolas', 'Sarasa Mono SC', 'Microsoft YaHei UI',
-    Courier, monospace;
+    var(--user-code-font-family, var(--zen-code-font)), var(--zen-code-font), var(--zen-mono-fallback), monospace;
+}
+
+body[os='windows'] {
+  --zen-flag-font: 'Twemoji Country Flags';
 }

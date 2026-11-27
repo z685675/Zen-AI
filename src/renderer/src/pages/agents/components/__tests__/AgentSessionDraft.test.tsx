@@ -85,8 +85,9 @@ vi.mock('@renderer/components/ModelRecoveryNotice', () => ({
 }))
 vi.mock('../LegacyAssistantInputbar', () => ({ default: () => null }))
 vi.mock('@renderer/pages/home/Inputbar/components/InputbarCore', () => ({
-  InputbarCore: ({ text, onTextChange, handleSendMessage, rightToolbar, onPause, topContent }: any) => (
+  InputbarCore: ({ text, onTextChange, handleSendMessage, rightToolbar, onPause, topContent, statusContent }: any) => (
     <>
+      {statusContent}
       {topContent}
       <textarea aria-label="Draft" value={text} onChange={(event) => onTextChange(event.target.value)} />
       <button type="button" onClick={handleSendMessage}>

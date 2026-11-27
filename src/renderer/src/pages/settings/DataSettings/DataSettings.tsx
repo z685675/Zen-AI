@@ -120,17 +120,19 @@ const DataSettings: FC = () => {
 
 const Container = styled(HStack)`
   flex: 1;
+  min-height: 0;
+  height: 100%;
 `
 
 const MenuList = styled.div`
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 4px;
   width: var(--settings-width);
   padding: 12px;
   padding-bottom: 48px;
   border-right: 0.5px solid var(--color-border);
-  height: 100vh;
+  height: 100%;
   overflow: auto;
   box-sizing: border-box;
   min-height: 0;

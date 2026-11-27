@@ -60,9 +60,22 @@ app.use((_req, res, next) => {
 
 app.use(
   cors({
-    origin: '*',
-    allowedHeaders: ['Content-Type', 'Authorization'],
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS']
+    origin: (origin, done) => {
+      // Electron's packaged file renderer has an opaque origin. Browser
+      // clients are otherwise limited to local origins and still need an API key.
+      const local = origin === 'null' || /^https?:\/\/(?:localhost|127\.0\.0\.1|\[::1\])(?::\d+)?$/i.test(origin ?? '')
+      done(null, local)
+    },
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'X-API-Key',
+      'Mcp-Session-Id',
+      'Mcp-Protocol-Version',
+      'Last-Event-ID'
+    ],
+    exposedHeaders: ['Mcp-Session-Id'],
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS']
   })
 )
 

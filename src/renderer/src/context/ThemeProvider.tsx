@@ -1,92 +1,86 @@
 import { isMac, isWin } from '@renderer/config/constant'
 import { useNavbarPosition, useSettings } from '@renderer/hooks/useSettings'
 import useUserTheme from '@renderer/hooks/useUserTheme'
+import { type UiThemePreset, uiThemePreset } from '@renderer/services/UiThemePresetService'
+import { persistor } from '@renderer/store'
 import { ThemeMode } from '@renderer/types'
-import { IpcChannel } from '@shared/IpcChannel'
-import type { PropsWithChildren } from 'react'
-import React, { createContext, use, useCallback, useEffect, useState } from 'react'
+import type { FC, PropsWithChildren } from 'react'
+import { createContext, use, useEffect, useLayoutEffect, useSyncExternalStore } from 'react'
+
+export type ResolvedThemeMode = ThemeMode.light | ThemeMode.dark
 
 interface ThemeContextType {
-  theme: ThemeMode
+  theme: ResolvedThemeMode
   settedTheme: ThemeMode
   toggleTheme: () => void
   setTheme: (theme: ThemeMode) => void
+  preset: UiThemePreset
+  setPreset: (preset: UiThemePreset) => void
 }
 
-const ONLY_SUPPORTED_THEME = ThemeMode.light
-
 const ThemeContext = createContext<ThemeContextType>({
-  theme: ONLY_SUPPORTED_THEME,
-  settedTheme: ONLY_SUPPORTED_THEME,
+  theme: ThemeMode.light,
+  settedTheme: ThemeMode.system,
   toggleTheme: () => {},
-  setTheme: () => {}
+  setTheme: () => {},
+  preset: 'codex',
+  setPreset: () => {}
 })
 
 interface ThemeProviderProps extends PropsWithChildren {
-  defaultTheme?: ThemeMode
+  syncNative?: boolean
 }
 
-const tailwindThemeChange = (theme: ThemeMode) => {
-  const root = window.document.documentElement
-  root.classList.remove('light', 'dark')
-  root.classList.add(theme)
+const SYSTEM_DARK = '(prefers-color-scheme: dark)'
+const getSystemDark = () => window.matchMedia?.(SYSTEM_DARK)?.matches ?? false
+const subscribeSystemDark = (onChange: () => void) => {
+  const media = window.matchMedia?.(SYSTEM_DARK)
+  media?.addEventListener('change', onChange)
+  return () => media?.removeEventListener('change', onChange)
 }
+const getBootstrapped = () => persistor.getState().bootstrapped
 
-export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
-  const { theme: settedTheme, setTheme: setSettedTheme, language } = useSettings()
-  const [actualTheme, setActualTheme] = useState<ThemeMode>(ONLY_SUPPORTED_THEME)
+export const ThemeProvider: FC<ThemeProviderProps> = ({ children, syncNative = false }) => {
+  const { theme: settedTheme, setTheme, language } = useSettings()
+  const systemDark = useSyncExternalStore(subscribeSystemDark, getSystemDark)
+  const preset = useSyncExternalStore(uiThemePreset.subscribe, uiThemePreset.get)
+  const bootstrapped = useSyncExternalStore(persistor.subscribe, getBootstrapped)
+  const actualTheme = settedTheme === ThemeMode.system ? (systemDark ? ThemeMode.dark : ThemeMode.light) : settedTheme
   const { initUserTheme } = useUserTheme()
   const { navbarPosition } = useNavbarPosition()
 
-  const applyLightTheme = useCallback(() => {
-    if (settedTheme !== ONLY_SUPPORTED_THEME) {
-      setSettedTheme(ONLY_SUPPORTED_THEME)
-    }
-  }, [setSettedTheme, settedTheme])
-
-  const toggleTheme = () => {
-    applyLightTheme()
-  }
-
-  useEffect(() => {
+  useLayoutEffect(() => {
     document.body.setAttribute('os', isMac ? 'mac' : isWin ? 'windows' : 'linux')
-    document.body.setAttribute('theme-mode', ONLY_SUPPORTED_THEME)
-    document.body.classList.remove('dark')
-    document.body.classList.add('light')
-    document.body.setAttribute('navbar-position', navbarPosition)
+    document.body.setAttribute('navbar-position', syncNative ? 'left' : navbarPosition)
     document.documentElement.lang = language
+  }, [language, navbarPosition, syncNative])
 
-    applyLightTheme()
+  useLayoutEffect(() => {
+    document.body.dataset.themePreset = preset
+    document.body.setAttribute('theme-mode', actualTheme)
+    for (const element of [document.body, document.documentElement]) {
+      element.classList.toggle('dark', actualTheme === ThemeMode.dark)
+      element.classList.toggle('light', actualTheme === ThemeMode.light)
+    }
+  }, [actualTheme, preset])
+
+  useLayoutEffect(() => {
     initUserTheme()
-
-    return window.electron.ipcRenderer.on(IpcChannel.ThemeUpdated, (_, actualTheme: ThemeMode) => {
-      if (actualTheme !== ONLY_SUPPORTED_THEME) {
-        void window.api.setTheme(ONLY_SUPPORTED_THEME)
-        return
-      }
-
-      document.body.setAttribute('theme-mode', ONLY_SUPPORTED_THEME)
-      setActualTheme(ONLY_SUPPORTED_THEME)
-    })
-  }, [applyLightTheme, initUserTheme, language, navbarPosition])
+  }, [initUserTheme])
 
   useEffect(() => {
-    tailwindThemeChange(ONLY_SUPPORTED_THEME)
-  }, [])
-
-  useEffect(() => {
-    setActualTheme(ONLY_SUPPORTED_THEME)
-    void window.api.setTheme(ONLY_SUPPORTED_THEME)
-    applyLightTheme()
-  }, [applyLightTheme])
+    if (syncNative && bootstrapped) void window.api.setTheme(settedTheme)
+  }, [bootstrapped, settedTheme, syncNative])
 
   return (
     <ThemeContext
       value={{
         theme: actualTheme,
-        settedTheme: ONLY_SUPPORTED_THEME,
-        toggleTheme,
-        setTheme: () => applyLightTheme()
+        settedTheme,
+        toggleTheme: () => setTheme(actualTheme === ThemeMode.dark ? ThemeMode.light : ThemeMode.dark),
+        setTheme,
+        preset,
+        setPreset: uiThemePreset.set
       }}>
       {children}
     </ThemeContext>

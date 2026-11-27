@@ -930,6 +930,20 @@
     "zoomIn": "Mărește",
     "zoomOut": "Micșorează"
   },
+  "app_shell": {
+    "chat_welcome": "Începe o conversație",
+    "chat_welcome_subtitle": "Pune întrebări, scrie, traduce sau explorează idei oricând, cu toată atenția îndreptată spre ideile tale",
+    "conversations": "Conversații",
+    "image_workbench": "Atelier de imagini",
+    "mcp": "MCP",
+    "more_tools": "Mai multe instrumente",
+    "navigation": "Navigare principală",
+    "new_conversation": "Conversație nouă",
+    "new_task": "Sarcină nouă",
+    "recent": "Sarcini și conversații recente",
+    "today_requests": "Astăzi · {{count}} solicitări",
+    "toggle_appearance": "Comută între aspectul deschis și cel întunecat"
+  },
   "assistantDataSafety": {
     "busy": "[to be translated]:Stop active assistant tasks first, then back up, restore or reset data. A data operation may also still be in progress."
   },
@@ -1141,6 +1155,9 @@
     "continuation_too_large": "[to be translated]:History is too large. Export a backup and provide the needed background in a new conversation.",
     "continuation_workspace_missing": "[to be translated]:The original workspace is missing or inaccessible. Check permissions and retry.",
     "continue": "[to be translated]:Continue in new assistant",
+    "delete_legacy_folder": "Șterge dosarul conversațiilor vechi",
+    "delete_legacy_folder_confirm": "Toate conversațiile vechi, inclusiv cele arhivate, vor fi șterse definitiv. Această acțiune este ireversibilă.",
+    "delete_legacy_folder_failed": "Unele conversații vechi nu au putut fi șterse. Încearcă din nou.",
     "historical_copy": "[to be translated]:History copy",
     "legacy_automation_disabled": "Asistentul vechi nu mai este întreținut. Integrările externe, inclusiv WeChat, și sarcinile programate sunt dezactivate inclusiv în modul dezvoltator. Setările și istoricul se păstrează. Funcțiile vor reveni când sunt acceptate de noul asistent.",
     "legacy_read_only": "Asistentul vechi nu mai este disponibil. Treceți la noul asistent.",
@@ -1608,6 +1625,7 @@
         "cache_value": "[to be translated]:{{hits}} hits / {{total}} parses",
         "compressions": "[to be translated]:History compactions",
         "error": "[to be translated]:Resource preparation failed",
+        "local_checkpoint_fallback": "Modelul la distanță pentru gestionarea contextului este temporar indisponibil. Procesarea continuă de la un punct de control local.",
         "managed": "[to be translated]:Resources and history managed",
         "managed_resources": "[to be translated]:{{count}} resources managed",
         "note": "[to be translated]:This shows resource, history, and capacity handling. It does not mean the model is still responding.",
@@ -1798,6 +1816,13 @@
       "prev": "Mesajul anterior",
       "top": "Înapoi sus"
     },
+    "quick_roles": {
+      "add": "Adaugă un rol",
+      "add_to_favorites": "Adaugă un rol la favorite",
+      "empty": "Nu ai adăugat încă fișe de rol",
+      "expand_settings": "Afișează setările rolului",
+      "mine": "Rolurile mele"
+    },
     "resend": "Retrimite",
     "save": {
       "file": {
@@ -1959,6 +1984,12 @@
         "md": "Copiază ca markdown",
         "plain_text": "Copiază ca text simplu (elimină Markdown)",
         "title": "Copiază"
+      },
+      "date_group": {
+        "earlier": "Mai vechi",
+        "last_seven_days": "Ultimele 7 zile",
+        "pinned": "Fixate",
+        "today": "Astăzi"
       },
       "delete": {
         "shortcut": "Ține apăsat {{key}} pentru a șterge direct"
@@ -2216,6 +2247,7 @@
     "models": "Modele",
     "more": "Mai mult",
     "name": "Nume",
+    "new": "Nou",
     "next_match": "Următorul meci",
     "no_results": "Niciun rezultat",
     "none": "Nimic",
@@ -2235,6 +2267,7 @@
     "prompt": "Prompt",
     "provider": "Furnizor",
     "reasoning_content": "Raționament profund",
+    "recently_deleted": "Șterse recent",
     "refresh": "Reîmprospătează",
     "regenerate": "Regenerează",
     "remove_image": "Elimină imaginea",
@@ -3166,6 +3199,11 @@
       "pending": "În așteptare",
       "preview": "Previzualizare",
       "raw": "Brut",
+      "read_paper": {
+        "active": "Se citește articolul",
+        "done": "Secțiunea a fost citită",
+        "label": "Citește articolul"
+      },
       "runningCount": "{{count}} instrumente în execuție",
       "search_limited": "[to be translated]:Search limited · not executed",
       "sections": {
@@ -3360,6 +3398,9 @@
     "no_matching_model": "[to be translated]:No available model matches the remote configuration. Import a Provider or choose a model manually.",
     "open_settings": "[to be translated]:Open Model Settings",
     "title": "[to be translated]:No model configured"
+  },
+  "model_status": {
+    "failures": "Eșecuri"
   },
   "models": {
     "add_parameter": "Adaugă parametru",
@@ -6533,6 +6574,24 @@
       "color_primary": "Culoare primară",
       "dark": "Întunecată",
       "light": "Luminoasă",
+      "mode": "Mod de aspect",
+      "preset": {
+        "codex": {
+          "description": "Spațiu de lucru monocrom",
+          "name": "Codex Workbench"
+        },
+        "font": "Folosește fontul stilului selectat",
+        "title": "Stil vizual",
+        "zen-paper": {
+          "description": "Tonuri calde de hârtie",
+          "name": "Zen Paper"
+        }
+      },
+      "route_transition": {
+        "crossfade": "Estompare",
+        "instant": "Schimbare instantanee",
+        "title": "Tranziții între pagini"
+      },
       "system": "Sistem",
       "title": "Temă",
       "window": {

@@ -1,5 +1,6 @@
 import type { Server } from 'node:http'
 
+import { LEGACY_ASSISTANT_READ_ONLY_CODE } from '@shared/agents/assistantAvailability'
 import { LEGACY_AUTOMATION_DISABLED_CODE } from '@shared/agents/legacyAutomation'
 import express from 'express'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
@@ -21,6 +22,7 @@ import { channelService } from '@main/services/agents/services/ChannelService'
 import { taskService } from '@main/services/agents/services/TaskService'
 
 import { channelsRouter } from '../channels'
+import { clawMcpRoutes } from '../claw-mcp'
 import { tasksRouter } from '../tasks'
 
 describe('legacy automation REST boundary', () => {
@@ -31,6 +33,7 @@ describe('legacy automation REST boundary', () => {
     app.use(express.json())
     app.use('/tasks', tasksRouter)
     app.use('/channels', channelsRouter)
+    app.use('/claw', clawMcpRoutes)
     server = await new Promise<Server>((resolve) => {
       const listening = app.listen(0, '127.0.0.1', () => resolve(listening))
     })
@@ -59,9 +62,17 @@ describe('legacy automation REST boundary', () => {
     expect(channelService.createChannel).not.toHaveBeenCalled()
   })
 
+  it('returns the read-only response from the retired Claw MCP route', async () => {
+    const response = await fetch(`${baseUrl}/claw/legacy/claw-mcp`)
+    expect(response.status).toBe(410)
+    expect(await response.json()).toMatchObject({ error: { code: LEGACY_ASSISTANT_READ_ONLY_CODE } })
+  })
+
   it.each(['/tasks', '/channels'])('preserves reading historical configuration: %s', async (route) => {
     const response = await fetch(`${baseUrl}${route}`)
     expect(response.status).toBe(200)
     expect(await response.json()).toMatchObject({ data: [] })
+    const list = route === '/tasks' ? taskService.listAllTasks : channelService.listChannels
+    expect(list).toHaveBeenCalledWith(expect.objectContaining({ legacyOnly: true }))
   })
 })

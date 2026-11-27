@@ -193,6 +193,7 @@ export enum IpcChannel {
   VertexAI_ClearAuthCache = 'vertexai:clear-auth-cache',
 
   Windows_ResetMinimumSize = 'window:reset-minimum-size',
+  Windows_ToggleSidebar = 'window:toggle-sidebar',
   Windows_SetMinimumSize = 'window:set-minimum-size',
   Windows_Resize = 'window:resize',
   Windows_GetSize = 'window:get-size',

@@ -930,6 +930,20 @@
     "zoomIn": "ズームイン",
     "zoomOut": "ズームアウト"
   },
+  "app_shell": {
+    "chat_welcome": "会話を始める",
+    "chat_welcome_subtitle": "いつでも質問、執筆、翻訳、アイデア出しができ、考えることそのものに集中できます",
+    "conversations": "会話履歴",
+    "image_workbench": "画像ワークベンチ",
+    "mcp": "MCP",
+    "more_tools": "その他のツール",
+    "navigation": "メインナビゲーション",
+    "new_conversation": "新しい会話",
+    "new_task": "新しいタスク",
+    "recent": "最近のタスクと会話",
+    "today_requests": "今日 · {{count}} 件のリクエスト",
+    "toggle_appearance": "ライトとダークの外観を切り替え"
+  },
   "assistantDataSafety": {
     "busy": "[to be translated]:Stop active assistant tasks first, then back up, restore or reset data. A data operation may also still be in progress."
   },
@@ -1141,6 +1155,9 @@
     "continuation_too_large": "[to be translated]:History is too large. Export a backup and provide the needed background in a new conversation.",
     "continuation_workspace_missing": "[to be translated]:The original workspace is missing or inaccessible. Check permissions and retry.",
     "continue": "[to be translated]:Continue in new assistant",
+    "delete_legacy_folder": "過去の会話フォルダーを削除",
+    "delete_legacy_folder_confirm": "アーカイブ済みの会話を含め、すべての過去の会話が完全に削除されます。この操作は取り消せません。",
+    "delete_legacy_folder_failed": "一部の過去の会話を削除できませんでした。もう一度お試しください。",
     "historical_copy": "[to be translated]:History copy",
     "legacy_automation_disabled": "旧アシスタントの保守は終了しました。WeChatなどの外部連携と定期タスクは、開発者モードを含め無効です。設定と履歴は保持され、新版アシスタントで対応後に再開します。",
     "legacy_read_only": "旧アシスタントの利用は終了しました。新しいアシスタントに切り替えてください。",
@@ -1608,6 +1625,7 @@
         "cache_value": "[to be translated]:{{hits}} hits / {{total}} parses",
         "compressions": "[to be translated]:History compactions",
         "error": "[to be translated]:Resource preparation failed",
+        "local_checkpoint_fallback": "コンテキスト整理用のリモートモデルは一時的に利用できません。ローカルのチェックポイントから処理を続けます。",
         "managed": "[to be translated]:Resources and history managed",
         "managed_resources": "[to be translated]:{{count}} resources managed",
         "note": "[to be translated]:This shows resource, history, and capacity handling. It does not mean the model is still responding.",
@@ -1798,6 +1816,13 @@
       "prev": "前のメッセージ",
       "top": "トップに戻る"
     },
+    "quick_roles": {
+      "add": "役割を追加",
+      "add_to_favorites": "お気に入りの役割を追加",
+      "empty": "役割カードはまだ追加されていません",
+      "expand_settings": "役割の設定を表示",
+      "mine": "自分の役割"
+    },
     "resend": "再送信",
     "save": {
       "file": {
@@ -1959,6 +1984,12 @@
         "md": "Markdownとしてコピー",
         "plain_text": "プレーンテキストとしてコピー（Markdownを除去）",
         "title": "コピー"
+      },
+      "date_group": {
+        "earlier": "それ以前",
+        "last_seven_days": "過去7日間",
+        "pinned": "ピン留め",
+        "today": "今日"
       },
       "delete": {
         "shortcut": "{{key}}キーを押しながらで直接削除"
@@ -2216,6 +2247,7 @@
     "models": "モデル",
     "more": "もっと",
     "name": "名前",
+    "new": "新規",
     "next_match": "次の試合",
     "no_results": "検索結果なし",
     "none": "無",
@@ -2235,6 +2267,7 @@
     "prompt": "プロンプト",
     "provider": "プロバイダー",
     "reasoning_content": "深く考察済み",
+    "recently_deleted": "最近削除した項目",
     "refresh": "更新",
     "regenerate": "再生成",
     "remove_image": "画像を削除",
@@ -3166,6 +3199,11 @@
       "pending": "保留中",
       "preview": "プレビュー",
       "raw": "生データ",
+      "read_paper": {
+        "active": "論文を読んでいます",
+        "done": "この節の読み取りが完了しました",
+        "label": "論文を読む"
+      },
       "runningCount": "{{count}}個のツールが実行中",
       "search_limited": "[to be translated]:Search limited · not executed",
       "sections": {
@@ -3360,6 +3398,9 @@
     "no_matching_model": "[to be translated]:No available model matches the remote configuration. Import a Provider or choose a model manually.",
     "open_settings": "[to be translated]:Open Model Settings",
     "title": "[to be translated]:No model configured"
+  },
+  "model_status": {
+    "failures": "失敗件数"
   },
   "models": {
     "add_parameter": "パラメータを追加",
@@ -6533,6 +6574,24 @@
       "color_primary": "テーマ色",
       "dark": "ダーク",
       "light": "ライト",
+      "mode": "外観モード",
+      "preset": {
+        "codex": {
+          "description": "モノクロのワークスペース",
+          "name": "Codex Workbench"
+        },
+        "font": "選択したスタイルのフォントを使用",
+        "title": "ビジュアルスタイル",
+        "zen-paper": {
+          "description": "温かみのある紙の色合い",
+          "name": "Zen Paper"
+        }
+      },
+      "route_transition": {
+        "crossfade": "クロスフェード",
+        "instant": "即時切り替え",
+        "title": "ページ切り替えの効果"
+      },
       "system": "システム",
       "title": "テーマ",
       "window": {

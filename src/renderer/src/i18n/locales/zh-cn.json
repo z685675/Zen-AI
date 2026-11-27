@@ -930,6 +930,29 @@
     "zoomIn": "放大",
     "zoomOut": "缩小"
   },
+  "app_shell": {
+    "chat_welcome": "从一次更轻松的对话开始",
+    "chat_welcome_subtitle": "随时提问、写作、翻译或头脑风暴，让注意力完全留在想法本身",
+    "conversations": "对话记录",
+    "image_workbench": "图片工作台",
+    "mcp": "MCP",
+    "model_degraded": "模型降级",
+    "model_failed": "模型异常",
+    "model_healthy": "模型正常",
+    "more_tools": "更多工具",
+    "my_usage": "我的用量",
+    "navigation": "主导航",
+    "new_conversation": "新建对话",
+    "new_task": "新建任务",
+    "recent": "近期任务与对话",
+    "sidebar_placement_desc": "自定义每个导航入口展示在侧边栏最外层、收入「更多工具」，或隐藏。",
+    "sidebar_placement_hidden": "隐藏",
+    "sidebar_placement_more": "更多工具",
+    "sidebar_placement_primary": "外层显示",
+    "today_count": "今日 {{count}} 次",
+    "today_requests": "今日 · {{count}} 次请求",
+    "toggle_appearance": "切换浅色或深色外观"
+  },
   "assistantDataSafety": {
     "busy": "智能助手任务或数据操作尚未结束，请先停止任务，或等待数据操作完成后再进行备份、恢复或清空。"
   },
@@ -1190,6 +1213,9 @@
     "continuation_too_large": "历史记录过大，请先导出备份，再在新版提供必要的背景。",
     "continuation_workspace_missing": "原工作目录不存在或不可访问，请检查目录权限后重试。",
     "continue": "在新版继续",
+    "delete_legacy_folder": "删除旧对话文件夹",
+    "delete_legacy_folder_confirm": "这会永久删除所有旧对话，包括已归档的会话。此操作无法撤销。",
+    "delete_legacy_folder_failed": "仍有旧对话未能删除，请重试。",
     "historical_copy": "历史副本",
     "legacy_automation_disabled": "弃用助手已停止维护，微信等外部接入和定时任务已关闭。已有配置与历史记录保留，待新版助手支持后再开放；开发者模式也无法启用。",
     "legacy_history": "旧对话",
@@ -1661,6 +1687,7 @@
         "cache_value": "{{hits}} 次命中 / {{total}} 次解析",
         "compressions": "历史整理",
         "error": "资料准备失败",
+        "local_checkpoint_fallback": "远程整理模型暂不可用，已使用本地 checkpoint 继续处理",
         "managed": "资料与历史已管理",
         "managed_resources": "已管理 {{count}} 份资料",
         "note": "这里只显示资料、历史和容量处理，不代表模型仍在回答。",
@@ -1851,6 +1878,13 @@
       "prev": "上一条消息",
       "top": "回到顶部"
     },
+    "quick_roles": {
+      "add": "添加角色",
+      "add_to_favorites": "添加常用角色",
+      "empty": "还没有添加角色卡片",
+      "expand_settings": "展开设定",
+      "mine": "我的"
+    },
     "resend": "重新发送",
     "save": {
       "file": {
@@ -2012,6 +2046,12 @@
         "md": "复制为 Markdown",
         "plain_text": "复制为纯文本（去除 Markdown）",
         "title": "复制"
+      },
+      "date_group": {
+        "earlier": "更早",
+        "last_seven_days": "近 7 天",
+        "pinned": "置顶",
+        "today": "今天"
       },
       "delete": {
         "shortcut": "按住 {{key}} 可直接删除"
@@ -2269,6 +2309,7 @@
     "models": "模型",
     "more": "更多",
     "name": "名称",
+    "new": "新建",
     "next_match": "下一个匹配",
     "no_results": "无结果",
     "none": "无",
@@ -2288,6 +2329,7 @@
     "prompt": "提示词",
     "provider": "提供商",
     "reasoning_content": "已深度思考",
+    "recently_deleted": "最近删除",
     "refresh": "刷新",
     "regenerate": "重新生成",
     "remove_image": "移除图片",
@@ -2349,7 +2391,8 @@
     "image-generation": "图像生成 (OpenAI)",
     "jina-rerank": "Jina 重排序",
     "openai": "OpenAI",
-    "openai-response": "OpenAI-Response"
+    "openai-response": "OpenAI-Response",
+    "openai-video": "OpenAI 兼容视频生成"
   },
   "error": {
     "availableProviders": "可用提供商",
@@ -2643,6 +2686,7 @@
     "split": "分屏"
   },
   "image_studio": {
+    "legacy_import_incomplete": "部分旧本地图片无法读取。可用作品已导入，原有文件仍保留。",
     "local": "本地图片",
     "opening": "正在打开图片工作台……",
     "reconnect": "重新连接",
@@ -3225,6 +3269,11 @@
       "pending": "等待中",
       "preview": "预览",
       "raw": "原始",
+      "read_paper": {
+        "active": "正在阅读论文",
+        "done": "本段读取完成",
+        "label": "阅读论文"
+      },
       "runningCount": "{{count}} 个工具运行中",
       "search_limited": "搜索受限 · 未执行",
       "sections": {
@@ -3428,6 +3477,7 @@
     "degraded": "降级",
     "description": "按所选密钥当前可调用的模型及渠道显示网关统计，包含换渠道重试。数据从网关升级后开始收集。",
     "empty": "没有符合条件的模型",
+    "failures": "失败次数",
     "first_response_latency": "平均首响应",
     "high_failure_rate": "失败率高",
     "history": "每日趋势",
@@ -4173,7 +4223,7 @@
       "realistic": "写实"
     },
     "text_desc_required": "请先输入图片描述",
-    "title": "图片生成",
+    "title": "图片/视频",
     "top_up": "充值",
     "translating": "翻译中...",
     "uploaded_input": "已上传输入",
@@ -6633,6 +6683,24 @@
       "color_primary": "主题颜色",
       "dark": "深色",
       "light": "浅色",
+      "mode": "外观模式",
+      "preset": {
+        "codex": {
+          "description": "纯净多层白阶轻透玻璃",
+          "name": "纯净玻璃"
+        },
+        "font": "跟随当前主题推荐字体",
+        "title": "视觉风格",
+        "zen-paper": {
+          "description": "温润羊脂暖杏轻透玻璃",
+          "name": "羊脂暖杏"
+        }
+      },
+      "route_transition": {
+        "crossfade": "淡入淡出",
+        "instant": "直接切换",
+        "title": "页面切换动效"
+      },
       "system": "系统",
       "title": "主题",
       "window": {
@@ -6868,7 +6936,7 @@
     "memories": "记忆",
     "notes": "笔记",
     "openclaw": "OpenClaw",
-    "paintings": "图片生成",
+    "paintings": "图片/视频",
     "settings": "设置",
     "store": "助手库",
     "translate": "翻译"

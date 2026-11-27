@@ -57,6 +57,8 @@ let child: EventEmitter & {
   signalCode: null
   kill: ReturnType<typeof vi.fn>
 }
+const children = new Map<number, typeof child>()
+let terminateChild: (pid: number) => void
 let launch: 'listen' | 'error' | 'exit' | 'wait' = 'listen'
 const config = () => ({
   provider: {
@@ -90,29 +92,41 @@ beforeEach(() => {
     observeExecutionArguments: mocks.executionArguments,
     setOperation: vi.fn()
   })
-  mocks.spawn.mockImplementation((executable: string) => {
+  children.clear()
+  let pid = 987654
+  terminateChild = (id) => {
+    const stopped = children.get(id)
+    queueMicrotask(() => stopped?.emit('exit', null, 'SIGTERM'))
+  }
+  vi.spyOn(process, 'kill').mockImplementation((id) => {
+    terminateChild(Math.abs(id))
+    return true
+  })
+  mocks.spawn.mockImplementation((executable: string, args: string[]) => {
     if (executable === 'taskkill') {
-      const stopped = child
-      queueMicrotask(() => stopped.emit('exit', null, 'SIGTERM'))
+      terminateChild(Number(args[1]))
       return new EventEmitter()
     }
-    child = Object.assign(new EventEmitter(), {
+    const spawned = Object.assign(new EventEmitter(), {
       stdout: new PassThrough(),
       stderr: new PassThrough(),
-      pid: 987654,
+      pid: pid++,
       exitCode: null,
       signalCode: null,
       kill: vi.fn()
     })
+    child = spawned
+    children.set(spawned.pid, spawned)
+    spawned.once('exit', () => children.delete(spawned.pid))
     queueMicrotask(() => {
-      if (launch === 'listen') child.stdout.write('opencode server listening on http://127.0.0.1:12345\n')
-      if (launch === 'error') child.emit('error', Object.assign(new Error('EACCES'), { code: 'EACCES' }))
+      if (launch === 'listen') spawned.stdout.write('opencode server listening on http://127.0.0.1:12345\n')
+      if (launch === 'error') spawned.emit('error', Object.assign(new Error('EACCES'), { code: 'EACCES' }))
       if (launch === 'exit') {
-        child.stderr.write('opaque-api-secret startup failed\n')
-        child.emit('exit', 7, null)
+        spawned.stderr.write('opaque-api-secret startup failed\n')
+        spawned.emit('exit', 7, null)
       }
     })
-    return child
+    return spawned
   })
   mocks.request.mockImplementation(async (route: string) => {
     if (route === '/global/health') return { healthy: true, version: '1.19.6' }
@@ -122,7 +136,9 @@ beforeEach(() => {
 })
 afterEach(async () => {
   const mod = await import('../process')
-  mod.stopOpenCodeProcesses()
+  const shutdown = mod.stopOpenCodeProcesses()
+  for (const running of children.values()) running.emit('exit', null, 'SIGTERM')
+  await shutdown
   vi.useRealTimers()
   vi.restoreAllMocks()
 })
@@ -134,6 +150,51 @@ const start = async (key = 'session', id = 'turn-1', signal = new AbortControlle
 }
 
 describe('OpenCode operation-scoped lifecycle evidence', () => {
+  it('waits for gateway setup during shutdown, closes the late gateway and never spawns a child', async () => {
+    const creating = Promise.withResolvers<void>()
+    const gateway = Promise.withResolvers<{ baseURL: string; token: string; stop: typeof mocks.gatewayStop }>()
+    mocks.gateway.mockImplementationOnce(() => {
+      creating.resolve()
+      return gateway.promise
+    })
+    const startup = start()
+    const rejected = expect(startup).rejects.toMatchObject({ name: 'AbortError' })
+    await creating.promise
+
+    const { stopOpenCodeProcesses } = await import('../process')
+    const shutdown = stopOpenCodeProcesses()
+    expect(stopOpenCodeProcesses()).toBe(shutdown)
+    const finished = vi.fn()
+    void shutdown.then(finished)
+    await Promise.resolve()
+    expect(finished).not.toHaveBeenCalled()
+
+    gateway.resolve({ baseURL: 'http://127.0.0.1:9876/v1', token: 'fixture', stop: mocks.gatewayStop })
+    await rejected
+    await shutdown
+    expect(mocks.gatewayStop).toHaveBeenCalledOnce()
+    expect(mocks.spawn).not.toHaveBeenCalled()
+  })
+
+  it('waits for an already running child to exit before completing shutdown', async () => {
+    await start()
+    const exited = Promise.withResolvers<void>()
+    terminateChild = (pid) => {
+      void exited.promise.then(() => children.get(pid)?.emit('exit', null, 'SIGTERM'))
+    }
+    const { stopOpenCodeProcesses } = await import('../process')
+    const shutdown = stopOpenCodeProcesses()
+    const finished = vi.fn()
+    void shutdown.then(finished)
+    await Promise.resolve()
+    expect(finished).not.toHaveBeenCalled()
+    expect(mocks.gatewayStop).toHaveBeenCalledOnce()
+
+    exited.resolve()
+    await shutdown
+    expect(finished).toHaveBeenCalledOnce()
+  })
+
   it('observes native and both MCP boundary arguments without confusing JSON-RPC IDs with call IDs', async () => {
     const { registerAssistantMcpContext } = await import('@main/apiServer/routes/assistant-mcp')
     const { registerBrowserMcpContext } = await import('@main/apiServer/routes/browser-mcp')
@@ -201,10 +262,7 @@ describe('OpenCode operation-scoped lifecycle evidence', () => {
     const mod = await import('../process')
     const runtime = await start()
     const previous = child
-    const spawn = mocks.spawn.getMockImplementation()!
-    mocks.spawn.mockImplementation((executable, ...args) =>
-      executable === 'taskkill' ? new EventEmitter() : spawn(executable, ...args)
-    )
+    terminateChild = () => {}
     runtime.release()
     runtime.stop()
     const next = mod.getOpenCodeProcess('session', '/workspace', config(), ['/workspace'], new AbortController().signal)
@@ -222,10 +280,7 @@ describe('OpenCode operation-scoped lifecycle evidence', () => {
     const mod = await import('../process')
     const runtime = await start()
     const previous = child
-    const spawn = mocks.spawn.getMockImplementation()!
-    mocks.spawn.mockImplementation((executable, ...args) =>
-      executable === 'taskkill' ? new EventEmitter() : spawn(executable, ...args)
-    )
+    terminateChild = () => {}
     runtime.release()
     runtime.stop()
     const next = mod.getOpenCodeProcess('session', '/workspace', config(), [], new AbortController().signal)

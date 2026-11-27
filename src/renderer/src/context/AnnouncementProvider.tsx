@@ -1,5 +1,4 @@
 import AnnouncementMarkdown from '@renderer/components/AnnouncementMarkdown'
-import { useNavbarPosition } from '@renderer/hooks/useSettings'
 import { announcementService, type AnnouncementViewItem } from '@renderer/services/AnnouncementService'
 import type { AnnouncementPayload } from '@renderer/types/announcement'
 import { Button, Modal, Popover } from 'antd'
@@ -45,33 +44,51 @@ const AnnouncementModal: FC<{
   onClose: () => void
 }> = ({ item, onClose }) => {
   const { t } = useTranslation()
-  const footer = [
-    item?.link ? (
-      <Button key="link" onClick={() => openAnnouncementLink(item)}>
-        {item.link.label || t('announcements.learn_more')}
-      </Button>
-    ) : null,
-    <Button key="close" type="primary" onClick={onClose}>
-      {t('common.i_know')}
-    </Button>
-  ].filter(Boolean)
 
   return (
     <Modal
       centered
       open={Boolean(item)}
-      title={item?.title}
-      width="min(80vw, calc(100vw - 32px))"
-      bodyStyle={{ minHeight: 'calc(80vh - 160px)', maxHeight: 'calc(80vh - 160px)', overflowY: 'auto' }}
-      footer={footer}
-      onCancel={onClose}>
+      title={null}
+      width="min(80vw, calc(100vw - 48px))"
+      footer={null}
+      onCancel={onClose}
+      styles={{
+        content: {
+          padding: 0,
+          overflow: 'hidden',
+          borderRadius: 'var(--zen-radius-xl)',
+          background: 'var(--zen-glass-rail)',
+          backdropFilter: 'blur(36px) saturate(165%)',
+          boxShadow: 'var(--zen-shadow-composer)'
+        },
+        body: { padding: 0, maxHeight: 'none', overflow: 'hidden' }
+      }}>
       {item && (
-        <ModalContent>
-          <ModalTime>{formatTime(item.publishedAt)}</ModalTime>
-          <ModalText>
-            <AnnouncementMarkdown content={item.content} />
-          </ModalText>
-        </ModalContent>
+        <AnnouncementModalShell>
+          <AnnouncementModalHeader>
+            <AnnouncementMetaRow>
+              <AnnouncementBadge>{t('announcements.title', '系统公告')}</AnnouncementBadge>
+              <ModalTime>{formatTime(item.publishedAt)}</ModalTime>
+            </AnnouncementMetaRow>
+            <AnnouncementModalTitle>{item.title}</AnnouncementModalTitle>
+          </AnnouncementModalHeader>
+          <AnnouncementModalBody>
+            <ModalText>
+              <AnnouncementMarkdown content={item.content} />
+            </ModalText>
+          </AnnouncementModalBody>
+          <AnnouncementModalFooter>
+            {item.link && (
+              <Button shape="round" onClick={() => openAnnouncementLink(item)}>
+                {item.link.label || t('announcements.learn_more')}
+              </Button>
+            )}
+            <Button shape="round" type="primary" onClick={onClose}>
+              {t('common.i_know')}
+            </Button>
+          </AnnouncementModalFooter>
+        </AnnouncementModalShell>
       )}
     </Modal>
   )
@@ -79,11 +96,17 @@ const AnnouncementModal: FC<{
 
 const UrgentBanner: FC<{ items: AnnouncementViewItem[] }> = ({ items }) => {
   const { t } = useTranslation()
-  const { isTopNavbar } = useNavbarPosition()
   const fullContent = (
     <UrgentPopoverContent>
       {items.map((item) => (
         <UrgentPopoverItem key={item.id}>
+          <UrgentPopoverHeader>
+            <UrgentPopoverBadge>
+              <UrgentDot aria-hidden="true" />
+              <span>{t('announcements.urgent_badge', '紧急公告')}</span>
+            </UrgentPopoverBadge>
+            <UrgentPopoverTime>{formatTime(item.publishedAt)}</UrgentPopoverTime>
+          </UrgentPopoverHeader>
           <UrgentPopoverTitle>{item.title}</UrgentPopoverTitle>
           <UrgentPopoverText>
             <AnnouncementMarkdown content={item.content} compact />
@@ -103,17 +126,23 @@ const UrgentBanner: FC<{ items: AnnouncementViewItem[] }> = ({ items }) => {
   }
 
   return (
-    <UrgentBannerShell $isTopNavbar={isTopNavbar}>
-      <Popover placement="bottom" content={fullContent} mouseEnterDelay={0.1}>
+    <UrgentBannerShell role="status" aria-live="polite">
+      <Popover placement="bottom" content={fullContent} mouseEnterDelay={0.12}>
         <UrgentBannerInner>
-          <UrgentScroller>
-            {items.map((item) => (
-              <UrgentMessage key={item.id}>
-                <UrgentTitle>{item.title}</UrgentTitle>
-                <span>{item.content}</span>
-              </UrgentMessage>
-            ))}
-          </UrgentScroller>
+          <UrgentBadge>
+            <UrgentDot aria-hidden="true" />
+            <span>{t('announcements.urgent_short', '紧急')}</span>
+          </UrgentBadge>
+          <UrgentTrack>
+            <UrgentScroller>
+              {items.map((item) => (
+                <UrgentMessage key={item.id}>
+                  <UrgentTitle>{item.title}</UrgentTitle>
+                  <UrgentBody>{item.content}</UrgentBody>
+                </UrgentMessage>
+              ))}
+            </UrgentScroller>
+          </UrgentTrack>
         </UrgentBannerInner>
       </Popover>
     </UrgentBannerShell>
@@ -198,63 +227,195 @@ export const AnnouncementProvider: FC<PropsWithChildren> = ({ children }) => {
   )
 }
 
-const ModalContent = styled.div`
+const AnnouncementModalShell = styled.div`
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  height: min(80vh, calc(100dvh - 48px));
+  max-height: calc(100dvh - 48px);
+  background: var(--zen-window-canvas);
+  color: var(--zen-text-1);
+`
+
+const AnnouncementModalHeader = styled.div`
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 22px 56px 16px 26px;
+  border-bottom: 0.5px solid var(--zen-border);
+`
+
+const AnnouncementMetaRow = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 10px;
+`
+
+const AnnouncementBadge = styled.span`
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 10px;
+  border-radius: var(--zen-radius-pill);
+  background: var(--zen-glass-pill);
+  box-shadow: var(--zen-shadow-active);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--zen-text-2);
+`
+
+const AnnouncementModalTitle = styled.h3`
+  margin: 0;
+  font-size: 19px;
+  font-weight: 600;
+  line-height: 1.35;
+  letter-spacing: -0.02em;
+  color: var(--zen-text-1);
+`
+
+const AnnouncementModalBody = styled.div`
+  flex: 1;
+  min-height: 0;
+  padding: 20px 26px;
+  overflow-y: auto;
+`
+
+const AnnouncementModalFooter = styled.div`
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 14px 26px 18px;
+  border-top: 0.5px solid var(--zen-border);
 `
 
 const ModalTime = styled.div`
-  font-size: 12px;
-  color: var(--color-text-3);
+  font-family: var(--code-font-family);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--zen-text-3);
 `
 
 const ModalText = styled.div`
-  color: var(--color-text-1);
+  font-size: 13.5px;
+  line-height: 1.75;
+  color: var(--zen-text-2);
   user-select: text;
+
+  strong {
+    color: var(--zen-text-1);
+  }
 `
 
 const scrollUrgent = keyframes`
   from {
-    transform: translateX(5.5%);
+    transform: translateX(0%);
   }
   to {
     transform: translateX(-100%);
   }
 `
 
-const UrgentBannerShell = styled.div<{ $isTopNavbar: boolean }>`
+const pulseUrgent = keyframes`
+  0%, 100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--zen-danger) 42%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--zen-danger) 0%, transparent);
+  }
+`
+
+const UrgentBannerShell = styled.div`
   position: fixed;
-  top: 7px;
-  left: ${({ $isTopNavbar }) =>
-    $isTopNavbar ? '50%' : 'calc(var(--sidebar-width) + (100vw - var(--sidebar-width)) / 2)'};
+  top: 8px;
+  left: 50%;
   transform: translateX(-50%);
   z-index: 9998;
-  width: ${({ $isTopNavbar }) =>
-    $isTopNavbar
-      ? 'min(380px, max(220px, calc(100vw - 360px)))'
-      : 'min(460px, max(220px, calc(100vw - var(--sidebar-width) - 260px)))'};
+  width: min(420px, max(150px, calc(100vw - 680px)));
   pointer-events: none;
 
-  @media (max-width: 900px) {
-    width: ${({ $isTopNavbar }) =>
-      $isTopNavbar ? 'min(300px, calc(100vw - 220px))' : 'min(340px, calc(100vw - var(--sidebar-width) - 180px))'};
+  @media (max-width: 960px) {
+    width: min(240px, max(140px, calc(100vw - 600px)));
   }
 `
 
 const UrgentBannerInner = styled.div`
-  height: 26px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--color-background) 72%, transparent);
-  border: 1px solid color-mix(in srgb, #d4380d 18%, transparent);
-  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.08);
-  backdrop-filter: blur(12px);
+  height: 30px;
+  padding: 0 10px 0 6px;
+  border-radius: var(--zen-radius-pill);
+  background:
+    linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--zen-danger) 7%, transparent) 0%,
+      transparent 38%
+    ),
+    var(--zen-glass-pill);
+  backdrop-filter: blur(28px) saturate(165%);
+  -webkit-backdrop-filter: blur(28px) saturate(165%);
+  box-shadow:
+    0 0 0 0.75px color-mix(in srgb, var(--zen-danger) 24%, transparent),
+    var(--zen-shadow-pill);
   overflow: hidden;
   display: flex;
   align-items: center;
+  gap: 8px;
   pointer-events: auto;
-  cursor: default;
+  cursor: pointer;
   -webkit-app-region: no-drag;
+  transition:
+    background 160ms ease,
+    box-shadow 180ms ease,
+    transform 150ms ease;
+
+  &:hover {
+    background:
+      linear-gradient(
+        90deg,
+        color-mix(in srgb, var(--zen-danger) 9%, transparent) 0%,
+        transparent 38%
+      ),
+      var(--zen-glass-pill-hover);
+    box-shadow:
+      0 0 0 0.75px color-mix(in srgb, var(--zen-danger) 32%, transparent),
+      var(--zen-shadow-pill-hover);
+    transform: translateY(-0.5px);
+  }
+`
+
+const UrgentBadge = styled.span`
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 20px;
+  padding: 0 8px 0 7px;
+  border-radius: var(--zen-radius-pill);
+  background: color-mix(in srgb, var(--zen-danger) 12%, transparent);
+  color: var(--zen-danger);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+`
+
+const UrgentDot = styled.span`
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--zen-danger);
+  flex: none;
+  animation: ${pulseUrgent} 2.2s ease-in-out infinite;
+`
+
+const UrgentTrack = styled.div`
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  mask-image: linear-gradient(90deg, transparent, #000 12px, #000 calc(100% - 14px), transparent);
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 12px, #000 calc(100% - 14px), transparent);
 `
 
 const UrgentScroller = styled.div`
@@ -262,8 +423,7 @@ const UrgentScroller = styled.div`
   align-items: center;
   gap: 36px;
   white-space: nowrap;
-  /* Keep the text moving at roughly the original speed while reducing the loop gap to about one second. */
-  animation: ${scrollUrgent} 18.7s linear infinite;
+  animation: ${scrollUrgent} 20s linear infinite;
   padding-left: 100%;
 
   ${UrgentBannerInner}:hover & {
@@ -275,36 +435,76 @@ const UrgentMessage = styled.span`
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  color: #d4380d;
-  font-size: 13px;
+  font-size: 12px;
+  line-height: 1;
 `
 
 const UrgentTitle = styled.span`
-  font-weight: 700;
+  font-weight: 600;
+  color: var(--zen-text-1);
+`
+
+const UrgentBody = styled.span`
+  color: var(--zen-text-2);
 `
 
 const UrgentPopoverContent = styled.div`
-  max-width: 520px;
-  max-height: 260px;
+  max-width: 440px;
+  max-height: 280px;
   overflow: auto;
   display: flex;
   flex-direction: column;
   gap: 12px;
+  padding: 2px;
 `
 
 const UrgentPopoverItem = styled.div`
   display: flex;
   flex-direction: column;
   gap: 6px;
+
+  & + & {
+    padding-top: 10px;
+    border-top: 0.5px solid var(--zen-border);
+  }
+`
+
+const UrgentPopoverHeader = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+`
+
+const UrgentPopoverBadge = styled.span`
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px;
+  border-radius: var(--zen-radius-pill);
+  background: color-mix(in srgb, var(--zen-danger) 12%, transparent);
+  color: var(--zen-danger);
+  font-size: 11px;
+  font-weight: 600;
+`
+
+const UrgentPopoverTime = styled.span`
+  font-family: var(--code-font-family);
+  font-size: 11px;
+  color: var(--zen-text-3);
+  font-variant-numeric: tabular-nums;
 `
 
 const UrgentPopoverTitle = styled.div`
-  font-weight: 700;
-  color: var(--color-text-1);
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--zen-text-1);
 `
 
 const UrgentPopoverText = styled.div`
-  color: var(--color-text-2);
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--zen-text-2);
 `
 
 const UrgentLinkButton = styled(Button)`

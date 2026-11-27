@@ -1,4 +1,9 @@
-import { type ImageCanvasBridge, imageCanvasChannels as channels } from '@shared/config/imageCanvas'
+import {
+  type ImageCanvasAppearance,
+  type ImageCanvasBridge,
+  imageCanvasChannels as channels
+} from '@shared/config/imageCanvas'
+import { type VideoBridge, videoChannels } from '@shared/config/videoGeneration'
 import { contextBridge, ipcRenderer } from 'electron'
 
 // This preload belongs exclusively to the bundled, local canvas. No desktop API,
@@ -11,11 +16,16 @@ const bridge: ImageCanvasBridge = {
   history: () => ipcRenderer.invoke(channels.history),
   historyPage: (cursor, limit) => ipcRenderer.invoke(channels.historyPage, { cursor, limit }),
   asset: (id) => ipcRenderer.invoke(channels.asset, id),
-  recover: (id) => ipcRenderer.invoke(channels.recover, id),
+  recover: (id, assetId) => ipcRenderer.invoke(channels.recover, assetId ? { id, assetId } : id),
   configure: (providerId, modelId, settings) =>
     ipcRenderer.invoke(channels.configure, { providerId, modelId, settings }),
   remove: (id) => ipcRenderer.invoke(channels.remove, id),
   exportAsset: (id, action) => ipcRenderer.invoke(channels.exportAsset, { id, action }),
+  onAppearance: (callback) => {
+    const listener = (_event: Electron.IpcRendererEvent, appearance: ImageCanvasAppearance) => callback(appearance)
+    ipcRenderer.on(channels.appearance, listener)
+    return () => ipcRenderer.removeListener(channels.appearance, listener)
+  },
   flush: (callback) => {
     const listener = async () => {
       await callback()
@@ -26,3 +36,14 @@ const bridge: ImageCanvasBridge = {
   }
 }
 contextBridge.exposeInMainWorld('imageCanvas', bridge)
+
+const video: VideoBridge = {
+  catalog: () => ipcRenderer.invoke(videoChannels.catalog),
+  history: () => ipcRenderer.invoke(videoChannels.history),
+  submit: (input) => ipcRenderer.invoke(videoChannels.submit, input),
+  recover: (id) => ipcRenderer.invoke(videoChannels.recover, id),
+  preview: (id) => ipcRenderer.invoke(videoChannels.preview, id),
+  save: (id) => ipcRenderer.invoke(videoChannels.save, id),
+  remove: (id) => ipcRenderer.invoke(videoChannels.remove, id)
+}
+contextBridge.exposeInMainWorld('videoWorkbench', video)

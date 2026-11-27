@@ -1,10 +1,9 @@
 import { loggerService } from '@logger'
 import { ErrorBoundary } from '@renderer/components/ErrorBoundary'
+import { SidebarBodySlot, useSidebarCreateAction } from '@renderer/context/SidebarSlotProvider'
 import db from '@renderer/databases'
 import { useAssistants, useDefaultModel } from '@renderer/hooks/useAssistant'
-import { useNavbarPosition, useSettings } from '@renderer/hooks/useSettings'
 import { useShortcut } from '@renderer/hooks/useShortcuts'
-import { useShowAssistants, useShowTopics } from '@renderer/hooks/useStore'
 import { autoRenameTopic, clearCachedActiveTopic, useActiveTopic } from '@renderer/hooks/useTopic'
 import i18n from '@renderer/i18n'
 import { getDefaultTopic } from '@renderer/services/AssistantService'
@@ -29,8 +28,6 @@ import {
   sortConversationTopics
 } from '@renderer/utils/conversationDraft'
 import { getNewConversationModel, isSameModel } from '@renderer/utils/conversationModel'
-import { MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH, SECOND_MIN_WINDOW_WIDTH } from '@shared/config/constant'
-import { AnimatePresence, motion } from 'motion/react'
 import type { FC } from 'react'
 import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useDispatch } from 'react-redux'
@@ -39,8 +36,7 @@ import styled from 'styled-components'
 
 import Chat from './Chat'
 import TopicsDrawer from './components/TopicsDrawer'
-import Navbar from './Navbar'
-import HomeTabs from './Tabs'
+import ConversationHistoryList from './Tabs/components/ConversationHistoryList'
 
 let _activeAssistant: Assistant
 const logger = loggerService.withContext('HomePage')
@@ -49,14 +45,10 @@ const HomePage: FC = () => {
   const { assistants } = useAssistants()
   const { defaultModel } = useDefaultModel()
   const navigate = useNavigate()
-  const { isLeftNavbar } = useNavbarPosition()
   const location = useLocation()
   const state = location.state
   const dispatch = useDispatch()
 
-  const { showAssistants, showTopics, topicPosition } = useSettings()
-  const { setShowAssistants, toggleShowAssistants } = useShowAssistants()
-  const { toggleShowTopics } = useShowTopics()
   const topicLoadingQuery = useAppSelector((state) => state.messages.loadingByTopic)
 
   const defaultConversationAssistant = useMemo(
@@ -77,13 +69,6 @@ const HomePage: FC = () => {
   const titleRepairAttemptsRef = useRef(new Set<string>())
   const creatingConversationRef = useRef(false)
   const [entryRestored, setEntryRestored] = useState(false)
-  const [isConversationHistoryCollapsed, setIsConversationHistoryCollapsed] = useState(false)
-
-  const isConversationHistoryVisible = showAssistants && !isConversationHistoryCollapsed
-  const showConversationHistory = useCallback(() => {
-    setShowAssistants(true)
-    setIsConversationHistoryCollapsed(false)
-  }, [setShowAssistants])
 
   _activeAssistant = activeAssistant
 
@@ -467,37 +452,11 @@ const HomePage: FC = () => {
     }
   }, [_setActiveTopic, assistants, defaultConversationAssistant, dispatch, getOrCreateEmptyTopicForAssistant])
 
-  useShortcut('toggle_show_assistants', () => {
-    if (topicPosition === 'right') {
-      toggleShowAssistants()
-      return
-    }
-
-    if (!showAssistants) {
-      setShowAssistants(true)
-      requestAnimationFrame(() => {
-        void EventEmitter.emit(EVENT_NAMES.SHOW_ASSISTANTS)
-      })
-      return
-    }
-
-    void EventEmitter.emit(EVENT_NAMES.SHOW_ASSISTANTS)
+  useSidebarCreateAction(() => {
+    void createConversation()
   })
 
   useShortcut('toggle_show_topics', () => {
-    if (topicPosition === 'right') {
-      toggleShowTopics()
-      return
-    }
-
-    if (!showAssistants) {
-      setShowAssistants(true)
-      requestAnimationFrame(() => {
-        void EventEmitter.emit(EVENT_NAMES.SHOW_TOPIC_SIDEBAR)
-      })
-      return
-    }
-
     void EventEmitter.emit(EVENT_NAMES.SHOW_TOPIC_SIDEBAR)
   })
 
@@ -550,7 +509,7 @@ const HomePage: FC = () => {
   useEffect(() => {
     const unsubscribes = [
       EventEmitter.on(EVENT_NAMES.SHOW_TOPIC_SIDEBAR, () => {
-        if (!isLeftNavbar || !activeAssistant || !activeTopic) return
+        if (!activeAssistant || !activeTopic) return
         void TopicsDrawer.show({
           activeAssistant,
           setActiveAssistant,
@@ -559,7 +518,7 @@ const HomePage: FC = () => {
         })
       }),
       EventEmitter.on(EVENT_NAMES.SWITCH_TOPIC_SIDEBAR, () => {
-        if (!isLeftNavbar || !activeAssistant || !activeTopic) return
+        if (!activeAssistant || !activeTopic) return
         void TopicsDrawer.show({
           activeAssistant,
           setActiveAssistant,
@@ -570,7 +529,7 @@ const HomePage: FC = () => {
     ]
 
     return () => unsubscribes.forEach((unsubscribe) => unsubscribe())
-  }, [activeAssistant, activeTopic, isLeftNavbar, setActiveAssistant, setActiveTopic])
+  }, [activeAssistant, activeTopic, setActiveAssistant, setActiveTopic])
 
   useEffect(() => {
     state?.assistant && setActiveAssistant(state.assistant)
@@ -578,59 +537,22 @@ const HomePage: FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state])
 
-  useEffect(() => {
-    const canMinimize =
-      topicPosition == 'left' ? !isConversationHistoryVisible : !isConversationHistoryVisible && !showTopics
-    void window.api.window.setMinimumSize(canMinimize ? SECOND_MIN_WINDOW_WIDTH : MIN_WINDOW_WIDTH, MIN_WINDOW_HEIGHT)
-
-    return () => {
-      void window.api.window.resetMinimumSize()
-    }
-  }, [isConversationHistoryVisible, showTopics, topicPosition])
-
   return (
     <Container id="home-page">
-      {isLeftNavbar && activeAssistant && activeTopic && (
-        <Navbar
-          activeAssistant={activeAssistant}
-          activeTopic={activeTopic}
-          setActiveTopic={setActiveTopic}
-          setActiveAssistant={setActiveAssistant}
-          position="left"
-        />
+      {activeAssistant && activeTopic && (
+        <SidebarBodySlot>
+          <ErrorBoundary>
+            <div className="flex min-h-0 flex-1 flex-col">
+              <ConversationHistoryList
+                activeTopic={activeTopic}
+                setActiveTopic={setActiveTopic}
+                onCreateConversation={() => void createConversation()}
+              />
+            </div>
+          </ErrorBoundary>
+        </SidebarBodySlot>
       )}
-      <ContentContainer id={isLeftNavbar ? 'content-container' : undefined}>
-        <AnimatePresence initial={false}>
-          {isConversationHistoryVisible && activeAssistant && activeTopic && (
-            <ErrorBoundary>
-              <motion.div
-                initial={{ width: 0, opacity: 0 }}
-                animate={{ width: 'var(--conversation-history-width)', opacity: 1 }}
-                exit={{ width: 0, opacity: 0 }}
-                transition={{ duration: 0.3, ease: 'easeInOut' }}
-                style={{ overflow: 'hidden' }}>
-                <HomeTabs
-                  activeAssistant={activeAssistant}
-                  activeTopic={activeTopic}
-                  setActiveAssistant={setActiveAssistant}
-                  setActiveTopic={setActiveTopic}
-                  onCreateConversation={() => void createConversation()}
-                  onCollapseConversationHistory={() => setIsConversationHistoryCollapsed(true)}
-                  position="left"
-                  mode="conversations-only"
-                  onOpenTopics={() =>
-                    void TopicsDrawer.show({
-                      activeAssistant,
-                      setActiveAssistant,
-                      activeTopic,
-                      setActiveTopic
-                    })
-                  }
-                />
-              </motion.div>
-            </ErrorBoundary>
-          )}
-        </AnimatePresence>
+      <ContentContainer id="content-container">
         <ErrorBoundary>
           {activeAssistant && activeTopic && (
             <Chat
@@ -640,8 +562,6 @@ const HomePage: FC = () => {
               setActiveTopic={setActiveTopic}
               setActiveAssistant={bindAssistantToActiveTopic}
               onCreateConversation={createConversation}
-              isConversationHistoryVisible={isConversationHistoryVisible}
-              onShowConversationHistory={showConversationHistory}
             />
           )}
         </ErrorBoundary>
@@ -653,25 +573,22 @@ const HomePage: FC = () => {
 const Container = styled.div`
   display: flex;
   flex: 1;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
   flex-direction: column;
-  [navbar-position='left'] & {
-    max-width: calc(100vw - var(--sidebar-width));
-  }
-  [navbar-position='top'] & {
-    max-width: 100vw;
-  }
 `
 
 const ContentContainer = styled.div`
   display: flex;
   flex: 1;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
   flex-direction: row;
   overflow: hidden;
-  background: #ffffff;
-
-  [navbar-position='top'] & {
-    max-width: calc(100vw - 12px);
-  }
+  background: transparent;
 `
 
 export default HomePage

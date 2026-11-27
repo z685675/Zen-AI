@@ -1390,6 +1390,13 @@ class FileStorage {
     return { data: base64, mime }
   }
 
+  public async readLegacyPaintingImage(id: string, maxBytes: number): Promise<Buffer> {
+    const file = this.getStoredFilePath(id)
+    const stat = await fs.promises.lstat(file)
+    if (!stat.isFile() || stat.size > maxBytes) throw new Error('invalid_legacy_image')
+    return fs.promises.readFile(file)
+  }
+
   public pdfPageCount = async (_: Electron.IpcMainInvokeEvent, id: string): Promise<number> => {
     const filePath = this.getStoredFilePath(id)
     const buffer = await fs.promises.readFile(filePath)

@@ -301,6 +301,7 @@ export function getAgentSessionInbox() {
       const images: Array<{ data: string; media_type: string }> = []
       for (const [index, file] of entry.files.entries()) {
         if (!entry.workspace) throw new Error('Missing attachment workspace')
+        // oxlint-disable-next-line no-control-regex -- Sanitize control characters for Windows filenames.
         const name = `${index + 1}-${file.origin_name.replace(/[\\/:*?"<>|\x00-\x1f]/g, '_')}`
         paths.push(
           await window.api.file.copyToAgentAttachment(

@@ -1,6 +1,7 @@
 import { managedModelFetch } from '@renderer/aiCore/provider/modelTransport'
 import type { Provider } from '@renderer/types'
 import { isZenManagedApiHost } from '@shared/config/zenProvider'
+import { discardResponseBody } from '@shared/modelTransport'
 import * as z from 'zod'
 
 const counter = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER)
@@ -129,7 +130,10 @@ export async function fetchUsageStatistics(
 ): Promise<UsageStatistics> {
   if (!source.supported || !source.apiKey) throw new UsageStatisticsError('unsupported')
   const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), 15000)
+  const timeout = setTimeout(
+    () => controller.abort(new DOMException('Usage statistics request timed out', 'TimeoutError')),
+    15_000
+  )
   try {
     const response = await baseFetch(buildUsageStatisticsUrl(source.apiHost, query), {
       method: 'GET',
@@ -140,6 +144,7 @@ export async function fetchUsageStatistics(
       cache: 'no-store'
     })
     if (!response.ok) {
+      discardResponseBody(response)
       if (response.status === 404 || response.status === 405) throw new UsageStatisticsError('unsupported')
       if (response.status === 401 || response.status === 403) throw new UsageStatisticsError('unauthorized')
       if (response.status === 422) throw new UsageStatisticsError('range_too_large')
@@ -208,8 +213,11 @@ export async function fetchModelDailyQuota(
     redirect: 'error',
     cache: 'no-store'
   })
-  if ([404, 405].includes(response.status)) return undefined
-  if (!response.ok) throw new UsageStatisticsError('unavailable')
+  if (!response.ok) {
+    discardResponseBody(response)
+    if ([404, 405].includes(response.status)) return undefined
+    throw new UsageStatisticsError('unavailable')
+  }
   return z.object({ success: z.literal(true), data: modelDailyQuotaSchema }).parse(await readResponse(response)).data
 }
 
@@ -259,10 +267,13 @@ export async function fetchModelPerformance(
       redirect: 'error',
       cache: 'no-store'
     })
-    if (response.status === 404 || response.status === 405) throw new UsageStatisticsError('unsupported')
-    if (response.status === 401 || response.status === 403) throw new UsageStatisticsError('unauthorized')
-    if (!response.ok) throw new UsageStatisticsError('unavailable')
-    if (response.headers.get('content-type')?.includes('text/html')) throw new UsageStatisticsError('unsupported')
+    if (!response.ok || response.headers.get('content-type')?.includes('text/html')) {
+      discardResponseBody(response)
+      if (response.status === 401 || response.status === 403) throw new UsageStatisticsError('unauthorized')
+      if (response.ok || response.status === 404 || response.status === 405)
+        throw new UsageStatisticsError('unsupported')
+      throw new UsageStatisticsError('unavailable')
+    }
     const result = z
       .object({ success: z.literal(true), data: performanceSnapshot })
       .safeParse(await readResponse(response))

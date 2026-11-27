@@ -90,7 +90,10 @@ vi.mock('@renderer/store', () => ({ useAppDispatch: () => mocks.noop }))
 vi.mock('@renderer/store/runtime', () => ({ setSearching: mocks.noop }))
 vi.mock('@renderer/utils', () => ({ classNames: (...names: unknown[]) => names.filter(Boolean).join(' ') }))
 vi.mock('@renderer/utils/formats', () => ({ formatQuotedText: (text: string) => text }))
-vi.mock('@renderer/utils/input', () => ({ isSendMessageKeyPressed: () => false }))
+vi.mock('@renderer/utils/input', () => ({
+  isSendMessageKeyPressed: () => false,
+  getSendMessageShortcutLabel: () => 'Enter'
+}))
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: mocks.t }) }))
 vi.mock('../../hooks/usePasteHandler', () => ({ usePasteHandler: () => ({ handlePaste: mocks.noop }) }))
 vi.mock('../../hooks/useFileDragDrop', () => ({ useFileDragDrop: () => ({ isDragging: false }) }))

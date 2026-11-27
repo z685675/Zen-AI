@@ -1,20 +1,19 @@
 /* xl, xxl, default style */
 :root {
-  --navbar-height: 44px;
-  --sidebar-width: 50px;
+  --navbar-height: 46px;
+  --sidebar-width: 264px;
   --status-bar-height: 40px;
   --input-bar-height: 100px;
 
-  --assistants-width: 248px;
-  --conversation-history-width: 186px;
-  --topic-list-width: 275px;
-  --settings-width: 250px;
+  --assistants-width: 264px;
+  --conversation-history-width: 264px;
+  --topic-list-width: 264px;
+  --settings-width: 236px;
 }
 
 [navbar-position='left'] {
-  --navbar-height: 42px;
-  --sidebar-width: 112px;
-  --list-item-border-radius: 20px;
+  --navbar-height: 46px;
+  --sidebar-width: 264px;
 }
 
 /* lg */

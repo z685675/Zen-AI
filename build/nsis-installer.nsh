@@ -165,11 +165,15 @@ FunctionEnd
   ; per-machine installation, causing "cannot close app" errors during both
   ; silent updates and manual reinstalls.
   ReadRegStr $R0 HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${UNINSTALL_APP_KEY}" "QuietUninstallString"
+  ; The transaction temporarily removes uninstall commands but keeps this key.
+  ReadRegStr $R3 HKLM "${INSTALL_REGISTRY_KEY}" "InstallLocation"
   ${If} $R0 != ""
-    UserInfo::GetAccountType
+  ${OrIf} $R3 != ""
+    System::Call 'shell32::IsUserAnAdmin() i.s'
     Pop $R1
-    ${If} $R1 != "admin"
+    ${If} $R1 == 0
       ${GetParameters} $R2
+      ClearErrors
       ExecShell "runas" "$EXEPATH" "$R2"
       ${If} ${Errors}
         SetErrorLevel 1

@@ -66,39 +66,67 @@ const SelectModelButton: FC<Props> = ({ assistant, topic, onTopicChange, persist
   return (
     <DropdownButton size="small" type="text" onClick={onSelectModel}>
       <ButtonContent>
-        <ModelAvatar model={model} size={20} />
-        <ModelName>
-          {model ? model.name : t('button.select_model')} {providerName ? ' | ' + providerName : ''}
+        <ModelAvatar model={model} size={16} />
+        <ModelName title={model ? `${model.name}${providerName ? ` | ${providerName}` : ''}` : undefined}>
+          {model ? model.name : t('button.select_model')}
+          {providerName && <ProviderSuffix> · {providerName}</ProviderSuffix>}
         </ModelName>
       </ButtonContent>
-      <ChevronsUpDown size={14} color="var(--color-icon)" />
+      <ChevronsUpDown size={13} color="var(--zen-text-3)" />
       {model && !provider && <Tag color="error">{t('models.invalid_model')}</Tag>}
     </DropdownButton>
   )
 }
 
 const DropdownButton = styled(Button)`
-  height: 38px;
-  font-size: 11px;
-  border-radius: 999px;
-  padding: 0 14px;
-  -webkit-app-region: none;
-  box-shadow: 0 8px 20px rgba(149, 157, 165, 0.1);
-  background: rgba(255, 255, 255, 0.94);
-  border: none;
+  && {
+    height: 35px;
+    font-size: 12.5px;
+    border-radius: var(--zen-radius-pill);
+    padding: 0 14px 0 11px;
+    -webkit-app-region: no-drag;
+    background: var(--zen-glass-pill);
+    backdrop-filter: blur(28px) saturate(165%);
+    -webkit-backdrop-filter: blur(28px) saturate(165%);
+    border: 0;
+    box-shadow: var(--zen-shadow-pill);
+    transition:
+      background 160ms ease,
+      box-shadow 180ms ease,
+      transform 150ms cubic-bezier(0.22, 1, 0.36, 1);
+
+    &:hover {
+      background: var(--zen-glass-pill-hover) !important;
+      box-shadow: var(--zen-shadow-pill-hover) !important;
+      transform: translateY(-0.5px);
+    }
+
+    &:active {
+      transform: scale(0.985);
+    }
+  }
 `
 
 const ButtonContent = styled.div`
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 7px;
+  min-width: 0;
 `
 
 const ModelName = styled.span`
   font-weight: 500;
-  margin-right: -2px;
-  font-size: 12px;
-  color: #1f2329;
+  font-size: 12.5px;
+  color: var(--zen-text-1);
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+`
+
+const ProviderSuffix = styled.span`
+  color: var(--zen-text-3);
+  font-weight: 400;
 `
 
 export default SelectModelButton

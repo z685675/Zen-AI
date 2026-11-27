@@ -10,6 +10,7 @@ export type ModelCapacityCatalog = {
 export const MODEL_CAPACITY_SOURCE_ENDPOINT = 'https://models.dev/models.json'
 export const MODEL_CAPACITY_ENDPOINT = 'https://zenai.925636.xyz/api/client/model-capacity-catalog'
 export const MODEL_CAPACITY_IPC = 'model-capacity:get'
+// oxlint-disable-next-line no-control-regex -- Control characters are invalid in model identifiers.
 const CANONICAL_ID = /^[a-z0-9][a-z0-9._-]*\/[^\s\u0000-\u001f]+$/i
 
 export function normalizeTokenLimit(value: unknown): number | undefined {

@@ -111,7 +111,16 @@ let failureMessage = 'upstream unavailable'
 let transportError: Record<string, unknown> | undefined
 let recoverTransport = false
 let loopFinished = false
-let collaboration: 'child' | 'question' | 'question-race' | 'cancel' | 'recovery' | 'background' | undefined
+let collaboration:
+  | 'child'
+  | 'question'
+  | 'question-race'
+  | 'question-live'
+  | 'cancel'
+  | 'recovery'
+  | 'background'
+  | 'queued'
+  | undefined
 let backgroundSettled = false
 let backgroundAnswer = ''
 const backgroundPart = {
@@ -152,7 +161,7 @@ const nativeInfo = () => ({
   tokens: { input: 10, output: 5, reasoning: 0, cache: { read: 50, write: 0 } }
 })
 const request = vi.fn(async (route: string, _method?: string, data?: unknown) => {
-  if (route === '/question/clarify/reply' && collaboration === 'question-race') {
+  if (route === '/question/clarify/reply' && (collaboration === 'question-race' || collaboration === 'question-live')) {
     await new Promise<void>((resolve) => setImmediate(resolve))
     return
   }
@@ -363,7 +372,32 @@ async function* events(signal: AbortSignal) {
     yield { type: 'session.status', properties: { sessionID: 'native', status: { type: 'idle' } } }
     return
   }
-  if (collaboration) {
+  if (collaboration === 'queued') {
+    const calls = ['child-first', 'child-second', 'child-queued']
+    const input = { description: 'Check source', subagent_type: 'general' }
+    for (const callID of calls)
+      yield {
+        type: 'permission.asked',
+        properties: { id: callID, sessionID: 'native', permission: 'task', metadata: input, tool: { callID } }
+      }
+    yield { type: 'session.status', properties: { sessionID: 'native', status: { type: 'idle' } } }
+    expect(request.mock.calls.some(([route]) => route === '/permission/child-queued/reply')).toBe(false)
+    for (const callID of calls)
+      yield {
+        type: 'message.part.updated',
+        properties: {
+          part: {
+            id: callID,
+            callID,
+            messageID: 'assistant-new',
+            sessionID: 'native',
+            type: 'tool',
+            tool: 'task',
+            state: { status: 'completed', input, output: 'Child findings returned' }
+          }
+        }
+      }
+  } else if (collaboration) {
     yield { type: 'message.updated', properties: { info: nativeInfo() } }
     yield {
       type: 'permission.asked',
@@ -407,7 +441,7 @@ async function* events(signal: AbortSignal) {
       type: 'permission.asked',
       properties: { id: 'foreign', sessionID: 'stranger', permission: 'edit', metadata: {} }
     }
-    if (collaboration === 'question' || collaboration === 'question-race' || collaboration === 'cancel') {
+    if (collaboration.startsWith('question') || collaboration === 'cancel') {
       yield {
         type: 'question.asked',
         properties: {
@@ -433,7 +467,8 @@ async function* events(signal: AbortSignal) {
         }
       }
     }
-    if (collaboration !== 'question-race') await new Promise<void>((resolve) => setImmediate(resolve))
+    if (collaboration !== 'question-race' && collaboration !== 'question-live')
+      await new Promise<void>((resolve) => setImmediate(resolve))
     yield {
       type: 'message.part.updated',
       properties: {
@@ -690,6 +725,8 @@ async function* events(signal: AbortSignal) {
       }
     }
   yield { type: 'session.status', properties: { sessionID: 'native', status: { type: 'idle' } } }
+  if (collaboration === 'question-live' && !signal.aborted)
+    await new Promise<void>((resolve) => signal.addEventListener('abort', () => resolve(), { once: true }))
 }
 const runtime = {
   session: vi.fn(async () => 'native'),
@@ -764,6 +801,18 @@ describe('OpenCode adapter turn lifecycle', () => {
       expect(progress.at(-1)).toMatchObject({ background: true, status: 'completed' })
     }
   )
+  it('keeps consuming child completion events when parent idle arrives with a queued admission', async () => {
+    collaboration = 'queued'
+    const result = await run()
+    expect(result.at(-1)?.type).toBe('complete')
+    expect(eventConnections).toBe(1)
+    expect(request).toHaveBeenCalledWith(
+      '/permission/child-queued/reply',
+      'POST',
+      { reply: 'once' },
+      expect.any(AbortSignal)
+    )
+  })
   it('retains background progress and reports a missing final answer after the child completes', async () => {
     collaboration = 'background'
     backgroundAnswer = ''
@@ -812,7 +861,7 @@ describe('OpenCode adapter turn lifecycle', () => {
       result.some((event: any) => event.chunk?.rawValue?.tasks?.some((task: any) => task.status === 'completed'))
     ).toBe(true)
   })
-  it.each(['question', 'question-race'] as const)(
+  it.each(['question', 'question-race', 'question-live'] as const)(
     'answers a child clarification and reconciles completion without hanging (%s)',
     async (value) => {
       collaboration = value

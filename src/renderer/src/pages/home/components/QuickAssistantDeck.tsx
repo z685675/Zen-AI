@@ -13,6 +13,7 @@ import { Dropdown, Modal } from 'antd'
 import { ChevronLeft, ChevronRight, Pencil, Plus, Settings2, Trash2, X } from 'lucide-react'
 import type { FC } from 'react'
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import styled from 'styled-components'
 import { v4 as uuid } from 'uuid'
 
@@ -35,6 +36,7 @@ const DEFAULT_QUICK_ASSISTANT_KEYWORDS = [
 ]
 
 const QuickAssistantDeck: FC<Props> = ({ assistants, activeAssistant, onSelectAssistant }) => {
+  const { t } = useTranslation()
   const dispatch = useAppDispatch()
   const systemPresets = useSystemAssistantPresets()
   const quickAssistantIds = useAppSelector((state) => state.assistants.quickAssistantIds ?? [])
@@ -216,106 +218,115 @@ const QuickAssistantDeck: FC<Props> = ({ assistants, activeAssistant, onSelectAs
     return items
   }
 
+  const isCustomRoleActive = activeAssistant.id !== defaultAssistant?.id
+
   return (
     <Container>
-      <DeckHeader>
-        <SectionTitle>常用角色</SectionTitle>
-        <DeckActions>
+      <DeckLayout>
+        <DeckScroller>
+          {currentRoles.length > 0 ? (
+            <ChipRow>
+              <Sortable<Assistant>
+                items={currentRoles}
+                itemKey="id"
+                isDragDisabled={(assistant) => assistant.id === defaultAssistant?.id}
+                layout="grid"
+                gap={8}
+                onSortEnd={({ oldIndex, newIndex }) => updateOrderWithinPage(oldIndex, newIndex)}
+                listStyle={{
+                  display: 'flex',
+                  flexWrap: 'wrap',
+                  justifyContent: 'flex-start',
+                  alignItems: 'center',
+                  overflow: 'visible',
+                  paddingTop: 6,
+                  paddingBottom: 6,
+                  gap: '8px 8px'
+                }}
+                itemStyle={{ width: 'fit-content' }}
+                useDragOverlay
+                showGhost
+                renderItem={(assistant: Assistant) => (
+                  <Dropdown key={assistant.id} menu={{ items: buildRoleMenu(assistant) }} trigger={['contextMenu']}>
+                    <RoleCard
+                      type="button"
+                      className={assistant.id === activeAssistant.id ? 'active' : undefined}
+                      onClick={() => onSelectAssistant(assistant)}>
+                      <RoleCardMain>
+                        <AssistantAvatar assistant={assistant} size={18} />
+                        <RoleName title={assistant.name}>{assistant.name}</RoleName>
+                      </RoleCardMain>
+                      {assistant.id !== defaultAssistant?.id && (
+                        <RoleCardTools className="role-card-tools">
+                          <RemoveButton
+                            type="button"
+                            data-no-dnd
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              if (deletingAssistantId === assistant.id) {
+                                dispatch(removeQuickAssistantId(assistant.id))
+                                setDeletingAssistantId(null)
+                                return
+                              }
+
+                              setDeletingAssistantId(assistant.id)
+                            }}>
+                            {deletingAssistantId === assistant.id ? <Trash2 size={12} /> : <X size={12} />}
+                          </RemoveButton>
+                        </RoleCardTools>
+                      )}
+                    </RoleCard>
+                  </Dropdown>
+                )}
+              />
+            </ChipRow>
+          ) : (
+            <EmptyDeck>
+              <span>{t('chat.quick_roles.empty')}</span>
+            </EmptyDeck>
+          )}
+        </DeckScroller>
+
+        <FixedActions>
           {visibleRoles.length > PAGE_SIZE && (
-            <>
+            <DeckPager>
               <PageButton type="button" onClick={() => setPage((value) => Math.max(0, value - 1))}>
-                <ChevronLeft size={14} />
+                <ChevronLeft size={13} />
               </PageButton>
               <PageInfo>
                 {currentPage + 1}/{pageCount}
               </PageInfo>
               <PageButton type="button" onClick={() => setPage((value) => Math.min(pageCount - 1, value + 1))}>
-                <ChevronRight size={14} />
+                <ChevronRight size={13} />
               </PageButton>
-            </>
+            </DeckPager>
           )}
-          <AddRoleButton type="button" onClick={() => setLibraryOpen(true)}>
-            <Plus size={14} />
-            <span>添加角色</span>
+          <AddRoleButton
+            type="button"
+            onClick={() => setLibraryOpen(true)}
+            title={t('chat.quick_roles.add_to_favorites')}>
+            <Plus size={13} />
+            <span>{t('chat.quick_roles.add')}</span>
           </AddRoleButton>
-        </DeckActions>
-      </DeckHeader>
+        </FixedActions>
+      </DeckLayout>
 
-      <DeckScroller>
-        {currentRoles.length > 0 ? (
-          <Sortable<Assistant>
-            items={currentRoles}
-            itemKey="id"
-            isDragDisabled={(assistant) => assistant.id === defaultAssistant?.id}
-            layout="grid"
-            gap={10}
-            onSortEnd={({ oldIndex, newIndex }) => updateOrderWithinPage(oldIndex, newIndex)}
-            listStyle={{
-              display: 'flex',
-              flexWrap: 'wrap',
-              alignItems: 'flex-start',
-              alignContent: 'flex-start',
-              width: '100%',
-              overflow: 'visible',
-              paddingTop: 12,
-              paddingRight: 12,
-              gap: '8px 10px'
-            }}
-            itemStyle={{ width: 'fit-content' }}
-            useDragOverlay
-            showGhost
-            renderItem={(assistant: Assistant) => (
-              <Dropdown key={assistant.id} menu={{ items: buildRoleMenu(assistant) }} trigger={['contextMenu']}>
-                <RoleCard
-                  type="button"
-                  className={assistant.id === activeAssistant.id ? 'active' : undefined}
-                  onClick={() => onSelectAssistant(assistant)}>
-                  <RoleCardMain>
-                    <AssistantAvatar assistant={assistant} size={22} />
-                    <RoleName title={assistant.name}>{assistant.name}</RoleName>
-                  </RoleCardMain>
-                  {assistant.id !== defaultAssistant?.id && (
-                    <RoleCardTools className="role-card-tools">
-                      <RemoveButton
-                        type="button"
-                        data-no-dnd
-                        onClick={(event) => {
-                          event.stopPropagation()
-                          if (deletingAssistantId === assistant.id) {
-                            dispatch(removeQuickAssistantId(assistant.id))
-                            setDeletingAssistantId(null)
-                            return
-                          }
-
-                          setDeletingAssistantId(assistant.id)
-                        }}>
-                        {deletingAssistantId === assistant.id ? <Trash2 size={12} /> : <X size={12} />}
-                      </RemoveButton>
-                    </RoleCardTools>
-                  )}
-                </RoleCard>
-              </Dropdown>
+      {isCustomRoleActive && (
+        <SummaryCard>
+          <SummaryHeader>
+            <SummaryTitle>
+              <AssistantAvatar assistant={activeAssistant} size={18} />
+              <span>{activeAssistant.name}</span>
+            </SummaryTitle>
+            {shouldShowExpand && (
+              <SummaryExpandButton type="button" onClick={() => setDetailOpen(true)}>
+                {t('chat.quick_roles.expand_settings')}
+              </SummaryExpandButton>
             )}
-          />
-        ) : (
-          <EmptyDeck>还没有添加角色卡片，先从右上角的角色库里选一个吧。</EmptyDeck>
-        )}
-      </DeckScroller>
-
-      <SummaryCard>
-        <SummaryHeader>
-          <SummaryTitle>
-            <AssistantAvatar assistant={activeAssistant} size={20} />
-            <span>{activeAssistant.name}</span>
-          </SummaryTitle>
-          {shouldShowExpand && (
-            <SummaryExpandButton type="button" onClick={() => setDetailOpen(true)}>
-              展开设定
-            </SummaryExpandButton>
-          )}
-        </SummaryHeader>
-        <SummaryText>{inlineSummary}</SummaryText>
-      </SummaryCard>
+          </SummaryHeader>
+          <SummaryText>{inlineSummary}</SummaryText>
+        </SummaryCard>
+      )}
 
       <Modal
         title={`${activeAssistant.name} 角色设定`}
@@ -338,28 +349,40 @@ const QuickAssistantDeck: FC<Props> = ({ assistants, activeAssistant, onSelectAs
 
 const Container = styled.div`
   width: 100%;
-  margin-top: 12px;
+  margin-top: 6px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-`
-
-const DeckHeader = styled.div`
-  display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 12px;
 `
 
-const SectionTitle = styled.div`
-  font-size: 11px;
-  font-weight: 500;
-  color: #8f959e;
-  letter-spacing: 0.04em;
+const DeckLayout = styled.div`
+  width: 100%;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
 `
 
-const DeckActions = styled.div`
+const FixedActions = styled.div`
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding-top: 6px;
+`
+
+const ChipRow = styled.div`
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  width: 100%;
+`
+
+const DeckPager = styled.div`
+  display: inline-flex;
   align-items: center;
   gap: 6px;
 `
@@ -368,25 +391,36 @@ const AddRoleButton = styled.button`
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  height: 36px;
-  border: none;
-  background: #f2f3f5;
-  color: #6b7280;
-  border-radius: 999px;
+  height: 33px;
+  border: 0;
+  background: var(--zen-glass-pill);
+  backdrop-filter: blur(24px) saturate(160%);
+  box-shadow: var(--zen-shadow-pill);
+  color: var(--zen-text-1);
+  border-radius: var(--zen-radius-pill);
   padding: 0 13px;
   cursor: pointer;
-  font-size: 11px;
-  font-weight: 400;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  transition:
+    background 160ms ease,
+    color 150ms ease,
+    box-shadow 180ms ease,
+    transform 150ms ease;
 
   &:hover {
-    color: #1f2329;
-    background: #eaedf1;
+    color: var(--zen-text-1);
+    background: var(--zen-glass-pill-hover);
+    box-shadow: var(--zen-shadow-pill-hover);
+    transform: translateY(-0.5px);
   }
 `
 
 const DeckScroller = styled.div`
-  min-height: 150px;
-  max-height: 150px;
+  flex: 1;
+  min-width: 0;
+  max-height: 112px;
   overflow-y: auto;
   overflow-x: hidden;
   overscroll-behavior: contain;
@@ -398,7 +432,7 @@ const DeckScroller = styled.div`
 
   &::-webkit-scrollbar-thumb {
     border-radius: 999px;
-    background: rgba(148, 163, 184, 0.45);
+    background: var(--color-scrollbar-thumb);
   }
 
   &::-webkit-scrollbar-track {
@@ -410,25 +444,39 @@ const RoleCard = styled.button`
   position: relative;
   width: fit-content;
   min-width: 0;
-  max-width: 174px;
-  height: 34px;
+  max-width: 176px;
+  height: 33px;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 5px;
-  border: none;
-  background: #f2f3f5;
-  color: #3c4652;
-  border-radius: 999px;
-  padding: 0 14px;
+  gap: 6px;
+  border: 0;
+  background: var(--zen-glass-pill);
+  backdrop-filter: blur(24px) saturate(160%);
+  box-shadow: var(--zen-shadow-pill);
+  color: var(--zen-text-2);
+  border-radius: var(--zen-radius-pill);
+  padding: 0 13px 0 9px;
   cursor: grab;
-  transition: all 0.18s ease;
+  transition:
+    background 160ms ease,
+    color 150ms ease,
+    box-shadow 180ms ease,
+    transform 150ms ease;
   overflow: visible;
 
-  &:hover,
+  &:hover {
+    background: var(--zen-glass-pill-hover);
+    box-shadow: var(--zen-shadow-pill-hover);
+    color: var(--zen-text-1);
+    transform: translateY(-0.5px);
+  }
+
   &.active {
-    background: #e8edf4;
-    color: #1f2329;
+    background: var(--zen-glass-active);
+    box-shadow: var(--zen-shadow-pill-hover);
+    color: var(--zen-text-1);
+    font-weight: 500;
   }
 
   &:hover .role-card-tools,
@@ -450,15 +498,15 @@ const RoleCardMain = styled.div`
 
 const RoleCardTools = styled.div`
   position: absolute;
-  right: -8px;
-  top: -9px;
+  right: -6px;
+  top: -7px;
   display: flex;
   align-items: center;
   gap: 0;
-  color: #9ca3af;
+  color: var(--zen-text-2);
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.18s ease;
+  transition: opacity 120ms ease;
 `
 
 const RoleName = styled.span`
@@ -466,48 +514,39 @@ const RoleName = styled.span`
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 13px;
+  font-size: 12.5px;
   font-weight: 400;
   text-align: center;
 `
 
 const RemoveButton = styled.button`
-  border: none;
-  background: #ffffff;
+  border: 1px solid var(--zen-border);
+  background: var(--zen-bg-elevated);
   color: inherit;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
   padding: 0;
-  border-radius: 999px;
-  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.12);
+  border-radius: 50%;
 
   &:hover {
-    background: #f8fafc;
+    background: var(--zen-bg-hover);
+    color: var(--zen-text-1);
   }
 `
 
 const SummaryCard = styled.div`
   position: relative;
-  border: 1px solid rgba(45, 202, 123, 0.15);
-  background: rgba(57, 181, 74, 0.045);
-  border-radius: 22px;
-  padding: 12px 14px 12px 18px;
-  box-shadow: 0 6px 14px rgba(15, 23, 42, 0.015);
-
-  &::before {
-    content: '';
-    position: absolute;
-    left: 0;
-    top: 12px;
-    bottom: 12px;
-    width: 3px;
-    border-radius: 999px;
-    background: rgba(57, 181, 74, 0.55);
-  }
+  margin-top: 4px;
+  border: 0;
+  background: var(--zen-glass-card);
+  backdrop-filter: blur(24px) saturate(160%);
+  box-shadow: var(--zen-shadow-card);
+  border-radius: var(--zen-radius-md);
+  padding: 14px 16px;
 `
 
 const SummaryHeader = styled.div`
@@ -521,59 +560,64 @@ const SummaryTitle = styled.div`
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  font-size: 11px;
+  font-size: 12.5px;
   font-weight: 500;
-  color: #1f2329;
+  color: var(--zen-text-1);
 `
 
 const SummaryText = styled.div`
   margin-top: 8px;
-  font-size: 11px;
+  font-size: 12.5px;
   line-height: 1.65;
-  color: #5f6975;
+  color: var(--zen-text-2);
 `
 
 const SummaryExpandButton = styled.button`
   border: none;
   background: transparent;
-  color: #5f6975;
+  color: var(--zen-text-2);
   cursor: pointer;
-  font-size: 11px;
+  font-size: 11.5px;
 
   &:hover {
-    color: #1f2329;
+    color: var(--zen-text-1);
   }
 `
 
 const PageButton = styled.button`
-  width: 26px;
-  height: 26px;
-  border-radius: 999px;
-  border: none;
-  background: #f2f3f5;
-  color: #6b7280;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--zen-radius-sm);
+  border: 1px solid var(--zen-border);
+  background: var(--zen-bg-elevated);
+  color: var(--zen-text-2);
   cursor: pointer;
   display: inline-flex;
   align-items: center;
   justify-content: center;
 
   &:hover {
-    background: #eaedf1;
-    color: #1f2329;
+    background: var(--zen-bg-hover);
+    border-color: var(--zen-border-strong);
+    color: var(--zen-text-1);
   }
 `
 
 const PageInfo = styled.div`
   font-size: 11px;
-  color: var(--color-text-3);
+  font-family: var(--code-font-family);
+  font-variant-numeric: tabular-nums;
+  color: var(--zen-text-3);
 `
 
 const EmptyDeck = styled.div`
-  border: 1px dashed var(--color-border);
-  border-radius: 18px;
-  padding: 18px 16px;
-  font-size: 13px;
-  color: var(--color-text-3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 8px;
+  font-size: 12.5px;
+  color: var(--zen-text-3);
   text-align: center;
 `
 

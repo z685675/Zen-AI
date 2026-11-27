@@ -110,6 +110,8 @@ vi.mock('electron', () => {
   }
 
   const privateBrowserSession = {
+    webRequest: { onBeforeRequest: vi.fn() },
+    resolveHost: vi.fn(),
     setProxy: vi.fn(async () => {}),
     clearStorageData: vi.fn(async () => {}),
     clearCache: vi.fn(async () => {})

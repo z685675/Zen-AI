@@ -5,6 +5,7 @@ import {
   consumeLocallyVerifiedEmptyConversation,
   getChatTopicDraftCacheKey,
   hasUnsentConversationDraft,
+  isLocallyVerifiedEmptyConversation,
   markLocallyVerifiedEmptyConversation,
   shouldDiscardEmptyConversation,
   sortConversationTopics
@@ -25,7 +26,9 @@ describe('conversation draft lifecycle', () => {
   it('consumes locally verified empty conversations only once', () => {
     markLocallyVerifiedEmptyConversation('topic-empty')
 
+    expect(isLocallyVerifiedEmptyConversation('topic-empty')).toBe(true)
     expect(consumeLocallyVerifiedEmptyConversation('topic-empty')).toBe(true)
+    expect(isLocallyVerifiedEmptyConversation('topic-empty')).toBe(false)
     expect(consumeLocallyVerifiedEmptyConversation('topic-empty')).toBe(false)
   })
 

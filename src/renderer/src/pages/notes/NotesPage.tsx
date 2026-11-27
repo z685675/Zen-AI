@@ -2,9 +2,9 @@ import { loggerService } from '@logger'
 import { Navbar, NavbarCenter } from '@renderer/components/app/Navbar'
 import type { CodeEditorHandles } from '@renderer/components/CodeEditor'
 import type { RichEditorRef } from '@renderer/components/RichEditor/types'
+import { SidebarBodySlot, useSidebarCreateAction } from '@renderer/context/SidebarSlotProvider'
 import { useActiveNode, useFileContent, useFileContentSync } from '@renderer/hooks/useNotesQuery'
 import { useNotesSettings } from '@renderer/hooks/useNotesSettings'
-import { useShowWorkspace } from '@renderer/hooks/useShowWorkspace'
 import { EVENT_NAMES, EventEmitter } from '@renderer/services/EventService'
 import {
   addDir,
@@ -45,7 +45,6 @@ import { getFileDirectory } from '@renderer/utils'
 import type { FileChangeEvent } from '@shared/config/types'
 import { message } from 'antd'
 import { debounce } from 'lodash'
-import { AnimatePresence, motion } from 'motion/react'
 import type { FC } from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -61,7 +60,6 @@ const NotesPage: FC = () => {
   const editorRef = useRef<RichEditorRef>(null)
   const codeEditorRef = useRef<CodeEditorHandles>(null)
   const { t } = useTranslation()
-  const { showWorkspace } = useShowWorkspace()
   const dispatch = useAppDispatch()
   const store = useAppStore()
   const activeFilePath = useAppSelector(selectActiveFilePath)
@@ -628,6 +626,16 @@ const NotesPage: FC = () => {
     [dispatch, getTargetFolderPath, refreshTree, updateExpandedPaths]
   )
 
+  const handleQuickCreateNote = useCallback(() => {
+    void handleCreateNote(t('notes.untitled_note'))
+  }, [handleCreateNote, t])
+
+  const handleQuickCreateFolder = useCallback(() => {
+    void handleCreateFolder(t('notes.untitled_folder'))
+  }, [handleCreateFolder, t])
+
+  useSidebarCreateAction(handleQuickCreateNote)
+
   const handleToggleExpanded = useCallback(
     (nodeId: string) => {
       const targetNode = findNode(notesTree, nodeId)
@@ -1139,35 +1147,26 @@ const NotesPage: FC = () => {
   return (
     <Container id="notes-page">
       <Navbar>
-        <NavbarCenter style={{ borderRight: 'none' }}>{t('notes.title')}</NavbarCenter>
+        <NavbarCenter style={{ borderRight: 'none' }} />
       </Navbar>
+      <SidebarBodySlot>
+        <NotesSidebar
+          notesTree={notesTree}
+          selectedFolderId={selectedFolderId}
+          onSelectNode={handleSelectNode}
+          onCreateFolder={handleCreateFolder}
+          onCreateNote={handleCreateNote}
+          onDeleteNode={handleDeleteNode}
+          onDeleteNodes={handleDeleteNodes}
+          onRenameNode={handleRenameNode}
+          onToggleExpanded={handleToggleExpanded}
+          onToggleStar={handleToggleStar}
+          onMoveNode={handleMoveNode}
+          onSortNodes={handleSortNodes}
+          onUploadFiles={handleUploadFiles}
+        />
+      </SidebarBodySlot>
       <ContentContainer id="content-container">
-        <AnimatePresence initial={false}>
-          {showWorkspace && (
-            <motion.div
-              initial={{ width: 0, opacity: 0 }}
-              animate={{ width: 250, opacity: 1 }}
-              exit={{ width: 0, opacity: 0 }}
-              transition={{ duration: 0.3, ease: 'easeInOut' }}
-              style={{ overflow: 'hidden' }}>
-              <NotesSidebar
-                notesTree={notesTree}
-                selectedFolderId={selectedFolderId}
-                onSelectNode={handleSelectNode}
-                onCreateFolder={handleCreateFolder}
-                onCreateNote={handleCreateNote}
-                onDeleteNode={handleDeleteNode}
-                onDeleteNodes={handleDeleteNodes}
-                onRenameNode={handleRenameNode}
-                onToggleExpanded={handleToggleExpanded}
-                onToggleStar={handleToggleStar}
-                onMoveNode={handleMoveNode}
-                onSortNodes={handleSortNodes}
-                onUploadFiles={handleUploadFiles}
-              />
-            </motion.div>
-          )}
-        </AnimatePresence>
         <EditorWrapper>
           <HeaderNavbar
             notesTree={notesTree}
@@ -1175,12 +1174,16 @@ const NotesPage: FC = () => {
             onToggleStar={handleToggleStar}
             onExpandPath={handleExpandPath}
             onRenameNode={handleRenameNode}
+            onCreateNote={handleQuickCreateNote}
+            onCreateFolder={handleQuickCreateFolder}
           />
           <NotesEditor
             activeNodeId={activeNode?.id}
             currentContent={currentContent}
             tokenCount={tokenCount}
             onMarkdownChange={handleMarkdownChange}
+            onCreateNote={handleQuickCreateNote}
+            onCreateFolder={handleQuickCreateFolder}
             editorRef={editorRef}
             codeEditorRef={codeEditorRef}
           />

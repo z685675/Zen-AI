@@ -1,4 +1,5 @@
 import { isLinux, isMac, isWin } from '@renderer/config/constant'
+import { AppTitleSlot, useSidebarShell } from '@renderer/context/SidebarSlotProvider'
 import { useFullscreen } from '@renderer/hooks/useFullscreen'
 import useNavBackgroundColor from '@renderer/hooks/useNavBackgroundColor'
 import { useRuntime } from '@renderer/hooks/useRuntime'
@@ -16,6 +17,9 @@ export const Navbar: FC<Props> = ({ children, style, ...props }) => {
   const isFullscreen = useFullscreen()
   const { isTopNavbar } = useNavbarPosition()
   const { minappShow } = useRuntime()
+  const shell = useSidebarShell()
+
+  if (shell) return <AppTitleSlot>{children}</AppTitleSlot>
 
   if (isTopNavbar) {
     return null
@@ -87,9 +91,16 @@ const NavbarCenterContainer = styled.div`
   align-items: center;
   padding: 0 ${isMac ? '20px' : 0};
   padding-left: 10px;
-  font-weight: bold;
+  font-weight: 600;
   color: var(--color-text-1);
   position: relative;
+
+  .zen-titlebar & {
+    padding: 0 4px;
+    font-size: 13.5px;
+    font-weight: 500;
+    letter-spacing: -0.01em;
+  }
 `
 
 const NavbarRightContainer = styled.div<{ $isFullscreen: boolean }>`
@@ -107,11 +118,16 @@ const NavbarMainContainer = styled.div<{ $isFullscreen: boolean }>`
   flex-direction: row;
   align-items: center;
   justify-content: space-between;
-  padding-right: ${isMac ? '20px' : 0};
   padding-left: 10px;
-  font-weight: bold;
+  font-weight: 600;
   color: var(--color-text-1);
   padding-right: ${({ $isFullscreen }) => ($isFullscreen ? '12px' : isWin ? '140px' : isLinux ? '120px' : '12px')};
+
+  .zen-titlebar & {
+    padding: 0 6px;
+    font-size: 13.5px;
+    font-weight: 500;
+  }
 `
 
 const NavbarHeaderContent = styled.div`
@@ -123,4 +139,8 @@ const NavbarHeaderContent = styled.div`
   padding: 0 12px;
   min-height: var(--navbar-height);
   max-height: var(--navbar-height);
+
+  .zen-titlebar & {
+    padding: 0 4px;
+  }
 `

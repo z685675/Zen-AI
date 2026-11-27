@@ -1293,18 +1293,35 @@ export class SessionMessageService extends BaseService {
         startFirstRuntimeEventTimer()
         attachRuntimeStream()
       },
-      cancel: (reason) => {
+      cancel: async (reason) => {
+        if (finished) return
         abortController.abort(typeof reason === 'string' ? reason : 'stream cancelled')
         // The HTTP abort listener can synchronously cancel this reader before
         // dispatch reaches forwardParentAbort. Forward explicitly before cleanup
         // removes that listener, even when the parent signal is already aborted.
         forwardParentAbort()
         cleanup()
-        resolveCompletion({})
+        try {
+          await agentStream.settled
+          if (options?.mirrorToBoundChannel) {
+            await this.mirrorSessionExchangeToBoundChannel(
+              session,
+              options.displayContent ?? req.content,
+              accumulator.getText(),
+              true,
+              [],
+              mirrorContext
+            )
+          }
+        } catch (error) {
+          logger.warn('Failed to finish cancelled session', { sessionId: session.id, error })
+        } finally {
+          resolveCompletion({})
+        }
       }
     })
 
-    return { stream, completion }
+    return { stream, completion: completion.finally(() => agentStream.settled) }
   }
 
   /**

@@ -46,7 +46,6 @@ import { agentMessageRepository } from './services/agents/database'
 import { bootstrapBuiltinAgents } from './services/agents/services/builtin/BuiltinAgentBootstrap'
 import { getSessionModelRecoveryIntent } from './services/agents/services/managedModelRecovery'
 import { AssistantFileChangeStore } from './services/agents/services/opencode/fileChanges'
-import { stopOpenCodeProcesses } from './services/agents/services/opencode/process'
 import { acquireSessionActivity, hasSessionActivity } from './services/agents/services/sessionActivity'
 import { sessionService } from './services/agents/services/SessionService'
 import { skillService } from './services/agents/skills/SkillService'
@@ -72,7 +71,6 @@ import { ConfigKeys, configManager } from './services/ConfigManager'
 import CopilotService from './services/CopilotService'
 import { collectMainDiagnostic } from './services/DiagnosticEvidenceService'
 import { registerDshPreviewIpc } from './services/dshPreview/ipc'
-import { stopAllDshRuntimes } from './services/dshPreview/runtime'
 import DxtService from './services/DxtService'
 import { ExportService } from './services/ExportService'
 import { externalAppsService } from './services/ExternalAppsService'
@@ -164,33 +162,48 @@ function getHardwareArch() {
   }
 }
 
-export async function registerIpc(mainWindow: BrowserWindow, app: Electron.App) {
+export async function registerIpc(app: Electron.App): Promise<(window: BrowserWindow) => void> {
+  const getMainWindow = () => {
+    const window = windowService.getMainWindow()
+    return window && !window.isDestroyed() ? window : null
+  }
+  const requireMainWindow = () => {
+    const window = getMainWindow()
+    if (!window) throw new Error('Main window does not exist or has been destroyed')
+    return window
+  }
+  const isMainFrame = (event: Electron.IpcMainInvokeEvent, window: BrowserWindow | null) =>
+    !!window && event.sender === window.webContents && event.senderFrame === event.sender.mainFrame
+
   registerModelTransportIpc()
-  registerDshPreviewIpc(mainWindow)
-  const imageCanvas = new ImageCanvasService(mainWindow)
-  let canvasControl = Promise.resolve<unknown>(undefined)
-  const studioSender = (event: Electron.IpcMainInvokeEvent) =>
-    event.sender === mainWindow.webContents && event.senderFrame === event.sender.mainFrame
+  registerDshPreviewIpc(getMainWindow)
+  let canvas: { service: ImageCanvasService; control: Promise<unknown> } | undefined
   ipcMain.handle(imageCanvasChannels.control, (event, action, input) => {
-    if (!studioSender(event)) throw new Error('invalid_canvas_control_sender')
-    const operation = canvasControl
+    const owner = getMainWindow()
+    const current = canvas
+    if (!current || !isMainFrame(event, owner)) throw new Error('invalid_canvas_control_sender')
+    const imageCanvas = current.service
+    if (action === 'import-legacy')
+      return imageCanvas.importLegacy(input, (name, maxBytes) => fileManager.readLegacyPaintingImage(name, maxBytes))
+    const operation = current.control
       .catch(() => undefined)
       .then(async () => {
+        if (getMainWindow() !== owner) throw new Error('invalid_canvas_control_sender')
         if (action === 'open') {
           return imageCanvas.open(input)
         }
         if (action === 'sync') return imageCanvas.sync(input)
+        if (action === 'appearance') return imageCanvas.setAppearance(input)
         if (action === 'resize') return imageCanvas.resize(input)
         if (action === 'visible') return imageCanvas.setVisible(input)
         if (action === 'close') return imageCanvas.close()
         throw new Error('invalid_canvas_action')
       })
-    canvasControl = operation
+    current.control = operation
     return operation
   })
   ipcMain.handle(IpcChannel.AssistantAutomation_Action, async (event, request: unknown) => {
-    if (event.sender !== mainWindow.webContents || event.senderFrame !== event.sender.mainFrame)
-      return { ok: false, code: 'automation_invalid_sender' }
+    if (!isMainFrame(event, getMainWindow())) return { ok: false, code: 'automation_invalid_sender' }
     const { automationService } = await import('./services/agents/services/automation/AutomationService')
     return automationService.request(request)
   })
@@ -199,7 +212,7 @@ export async function registerIpc(mainWindow: BrowserWindow, app: Electron.App) 
     return collectMainDiagnostic(operationId)
   })
   const notificationService = new NotificationService()
-  const appUpdateService = new AppUpdateService(mainWindow, app.getVersion(), () => configManager.getAutoUpdate())
+  const appUpdateService = new AppUpdateService(null, app.getVersion(), () => configManager.getAutoUpdate())
 
   // Register shutdown handlers
   powerMonitorService.registerShutdownHandler(() => {
@@ -208,12 +221,6 @@ export async function registerIpc(mainWindow: BrowserWindow, app: Electron.App) 
       mw.webContents.send(IpcChannel.App_SaveData)
     }
   })
-
-  const checkMainWindow = () => {
-    if (!mainWindow || mainWindow.isDestroyed()) {
-      throw new Error('Main window does not exist or has been destroyed')
-    }
-  }
 
   ipcMain.handle(IpcChannel.App_Info, () => ({
     version: app.getVersion(),
@@ -248,7 +255,7 @@ export async function registerIpc(mainWindow: BrowserWindow, app: Electron.App) 
     await proxyManager.configureProxy(proxyConfig)
   })
 
-  ipcMain.handle(IpcChannel.App_Reload, () => mainWindow.reload())
+  ipcMain.handle(IpcChannel.App_Reload, () => requireMainWindow().reload())
   ipcMain.handle(IpcChannel.App_Quit, () => app.quit())
   ipcMain.handle(IpcChannel.Open_Website, (_, url: string) => {
     if (!isSafeExternalUrl(url)) {
@@ -337,7 +344,7 @@ export async function registerIpc(mainWindow: BrowserWindow, app: Electron.App) 
 
   ipcMain.handle(IpcChannel.AgentMessage_PersistExchange, async (_event, payload) => {
     try {
-      return await agentMessageRepository.persistExchange(payload)
+      return await agentMessageRepository.persistExchange(payload, true)
     } catch (error) {
       logger.error('Failed to persist agent session messages', error as Error)
       throw error
@@ -369,11 +376,11 @@ export async function registerIpc(mainWindow: BrowserWindow, app: Electron.App) 
   }
 
   ipcMain.handle(IpcChannel.App_SetFullScreen, (_, value: boolean): void => {
-    mainWindow.setFullScreen(value)
+    requireMainWindow().setFullScreen(value)
   })
 
   ipcMain.handle(IpcChannel.App_IsFullScreen, (): boolean => {
-    return mainWindow.isFullScreen()
+    return requireMainWindow().isFullScreen()
   })
 
   // Get System Fonts
@@ -624,9 +631,8 @@ export async function registerIpc(mainWindow: BrowserWindow, app: Electron.App) 
 
     app.relaunch(options)
     markRendererDataCommitted(event.sender.id)
-    stopOpenCodeProcesses()
-    await stopAllDshRuntimes()
-    app.exit(0)
+    app.isQuitting = true
+    app.quit()
   })
 
   // Reset all data (factory reset)
@@ -644,7 +650,7 @@ export async function registerIpc(mainWindow: BrowserWindow, app: Electron.App) 
     await notificationService.sendNotification(notification)
   })
   ipcMain.handle(IpcChannel.Notification_OnClick, (_, notification: Notification) => {
-    mainWindow.webContents.send('notification-click', notification)
+    getMainWindow()?.webContents.send('notification-click', notification)
   })
 
   // zip
@@ -833,6 +839,7 @@ export async function registerIpc(mainWindow: BrowserWindow, app: Electron.App) 
   ipcMain.handle(IpcChannel.Shortcuts_Update, (_, shortcuts: Shortcut[]) => {
     configManager.setShortcuts(shortcuts)
     // Refresh shortcuts registration
+    const mainWindow = getMainWindow()
     if (mainWindow) {
       unregisterAllShortcuts()
       registerShortcuts(mainWindow)
@@ -864,13 +871,11 @@ export async function registerIpc(mainWindow: BrowserWindow, app: Electron.App) 
 
   // window
   ipcMain.handle(IpcChannel.Windows_SetMinimumSize, (_, width: number, height: number) => {
-    checkMainWindow()
-    mainWindow.setMinimumSize(width, height)
+    requireMainWindow().setMinimumSize(width, height)
   })
 
   ipcMain.handle(IpcChannel.Windows_ResetMinimumSize, () => {
-    checkMainWindow()
-
+    const mainWindow = requireMainWindow()
     mainWindow.setMinimumSize(MIN_WINDOW_WIDTH, MIN_WINDOW_HEIGHT)
     const [width, height] = mainWindow.getSize() ?? [MIN_WINDOW_WIDTH, MIN_WINDOW_HEIGHT]
     if (width < MIN_WINDOW_WIDTH) {
@@ -879,44 +884,29 @@ export async function registerIpc(mainWindow: BrowserWindow, app: Electron.App) 
   })
 
   ipcMain.handle(IpcChannel.Windows_GetSize, () => {
-    checkMainWindow()
-    const [width, height] = mainWindow.getSize() ?? [MIN_WINDOW_WIDTH, MIN_WINDOW_HEIGHT]
+    const [width, height] = requireMainWindow().getSize() ?? [MIN_WINDOW_WIDTH, MIN_WINDOW_HEIGHT]
     return [width, height]
   })
 
   // Window Controls
   ipcMain.handle(IpcChannel.Windows_Minimize, () => {
-    checkMainWindow()
-    mainWindow.minimize()
+    requireMainWindow().minimize()
   })
 
   ipcMain.handle(IpcChannel.Windows_Maximize, () => {
-    checkMainWindow()
-    mainWindow.maximize()
+    requireMainWindow().maximize()
   })
 
   ipcMain.handle(IpcChannel.Windows_Unmaximize, () => {
-    checkMainWindow()
-    mainWindow.unmaximize()
+    requireMainWindow().unmaximize()
   })
 
   ipcMain.handle(IpcChannel.Windows_Close, () => {
-    checkMainWindow()
-    mainWindow.close()
+    requireMainWindow().close()
   })
 
   ipcMain.handle(IpcChannel.Windows_IsMaximized, () => {
-    checkMainWindow()
-    return mainWindow.isMaximized()
-  })
-
-  // Send maximized state changes to renderer
-  mainWindow.on('maximize', () => {
-    mainWindow.webContents.send(IpcChannel.Windows_MaximizedChanged, true)
-  })
-
-  mainWindow.on('unmaximize', () => {
-    mainWindow.webContents.send(IpcChannel.Windows_MaximizedChanged, false)
+    return requireMainWindow().isMaximized()
   })
 
   // VertexAI
@@ -1314,13 +1304,14 @@ export async function registerIpc(mainWindow: BrowserWindow, app: Electron.App) 
     lanTransferClientService.connectAndHandshake(payload)
   )
   ipcMain.handle(IpcChannel.LocalTransfer_Disconnect, () => lanTransferClientService.disconnect())
-  ipcMain.handle(IpcChannel.LocalTransfer_SendFile, (_, payload: { filePath: string }) =>
-    lanTransferClientService.sendFile(payload.filePath)
-  )
+  ipcMain.handle(IpcChannel.LocalTransfer_SendFile, async (event, payload: { filePath: string }) => {
+    const filePath = await backupManager.getLanTransferSendPath(event.sender.id, payload.filePath)
+    return lanTransferClientService.sendFile(filePath)
+  })
   ipcMain.handle(IpcChannel.LocalTransfer_CancelTransfer, () => lanTransferClientService.cancelTransfer())
 
   ipcMain.handle(IpcChannel.APP_CrashRenderProcess, () => {
-    mainWindow.webContents.forcefullyCrashRenderer()
+    requireMainWindow().webContents.forcefullyCrashRenderer()
   })
 
   // OpenClaw
@@ -1390,4 +1381,15 @@ export async function registerIpc(mainWindow: BrowserWindow, app: Electron.App) 
   ipcMain.handle(IpcChannel.Analytics_TrackTokenUsage, (_, data: TokenUsageData) =>
     analyticsService.trackTokenUsage(data)
   )
+
+  return (window) => {
+    const current = { service: new ImageCanvasService(window), control: Promise.resolve<unknown>(undefined) }
+    canvas = current
+    appUpdateService.bindWindow(window)
+    window.on('maximize', () => window.webContents.send(IpcChannel.Windows_MaximizedChanged, true))
+    window.on('unmaximize', () => window.webContents.send(IpcChannel.Windows_MaximizedChanged, false))
+    window.once('closed', () => {
+      if (canvas === current) canvas = undefined
+    })
+  }
 }

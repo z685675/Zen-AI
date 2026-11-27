@@ -73,18 +73,24 @@ export class HotpatchEngine {
   async select(safeMode = false): Promise<{ snapshot?: VerifiedSnapshot; challenge?: string }> {
     const { store, repository, trust, base } = this.options
     let allowPending = false
+    let preserveAcceptedRollback = false
     const pending = store.snapshot.pending
     if (pending && !safeMode) {
       try {
         const raw = Buffer.from(pending.policyBytes, 'base64url')
         const policy = verifyEnvelope(raw, 'policy', trust).value
-        validatePolicy(policy, base, this.now)
-        allowPending =
-          policy.action !== 'pause' &&
+        const accepted = store.snapshot
+        const matches =
           policy.policySequence === pending.policySequence &&
-          policy.policySequence === store.snapshot.highestSequence &&
-          sha256(raw) === store.snapshot.policyDigest &&
+          policy.policySequence === accepted.highestSequence &&
+          sha256(raw) === accepted.policyDigest &&
           sameSnapshot(policy.target, pending.target)
+        // Only the exact rollback already accepted while valid can outlive its
+        // download window. Offers and fresh network policies still expire.
+        const acceptedRollback = matches && policy.action === 'rollback'
+        validatePolicy(policy, base, this.now, acceptedRollback)
+        allowPending = matches && policy.action !== 'pause'
+        preserveAcceptedRollback = acceptedRollback
       } catch {
         // Expired/newly invalid offers cannot block offline startup with an older healthy version.
       }
@@ -93,7 +99,7 @@ export class HotpatchEngine {
           state.pending = null
         })
     }
-    let selection = await store.beginBoot(allowPending, safeMode)
+    let selection = await store.beginBoot(allowPending, safeMode, preserveAcceptedRollback)
     // At most active + older good + builtin. No unbounded recovery loops.
     for (let attempts = 0; selection.target && attempts < 3; attempts++) {
       try {

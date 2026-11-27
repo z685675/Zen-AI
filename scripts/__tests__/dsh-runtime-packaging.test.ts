@@ -12,6 +12,13 @@ it('packages only pinned DSH bootstrap resources, excluding the installed depend
   const prepared = prepareDshPreviewRuntime()
   expect(prepared.bytes).toBeLessThan(1024 * 1024)
   const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'zen-dsh-package-test-'))
+  const resolved = path.resolve(parent)
+  if (
+    path.dirname(resolved) !== path.resolve(os.tmpdir()) ||
+    !path.basename(resolved).startsWith('zen-dsh-package-test-')
+  ) {
+    throw new Error('Invalid temporary package test directory')
+  }
   try {
     const target = copyDshPreviewRuntime({ appOutDir: parent, packager: { getResourcesDir: (value: string) => value } })
     expect(fs.readdirSync(target).sort()).toEqual([
@@ -25,12 +32,6 @@ it('packages only pinned DSH bootstrap resources, excluding the installed depend
     const buildConfig = fs.readFileSync(path.resolve(__dirname, '../../electron-builder.yml'), 'utf8')
     expect(buildConfig).toContain('!resources/dsh-runtime/**')
   } finally {
-    const resolved = path.resolve(parent)
-    if (
-      path.dirname(resolved) !== path.resolve(os.tmpdir()) ||
-      !path.basename(resolved).startsWith('zen-dsh-package-test-')
-    )
-      throw new Error('Invalid temporary package test directory')
     fs.rmSync(resolved, { recursive: true, force: true })
   }
 })

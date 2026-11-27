@@ -926,7 +926,7 @@ function mapLogLevelColor(level: MCPServerLogEntry['level']) {
 const VersionBadge = styled(Badge)`
   .ant-badge-count {
     background-color: var(--color-primary);
-    color: white;
+    color: var(--color-primary-foreground);
     font-size: 11px;
     font-weight: 500;
     padding: 0 6px;

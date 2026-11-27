@@ -149,7 +149,10 @@ async function stopIsolatedPages(application: ElectronApplication, renderer: str
         }
       })
     // InputbarCore's existing onPause control; never a generic Run/approval button.
-    const pause = page.locator('#inputbar button:has(svg.lucide-circle-pause)').filter({ visible: true })
+    const pause = page
+      .locator('#inputbar')
+      .getByRole('button', { name: /^(暂停|Pause)$/i })
+      .filter({ visible: true })
     const denied = new Set<string>()
     const deadline = Date.now() + 10000
     let stopped = false
@@ -408,7 +411,7 @@ export async function openEntry(page: Page, entry: string) {
   if (entry === 'assistant') {
     const enable = page.getByRole('button', { name: /启用并启动|Enable and Start/i })
     const start = page.getByRole('button', { name: /^启\s*动$|^Start$/i })
-    const create = page.getByRole('button', { name: /新建对话|New Conversation|New Chat/i }).first()
+    const create = page.getByRole('button', { name: /^(新建任务|New Task)$/i }).first()
     const input = page.locator('#inputbar textarea').first()
     const deadline = performance.now() + 30000
     while (performance.now() < deadline) {
@@ -439,7 +442,11 @@ export async function sendUI(
   let lastPhase: UIWaitPhase | undefined
   const textarea = page.locator('#inputbar textarea').filter({ visible: true }).first()
   await textarea.fill(prompt, { timeout: 15000 })
-  await page.locator('#inputbar [role="button"][aria-disabled="false"].icon-ic_send').click({ timeout: 15000 })
+  await page
+    .locator('#inputbar')
+    .getByRole('button', { name: /^(发送|Send)$/i })
+    .filter({ visible: true })
+    .click({ timeout: 15000 })
   while (performance.now() - started < timeoutMs) {
     if (signal?.aborted) throw new Error('已取消')
     await progress.checkFailure?.()

@@ -116,7 +116,7 @@ win:
     - target: portable
   signtoolOptions:
     sign: scripts/win-sign.js
-  verifyUpdateCodeSignature: false
+  verifyUpdateCodeSignature: true
 nsis:
   artifactName: ${productName}-${version}-windows-${arch}-setup.${ext}
   installerIcon: installer-icon.ico

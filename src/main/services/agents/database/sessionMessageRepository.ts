@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 
 import { loggerService } from '@logger'
+import { assertAssistantExecutionAllowed } from '@shared/agents/assistantAvailability'
 import { DEFAULT_DSH_AGENT_ID, isNewAssistantAgentId } from '@shared/config/agents'
 import type {
   AgentMessageAssistantPersistPayload,
@@ -44,7 +45,7 @@ class AgentMessageRepository extends BaseService {
     return AgentMessageRepository.instance
   }
 
-  private async assertSessionAccess(sessionId: string): Promise<void> {
+  private async assertSessionAccess(sessionId: string, activeAssistantOnly = false): Promise<void> {
     // IPC carries a session ID and untrusted message payloads. Authorization
     // follows the stored owner, never a renderer-supplied assistantId.
     const database = await this.getDatabase()
@@ -53,6 +54,7 @@ class AgentMessageRepository extends BaseService {
       .from(sessionsTable)
       .where(eq(sessionsTable.id, sessionId))
       .limit(1)
+    if (activeAssistantOnly) assertAssistantExecutionAllowed(session?.agentId)
     if (session?.agentId === DEFAULT_DSH_AGENT_ID) assertDshPreviewUnlocked()
   }
 
@@ -198,8 +200,12 @@ class AgentMessageRepository extends BaseService {
     return this.upsertMessage(params)
   }
 
-  async persistExchange(params: AgentMessagePersistExchangePayload): Promise<AgentMessagePersistExchangeResult> {
+  async persistExchange(
+    params: AgentMessagePersistExchangePayload,
+    activeAssistantOnly = false
+  ): Promise<AgentMessagePersistExchangeResult> {
     const { sessionId, agentSessionId, user, assistant } = params
+    if (activeAssistantOnly) await this.assertSessionAccess(sessionId, true)
 
     const exchangeResult: AgentMessagePersistExchangeResult = {}
 

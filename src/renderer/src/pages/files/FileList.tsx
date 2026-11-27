@@ -112,12 +112,21 @@ const ImageWrapper = styled.div`
   position: relative;
   aspect-ratio: 1;
   overflow: hidden;
-  border-radius: 8px;
-  background-color: var(--color-background-soft);
+  border-radius: var(--zen-radius-md);
+  background: var(--zen-glass-card);
+  box-shadow: var(--zen-shadow-card);
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 0.5px solid var(--color-border);
+  border: 0;
+  transition:
+    box-shadow 180ms ease,
+    transform 150ms ease;
+
+  &:hover {
+    box-shadow: var(--zen-shadow-pill-hover);
+    transform: translateY(-1px);
+  }
 
   .ant-image {
     height: 100%;

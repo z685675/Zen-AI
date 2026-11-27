@@ -2,6 +2,10 @@ import { loggerService } from '@logger'
 import { AgentModelValidationError, sessionService } from '@main/services/agents'
 import { broadcastSessionChanged } from '@main/services/agents/services/channels/sessionStreamIpc'
 import { legacyContinuationService } from '@main/services/agents/services/LegacyContinuationService'
+import {
+  LEGACY_ASSISTANT_READ_ONLY_CODE,
+  LEGACY_ASSISTANT_READ_ONLY_MESSAGE
+} from '@shared/agents/assistantAvailability'
 import { DEFAULT_OPENCODE_AGENT_ID, isNewAssistantAgentId } from '@shared/config/agents'
 import type { ListAgentSessionsResponse, SearchAgentSessionsResponse, UpdateSessionResponse } from '@types'
 import { type ReplaceSessionRequest } from '@types'
@@ -112,10 +116,16 @@ const modelValidationErrorBody = (error: AgentModelValidationError) => ({
   }
 })
 
-export const createSession = async (req: Request, res: Response): Promise<Response> => {
+export const createSession = async (req: ValidationRequest, res: Response): Promise<Response> => {
   const { agentId } = req.params
+  if (!isNewAssistantAgentId(agentId)) {
+    return res.status(410).json({
+      error: { code: LEGACY_ASSISTANT_READ_ONLY_CODE, type: 'read_only', message: LEGACY_ASSISTANT_READ_ONLY_MESSAGE }
+    })
+  }
+
   try {
-    const sessionData = req.body
+    const sessionData = req.validatedBody
 
     logger.debug('Creating new session', { agentId })
     logger.debug('Session payload', { sessionData })
@@ -291,11 +301,10 @@ export const updateSession = async (req: Request, res: Response): Promise<Respon
   }
 }
 
-export const patchSession = async (req: Request, res: Response): Promise<Response> => {
+export const patchSession = async (req: ValidationRequest, res: Response): Promise<Response> => {
   const { agentId, sessionId } = req.params
   try {
     logger.debug('Patching session', { agentId, sessionId })
-    logger.debug('Patch payload', { body: req.body })
 
     // First check if session exists and belongs to agent
     const existingSession = await sessionService.getSession(agentId, sessionId)
@@ -310,8 +319,7 @@ export const patchSession = async (req: Request, res: Response): Promise<Respons
       })
     }
 
-    const updateSession = { ...existingSession, ...req.body }
-    const session = await sessionService.updateSession(agentId, sessionId, updateSession)
+    const session = await sessionService.updateSession(agentId, sessionId, req.validatedBody ?? {})
 
     if (!session) {
       logger.warn('Session missing while patching', { agentId, sessionId })

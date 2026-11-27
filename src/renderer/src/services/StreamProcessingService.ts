@@ -87,9 +87,9 @@ export function createStreamProcessor(callbacks: StreamProcessorCallbacks = {}, 
     terminalState = 'error'
     cleanupAbortListener()
     const abortError = new DOMException('Request was aborted', 'AbortError')
-    Promise.resolve(callbacks.onError?.(abortError)).catch((error) => {
-      logger.error('Error processing stream abort:', error as Error)
-    })
+    processingQueue = processingQueue
+      .then(() => (options.isActive?.() !== false ? callbacks.onError?.(abortError) : undefined))
+      .catch((error) => logger.error('Error processing stream abort:', error as Error))
   }
 
   options.signal?.addEventListener('abort', handleAbort, { once: true })

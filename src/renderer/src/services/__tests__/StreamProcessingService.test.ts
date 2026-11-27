@@ -63,6 +63,32 @@ describe('createStreamProcessor request lifecycle', () => {
     expect(onTextChunk).not.toHaveBeenCalled()
   })
 
+  it('waits for the running callback before applying the aborted state', async () => {
+    const controller = new AbortController()
+    const gate = Promise.withResolvers<void>()
+    const writes: string[] = []
+    const process = createStreamProcessor(
+      {
+        onTextChunk: async () => {
+          await gate.promise
+          writes.push('streaming')
+        },
+        onError: () => {
+          writes.push('paused')
+        }
+      },
+      { signal: controller.signal }
+    )
+
+    void process({ type: ChunkType.TEXT_DELTA, text: 'part' })
+    await Promise.resolve()
+    controller.abort()
+    expect(writes).toEqual([])
+    gate.resolve()
+    await process.drain()
+    expect(writes).toEqual(['streaming', 'paused'])
+  })
+
   it('notifies the active request when aborted', async () => {
     const controller = new AbortController()
     const onError = vi.fn()

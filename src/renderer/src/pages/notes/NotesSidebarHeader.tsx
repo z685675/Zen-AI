@@ -93,15 +93,15 @@ const NotesSidebarHeader: FC<NotesSidebarHeaderProps> = ({
       <HeaderActions>
         {!isShowStarred && !isShowSearch && !isManageMode && (
           <>
-            <Tooltip title={t('notes.new_note')} mouseEnterDelay={0.8}>
-              <ActionButton onClick={onCreateNote}>
-                <FilePlus2 size={18} />
+            <Tooltip title={t('notes.new_note')} mouseEnterDelay={0.5}>
+              <ActionButton onClick={onCreateNote} aria-label={t('notes.new_note')}>
+                <FilePlus2 size={15} />
               </ActionButton>
             </Tooltip>
 
-            <Tooltip title={t('notes.new_folder')} mouseEnterDelay={0.8}>
-              <ActionButton onClick={onCreateFolder}>
-                <FolderPlus size={18} />
+            <Tooltip title={t('notes.new_folder')} mouseEnterDelay={0.5}>
+              <ActionButton onClick={onCreateFolder} aria-label={t('notes.new_folder')}>
+                <FolderPlus size={15} />
               </ActionButton>
             </Tooltip>
 
@@ -111,28 +111,28 @@ const NotesSidebarHeader: FC<NotesSidebarHeaderProps> = ({
                 onClick: handleSortMenuClick
               }}
               trigger={['click']}>
-              <Tooltip title={t('assistants.presets.sorting.title')} mouseEnterDelay={0.8}>
-                <ActionButton>
-                  <ArrowUpNarrowWide size={18} />
+              <Tooltip title={t('assistants.presets.sorting.title')} mouseEnterDelay={0.5}>
+                <ActionButton aria-label={t('assistants.presets.sorting.title')}>
+                  <ArrowUpNarrowWide size={15} />
                 </ActionButton>
               </Tooltip>
             </Dropdown>
 
-            <Tooltip title={t('notes.show_starred')} mouseEnterDelay={0.8}>
-              <ActionButton onClick={onToggleStarredView}>
-                <Star size={18} />
+            <Tooltip title={t('notes.show_starred')} mouseEnterDelay={0.5}>
+              <ActionButton onClick={onToggleStarredView} aria-label={t('notes.show_starred')}>
+                <Star size={15} />
               </ActionButton>
             </Tooltip>
 
-            <Tooltip title={t('common.search')} mouseEnterDelay={0.8}>
-              <ActionButton onClick={onToggleSearchView}>
-                <Search size={18} />
+            <Tooltip title={t('common.search')} mouseEnterDelay={0.5}>
+              <ActionButton onClick={onToggleSearchView} aria-label={t('common.search')}>
+                <Search size={15} />
               </ActionButton>
             </Tooltip>
 
-            <Tooltip title={t('common.batch_delete')} mouseEnterDelay={0.8}>
-              <ActionButton onClick={onToggleManageMode}>
-                <CheckSquare size={18} />
+            <Tooltip title={t('common.batch_delete')} mouseEnterDelay={0.5}>
+              <ActionButton onClick={onToggleManageMode} aria-label={t('common.batch_delete')}>
+                <CheckSquare size={15} />
               </ActionButton>
             </Tooltip>
           </>
@@ -187,36 +187,46 @@ const NotesSidebarHeader: FC<NotesSidebarHeaderProps> = ({
 }
 
 const SidebarHeader = styled.div<{ isStarView?: boolean; isSearchView?: boolean }>`
-  padding: 8px 12px;
-  border-bottom: 0.5px solid var(--color-border);
+  flex: none;
+  padding: 8px 10px 6px;
+  border-bottom: 0.5px solid var(--zen-border);
   display: flex;
-  justify-content: ${(props) => (props.isStarView || props.isSearchView ? 'flex-start' : 'center')};
-  height: var(--navbar-height);
+  align-items: center;
+  justify-content: ${(props) => (props.isStarView || props.isSearchView ? 'flex-start' : 'space-between')};
+  min-height: 40px;
 `
 
 const HeaderActions = styled.div`
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 4px;
+  width: 100%;
   min-width: 0;
 `
 
 const ActionButton = styled.button.attrs({ type: 'button' })<{ danger?: boolean }>`
-  width: 24px;
-  height: 24px;
+  width: 28px;
+  height: 28px;
+  flex: none;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 0;
   border: none;
   background: transparent;
-  border-radius: 3px;
-  color: ${(props) => (props.danger ? 'var(--color-error)' : 'var(--color-text-2)')};
+  border-radius: 8px;
+  color: ${(props) => (props.danger ? 'var(--color-error)' : 'var(--zen-text-2)')};
   cursor: pointer;
+  transition:
+    background 150ms ease,
+    color 150ms ease,
+    box-shadow 160ms ease;
 
   &:hover {
-    background-color: var(--color-background-soft);
-    color: ${(props) => (props.danger ? 'var(--color-error)' : 'var(--color-text)')};
+    background: var(--zen-glass-active);
+    box-shadow: var(--zen-shadow-active);
+    color: ${(props) => (props.danger ? 'var(--color-error)' : 'var(--zen-text-1)')};
   }
 
   &:disabled {
@@ -225,8 +235,9 @@ const ActionButton = styled.button.attrs({ type: 'button' })<{ danger?: boolean 
   }
 
   &:disabled:hover {
-    background-color: transparent;
-    color: ${(props) => (props.danger ? 'var(--color-error)' : 'var(--color-text-2)')};
+    background: transparent;
+    box-shadow: none;
+    color: ${(props) => (props.danger ? 'var(--color-error)' : 'var(--zen-text-2)')};
   }
 `
 

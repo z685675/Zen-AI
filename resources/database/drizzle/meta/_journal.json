@@ -77,6 +77,13 @@
       "tag": "0010_assistant_automation_settings",
       "version": "7",
       "when": 1792022401000
+    },
+    {
+      "breakpoints": true,
+      "idx": 11,
+      "tag": "0011_assistant_references",
+      "version": "7",
+      "when": 1792022402000
     }
   ],
   "version": "8"

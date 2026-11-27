@@ -73,7 +73,7 @@ export class HotpatchService {
   async prepare(): Promise<void> {
     this.stopped = false
     this.registerIpc()
-    app.once('before-quit', () => this.stop())
+    app.once('will-quit', () => this.stop())
     // No runtime environment variable/API response can introduce a signing trust root.
     if (!app.isPackaged || !HOTPATCH_PRODUCTION_ENABLED || !Object.keys(HOTPATCH_PRODUCTION_TRUST).length) {
       this.resolveStartup(true)
@@ -178,15 +178,19 @@ export class HotpatchService {
   }
 
   bindWindow(window: BrowserWindow): void {
+    if (this.window === window) return
     this.window = window
+    clearTimeout(this.healthTimer)
     if (!this.secure) return
-    if (this.challenge) {
+    if (this.guardingStartup) {
       this.healthTimer = setTimeout(() => {
         void this.failStartup('startup-timeout')
       }, 120000)
       this.healthTimer.unref()
       window.webContents.on('did-fail-load', (_event, code, _description, _url, mainFrame) => {
-        if (mainFrame && code !== -3 && this.guardingStartup) void this.failStartup('entry-load-failed')
+        if (this.window === window && mainFrame && code !== -3 && this.guardingStartup) {
+          void this.failStartup('entry-load-failed')
+        }
       })
     }
     void this.startupReady.then((ready) => {

@@ -1,10 +1,9 @@
 import mcpService from '@main/services/MCPService'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp'
-import type { JSONRPCMessage, MessageExtraInfo } from '@modelcontextprotocol/sdk/types'
-import { isJSONRPCRequest, JSONRPCMessageSchema } from '@modelcontextprotocol/sdk/types'
+import type { JSONRPCMessage } from '@modelcontextprotocol/sdk/types'
+import { isInitializeRequest, JSONRPCMessageSchema } from '@modelcontextprotocol/sdk/types'
 import type { MCPServer } from '@types'
 import { randomUUID } from 'crypto'
-import { EventEmitter } from 'events'
 import type { Request, Response } from 'express'
 import type { IncomingMessage, ServerResponse } from 'http'
 
@@ -12,7 +11,14 @@ import { loggerService } from '../../services/LoggerService'
 import { createMcpServerForTransport, getMCPServersFromRedux } from '../utils/mcp'
 
 const logger = loggerService.withContext('MCPApiService')
-const transports: Record<string, StreamableHTTPServerTransport> = {}
+const MCP_IDLE_TIMEOUT_MS = 30 * 60_000
+const MAX_MCP_SESSIONS = 128
+
+type McpSession = {
+  serverId: string
+  transport: StreamableHTTPServerTransport
+  timer?: ReturnType<typeof setTimeout>
+}
 
 interface McpServerDTO {
   id: MCPServer['id']
@@ -37,20 +43,9 @@ interface McpServersResp {
  * 3. Leverages existing MCPService for actual server connections
  * 4. Provides session management for API clients
  */
-class MCPApiService extends EventEmitter {
-  private transport: StreamableHTTPServerTransport = new StreamableHTTPServerTransport({
-    sessionIdGenerator: () => randomUUID()
-  })
-
-  constructor() {
-    super()
-    this.initMcpServer()
-    logger.debug('MCPApiService initialized')
-  }
-
-  private initMcpServer() {
-    this.transport.onmessage = this.onMessage
-  }
+class MCPApiService {
+  private sessions = new Map<string, McpSession>()
+  private connecting = 0
 
   // get all activated servers
   async getAllServers(req: Request): Promise<McpServersResp> {
@@ -120,63 +115,57 @@ class MCPApiService extends EventEmitter {
   }
 
   async handleRequest(req: Request, res: Response, server: MCPServer) {
-    const sessionId = req.headers['mcp-session-id'] as string | undefined
-    logger.debug('Handling MCP request', { sessionId, serverId: server.id })
-    let transport: StreamableHTTPServerTransport
-    if (sessionId && transports[sessionId]) {
-      transport = transports[sessionId]
-    } else {
-      transport = new StreamableHTTPServerTransport({
-        sessionIdGenerator: () => randomUUID(),
-        onsessioninitialized: (sessionId) => {
-          transports[sessionId] = transport
-        }
-      })
+    if (!server.isActive) return res.sendStatus(404)
+    const rawSessionId = req.headers['mcp-session-id']
+    const existing = typeof rawSessionId === 'string' ? this.sessions.get(rawSessionId) : undefined
+    if (rawSessionId !== undefined && existing?.serverId !== server.id) return res.sendStatus(404)
 
-      transport.onclose = () => {
-        logger.info('Transport closed', { sessionId })
-        if (transport.sessionId) {
-          delete transports[transport.sessionId]
-        }
+    let messages: JSONRPCMessage[] | undefined
+    if (req.method === 'POST') {
+      const payload = Array.isArray(req.body) ? req.body : [req.body]
+      const parsed = JSONRPCMessageSchema.array().min(1).safeParse(payload)
+      if (!parsed.success) return res.sendStatus(400)
+      messages = parsed.data
+    }
+
+    if (existing) {
+      this.refreshSession(existing)
+      return existing.transport.handleRequest(req as IncomingMessage, res as ServerResponse, messages)
+    }
+    if (req.method !== 'POST' || messages?.length !== 1 || !isInitializeRequest(messages[0])) {
+      return res.sendStatus(400)
+    }
+    if (this.sessions.size + this.connecting >= MAX_MCP_SESSIONS) return res.sendStatus(503)
+    this.connecting++
+
+    const transport = new StreamableHTTPServerTransport({
+      sessionIdGenerator: randomUUID,
+      onsessioninitialized: (id) => {
+        this.sessions.set(id, entry)
+        this.refreshSession(entry)
       }
+    })
+    const entry: McpSession = { serverId: server.id, transport }
+    transport.onclose = () => {
+      clearTimeout(entry.timer)
+      if (transport.sessionId) this.sessions.delete(transport.sessionId)
+    }
+    try {
       const mcpServer = await createMcpServerForTransport(server.id)
       await mcpServer.connect(transport)
+      await transport.handleRequest(req as IncomingMessage, res as ServerResponse, messages[0])
+    } finally {
+      this.connecting--
+      if (!transport.sessionId) await transport.close()
     }
-    const jsonpayload = req.body
-    const messages: JSONRPCMessage[] = []
-
-    if (Array.isArray(jsonpayload)) {
-      for (const payload of jsonpayload) {
-        const message = JSONRPCMessageSchema.parse(payload)
-        messages.push(message)
-      }
-    } else {
-      const message = JSONRPCMessageSchema.parse(jsonpayload)
-      messages.push(message)
-    }
-
-    for (const message of messages) {
-      if (isJSONRPCRequest(message)) {
-        if (!message.params) {
-          message.params = {}
-        }
-        if (!message.params._meta) {
-          message.params._meta = {}
-        }
-        message.params._meta.serverId = server.id
-      }
-    }
-
-    logger.debug('Dispatching MCP request', {
-      sessionId: transport.sessionId ?? sessionId,
-      messageCount: messages.length
-    })
-    await transport.handleRequest(req as IncomingMessage, res as ServerResponse, messages)
   }
 
-  private onMessage(message: JSONRPCMessage, extra?: MessageExtraInfo) {
-    logger.debug('Received MCP message', { message, extra })
-    // Handle message here
+  private refreshSession(entry: McpSession): void {
+    clearTimeout(entry.timer)
+    entry.timer = setTimeout(() => {
+      void entry.transport.close().catch((error) => logger.warn('Failed to close expired MCP session', { error }))
+    }, MCP_IDLE_TIMEOUT_MS)
+    entry.timer.unref()
   }
 }
 

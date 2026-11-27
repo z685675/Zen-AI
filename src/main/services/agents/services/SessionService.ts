@@ -42,6 +42,7 @@ import {
 import type { AgentModelField } from '../errors'
 import { invalidateAutomationSession } from './automation/bridge'
 import { builtinSlashCommands } from './claudecode/commands'
+import type { editDshNativeHistory } from './dsh/history'
 import {
   forgetSessionModelIntent,
   getManagedRecoveryInventory,
@@ -1046,10 +1047,10 @@ export class SessionService extends BaseService {
   async resetOpenCodeMemory(agentId: string, id: string): Promise<void> {
     if (!isNewAssistantAgentId(agentId) || !(await this.sessionExists(agentId, id)))
       throw new Error('New assistant session not found')
-    if (agentId === DEFAULT_DSH_AGENT_ID) {
-      assertDshPreviewUnlocked()
-      const release = acquireSessionActivity(id, 'continuation')
-      try {
+    const release = acquireSessionActivity(id, 'continuation')
+    try {
+      if (agentId === DEFAULT_DSH_AGENT_ID) {
+        assertDshPreviewUnlocked()
         const { readDshSessionHistory, replaceDshSessionHistory, resetDshSession } = await import(
           '../../dshPreview/runtime'
         )
@@ -1062,17 +1063,17 @@ export class SessionService extends BaseService {
           await replaceDshSessionHistory(id, previous.events)
           throw error
         }
-      } finally {
-        release()
+        return
       }
-      return
+      await invalidateAutomationSession(id)
+      const database = await this.getDatabase()
+      const { archiveOpenCodeSession } = await import('./opencode/process')
+      await archiveOpenCodeSession(id, async () => {
+        await database.delete(sessionMessagesTable).where(eq(sessionMessagesTable.session_id, id))
+      })
+    } finally {
+      release()
     }
-    await invalidateAutomationSession(id)
-    const database = await this.getDatabase()
-    const { archiveOpenCodeSession } = await import('./opencode/process')
-    await archiveOpenCodeSession(id, async () => {
-      await database.delete(sessionMessagesTable).where(eq(sessionMessagesTable.session_id, id))
-    })
   }
 
   async changeOpenCodeHistory(
@@ -1082,6 +1083,20 @@ export class SessionService extends BaseService {
     action: 'retry' | 'delete' | 'fork'
   ): Promise<GetAgentSessionResponse> {
     if (!isNewAssistantAgentId(agentId)) throw new Error('Not a new assistant session')
+    const release = acquireSessionActivity(id, 'continuation')
+    try {
+      return await this.changeNativeHistoryUnderLease(agentId, id, messageId, action)
+    } finally {
+      release()
+    }
+  }
+
+  private async changeNativeHistoryUnderLease(
+    agentId: string,
+    id: string,
+    messageId: string,
+    action: 'retry' | 'delete' | 'fork'
+  ): Promise<GetAgentSessionResponse> {
     const session = await this.getSession(agentId, id)
     if (!session) throw new Error('Session not found')
     const database = await this.getDatabase()
@@ -1095,9 +1110,9 @@ export class SessionService extends BaseService {
       throw new Error('Display history is invalid')
     if (!display.some((item) => item.message.id === messageId)) throw new Error('Message not found')
     const dsh = agentId === DEFAULT_DSH_AGENT_ID
-    const { editNativeHistory } = dsh
-      ? { editNativeHistory: (await import('./dsh/history')).editDshNativeHistory }
-      : await import('./opencode/history')
+    const editNativeHistory: (...args: Parameters<typeof editDshNativeHistory>) => Promise<unknown> = dsh
+      ? (await import('./dsh/history')).editDshNativeHistory
+      : (await import('./opencode/history')).editNativeHistory
     let target = session
     if (action === 'fork') {
       const created = await this.createSession(agentId, {
@@ -1108,67 +1123,73 @@ export class SessionService extends BaseService {
       if (!created) throw new Error('Could not create branch')
       target = created
     }
+    let releaseBranch: (() => void) | undefined
     try {
       if (action === 'fork') {
+        releaseBranch = acquireSessionActivity(target.id, 'continuation')
         if (dsh) {
           const { forkDshSession } = await import('../../dshPreview/runtime')
-          const release = acquireSessionActivity(id, 'continuation')
-          try {
-            await forkDshSession(id, target.id)
-          } finally {
-            release()
-          }
+          await forkDshSession(id, target.id)
         } else {
           const { copyOpenCodeHistory } = await import('./opencode/process')
           await copyOpenCodeHistory(id, target.id)
         }
       }
-      await editNativeHistory(target, display, messageId, action, async (items, nativeId) => {
-        const idMap = new Map<string, string>()
-        if (action === 'fork') {
-          for (const item of items) {
-            idMap.set(item.message.id, randomUUID())
-            for (const block of item.blocks) idMap.set(block.id, randomUUID())
-          }
-        }
-        const now = new Date().toISOString()
-        await database.transaction(async (tx) => {
-          await tx.delete(sessionMessagesTable).where(eq(sessionMessagesTable.session_id, target.id))
-          for (const item of items) {
-            const message = item.message
-            if (action === 'fork') {
-              message.id = idMap.get(message.id)!
-              message.topicId = `agent-session:${target.id}`
-              message.askId = message.askId ? idMap.get(message.askId) : undefined
-              message.blocks = message.blocks.map((blockId) => idMap.get(blockId)!)
-              for (const block of item.blocks) {
-                block.id = idMap.get(block.id)!
-                block.messageId = message.id
-              }
+      await editNativeHistory(
+        target,
+        display,
+        messageId,
+        action,
+        async (items, nativeId) => {
+          const idMap = new Map<string, string>()
+          if (action === 'fork') {
+            for (const item of items) {
+              idMap.set(item.message.id, randomUUID())
+              for (const block of item.blocks) idMap.set(block.id, randomUUID())
             }
-            await tx.insert(sessionMessagesTable).values({
-              session_id: target.id,
-              role: message.role,
-              content: JSON.stringify(item),
-              agent_session_id: nativeId,
-              created_at: message.createdAt,
-              updated_at: now
-            })
           }
-          await tx.update(sessionsTable).set({ updated_at: now }).where(eq(sessionsTable.id, target.id))
-        })
-      })
+          const now = new Date().toISOString()
+          await database.transaction(async (tx) => {
+            await tx.delete(sessionMessagesTable).where(eq(sessionMessagesTable.session_id, target.id))
+            for (const item of items) {
+              const message = item.message
+              if (action === 'fork') {
+                message.id = idMap.get(message.id)!
+                message.topicId = `agent-session:${target.id}`
+                message.askId = message.askId ? idMap.get(message.askId) : undefined
+                message.blocks = message.blocks.map((blockId) => idMap.get(blockId)!)
+                for (const block of item.blocks) {
+                  block.id = idMap.get(block.id)!
+                  block.messageId = message.id
+                }
+              }
+              await tx.insert(sessionMessagesTable).values({
+                session_id: target.id,
+                role: message.role,
+                content: JSON.stringify(item),
+                agent_session_id: nativeId,
+                created_at: message.createdAt,
+                updated_at: now
+              })
+            }
+            await tx.update(sessionsTable).set({ updated_at: now }).where(eq(sessionsTable.id, target.id))
+          })
+        },
+        true
+      )
       return (await this.getSession(agentId, target.id))!
     } catch (error) {
+      releaseBranch?.()
       if (action === 'fork') await this.deleteSession(agentId, target.id)
       throw error
+    } finally {
+      releaseBranch?.()
     }
   }
 
   async deleteSession(agentId: string, id: string): Promise<boolean> {
     if (agentId === DEFAULT_DSH_AGENT_ID) assertDshPreviewUnlocked()
     assertSessionNotContinuing(id)
-    await invalidateAutomationSession(id)
     const database = await this.getDatabase()
     const remove = async () => {
       const result = await database
@@ -1176,21 +1197,26 @@ export class SessionService extends BaseService {
         .where(and(eq(sessionsTable.id, id), eq(sessionsTable.agent_id, agentId)))
       return result.rowsAffected > 0
     }
-    if (agentId === DEFAULT_DSH_AGENT_ID && (await this.sessionExists(agentId, id))) {
-      if (hasSessionActivity(id)) throw new Error('Stop the task before deleting its session')
-      const { deleteDshSession } = await import('../../dshPreview/runtime')
-      await deleteDshSession(id)
-      return remove()
-    }
-    if (agentId === DEFAULT_OPENCODE_AGENT_ID && (await this.sessionExists(agentId, id))) {
+    if (!isNewAssistantAgentId(agentId)) return remove()
+    if (!(await this.sessionExists(agentId, id))) return false
+
+    const release = acquireSessionActivity(id, 'continuation')
+    try {
+      await invalidateAutomationSession(id)
+      if (agentId === DEFAULT_DSH_AGENT_ID) {
+        const { deleteDshSession } = await import('../../dshPreview/runtime')
+        await deleteDshSession(id)
+        return await remove()
+      }
       const { archiveOpenCodeSession } = await import('./opencode/process')
       let removed = false
       await archiveOpenCodeSession(id, async () => {
         removed = await remove()
       })
       return removed
+    } finally {
+      release()
     }
-    return remove()
   }
 
   async deleteEmptySessionsForAgents(agentIds: string[]): Promise<number> {

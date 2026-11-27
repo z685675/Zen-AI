@@ -2,7 +2,6 @@ import { RightOutlined } from '@ant-design/icons'
 import { DynamicVirtualList, type DynamicVirtualListRef } from '@renderer/components/VirtualList'
 import { isMac } from '@renderer/config/constant'
 import { useTimer } from '@renderer/hooks/useTimer'
-import useUserTheme from '@renderer/hooks/useUserTheme'
 import { classNames } from '@renderer/utils'
 import { Flex } from 'antd'
 import { t } from 'i18next'
@@ -42,10 +41,6 @@ export const QuickPanelView: React.FC<Props> = ({ setInputText }) => {
   if (!ctx) {
     throw new Error('QuickPanel must be used within a QuickPanelProvider')
   }
-
-  const { colorPrimary } = useUserTheme()
-  const selectedColor = colorPrimary.alpha(0.15).toString()
-  const selectedColorHover = colorPrimary.alpha(0.2).toString()
 
   const ASSISTIVE_KEY = isMac ? '⌘' : 'Ctrl'
   const [isAssistiveKeyPressed, setIsAssistiveKeyPressed] = useState(false)
@@ -746,8 +741,6 @@ export const QuickPanelView: React.FC<Props> = ({ setInputText }) => {
       style={anchorStyle}
       $anchored={Boolean(ctx.anchorElement)}
       $pageSize={ctx.pageSize}
-      $selectedColor={selectedColor}
-      $selectedColorHover={selectedColorHover}
       $collapsed={collapsed}
       className={ctx.isVisible ? 'visible' : ''}
       data-testid="quick-panel">
@@ -818,14 +811,12 @@ export const QuickPanelView: React.FC<Props> = ({ setInputText }) => {
 
 const QuickPanelContainer = styled.div<{
   $pageSize: number
-  $selectedColor: string
-  $selectedColorHover: string
   $collapsed?: boolean
   $anchored?: boolean
 }>`
-  --focused-color: rgba(0, 0, 0, 0.06);
-  --selected-color: ${(props) => props.$selectedColor};
-  --selected-color-dark: ${(props) => props.$selectedColorHover};
+  --focused-color: var(--zen-bg-hover);
+  --selected-color: color-mix(in srgb, var(--color-primary) 15%, transparent);
+  --selected-color-dark: color-mix(in srgb, var(--color-primary) 20%, transparent);
   max-height: 0;
   position: absolute;
   top: 1px;

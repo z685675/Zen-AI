@@ -46,7 +46,7 @@ beforeEach(() => {
 })
 
 describe('compact native execution activity', () => {
-  it('keeps child task progress visible outside the collapsed execution log', () => {
+  it('shows the child count in the summary and progress in the expanded log', () => {
     render(
       <NativeActivity
         blocks={[]}
@@ -62,9 +62,12 @@ describe('compact native execution activity', () => {
         ]}
       />
     )
+    const summary = screen.getByRole('button', { name: /nativeSubagents.title · 1/ })
+    expect(summary).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByText('Check product prices')).not.toBeInTheDocument()
+    fireEvent.click(summary)
     expect(screen.getByText('Check product prices')).toBeInTheDocument()
     expect(screen.getByText(/nativeSubagents.waiting_answer/)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'nativeActivity.thinking' })).toHaveAttribute('aria-expanded', 'false')
   })
   it('provides Chinese activity labels at the actual lookup path', () => {
     expect(zh.nativeActivity.thinking).toBe('思考')
@@ -81,11 +84,11 @@ describe('compact native execution activity', () => {
   })
   it('keeps detailed thinking, failures and file-tool output collapsed by default', () => {
     render(<NativeActivity blocks={[tool('write'), thinking, tool('retry', 'error')]} processing={false} />)
-    expect(screen.getByRole('button', { name: 'nativeActivity.finished' })).toHaveAttribute('aria-expanded', 'false')
+    const summary = screen.getByRole('button', { name: /nativeActivity.finished.*nativeActivity.failures/ })
+    expect(summary).toHaveAttribute('aria-expanded', 'false')
     expect(screen.queryByText('details-write')).not.toBeInTheDocument()
     expect(screen.queryByText('private reasoning')).not.toBeInTheDocument()
-    expect(screen.getByText('nativeActivity.failures')).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'nativeActivity.finished' }))
+    fireEvent.click(summary)
     expect(screen.getByText('details-write')).toBeInTheDocument()
     expect(screen.getByText('private reasoning')).toBeInTheDocument()
   })
@@ -98,7 +101,7 @@ describe('compact native execution activity', () => {
     mocks.waiting.clear()
     rerender(<NativeActivity blocks={[tool('permission'), tool('next', 'invoking')]} processing />)
     expect(screen.queryByRole('button', { name: 'approve-permission' })).not.toBeInTheDocument()
-    expect(screen.getByText('next')).toBeInTheDocument()
+    expect(screen.queryByText('next')).not.toBeInTheDocument()
     expect(screen.queryByText('details-next')).not.toBeInTheDocument()
     rerender(<NativeActivity blocks={[tool('permission'), tool('next')]} processing={false} />)
     expect(screen.queryByText('next')).not.toBeInTheDocument()

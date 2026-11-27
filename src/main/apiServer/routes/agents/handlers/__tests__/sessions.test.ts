@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   getSession: vi.fn(),
   sessionExists: vi.fn(),
   resetOpenCodeMemory: vi.fn(),
+  updateSession: vi.fn(),
   changeOpenCodeHistory: vi.fn()
 }))
 
@@ -31,6 +32,7 @@ vi.mock('@main/services/agents', () => ({
     getSession: (...args: unknown[]) => mocks.getSession(...args),
     sessionExists: mocks.sessionExists,
     resetOpenCodeMemory: mocks.resetOpenCodeMemory,
+    updateSession: mocks.updateSession,
     changeOpenCodeHistory: mocks.changeOpenCodeHistory
   }
 }))
@@ -43,7 +45,7 @@ vi.mock('@main/services/agents/services/LegacyContinuationService', () => ({
   legacyContinuationService: { continueSession: vi.fn() }
 }))
 
-import { changeNativeHistory, createSession, deleteSession, resetNativeMemory } from '../sessions'
+import { changeNativeHistory, createSession, deleteSession, patchSession, resetNativeMemory } from '../sessions'
 
 describe('agent session handlers', () => {
   beforeEach(() => {
@@ -146,13 +148,14 @@ describe('agent session handlers', () => {
     expect(mocks.broadcastSessionChanged).not.toHaveBeenCalled()
   })
 
-  it('broadcasts newly created sessions before returning them', async () => {
-    const session = { id: 'session-1', agent_id: 'agent-1', name: 'Untitled' }
+  it('broadcasts newly created sessions using only validated input', async () => {
+    const session = { id: 'session-1', agent_id: 'zen-opencode-default', name: 'Untitled' }
     mocks.createSession.mockResolvedValue(session)
 
     const req = {
-      params: { agentId: 'agent-1' },
-      body: { name: 'Untitled' }
+      params: { agentId: 'zen-opencode-default' },
+      body: { name: 'Untitled', agent_id: 'legacy' },
+      validatedBody: { name: 'Untitled' }
     } as unknown as Request
     const json = vi.fn()
     const status = vi.fn(() => ({ json }))
@@ -160,10 +163,33 @@ describe('agent session handlers', () => {
 
     await createSession(req, res)
 
-    expect(mocks.createSession).toHaveBeenCalledWith('agent-1', { name: 'Untitled' })
-    expect(mocks.broadcastSessionChanged).toHaveBeenCalledWith('agent-1', 'session-1', false, 'created')
+    expect(mocks.createSession).toHaveBeenCalledWith('zen-opencode-default', { name: 'Untitled' })
+    expect(mocks.broadcastSessionChanged).toHaveBeenCalledWith('zen-opencode-default', 'session-1', false, 'created')
     expect(status).toHaveBeenCalledWith(201)
     expect(json).toHaveBeenCalledWith(session)
+  })
+
+  it('keeps archived assistants from creating new sessions', async () => {
+    const req = { params: { agentId: 'legacy' } } as unknown as Request
+    const json = vi.fn()
+    const status = vi.fn(() => ({ json }))
+    await createSession(req, { status } as unknown as Response)
+    expect(status).toHaveBeenCalledWith(410)
+    expect(json).toHaveBeenCalledWith({ error: expect.objectContaining({ code: 'legacy_assistant_read_only' }) })
+    expect(mocks.createSession).not.toHaveBeenCalled()
+    expect(mocks.broadcastSessionChanged).not.toHaveBeenCalled()
+  })
+
+  it('updates only approved PATCH fields', async () => {
+    mocks.getSession.mockResolvedValue({ id: 's', agent_id: 'a', name: 'original' })
+    mocks.updateSession.mockResolvedValue({ id: 's', agent_id: 'a', name: 'updated' })
+    const req = {
+      params: { agentId: 'a', sessionId: 's' },
+      body: { name: 'updated', agent_id: 'other' },
+      validatedBody: { name: 'updated' }
+    } as unknown as Request
+    await patchSession(req, { json: vi.fn() } as unknown as Response)
+    expect(mocks.updateSession).toHaveBeenCalledWith('a', 's', { name: 'updated' })
   })
 
   it('allows the last session to be deleted without silently creating another empty session', async () => {

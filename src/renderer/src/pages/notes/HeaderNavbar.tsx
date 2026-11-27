@@ -7,7 +7,7 @@ import { useNotesSettings } from '@renderer/hooks/useNotesSettings'
 import { findNode } from '@renderer/services/NotesTreeService'
 import { Breadcrumb, Dropdown, Input, Tooltip } from 'antd'
 import { t } from 'i18next'
-import { MoreHorizontal, Star } from 'lucide-react'
+import { FilePlus2, FolderPlus, MoreHorizontal, Star } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import styled from 'styled-components'
 
@@ -16,7 +16,15 @@ import NotesSettings from './NotesSettings'
 
 const logger = loggerService.withContext('HeaderNavbar')
 
-const HeaderNavbar = ({ notesTree, getCurrentNoteContent, onToggleStar, onExpandPath, onRenameNode }) => {
+const HeaderNavbar = ({
+  notesTree,
+  getCurrentNoteContent,
+  onToggleStar,
+  onExpandPath,
+  onRenameNode,
+  onCreateNote,
+  onCreateFolder
+}) => {
   const { activeNode } = useActiveNode(notesTree)
   const [breadcrumbItems, setBreadcrumbItems] = useState<
     Array<{ key: string; title: string; treePath: string; isFolder: boolean }>
@@ -242,7 +250,22 @@ const HeaderNavbar = ({ notesTree, getCurrentNoteContent, onToggleStar, onExpand
             })}></Breadcrumb>
         </BreadcrumbsContainer>
       </NavbarCenter>
-      <NavbarRight style={{ paddingRight: 0 }}>
+      <NavbarRight style={{ paddingRight: 12, gap: 6 }}>
+        {onCreateNote && (
+          <Tooltip title={t('notes.new_note')} mouseEnterDelay={0.5}>
+            <QuickCreateButton type="button" onClick={onCreateNote} aria-label={t('notes.new_note')}>
+              <FilePlus2 size={14} />
+              <span>{t('notes.new_note')}</span>
+            </QuickCreateButton>
+          </Tooltip>
+        )}
+        {onCreateFolder && (
+          <Tooltip title={t('notes.new_folder')} mouseEnterDelay={0.5}>
+            <QuickIconButton type="button" onClick={onCreateFolder} aria-label={t('notes.new_folder')}>
+              <FolderPlus size={15} />
+            </QuickIconButton>
+          </Tooltip>
+        )}
         {canShowStarButton && (
           <Tooltip title={activeNode.isStarred ? t('notes.unstar') : t('notes.star')} mouseEnterDelay={0.8}>
             <StarButton onClick={handleToggleStarred}>
@@ -269,6 +292,60 @@ const HeaderNavbar = ({ notesTree, getCurrentNoteContent, onToggleStar, onExpand
     </NavbarHeader>
   )
 }
+
+const QuickCreateButton = styled.button`
+  -webkit-app-region: no-drag;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 11px;
+  border: 0;
+  border-radius: var(--zen-radius-pill);
+  background: var(--zen-glass-pill);
+  backdrop-filter: blur(20px) saturate(160%);
+  box-shadow: var(--zen-shadow-pill);
+  color: var(--zen-text-1);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background 150ms ease,
+    box-shadow 160ms ease,
+    transform 130ms ease;
+
+  &:hover {
+    background: var(--zen-glass-pill-hover);
+    box-shadow: var(--zen-shadow-pill-hover);
+    transform: translateY(-0.5px);
+  }
+`
+
+const QuickIconButton = styled.button`
+  -webkit-app-region: no-drag;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--zen-text-2);
+  cursor: pointer;
+  transition:
+    background 150ms ease,
+    color 150ms ease,
+    box-shadow 160ms ease;
+
+  &:hover {
+    background: var(--zen-glass-active);
+    box-shadow: var(--zen-shadow-active);
+    color: var(--zen-text-1);
+  }
+`
 
 const NavbarIcon = styled(BaseNavbarIcon)`
   svg {

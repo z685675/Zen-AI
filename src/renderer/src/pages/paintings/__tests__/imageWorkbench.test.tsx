@@ -615,15 +615,13 @@ describe('image workbench workflows', () => {
     vi.mocked(window.imageCanvas!.recover).mockResolvedValue({ ...task, status: 'running', error: undefined })
     render(<Workbench />)
     await screen.findByRole('heading', { name: 'Image download pending' })
-    expect(
-      screen.getByText('Generated, but not downloaded yet. Retrieve the original result without generating again.')
-    ).toBeInTheDocument()
+    expect(screen.getByText('The image has been generated and is waiting to be downloaded.')).toBeInTheDocument()
     expect(screen.getByText('Stopped during: Downloading images')).toBeInTheDocument()
     expect(screen.getByText('Task diagnostics', { exact: false })).toHaveTextContent('185.0 s')
     expect(screen.getByText('server-task-id')).toBeInTheDocument()
     expect(screen.getByText('245.0 s')).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Retrieve original result' }))
-    await waitFor(() => expect(window.imageCanvas!.recover).toHaveBeenCalledWith(task.id))
+    fireEvent.click(screen.getByRole('button', { name: 'Download image' }))
+    await waitFor(() => expect(window.imageCanvas!.recover).toHaveBeenCalledWith(task.id, undefined))
     expect(window.imageCanvas!.submit).not.toHaveBeenCalled()
   })
   it('does not submit a shortcut during IME composition or while references are being read', async () => {

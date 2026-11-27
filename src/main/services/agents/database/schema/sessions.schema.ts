@@ -6,40 +6,43 @@ import { foreignKey, index, integer, sqliteTable, text } from 'drizzle-orm/sqlit
 
 import { agentsTable } from './agents.schema'
 
-export const sessionsTable = sqliteTable('sessions', {
-  id: text('id').primaryKey(),
-  agent_type: text('agent_type').notNull(),
-  agent_id: text('agent_id').notNull(), // Primary agent ID for the session
-  name: text('name').notNull(),
-  description: text('description'),
-  accessible_paths: text('accessible_paths'), // JSON array of directory paths the agent can access
+export const sessionsTable = sqliteTable(
+  'sessions',
+  {
+    id: text('id').primaryKey(),
+    agent_type: text('agent_type').notNull(),
+    agent_id: text('agent_id').notNull(), // Primary agent ID for the session
+    name: text('name').notNull(),
+    description: text('description'),
+    accessible_paths: text('accessible_paths'), // JSON array of directory paths the agent can access
 
-  instructions: text('instructions'),
+    instructions: text('instructions'),
 
-  model: text('model').notNull(), // Main model ID (required)
-  plan_model: text('plan_model'), // Optional plan/thinking model ID
-  small_model: text('small_model'), // Optional small/fast model ID
+    model: text('model').notNull(), // Main model ID (required)
+    plan_model: text('plan_model'), // Optional plan/thinking model ID
+    small_model: text('small_model'), // Optional small/fast model ID
 
-  mcps: text('mcps'), // JSON array of MCP tool IDs
-  allowed_tools: text('allowed_tools'), // JSON array of allowed tool IDs (whitelist)
-  slash_commands: text('slash_commands'), // JSON array of slash command objects from SDK init
+    mcps: text('mcps'), // JSON array of MCP tool IDs
+    allowed_tools: text('allowed_tools'), // JSON array of allowed tool IDs (whitelist)
+    slash_commands: text('slash_commands'), // JSON array of slash command objects from SDK init
 
-  configuration: text('configuration'), // JSON, extensible settings
+    configuration: text('configuration'), // JSON, extensible settings
 
-  sort_order: integer('sort_order').notNull().default(0), // Manual sort order (lower = first)
-  is_pinned: integer('is_pinned', { mode: 'boolean' }).notNull().default(false),
-  is_archived: integer('is_archived', { mode: 'boolean' }).notNull().default(false),
+    sort_order: integer('sort_order').notNull().default(0), // Manual sort order (lower = first)
+    is_pinned: integer('is_pinned', { mode: 'boolean' }).notNull().default(false),
+    is_archived: integer('is_archived', { mode: 'boolean' }).notNull().default(false),
 
-  created_at: text('created_at').notNull(),
-  updated_at: text('updated_at').notNull()
-})
-
-// Foreign keys for sessions table
-export const sessionsFkAgent = foreignKey({
-  columns: [sessionsTable.agent_id],
-  foreignColumns: [agentsTable.id],
-  name: 'fk_session_agent_id'
-}).onDelete('cascade')
+    created_at: text('created_at').notNull(),
+    updated_at: text('updated_at').notNull()
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.agent_id],
+      foreignColumns: [agentsTable.id],
+      name: 'fk_session_agent_id'
+    }).onDelete('cascade')
+  ]
+)
 
 // Indexes for sessions table
 export const sessionsCreatedAtIdx = index('idx_sessions_created_at').on(sessionsTable.created_at)

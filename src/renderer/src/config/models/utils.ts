@@ -221,8 +221,8 @@ const supportsOpenAIImageEndpoint = (provider: Provider): boolean => {
 }
 
 export const getEffectiveModelEndpointType = (model: Model, provider?: Provider): EndpointType | undefined => {
-  if (model.endpoint_type === 'image-generation') {
-    return 'image-generation'
+  if (model.endpoint_type === 'image-generation' || model.endpoint_type === 'openai-video') {
+    return model.endpoint_type
   }
 
   const declaredEndpointTypes = model.supported_endpoint_types ?? []
@@ -256,7 +256,15 @@ export const getEffectiveModelEndpointType = (model: Model, provider?: Provider)
     }
 
     const preferredEndpoint = (
-      ['openai', 'openai-response', 'anthropic', 'gemini', 'image-generation', 'jina-rerank'] as EndpointType[]
+      [
+        'openai',
+        'openai-response',
+        'anthropic',
+        'gemini',
+        'image-generation',
+        'openai-video',
+        'jina-rerank'
+      ] as EndpointType[]
     ).find((endpointType) => declaredEndpointTypes.includes(endpointType))
     if (preferredEndpoint) {
       return preferredEndpoint

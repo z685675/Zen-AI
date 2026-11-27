@@ -187,7 +187,7 @@ const Sidebar: FC = () => {
 const MainMenus: FC = () => {
   const { hideMinappPopup } = useMinappPopup()
   const { pathname } = useLocation()
-  const { sidebarIcons, defaultPaintingProvider } = useSettings()
+  const { sidebarIcons } = useSettings()
   const { enableDeveloperMode } = useEnableDeveloperMode()
   const { minappShow } = useRuntime()
   const navigate = useNavigate()
@@ -223,7 +223,7 @@ const MainMenus: FC = () => {
     assistants: '/',
     agents: '/agents',
     store: '/store',
-    paintings: defaultPaintingProvider ? `/paintings/${defaultPaintingProvider}` : '/paintings',
+    paintings: '/paintings',
     new_assistant: '/new-assistant',
     translate: '/translate',
     minapp: '/apps',

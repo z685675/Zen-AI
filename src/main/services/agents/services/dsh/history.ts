@@ -62,9 +62,10 @@ export async function editDshNativeHistory(
   display: AgentPersistedMessage[],
   messageId: string,
   action: 'retry' | 'delete' | 'fork',
-  commit: (items: AgentPersistedMessage[], nativeId: string) => Promise<void>
+  commit: (items: AgentPersistedMessage[], nativeId: string) => Promise<void>,
+  activityAlreadyHeld = false
 ) {
-  const release = acquireSessionActivity(session.id, 'continuation')
+  const release = activityAlreadyHeld ? undefined : acquireSessionActivity(session.id, 'continuation')
   try {
     const original = await readDshSessionHistory(session.id)
     const plan = planDshHistory(original.events, display, messageId, action)
@@ -83,6 +84,6 @@ export async function editDshNativeHistory(
       throw error
     }
   } finally {
-    release()
+    release?.()
   }
 }

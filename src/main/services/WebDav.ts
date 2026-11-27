@@ -1,15 +1,11 @@
+import { Readable } from 'node:stream'
+
 import { loggerService } from '@logger'
 import type { WebDavConfig } from '@types'
 import https from 'https'
 import path from 'path'
 import type Stream from 'stream'
-import type {
-  BufferLike,
-  CreateDirectoryOptions,
-  GetFileContentsOptions,
-  PutFileContentsOptions,
-  WebDAVClient
-} from 'webdav'
+import type { BufferLike, CreateDirectoryOptions, PutFileContentsOptions, WebDAVClient } from 'webdav'
 import { createClient } from 'webdav'
 
 const logger = loggerService.withContext('WebDav')
@@ -32,7 +28,6 @@ export default class WebDav {
     })
 
     this.putFileContents = this.putFileContents.bind(this)
-    this.getFileContents = this.getFileContents.bind(this)
     this.createDirectory = this.createDirectory.bind(this)
     this.deleteFile = this.deleteFile.bind(this)
   }
@@ -67,19 +62,21 @@ export default class WebDav {
     }
   }
 
-  public getFileContents = async (filename: string, options?: GetFileContentsOptions) => {
-    if (!this.instance) {
-      throw new Error('WebDAV client not initialized')
-    }
-
+  public openReadStream(filename: string, signal: AbortSignal): Stream.Readable {
+    if (!this.instance) throw new Error('WebDAV client not initialized')
     const remoteFilePath = path.posix.join(this.webdavPath, filename)
-
-    try {
-      return await this.instance.getFileContents(remoteFilePath, options)
-    } catch (error) {
-      logger.error('Error getting file contents on WebDAV:', error as Error)
-      throw error
-    }
+    const stream = this.instance.createReadStream(remoteFilePath, {
+      signal,
+      callback: ({ body }) => {
+        // The WebDAV client pipes its response into a PassThrough. Forward
+        // source failures, and release the source if the consumer stops early.
+        if (!(body instanceof Readable)) return
+        body.once('error', (error) => stream.destroy(error))
+        if (stream.destroyed) body.destroy()
+        else stream.once('close', () => body.destroy())
+      }
+    })
+    return stream
   }
 
   public getDirectoryContents = async () => {

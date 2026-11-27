@@ -99,49 +99,57 @@ const FileItem: React.FC<FileItemProps> = ({ fileInfo, style }) => {
 }
 
 const FileItemCard = styled.div`
-  border-radius: 8px;
+  border-radius: var(--zen-radius-md);
   overflow: hidden;
-  border: 0.5px solid var(--color-border);
+  border: 0;
+  background: var(--zen-glass-card);
+  backdrop-filter: blur(20px) saturate(155%);
+  -webkit-backdrop-filter: blur(20px) saturate(155%);
+  box-shadow: var(--zen-shadow-card);
   flex-shrink: 0;
   transition:
-    box-shadow 0.2s ease,
-    background-color 0.2s ease;
-  --shadow-color: rgba(0, 0, 0, 0.05);
+    box-shadow 180ms ease,
+    background 160ms ease,
+    transform 140ms ease;
+
   &:hover {
-    box-shadow:
-      0 10px 15px -3px var(--shadow-color),
-      0 4px 6px -4px var(--shadow-color);
-  }
-  body[theme-mode='dark'] & {
-    --shadow-color: rgba(255, 255, 255, 0.02);
+    background: var(--zen-glass-pill-hover);
+    box-shadow: var(--zen-shadow-pill-hover);
+    transform: translateY(-0.5px);
   }
 `
 
 const CardContent = styled.div`
-  padding: 8px 8px 8px 16px;
+  padding: 10px 10px 10px 16px;
   display: flex;
-  align-items: stretch;
-  gap: 16px;
+  align-items: center;
+  gap: 14px;
 `
 
 const FileIcon = styled.div`
-  max-height: 44px;
-  color: var(--color-text-3);
-  font-size: 32px;
+  width: 38px;
+  height: 38px;
+  border-radius: var(--zen-radius-sm);
+  background: var(--zen-bg-subtle);
+  color: var(--zen-text-2);
+  font-size: 20px;
   display: flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
 `
 
 const FileName = styled.div`
-  font-size: 15px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--zen-text-1);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   cursor: pointer;
-  transition: color 0.2s ease;
+  transition: color 0.15s ease;
   span {
-    font-size: 15px;
+    font-size: 14px;
   }
   &:hover {
     color: var(--color-primary);
@@ -149,8 +157,9 @@ const FileName = styled.div`
 `
 
 const FileInfo = styled.div`
-  font-size: 13px;
-  color: var(--color-text-2);
+  font-size: 12px;
+  color: var(--zen-text-3);
+  margin-top: 2px;
 `
 
 const FileActions = styled.div`

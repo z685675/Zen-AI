@@ -21,6 +21,12 @@ export default defineConfig({
           resolve(root, '../../src/renderer/src/assets/fonts/harmonyos/LICENSE.txt'),
           resolve(root, '../../resources/image-workbench/HarmonyOS-font-LICENSE.txt')
         )
+        for (const font of ['geist', 'geistmono', 'ibmplexsans', 'ibmplexmono']) {
+          copyFileSync(
+            resolve(root, `../../src/renderer/src/assets/fonts/presets/${font}-OFL.txt`),
+            resolve(root, `../../resources/image-workbench/${font}-OFL.txt`)
+          )
+        }
       }
     }
   ]

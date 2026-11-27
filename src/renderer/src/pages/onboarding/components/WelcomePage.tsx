@@ -25,22 +25,42 @@ const WelcomePage: FC<WelcomePageProps> = ({ setStep }) => {
   }
 
   return (
-    <div className="flex h-full w-full flex-col items-center justify-center">
-      <div className="flex flex-col items-center gap-6">
-        <img src={AppLogo} alt={APP_NAME} className="h-16 w-16 rounded-xl" />
-
-        <div className="flex flex-col items-center gap-2">
-          <h1 className="m-0 font-semibold text-(--color-text) text-2xl">{t('onboarding.welcome.title')}</h1>
-          <p className="m-0 text-(--color-text-2) text-sm">{t('onboarding.welcome.subtitle')}</p>
+    <div className="flex h-full w-full flex-col items-center justify-center p-6">
+      <div
+        className="flex w-full max-w-[460px] flex-col items-center gap-6 px-10 py-11"
+        style={{
+          borderRadius: 'var(--zen-radius-xl)',
+          background: 'var(--zen-glass-card)',
+          backdropFilter: 'blur(32px) saturate(165%)',
+          WebkitBackdropFilter: 'blur(32px) saturate(165%)',
+          boxShadow: 'var(--zen-shadow-composer)'
+        }}>
+        <div
+          className="flex h-[72px] w-[72px] items-center justify-center rounded-2xl"
+          style={{ background: 'var(--zen-glass-pill)', boxShadow: 'var(--zen-shadow-pill)' }}>
+          <img src={AppLogo} alt={APP_NAME} className="h-14 w-14 rounded-xl" />
         </div>
 
-        <div className="mt-2 flex w-100 flex-col gap-3">
-          <Button type="primary" size="large" block className="h-12 rounded-lg" onClick={handleSelectProvider}>
+        <div className="flex flex-col items-center gap-2 text-center">
+          <h1 className="m-0 font-semibold text-(--zen-text-1) text-2xl tracking-tight">
+            {t('onboarding.welcome.title')}
+          </h1>
+          <p className="m-0 text-(--zen-text-2) text-sm">{t('onboarding.welcome.subtitle')}</p>
+        </div>
+
+        <div className="mt-2 flex w-full flex-col gap-3">
+          <Button
+            type="primary"
+            size="large"
+            shape="round"
+            block
+            className="h-11 font-medium"
+            onClick={handleSelectProvider}>
             {t('onboarding.welcome.other_provider')}
           </Button>
         </div>
 
-        <p className="mt-1 text-(--color-text-3) text-xs">{t('onboarding.welcome.setup_hint')}</p>
+        <p className="m-0 text-center text-(--zen-text-3) text-xs">{t('onboarding.welcome.setup_hint')}</p>
       </div>
     </div>
   )

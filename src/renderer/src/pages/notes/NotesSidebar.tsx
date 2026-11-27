@@ -660,7 +660,11 @@ const NotesSidebar: FC<NotesSidebarProps> = ({
                     {recentDeletedNotes.length > 0 && (
                       <RecycleBinEntryWrap>
                         <RecycleBinEntryButton type="button" onClick={() => setIsRecycleBinOpen(true)}>
-                          最近删除 ({recentDeletedNotes.length})
+                          <RecycleBinEntryLabel>
+                            <Trash2 size={13} />
+                            <span>{t('common.recently_deleted')}</span>
+                          </RecycleBinEntryLabel>
+                          <RecycleBinEntryCount>{recentDeletedNotes.length}</RecycleBinEntryCount>
                         </RecycleBinEntryButton>
                       </RecycleBinEntryWrap>
                     )}
@@ -669,7 +673,7 @@ const NotesSidebar: FC<NotesSidebarProps> = ({
                   {isDragOverSidebar && <DragOverIndicator />}
                 </SidebarContainer>
                 <Modal
-                  title="最近删除"
+                  title={t('common.recently_deleted')}
                   open={isRecycleBinOpen}
                   onCancel={() => {
                     setIsRecycleBinOpen(false)
@@ -824,12 +828,10 @@ const NotesSidebar: FC<NotesSidebarProps> = ({
 }
 
 export const SidebarContainer = styled.div`
-  width: 250px;
-  min-width: 250px;
-  height: calc(100vh - var(--navbar-height));
-  background-color: var(--color-background);
-  border-right: 0.5px solid var(--color-border);
-  border-top-left-radius: 10px;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  background-color: transparent;
   display: flex;
   flex-direction: column;
   position: relative;
@@ -838,10 +840,10 @@ export const SidebarContainer = styled.div`
 
 export const NotesTreeContainer = styled.div`
   flex: 1;
+  min-height: 0;
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  height: calc(100vh - var(--navbar-height) - 45px);
 `
 
 export const DragOverIndicator = styled.div`
@@ -913,27 +915,68 @@ export const CancelButton = styled.button`
 `
 
 const RecycleBinEntryWrap = styled.div`
-  margin: 0 8px 12px;
+  padding: 8px 10px 10px;
 `
 
 const RecycleBinEntryButton = styled.button`
   width: 100%;
   display: flex;
   align-items: center;
-  justify-content: center;
-  padding: 8px 10px;
+  justify-content: space-between;
+  gap: 8px;
+  height: 32px;
+  padding: 0 10px;
   border: none;
-  border-radius: 12px;
-  background: var(--color-background-soft);
-  color: var(--color-text-2);
+  border-radius: var(--zen-radius-sm);
+  background: var(--zen-bg-subtle);
+  color: var(--zen-text-2);
   cursor: pointer;
   font-size: 12px;
   font-weight: 500;
+  transition:
+    background 150ms ease,
+    color 150ms ease,
+    box-shadow 160ms ease;
 
   &:hover {
-    background: var(--color-background-mute);
-    color: var(--color-text);
+    background: var(--zen-glass-active);
+    box-shadow: var(--zen-shadow-active);
+    color: var(--zen-text-1);
   }
+`
+
+const RecycleBinEntryLabel = styled.span`
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+
+  svg {
+    flex: none;
+    color: var(--zen-text-3);
+    transition: color 150ms ease;
+  }
+
+  ${RecycleBinEntryButton}:hover & svg {
+    color: var(--zen-text-2);
+  }
+`
+
+const RecycleBinEntryCount = styled.span`
+  flex: none;
+  min-width: 18px;
+  padding: 1px 6px;
+  border-radius: var(--zen-radius-pill);
+  background: var(--zen-bg-hover);
+  color: var(--zen-text-3);
+  font-family: var(--code-font-family);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.4;
+  text-align: center;
 `
 
 const RecycleBinModalList = styled.div`
@@ -988,10 +1031,10 @@ const RecentDeletedSelector = styled.button`
   width: 18px;
   height: 18px;
   flex-shrink: 0;
-  border: 1px solid rgba(15, 23, 42, 0.15);
-  border-radius: 6px;
-  background: #ffffff;
-  color: #16a34a;
+  border: 1px solid var(--zen-border-strong);
+  border-radius: 5px;
+  background: var(--zen-bg-elevated);
+  color: var(--zen-success);
   display: inline-flex;
   align-items: center;
   justify-content: center;

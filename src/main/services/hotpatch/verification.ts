@@ -72,13 +72,18 @@ export function assertCompatible(expected: HotpatchBase, actual: HotpatchBase): 
   }
 }
 
-export function validatePolicy(policy: HotpatchPolicy, base: HotpatchBase, now: number): void {
+export function validatePolicy(
+  policy: HotpatchPolicy,
+  base: HotpatchBase,
+  now: number,
+  allowPreviouslyAcceptedRollback = false
+): void {
   assertCompatible(base, policy.base)
   if (
     !Number.isSafeInteger(now) ||
     now < 1_700_000_000 ||
     policy.issuedAt > now + HOTPATCH_LIMITS.clockSkewSeconds ||
-    policy.expiresAt <= now ||
+    (policy.expiresAt <= now && !(allowPreviouslyAcceptedRollback && policy.action === 'rollback')) ||
     policy.expiresAt <= policy.issuedAt ||
     policy.expiresAt - policy.issuedAt > HOTPATCH_LIMITS.policyLifetimeSeconds
   )

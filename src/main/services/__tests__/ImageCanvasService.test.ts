@@ -42,10 +42,10 @@ vi.mock('electron', () => ({
         this.webContents.mainFrame.url = pathToFileURL(path).href
       }),
       close: vi.fn(),
-      send: (channel: string) => {
+      send: vi.fn((channel: string) => {
         if (channel === channels.flush)
           mocks.listeners.get(channels.flushed)?.({ sender: this.webContents, senderFrame: this.webContents.mainFrame })
-      }
+      })
     }
     setBounds = vi.fn()
     setVisible = vi.fn()
@@ -114,15 +114,27 @@ describe('bundled canvas isolation', () => {
     await service.open({
       providers: [],
       bounds: { x: 0, y: 0, width: 900, height: 700 },
+      theme: 'dark',
+      themePreset: 'zen-paper',
       userFontFamily: fontFamily
     })
     const view = mocks.views.at(-1)
     expect(view.webContents.loadFile.mock.calls[0][0]).toContain('image-workbench')
     const appearance = new URLSearchParams(view.webContents.loadFile.mock.calls[0][1].hash)
     expect(appearance.get('fontFamily')).toBe(fontFamily)
+    expect(appearance.get('theme')).toBe('dark')
+    expect(appearance.get('themePreset')).toBe('zen-paper')
     expect(appearance.get('os')).toBe(
       process.platform === 'win32' ? 'windows' : process.platform === 'darwin' ? 'mac' : 'linux'
     )
+    service.setAppearance({ theme: 'light', themePreset: 'codex', language: 'en-US' })
+    expect(view.webContents.send).toHaveBeenCalledWith(channels.appearance, {
+      theme: 'light',
+      themePreset: 'codex',
+      language: 'en-US',
+      userFontFamily: ''
+    })
+    expect(view.webContents.loadFile).toHaveBeenCalledTimes(1)
     const handler = mocks.handlers.get(channels.catalog)!
     const frame = view.webContents.mainFrame
     expect(await handler({ sender: view.webContents, senderFrame: frame })).toEqual([])

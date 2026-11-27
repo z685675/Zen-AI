@@ -9,17 +9,26 @@ interface Props {
   activeTopic: Topic
   setActiveAssistant: (assistant: Assistant) => void
   setActiveTopic: (topic: Topic) => void
+  persistAsDefault: boolean
 }
 
-const ChatNavbarContent: FC<Props> = ({ assistant, assistants, activeTopic, setActiveAssistant, setActiveTopic }) => {
+const ChatNavbarContent: FC<Props> = ({
+  assistant,
+  assistants,
+  activeTopic,
+  setActiveAssistant,
+  setActiveTopic,
+  persistAsDefault
+}) => {
   return (
-    <div className="flex min-w-0 flex-1 items-center justify-between">
+    <div className="flex min-w-0 shrink items-center justify-end">
       <TopicContent
         assistant={assistant}
         assistants={assistants}
         activeTopic={activeTopic}
         setActiveAssistant={setActiveAssistant}
         setActiveTopic={setActiveTopic}
+        persistAsDefault={persistAsDefault}
       />
     </div>
   )

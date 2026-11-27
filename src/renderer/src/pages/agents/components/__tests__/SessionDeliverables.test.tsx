@@ -71,6 +71,37 @@ beforeEach(() => {
 })
 
 describe('conversation file changes', () => {
+  it('shows line deltas for an available text change and hides the badge for an empty session', async () => {
+    const entry = {
+      id: 'diff',
+      turn: 'turn',
+      path: 'C:/output/report.md',
+      kind: 'modified',
+      changedAt: 1,
+      canRestore: false
+    }
+    const fileChanges = vi.fn().mockResolvedValueOnce([]).mockResolvedValue([entry])
+    const previewFileChange = vi.fn().mockResolvedValue({
+      format: 'text',
+      before: 'old\n',
+      current: 'new\n',
+      beforeBytes: 4,
+      currentBytes: 4,
+      partial: false,
+      changedSince: false
+    })
+    Object.assign(window.api, { agentLifecycle: { fileChanges, previewFileChange } })
+    const { rerender } = render(
+      <SessionFileChanges key="empty" sessionId="empty" topicId="agent-session:empty" running={false} />
+    )
+    await waitFor(() => expect(fileChanges).toHaveBeenCalledWith('empty'))
+    expect(screen.queryByRole('button', { name: '文件变更' })).not.toBeInTheDocument()
+    rerender(<SessionFileChanges key="diff" sessionId="diff" topicId="agent-session:diff" running={false} />)
+    fireEvent.click(await screen.findByRole('button', { name: '文件变更' }))
+    expect(await screen.findByText('+1')).toBeVisible()
+    expect(screen.getByText('−1')).toBeVisible()
+  })
+
   it('requires an idle turn and explicit confirmation before restoring, and shows conflicts', async () => {
     const entry = {
       id: 'change',
@@ -86,7 +117,7 @@ describe('conversation file changes', () => {
     Object.assign(window.api, { agentLifecycle: { fileChanges: load, restoreFileChange: restore } })
     Object.assign(window.toast, { warning })
     const { rerender } = render(<SessionFileChanges sessionId="one" topicId="agent-session:one" running />)
-    fireEvent.click(screen.getByRole('button', { name: '文件变更' }))
+    fireEvent.click(await screen.findByRole('button', { name: '文件变更' }))
     const button = await screen.findByRole('button', { name: '恢复之前版本' })
     expect(button).toBeDisabled()
     rerender(<SessionFileChanges sessionId="one" topicId="agent-session:one" running={false} />)

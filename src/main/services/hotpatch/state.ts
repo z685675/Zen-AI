@@ -49,6 +49,21 @@ export const sameSnapshot = (left: SnapshotReference | null, right: SnapshotRefe
     ? left === right
     : left.patchId === right.patchId && left.manifestSha256 === right.manifestSha256
 
+const INTERRUPTED_BOOT = 'startup-interrupted'
+const INTERRUPTED_LAST_GOOD = 'startup-interrupted-last-good'
+
+function quarantineStartupTarget(state: HotpatchState, target: SnapshotReference, code: string): void {
+  state.quarantined = [
+    ...state.quarantined.filter((item) => !sameSnapshot(item.target, target)),
+    { target, code: code.slice(0, 80) }
+  ].slice(-100)
+  if (sameSnapshot(state.lastGood, target)) {
+    state.lastGood = state.previousGood
+    state.previousGood = null
+  }
+  if (sameSnapshot(state.previousGood, target)) state.previousGood = null
+}
+
 function fresh(baseBuildId: string): HotpatchState {
   return {
     schemaVersion: 1,
@@ -177,17 +192,24 @@ export class HotpatchStateStore {
   /** Select once, before creating any renderer. No network request or running-task refresh here. */
   async beginBoot(
     allowPending: boolean,
-    safeMode = false
+    safeMode = false,
+    preserveAcceptedRollback = false
   ): Promise<{ target: SnapshotReference | null; challenge?: string; trial: boolean }> {
     return this.update((state) => {
       if (state.boot) {
-        // An interrupted startup is not proof of malicious/bad code (power loss/user exit).
-        // Fall back without permanent quarantine; do not repeatedly trial the same policy.
-        state.skippedSequence = Math.max(state.skippedSequence, state.boot.policySequence)
+        const { target, policySequence } = state.boot
+        const wasLastGood = sameSnapshot(state.lastGood, target)
+        const repeated = wasLastGood && state.lastError?.code === INTERRUPTED_LAST_GOOD
+        // A single interruption may be a power loss or an early exit. Two
+        // consecutive interruptions of the same known-good snapshot must fall back.
+        if (repeated) quarantineStartupTarget(state, target, INTERRUPTED_LAST_GOOD)
+        state.skippedSequence = Math.max(state.skippedSequence, policySequence)
         state.active = state.lastGood
         state.boot = null
-        state.pending = null
-        state.lastError = { code: 'startup-interrupted', at: Date.now() }
+        // A pending rollback has already been reverified by the engine. Preserve
+        // it through crash recovery when it is still the accepted decision.
+        if (!(preserveAcceptedRollback && state.pending?.policySequence === state.highestSequence)) state.pending = null
+        state.lastError = { code: wasLastGood && !repeated ? INTERRUPTED_LAST_GOOD : INTERRUPTED_BOOT, at: Date.now() }
       }
       if (safeMode || state.disabledByUser || state.recoveryRequired) {
         // This process selected builtin. Keep the healthy snapshot for recovery, but let
@@ -195,9 +217,13 @@ export class HotpatchStateStore {
         state.active = null
         return { target: null, trial: false }
       }
-      if (state.pending && allowPending) {
-        const pending = state.pending
-        state.pending = null
+      const pending = allowPending ? state.pending : null
+      if (pending) state.pending = null
+      if (
+        pending &&
+        pending.policySequence > state.skippedSequence &&
+        !state.quarantined.some((item) => sameSnapshot(item.target, pending.target))
+      ) {
         if (!pending.target) {
           state.active = null
           state.lastGood = null
@@ -233,17 +259,7 @@ export class HotpatchStateStore {
   async failStartup(code: string): Promise<SnapshotReference | null> {
     return this.update((state) => {
       const target = state.boot?.target ?? state.active
-      if (target) {
-        state.quarantined = [
-          ...state.quarantined.filter((item) => !sameSnapshot(item.target, target)),
-          { target, code: code.slice(0, 80) }
-        ].slice(-100)
-        if (sameSnapshot(state.lastGood, target)) {
-          state.lastGood = state.previousGood
-          state.previousGood = null
-        }
-        if (sameSnapshot(state.previousGood, target)) state.previousGood = null
-      }
+      if (target) quarantineStartupTarget(state, target, code)
       state.active = state.lastGood
       state.boot = null
       state.pending = null

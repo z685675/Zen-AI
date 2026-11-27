@@ -4,17 +4,15 @@
   --color-scrollbar-thumb-light: rgba(0, 0, 0, 0.15);
   --color-scrollbar-thumb-light-hover: rgba(0, 0, 0, 0.2);
 
-  --color-scrollbar-thumb: var(--color-scrollbar-thumb-dark);
-  --color-scrollbar-thumb-hover: var(--color-scrollbar-thumb-dark-hover);
-
   --scrollbar-width: 6px;
   --scrollbar-height: 6px;
   --scrollbar-thumb-radius: 10px;
 }
 
-body[theme-mode='light'] {
-  --color-scrollbar-thumb: var(--color-scrollbar-thumb-light);
-  --color-scrollbar-thumb-hover: var(--color-scrollbar-thumb-light-hover);
+:root,
+body[theme-mode] {
+  --color-scrollbar-thumb: color-mix(in srgb, var(--zen-text-2) 24%, transparent);
+  --color-scrollbar-thumb-hover: color-mix(in srgb, var(--zen-text-2) 40%, transparent);
 }
 
 /* 全局初始化滚动条样式 */
@@ -35,15 +33,6 @@ body[theme-mode='light'] {
 
 ::-webkit-scrollbar-thumb:hover {
   background: var(--color-scrollbar-thumb-hover);
-}
-
-pre:not(.shiki)::-webkit-scrollbar-thumb {
-  border-radius: 0;
-  background: rgba(0, 0, 0, 0.08);
-}
-
-pre:not(.shiki)::-webkit-scrollbar-thumb:hover {
-  background: rgba(0, 0, 0, 0.15);
 }
 
 .shiki-dark {

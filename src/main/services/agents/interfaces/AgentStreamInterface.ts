@@ -20,6 +20,8 @@ export interface AgentStream extends EventEmitter {
   once(event: 'data', listener: (data: AgentStreamEvent) => void): this
   /** SDK session_id captured from the init message, used for resume. */
   sdkSessionId?: string
+  /** Resolves after native turn resources have been released. */
+  settled?: Promise<void>
 }
 
 export interface AgentThinkingOptions {

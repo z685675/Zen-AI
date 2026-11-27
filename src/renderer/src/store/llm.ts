@@ -54,12 +54,18 @@ type LlmSettings = {
   }
 }
 
+export interface RemoteModelPolicyProgress {
+  version: number
+  pending: Partial<Record<'chat' | 'quick' | 'translate', string | null>>
+}
+
 export interface LlmState {
   providers: Provider[]
   defaultModel?: Model
   defaultModelPolicyVersion?: number
   modelPolicy?: ModelPolicySnapshot
   remoteModelPolicyVersion?: number
+  remoteModelPolicyProgress?: RemoteModelPolicyProgress
   /** @deprecated */
   topicNamingModel: Model
   quickModel?: Model
@@ -220,13 +226,15 @@ const llmSlice = createSlice({
         defaultModel?: Model
         quickModel?: Model
         translateModel?: Model
-        version: number
+        version?: number
+        progress?: RemoteModelPolicyProgress
       }>
     ) => {
       if (action.payload.defaultModel) state.defaultModel = action.payload.defaultModel
       if (action.payload.quickModel) state.quickModel = action.payload.quickModel
       if (action.payload.translateModel) state.translateModel = action.payload.translateModel
-      state.remoteModelPolicyVersion = action.payload.version
+      if (action.payload.version !== undefined) state.remoteModelPolicyVersion = action.payload.version
+      state.remoteModelPolicyProgress = action.payload.progress
     },
 
     setQuickAssistantId: (state, action: PayloadAction<string>) => {

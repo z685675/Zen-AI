@@ -863,53 +863,6 @@
   ],
   "paths": {
     "/v1/agents": {
-      "post": {
-        "summary": "Create a new agent",
-        "description": "Creates a new autonomous agent with the specified configuration and automatically provisions an initial session that mirrors the agent's settings.",
-        "tags": ["Agents"],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateAgentRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Agent created successfully",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AgentEntity"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Validation error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Internal server error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        }
-      },
       "get": {
         "summary": "List all agents",
         "description": "Retrieves a paginated list of all agents",
@@ -1004,6 +957,23 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Create a legacy assistant (retired)",
+        "tags": ["Agents"],
+        "deprecated": true,
+        "responses": {
+          "410": {
+            "description": "Legacy assistants are read-only",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -1362,43 +1332,48 @@
         }
       }
     },
-    "/agents": {
-      "post": {
-        "summary": "Create a new agent",
-        "tags": ["Agents"],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateAgentRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Agent created successfully",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AgentEntity"
-                }
-              }
-            }
+    "/agents/sessions": {
+      "get": {
+        "summary": "List all sessions",
+        "tags": ["Sessions"],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            },
+            "description": "Number of sessions to return"
           },
-          "400": {
-            "description": "Invalid request body",
+          {
+            "in": "query",
+            "name": "offset",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            },
+            "description": "Number of sessions to skip"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of sessions",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/ListSessionsResponse"
                 }
               }
             }
           }
         }
-      },
+      }
+    },
+    "/agents": {
       "get": {
         "summary": "List all agents with pagination",
         "tags": ["Agents"],
@@ -1441,47 +1416,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ListAgentsResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/agents/sessions": {
-      "get": {
-        "summary": "List all sessions",
-        "tags": ["Sessions"],
-        "parameters": [
-          {
-            "in": "query",
-            "name": "limit",
-            "schema": {
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 100,
-              "default": 20
-            },
-            "description": "Number of sessions to return"
-          },
-          {
-            "in": "query",
-            "name": "offset",
-            "schema": {
-              "type": "integer",
-              "minimum": 0,
-              "default": 0
-            },
-            "description": "Number of sessions to skip"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "List of sessions",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ListSessionsResponse"
                 }
               }
             }
@@ -1674,7 +1608,7 @@
     },
     "/agents/{agentId}/sessions": {
       "post": {
-        "summary": "Create a new session for an agent",
+        "summary": "Create a new session for an active assistant",
         "tags": ["Sessions"],
         "parameters": [
           {
@@ -1720,6 +1654,16 @@
           },
           "404": {
             "description": "Agent not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Legacy assistants are read-only",
             "content": {
               "application/json": {
                 "schema": {

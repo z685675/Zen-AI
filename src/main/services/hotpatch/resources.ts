@@ -45,6 +45,7 @@ export function safeSnapshotPath(value: string): boolean {
   return (
     value.length > 0 &&
     value.length <= 512 &&
+    // oxlint-disable-next-line no-control-regex -- Reject control characters in archive paths.
     !/[\\:\x00-\x1f\x7f%?#]/.test(value) &&
     value.split('/').every((part) => part !== '' && part !== '.' && part !== '..' && !/[. ]$/.test(part)) &&
     !value

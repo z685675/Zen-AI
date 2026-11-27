@@ -24,6 +24,28 @@ function provider(overrides: Partial<Provider> = {}): Provider {
   }
 }
 describe('canvas provider catalog', () => {
+  it('lists declared video endpoints and arbitrary aliases without listing text models', () => {
+    const config = provider({
+      models: [
+        {
+          id: 'new/vendor-alias',
+          provider: 'custom',
+          group: 'Test',
+          name: 'Remote',
+          supported_endpoint_types: ['openai-video']
+        },
+        { id: 'my-clips', provider: 'custom', group: 'Test', name: 'Manual', endpoint_type: 'openai-video' },
+        { id: 'ordinary-chat', provider: 'custom', group: 'Test', name: 'Chat', supported_endpoint_types: ['openai'] }
+      ]
+    })
+    expect(imageCanvasProviders([config])[0]).toMatchObject({
+      models: [],
+      videoModels: [
+        { id: 'new/vendor-alias', name: 'Remote' },
+        { id: 'my-clips', name: 'Manual' }
+      ]
+    })
+  })
   it('allows an existing keyless image provider so a ComfyUI transport can be configured', () => {
     const result = imageCanvasProviders([provider({ apiHost: 'http://192.168.1.20:8188', apiKey: '' })])
     expect(result).toHaveLength(1)

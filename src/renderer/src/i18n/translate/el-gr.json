@@ -930,6 +930,20 @@
     "zoomIn": "Μεγέθυνση",
     "zoomOut": "Σμίκρυνση"
   },
+  "app_shell": {
+    "chat_welcome": "Ξεκινήστε μια συνομιλία",
+    "chat_welcome_subtitle": "Κάντε ερωτήσεις, γράψτε, μεταφράστε ή αναζητήστε νέες ιδέες ανά πάσα στιγμή, με όλη σας την προσοχή στις ιδέες σας",
+    "conversations": "Συνομιλίες",
+    "image_workbench": "Εργαστήριο εικόνων",
+    "mcp": "MCP",
+    "more_tools": "Περισσότερα εργαλεία",
+    "navigation": "Κύρια πλοήγηση",
+    "new_conversation": "Νέα συνομιλία",
+    "new_task": "Νέα εργασία",
+    "recent": "Πρόσφατες εργασίες και συνομιλίες",
+    "today_requests": "Σήμερα · {{count}} αιτήματα",
+    "toggle_appearance": "Εναλλαγή φωτεινής ή σκοτεινής εμφάνισης"
+  },
   "assistantDataSafety": {
     "busy": "[to be translated]:Stop active assistant tasks first, then back up, restore or reset data. A data operation may also still be in progress."
   },
@@ -1141,6 +1155,9 @@
     "continuation_too_large": "[to be translated]:History is too large. Export a backup and provide the needed background in a new conversation.",
     "continuation_workspace_missing": "[to be translated]:The original workspace is missing or inaccessible. Check permissions and retry.",
     "continue": "[to be translated]:Continue in new assistant",
+    "delete_legacy_folder": "Διαγραφή φακέλου παλιών συνομιλιών",
+    "delete_legacy_folder_confirm": "Διαγράφονται οριστικά όλες οι παλιές συνομιλίες, μαζί με τις αρχειοθετημένες. Αυτή η ενέργεια δεν αναιρείται.",
+    "delete_legacy_folder_failed": "Ορισμένες παλιές συνομιλίες δεν διαγράφηκαν. Δοκιμάστε ξανά.",
     "historical_copy": "[to be translated]:History copy",
     "legacy_automation_disabled": "Ο παλιός βοηθός δεν συντηρείται πλέον. Οι εξωτερικές συνδέσεις, όπως το WeChat, και οι προγραμματισμένες εργασίες απενεργοποιούνται ακόμη και στη λειτουργία προγραμματιστή. Οι ρυθμίσεις και το ιστορικό διατηρούνται μέχρι να υποστηριχθούν από τον νέο βοηθό.",
     "legacy_read_only": "Ο παλιός βοηθός δεν είναι πλέον διαθέσιμος. Μεταβείτε στον νέο βοηθό.",
@@ -1608,6 +1625,7 @@
         "cache_value": "[to be translated]:{{hits}} hits / {{total}} parses",
         "compressions": "[to be translated]:History compactions",
         "error": "[to be translated]:Resource preparation failed",
+        "local_checkpoint_fallback": "Το απομακρυσμένο μοντέλο οργάνωσης περιεχομένου δεν είναι προσωρινά διαθέσιμο. Η επεξεργασία συνεχίζεται από τοπικό σημείο ελέγχου.",
         "managed": "[to be translated]:Resources and history managed",
         "managed_resources": "[to be translated]:{{count}} resources managed",
         "note": "[to be translated]:This shows resource, history, and capacity handling. It does not mean the model is still responding.",
@@ -1798,6 +1816,13 @@
       "prev": "Προηγούμενο μήνυμα",
       "top": "Επιστροφή στην κορυφή"
     },
+    "quick_roles": {
+      "add": "Προσθήκη ρόλου",
+      "add_to_favorites": "Προσθήκη αγαπημένου ρόλου",
+      "empty": "Δεν έχουν προστεθεί κάρτες ρόλων",
+      "expand_settings": "Εμφάνιση ρυθμίσεων ρόλου",
+      "mine": "Δικά μου"
+    },
     "resend": "Ξαναστείλε",
     "save": {
       "file": {
@@ -1959,6 +1984,12 @@
         "md": "Αντιγραφή ως Markdown",
         "plain_text": "Αντιγραφή ως απλό κείμενο (αφαίρεση Markdown)",
         "title": "Αντιγραφή"
+      },
+      "date_group": {
+        "earlier": "Παλαιότερα",
+        "last_seven_days": "Τελευταίες 7 ημέρες",
+        "pinned": "Καρφιτσωμένα",
+        "today": "Σήμερα"
       },
       "delete": {
         "shortcut": "Πατήστε {{key}} για να διαγράψετε αμέσως"
@@ -2216,6 +2247,7 @@
     "models": "Μοντέλα",
     "more": "Περισσότερα",
     "name": "Όνομα",
+    "new": "Νέο",
     "next_match": "Επόμενος αγώνας",
     "no_results": "Δεν βρέθηκαν αποτελέσματα",
     "none": "Χωρίς",
@@ -2235,6 +2267,7 @@
     "prompt": "Ενδεικτικός ρήματος",
     "provider": "Παρέχων",
     "reasoning_content": "Έχει σκεφτεί πολύ καλά",
+    "recently_deleted": "Διαγράφηκαν πρόσφατα",
     "refresh": "Ανανέωση",
     "regenerate": "Ξαναπαραγωγή",
     "remove_image": "Αφαίρεση εικόνας",
@@ -3166,6 +3199,11 @@
       "pending": "Εκκρεμεί",
       "preview": "Προεπισκόπηση",
       "raw": "Ακατέργαστο",
+      "read_paper": {
+        "active": "Ανάγνωση του άρθρου",
+        "done": "Η ανάγνωση της ενότητας ολοκληρώθηκε",
+        "label": "Ανάγνωση άρθρου"
+      },
       "runningCount": "{{count}} εργαλεία εκτελούνται",
       "search_limited": "[to be translated]:Search limited · not executed",
       "sections": {
@@ -3360,6 +3398,9 @@
     "no_matching_model": "[to be translated]:No available model matches the remote configuration. Import a Provider or choose a model manually.",
     "open_settings": "[to be translated]:Open Model Settings",
     "title": "[to be translated]:No model configured"
+  },
+  "model_status": {
+    "failures": "Αποτυχίες"
   },
   "models": {
     "add_parameter": "Προσθήκη παραμέτρων",
@@ -6533,6 +6574,24 @@
       "color_primary": "Κύριο Χρώμα Θέματος",
       "dark": "Σκοτεινό",
       "light": "Φωτεινό",
+      "mode": "Λειτουργία εμφάνισης",
+      "preset": {
+        "codex": {
+          "description": "Μονόχρωμος χώρος εργασίας",
+          "name": "Codex Workbench"
+        },
+        "font": "Χρήση της γραμματοσειράς του επιλεγμένου στιλ",
+        "title": "Οπτικό στιλ",
+        "zen-paper": {
+          "description": "Ζεστοί χάρτινοι τόνοι",
+          "name": "Zen Paper"
+        }
+      },
+      "route_transition": {
+        "crossfade": "Ομαλή εναλλαγή",
+        "instant": "Άμεση εναλλαγή",
+        "title": "Μεταβάσεις σελίδων"
+      },
       "system": "Σύστημα",
       "title": "Θέμα",
       "window": {

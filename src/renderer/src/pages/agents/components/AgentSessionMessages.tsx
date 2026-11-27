@@ -410,7 +410,7 @@ const AgentSessionMessages = ({ agentId, sessionId, readOnly = false }: Props) =
         // Restoring a position can temporarily hit the end of a partial history page.
         if (!isRestoringScrollRef.current) handleScrollPosition()
       }}>
-      <NarrowLayout style={{ display: 'flex', flexDirection: 'column-reverse' }} contentMaxWidth="960px">
+      <NarrowLayout reading style={{ display: 'flex', flexDirection: 'column-reverse' }}>
         <InfiniteScroll
           dataLength={displayMessages.length}
           next={loadMoreMessages}
@@ -488,7 +488,7 @@ const LoaderContainer = styled.div`
   justify-content: center;
   padding: 10px;
   width: 100%;
-  background: var(--color-background);
+  background: transparent;
   pointer-events: none;
 `
 

@@ -562,17 +562,17 @@ export class NodeProxyController {
 
     const agent = new ProxyAgent()
     this.proxyAgent = agent
-    http.get = this.bindHttpMethod(this.originalHttpGet, agent)
-    http.request = this.bindHttpMethod(this.originalHttpRequest, agent)
-    https.get = this.bindHttpMethod(this.originalHttpsGet, agent)
-    https.request = this.bindHttpMethod(this.originalHttpsRequest, agent)
+    http.get = this.bindHttpMethod(this.originalHttpGet, agent, 'http:')
+    http.request = this.bindHttpMethod(this.originalHttpRequest, agent, 'http:')
+    https.get = this.bindHttpMethod(this.originalHttpsGet, agent, 'https:')
+    https.request = this.bindHttpMethod(this.originalHttpsRequest, agent, 'https:')
   }
 
   // oxlint-disable-next-line @typescript-eslint/no-unsafe-function-type
-  private bindHttpMethod(originalMethod: Function, agent: http.Agent | https.Agent) {
+  private bindHttpMethod(originalMethod: Function, agent: http.Agent | https.Agent, protocol: 'http:' | 'https:') {
     return (...args: any[]) => {
       let url: string | URL | undefined
-      let options: http.RequestOptions | https.RequestOptions
+      let options: https.RequestOptions
       let callback: ((res: http.IncomingMessage) => void) | undefined
 
       if (typeof args[0] === 'string' || args[0] instanceof URL) {
@@ -593,12 +593,13 @@ export class NodeProxyController {
         callback = args[1]
       }
 
-      if (url && this.proxyBypassRuleMatcher.isByPass(url.toString(), this.logger)) {
-        return originalMethod(url, options, callback)
+      const destination = this.getHttpDestination(url, options, protocol)
+      if (options.socketPath || (destination && this.proxyBypassRuleMatcher.isByPass(destination.href, this.logger))) {
+        return url ? originalMethod(url, options, callback) : originalMethod(options, callback)
       }
 
-      if (options.agent instanceof https.Agent) {
-        ;(agent as https.Agent).options.rejectUnauthorized = options.agent.options.rejectUnauthorized
+      if (options.agent instanceof https.Agent && options.rejectUnauthorized === undefined) {
+        options.rejectUnauthorized = options.agent.options.rejectUnauthorized
       }
 
       options.agent = agent
@@ -607,6 +608,22 @@ export class NodeProxyController {
       }
 
       return originalMethod(options, callback)
+    }
+  }
+
+  private getHttpDestination(
+    url: string | URL | undefined,
+    options: https.RequestOptions,
+    protocol: string
+  ): URL | null {
+    try {
+      const target = url ? new URL(url) : new URL(`${protocol}//localhost`)
+      const host = options.hostname || options.host
+      if (host) target.hostname = host.includes(':') && !host.startsWith('[') ? `[${host}]` : host
+      if (options.port !== undefined) target.port = String(options.port)
+      return target
+    } catch {
+      return null
     }
   }
 

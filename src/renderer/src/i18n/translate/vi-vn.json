@@ -930,6 +930,20 @@
     "zoomIn": "Thu phóng",
     "zoomOut": "Alejarse"
   },
+  "app_shell": {
+    "chat_welcome": "Bắt đầu cuộc trò chuyện",
+    "chat_welcome_subtitle": "Đặt câu hỏi, viết, dịch hoặc lên ý tưởng bất cứ lúc nào để bạn có thể tập trung hoàn toàn vào ý tưởng của mình",
+    "conversations": "Cuộc trò chuyện",
+    "image_workbench": "Không gian làm việc hình ảnh",
+    "mcp": "MCP",
+    "more_tools": "Công cụ khác",
+    "navigation": "Điều hướng chính",
+    "new_conversation": "Cuộc trò chuyện mới",
+    "new_task": "Tác vụ mới",
+    "recent": "Tác vụ và cuộc trò chuyện gần đây",
+    "today_requests": "Hôm nay · {{count}} yêu cầu",
+    "toggle_appearance": "Chuyển giao diện sáng hoặc tối"
+  },
   "assistantDataSafety": {
     "busy": "[to be translated]:Stop active assistant tasks first, then back up, restore or reset data. A data operation may also still be in progress."
   },
@@ -1141,6 +1155,9 @@
     "continuation_too_large": "[to be translated]:History is too large. Export a backup and provide the needed background in a new conversation.",
     "continuation_workspace_missing": "[to be translated]:The original workspace is missing or inaccessible. Check permissions and retry.",
     "continue": "[to be translated]:Continue in new assistant",
+    "delete_legacy_folder": "Xóa thư mục cuộc trò chuyện cũ",
+    "delete_legacy_folder_confirm": "Tất cả cuộc trò chuyện cũ, kể cả nội dung đã lưu trữ, sẽ bị xóa vĩnh viễn. Không thể hoàn tác thao tác này.",
+    "delete_legacy_folder_failed": "Không thể xóa một số cuộc trò chuyện cũ. Hãy thử lại.",
     "historical_copy": "[to be translated]:History copy",
     "legacy_automation_disabled": "Trợ lý cũ không còn được bảo trì. Các tích hợp bên ngoài, gồm WeChat, và tác vụ theo lịch đã bị tắt, kể cả trong chế độ nhà phát triển. Cấu hình và lịch sử được giữ lại. Các tính năng sẽ mở lại khi trợ lý mới hỗ trợ.",
     "legacy_read_only": "Trợ lý cũ đã ngừng hoạt động. Vui lòng chuyển sang trợ lý mới.",
@@ -1608,6 +1625,7 @@
         "cache_value": "[to be translated]:{{hits}} hits / {{total}} parses",
         "compressions": "[to be translated]:History compactions",
         "error": "[to be translated]:Resource preparation failed",
+        "local_checkpoint_fallback": "Mô hình xử lý ngữ cảnh từ xa tạm thời không khả dụng. Quá trình xử lý sẽ tiếp tục từ điểm lưu cục bộ.",
         "managed": "[to be translated]:Resources and history managed",
         "managed_resources": "[to be translated]:{{count}} resources managed",
         "note": "[to be translated]:This shows resource, history, and capacity handling. It does not mean the model is still responding.",
@@ -1798,6 +1816,13 @@
       "prev": "Tin nhắn trước",
       "top": "Quay lại đầu trang"
     },
+    "quick_roles": {
+      "add": "Thêm vai trò",
+      "add_to_favorites": "Thêm vai trò yêu thích",
+      "empty": "Chưa thêm thẻ vai trò nào",
+      "expand_settings": "Hiện cài đặt vai trò",
+      "mine": "Vai trò của tôi"
+    },
     "resend": "Gửi lại",
     "save": {
       "file": {
@@ -1959,6 +1984,12 @@
         "md": "Sao chép dưới dạng markdown",
         "plain_text": "Sao chép dưới dạng văn bản thuần (loại bỏ Markdown)",
         "title": "Sao chép"
+      },
+      "date_group": {
+        "earlier": "Trước đó",
+        "last_seven_days": "7 ngày qua",
+        "pinned": "Đã ghim",
+        "today": "Hôm nay"
       },
       "delete": {
         "shortcut": "Giữ {{key}} để xóa trực tiếp"
@@ -2216,6 +2247,7 @@
     "models": "Mô hình",
     "more": "Thêm",
     "name": "Tên",
+    "new": "Tạo mới",
     "next_match": "Trận đấu tiếp theo",
     "no_results": "Không có kết quả",
     "none": "",
@@ -2235,6 +2267,7 @@
     "prompt": "Lời nhắc",
     "provider": "Nhà cung cấp",
     "reasoning_content": "Reasoning profundo",
+    "recently_deleted": "Đã xóa gần đây",
     "refresh": "Làm mới",
     "regenerate": "Tái tạo",
     "remove_image": "Xóa hình ảnh",
@@ -3166,6 +3199,11 @@
       "pending": "Đang chờ",
       "preview": "Voorbeeld",
       "raw": "Raw",
+      "read_paper": {
+        "active": "Đang đọc bài nghiên cứu",
+        "done": "Đã đọc xong phần này",
+        "label": "Đọc bài nghiên cứu"
+      },
       "runningCount": "{{count}} công cụ đang chạy",
       "search_limited": "[to be translated]:Search limited · not executed",
       "sections": {
@@ -3360,6 +3398,9 @@
     "no_matching_model": "[to be translated]:No available model matches the remote configuration. Import a Provider or choose a model manually.",
     "open_settings": "[to be translated]:Open Model Settings",
     "title": "[to be translated]:No model configured"
+  },
+  "model_status": {
+    "failures": "Số lần thất bại"
   },
   "models": {
     "add_parameter": "Thêm tham số",
@@ -6533,6 +6574,24 @@
       "color_primary": "Warna Primer",
       "dark": "Tối",
       "light": "Luz",
+      "mode": "Chế độ giao diện",
+      "preset": {
+        "codex": {
+          "description": "Không gian làm việc đơn sắc",
+          "name": "Codex Workbench"
+        },
+        "font": "Dùng phông chữ của kiểu đã chọn",
+        "title": "Kiểu giao diện",
+        "zen-paper": {
+          "description": "Tông màu giấy ấm",
+          "name": "Zen Paper"
+        }
+      },
+      "route_transition": {
+        "crossfade": "Mờ dần",
+        "instant": "Chuyển ngay",
+        "title": "Hiệu ứng chuyển trang"
+      },
       "system": "Hệ thống",
       "title": "Chủ đề",
       "window": {

@@ -1,6 +1,6 @@
 import { loggerService } from '@logger'
 import { assertLegacyAutomationEnabled } from '@shared/agents/legacyAutomation'
-import { DEFAULT_OPENCODE_AGENT_ID } from '@shared/config/agents'
+import { DEFAULT_OPENCODE_AGENT_ID, NEW_ASSISTANT_AGENT_IDS } from '@shared/config/agents'
 import type { CreateTaskRequest, ListOptions, ScheduledTaskEntity, TaskRunLogEntity, UpdateTaskRequest } from '@types'
 import { and, asc, count, desc, eq, inArray, isNotNull, lte, ne, notInArray } from 'drizzle-orm'
 
@@ -17,6 +17,8 @@ import {
 import { computeInitialTaskRun, computeNextCronRun, validateTaskSchedule } from './taskSchedule'
 
 const logger = loggerService.withContext('TaskService')
+
+const legacyTask = notInArray(scheduledTasksTable.agent_id, [...NEW_ASSISTANT_AGENT_IDS])
 
 export class TaskService extends BaseService {
   private static instance: TaskService | null = null
@@ -120,9 +122,13 @@ export class TaskService extends BaseService {
     }
   }
 
-  async getTaskById(taskId: string): Promise<ScheduledTaskEntity | null> {
+  async getTaskById(taskId: string, legacyOnly = false): Promise<ScheduledTaskEntity | null> {
     const database = await this.getDatabase()
-    const result = await database.select().from(scheduledTasksTable).where(eq(scheduledTasksTable.id, taskId)).limit(1)
+    const result = await database
+      .select()
+      .from(scheduledTasksTable)
+      .where(and(eq(scheduledTasksTable.id, taskId), legacyOnly ? legacyTask : undefined))
+      .limit(1)
 
     if (!result[0]) return null
     return this.enrichWithChannels(result[0])
@@ -174,17 +180,21 @@ export class TaskService extends BaseService {
     return this.getTaskWithChannels(taskId)
   }
 
-  async deleteTaskById(taskId: string): Promise<boolean> {
+  async deleteTaskById(taskId: string, legacyOnly = false): Promise<boolean> {
     const database = await this.getDatabase()
-    const result = await database.delete(scheduledTasksTable).where(eq(scheduledTasksTable.id, taskId))
+    const result = await database
+      .delete(scheduledTasksTable)
+      .where(and(eq(scheduledTasksTable.id, taskId), legacyOnly ? legacyTask : undefined))
 
-    logger.info('Task deleted', { taskId })
+    if (result.rowsAffected > 0) logger.info('Task deleted', { taskId })
     return result.rowsAffected > 0
   }
 
-  async listAllTasks(options: ListOptions = {}): Promise<{ tasks: ScheduledTaskEntity[]; total: number }> {
+  async listAllTasks(
+    options: ListOptions & { legacyOnly?: boolean } = {}
+  ): Promise<{ tasks: ScheduledTaskEntity[]; total: number }> {
     const database = await this.getDatabase()
-    const whereCondition = ne(scheduledTasksTable.name, 'heartbeat')
+    const whereCondition = and(ne(scheduledTasksTable.name, 'heartbeat'), options.legacyOnly ? legacyTask : undefined)
 
     const totalResult = await database.select({ count: count() }).from(scheduledTasksTable).where(whereCondition)
 

@@ -37,16 +37,12 @@ export class BackupPathMigrationService {
   static async migrateRestoredInternalPaths(options: { removeWeChatCredentials?: boolean } = {}): Promise<void> {
     const currentUserDataPath = app.getPath('userData')
 
-    const migrations = [
-      this.migrateAgentsDatabase(currentUserDataPath),
-      this.migrateNotesInternalLinks(currentUserDataPath)
-    ]
+    await this.migrateAgentsDatabase(currentUserDataPath)
+    await this.migrateNotesInternalLinks(currentUserDataPath)
     if (options.removeWeChatCredentials) {
-      migrations.push(this.removeRestoredWeChatCredentials())
-      migrations.push(this.deactivateRestoredWeChatChannels())
+      await this.deactivateRestoredWeChatChannels()
+      await this.removeRestoredWeChatCredentials()
     }
-
-    await Promise.all(migrations)
 
     await fs.writeFile(this.getMigrationMarkerPath(), new Date().toISOString(), 'utf-8')
   }
@@ -99,6 +95,7 @@ export class BackupPathMigrationService {
       }
     } catch (error) {
       logger.error('Failed to migrate internal data paths in agents database', error as Error)
+      throw error
     } finally {
       client.close()
     }
@@ -109,12 +106,8 @@ export class BackupPathMigrationService {
     table: string,
     column: string
   ): Promise<boolean> {
-    try {
-      const result = await client.execute(`PRAGMA table_info(${table})`)
-      return result.rows.some((row) => row.name === column)
-    } catch {
-      return false
-    }
+    const result = await client.execute(`PRAGMA table_info(${table})`)
+    return result.rows.some((row) => row.name === column)
   }
 
   private static async migrateNotesInternalLinks(currentUserDataPath: string): Promise<void> {
@@ -143,6 +136,7 @@ export class BackupPathMigrationService {
       }
     } catch (error) {
       logger.error('Failed to migrate internal data links in notes', error as Error)
+      throw error
     }
   }
 
@@ -165,6 +159,7 @@ export class BackupPathMigrationService {
       }
     } catch (error) {
       logger.error('Failed to remove restored WeChat credentials', error as Error)
+      throw error
     }
   }
 
@@ -194,6 +189,7 @@ export class BackupPathMigrationService {
       }
     } catch (error) {
       logger.error('Failed to mark restored WeChat channels inactive', error as Error)
+      throw error
     } finally {
       client.close()
     }

@@ -8,7 +8,8 @@ import type {
   ImageCanvasProgress,
   ImageCanvasProvider,
   ImageCanvasRequest,
-  ImageCanvasTask
+  ImageCanvasTask,
+  LegacyImageRecord
 } from '@shared/config/imageCanvas'
 import { imageCanvasMaxBatchTasks } from '@shared/config/imageCanvas'
 import { defaultImageCapabilities } from '@shared/config/imageCapabilities'
@@ -30,6 +31,11 @@ import { ImageStudioRequestError } from './studioRequest'
 
 type StoredTask = ImageCanvasTask & { fingerprint: string; remote?: CanvasRemoteJob; providerBinding?: string }
 const logger = loggerService.withContext('ImageCanvas')
+
+function legacyId(parts: Array<string | number>): string {
+  const hex = createHash('sha256').update(JSON.stringify(parts)).digest('hex')
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`
+}
 
 function providerBinding(provider: ImageCanvasProvider): string {
   const key = provider.apiKey
@@ -54,6 +60,8 @@ export class ImageCanvasTaskStore {
   private pending: Array<() => void> = []
   private activePhases = new Map<string, { phase: NonNullable<ImageCanvasTask['phase']>; started: number }>()
   private readonly index: string
+  private readonly legacyIndex: string
+  private legacyImports?: Set<string>
   private readonly studioAssets: StudioAssetCache
 
   constructor(
@@ -63,6 +71,7 @@ export class ImageCanvasTaskStore {
     mkdirSync(directory, { recursive: true })
     this.studioAssets = new StudioAssetCache(directory)
     this.index = join(directory, 'tasks.json')
+    this.legacyIndex = join(directory, 'legacy-imports.json')
     if (existsSync(this.index)) {
       // A corrupt index must not silently discard billing/deduplication evidence.
       const records: StoredTask[] = JSON.parse(readFileSync(this.index, 'utf8'))
@@ -84,7 +93,8 @@ export class ImageCanvasTaskStore {
         throw new Error('invalid_task_index')
       this.tasks = records.map((task) => {
         if (task.status !== 'running') return task
-        const notSubmitted = task.diagnostics?.generationSubmitted === false && !task.remote
+        const notSubmitted =
+          !task.remote && (task.phase === 'queued' || task.diagnostics?.generationSubmitted === false)
         return {
           ...task,
           status: notSubmitted ? 'failed' : 'uncertain',
@@ -150,6 +160,7 @@ export class ImageCanvasTaskStore {
       timings[active.phase] = (timings[active.phase] || 0) + Math.max(0, Math.round(performance.now() - active.started))
     }
     return {
+      ...(task.importedLegacy ? { importedLegacy: true } : {}),
       id: task.id,
       providerId: task.providerId,
       modelId: task.modelId,
@@ -169,6 +180,82 @@ export class ImageCanvasTaskStore {
       maskAsset: task.maskAsset,
       batchId: task.batchId
     }
+  }
+
+  private importedIds(): Set<string> {
+    this.legacyImports ??= new Set<string>(
+      existsSync(this.legacyIndex) ? JSON.parse(readFileSync(this.legacyIndex, 'utf8')) : []
+    )
+    return this.legacyImports
+  }
+
+  private markImported(id: string): void {
+    const ids = this.importedIds()
+    if (ids.has(id)) return
+    writeFileSync(`${this.legacyIndex}.tmp`, JSON.stringify([...ids, id]), { mode: 0o600 })
+    renameSync(`${this.legacyIndex}.tmp`, this.legacyIndex)
+    ids.add(id)
+  }
+
+  async importLegacy(
+    record: LegacyImageRecord,
+    readAsset: (source: LegacyImageRecord['assets'][number]) => Promise<Buffer>
+  ): Promise<number> {
+    const id = legacyId(['record', record.id])
+    if (this.importedIds().has(id)) return 0
+    const existing = this.tasks.find((task) => task.id === id)
+    const assets: string[] = []
+    let missing = 0
+    for (const [index, source] of record.assets.entries()) {
+      const assetId = legacyId(['asset', record.id, index])
+      const file = join(this.directory, `${assetId}.png`)
+      try {
+        if (!existsSync(file)) {
+          const png = await sharp(await readAsset(source), { limitInputPixels: 50_000_000 })
+            .rotate()
+            .png()
+            .toBuffer()
+          writeFileSync(`${file}.tmp`, png, { mode: 0o600 })
+          renameSync(`${file}.tmp`, file)
+        }
+        assets.push(assetId)
+      } catch {
+        missing++
+      }
+    }
+    if (this.importedIds().has(id)) {
+      for (const asset of assets) {
+        const file = join(this.directory, `${asset}.png`)
+        if (existsSync(file)) unlinkSync(file)
+      }
+      return 0
+    }
+    if (!existing || JSON.stringify(existing.assets) !== JSON.stringify(assets)) {
+      const previous = this.tasks
+      this.tasks = [
+        {
+          id,
+          fingerprint: id,
+          importedLegacy: true,
+          providerId: '',
+          modelId: '',
+          prompt: record.prompt,
+          createdAt: new Date(Date.parse(record.createdAt || '') || 0).toISOString(),
+          status: assets.length ? 'completed' : 'failed',
+          error: assets.length ? undefined : 'legacy_image_unavailable',
+          assets
+        },
+        ...previous.filter((task) => task.id !== id)
+      ]
+      try {
+        this.persist()
+      } catch (error) {
+        this.tasks = previous
+        throw error
+      }
+    }
+    if (!missing) this.markImported(id)
+    return missing
   }
 
   async asset(id: string): Promise<string> {
@@ -293,7 +380,7 @@ export class ImageCanvasTaskStore {
         attempts: 0,
         phaseDurationsMs: {},
         transport: isZenManagedApiHost(provider.apiHost) ? 'studio' : 'direct',
-        ...(isZenManagedApiHost(provider.apiHost) ? { generationSubmitted: false } : {})
+        generationSubmitted: false
       }
     }
     this.tasks.unshift(task)
@@ -318,12 +405,15 @@ export class ImageCanvasTaskStore {
     return this.task(task.id)!
   }
 
-  recover(provider: ImageCanvasProvider, id: string): ImageCanvasTask {
+  recover(provider: ImageCanvasProvider, id: string, assetId?: string): ImageCanvasTask {
     const task = this.tasks.find((task) => task.id === id && task.providerId === provider.id)
     if (!task?.remote) throw new Error('studio_job_unavailable')
     if (task.providerBinding && task.providerBinding !== providerBinding(provider))
       throw new Error('provider_configuration_changed')
-    if (task.status === 'running' || task.status === 'completed') return this.publicTask(task)
+    const repairIndex = assetId === undefined ? undefined : task.assets.indexOf(assetId)
+    if (repairIndex === -1) throw new Error('asset_unavailable')
+    if (task.status === 'running' || (task.status === 'completed' && repairIndex === undefined))
+      return this.publicTask(task)
     if (this.active >= 2) throw new Error('too_many_tasks')
     const previous = { status: task.status, error: task.error }
     task.status = 'running'
@@ -335,7 +425,7 @@ export class ImageCanvasTaskStore {
       throw error
     }
     this.active++
-    void this.run(structuredClone(provider), undefined, task)
+    void this.run(structuredClone(provider), undefined, task, repairIndex)
     return this.publicTask(task)
   }
 
@@ -343,6 +433,7 @@ export class ImageCanvasTaskStore {
     const task = this.tasks.find((item) => item.id === id)
     if (!task) throw new Error('task_unavailable')
     if (task.status === 'running') throw new Error('task_running')
+    if (task.importedLegacy) this.markImported(id)
     const previous = this.tasks
     this.tasks = this.tasks.filter((item) => item !== task)
     try {
@@ -380,7 +471,8 @@ export class ImageCanvasTaskStore {
   private async run(
     provider: ImageCanvasProvider,
     input: ImageCanvasRequest | undefined,
-    task: StoredTask
+    task: StoredTask,
+    repairIndex?: number
   ): Promise<void> {
     let phase = task.phase || 'preparing'
     let phaseStart = performance.now()
@@ -402,6 +494,9 @@ export class ImageCanvasTaskStore {
       phaseStart = performance.now()
     }
     const progress: ImageCanvasProgress = (next, capability, server, download) => {
+      if (next === 'generating' && task.diagnostics?.transport === 'direct') {
+        task.diagnostics.generationSubmitted = true
+      }
       if (download && task.diagnostics) {
         const downloads = (task.diagnostics.downloads ??= [])
         const index = downloads.findIndex((entry) => entry.assetId === download.assetId)
@@ -451,7 +546,8 @@ export class ImageCanvasTaskStore {
           ? await readExternalImages(provider, task.remote, this.request, progress)
           : await readStudioImages(provider, task.remote!, this.request, undefined, progress, studioAssets)
       for (const [index, bytes] of images.entries()) {
-        if (task.assets[index]) continue
+        const currentAsset = task.assets[index]
+        if (currentAsset && index !== repairIndex) continue
         progress('decoding')
         let normalized: Buffer
         try {
@@ -465,7 +561,7 @@ export class ImageCanvasTaskStore {
         }
         if (normalized.length > 40 * 1024 * 1024) throw new Error('result_too_large')
         progress('saving')
-        const id = randomUUID()
+        const id = currentAsset || randomUUID()
         const path = join(this.directory, `${id}.png`)
         try {
           writeFileSync(`${path}.tmp`, normalized)
@@ -473,12 +569,17 @@ export class ImageCanvasTaskStore {
         } catch {
           throw new Error('image_storage_failed')
         }
-        task.assets.push(id)
-        const metadata = await sharp(normalized).metadata()
-        if (metadata.width && metadata.height) (task.outputSizes ??= []).push(`${metadata.width}x${metadata.height}`)
+        if (!currentAsset) {
+          task.assets.push(id)
+          const metadata = await sharp(normalized).metadata()
+          if (metadata.width && metadata.height) (task.outputSizes ??= []).push(`${metadata.width}x${metadata.height}`)
+        }
         this.persist()
       }
-      if (images.length < (task.parameters?.count || 1)) {
+      if (
+        images.length < (task.parameters?.count || 1) ||
+        (repairIndex !== undefined && repairIndex >= images.length)
+      ) {
         task.status = 'uncertain'
         task.error = 'partial_image_result'
       } else {

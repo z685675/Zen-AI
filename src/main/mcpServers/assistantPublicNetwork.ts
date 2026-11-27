@@ -3,6 +3,8 @@ import { lookup } from 'node:dns/promises'
 import { net, session } from 'electron'
 import ipaddr from 'ipaddr.js'
 
+import { isLocalHostname, isPublicAddress, webHostname } from './publicWebNetwork'
+
 export type PublicRequest = (url: string, init: RequestInit) => Promise<Response>
 let network: Promise<Electron.Session> | undefined
 
@@ -130,10 +132,6 @@ export async function readPublicBytes(response: Response, limit: number) {
 }
 
 const normalizedHost = (value: string) => value.toLowerCase().replace(/\.$/, '')
-const localHost = (hostname: string) =>
-  !hostname.includes('.') || /(?:^|\.)(?:localhost|local|internal|lan|home|home\.arpa)$/.test(hostname)
-const publicAddress = (address: string) => ipaddr.isValid(address) && ipaddr.process(address).range() === 'unicast'
-
 function fakeDnsAddress(address: string): boolean {
   if (!ipaddr.isValid(address)) return false
   const parsed = ipaddr.process(address)
@@ -179,7 +177,7 @@ async function verifyPublicDns(hostname: string, signal: AbortSignal | undefined
         const before = names.size
         for (const record of records) {
           if (record.type !== 5 || typeof record.name !== 'string' || !names.has(normalizedHost(record.name))) continue
-          if (typeof record.data !== 'string' || localHost(normalizedHost(record.data)))
+          if (typeof record.data !== 'string' || isLocalHostname(normalizedHost(record.data)))
             throw new Error('Private/local source addresses are not supported')
           names.add(normalizedHost(record.data))
         }
@@ -191,7 +189,7 @@ async function verifyPublicDns(hostname: string, signal: AbortSignal | undefined
     })
   )
   const addresses = answers.flat()
-  if (!addresses.length || addresses.some((address) => typeof address !== 'string' || !publicAddress(address)))
+  if (!addresses.length || addresses.some((address) => typeof address !== 'string' || !isPublicAddress(address)))
     throw new Error('Private/local or unverifiable source addresses are not supported')
 }
 
@@ -199,23 +197,36 @@ export async function assertPublicSourceUrl(value: string, signal?: AbortSignal,
   const url = new URL(value)
   if (url.protocol !== 'https:' || url.username || url.password || (url.port && url.port !== '443'))
     throw new Error('Only public HTTPS source URLs are supported')
-  const hostname = normalizedHost(url.hostname.replace(/^\[|\]$/g, ''))
+  const hostname = webHostname(url)
   if (ipaddr.isValid(hostname)) {
-    if (!publicAddress(hostname)) throw new Error('Private/local source addresses are not supported')
+    if (!isPublicAddress(hostname)) throw new Error('Private/local source addresses are not supported')
     return url
   }
-  if (localHost(hostname)) throw new Error('Private/local source addresses are not supported')
+  if (isLocalHostname(hostname)) throw new Error('Private/local source addresses are not supported')
   signal?.throwIfAborted()
   const addresses = await lookup(hostname, { all: true })
-  if (!addresses.length || addresses.some(({ address }) => !publicAddress(address) && !fakeDnsAddress(address)))
+  await assertPublicDnsAnswers(
+    hostname,
+    addresses.map(({ address }) => address),
+    signal,
+    request
+  )
+  return url
+}
+
+export async function assertPublicDnsAnswers(
+  hostname: string,
+  addresses: string[],
+  signal?: AbortSignal,
+  request = fetchAssistantPublic
+): Promise<void> {
+  if (!addresses.length || addresses.some((address) => !isPublicAddress(address) && !fakeDnsAddress(address)))
     throw new Error('Private/local source addresses are not supported')
-  if (addresses.some(({ address }) => fakeDnsAddress(address))) {
-    // A virtual address is not evidence of a real public destination. Independently
-    // confirm both address families, then let the system proxy/TUN route the name.
+  if (addresses.some(fakeDnsAddress)) {
+    // Virtual addresses need independent public DNS evidence before system proxy/TUN routing.
     await verifyPublicDns(hostname, signal, request)
   }
   signal?.throwIfAborted()
-  return url
 }
 
 export async function requestPublicSource(

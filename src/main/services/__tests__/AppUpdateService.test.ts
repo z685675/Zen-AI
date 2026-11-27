@@ -938,6 +938,7 @@ describe('AppUpdateService', () => {
     })
     await vi.advanceTimersByTimeAsync(120000)
     expect(settled).toBe(false)
+    mockAutoUpdater.emit('error', new Error('UAC declined'))
     rejectLaunch(new Error('UAC declined'))
     await expect(first).resolves.toMatchObject({ success: false })
     expect(mockNativeAutoUpdater.listenerCount('before-quit-for-update')).toBe(0)
@@ -946,6 +947,7 @@ describe('AppUpdateService', () => {
       mockNativeAutoUpdater.emit('before-quit-for-update')
     })
     await expect(service.quitAndInstall()).resolves.toMatchObject({ success: true })
+    expect(mockAutoUpdater.checkForUpdates).not.toHaveBeenCalled()
   })
 
   it('rejects a corrupt cached DMG and an HTML download without opening it or quitting', async () => {
@@ -1258,6 +1260,18 @@ describe('AppUpdateService', () => {
     await vi.advanceTimersByTimeAsync(0)
     expect(service.getState()).toMatchObject({ status: 'downloaded', updateInfo: { version: '1.1.0' } })
     vi.clearAllTimers()
+  })
+
+  it('does not let a periodic check download the already prepared installer again', async () => {
+    const { AppUpdateService } = await import('../AppUpdateService')
+    const service = new AppUpdateService(null, '1.0.0', () => true)
+    mockAutoUpdater.emit('update-downloaded', { version: '1.1.0' })
+    mockAutoUpdater.checkForUpdates.mockImplementationOnce(async () => {
+      expect(mockAutoUpdater.autoDownload).toBe(false)
+      return { isUpdateAvailable: true, updateInfo: { version: '1.1.0' } }
+    })
+    await expect(service.checkForUpdates('auto')).resolves.toMatchObject({ status: 'downloaded' })
+    expect(mockAutoUpdater.downloadUpdate).not.toHaveBeenCalled()
   })
 
   it.each(['update-available', 'update-not-available'])(

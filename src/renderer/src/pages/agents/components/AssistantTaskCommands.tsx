@@ -30,8 +30,9 @@ export default function AssistantTaskCommands({ onSelect }: { onSelect: (command
         type="button"
         aria-label={t('assistantTaskCommands.title')}
         title={t('assistantTaskCommands.title')}
-        className="flex size-8 items-center justify-center rounded-full text-(--color-text-2) hover:bg-(--color-background-soft)">
-        <Command size={15} />
+        className="flex h-7 items-center gap-1 rounded-(--zen-radius-sm) border border-(--zen-border) bg-(--zen-bg-subtle) px-2 text-(--zen-text-2) text-xs hover:bg-(--zen-bg-hover)">
+        <Command size={13} />
+        <span aria-hidden="true">/</span>
       </button>
     </Dropdown>
   )

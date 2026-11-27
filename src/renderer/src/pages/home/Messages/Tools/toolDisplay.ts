@@ -1,4 +1,5 @@
 import type { MCPTool } from '@renderer/types'
+import { t } from 'i18next'
 
 import { AgentToolsType } from './MessageAgentTools/types'
 
@@ -90,7 +91,11 @@ export const getToolDisplayInfo = (toolName?: string, tool?: Pick<MCPTool, 'serv
   const normalizedServer = normalize(serverName)
   const normalizedName = normalize(name)
   if (normalizedName === 'readpaper') {
-    return { label: '阅读论文', activeLabel: '正在阅读论文', doneLabel: '本段读取完成' }
+    return {
+      label: t('message.tools.read_paper.label'),
+      activeLabel: t('message.tools.read_paper.active'),
+      doneLabel: t('message.tools.read_paper.done')
+    }
   }
 
   if (normalizedServer.includes('browser')) {

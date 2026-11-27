@@ -292,40 +292,28 @@ const getDependencyErrorLabel = (toolResponse: any): string | undefined => {
 const getToneColor = (tone: AgentTaskStatus['tone']) => {
   switch (tone) {
     case 'success':
-      return 'var(--color-status-success, #22c55e)'
+      return 'var(--zen-success)'
     case 'error':
-      return 'var(--color-status-error, #ff4d4f)'
+      return 'var(--zen-danger)'
     case 'running':
     default:
-      return 'var(--color-primary)'
-  }
-}
-
-const getToneBackground = (tone: AgentTaskStatus['tone']) => {
-  switch (tone) {
-    case 'success':
-      return 'rgba(34, 197, 94, 0.08)'
-    case 'error':
-      return 'rgba(255, 77, 79, 0.08)'
-    case 'running':
-    default:
-      return 'rgba(22, 119, 255, 0.08)'
+      return 'var(--zen-warning)'
   }
 }
 
 const StatusContainer = styled.div<{ $tone: AgentTaskStatus['tone'] }>`
+  --tone: ${(props) => getToneColor(props.$tone)};
   display: inline-flex;
   align-items: center;
   gap: 7px;
   max-width: 100%;
   width: fit-content;
   margin-bottom: 8px;
-  padding: 7px 11px;
-  border-radius: 999px;
-  color: ${(props) => getToneColor(props.$tone)};
-  background: ${(props) => getToneBackground(props.$tone)};
-  border: 0.5px solid color-mix(in srgb, ${(props) => getToneColor(props.$tone)} 24%, transparent);
-  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.04);
+  padding: 4px 8px;
+  border-radius: var(--zen-radius-md);
+  color: var(--zen-text-2);
+  background: var(--zen-bg-elevated);
+  border: 1px solid var(--zen-border);
 `
 
 const StatusIcon = styled.span`
@@ -335,6 +323,7 @@ const StatusIcon = styled.span`
   width: 14px;
   height: 14px;
   flex: 0 0 auto;
+  color: var(--tone);
 `
 
 const StatusText = styled.span`

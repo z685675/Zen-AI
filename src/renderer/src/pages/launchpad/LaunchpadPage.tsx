@@ -2,7 +2,6 @@ import { OpenClawIcon } from '@renderer/components/Icons/SVGIcon'
 import App from '@renderer/components/MinApp/MinApp'
 import { useMinapps } from '@renderer/hooks/useMinapps'
 import { useRuntime } from '@renderer/hooks/useRuntime'
-import { useSettings } from '@renderer/hooks/useSettings'
 import {
   Activity,
   BarChart3,
@@ -24,7 +23,6 @@ import styled from 'styled-components'
 const LaunchpadPage: FC = () => {
   const navigate = useNavigate()
   const { t } = useTranslation()
-  const { defaultPaintingProvider } = useSettings()
   const { pinned } = useMinapps()
   const { openedKeepAliveMinapps } = useRuntime()
 
@@ -56,7 +54,7 @@ const LaunchpadPage: FC = () => {
     {
       icon: <Palette size={32} className="icon" />,
       text: t('title.paintings'),
-      path: defaultPaintingProvider ? `/paintings/${defaultPaintingProvider}` : '/paintings',
+      path: '/paintings',
       bgColor: 'linear-gradient(135deg, #EC4899, #F472B6)' // 绘画：活力粉色，代表创造力和艺术
     },
     {

@@ -1,9 +1,10 @@
-import { writeFile } from 'node:fs/promises'
+import { copyFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
 import { loggerService } from '@logger'
 import {
+  type ImageCanvasAppearance,
   type ImageCanvasCatalog,
   imageCanvasChannels as channels,
   imageCanvasMaxBatchTasks,
@@ -12,9 +13,12 @@ import {
   imageCanvasProtocols,
   type ImageCanvasProvider,
   type ImageCanvasRequest,
-  imageViewBounds
+  imageViewBounds,
+  type LegacyImageRecord
 } from '@shared/config/imageCanvas'
+import { videoChannels, type VideoRequest } from '@shared/config/videoGeneration'
 import { isZenManagedApiHost } from '@shared/config/zenProvider'
+import { IpcChannel } from '@shared/IpcChannel'
 import {
   app,
   type BrowserWindow,
@@ -27,19 +31,33 @@ import {
   WebContentsView
 } from 'electron'
 
+import { fetchPublicHttpsResult } from '../mcpServers/publicWebNetwork'
+import { importLegacyImages } from './imageCanvas/legacyImages'
 import { ImageModelConfiguration } from './imageCanvas/ModelConfiguration'
+import type { ImageFetch } from './imageCanvas/protocol'
 import { studioModels } from './imageCanvas/studio'
 import { createStudioDownloadFetch } from './imageCanvas/studioTransport'
 import { ImageCanvasTaskStore } from './imageCanvas/TaskStore'
+import { VideoTasks } from './imageCanvas/VideoTasks'
 import { routeManagedFetch } from './modelTransport/apiFetch'
 
 const logger = loggerService.withContext('ImageCanvas')
+function canvasAppearance(input: ImageCanvasAppearance = {}): Required<ImageCanvasAppearance> {
+  return {
+    theme: input.theme === 'dark' ? 'dark' : 'light',
+    themePreset: input.themePreset === 'zen-paper' ? 'zen-paper' : 'codex',
+    language: typeof input.language === 'string' ? input.language.slice(0, 20) : 'zh-CN',
+    userFontFamily: typeof input.userFontFamily === 'string' ? input.userFontFamily.slice(0, 500) : ''
+  }
+}
 let tasks: ImageCanvasTaskStore | undefined
+let videos: VideoTasks | undefined
 
 export class ImageCanvasService {
   private view?: WebContentsView
   private providers: ImageCanvasProvider[] = []
   private closing?: Promise<void>
+  private importing = Promise.resolve(0)
   private readonly page = join(__dirname, '../../resources/image-workbench/index.html')
   private configuration?: ImageModelConfiguration
   private readonly catalogs = new Map<string, { expires: number; value: Promise<ImageCanvasProvider> }>()
@@ -47,13 +65,16 @@ export class ImageCanvasService {
     (input, init) => net.fetch(input instanceof URL ? input.href : input, init),
     (url) => session.defaultSession.resolveProxy(url)
   )
-  private readonly request: typeof fetch = routeManagedFetch(this.downloadFetch)
+  private readonly apiRequest = routeManagedFetch(this.downloadFetch)
+  private readonly request: ImageFetch = (input, init) => {
+    if (init?.publicImageResult) {
+      if (typeof input !== 'string' && !(input instanceof URL)) throw new Error('invalid_result_url')
+      return fetchPublicHttpsResult(input, init.signal)
+    }
+    return this.apiRequest(input, init)
+  }
 
   constructor(private readonly window: BrowserWindow) {
-    window.once('closed', () => {
-      this.view?.webContents.close()
-      this.view = undefined
-    })
     const authorized = (event: Electron.IpcMainInvokeEvent | Electron.IpcMainEvent) =>
       this.view &&
       event.sender === this.view.webContents &&
@@ -84,13 +105,52 @@ export class ImageCanvasService {
     handle(channels.history, () => this.store().history())
     handle(channels.historyPage, (input) => this.store().historyPage(input?.cursor, input?.limit))
     handle(channels.asset, (id) => this.store().asset(this.validId(id)))
-    handle(channels.recover, (id) => {
-      const task = this.store().task(this.validId(id))
+    handle(channels.recover, (input) => {
+      const id = this.validId(typeof input === 'string' ? input : input?.id)
+      const assetId = input?.assetId === undefined ? undefined : this.validId(input.assetId)
+      const task = this.store().task(id)
       const provider = this.providers.find((provider) => provider.id === task?.providerId)
       if (!provider) throw new Error('provider_unavailable')
-      return this.store().recover(provider, id)
+      return this.store().recover(provider, id, assetId)
     })
     handle(channels.remove, (id) => this.store().remove(this.validId(id)))
+    handle(videoChannels.catalog, () =>
+      this.providers
+        .filter((provider) => provider.videoModels?.length)
+        .map(({ id, name, videoModels }) => ({ id, name, models: videoModels }))
+    )
+    handle(videoChannels.history, () => this.videoStore().history())
+    handle(videoChannels.submit, (input: VideoRequest) => {
+      this.validId(input?.id)
+      const provider = this.providers.find(
+        (provider) =>
+          provider.id === input.providerId && provider.videoModels?.some((model) => model.id === input.modelId)
+      )
+      if (!provider) throw new Error('model_unavailable')
+      return this.videoStore().submit(provider, input)
+    })
+    handle(videoChannels.recover, (value) => {
+      const id = this.validId(value)
+      const task = this.videoStore()
+        .history()
+        .find((task) => task.id === id)
+      const provider = this.providers.find((provider) => provider.id === task?.providerId)
+      if (!provider) throw new Error('provider_unavailable')
+      return this.videoStore().recover(provider, id)
+    })
+    handle(videoChannels.preview, (id) => this.videoStore().preview(this.validId(id)))
+    handle(videoChannels.remove, (id) => this.videoStore().remove(this.validId(id)))
+    handle(videoChannels.save, async (value) => {
+      const id = this.validId(value)
+      const source = this.videoStore().file(id)
+      const target = await dialog.showSaveDialog(this.window, {
+        defaultPath: `Zen-AI-${id}.mp4`,
+        filters: [{ name: 'MP4', extensions: ['mp4'] }]
+      })
+      if (target.canceled || !target.filePath) return false
+      await copyFile(source, target.filePath)
+      return true
+    })
     handle(
       channels.configure,
       (input: { providerId: string; modelId: string; settings: ImageCanvasModelConfiguration | null }) => {
@@ -119,8 +179,15 @@ export class ImageCanvasService {
       return true
     })
     // Install before the first page is opened; unauthenticated frames cannot acknowledge a flush.
-    ipcMain.on(channels.flushed, (event) => {
+    const acknowledgeFlush = (event: Electron.IpcMainEvent) => {
       if (authorized(event)) this.resolveFlush?.()
+    }
+    ipcMain.on(channels.flushed, acknowledgeFlush)
+    window.once('closed', () => {
+      ipcMain.off(channels.flushed, acknowledgeFlush)
+      this.resolveFlush?.()
+      this.view?.webContents.close()
+      this.view = undefined
     })
   }
 
@@ -134,6 +201,22 @@ export class ImageCanvasService {
   private store(): ImageCanvasTaskStore {
     tasks ??= new ImageCanvasTaskStore(join(app.getPath('userData'), 'Data', 'image-canvas'), this.request)
     return tasks
+  }
+
+  private videoStore(): VideoTasks {
+    videos ??= new VideoTasks(join(app.getPath('userData'), 'Data', 'video-workbench'), this.apiRequest)
+    return videos
+  }
+
+  importLegacy(
+    records: LegacyImageRecord[],
+    readStoredFile: (name: string, maxBytes: number) => Promise<Buffer>
+  ): Promise<number> {
+    const operation = this.importing
+      .catch(() => 0)
+      .then(() => importLegacyImages(this.store(), records, readStoredFile))
+    this.importing = operation
+    return operation
   }
 
   private config(): ImageModelConfiguration {
@@ -159,22 +242,24 @@ export class ImageCanvasService {
 
   private async catalog(): Promise<ImageCanvasCatalog> {
     return Promise.all(
-      this.providers.map(async (provider) => {
-        try {
-          const { id, name, models } = await this.readyProvider(provider.id)
-          return { id, name, models }
-        } catch (error) {
-          const message = error instanceof Error ? error.message : ''
-          return {
-            id: provider.id,
-            name: provider.name,
-            models: [],
-            error: /^(?:studio_upgrade_required|studio_http_\d{3}|provider_key_missing)$/.test(message)
-              ? message
-              : 'catalog_unavailable'
+      this.providers
+        .filter((provider) => provider.models.length)
+        .map(async (provider) => {
+          try {
+            const { id, name, models } = await this.readyProvider(provider.id)
+            return { id, name, models }
+          } catch (error) {
+            const message = error instanceof Error ? error.message : ''
+            return {
+              id: provider.id,
+              name: provider.name,
+              models: [],
+              error: /^(?:studio_upgrade_required|studio_http_\d{3}|provider_key_missing)$/.test(message)
+                ? message
+                : 'catalog_unavailable'
+            }
           }
-        }
-      })
+        })
     )
   }
 
@@ -193,6 +278,18 @@ export class ImageCanvasService {
         provider.apiKey.length > 64000 ||
         !Array.isArray(provider.models) ||
         provider.models.length > 2000 ||
+        (provider.videoModels !== undefined &&
+          (!Array.isArray(provider.videoModels) ||
+            provider.videoModels.length > 2000 ||
+            provider.videoModels.some(
+              (model) =>
+                !model ||
+                typeof model.id !== 'string' ||
+                !model.id.trim() ||
+                model.id.length > 1024 ||
+                typeof model.name !== 'string' ||
+                model.name.length > 500
+            ))) ||
         provider.models.some(
           (model) =>
             !model ||
@@ -219,6 +316,12 @@ export class ImageCanvasService {
       models: provider.models.map(({ id, name, protocol }) => ({ id, name, protocol }))
     }))
     this.catalogs.clear()
+    try {
+      if (videos || this.providers.some((provider) => provider.videoModels?.length))
+        this.videoStore().resume(this.providers)
+    } catch {
+      logger.error('Could not load video history')
+    }
     this.view?.webContents.send(channels.flush)
   }
 
@@ -250,13 +353,22 @@ export class ImageCanvasService {
       view.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
       view.webContents.on('will-navigate', (event) => event.preventDefault())
       view.webContents.on('will-redirect', (event) => event.preventDefault())
+      view.webContents.on('before-input-event', (event, input) => {
+        const primaryModifier =
+          process.platform === 'darwin' ? input.meta && !input.control : input.control && !input.meta
+        if (input.type !== 'keyDown' || input.code !== 'KeyB' || !primaryModifier || input.alt || input.shift) return
+        event.preventDefault()
+        if (!input.isAutoRepeat && !this.window.isDestroyed()) {
+          this.window.webContents.send(IpcChannel.Windows_ToggleSidebar)
+        }
+      })
       this.resize(input.bounds)
+      const { userFontFamily: fontFamily, ...appearance } = canvasAppearance(input)
       await view.webContents.loadFile(this.page, {
         hash: new URLSearchParams({
-          theme: input.theme === 'dark' ? 'dark' : 'light',
-          language: typeof input.language === 'string' ? input.language.slice(0, 20) : 'zh-CN',
-          os: process.platform === 'win32' ? 'windows' : process.platform === 'darwin' ? 'mac' : 'linux',
-          fontFamily: typeof input.userFontFamily === 'string' ? input.userFontFamily.slice(0, 500) : ''
+          ...appearance,
+          fontFamily,
+          os: process.platform === 'win32' ? 'windows' : process.platform === 'darwin' ? 'mac' : 'linux'
         }).toString()
       })
       if (this.window.isDestroyed() || this.view !== view) return { ok: false }
@@ -285,6 +397,12 @@ export class ImageCanvasService {
 
   setVisible(visible: boolean): void {
     if (typeof visible === 'boolean') this.view?.setVisible(visible)
+  }
+
+  setAppearance(input: ImageCanvasAppearance): void {
+    const view = this.view
+    if (!view || view.webContents.isDestroyed() || !input || typeof input !== 'object') return
+    view.webContents.send(channels.appearance, canvasAppearance(input))
   }
 
   async close(): Promise<void> {

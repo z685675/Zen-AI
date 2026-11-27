@@ -372,7 +372,13 @@ const SessionItem = ({
   )
 
   const availableItems = readOnly
-    ? menuItems?.filter((item) => item?.key === 'continue-new' || item?.key === 'notes' || item?.key === 'export')
+    ? menuItems?.filter(
+        (item) =>
+          item?.key === 'continue-new' ||
+          item?.key === 'notes' ||
+          item?.key === 'export' ||
+          (item?.key === 'delete' && onDelete)
+      )
     : menuItems
 
   return (
@@ -429,7 +435,7 @@ const SessionItem = ({
                   <SessionLabel
                     session={session}
                     className={classNames(
-                      'font-semibold text-(--color-text-1)',
+                      'font-medium text-(--zen-text-1)',
                       isRenaming ? 'animation-shimmer' : isNewlyRenamed ? 'animation-reveal' : ''
                     )}
                   />
@@ -452,9 +458,9 @@ const SessionItem = ({
 }
 
 const SessionListItem = styled.div`
-  padding: 8px 12px;
+  padding: 8px 10px;
   border-radius: var(--list-item-border-radius);
-  font-size: 12px;
+  font-size: 13px;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
@@ -467,8 +473,8 @@ const SessionListItem = styled.div`
   }
 
   &:hover {
-    background-color: var(--color-list-item-hover);
-    transition: background-color 0.1s;
+    background-color: var(--zen-bg-hover);
+    transition: background-color 150ms ease;
 
     .menu {
       opacity: 1;
@@ -476,8 +482,8 @@ const SessionListItem = styled.div`
   }
 
   &.active {
-    background-color: var(--color-list-item);
-    box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+    background: var(--zen-glass-active);
+    box-shadow: var(--zen-shadow-active);
     .menu {
       opacity: 1;
 
@@ -489,11 +495,11 @@ const SessionListItem = styled.div`
 
   &.singlealone {
     &:hover {
-      background-color: var(--color-background-soft);
+      background-color: var(--zen-bg-hover);
     }
     &.active {
-      background-color: var(--color-background-mute);
-      box-shadow: none;
+      background: var(--zen-glass-active);
+      box-shadow: var(--zen-shadow-active);
     }
   }
 `
@@ -502,8 +508,8 @@ const SessionNameContainer = styled.div`
   display: flex;
   flex-direction: row;
   align-items: center;
-  gap: 4px;
-  min-height: 21px;
+  gap: 6px;
+  min-height: 20px;
   justify-content: space-between;
 `
 
@@ -511,11 +517,11 @@ const SessionMeta = styled.div`
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 6px;
-  margin-top: 5px;
-  color: var(--color-text-3);
-  font-size: 10px;
-  line-height: 14px;
+  gap: 8px;
+  margin-top: 4px;
+  color: var(--zen-text-3);
+  font-size: 11px;
+  line-height: 15px;
 `
 
 const MetaAgentName = styled.span`
@@ -524,25 +530,25 @@ const MetaAgentName = styled.span`
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-  color: var(--color-text-3);
-  font-size: 10px;
+  color: var(--zen-text-3);
+  font-size: 11px;
   font-weight: 400;
-  opacity: 0.72;
 `
 
 const MetaTime = styled.span`
   flex-shrink: 0;
-  color: var(--color-text-3);
-  font-size: 10px;
-  opacity: 0.58;
+  color: var(--zen-text-3);
+  font-family: var(--code-font-family);
+  font-variant-numeric: tabular-nums;
+  font-size: 10.5px;
 `
 
 const SessionName = styled.div`
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
   overflow: hidden;
-  font-size: 12px;
+  font-size: 13px;
   position: relative;
   min-width: 0;
 `

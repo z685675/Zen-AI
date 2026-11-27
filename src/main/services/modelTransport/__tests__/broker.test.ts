@@ -10,7 +10,10 @@ const request = {
   body: 'original-body'
 }
 const brokers: ModelTransportBroker[] = []
-afterEach(() => brokers.splice(0).forEach((broker) => broker.stop()))
+afterEach(() => {
+  brokers.splice(0).forEach((broker) => broker.stop())
+  vi.useRealTimers()
+})
 function broker(send: ConstructorParameters<typeof ModelTransportBroker>[0]) {
   const value = new ModelTransportBroker(send)
   brokers.push(value)
@@ -63,6 +66,34 @@ describe('model response streaming broker', () => {
     value.cancelOwner(1)
     expect(await pending).toMatchObject({ ok: false, error: { name: 'AbortError' } })
     expect(send).toHaveBeenCalledOnce()
+  })
+
+  it('reclaims abandoned responses without cancelling an in-flight SSE read', async () => {
+    vi.useFakeTimers()
+    const parked = { ...request, id: 'parked' }
+    const streaming = { ...request, id: 'streaming' }
+    let writer!: ReadableStreamDefaultController<Uint8Array>
+    const abandoned = vi.fn()
+    const value = broker(
+      async ({ id }) =>
+        new Response(
+          id === parked.id
+            ? new ReadableStream({ cancel: abandoned })
+            : new ReadableStream({ start: (controller) => (writer = controller) })
+        )
+    )
+    await value.start(1, parked)
+    await value.start(1, streaming)
+    const waiting = value.pull(1, streaming.id)
+    await vi.advanceTimersByTimeAsync(65_000)
+    expect(abandoned).toHaveBeenCalledOnce()
+    expect(await value.start(1, parked)).toMatchObject({ ok: true })
+
+    const chunk = new Uint8Array([1])
+    writer.enqueue(chunk)
+    expect(await waiting).toEqual({ done: false, value: chunk })
+    await vi.advanceTimersByTimeAsync(65_000)
+    expect(await value.pull(1, streaming.id)).toHaveProperty('error.name', 'AbortError')
   })
 
   it('does not let duplicate request IDs cancel the existing stream and cancels on window teardown', async () => {

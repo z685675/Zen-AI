@@ -5,6 +5,7 @@ import {
   type ModelPolicySnapshot,
   normalizeModelPolicy
 } from '@shared/config/modelPolicy'
+import { discardResponseBody } from '@shared/modelTransport'
 import { app } from 'electron'
 
 import { ConfigKeys, configManager } from './ConfigManager'
@@ -113,7 +114,10 @@ class RemoteModelPolicyService {
         return refreshed
       }
 
-      if (!response.ok) throw new Error(`model policy request failed: ${response.status}`)
+      if (!response.ok) {
+        discardResponseBody(response)
+        throw new Error(`model policy request failed: ${response.status}`)
+      }
 
       const payload = (await response.json()) as RemoteModelPolicyResponse
       const data = payload.data ?? payload

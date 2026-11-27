@@ -97,6 +97,17 @@ describe('model transport IPC trust and lifecycle', () => {
     expect(await modelApiTransport.resolveProxy?.(request.url)).toBe('DIRECT')
   })
 
+  it.each([
+    ['timeout', 'TimeoutError'],
+    [undefined, 'AbortError']
+  ])('restores the cancellation category from IPC (%s)', async (reason, name) => {
+    const owner = event()
+    await start(owner, request)
+    const signal = state.fetch.mock.calls[0][1].signal as AbortSignal
+    await state.handlers.get(MODEL_TRANSPORT_IPC.cancel)!(owner, request.id, reason)
+    expect(signal.reason).toHaveProperty('name', name)
+  })
+
   it.each(['destroyed', 'render-process-gone', 'did-navigate'])(
     'cancels active streams when the owner emits %s',
     async (name) => {

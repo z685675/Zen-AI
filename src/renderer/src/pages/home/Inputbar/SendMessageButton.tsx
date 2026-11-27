@@ -1,40 +1,48 @@
-import type { FC, KeyboardEvent } from 'react'
+import { ArrowUp, Square } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import styled from 'styled-components'
 
 interface Props {
-  disabled: boolean
+  disabled?: boolean
   sendMessage: () => void
+  stop?: boolean
 }
 
-const SendMessageButton: FC<Props> = ({ disabled, sendMessage }) => {
+export default function SendMessageButton({ disabled = false, sendMessage, stop = false }: Props) {
   const { t } = useTranslation()
-
-  const handleKeyDown = (e: KeyboardEvent<HTMLElement>) => {
-    if (!disabled && (e.key === 'Enter' || e.key === ' ')) {
-      e.preventDefault()
-      sendMessage()
-    }
-  }
-
+  const label = stop ? t('chat.input.pause') : t('chat.input.send')
   return (
-    <i
-      className="iconfont icon-ic_send"
-      onClick={disabled ? undefined : sendMessage}
-      onKeyDown={handleKeyDown}
-      role="button"
-      aria-label={t('chat.input.send')}
-      aria-disabled={disabled}
-      tabIndex={disabled ? -1 : 0}
-      style={{
-        cursor: disabled ? 'not-allowed' : 'pointer',
-        color: disabled ? 'var(--color-text-3)' : 'var(--color-primary)',
-        fontSize: 22,
-        transition: 'all 0.2s',
-        marginTop: 1,
-        marginRight: 2
-      }}
-    />
+    <Button type="button" disabled={disabled} onClick={sendMessage} aria-label={label} title={label}>
+      {stop ? <Square size={12} fill="currentColor" /> : <ArrowUp size={16} strokeWidth={2.3} />}
+    </Button>
   )
 }
 
-export default SendMessageButton
+const Button = styled.button`
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  color: var(--color-primary-foreground);
+  background: var(--color-primary);
+  cursor: pointer;
+
+  &:disabled {
+    color: var(--zen-text-3);
+    background: var(--zen-bg-subtle);
+    cursor: not-allowed;
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--zen-accent);
+    outline-offset: 2px;
+  }
+
+  svg {
+    color: inherit;
+  }
+`

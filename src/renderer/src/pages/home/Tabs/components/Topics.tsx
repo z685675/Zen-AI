@@ -74,14 +74,14 @@ export const Topics: React.FC<Props> = ({ assistant: _assistant, activeTopic, se
   const { notesPath } = useNotesSettings()
   const { assistant, addTopic, removeTopic, updateTopic, updateTopics } = useAssistant(_assistant.id)
   const { defaultModel } = useDefaultModel()
-  const { showTopicTime, pinTopicsToTop, setTopicPosition, topicPosition } = useSettings()
+  const { setTopicPosition, topicPosition } = useSettings()
 
   const renamingTopics = useSelector((state: RootState) => state.runtime.chat.renamingTopics)
   const topicLoadingQuery = useSelector((state: RootState) => state.messages.loadingByTopic)
   const topicFulfilledQuery = useSelector((state: RootState) => state.messages.fulfilledByTopic)
   const newlyRenamedTopics = useSelector((state: RootState) => state.runtime.chat.newlyRenamedTopics)
 
-  const borderRadius = showTopicTime ? 12 : 'var(--list-item-border-radius)'
+  const borderRadius = 12
 
   const [deletingTopicId, setDeletingTopicId] = useState<string | null>(null)
   const deleteTimerRef = useRef<NodeJS.Timeout>(null)
@@ -192,40 +192,37 @@ export const Topics: React.FC<Props> = ({ assistant: _assistant, activeTopic, se
 
   const onPinTopic = useCallback(
     (topic: Topic) => {
-      // 只有当 pinTopicsToTop 开启时才重新排序话题
-      if (pinTopicsToTop) {
-        let newIndex = 0
+      let newIndex = 0
 
-        if (topic.pinned) {
-          // 取消固定：将话题移到未固定话题的顶部
-          const pinnedTopics = assistant.topics.filter((t) => t.pinned)
-          const unpinnedTopics = assistant.topics.filter((t) => !t.pinned)
+      if (topic.pinned) {
+        // 取消固定：将话题移到未固定话题的顶部
+        const pinnedTopics = assistant.topics.filter((t) => t.pinned)
+        const unpinnedTopics = assistant.topics.filter((t) => !t.pinned)
 
-          const reorderedTopics = [...pinnedTopics.filter((t) => t.id !== topic.id), topic, ...unpinnedTopics]
+        const reorderedTopics = [...pinnedTopics.filter((t) => t.id !== topic.id), topic, ...unpinnedTopics]
 
-          newIndex = pinnedTopics.length - 1
-          updateTopics(reorderedTopics)
-        } else {
-          // 固定话题：移到固定区域顶部
-          const pinnedTopics = assistant.topics.filter((t) => t.pinned)
-          const unpinnedTopics = assistant.topics.filter((t) => !t.pinned)
+        newIndex = pinnedTopics.length - 1
+        updateTopics(reorderedTopics)
+      } else {
+        // 固定话题：移到固定区域顶部
+        const pinnedTopics = assistant.topics.filter((t) => t.pinned)
+        const unpinnedTopics = assistant.topics.filter((t) => !t.pinned)
 
-          const reorderedTopics = [topic, ...pinnedTopics, ...unpinnedTopics.filter((t) => t.id !== topic.id)]
+        const reorderedTopics = [topic, ...pinnedTopics, ...unpinnedTopics.filter((t) => t.id !== topic.id)]
 
-          newIndex = 0
-          updateTopics(reorderedTopics)
-        }
-
-        // 延迟滚动到话题位置（等待渲染完成）
-        setTimeout(() => {
-          listRef.current?.scrollToIndex(newIndex, { align: 'auto' })
-        }, 50)
+        newIndex = 0
+        updateTopics(reorderedTopics)
       }
+
+      // 延迟滚动到话题位置（等待渲染完成）
+      setTimeout(() => {
+        listRef.current?.scrollToIndex(newIndex, { align: 'auto' })
+      }, 50)
 
       const updatedTopic = { ...topic, pinned: !topic.pinned }
       updateTopic(updatedTopic)
     },
-    [assistant.topics, updateTopic, updateTopics, pinTopicsToTop]
+    [assistant.topics, updateTopic, updateTopics]
   )
 
   const onDeleteTopic = useCallback(
@@ -518,17 +515,14 @@ export const Topics: React.FC<Props> = ({ assistant: _assistant, activeTopic, se
     onDeleteTopic
   ])
 
-  // Sort topics based on pinned status if pinTopicsToTop is enabled
+  // Always keep pinned topics at the top
   const sortedTopics = useMemo(() => {
-    if (pinTopicsToTop) {
-      return [...assistant.topics].sort((a, b) => {
-        if (a.pinned && !b.pinned) return -1
-        if (!a.pinned && b.pinned) return 1
-        return 0
-      })
-    }
-    return assistant.topics
-  }, [assistant.topics, pinTopicsToTop])
+    return [...assistant.topics].sort((a, b) => {
+      if (a.pinned && !b.pinned) return -1
+      if (!a.pinned && b.pinned) return 1
+      return 0
+    })
+  }, [assistant.topics])
 
   // Filter topics based on search text (only in manage mode)
   // Supports: case-insensitive, space-separated keywords (all must match)
@@ -691,9 +685,7 @@ export const Topics: React.FC<Props> = ({ assistant: _assistant, activeTopic, se
                     {fullTopicPrompt}
                   </TopicPromptText>
                 )}
-                {showTopicTime && (
-                  <TopicTime className="time">{dayjs(topic.createdAt).format('YYYY/MM/DD HH:mm')}</TopicTime>
-                )}
+                <TopicTime className="time">{dayjs(topic.createdAt).format('YYYY/MM/DD HH:mm')}</TopicTime>
               </TopicListItem>
             </Dropdown>
           )

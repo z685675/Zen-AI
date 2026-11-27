@@ -15,6 +15,7 @@ import { formatApiHost, withoutTrailingSlash } from '@renderer/utils'
 import { isAIGatewayProvider, isGeminiProvider, isOllamaProvider } from '@renderer/utils/provider'
 import { modelCapacityFields, parseModelCapabilities, registerModelCapabilities } from '@shared/modelCapabilities'
 import { defaultAppHeaders } from '@shared/utils'
+import { splitApiKeyString } from '@shared/utils/apiKeys'
 import * as z from 'zod'
 
 import {
@@ -90,7 +91,8 @@ async function getFromApi<T>({
 // === Helpers ===
 
 function getApiKey(provider: Provider): string {
-  const keys = provider.apiKey.split(',').map((key) => key.trim())
+  const keys = splitApiKeyString(provider.apiKey)
+  if (keys.length === 0) return ''
   const keyName = `provider:${provider.id}:last_used_key`
 
   if (keys.length === 1) {
@@ -313,6 +315,7 @@ const newApiFetcher: ModelFetcher = {
     return dedup(response.data, (m) => m.id).map((m) =>
       toModel(m.id, provider, {
         owned_by: m.owned_by,
+        ...(m.endpoint_type === 'openai-video' ? { endpoint_type: 'openai-video' } : {}),
         ...(m.supported_endpoint_types
           ? { supported_endpoint_types: m.supported_endpoint_types as EndpointType[] }
           : {}),
@@ -416,6 +419,7 @@ const openAICompatibleFetcher: ModelFetcher = {
     return dedup(response.data, (m) => m.id).map((m) =>
       toModel(m.id, provider, {
         owned_by: m.owned_by,
+        ...(m.endpoint_type === 'openai-video' ? { endpoint_type: 'openai-video' } : {}),
         ...(m.supported_endpoint_types
           ? { supported_endpoint_types: m.supported_endpoint_types as EndpointType[] }
           : {}),

@@ -1,4 +1,5 @@
 import type { Provider } from '@renderer/types'
+import { splitApiKeyString } from '@shared/utils/apiKeys'
 import { getModelDailyQuotaErrorKind } from '@shared/utils/modelDailyQuota'
 
 type ErrorRecord = Record<string, unknown>
@@ -87,12 +88,7 @@ export function shouldRotateChatApiKey(error: unknown): boolean {
   )
 }
 
-export function getProviderApiKeys(apiKey?: string): string[] {
-  return (apiKey || '')
-    .split(',')
-    .map((key) => key.trim())
-    .filter(Boolean)
-}
+export const getProviderApiKeys = splitApiKeyString
 
 export function orderChatApiKeys(provider: Provider, stableKey: string): string[] {
   const keys = getProviderApiKeys(provider.apiKey)

@@ -46,7 +46,7 @@ function App(): React.ReactElement {
       <Provider store={store}>
         <QueryClientProvider client={queryClient}>
           <StyleSheetManager>
-            <ThemeProvider>
+            <ThemeProvider syncNative>
               <AntdProvider>
                 <NotificationProvider>
                   <CodeStyleProvider>

@@ -68,7 +68,7 @@ import {
   getProviderByModel,
   getQuickModel
 } from './AssistantService'
-import { getErrorStatusCode, orderChatApiKeys, shouldRotateChatApiKey } from './chatKeyFailover'
+import { getErrorStatusCode, getProviderApiKeys, orderChatApiKeys, shouldRotateChatApiKey } from './chatKeyFailover'
 import { escapeContextAttribute } from './context/ContextAttachmentExcerptService'
 import { createAttachmentReference, getCompletedAssistantResponseSourceIds } from './context/ContextAttachmentPolicy'
 import { createContextCompactionKeyFailover as createKeyFailover } from './context/ContextCompactionKeyFailover'
@@ -554,8 +554,9 @@ async function convertMessagesForCheckpoint(
         )
       } catch (error) {
         logger.warn(`Failed to extract ${file.origin_name} for context checkpoint`, error as Error)
+        const extractionFailureNotice = '[内容提取失败；原件仍保存在本地]'
         sections.push(
-          `<file name="${escapeContextAttribute(file.origin_name)}" extraction="failed">\n[内容提取失败；原件仍保存在本地]\n</file>`
+          `<file name="${escapeContextAttribute(file.origin_name)}" extraction="failed">\n${extractionFailureNotice}\n</file>`
         )
       } finally {
         processedItems += 1
@@ -2209,10 +2210,7 @@ function getRotatedApiKey(provider: Provider): string {
     return ''
   }
 
-  const keys = provider.apiKey
-    .split(',')
-    .map((key) => key.trim())
-    .filter(Boolean)
+  const keys = getProviderApiKeys(provider.apiKey)
 
   if (keys.length === 0) {
     return ''
@@ -2253,10 +2251,7 @@ function getStableChatApiKey(provider: Provider, topicId?: string, modelId?: str
     return getRotatedApiKey(provider)
   }
 
-  const keys = provider.apiKey
-    .split(',')
-    .map((key) => key.trim())
-    .filter(Boolean)
+  const keys = getProviderApiKeys(provider.apiKey)
 
   if (keys.length <= 1) {
     return keys[0] || ''

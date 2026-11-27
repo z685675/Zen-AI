@@ -146,7 +146,7 @@ const FilesPage: FC = () => {
   return (
     <Container>
       <Navbar>
-        <NavbarCenter style={{ borderRight: 'none' }}>{t('files.title')}</NavbarCenter>
+        <NavbarCenter style={{ borderRight: 'none' }} />
       </Navbar>
       <ContentContainer id="content-container">
         <SideNav>
@@ -231,11 +231,14 @@ const Container = styled.div`
   flex: 1;
   flex-direction: column;
   height: calc(100vh - var(--navbar-height));
+  background: transparent;
 `
 
 const MainContent = styled.div`
   display: flex;
   flex: 1;
+  min-width: 0;
+  min-height: 0;
   flex-direction: column;
 `
 
@@ -244,69 +247,60 @@ const SortContainer = styled.div`
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 8px 16px;
-  border-bottom: 0.5px solid var(--color-border);
+  padding: 10px 18px;
+  border-bottom: 0.5px solid var(--zen-border);
 `
 
 const ContentContainer = styled.div`
   display: flex;
   flex: 1;
   flex-direction: row;
-  min-height: 100%;
+  min-height: 0;
 `
 
 const SideNav = styled.div`
   display: flex;
   flex-direction: column;
   width: var(--settings-width);
-  border-right: 0.5px solid var(--color-border);
-  padding: 12px 10px;
+  background: var(--zen-bg-subtle);
+  border-right: 0.5px solid var(--zen-border);
+  padding: 12px 8px;
   user-select: none;
-  gap: 6px;
+  gap: 4px;
 
   .ant-menu {
     border-inline-end: none !important;
     background: transparent;
   }
-
-  .ant-menu-item {
-    height: 36px;
-    line-height: 36px;
-    margin: 4px 0;
-    width: 100%;
-    border-radius: var(--list-item-border-radius);
-    border: 0.5px solid transparent;
-
-    &:hover {
-      background-color: var(--color-background-soft) !important;
-    }
-
-    &.ant-menu-item-selected {
-      background-color: var(--color-background-soft);
-      color: var(--color-primary);
-      border: 0.5px solid var(--color-border);
-    }
-  }
 `
 
 const SortButton = styled(Button)<{ active?: boolean }>`
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 4px 12px;
-  height: 30px;
-  border-radius: var(--list-item-border-radius);
-  border: 0.5px solid ${(props) => (props.active ? 'var(--color-border)' : 'transparent')};
-  background-color: ${(props) => (props.active ? 'var(--color-background-soft)' : 'transparent')};
-  color: ${(props) => (props.active ? 'var(--color-text)' : 'var(--color-text-secondary)')};
+  && {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 0 13px;
+    height: 30px;
+    border-radius: var(--zen-radius-pill);
+    border: 0;
+    background: ${(props) => (props.active ? 'var(--zen-glass-active)' : 'transparent')};
+    box-shadow: ${(props) => (props.active ? 'var(--zen-shadow-active)' : 'none')};
+    color: ${(props) => (props.active ? 'var(--zen-text-1)' : 'var(--zen-text-2)')};
+    font-size: 12.5px;
+    font-weight: ${(props) => (props.active ? 500 : 400)};
+    transition:
+      background 150ms ease,
+      color 150ms ease,
+      box-shadow 160ms ease;
 
-  &:hover {
-    background-color: var(--color-background-soft);
-    color: var(--color-text);
-  }
+    &:hover {
+      background: ${(props) => (props.active ? 'var(--zen-glass-pill-hover)' : 'var(--zen-bg-hover)')} !important;
+      color: var(--zen-text-1) !important;
+    }
 
-  .anticon {
-    font-size: 12px;
+    .anticon {
+      font-size: 12px;
+    }
   }
 `
 

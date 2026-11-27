@@ -28,7 +28,7 @@ tasksRouter.get('/', async (req: Request, res: Response) => {
     const offset = req.query.offset ? parseInt(req.query.offset as string) : 0
 
     logger.debug('Listing all tasks', { limit, offset })
-    const result = await taskService.listAllTasks({ limit, offset })
+    const result = await taskService.listAllTasks({ limit, offset, legacyOnly: true })
 
     return res.json({
       data: result.tasks,
@@ -85,7 +85,7 @@ tasksRouter.get('/:taskId', async (req: Request, res: Response) => {
   const { taskId } = req.params
   try {
     logger.debug('Getting task', { taskId })
-    const task = await taskService.getTaskById(taskId)
+    const task = await taskService.getTaskById(taskId, true)
 
     if (!task) {
       return res.status(404).json({
@@ -145,7 +145,7 @@ tasksRouter.delete('/:taskId', async (req: Request, res: Response) => {
   const { taskId } = req.params
   try {
     logger.debug('Deleting task', { taskId })
-    const deleted = await taskService.deleteTaskById(taskId)
+    const deleted = await taskService.deleteTaskById(taskId, true)
 
     if (!deleted) {
       return res.status(404).json({
@@ -196,7 +196,7 @@ tasksRouter.post('/:taskId/run', async (req: Request, res: Response) => {
 tasksRouter.get('/:taskId/logs', async (req: Request, res: Response) => {
   const { taskId } = req.params
   try {
-    const task = await taskService.getTaskById(taskId)
+    const task = await taskService.getTaskById(taskId, true)
     if (!task) {
       return res.status(404).json({
         error: { message: 'Task not found', type: 'not_found', code: 'task_not_found' }

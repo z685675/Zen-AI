@@ -593,7 +593,7 @@ const OpenClawPage: FC = () => {
   return (
     <div className="flex flex-1 flex-col">
       <Navbar>
-        <NavbarCenter style={{ borderRight: 'none' }}>{t('openclaw.title')}</NavbarCenter>
+        <NavbarCenter style={{ borderRight: 'none' }} />
       </Navbar>
       <div className="flex flex-1 flex-col">{renderContent()}</div>
     </div>

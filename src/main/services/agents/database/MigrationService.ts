@@ -6,7 +6,7 @@ import fs from 'fs'
 import path from 'path'
 
 import type * as schema from './schema'
-import { migrations, type NewMigration } from './schema/migrations.schema'
+import { migrations } from './schema/migrations.schema'
 
 const logger = loggerService.withContext('MigrationService')
 
@@ -134,22 +134,16 @@ export class MigrationService {
       logger.info(`Executing migration ${migration.tag}...`)
       const startTime = Date.now()
 
-      // Read and execute SQL
       const sqlContent = fs.readFileSync(sqlFilePath, 'utf-8')
-      await this.client.executeMultiple(sqlContent)
-
-      // Record migration as applied (store journal idx as version for tracking)
-      const newMigration: NewMigration = {
-        version: migration.idx,
-        tag: migration.tag,
-        executedAt: Date.now()
-      }
-
-      if (!(await this.migrationsTableExists())) {
-        throw new Error('Migrations table missing after executing migration; cannot record progress')
-      }
-
-      await this.db.insert(migrations).values(newMigration)
+      if (!Number.isSafeInteger(migration.idx) || migration.idx < 0) throw new Error('Invalid migration index')
+      const tag = migration.tag.replaceAll("'", "''")
+      // libSQL rolls back an open transaction if executeMultiple fails.
+      await this.client.executeMultiple(`
+        BEGIN IMMEDIATE;
+        ${sqlContent}
+        INSERT INTO migrations (version, tag, executed_at) VALUES (${migration.idx}, '${tag}', ${Date.now()});
+        COMMIT;
+      `)
 
       const executionTime = Date.now() - startTime
       logger.info(`Migration ${migration.tag} completed in ${executionTime}ms`)

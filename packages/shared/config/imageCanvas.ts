@@ -64,6 +64,14 @@ export type ImageCanvasProvider = {
   apiKey: string
   headers?: Record<string, string>
   models: ImageCanvasModel[]
+  videoModels?: Array<{ id: string; name: string }>
+}
+
+export type LegacyImageRecord = {
+  id: string
+  prompt: string
+  createdAt?: string
+  assets: Array<{ name?: string; url?: string }>
 }
 export type ImageCanvasCatalog = Array<{ id: string; name: string; models: ImageCanvasModel[]; error?: string }>
 export type ImageCanvasRequest = {
@@ -168,6 +176,7 @@ export type ImageCanvasProgress = (
   download?: ImageCanvasDownloadProgress
 ) => void
 export type ImageCanvasTask = {
+  importedLegacy?: boolean
   outputSizes?: string[]
   id: string
   providerId: string
@@ -212,18 +221,22 @@ export type ImageCanvasBridge = {
   history: () => Promise<ImageCanvasTask[]>
   historyPage?: (cursor?: string, limit?: number) => Promise<ImageCanvasHistoryPage>
   asset: (id: string) => Promise<string>
-  recover: (id: string) => Promise<ImageCanvasTask>
+  recover: (id: string, assetId?: string) => Promise<ImageCanvasTask>
   configure: (providerId: string, modelId: string, settings: ImageCanvasModelConfiguration | null) => Promise<void>
   remove: (id: string) => Promise<void>
   exportAsset: (id: string, action: 'save' | 'copy') => Promise<boolean>
   flush: (callback: () => Promise<void>) => () => void
+  onAppearance: (callback: (appearance: ImageCanvasAppearance) => void) => () => void
 }
-export type ImageCanvasOpen = {
-  bounds: ImageViewBounds
-  providers: ImageCanvasProvider[]
+export type ImageCanvasAppearance = {
   theme?: 'light' | 'dark'
+  themePreset?: 'codex' | 'zen-paper'
   language?: string
   userFontFamily?: string
+}
+export type ImageCanvasOpen = ImageCanvasAppearance & {
+  bounds: ImageViewBounds
+  providers: ImageCanvasProvider[]
 }
 
 export const imageCanvasChannels = {
@@ -239,6 +252,7 @@ export const imageCanvasChannels = {
   configure: 'image-canvas:configure',
   remove: 'image-canvas:remove',
   exportAsset: 'image-canvas:export',
+  appearance: 'image-canvas:appearance',
   flush: 'image-canvas:flush',
   flushed: 'image-canvas:flushed'
 } as const

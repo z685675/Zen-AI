@@ -44,18 +44,13 @@ export default class DshService implements AgentServiceInterface {
       const model = await validateModelId(session.model)
       if (!model.valid || !model.provider || !model.modelId)
         throw new Error('Selected model is unavailable; configure a valid Provider/model')
-      setImmediate(() => {
-        void this.run(
-          stream,
-          prompt,
-          session,
-          model.provider!,
-          model.modelId!,
-          abortController,
-          thinkingOptions,
-          images
+      stream.settled = new Promise<void>((ready) => setImmediate(ready))
+        .then(() =>
+          this.run(stream, prompt, session, model.provider!, model.modelId!, abortController, thinkingOptions, images)
         )
-      })
+        .catch((error) => {
+          stream.emit('data', { type: 'error', error })
+        })
       return stream
     } catch (error) {
       return failAgentStreamBeforeStart(

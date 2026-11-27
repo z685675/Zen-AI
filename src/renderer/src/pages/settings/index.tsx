@@ -8,9 +8,9 @@ export const SettingContainer = styled.div<{ theme?: ThemeMode; showScrollbar?: 
   display: flex;
   flex-direction: column;
   flex: 1;
-  padding: 15px 18px;
-  overflow-y: scroll;
-  background: ${(props) => (props.theme === 'dark' ? 'transparent' : 'var(--color-background-soft)')};
+  padding: 28px 36px 40px;
+  overflow-y: auto;
+  background: transparent;
 
   &::-webkit-scrollbar {
     display: ${(props) => (props.showScrollbar ? 'block' : 'none')};
@@ -52,7 +52,7 @@ export const SettingDescription = styled.div`
 `
 
 export const SettingDivider = styled(Divider)`
-  margin: 10px 0;
+  margin: 14px 0;
   border-block-start: 0.5px solid var(--color-border);
 `
 
@@ -61,7 +61,8 @@ export const SettingRow = styled.div`
   flex-direction: row;
   justify-content: space-between;
   align-items: center;
-  min-height: 24px;
+  gap: 16px;
+  min-height: 32px;
 `
 
 export const SettingRowTitle = styled.div`
@@ -82,8 +83,7 @@ export const SettingHelpTextRow = styled.div`
 
 export const SettingHelpText = styled.div`
   font-size: 11px;
-  color: var(--color-text);
-  opacity: 0.4;
+  color: var(--zen-text-3);
 `
 
 export const SettingHelpLink = styled(Link)`
@@ -92,9 +92,13 @@ export const SettingHelpLink = styled(Link)`
 `
 
 export const SettingGroup = styled.div<{ theme?: ThemeMode; css?: CSSProp }>`
-  margin-bottom: 20px;
-  border-radius: var(--list-item-border-radius);
-  border: 0.5px solid var(--color-border);
-  padding: 16px;
-  background: ${(props) => (props.theme === 'dark' ? '#00000010' : 'var(--color-background)')};
+  width: 100%;
+  max-width: 860px;
+  margin: 0 auto 22px;
+  border-radius: var(--zen-radius-md);
+  border: 0;
+  padding: 20px 22px;
+  background: var(--zen-glass-card);
+  backdrop-filter: blur(24px) saturate(160%);
+  box-shadow: var(--zen-shadow-card);
 `

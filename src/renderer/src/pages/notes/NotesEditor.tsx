@@ -11,7 +11,7 @@ import { useAppDispatch } from '@renderer/store'
 import { setEnableSpellCheck } from '@renderer/store/settings'
 import type { EditorView } from '@renderer/types'
 import { Empty, Tooltip } from 'antd'
-import { SpellCheck } from 'lucide-react'
+import { FilePlus2, FolderPlus, SpellCheck } from 'lucide-react'
 import type { FC, RefObject } from 'react'
 import { memo, useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -24,10 +24,21 @@ interface NotesEditorProps {
   editorRef: RefObject<RichEditorRef | null>
   codeEditorRef: RefObject<CodeEditorHandles | null>
   onMarkdownChange: (content: string) => void
+  onCreateNote?: () => void
+  onCreateFolder?: () => void
 }
 
 const NotesEditor: FC<NotesEditorProps> = memo(
-  ({ activeNodeId, currentContent, tokenCount, onMarkdownChange, editorRef, codeEditorRef }) => {
+  ({
+    activeNodeId,
+    currentContent,
+    tokenCount,
+    onMarkdownChange,
+    onCreateNote,
+    onCreateFolder,
+    editorRef,
+    codeEditorRef
+  }) => {
     const { t } = useTranslation()
     const dispatch = useAppDispatch()
     const { settings } = useNotesSettings()
@@ -52,6 +63,22 @@ const NotesEditor: FC<NotesEditorProps> = memo(
       return (
         <EmptyContainer>
           <Empty description={t('notes.empty')} image={Empty.PRESENTED_IMAGE_SIMPLE} />
+          {(onCreateNote || onCreateFolder) && (
+            <EmptyActions>
+              {onCreateNote && (
+                <EmptyActionButton type="button" $primary onClick={onCreateNote}>
+                  <FilePlus2 size={15} />
+                  <span>{t('notes.new_note')}</span>
+                </EmptyActionButton>
+              )}
+              {onCreateFolder && (
+                <EmptyActionButton type="button" onClick={onCreateFolder}>
+                  <FolderPlus size={15} />
+                  <span>{t('notes.new_folder')}</span>
+                </EmptyActionButton>
+              )}
+            </EmptyActions>
+          )}
         </EmptyContainer>
       )
     }
@@ -140,11 +167,48 @@ NotesEditor.displayName = 'NotesEditor'
 
 const EmptyContainer = styled.div`
   display: flex;
+  flex-direction: column;
   justify-content: center;
   align-items: center;
+  gap: 16px;
   width: 100%;
   height: 100%;
   flex: 1;
+`
+
+const EmptyActions = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 10px;
+`
+
+const EmptyActionButton = styled.button<{ $primary?: boolean }>`
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 36px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: var(--zen-radius-pill);
+  background: ${({ $primary }) => ($primary ? 'var(--zen-glass-pill-hover)' : 'var(--zen-glass-pill)')};
+  backdrop-filter: blur(24px) saturate(165%);
+  box-shadow: ${({ $primary }) => ($primary ? 'var(--zen-shadow-pill-hover)' : 'var(--zen-shadow-pill)')};
+  color: ${({ $primary }) => ($primary ? 'var(--zen-text-1)' : 'var(--zen-text-2)')};
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background 160ms ease,
+    color 150ms ease,
+    box-shadow 180ms ease,
+    transform 150ms ease;
+
+  &:hover {
+    background: var(--zen-glass-pill-hover);
+    box-shadow: var(--zen-shadow-pill-hover);
+    color: var(--zen-text-1);
+    transform: translateY(-0.5px);
+  }
 `
 
 const RichEditorContainer = styled.div`

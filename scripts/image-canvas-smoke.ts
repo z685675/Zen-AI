@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process'
-import { mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 
@@ -14,7 +14,8 @@ async function main() {
   const packagedApp = packagedIndex >= 0 ? process.argv[packagedIndex + 1] : undefined
   if (packagedIndex >= 0 && (!packagedApp || !packagedApp.endsWith('.asar')))
     throw new Error('--packaged-app requires the path to app.asar')
-  const directory = mkdtempSync(resolve('tmp/image-canvas-smoke-'))
+  mkdirSync(resolve('local'), { recursive: true })
+  const directory = mkdtempSync(resolve('local/image-canvas-smoke-'))
   const root = process.cwd()
   const data = mkdtempSync(resolve(tmpdir(), 'zen-image-canvas-smoke-'))
   writeFileSync(
@@ -36,7 +37,27 @@ app.whenReady().then(async () => {
  try {
   const image = await sharp(Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="960" height="640"><defs><linearGradient id="g" x2="1" y2="1"><stop stop-color="#dce4ff"/><stop offset="1" stop-color="#f7e8dd"/></linearGradient></defs><rect width="960" height="640" fill="url(#g)"/><circle cx="690" cy="190" r="90" fill="#f8f6ef"/><path d="M0 480L260 220 510 480 690 300 960 540V640H0Z" fill="#a3b2d5"/><path d="M0 580L300 420 590 550 780 440 960 520V640H0Z" fill="#788da9"/><text x="46" y="66" font-family="Arial" font-size="24" fill="#425272">OFFLINE TEST IMAGE</text></svg>')).png().toBuffer()
   let calls=0
+  let videoCalls=0
   server=createServer((req,res)=>{
+   if(req.headers.authorization==='Bearer offline-test-key' && req.url==='/v1/videos' && req.method==='POST'){
+    const chunks=[];
+    req.on('data',chunk=>chunks.push(chunk));
+    req.on('end',()=>{
+     const body=Buffer.concat(chunks).toString('latin1');
+     if(!req.headers['content-type']?.startsWith('multipart/form-data;')||!body.includes('test/custom-alias')||!body.includes('name="input_reference"')||!body.includes('1280x720')){
+      res.writeHead(400).end();return
+     }
+     videoCalls++;
+     res.setHeader('Content-Type','application/json');res.end(JSON.stringify({id:'fixture-video',status:'queued'}))
+    });
+    return
+   }
+   if(req.headers.authorization==='Bearer offline-test-key' && req.url==='/v1/videos/fixture-video'){
+    res.setHeader('Content-Type','application/json');res.end(JSON.stringify({id:'fixture-video',status:'completed'}));return
+   }
+   if(req.headers.authorization==='Bearer offline-test-key' && req.url==='/v1/videos/fixture-video/content'){
+    res.setHeader('Content-Type','video/mp4');res.end(Buffer.from('00000014667479706d70343200000000','hex'));return
+   }
    if(!['/v1/images/generations','/v1/images/edits'].includes(req.url) || req.headers.authorization!=='Bearer offline-test-key'){res.writeHead(400);res.end();return}
    calls++;req.resume();res.setHeader('Content-Type','application/json');res.end(JSON.stringify({data:[{b64_json:image.toString('base64')}]}))
   })
@@ -44,7 +65,7 @@ app.whenReady().then(async () => {
   const window = new BrowserWindow({show:false,width:1000,height:760,webPreferences:{sandbox:true}})
   const service = new ImageCanvasService(window)
   // The bundled service resolves these paths relative to out/main in production.
-  const providers=[{id:'offline',name:'Offline smoke',apiHost:'http://127.0.0.1:'+server.address().port,apiKey:'offline-test-key',models:[{id:'gpt-image-test',name:'Image',protocol:'openai'},{id:'gpt-image-alternate',name:'Image alternate',protocol:'openai'}]}]
+  const providers=[{id:'offline',name:'Offline smoke',apiHost:'http://127.0.0.1:'+server.address().port,apiKey:'offline-test-key',videoModels:[{id:'test/custom-alias',name:'Custom video'}],models:[{id:'gpt-image-test',name:'Image',protocol:'openai'},{id:'gpt-image-alternate',name:'Image alternate',protocol:'openai'}]}]
   if(${JSON.stringify(benchmark)}) {
    const samples=[]
    for(let trial=0;trial<5;trial++) {
@@ -79,12 +100,30 @@ app.whenReady().then(async () => {
   process.stdout.write('PASS: global custom font reaches visible headings, buttons and form controls\\n')
   const health=await view.webContents.executeJavaScript('JSON.stringify({bridge:typeof window.imageCanvas,api:typeof window.api,node:typeof window.require,body:document.body.innerText})')
   const state=JSON.parse(health)
-  if(state.bridge!=='object'||state.api!=='undefined'||state.node!=='undefined'||!state.body.includes(${JSON.stringify(workbench ? '图片工作台' : 'Zen-AI')}))throw Error('invalid_page_isolation:'+health)
+  if(state.bridge!=='object'||state.api!=='undefined'||state.node!=='undefined'||!state.body.includes(${JSON.stringify(workbench ? '图片生成' : 'Zen-AI')}))throw Error('invalid_page_isolation:'+health)
   const catalog=await view.webContents.executeJavaScript('window.imageCanvas.catalog()')
   if(JSON.stringify(catalog).includes('offline-test-key')||JSON.stringify(catalog).includes('127.0.0.1'))throw Error('catalog_secret_leak')
+  const switchToVideo=await view.webContents.executeJavaScript("(()=>{const tabs=[...document.querySelectorAll('.media-tabbar button')];if(tabs.map(tab=>tab.textContent).join('/')!=='图片生成/视频生成')return false;tabs[1].click();return true})()")
+  if(!switchToVideo)throw Error('media_tabs_incorrect')
+  const videoSettings=await view.webContents.executeJavaScript("(()=>{const form=document.querySelector('.video-form');const legends=[...form.querySelectorAll('legend')].map(item=>item.textContent);const seconds=[...form.querySelectorAll('button')].find(item=>item.textContent==='10 秒');seconds.click();return legends.join('/')==='清晰度/尺寸/秒数'})()")
+  if(!videoSettings||!(await view.webContents.executeJavaScript("document.querySelector('.video-custom-seconds input').value === '10'")))throw Error('video_duration_did_not_apply')
+  await view.webContents.executeJavaScript("document.querySelector('.media-tabbar button').click()")
+  process.stdout.write('PASS: media tabs are ordered, duration follows size, and the selected seconds update the video form\\n')
   for(let i=0;i<10;i++) {service.setVisible(false);service.resize({x:0,y:80,width:1000,height:680});service.setVisible(true)}
   if(service.view!==view||calls!==0||view.getBounds().y!==80)throw Error('mode_switch_recreated_view_or_covered_titlebar')
   process.stdout.write('PASS: 10 visibility switches keep the workbench instance and reserved titlebar; no generation requests\\n')
+  const videoCatalog=await view.webContents.executeJavaScript('window.videoWorkbench.catalog()')
+  if(videoCatalog[0]?.models[0]?.id!=='test/custom-alias'||JSON.stringify(videoCatalog).includes('offline-test-key'))throw Error('video_catalog_invalid')
+  const clipId=randomUUID()
+  const videoRequest={id:clipId,providerId:'offline',modelId:'test/custom-alias',prompt:'Offline video',seconds:10,size:'1280x720',firstFrame:'data:image/png;base64,'+image.toString('base64')}
+  await view.webContents.executeJavaScript('window.videoWorkbench.submit('+JSON.stringify(videoRequest)+')')
+  const videoDeadline=Date.now()+5000
+  const videoHistory=()=>view.webContents.executeJavaScript('window.videoWorkbench.history()')
+  while((await videoHistory())[0]?.status!=='completed'&&Date.now()<videoDeadline)await new Promise(resolve=>setTimeout(resolve,30))
+  if((await videoHistory())[0]?.status!=='completed'||videoCalls!==1)throw Error('compatible_video_flow_failed')
+  const clipBytes=await view.webContents.executeJavaScript('window.videoWorkbench.preview('+JSON.stringify(clipId)+').then(bytes=>bytes.byteLength)')
+  if(clipBytes!==16)throw Error('compatible_video_result_not_archived')
+  process.stdout.write('PASS: arbitrary video alias, multipart first frame, task status and local content through the real Electron bridge\\n')
   const id=randomUUID()
   const request={id,providerId:'offline',modelId:'gpt-image-test',prompt:'Offline smoke',references:[],size:'1:1',quality:'auto',background:'',count:1}
   let firstId=id
@@ -93,6 +132,9 @@ app.whenReady().then(async () => {
    while(!(await view.webContents.executeJavaScript('document.querySelector("select")?.value === "offline"'))&&Date.now()<hydrated)await new Promise(resolve=>setTimeout(resolve,30))
    await view.webContents.executeJavaScript('(()=>{const area=document.querySelector("textarea");Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,"value").set.call(area,"Offline UI generation");area.dispatchEvent(new Event("input",{bubbles:true}));})()')
    await new Promise(resolve=>setTimeout(resolve,100))
+   await view.webContents.executeJavaScript("document.querySelectorAll('.media-tabbar button')[1].click()")
+   await view.webContents.executeJavaScript("document.querySelectorAll('.media-tabbar button')[0].click()")
+   if(!(await view.webContents.executeJavaScript("document.querySelector('textarea').value === 'Offline UI generation'")))throw Error('media_tab_lost_image_draft')
    const clicked=await view.webContents.executeJavaScript('(()=>{const button=document.querySelector("button.generate");if(button.disabled)return false;button.click();button.click();return true})()')
    if(!clicked)throw Error('workbench_form_not_ready')
    const accepted=Date.now()+5000
@@ -156,13 +198,13 @@ app.whenReady().then(async () => {
    // Hidden windows do not reliably advance compositor transitions. Capture
    // settled theme colors; reduced-motion behavior is already part of the CSS.
    await contents.insertCSS('*,*::before,*::after{transition:none!important;animation:none!important}')
-   for(const theme of ['light','dark']) {
-    await contents.executeJavaScript('document.documentElement.dataset.theme='+JSON.stringify(theme))
+   for(const [themePreset,theme] of [['codex','light'],['codex','dark'],['zen-paper','light'],['zen-paper','dark']]) {
+    service.setAppearance({theme,themePreset})
     await new Promise(resolve=>setTimeout(resolve,200))
     const contrast=await contents.executeJavaScript('(()=>{const rgb=value=>value.match(/[0-9.]+/g).slice(0,3).map(Number);const lum=value=>rgb(value).map(v=>v/255).map(v=>v<=.04045?v/12.92:((v+.055)/1.055)**2.4).reduce((s,v,i)=>s+v*[.2126,.7152,.0722][i],0);const ratio=(a,b)=>(Math.max(a,b)+.05)/(Math.min(a,b)+.05);const button=getComputedStyle(document.querySelector("button.generate"));const muted=getComputedStyle(document.querySelector(".muted"));return {button:ratio(lum(button.color),lum(button.backgroundColor)),muted:ratio(lum(muted.color),lum(getComputedStyle(document.querySelector(".topbar")).backgroundColor))}})()')
-    if(contrast.button<4.5||contrast.muted<4.5)throw Error('theme_contrast_failed:'+theme+':'+JSON.stringify(contrast))
+    if(contrast.button<4.5||contrast.muted<4.5)throw Error('theme_contrast_failed:'+themePreset+':'+theme+':'+JSON.stringify(contrast))
     await new Promise(resolve=>setTimeout(resolve,120))
-    require('node:fs').writeFileSync(${JSON.stringify(resolve('../workspace-docs/artifacts/image-workbench-'))}+theme+'.png',(await contents.capturePage(undefined,{stayHidden:true,stayAwake:true})).toPNG())
+    require('node:fs').writeFileSync(${JSON.stringify(resolve('../workspace-docs/artifacts/image-workbench-'))}+themePreset+'-'+theme+'.png',(await contents.capturePage(undefined,{stayHidden:true,stayAwake:true})).toPNG())
    }
    process.stdout.write('PASS: light/dark text contrast >= 4.5, named dialog, Tab containment and Escape focus restoration\\n')
    process.stdout.write('PASS: prompt generation, single/multi-image edits, exact count, reference persistence, desktop layout; screenshot '+screenshot+'\\n')
@@ -200,8 +242,8 @@ app.whenReady().then(async () => {
    await waitFor('document.querySelector("button.generate").textContent.includes("2") && !document.querySelector("button.generate").disabled')
    await contents.executeJavaScript('document.querySelector("button.generate").click()')
    await waitFor('window.imageCanvas.history().then(items=>items.filter(task=>task.batchId&&task.status==="completed").length===2)')
-   await waitFor('document.querySelectorAll(".comparison-card").length===2')
-   await contents.executeJavaScript('document.documentElement.dataset.theme="light"')
+   await waitFor('document.querySelectorAll(".gallery-thumbnail").length===2')
+   service.setAppearance({theme:'light',themePreset:'codex'})
    service.resize({x:0,y:0,width:999,height:760})
    await new Promise(resolve=>setTimeout(resolve,150))
    service.resize({x:0,y:0,width:1000,height:760})
@@ -211,7 +253,7 @@ app.whenReady().then(async () => {
    process.stdout.write('PASS: real pointer mask painting, aligned overlay, masked task persistence, two-model batch and result cards; six local generation requests total\\n')
    const historyBefore=(await service.store().history()).length
    await contents.executeJavaScript('document.querySelector(".topbar button.primary").click()')
-   const blank='!document.querySelector(".preview img, .reference img, .comparison-card, .task-info") && document.querySelector("textarea").value === "" && document.querySelector("select").value === "offline"'
+   const blank='!document.querySelector(".result-gallery, .reference img, .task-info") && document.querySelector("textarea").value === "" && document.querySelector("select").value === "offline"'
    await waitFor(blank)
    await new Promise(resolve=>setTimeout(resolve,2200))
    if(!(await contents.executeJavaScript(blank)))throw Error('new_image_restored_old_result')

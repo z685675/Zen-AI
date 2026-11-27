@@ -75,14 +75,8 @@ export class RuntimeExecutor<
     })
   }
 
-  private createConfigureContextPlugin() {
-    return definePlugin({
-      name: '_internal_configureContext',
-      configureContext: async () => {
-        // Placeholder for future context configuration
-        // Previously set executor and baseProvider, now handled by registry
-      }
-    })
+  private withModelResolver(plugin: AiPlugin): PluginEngine<T> {
+    return new PluginEngine(this.config.providerId, [...this.pluginEngine.getPlugins(), plugin])
   }
 
   // === 高阶重载：直接使用模型 ===
@@ -91,16 +85,8 @@ export class RuntimeExecutor<
    * 流式文本生成
    */
   async streamText(params: streamTextParams): Promise<ReturnType<typeof _streamText>> {
-    const { model } = params
-
-    // 根据 model 类型决定插件配置
-    if (typeof model === 'string') {
-      this.pluginEngine.usePlugins([this.createResolveModelPlugin(), this.createConfigureContextPlugin()])
-    } else {
-      this.pluginEngine.usePlugins([this.createConfigureContextPlugin()])
-    }
-
-    return this.pluginEngine.executeStreamWithPlugins(
+    const engine = this.withModelResolver(this.createResolveModelPlugin())
+    return engine.executeStreamWithPlugins(
       'streamText',
       params,
       (resolvedModel, transformedParams, streamTransforms) => {
@@ -122,16 +108,8 @@ export class RuntimeExecutor<
    * 生成文本
    */
   async generateText(params: generateTextParams): Promise<ReturnType<typeof _generateText>> {
-    const { model } = params
-
-    // 根据 model 类型决定插件配置
-    if (typeof model === 'string') {
-      this.pluginEngine.usePlugins([this.createResolveModelPlugin(), this.createConfigureContextPlugin()])
-    } else {
-      this.pluginEngine.usePlugins([this.createConfigureContextPlugin()])
-    }
-
-    return this.pluginEngine.executeWithPlugins<Parameters<typeof _generateText>[0], ReturnType<typeof _generateText>>(
+    const engine = this.withModelResolver(this.createResolveModelPlugin())
+    return engine.executeWithPlugins<Parameters<typeof _generateText>[0], ReturnType<typeof _generateText>>(
       'generateText',
       params,
       (resolvedModel, transformedParams) => _generateText({ ...transformedParams, model: resolvedModel })
@@ -143,16 +121,8 @@ export class RuntimeExecutor<
    */
   async generateImage(params: generateImageParams): Promise<generateImageResult> {
     try {
-      const { model } = params
-
-      // 根据 model 类型决定插件配置
-      if (typeof model === 'string') {
-        this.pluginEngine.usePlugins([this.createResolveImageModelPlugin(), this.createConfigureContextPlugin()])
-      } else {
-        this.pluginEngine.usePlugins([this.createConfigureContextPlugin()])
-      }
-
-      return this.pluginEngine.executeImageWithPlugins('generateImage', params, (resolvedModel, transformedParams) =>
+      const engine = this.withModelResolver(this.createResolveImageModelPlugin())
+      return engine.executeImageWithPlugins('generateImage', params, (resolvedModel, transformedParams) =>
         _generateImage({ ...transformedParams, model: resolvedModel })
       )
     } catch (error) {

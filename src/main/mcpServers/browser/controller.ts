@@ -7,9 +7,11 @@ import { randomUUID } from 'crypto'
 import { app, BrowserView, BrowserWindow, dialog, nativeTheme, session, shell } from 'electron'
 import TurndownService from 'turndown'
 
+import { parsePublicWebUrl } from '../publicWebNetwork'
 import { clickTargetScript, clickVerificationScript } from './clickScripts'
 import { HANDOFF_BAR_HEIGHT, SESSION_KEY_DEFAULT, SESSION_KEY_PRIVATE, TAB_BAR_HEIGHT } from './constants'
 import { type BrowserDownloadInfo, BrowserDownloadManager } from './downloads'
+import { allowBrowserNavigation, protectBrowserSession } from './network'
 import { BrowserOperationLimiter } from './operationLimiter'
 import { TAB_BAR_HTML } from './tabbar-html'
 import { type BrowserHandoffInfo, type BrowserUserAction, logger, type TabInfo, type WindowInfo } from './types'
@@ -80,7 +82,9 @@ export class CdpBrowserController {
     if (!ready) {
       // Browser traffic follows the computer's network independently of the
       // application's API proxy selection. Keep Chromium's live system resolver.
-      ready = session.fromPartition(partition).setProxy({ mode: 'system' })
+      const browserSession = session.fromPartition(partition)
+      protectBrowserSession(browserSession)
+      ready = browserSession.setProxy({ mode: 'system' })
       this.browserNetworkReady.set(partition, ready)
     }
     try {
@@ -541,6 +545,7 @@ export class CdpBrowserController {
       }
     }
 
+    if (!allowBrowserNavigation(finalUrl)) return
     activeTab.view.webContents.loadURL(finalUrl).catch((error) => {
       logger.warn('Navigation failed in tab bar', { error, url: finalUrl, tabId: windowInfo.activeTabId })
     })
@@ -904,6 +909,12 @@ export class CdpBrowserController {
     if (view.webContents.session) this.downloadManager.attachSession(view.webContents.session)
 
     const windowKey = windowInfo.windowKey
+    view.webContents.on('will-frame-navigate', (event) => {
+      if (!allowBrowserNavigation(event.url, event.isMainFrame)) event.preventDefault()
+    })
+    view.webContents.on('will-redirect', (event) => {
+      if (!allowBrowserNavigation(event.url, event.isMainFrame)) event.preventDefault()
+    })
     view.webContents.on('did-start-loading', () => logger.info(`did-start-loading`, { windowKey, tabId }))
     view.webContents.on('dom-ready', () => {
       logger.info(`dom-ready`, { windowKey, tabId })
@@ -953,14 +964,14 @@ export class CdpBrowserController {
 
     // Handle new window requests (e.g., target="_blank" links) - open in new tab instead
     view.webContents.setWindowOpenHandler(({ url }) => {
+      if (!allowBrowserNavigation(url)) return { action: 'deny' }
       // Create a new tab and navigate to the URL
       this.createTab(privateMode, true)
         .then(({ tabId: newTabId }) => {
           return this.switchTab(privateMode, newTabId).then(() => {
             const newTab = windowInfo.tabs.get(newTabId)
-            if (newTab && !newTab.view.webContents.isDestroyed()) {
-              void newTab.view.webContents.loadURL(url)
-            }
+            if (!newTab || newTab.view.webContents.isDestroyed()) return undefined
+            return newTab.view.webContents.loadURL(url)
           })
         })
         .catch((error) => {
@@ -1105,6 +1116,7 @@ export class CdpBrowserController {
     newTab: boolean,
     target: { tabId: string; tab: TabInfo }
   ) {
+    parsePublicWebUrl(url)
     const { tabId: actualTabId, tab } = target
     const view = tab.view
     const windowKey = this.getWindowKey(privateMode)

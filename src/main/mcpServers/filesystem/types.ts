@@ -48,24 +48,26 @@ function normalizeForComparison(filePath: string): string {
 }
 
 async function resolveRealOrNearestExistingPath(targetPath: string): Promise<string> {
-  try {
-    return normalizePath(await fs.realpath(targetPath))
-  } catch {
-    let currentPath = path.dirname(targetPath)
+  let candidate = targetPath
+  while (true) {
+    try {
+      const resolved = await fs.realpath(candidate)
+      return path.join(resolved, path.relative(candidate, targetPath))
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
 
-    while (true) {
+      // realpath also returns ENOENT for a dangling link. Only an absent entry
+      // can be appended to its nearest existing, resolved ancestor.
       try {
-        const realCurrentPath = await fs.realpath(currentPath)
-        const relativeSuffix = path.relative(currentPath, targetPath)
-        return normalizePath(path.join(realCurrentPath, relativeSuffix))
-      } catch {
-        const parentPath = path.dirname(currentPath)
-        if (parentPath === currentPath) {
-          logger.warn('Could not resolve any existing ancestor for path', { targetPath })
-          return normalizePath(targetPath)
-        }
-        currentPath = parentPath
+        await fs.lstat(candidate)
+        throw new Error('Access denied: Could not resolve an existing filesystem entry')
+      } catch (missing) {
+        if ((missing as NodeJS.ErrnoException).code !== 'ENOENT') throw missing
       }
+
+      const parent = path.dirname(candidate)
+      if (parent === candidate) throw error
+      candidate = parent
     }
   }
 }
@@ -79,21 +81,28 @@ function isPathWithinRoot(targetPath: string, rootPath: string): boolean {
   }
 
   const relativePath = path.relative(normalizedRootPath, normalizedTargetPath)
-  return relativePath !== '' && !relativePath.startsWith('..') && !path.isAbsolute(relativePath)
+  return relativePath !== '..' && !relativePath.startsWith('..' + path.sep) && !path.isAbsolute(relativePath)
 }
 
 // Security validation
-export async function validatePath(requestedPath: string, baseDir?: string): Promise<string> {
+export async function validatePath(
+  requestedPath: string,
+  baseDir?: string,
+  options?: { allowRoot?: boolean }
+): Promise<string> {
   const expandedPath = expandHome(requestedPath)
   const root = expandHome(baseDir ?? process.cwd())
   const absolute = path.isAbsolute(expandedPath) ? path.resolve(expandedPath) : path.resolve(root, expandedPath)
 
-  const resolvedRoot = await resolveRealOrNearestExistingPath(path.resolve(root))
+  const resolvedRoot = await fs.realpath(path.resolve(root))
   const resolvedPath = await resolveRealOrNearestExistingPath(absolute)
 
   if (!isPathWithinRoot(resolvedPath, resolvedRoot)) {
     throw new Error(`Access denied: Path is outside the configured workspace root: ${requestedPath}`)
   }
+
+  if (options?.allowRoot === false && normalizeForComparison(resolvedPath) === normalizeForComparison(resolvedRoot))
+    throw new Error('Access denied: The workspace root is protected')
 
   return resolvedPath
 }

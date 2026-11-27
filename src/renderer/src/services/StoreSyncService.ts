@@ -25,6 +25,9 @@ export class StoreSyncService {
     syncList: []
   }
   private broadcastSyncRemover: (() => void) | null = null
+  private subscription?: Promise<void>
+  private rehydrated = false
+  private pendingActions: StoreSyncAction[] = []
 
   private constructor() {
     return
@@ -59,7 +62,11 @@ export class StoreSyncService {
 
       // Check if this action came from sync or is a whitelisted action
       const syncAction = action as StoreSyncAction
-      if (!syncAction.meta?.fromSync && this.shouldSyncAction(syncAction.type)) {
+      if (
+        typeof syncAction?.type === 'string' &&
+        !syncAction.meta?.fromSync &&
+        this.shouldSyncAction(syncAction.type)
+      ) {
         // Send to main process for broadcasting to other windows using the preload API
         if (window.api?.storeSync) {
           void window.api.storeSync.onUpdate(syncAction)
@@ -89,32 +96,40 @@ export class StoreSyncService {
 
   /**
    * Subscribe to sync service
-   * Sets up IPC listener and registers cleanup on window close
+   * Attach before rehydration so incoming actions can be replayed over the stored snapshot.
    */
   public subscribe(): void {
-    if (this.broadcastSyncRemover || !window.api?.storeSync) {
-      return
-    }
+    if (this.subscription || !window.api?.storeSync || !window.electron?.ipcRenderer) return
 
     this.broadcastSyncRemover = window.electron.ipcRenderer.on(
       IpcChannel.StoreSync_BroadcastSync,
       (_, action: StoreSyncAction) => {
-        try {
-          // Dispatch to the store
-          if (window.store) {
-            window.store.dispatch(action)
-          }
-        } catch (error) {
-          logger.error('Error dispatching synced action:', error as Error)
-        }
+        if (this.rehydrated) this.dispatchSynced(action)
+        else this.pendingActions.push(action)
       }
     )
 
-    void window.api.storeSync.subscribe()
+    this.subscription = Promise.resolve(window.api.storeSync.subscribe())
+      .then((replay: StoreSyncAction[]) => {
+        if (!Array.isArray(replay)) return
+        if (this.rehydrated) replay.forEach((action) => this.dispatchSynced(action))
+        else this.pendingActions = [...replay, ...this.pendingActions]
+      })
+      .catch((error: Error) => logger.error('Error subscribing to store sync:', error))
+  }
 
-    window.addEventListener('beforeunload', () => {
-      this.unsubscribe()
-    })
+  public async finishRehydration(): Promise<void> {
+    await this.subscription
+    this.rehydrated = true
+    for (const action of this.pendingActions.splice(0)) this.dispatchSynced(action)
+  }
+
+  private dispatchSynced(action: StoreSyncAction): void {
+    try {
+      window.store.dispatch(action)
+    } catch (error) {
+      logger.error('Error dispatching synced action:', error as Error)
+    }
   }
 
   /**
@@ -130,6 +145,7 @@ export class StoreSyncService {
       this.broadcastSyncRemover()
       this.broadcastSyncRemover = null
     }
+    this.subscription = undefined
   }
 }
 

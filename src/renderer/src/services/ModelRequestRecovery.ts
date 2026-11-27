@@ -2,6 +2,7 @@ import { isAssistantModelIdentifierBlocked } from '@renderer/config/agentModelPo
 import type { Model, Provider } from '@renderer/types'
 import type { ModelPolicy } from '@shared/config/modelPolicy'
 import { isTextFallbackIdentifier, selectRecoverableModel } from '@shared/config/modelRecovery'
+import { isVideoOnlyEndpointModel } from '@shared/config/videoGeneration'
 import { isZenManagedApiHost } from '@shared/config/zenProvider'
 
 import { modelRecoveryIntents } from './modelRecoveryIntents'
@@ -14,7 +15,7 @@ export function resolveNextManagedRequestModel(
   providers: Provider[],
   policy?: ModelPolicy
 ): Model | undefined {
-  if (!current || !isTextFallbackIdentifier(current.id)) return current
+  if (!current || isVideoOnlyEndpointModel(current) || !isTextFallbackIdentifier(current.id)) return current
   const provider = providers.find((entry) => entry.id === current.provider)
   if (!provider || !isZenManagedApiHost(provider.apiHost)) return current
   if (!provider.enabled) return undefined
@@ -23,6 +24,7 @@ export function resolveNextManagedRequestModel(
       isTextFallbackIdentifier(model.id) &&
       model.endpoint_type !== 'image-generation' &&
       model.endpoint_type !== 'jina-rerank' &&
+      !isVideoOnlyEndpointModel(model) &&
       !isAssistantModelIdentifierBlocked(model.id, policy)
   )
   const key = (model: Model) => `${model.provider}:${model.id}`

@@ -5,7 +5,7 @@ export type AvailableModelDescriptor = {
   name?: string
   model_capabilities?: ModelCapabilities
   supported_endpoint_types?: Array<
-    'openai' | 'openai-response' | 'anthropic' | 'gemini' | 'image-generation' | 'jina-rerank'
+    'openai' | 'openai-response' | 'anthropic' | 'gemini' | 'image-generation' | 'openai-video' | 'jina-rerank'
   >
 }
 
@@ -42,9 +42,15 @@ export function parseAvailableModels(value: unknown): AvailableModelDescriptor[]
       supported_endpoint_types: Array.isArray(model.supported_endpoint_types)
         ? model.supported_endpoint_types.filter(
             (type): type is NonNullable<AvailableModelDescriptor['supported_endpoint_types']>[number] =>
-              ['openai', 'openai-response', 'anthropic', 'gemini', 'image-generation', 'jina-rerank'].includes(
-                type as string
-              )
+              [
+                'openai',
+                'openai-response',
+                'anthropic',
+                'gemini',
+                'image-generation',
+                'openai-video',
+                'jina-rerank'
+              ].includes(type as string)
           )
         : undefined
     }

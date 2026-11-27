@@ -1,7 +1,6 @@
 @import '../../../src/renderer/src/assets/styles/font.css';
 
 :root {
-  --user-font-family: '';
   font-family: var(--font-family);
 }
 

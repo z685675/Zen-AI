@@ -5,9 +5,10 @@ import { assertDshPreviewUnlocked, isDshPreviewUnlocked, lockDshPreview, unlockD
 import { ensureDshPreviewAgent } from './builtin'
 import { getDshPreviewRuntimeStatus, prepareDshPreviewRuntime, stopAllDshRuntimes } from './runtime'
 
-export function registerDshPreviewIpc(mainWindow: BrowserWindow): void {
+export function registerDshPreviewIpc(getMainWindow: () => BrowserWindow | null): void {
   const requireOwner = (event: Electron.IpcMainInvokeEvent) => {
-    if (event.sender !== mainWindow.webContents || event.senderFrame !== mainWindow.webContents.mainFrame) {
+    const mainWindow = getMainWindow()
+    if (!mainWindow || event.sender !== mainWindow.webContents || event.senderFrame !== event.sender.mainFrame) {
       throw new Error('Invalid internal testing sender')
     }
   }
@@ -17,7 +18,7 @@ export function registerDshPreviewIpc(mainWindow: BrowserWindow): void {
       : { unlocked: false, version: DSH_PREVIEW_VERSION, state: 'not-installed' }
   const changed = () => {
     const value = status()
-    if (!mainWindow.isDestroyed()) mainWindow.webContents.send(DSH_PREVIEW_IPC.changed, value)
+    getMainWindow()?.webContents.send(DSH_PREVIEW_IPC.changed, value)
     return value
   }
 

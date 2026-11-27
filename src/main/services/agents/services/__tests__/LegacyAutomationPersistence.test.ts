@@ -1,6 +1,7 @@
 import { createClient } from '@libsql/client'
 import { LEGACY_AUTOMATION_DISABLED_CODE } from '@shared/agents/legacyAutomation'
-import { DEFAULT_OPENCODE_AGENT_ID } from '@shared/config/agents'
+import { DEFAULT_DSH_AGENT_ID, DEFAULT_OPENCODE_AGENT_ID } from '@shared/config/agents'
+import { getTableColumns, getTableName } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/libsql'
 import { SQLiteSyncDialect } from 'drizzle-orm/sqlite-core'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -18,7 +19,7 @@ vi.mock('../../BaseService', () => ({
   }
 }))
 
-import { channelsTable, scheduledTasksTable } from '../../database/schema'
+import { channelsTable, channelTaskSubscriptionsTable, scheduledTasksTable } from '../../database/schema'
 import { ChannelService } from '../ChannelService'
 import { TaskService } from '../TaskService'
 
@@ -80,6 +81,63 @@ describe('legacy persisted state shutdown', () => {
         { id: 3, status: 'paused', error: 'legacy_disabled' }
       ])
     } finally {
+      client.close()
+    }
+  })
+
+  it('scopes legacy lists and deletes to historical owners before pagination and mutation', async () => {
+    const client = createClient({ url: 'file::memory:' })
+    const database = drizzle(client)
+    const previous = mocks.getDatabase.getMockImplementation()
+    mocks.getDatabase.mockResolvedValue(database as any)
+    try {
+      for (const table of [channelsTable, channelTaskSubscriptionsTable, scheduledTasksTable]) {
+        const columns = Object.values(getTableColumns(table))
+          .map((column) => `"${column.name}" ${column.getSQLType()}${column.primary ? ' PRIMARY KEY' : ''}`)
+          .join(', ')
+        await client.execute(`CREATE TABLE "${getTableName(table)}" (${columns})`)
+      }
+      const channels = ChannelService.getInstance()
+      const tasks = TaskService.getInstance()
+      const config = { type: 'wechat' } as const
+      const now = new Date().toISOString()
+      for (const agentId of ['legacy', DEFAULT_OPENCODE_AGENT_ID, DEFAULT_DSH_AGENT_ID]) {
+        await database.insert(channelsTable).values({ id: agentId, agentId, type: 'wechat', name: agentId, config })
+        await database.insert(scheduledTasksTable).values({
+          id: agentId,
+          agent_id: agentId,
+          name: agentId,
+          prompt: 'fixture',
+          schedule_type: 'interval',
+          schedule_value: '60000',
+          created_at: now,
+          updated_at: now
+        })
+      }
+      await database.insert(channelsTable).values({ id: 'unassigned', type: 'wechat', name: 'unassigned', config })
+
+      expect((await channels.listChannels({ legacyOnly: true })).map(({ id }) => id).sort()).toEqual([
+        'legacy',
+        'unassigned'
+      ])
+      expect(await channels.listChannels({ agentId: DEFAULT_OPENCODE_AGENT_ID, legacyOnly: true })).toEqual([])
+      expect(await tasks.listAllTasks({ legacyOnly: true, limit: 1 })).toMatchObject({
+        total: 1,
+        tasks: [{ id: 'legacy' }]
+      })
+
+      for (const id of [DEFAULT_OPENCODE_AGENT_ID, DEFAULT_DSH_AGENT_ID]) {
+        expect(await channels.getChannel(id, true)).toBeNull()
+        expect(await tasks.getTaskById(id, true)).toBeNull()
+        expect(await channels.deleteChannel(id, true)).toBe(false)
+        expect(await tasks.deleteTaskById(id, true)).toBe(false)
+        expect(await channels.getChannel(id)).toMatchObject({ id })
+        expect(await tasks.getTaskById(id)).toMatchObject({ id })
+      }
+      expect(await channels.deleteChannel('unassigned', true)).toBe(true)
+      expect(await tasks.deleteTaskById('legacy', true)).toBe(true)
+    } finally {
+      if (previous) mocks.getDatabase.mockImplementation(previous)
       client.close()
     }
   })

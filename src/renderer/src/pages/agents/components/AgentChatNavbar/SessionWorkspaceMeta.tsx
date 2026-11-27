@@ -40,10 +40,15 @@ const SessionWorkspaceMeta = ({ agent, session }: SessionWorkspaceMetaProps) => 
   }) => (
     <div
       className={cn(
-        'flex items-center gap-1.5 text-foreground-500 text-xs dark:text-foreground-400',
-        onClick !== undefined ? 'cursor-pointer' : undefined,
+        'nodrag flex h-[35px] items-center gap-1.5 rounded-full px-3 text-(--zen-text-2) text-xs transition-all',
+        onClick !== undefined ? 'cursor-pointer hover:text-(--zen-text-1)' : undefined,
         className
       )}
+      style={{
+        background: 'var(--zen-glass-pill)',
+        backdropFilter: 'blur(24px) saturate(160%)',
+        boxShadow: 'var(--zen-shadow-pill)'
+      }}
       title={tooltip ?? text}
       onClick={onClick}>
       <Folder className="h-3.5 w-3.5 shrink-0" />
@@ -57,7 +62,7 @@ const SessionWorkspaceMeta = ({ agent, session }: SessionWorkspaceMetaProps) => 
         key="path"
         text={getLastFolderName(firstAccessiblePath)}
         tooltip={firstAccessiblePath}
-        className="max-w-60 transition-colors hover:border-primary hover:text-primary"
+        className="max-w-44 transition-colors"
         onClick={() => {
           window.api.file
             .openPath(firstAccessiblePath)
@@ -75,7 +80,7 @@ const SessionWorkspaceMeta = ({ agent, session }: SessionWorkspaceMetaProps) => 
     return null
   }
 
-  return <div className="ml-2 flex items-center gap-2">{infoItems}</div>
+  return <div className="flex min-w-0 items-center gap-1.5">{infoItems}</div>
 }
 
 export default SessionWorkspaceMeta

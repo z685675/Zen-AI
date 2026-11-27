@@ -57,7 +57,7 @@ const ResultItem = styled.div`
 export const ScoreTag = styled.div`
   padding: 2px 8px;
   background: var(--color-primary);
-  color: white;
+  color: var(--color-primary-foreground);
   border-radius: 4px;
   font-size: 12px;
   flex-shrink: 0;
@@ -77,7 +77,7 @@ export const CopyButton = styled.div`
 
   &:hover {
     background: var(--color-primary);
-    color: white;
+    color: var(--color-primary-foreground);
   }
 `
 

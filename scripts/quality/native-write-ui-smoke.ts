@@ -294,8 +294,8 @@ export async function nativeWriteUISmoke(root: string, directory: string) {
       if (item.decision === 'cancel') {
         await page
           .locator('#inputbar')
-          .locator('button, [role="button"]')
-          .filter({ has: page.locator('svg.lucide-circle-pause') })
+          .getByRole('button', { name: /^(暂停|Pause)$/i })
+          .filter({ visible: true })
           .click()
       } else if (item.decision === 'allow') {
         const guard = await createNativeWritePermissionGuard(page, instance.instance, {

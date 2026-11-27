@@ -2,10 +2,15 @@
 
 import { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js'
-import { net } from 'electron'
+import { discardResponseBody } from '@shared/modelTransport'
 import { JSDOM } from 'jsdom'
 import TurndownService from 'turndown'
 import * as z from 'zod'
+
+import { readPublicBytes } from './assistantPublicNetwork'
+import { fetchPublicWeb } from './publicWebNetwork'
+
+const MAX_RESPONSE_BYTES = 16 * 1024 * 1024
 
 export const RequestPayloadSchema = z.object({
   url: z.url(),
@@ -15,20 +20,22 @@ export const RequestPayloadSchema = z.object({
 export type RequestPayload = z.infer<typeof RequestPayloadSchema>
 
 export class Fetcher {
-  private static async _fetch({ url, headers }: RequestPayload): Promise<Response> {
+  private static async _fetch({ url, headers }: RequestPayload): Promise<string> {
     try {
-      const response = await net.fetch(url, {
-        headers: {
+      const response = await fetchPublicWeb(
+        url,
+        {
           'User-Agent':
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
           ...headers
-        }
-      })
-
+        },
+        AbortSignal.timeout(30_000)
+      )
       if (!response.ok) {
+        discardResponseBody(response)
         throw new Error(`HTTP error: ${response.status}`)
       }
-      return response
+      return response.body ? new TextDecoder().decode(await readPublicBytes(response, MAX_RESPONSE_BYTES)) : ''
     } catch (e: unknown) {
       if (e instanceof Error) {
         throw new Error(`Failed to fetch ${url}: ${e.message}`)
@@ -40,8 +47,7 @@ export class Fetcher {
 
   static async html(requestPayload: RequestPayload) {
     try {
-      const response = await this._fetch(requestPayload)
-      const html = await response.text()
+      const html = await this._fetch(requestPayload)
       return { content: [{ type: 'text', text: html }], isError: false }
     } catch (error) {
       return {
@@ -53,8 +59,7 @@ export class Fetcher {
 
   static async json(requestPayload: RequestPayload) {
     try {
-      const response = await this._fetch(requestPayload)
-      const json = await response.json()
+      const json: unknown = JSON.parse(await this._fetch(requestPayload))
       return {
         content: [{ type: 'text', text: JSON.stringify(json) }],
         isError: false
@@ -69,9 +74,7 @@ export class Fetcher {
 
   static async txt(requestPayload: RequestPayload) {
     try {
-      const response = await this._fetch(requestPayload)
-      const html = await response.text()
-
+      const html = await this._fetch(requestPayload)
       const dom = new JSDOM(html)
       const document = dom.window.document
 
@@ -98,8 +101,7 @@ export class Fetcher {
 
   static async markdown(requestPayload: RequestPayload) {
     try {
-      const response = await this._fetch(requestPayload)
-      const html = await response.text()
+      const html = await this._fetch(requestPayload)
       const turndownService = new TurndownService()
       const markdown = turndownService.turndown(html)
       return { content: [{ type: 'text', text: markdown }], isError: false }

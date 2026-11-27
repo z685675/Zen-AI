@@ -15,6 +15,7 @@
  * --------------------------------------------------------------------------
  */
 import { randomUUID } from 'node:crypto'
+import { pipeline } from 'node:stream/promises'
 
 import { loggerService } from '@logger'
 import { APP_BACKUP_PREFIX, APP_NAME, APP_TEMP_DIR_NAME } from '@shared/config/constant'
@@ -24,7 +25,6 @@ import type { S3Config } from '@types'
 import archiver from 'archiver'
 import { app } from 'electron'
 import * as fs from 'fs-extra'
-import StreamZip from 'node-stream-zip'
 import * as path from 'path'
 import type { CreateDirectoryOptions, FileStat } from 'webdav'
 
@@ -36,6 +36,12 @@ import {
   registerRendererDataStage,
   withAssistantDataOperation
 } from './AssistantDataOperationService'
+import {
+  extractBackupArchive,
+  limitBackupBytes,
+  MAX_BACKUP_ARCHIVE_BYTES,
+  validateWebDavBackupName
+} from './BackupArchive'
 import { BackupPathMigrationService } from './BackupPathMigrationService'
 import S3Storage from './S3Storage'
 import selectionService from './SelectionService'
@@ -47,6 +53,7 @@ const logger = loggerService.withContext('BackupManager')
 class BackupManager {
   private tempDir = path.join(app.getPath('temp'), APP_TEMP_DIR_NAME, 'backup', 'temp')
   private backupDir = path.join(app.getPath('temp'), APP_TEMP_DIR_NAME, 'backup')
+  private lanTransferBackups = new Map<number, { path: string; expiresAt: number }>()
 
   // Cached instance to avoid recreating
   private s3Storage: S3Storage | null = null
@@ -133,13 +140,22 @@ class BackupManager {
       logger.error('[handleStartupRestore] Failed to complete restoration:', error as Error)
       for (const swap of swaps.reverse()) {
         try {
-          if (swap.installed) await fs.rename(swap.destination, swap.source)
+          if (swap.installed) await fs.rename(swap.destination, `${swap.source}.failed-${randomUUID()}`)
           if (swap.saved) await fs.rename(swap.original, swap.destination)
         } catch (rollbackError) {
           logger.error(
             '[handleStartupRestore] Rollback failed; original and staged data retained',
             rollbackError as Error
           )
+        }
+      }
+      // Park any directories that were never swapped too. They must not be
+      // mistaken for a separate restore request on every subsequent launch.
+      for (const source of [indexedDBRestore, localStorageRestore, dataRestore]) {
+        try {
+          if (await fs.pathExists(source)) await fs.rename(source, `${source}.failed-${randomUUID()}`)
+        } catch (error) {
+          logger.error('[handleStartupRestore] Could not park failed restore data', error as Error)
         }
       }
     }
@@ -533,7 +549,11 @@ class BackupManager {
     return withAssistantDataOperation('restore', () => this.restoreProtected(_, backupPath), _?.sender?.id)
   }
 
-  private async restoreProtected(_: Electron.IpcMainInvokeEvent, backupPath: string): Promise<string | void> {
+  private async restoreProtected(
+    _: Electron.IpcMainInvokeEvent,
+    backupPath: string,
+    afterExtract?: () => Promise<void>
+  ): Promise<string | void> {
     const onProgress = this.onProgress(IpcChannel.RestoreProgress, true)
     const stagedPaths: string[] = []
 
@@ -545,13 +565,9 @@ class BackupManager {
 
       logger.debug(`step 1: unzip backup file: ${this.tempDir}`)
 
-      const zip = new StreamZip.async({ file: backupPath })
       onProgress({ stage: 'extracting', progress: 15, total: 100 })
-      try {
-        await zip.extract(null, this.tempDir)
-      } finally {
-        await zip.close()
-      }
+      await extractBackupArchive(backupPath, this.tempDir)
+      await afterExtract?.()
       onProgress({ stage: 'extracted', progress: 20, total: 100 })
 
       // Check for backup type: direct (version 6+) or legacy (version <= 5)
@@ -773,26 +789,10 @@ class BackupManager {
    */
   async restoreFromWebdav(_: Electron.IpcMainInvokeEvent, webdavConfig: WebDavConfig) {
     const filename = webdavConfig.fileName || `${APP_BACKUP_PREFIX}.backup.zip`
-    const webdavClient = this.getWebDavInstance(webdavConfig)
     try {
-      const retrievedFile = await webdavClient.getFileContents(filename)
-      const backupedFilePath = path.join(this.backupDir, filename)
-
-      if (!fs.existsSync(this.backupDir)) {
-        fs.mkdirSync(this.backupDir, { recursive: true })
-      }
-
-      // Write file using streaming
-      await new Promise<void>((resolve, reject) => {
-        const writeStream = fs.createWriteStream(backupedFilePath)
-        writeStream.write(retrievedFile as Buffer)
-        writeStream.end()
-
-        writeStream.on('finish', () => resolve())
-        writeStream.on('error', (error) => reject(error))
-      })
-
-      return await this.restore(_, backupedFilePath)
+      validateWebDavBackupName(filename)
+      const webdavClient = this.getWebDavInstance(webdavConfig)
+      return await this.restoreRemoteBackup(_, (signal) => webdavClient.openReadStream(filename, signal))
     } catch (error: any) {
       logger.error('Failed to restore from WebDAV:', error)
       throw new Error(error.message || 'Failed to restore backup file')
@@ -809,29 +809,45 @@ class BackupManager {
   async restoreFromS3(_: Electron.IpcMainInvokeEvent, s3Config: S3Config) {
     const filename = s3Config.fileName || `${APP_BACKUP_PREFIX}.backup.zip`
 
-    logger.debug(`Starting restore from S3: ${filename}`)
-
-    const s3Client = this.getS3Storage(s3Config)
     try {
-      const retrievedFile = await s3Client.getFileContents(filename)
-      const backupedFilePath = path.join(this.backupDir, filename)
-      if (!fs.existsSync(this.backupDir)) {
-        fs.mkdirSync(this.backupDir, { recursive: true })
-      }
-      await new Promise<void>((resolve, reject) => {
-        const writeStream = fs.createWriteStream(backupedFilePath)
-        writeStream.write(retrievedFile)
-        writeStream.end()
-        writeStream.on('finish', () => resolve())
-        writeStream.on('error', (error) => reject(error))
-      })
-
-      logger.info(`S3 restore file downloaded successfully: ${filename}`)
-      return await this.restore(_, backupedFilePath)
+      const s3Client = this.getS3Storage(s3Config)
+      return await this.restoreRemoteBackup(_, (signal) => s3Client.openReadStream(filename, signal))
     } catch (error: any) {
       logger.error('[BackupManager] Failed to restore from S3:', error)
       throw new Error(error.message || 'Failed to restore backup file')
     }
+  }
+
+  private restoreRemoteBackup(
+    event: Electron.IpcMainInvokeEvent,
+    open: (signal: AbortSignal) => NodeJS.ReadableStream | Promise<NodeJS.ReadableStream>
+  ): Promise<string | void> {
+    return withAssistantDataOperation(
+      'restore',
+      async () => {
+        await fs.ensureDir(this.backupDir)
+        const directory = await fs.mkdtemp(path.join(this.backupDir, 'restore-'))
+        // Remote names and object keys are never used as local filesystem paths.
+        const archive = path.join(directory, 'backup.zip')
+        const controller = new AbortController()
+        const cleanup = () => fs.remove(directory).catch(() => logger.warn('Could not remove remote backup staging'))
+        try {
+          const source = await open(controller.signal)
+          await pipeline(
+            source,
+            limitBackupBytes(MAX_BACKUP_ARCHIVE_BYTES),
+            fs.createWriteStream(archive, { flags: 'wx', mode: 0o600 }),
+            { signal: controller.signal }
+          )
+          // Remove the download before a direct restore can exit the process.
+          return await this.restoreProtected(event, archive, cleanup)
+        } finally {
+          controller.abort()
+          await cleanup()
+        }
+      },
+      event?.sender?.id
+    )
   }
 
   // ==================== File Utility Methods ====================
@@ -1067,7 +1083,7 @@ class BackupManager {
       .replace(/[-:T.Z]/g, '')
       .slice(0, 14)
 
-    const fileName = `${APP_BACKUP_PREFIX}.${timestamp}.zip`
+    const fileName = `${APP_BACKUP_PREFIX}.${timestamp}.${randomUUID()}.zip`
     const tempPath = path.join(app.getPath('temp'), APP_TEMP_DIR_NAME, 'lan-transfer')
     const targetPath = destinationPath || tempPath
 
@@ -1076,10 +1092,33 @@ class BackupManager {
 
     // Create backup with skipBackupFile=true (no Data folder)
     const backupedFilePath = await this.backupLegacy(_, fileName, data, targetPath, true)
+    if (path.resolve(targetPath) === path.resolve(tempPath)) {
+      const now = Date.now()
+      for (const [id, backup] of this.lanTransferBackups) {
+        if (backup.expiresAt <= now) this.lanTransferBackups.delete(id)
+      }
+      this.lanTransferBackups.set(_.sender.id, { path: path.resolve(backupedFilePath), expiresAt: now + 60 * 60_000 })
+    }
 
     logger.info(`[BackupManager] Created LAN transfer backup at: ${backupedFilePath}`)
 
     return backupedFilePath
+  }
+
+  async getLanTransferSendPath(owner: number, filePath: string): Promise<string> {
+    const backup = this.lanTransferBackups.get(owner)
+    if (!backup || backup.expiresAt <= Date.now() || backup.path !== path.resolve(filePath)) {
+      throw new Error('LAN transfer requires a backup prepared by this window')
+    }
+    const [root, resolved, stat] = await Promise.all([
+      fs.realpath(path.dirname(backup.path)),
+      fs.realpath(backup.path),
+      fs.lstat(backup.path)
+    ])
+    if (!stat.isFile() || path.dirname(resolved) !== root || path.basename(resolved) !== path.basename(backup.path)) {
+      throw new Error('LAN transfer backup is no longer available')
+    }
+    return resolved
   }
 
   /**

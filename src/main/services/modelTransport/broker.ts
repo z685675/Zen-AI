@@ -1,5 +1,6 @@
 import { isRoutableApiRequest } from '@shared/clientConnections'
 import {
+  discardResponseBody,
   isManagedModelRequest,
   type ModelTransportChunk,
   type ModelTransportRequest,
@@ -11,7 +12,10 @@ interface ActiveRequest {
   controller: AbortController
   reader?: ReadableStreamDefaultReader<Uint8Array>
   reading: boolean
+  idleTimer?: ReturnType<typeof setTimeout>
 }
+
+const RESPONSE_IDLE_TIMEOUT_MS = 60_000
 
 /** Pull-based IPC keeps SSE streaming and backpressure without buffering replies. */
 export class ModelTransportBroker {
@@ -30,7 +34,7 @@ export class ModelTransportBroker {
       requests.set(request.id, active)
       const response = await this.send(request, active.controller.signal)
       if (active.controller.signal.aborted) {
-        await response.body?.cancel()
+        discardResponseBody(response)
         active.controller.signal.throwIfAborted()
       }
       active.reader = response.body?.getReader()
@@ -46,10 +50,11 @@ export class ModelTransportBroker {
         ),
         hasBody: Boolean(active.reader)
       }
-      if (!active.reader) this.remove(owner, request.id)
+      if (active.reader) this.scheduleIdleExpiry(owner, request.id, active)
+      else this.remove(owner, request.id, active)
       return result
     } catch (error) {
-      if (active) this.cancel(owner, request.id)
+      if (active && this.owners.get(owner)?.get(request.id) === active) this.cancel(owner, request.id)
       return { ok: false, error: transportError(error) }
     }
   }
@@ -60,28 +65,43 @@ export class ModelTransportBroker {
     if (active.reading)
       return { error: { name: 'TypeError', message: 'Concurrent model stream reads are not allowed' } }
     active.reading = true
+    clearTimeout(active.idleTimer)
     try {
       const result = await active.reader.read()
+      active.controller.signal.throwIfAborted()
       if (result.done) {
         active.reader.releaseLock()
-        this.remove(owner, id)
+        this.remove(owner, id, active)
         return { done: true }
       }
+      this.scheduleIdleExpiry(owner, id, active)
       return { done: false, value: result.value }
     } catch (error) {
-      this.cancel(owner, id)
+      if (this.owners.get(owner)?.get(id) === active) this.cancel(owner, id)
       return { error: transportError(error) }
     } finally {
       active.reading = false
     }
   }
 
-  cancel(owner: number, id: string) {
+  cancel(owner: number, id: string, reason?: DOMException) {
     const active = this.owners.get(owner)?.get(id)
     if (!active) return
-    this.remove(owner, id)
-    active.controller.abort()
-    void active.reader?.cancel().catch(() => {})
+    this.remove(owner, id, active)
+    active.controller.abort(reason)
+    const reader = active.reader
+    void reader
+      ?.cancel()
+      .catch(() => {})
+      .finally(() => reader.releaseLock())
+  }
+
+  private scheduleIdleExpiry(owner: number, id: string, active: ActiveRequest) {
+    // A pending pull still belongs to a live reader, even during long SSE pauses.
+    active.idleTimer = setTimeout(() => {
+      if (this.owners.get(owner)?.get(id) === active) this.cancel(owner, id)
+    }, RESPONSE_IDLE_TIMEOUT_MS)
+    active.idleTimer.unref()
   }
 
   cancelOwner(owner: number) {
@@ -92,10 +112,12 @@ export class ModelTransportBroker {
     for (const owner of this.owners.keys()) this.cancelOwner(owner)
   }
 
-  private remove(owner: number, id: string) {
+  private remove(owner: number, id: string, active: ActiveRequest) {
+    clearTimeout(active.idleTimer)
     const requests = this.owners.get(owner)
-    requests?.delete(id)
-    if (!requests?.size) this.owners.delete(owner)
+    if (requests?.get(id) !== active) return
+    requests.delete(id)
+    if (!requests.size) this.owners.delete(owner)
   }
 
   private validate(request: ModelTransportRequest) {

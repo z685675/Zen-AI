@@ -102,6 +102,14 @@ describe('authMiddleware', () => {
     })
   })
 
+  it('denies a differently encoded API key without throwing', async () => {
+    vi.mocked(req.header!).mockImplementation((name: string) => (name === 'x-api-key' ? 'é' : undefined))
+    mockConfig.get.mockResolvedValue({ apiKey: 'a' })
+    await authMiddleware(req as Request, res as Response, next)
+    expect(statusMock).toHaveBeenCalledWith(403)
+    expect(next).not.toHaveBeenCalled()
+  })
+
   describe('API Key authentication (priority)', () => {
     const validApiKey = 'valid-api-key-123'
 

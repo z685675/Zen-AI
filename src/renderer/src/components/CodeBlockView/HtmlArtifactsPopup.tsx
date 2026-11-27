@@ -391,7 +391,7 @@ const ViewButton = styled(Button)`
 
   &.ant-btn-primary {
     background: var(--color-primary);
-    color: white;
+    color: var(--color-primary-foreground);
   }
 
   &.ant-btn-default {

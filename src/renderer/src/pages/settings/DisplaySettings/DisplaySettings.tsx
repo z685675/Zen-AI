@@ -1,88 +1,45 @@
-import CodeEditor from '@renderer/components/CodeEditor'
 import { ResetIcon } from '@renderer/components/Icons'
-import { HStack } from '@renderer/components/Layout'
 import TextBadge from '@renderer/components/TextBadge'
-import { isLinux, isMac, THEME_COLOR_PRESETS } from '@renderer/config/constant'
-import { DEFAULT_DISABLED_SIDEBAR_ICONS, DEFAULT_SIDEBAR_ICONS } from '@renderer/config/sidebar'
+import { isLinux, isMac } from '@renderer/config/constant'
+import {
+  type SidebarEntryPlacement,
+  uiSidebarPlacements,
+  UNIFIED_SIDEBAR_ENTRIES
+} from '@renderer/config/unifiedSidebar'
+import { THEME_PRESET_ANTD_TOKENS } from '@renderer/context/AntdProvider'
 import { useTheme } from '@renderer/context/ThemeProvider'
-import { useNavbarPosition, useSettings } from '@renderer/hooks/useSettings'
+import { useEnableDeveloperMode, useSettings } from '@renderer/hooks/useSettings'
 import { useTimer } from '@renderer/hooks/useTimer'
 import useUserTheme from '@renderer/hooks/useUserTheme'
+import { UI_THEME_PRESETS } from '@renderer/services/UiThemePresetService'
 import { useAppDispatch } from '@renderer/store'
-import type { AssistantIconType } from '@renderer/store/settings'
-import {
-  setAssistantIconType,
-  setClickAssistantToShowTopic,
-  setConversationFontSize,
-  setCustomCss,
-  setPinTopicsToTop,
-  setShowTopicTime,
-  setSidebarIcons
-} from '@renderer/store/settings'
-import { Button, ColorPicker, Segmented, Select, Slider, Switch, Tooltip } from 'antd'
+import { setConversationFontSize } from '@renderer/store/settings'
+import { ThemeMode } from '@renderer/types'
+import { Button, Segmented, Select, Slider, Switch, Tooltip } from 'antd'
 import { Minus, Plus } from 'lucide-react'
 import type { FC } from 'react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import { useTranslation } from 'react-i18next'
 import styled from 'styled-components'
 
 import { SettingContainer, SettingDivider, SettingGroup, SettingRow, SettingRowTitle, SettingTitle } from '..'
-import SidebarIconsManager from './SidebarIconsManager'
-
-const ColorCircleWrapper = styled.div`
-  width: 24px;
-  height: 24px;
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-`
-
-const ColorCircle = styled.div<{ color: string; isActive?: boolean }>`
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  background-color: ${(props) => props.color};
-  cursor: pointer;
-  transform: translate(-50%, -50%);
-  border: 2px solid ${(props) => (props.isActive ? 'var(--color-border)' : 'transparent')};
-  transition: opacity 0.2s;
-
-  &:hover {
-    opacity: 0.8;
-  }
-`
 
 const DisplaySettings: FC = () => {
-  const {
-    windowStyle,
-    setWindowStyle,
-    topicPosition,
-    setTopicPosition,
-    clickAssistantToShowTopic,
-    showTopicTime,
-    pinTopicsToTop,
-    customCss,
-    sidebarIcons,
-    assistantIconType,
-    conversationFontSize,
-    userTheme,
-    useSystemTitleBar,
-    setUseSystemTitleBar
-  } = useSettings()
-  const { navbarPosition, setNavbarPosition } = useNavbarPosition()
-  const { theme } = useTheme()
+  const { windowStyle, setWindowStyle, conversationFontSize, userTheme, useSystemTitleBar, setUseSystemTitleBar } =
+    useSettings()
+  const { theme, settedTheme, setTheme, preset, setPreset } = useTheme()
+  const { enableDeveloperMode } = useEnableDeveloperMode()
+  const sidebarPlacements = useSyncExternalStore(uiSidebarPlacements.subscribe, uiSidebarPlacements.get)
+  const sidebarEntries = useMemo(
+    () => UNIFIED_SIDEBAR_ENTRIES.filter((entry) => !entry.developerOnly || enableDeveloperMode),
+    [enableDeveloperMode]
+  )
   const { t } = useTranslation()
   const dispatch = useAppDispatch()
   const { setTimeoutTimer } = useTimer()
   const [currentZoom, setCurrentZoom] = useState(1.0)
   const { setUserTheme } = useUserTheme()
 
-  const [visibleIcons, setVisibleIcons] = useState(sidebarIcons?.visible || DEFAULT_SIDEBAR_ICONS)
-  const [disabledIcons, setDisabledIcons] = useState(sidebarIcons?.disabled || DEFAULT_DISABLED_SIDEBAR_ICONS)
   const [fontList, setFontList] = useState<string[]>([])
 
   const handleWindowStyleChange = useCallback(
@@ -111,22 +68,6 @@ const DisplaySettings: FC = () => {
       }
     })
   }
-
-  const handleColorPrimaryChange = useCallback(
-    (colorHex: string) => {
-      setUserTheme({
-        ...userTheme,
-        colorPrimary: colorHex
-      })
-    },
-    [setUserTheme, userTheme]
-  )
-
-  const handleReset = useCallback(() => {
-    setVisibleIcons([...DEFAULT_SIDEBAR_ICONS])
-    setDisabledIcons([...DEFAULT_DISABLED_SIDEBAR_ICONS])
-    dispatch(setSidebarIcons({ visible: DEFAULT_SIDEBAR_ICONS, disabled: DEFAULT_DISABLED_SIDEBAR_ICONS }))
-  }, [dispatch])
 
   useEffect(() => {
     // 初始化获取所有系统字体
@@ -178,15 +119,6 @@ const DisplaySettings: FC = () => {
     [setUserTheme, userTheme]
   )
 
-  const assistantIconTypeOptions = useMemo(
-    () => [
-      { value: 'model', label: t('settings.assistant.icon.type.model') },
-      { value: 'emoji', label: t('settings.assistant.icon.type.emoji') },
-      { value: 'none', label: t('settings.assistant.icon.type.none') }
-    ],
-    [t]
-  )
-
   const renderFontOption = useCallback(
     (font: string) => (
       <Tooltip title={font} placement="left" mouseEnterDelay={0.5}>
@@ -208,35 +140,46 @@ const DisplaySettings: FC = () => {
         <SettingTitle>{t('settings.display.title')}</SettingTitle>
         <SettingDivider />
         <SettingRow>
-          <SettingRowTitle>{t('settings.theme.color_primary')}</SettingRowTitle>
-          <HStack gap="12px" alignItems="center">
-            <HStack gap="12px">
-              {THEME_COLOR_PRESETS.map((color) => (
-                <ColorCircleWrapper key={color}>
-                  <ColorCircle
-                    color={color}
-                    isActive={userTheme.colorPrimary === color}
-                    onClick={() => handleColorPrimaryChange(color)}
-                  />
-                </ColorCircleWrapper>
-              ))}
-            </HStack>
-            <ColorPicker
-              style={{ fontFamily: 'inherit' }}
-              className="color-picker"
-              value={userTheme.colorPrimary}
-              onChange={(color) => handleColorPrimaryChange(color.toHexString())}
-              showText
-              size="small"
-              presets={[
-                {
-                  label: 'Presets',
-                  colors: THEME_COLOR_PRESETS
-                }
-              ]}
-            />
-          </HStack>
+          <SettingRowTitle>{t('settings.theme.mode')}</SettingRowTitle>
+          <Segmented
+            aria-label={t('settings.theme.mode')}
+            value={settedTheme}
+            onChange={setTheme}
+            options={[
+              { value: ThemeMode.light, label: t('settings.theme.light') },
+              { value: ThemeMode.dark, label: t('settings.theme.dark') },
+              { value: ThemeMode.system, label: t('settings.theme.system') }
+            ]}
+          />
         </SettingRow>
+        <SettingDivider />
+        <SettingRowTitle id="theme-preset-title">{t('settings.theme.preset.title')}</SettingRowTitle>
+        <PresetChoices role="group" aria-labelledby="theme-preset-title">
+          {UI_THEME_PRESETS.map((choice) => {
+            const colors = THEME_PRESET_ANTD_TOKENS[choice][theme]
+            return (
+              <PresetChoice
+                key={choice}
+                type="button"
+                aria-pressed={choice === preset}
+                onClick={() => setPreset(choice)}>
+                <PalettePreview aria-hidden="true" $frame={colors.frame} $sidebar={colors.sidebar}>
+                  <PaletteCanvas $canvas={colors.canvas} $text={colors.text} $accent={colors.accent} />
+                </PalettePreview>
+                <strong>
+                  {choice === 'codex'
+                    ? t('settings.theme.preset.codex.name')
+                    : t('settings.theme.preset.zen-paper.name')}
+                </strong>
+                <span>
+                  {choice === 'codex'
+                    ? t('settings.theme.preset.codex.description')
+                    : t('settings.theme.preset.zen-paper.description')}
+                </span>
+              </PresetChoice>
+            )
+          })}
+        </PresetChoices>
         {isMac && (
           <>
             <SettingDivider />
@@ -255,24 +198,6 @@ const DisplaySettings: FC = () => {
             </SettingRow>
           </>
         )}
-      </SettingGroup>
-      <SettingGroup theme={theme}>
-        <SettingTitle style={{ justifyContent: 'flex-start', gap: 5 }}>
-          {t('settings.display.navbar.title')} <TextBadge text="New" />
-        </SettingTitle>
-        <SettingDivider />
-        <SettingRow>
-          <SettingRowTitle>{t('settings.display.navbar.position.label')}</SettingRowTitle>
-          <Segmented
-            value={navbarPosition}
-            shape="round"
-            onChange={setNavbarPosition}
-            options={[
-              { label: t('settings.display.navbar.position.left'), value: 'left' },
-              { label: t('settings.display.navbar.position.top'), value: 'top' }
-            ]}
-          />
-        </SettingRow>
       </SettingGroup>
       <SettingGroup theme={theme}>
         <SettingTitle>{t('settings.display.zoom.title')}</SettingTitle>
@@ -298,7 +223,7 @@ const DisplaySettings: FC = () => {
         <SettingDivider />
         <SettingRow>
           <SettingRowTitle>{t('settings.display.conversation.font_size')}</SettingRowTitle>
-          <ZoomValue>{conversationFontSize}px</ZoomValue>
+          <ZoomValue>{conversationFontSize === 12 ? t('common.default') : `+${conversationFontSize - 12}px`}</ZoomValue>
         </SettingRow>
         <Slider
           value={conversationFontSize}
@@ -326,14 +251,7 @@ const DisplaySettings: FC = () => {
               placeholder={t('settings.display.font.select')}
               options={[
                 {
-                  label: (
-                    <span
-                      style={{
-                        fontFamily: "'HarmonyOS Sans SC', 'HarmonyOS Sans', Ubuntu, system-ui, Arial, sans-serif"
-                      }}>
-                      {t('settings.display.font.default')}
-                    </span>
-                  ),
+                  label: <span style={{ fontFamily: 'var(--zen-ui-font)' }}>{t('settings.theme.preset.font')}</span>,
                   value: ''
                 },
                 ...fontList.map((font) => ({ label: renderFontOption(font), value: font }))
@@ -361,14 +279,7 @@ const DisplaySettings: FC = () => {
               placeholder={t('settings.display.font.select')}
               options={[
                 {
-                  label: (
-                    <span
-                      style={{
-                        fontFamily: "'HarmonyOS Sans SC', 'HarmonyOS Sans', Ubuntu, system-ui, Arial, sans-serif"
-                      }}>
-                      {t('settings.display.font.default')}
-                    </span>
-                  ),
+                  label: <span style={{ fontFamily: 'var(--zen-code-font)' }}>{t('settings.theme.preset.font')}</span>,
                   value: ''
                 },
                 ...fontList.map((font) => ({ label: renderFontOption(font), value: font }))
@@ -389,117 +300,136 @@ const DisplaySettings: FC = () => {
         </SettingRow>
       </SettingGroup>
       <SettingGroup theme={theme}>
-        <SettingTitle>{t('settings.display.topic.title')}</SettingTitle>
-        <SettingDivider />
-        <SettingRow>
-          <SettingRowTitle>{t('settings.topic.position.label')}</SettingRowTitle>
-          <Segmented
-            value={topicPosition || 'right'}
-            shape="round"
-            onChange={setTopicPosition}
-            options={[
-              { value: 'left', label: t('settings.topic.position.left') },
-              { value: 'right', label: t('settings.topic.position.right') }
-            ]}
-          />
-        </SettingRow>
-        <SettingDivider />
-        {topicPosition === 'left' && (
-          <>
-            <SettingRow>
-              <SettingRowTitle>{t('settings.advanced.auto_switch_to_topics')}</SettingRowTitle>
-              <Switch
-                checked={clickAssistantToShowTopic}
-                onChange={(checked) => dispatch(setClickAssistantToShowTopic(checked))}
-              />
-            </SettingRow>
-            <SettingDivider />
-          </>
-        )}
-        <SettingRow>
-          <SettingRowTitle>{t('settings.topic.show.time')}</SettingRowTitle>
-          <Switch checked={showTopicTime} onChange={(checked) => dispatch(setShowTopicTime(checked))} />
-        </SettingRow>
-        <SettingDivider />
-        <SettingRow>
-          <SettingRowTitle>{t('settings.topic.pin_to_top')}</SettingRowTitle>
-          <Switch checked={pinTopicsToTop} onChange={(checked) => dispatch(setPinTopicsToTop(checked))} />
-        </SettingRow>
-      </SettingGroup>
-      <SettingGroup theme={theme}>
-        <SettingTitle>{t('settings.display.assistant.title')}</SettingTitle>
-        <SettingDivider />
-        <SettingRow>
-          <SettingRowTitle>{t('settings.assistant.icon.type.label')}</SettingRowTitle>
-          <Segmented
-            value={assistantIconType}
-            shape="round"
-            onChange={(value) => dispatch(setAssistantIconType(value as AssistantIconType))}
-            options={assistantIconTypeOptions}
-          />
-        </SettingRow>
-      </SettingGroup>
-      {navbarPosition === 'left' && (
-        <SettingGroup theme={theme}>
-          <SettingTitle
-            style={{ display: 'flex', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span>{t('settings.display.sidebar.title')}</span>
-            <ResetButtonWrapper>
-              <Button onClick={handleReset}>{t('common.reset')}</Button>
-            </ResetButtonWrapper>
-          </SettingTitle>
-          <SettingDivider />
-          <SidebarIconsManager
-            visibleIcons={visibleIcons}
-            disabledIcons={disabledIcons}
-            setVisibleIcons={setVisibleIcons}
-            setDisabledIcons={setDisabledIcons}
-          />
-        </SettingGroup>
-      )}
-      <SettingGroup theme={theme}>
-        <SettingTitle>
-          {t('settings.display.custom.css.label')}
-          <TitleExtra onClick={() => window.api.openWebsite('https://cherrycss.com/')}>
-            {t('settings.display.custom.css.cherrycss')}
-          </TitleExtra>
+        <SettingTitle style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span>{t('settings.display.sidebar.title')}</span>
+          <Button size="small" onClick={() => uiSidebarPlacements.reset()}>
+            {t('common.reset')}
+          </Button>
         </SettingTitle>
+        <SettingDescription style={{ marginTop: 2, marginBottom: 10 }}>
+          {t('app_shell.sidebar_placement_desc', '自定义每个导航入口展示在侧边栏最外层、收入「更多工具」，或隐藏。')}
+        </SettingDescription>
         <SettingDivider />
-        <CodeEditor
-          value={customCss}
-          language="css"
-          placeholder={t('settings.display.custom.css.placeholder')}
-          onChange={(value) => dispatch(setCustomCss(value))}
-          height="60vh"
-          expanded={false}
-          wrapped
-          options={{
-            autocompletion: true,
-            lineNumbers: true,
-            foldGutter: true,
-            keymap: true
-          }}
-          style={{
-            outline: '0.5px solid var(--color-border)',
-            borderRadius: '5px'
-          }}
-        />
+        <SidebarPlacementList>
+          {sidebarEntries.map((entry) => {
+            const Icon = entry.icon
+            const options: Array<{ label: string; value: SidebarEntryPlacement }> = [
+              { label: t('app_shell.sidebar_placement_primary', '外层显示'), value: 'primary' },
+              { label: t('app_shell.sidebar_placement_more', '更多工具'), value: 'more' }
+            ]
+            if (!entry.required) {
+              options.push({ label: t('app_shell.sidebar_placement_hidden', '隐藏'), value: 'hidden' })
+            }
+            return (
+              <SidebarPlacementRow key={entry.id}>
+                <SidebarPlacementInfo>
+                  <SidebarPlacementIcon>
+                    <Icon size={15} />
+                  </SidebarPlacementIcon>
+                  <span>{t(entry.labelKey)}</span>
+                </SidebarPlacementInfo>
+                <Segmented
+                  size="small"
+                  shape="round"
+                  value={sidebarPlacements[entry.id]}
+                  onChange={(value) => uiSidebarPlacements.setPlacement(entry.id, value)}
+                  options={options}
+                />
+              </SidebarPlacementRow>
+            )
+          })}
+        </SidebarPlacementList>
       </SettingGroup>
     </SettingContainer>
   )
 }
 
-const TitleExtra = styled.div`
-  font-size: 12px;
+const PresetChoices = styled.div`
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin: 10px 0 2px;
+`
+
+const PresetChoice = styled.button`
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 10px;
+  color: var(--zen-text-1);
+  text-align: start;
+  background: var(--zen-glass-card);
+  backdrop-filter: blur(20px) saturate(160%);
+  border: 0;
+  box-shadow: var(--zen-shadow-card);
+  border-radius: var(--zen-radius-md);
   cursor: pointer;
-  text-decoration: underline;
-  opacity: 0.7;
+  transition:
+    background 160ms ease,
+    box-shadow 180ms ease,
+    transform 150ms ease;
+
+  &:hover {
+    background: var(--zen-glass-pill-hover);
+    box-shadow: var(--zen-shadow-pill-hover);
+    transform: translateY(-0.5px);
+  }
+
+  &[aria-pressed='true'] {
+    background: var(--zen-glass-active);
+    box-shadow:
+      0 0 0 1.5px var(--zen-success),
+      var(--zen-shadow-pill);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--zen-accent);
+    outline-offset: 2px;
+  }
+
+  > span {
+    color: var(--zen-text-2);
+    font-size: 12px;
+  }
 `
-const ResetButtonWrapper = styled.div`
+
+const PalettePreview = styled.div<{ $frame: string; $sidebar: string }>`
   display: flex;
-  align-items: center;
-  justify-content: center;
+  height: 56px;
+  padding: 8px 4px 4px 25%;
+  background: linear-gradient(to right, ${({ $sidebar }) => $sidebar} 25%, ${({ $frame }) => $frame} 25%);
+  border: 1px solid var(--zen-border);
+  border-radius: var(--zen-radius-sm);
 `
+
+const PaletteCanvas = styled.div<{ $canvas: string; $text: string; $accent: string }>`
+  flex: 1;
+  display: grid;
+  align-content: center;
+  gap: 6px;
+  padding: 8px;
+  background: ${({ $canvas }) => $canvas};
+  border-radius: 4px;
+
+  &::before,
+  &::after {
+    content: '';
+    height: 3px;
+    border-radius: 2px;
+  }
+
+  &::before {
+    width: 56%;
+    background: ${({ $text }) => $text};
+    opacity: 0.7;
+  }
+
+  &::after {
+    width: 25%;
+    background: ${({ $accent }) => $accent};
+  }
+`
+
 const ZoomButtonGroup = styled.div`
   display: flex;
   align-items: center;
@@ -524,6 +454,51 @@ const SelectRow = styled.div`
   align-items: center;
   justify-content: flex-end;
   width: 380px;
+`
+
+const SidebarPlacementList = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 4px;
+`
+
+const SidebarPlacementRow = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  border-radius: var(--zen-radius-sm);
+  background: var(--zen-bg-subtle);
+  transition: background 150ms ease;
+
+  &:hover {
+    background: var(--zen-bg-hover);
+  }
+`
+
+const SidebarPlacementInfo = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  color: var(--zen-text-1);
+  font-size: 13px;
+  font-weight: 500;
+`
+
+const SidebarPlacementIcon = styled.span`
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  background: var(--zen-glass-pill);
+  box-shadow: var(--zen-shadow-active);
+  color: var(--zen-text-2);
+  flex: none;
 `
 
 export default DisplaySettings

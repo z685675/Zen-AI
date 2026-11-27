@@ -485,10 +485,12 @@ export async function uiSmoke(
         throw error
       } finally {
         try {
-          if (instance) await closeIsolated(instance.application)
-        } catch (error) {
-          cleanupConfirmed = false
-          throw error
+          if (instance) {
+            await closeIsolated(instance.application).catch((error) => {
+              cleanupConfirmed = false
+              throw error
+            })
+          }
         } finally {
           await gateway.close()
           await writeFile(

@@ -11,6 +11,9 @@ export const markLocallyVerifiedEmptyConversation = (conversationId: string): vo
   locallyVerifiedEmptyConversationIds.add(conversationId)
 }
 
+export const isLocallyVerifiedEmptyConversation = (conversationId: string): boolean =>
+  locallyVerifiedEmptyConversationIds.has(conversationId)
+
 export const consumeLocallyVerifiedEmptyConversation = (conversationId: string): boolean =>
   locallyVerifiedEmptyConversationIds.delete(conversationId)
 

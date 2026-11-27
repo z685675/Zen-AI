@@ -930,6 +930,29 @@
     "zoomIn": "Zoom In",
     "zoomOut": "Zoom Out"
   },
+  "app_shell": {
+    "chat_welcome": "Start a conversation",
+    "chat_welcome_subtitle": "Ask questions, write, translate, or brainstorm anytime, so you can focus entirely on your ideas",
+    "conversations": "Conversations",
+    "image_workbench": "Image Workbench",
+    "mcp": "MCP",
+    "model_degraded": "Degraded",
+    "model_failed": "High errors",
+    "model_healthy": "Model healthy",
+    "more_tools": "More tools",
+    "my_usage": "My usage",
+    "navigation": "Main navigation",
+    "new_conversation": "New conversation",
+    "new_task": "New task",
+    "recent": "Recent tasks and conversations",
+    "sidebar_placement_desc": "Choose whether each navigation entry appears at the top level of the sidebar, inside More tools, or is hidden.",
+    "sidebar_placement_hidden": "Hidden",
+    "sidebar_placement_more": "More tools",
+    "sidebar_placement_primary": "Top level",
+    "today_count": "{{count}} today",
+    "today_requests": "Today · {{count}} requests",
+    "toggle_appearance": "Switch light or dark appearance"
+  },
   "assistantDataSafety": {
     "busy": "Stop active assistant tasks first, then back up, restore or reset data. A data operation may also still be in progress."
   },
@@ -1190,6 +1213,9 @@
     "continuation_too_large": "History is too large. Export a backup and provide the needed background in a new conversation.",
     "continuation_workspace_missing": "The original workspace is missing or inaccessible. Check permissions and retry.",
     "continue": "Continue in new assistant",
+    "delete_legacy_folder": "Delete old conversations folder",
+    "delete_legacy_folder_confirm": "This permanently deletes all old conversations, including archived ones. This action cannot be undone.",
+    "delete_legacy_folder_failed": "Some old conversations could not be deleted. Try again.",
     "historical_copy": "History copy",
     "legacy_automation_disabled": "The deprecated assistant is no longer maintained. External integrations, including WeChat, and scheduled tasks are disabled, including in developer mode. Existing settings and history are preserved. These features will reopen only after the new assistant supports them.",
     "legacy_history": "Old Conversations",
@@ -1661,6 +1687,7 @@
         "cache_value": "{{hits}} hits / {{total}} parses",
         "compressions": "History compactions",
         "error": "Resource preparation failed",
+        "local_checkpoint_fallback": "The remote context model is temporarily unavailable. Processing will continue from a local checkpoint.",
         "managed": "Resources and history managed",
         "managed_resources": "{{count}} resources managed",
         "note": "This shows resource, history, and capacity handling. It does not mean the model is still responding.",
@@ -1851,6 +1878,13 @@
       "prev": "Previous Message",
       "top": "Back to top"
     },
+    "quick_roles": {
+      "add": "Add role",
+      "add_to_favorites": "Add a favorite role",
+      "empty": "No role cards have been added",
+      "expand_settings": "Show role settings",
+      "mine": "Mine"
+    },
     "resend": "Resend",
     "save": {
       "file": {
@@ -2012,6 +2046,12 @@
         "md": "Copy as markdown",
         "plain_text": "Copy as plain text (remove Markdown)",
         "title": "Copy"
+      },
+      "date_group": {
+        "earlier": "Earlier",
+        "last_seven_days": "Last 7 days",
+        "pinned": "Pinned",
+        "today": "Today"
       },
       "delete": {
         "shortcut": "Hold {{key}} to delete directly"
@@ -2269,6 +2309,7 @@
     "models": "Models",
     "more": "More",
     "name": "Name",
+    "new": "New",
     "next_match": "Next match",
     "no_results": "No results",
     "none": "None",
@@ -2288,6 +2329,7 @@
     "prompt": "Prompt",
     "provider": "Provider",
     "reasoning_content": "Deep reasoning",
+    "recently_deleted": "Recently deleted",
     "refresh": "Refresh",
     "regenerate": "Regenerate",
     "remove_image": "Remove image",
@@ -2349,7 +2391,8 @@
     "image-generation": "Image Generation (OpenAI)",
     "jina-rerank": "Jina Rerank",
     "openai": "OpenAI",
-    "openai-response": "OpenAI-Response"
+    "openai-response": "OpenAI-Response",
+    "openai-video": "OpenAI-compatible Video Generation"
   },
   "error": {
     "availableProviders": "Available Providers",
@@ -2643,6 +2686,7 @@
     "split": "Split"
   },
   "image_studio": {
+    "legacy_import_incomplete": "Some old local images could not be read. Available images were imported and the original files were kept.",
     "local": "Local images",
     "opening": "Opening image workspace…",
     "reconnect": "Reconnect",
@@ -3225,6 +3269,11 @@
       "pending": "Pending",
       "preview": "Preview",
       "raw": "Raw",
+      "read_paper": {
+        "active": "Reading the paper",
+        "done": "Finished reading this section",
+        "label": "Read paper"
+      },
       "runningCount": "{{count}} tools running",
       "search_limited": "Search limited · not executed",
       "sections": {
@@ -3428,6 +3477,7 @@
     "degraded": "Degraded",
     "description": "Gateway statistics cover the models and channels currently accessible to the selected key and include retries. Data collection starts after the gateway update.",
     "empty": "No matching models",
+    "failures": "Failures",
     "first_response_latency": "Average first response time",
     "high_failure_rate": "High failure rate",
     "history": "Daily history",
@@ -4173,7 +4223,7 @@
       "realistic": "Realistic"
     },
     "text_desc_required": "Please enter image description first",
-    "title": "Image Generation",
+    "title": "Images / Videos",
     "top_up": "Top up ",
     "translating": "Translating...",
     "uploaded_input": "Uploaded input",
@@ -6633,6 +6683,24 @@
       "color_primary": "Primary Color",
       "dark": "Dark",
       "light": "Light",
+      "mode": "Appearance mode",
+      "preset": {
+        "codex": {
+          "description": "Pure white layered liquid glass",
+          "name": "Pure Glass"
+        },
+        "font": "Use the selected style’s font",
+        "title": "Visual style",
+        "zen-paper": {
+          "description": "Warm ivory silk liquid glass",
+          "name": "Warm Silk"
+        }
+      },
+      "route_transition": {
+        "crossfade": "Crossfade",
+        "instant": "Instant",
+        "title": "Page transitions"
+      },
       "system": "System",
       "title": "Theme",
       "window": {
@@ -6868,7 +6936,7 @@
     "memories": "Memories",
     "notes": "Notes",
     "openclaw": "OpenClaw",
-    "paintings": "Image Generation",
+    "paintings": "Images / Videos",
     "settings": "Settings",
     "store": "Assistant Library",
     "translate": "Translate"

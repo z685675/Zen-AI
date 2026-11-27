@@ -2,6 +2,7 @@ import { loggerService } from '@logger'
 import { modelRecoveryIntents } from '@renderer/services/modelRecoveryIntents'
 import { useAppSelector } from '@renderer/store'
 import { MODEL_RECOVERY_STABILITY_MS, type ModelRecoveryIntent } from '@shared/config/modelRecovery'
+import { X } from 'lucide-react'
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -11,7 +12,9 @@ export function ModelRecoveryNotice({ intent }: { intent?: ModelRecoveryIntent }
   const { t } = useTranslation()
   const providers = useAppSelector((state) => state.llm.providers)
   const [now, setNow] = useState(Date.now)
-  const visible = !!intent && intent.preferred !== intent.actual
+  const [dismissed, setDismissed] = useState<string>()
+  const noticeId = intent ? JSON.stringify([intent.preferred, intent.actual]) : undefined
+  const visible = !!intent && intent.preferred !== intent.actual && dismissed !== noticeId
   useEffect(() => {
     if (!visible) return
     const timer = setInterval(() => setNow(Date.now()), 15000)
@@ -35,12 +38,23 @@ export function ModelRecoveryNotice({ intent }: { intent?: ModelRecoveryIntent }
         ? t('model_recovery.observing', { minutes: Math.ceil(remaining / 60000) })
         : t('model_recovery.idle')
   }
+  const label = intent.actual
+    ? t('model_recovery.fallback', { preferred: name(intent.preferred), actual: name(intent.actual) })
+    : t('model_recovery.empty', { preferred: name(intent.preferred) })
+  const summary = `${label} ${detail}`
   return (
-    <div role="status" className="px-4 py-1 text-[var(--color-text-3)] text-xs">
-      {intent.actual
-        ? t('model_recovery.fallback', { preferred: name(intent.preferred), actual: name(intent.actual) })
-        : t('model_recovery.empty', { preferred: name(intent.preferred) })}{' '}
-      {detail}
+    <div className="mb-2 flex h-7 items-center gap-2 rounded-(--zen-radius-sm) border border-(--zen-border) bg-(--zen-bg-elevated) px-2 text-(--zen-text-2) text-xs">
+      <span className="size-1.5 shrink-0 rounded-full bg-(--zen-warning)" aria-hidden="true" />
+      <span role="status" title={summary} className="min-w-0 flex-1 truncate">
+        {summary}
+      </span>
+      <button
+        type="button"
+        aria-label={t('common.close')}
+        className="grid size-5 shrink-0 place-items-center rounded hover:bg-(--zen-bg-hover)"
+        onClick={() => setDismissed(noticeId)}>
+        <X size={13} />
+      </button>
     </div>
   )
 }

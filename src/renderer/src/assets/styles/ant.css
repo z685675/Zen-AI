@@ -40,6 +40,10 @@
   justify-content: center;
 }
 
+.ant-btn .ant-btn-icon .lucide:not(.lucide-custom) {
+  color: inherit;
+}
+
 .ant-tabs-tabpane:focus-visible {
   outline: none;
 }
@@ -106,11 +110,14 @@
   width: max-content;
   overflow-y: auto;
   overflow-x: hidden;
-  border: 0.5px solid var(--color-border);
+  border: 1px solid var(--zen-border);
 }
 
 .ant-dropdown {
-  background-color: var(--ant-color-bg-elevated);
+  background: var(--zen-glass-composer);
+  backdrop-filter: blur(28px) saturate(170%);
+  -webkit-backdrop-filter: blur(28px) saturate(170%);
+  box-shadow: var(--zen-shadow-card);
   overflow: hidden;
   border-radius: var(--ant-border-radius-lg);
   user-select: none;
@@ -119,7 +126,6 @@
 .ant-dropdown .ant-dropdown-menu {
   max-height: 80vh;
   overflow-y: auto;
-  border: 0.5px solid var(--color-border);
 }
 
 /* Align lucide icon in dropdown menu item extra */
@@ -130,12 +136,8 @@
   justify-content: center;
 }
 
-.ant-dropdown .ant-dropdown-arrow + .ant-dropdown-menu {
-  border: none;
-}
-
 .ant-select-dropdown {
-  border: 0.5px solid var(--color-border);
+  border: 1px solid var(--zen-border);
 }
 
 .ant-dropdown-menu-submenu {
@@ -165,17 +167,19 @@
   align-items: center;
 }
 
-.ant-popover .ant-popover-inner {
-  border: 0.5px solid var(--color-border);
-}
-
 .ant-popover .ant-popover-inner .ant-popover-inner-content {
   max-height: 70vh;
   overflow-y: auto;
 }
 
-.ant-popover .ant-popover-arrow + .ant-popover-content .ant-popover-inner {
-  border: none;
+body[theme-mode] :is(.ant-modal-content, .ant-drawer-content, .ant-popover-inner, .ant-dropdown .ant-dropdown-menu) {
+  border: 1px solid var(--zen-border);
+  border-radius: var(--zen-radius-lg);
+  box-shadow: none;
+}
+
+body[theme-mode] .ant-drawer-content-wrapper {
+  box-shadow: none;
 }
 
 .ant-modal:not(.ant-modal-confirm) .ant-modal-confirm-body-has-title {
@@ -183,8 +187,6 @@
 }
 
 .ant-modal:not(.ant-modal-confirm) .ant-modal-content {
-  border-radius: 10px;
-  border: 0.5px solid var(--color-border);
   padding: 0 0 8px 0;
 }
 
@@ -194,7 +196,7 @@
 
 .ant-modal:not(.ant-modal-confirm) .ant-modal-content .ant-modal-header {
   padding: 16px 16px 0 16px;
-  border-radius: 10px;
+  border-radius: var(--zen-radius-lg);
 }
 
 .ant-modal:not(.ant-modal-confirm) .ant-modal-content .ant-modal-body {
@@ -259,6 +261,15 @@
 }
 
 /* Confirm buttons live inside AntD's body; only release notes may scroll. */
+.zen-app-update-modal .ant-modal-content {
+  padding: 22px 26px 20px !important;
+  border: 0 !important;
+  border-radius: var(--zen-radius-xl) !important;
+  background: var(--zen-window-canvas) !important;
+  backdrop-filter: blur(36px) saturate(165%);
+  -webkit-backdrop-filter: blur(36px) saturate(165%);
+  box-shadow: var(--zen-shadow-composer) !important;
+}
 .zen-app-update-modal .ant-modal-confirm-body-wrapper,
 .zen-app-update-modal .ant-modal-confirm-paragraph,
 .zen-app-update-modal .ant-modal-confirm-content {
@@ -276,11 +287,30 @@
 .zen-app-update-modal .ant-modal-confirm-paragraph {
   flex: 1;
   max-width: none;
+  row-gap: 14px;
 }
-.zen-app-update-modal .ant-modal-confirm-title,
+.zen-app-update-modal .ant-modal-confirm-title {
+  flex-shrink: 0;
+  font-size: 19px !important;
+  font-weight: 600 !important;
+  letter-spacing: -0.02em;
+  color: var(--zen-text-1) !important;
+  padding-bottom: 12px;
+  border-bottom: 0.5px solid var(--zen-border);
+}
 .zen-app-update-modal .ant-modal-confirm-btns {
   flex-shrink: 0;
-}
-.zen-app-update-modal .ant-modal-confirm-btns {
   margin-top: 16px;
+  padding-top: 14px;
+  border-top: 0.5px solid var(--zen-border);
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+.zen-app-update-modal .ant-modal-confirm-btns .ant-btn {
+  height: 34px;
+  padding: 0 18px;
+  border-radius: var(--zen-radius-pill);
+  font-size: 13px;
+  font-weight: 500;
 }

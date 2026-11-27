@@ -36,7 +36,13 @@ function pending() {
 beforeEach(async () => {
   vi.resetModules()
   vi.clearAllMocks()
-  harness.createClient.mockImplementation(() => ({ close: vi.fn() }))
+  harness.createClient.mockImplementation(() => ({
+    close: vi.fn(),
+    execute: vi.fn().mockResolvedValue(undefined),
+    batch: vi.fn(),
+    executeMultiple: vi.fn(),
+    transaction: vi.fn()
+  }))
   harness.runMigrations.mockResolvedValue(undefined)
   harness.runDataMigrations.mockResolvedValue(undefined)
   ;({ DatabaseManager } = await import('../DatabaseManager'))
@@ -55,6 +61,42 @@ describe('assistant native database lifecycle', () => {
     expect(instances[0].isInitialized()).toBe(true)
     expect(harness.runMigrations).toHaveBeenCalledOnce()
     expect(harness.runDataMigrations).toHaveBeenCalledOnce()
+    await DatabaseManager.close()
+  })
+
+  it('queues independent queries until the current native transaction commits', async () => {
+    const execute = vi.fn().mockResolvedValue(undefined)
+    let closed = false
+    const tx = {
+      get closed() {
+        return closed
+      },
+      commit: vi.fn(async () => {
+        closed = true
+      }),
+      rollback: vi.fn(async () => {
+        closed = true
+      }),
+      close: vi.fn(() => {
+        closed = true
+      })
+    }
+    harness.createClient.mockReturnValueOnce({
+      execute,
+      batch: vi.fn(),
+      executeMultiple: vi.fn(),
+      transaction: vi.fn().mockResolvedValue(tx),
+      close: vi.fn()
+    })
+    const client = await (await DatabaseManager.getInstance()).getClient()
+    const transaction = await client.transaction()
+    const outside = client.execute('SELECT 1')
+    await Promise.resolve()
+    expect(execute).not.toHaveBeenCalledWith('SELECT 1')
+    await transaction.commit()
+    await outside
+    expect(execute).toHaveBeenCalledWith('SELECT 1')
+    expect(execute).toHaveBeenCalledWith('PRAGMA busy_timeout = 5000')
     await DatabaseManager.close()
   })
 
@@ -146,7 +188,7 @@ describe('assistant native database lifecycle', () => {
     const close = vi.fn(() => {
       throw new Error('failed-init close failed')
     })
-    harness.createClient.mockReturnValueOnce({ close })
+    harness.createClient.mockReturnValueOnce({ close, execute: vi.fn() })
     harness.runMigrations.mockRejectedValueOnce(new Error('migration failed'))
     await expect(DatabaseManager.getInstance()).rejects.toThrow('migration failed')
     await expect(DatabaseManager.getInstance()).rejects.toHaveProperty('code', 'assistant_database_close_failed')
@@ -159,7 +201,7 @@ describe('assistant native database lifecycle', () => {
     const close = vi.fn(() => {
       throw new Error('failed-init close failed')
     })
-    harness.createClient.mockReturnValueOnce({ close })
+    harness.createClient.mockReturnValueOnce({ close, execute: vi.fn() })
     harness.runMigrations.mockRejectedValueOnce(new Error('migration failed'))
     await Promise.all([
       expect(DatabaseManager.getInstance()).rejects.toThrow('migration failed'),

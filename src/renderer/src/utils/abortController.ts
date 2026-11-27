@@ -15,6 +15,7 @@ export const removeAbortController = (id: string, abortFn: () => void) => {
     if (index !== -1) {
       callbackArr.splice(index, 1)
     }
+    if (callbackArr.length === 0) abortMap.delete(id)
   } else {
     abortMap.delete(id)
   }
@@ -22,11 +23,13 @@ export const removeAbortController = (id: string, abortFn: () => void) => {
 
 export const abortCompletion = (id: string) => {
   const abortFns = abortMap.get(id)
-  if (abortFns?.length) {
-    for (const fn of [...abortFns]) {
-      fn()
-      removeAbortController(id, fn)
-    }
+  if (!abortFns?.length) {
+    abortMap.delete(id)
+    return
+  }
+  for (const fn of [...abortFns]) {
+    fn()
+    removeAbortController(id, fn)
   }
 }
 

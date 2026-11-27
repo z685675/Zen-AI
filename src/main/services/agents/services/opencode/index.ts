@@ -60,9 +60,13 @@ export default class OpenCodeService implements AgentServiceInterface {
     const provider = modelInfo.provider
     // Preparation starts after listeners are attached; cancellation remains
     // effective while the native process/MCP inventory is being initialized.
-    setImmediate(() => {
-      void this.run(stream, prompt, session, provider, modelInfo.modelId!, abortController, thinkingOptions, images)
-    })
+    stream.settled = new Promise<void>((ready) => setImmediate(ready))
+      .then(() =>
+        this.run(stream, prompt, session, provider, modelInfo.modelId!, abortController, thinkingOptions, images)
+      )
+      .catch((error) => {
+        stream.emit('data', { type: 'error', error })
+      })
     return stream
   }
 
@@ -221,6 +225,11 @@ export default class OpenCodeService implements AgentServiceInterface {
     signal.addEventListener('abort', cancel, { once: true })
     const retryStarted = { at: 0 }
     let retryTimeout: ReturnType<typeof setTimeout> | undefined
+    const clearRetryBudget = () => {
+      clearTimeout(retryTimeout)
+      retryTimeout = undefined
+      retryStarted.at = 0
+    }
     const heartbeat = setInterval(() => {
       touchAssistantMcpContext(session.id)
       touchBrowserMcpContext(session.id)
@@ -382,6 +391,15 @@ export default class OpenCodeService implements AgentServiceInterface {
         prepareText
       )
       let awaitingNativeRun = false
+      let idlePending = false
+      let wakeIdle: (() => void) | undefined
+      const trackPermission = (task: Promise<void>) => {
+        permissionTasks.add(task)
+        void task.finally(() => {
+          permissionTasks.delete(task)
+          if (idlePending && !permissionTasks.size) wakeIdle?.()
+        })
+      }
       const reconcile = async (atIdle = false) => {
         awaitingNativeRun = false
         await turnInput?.settle()
@@ -393,7 +411,6 @@ export default class OpenCodeService implements AgentServiceInterface {
         )
         if (atIdle && loopRecovery.waiting) {
           turnInput?.ready(false)
-          await Promise.all(permissionTasks)
           if (permissionError) throw permissionError
           const recovery = await loopRecovery.resume({
             client: runtime!.client,
@@ -538,6 +555,20 @@ export default class OpenCodeService implements AgentServiceInterface {
           (!turnInput?.hasAdditions || latest?.parentID === turnInput.latestMessageId || followedByBackgroundResult)
         )
       }
+      const noteIdle = () => {
+        idlePending = true
+        turnInput?.ready(false)
+      }
+      const settleIdle = async () => {
+        if (permissionError) throw permissionError
+        if (permissionTasks.size) return
+        idlePending = false
+        const reconciled = await reconcile(true)
+        if (permissionError) throw permissionError
+        // The independent permission watcher can discover another prompt during reconciliation.
+        if (permissionTasks.size) idlePending = true
+        else completed = reconciled
+      }
       const permission = async (props: OpenCodeEvent['properties']) => {
         if (permissionSignal.aborted || completed || pendingPermissions.has(props.id)) return
         pendingPermissions.add(props.id)
@@ -616,6 +647,7 @@ export default class OpenCodeService implements AgentServiceInterface {
         approvalControllers.set(props.id, approvalController)
         const approvalSignal = AbortSignal.any([permissionSignal, approvalController.signal])
         deadline.wait(`permission:${props.id}`)
+        clearRetryBudget()
         status('waiting_permission')
         const permissionToolCallId = `${subagents?.toolCallPrefix(props.sessionID || nativeId!) ?? session.id}:${props.tool?.callID || `permission:${props.id}`}`
         subagents?.waitingFor(props.sessionID, 'waiting_permission')
@@ -685,8 +717,7 @@ export default class OpenCodeService implements AgentServiceInterface {
           permissionError = error
           eventController.abort('permission reply failed')
         })
-        permissionTasks.add(task)
-        void task.finally(() => permissionTasks.delete(task))
+        trackPermission(task)
       }
       const requestQuestion = (props: OpenCodeEvent['properties']) => {
         if (completed || permissionSignal.aborted || pendingQuestions.has(props.id)) return
@@ -708,6 +739,7 @@ export default class OpenCodeService implements AgentServiceInterface {
           approvalControllers.set(key, questionController)
           const questionSignal = AbortSignal.any([permissionSignal, questionController.signal])
           deadline.wait(key)
+          clearRetryBudget()
           status('waiting_answer')
           subagents?.waitingFor(props.sessionID, 'waiting_answer')
           try {
@@ -734,8 +766,7 @@ export default class OpenCodeService implements AgentServiceInterface {
             eventController.abort('question reply failed')
           }
         })
-        permissionTasks.add(task)
-        void task.finally(() => permissionTasks.delete(task))
+        trackPermission(task)
       }
       const handle = async (event: OpenCodeEvent) => {
         const props = event.properties
@@ -767,6 +798,7 @@ export default class OpenCodeService implements AgentServiceInterface {
         }
         if (event.type === 'message.updated' && props.info?.summary && !state.previousMessages.has(props.info.id)) {
           compacting = true
+          clearRetryBudget()
           status('compacting')
         }
         if (event.type === 'session.error') {
@@ -777,6 +809,7 @@ export default class OpenCodeService implements AgentServiceInterface {
             overflowMessages = new Set(state.messages.keys())
             if (++consecutiveOverflows > 3) throw this.nativeError(pendingOverflow)
             compacting = true
+            clearRetryBudget()
             status('compacting')
             recordMainDiagnostic(options?.diagnosticId, 'runtime', 'native-context-recovery', {
               runtime: 'opencode',
@@ -823,11 +856,14 @@ export default class OpenCodeService implements AgentServiceInterface {
         if (event.type === 'session.status') {
           const next = props.status
           if (next?.type === 'busy') {
+            clearRetryBudget()
+            idlePending = false
             turnInput?.ready(admitted)
             observedBusy = true
             status(permissions > 0 ? 'waiting_permission' : 'busy')
           }
-          if (next?.type === 'retry') {
+          if (next?.type === 'retry' && !compacting && permissions === 0) {
+            idlePending = false
             timing.retry()
             if (!retryTimeout)
               retryTimeout = setTimeout(
@@ -842,14 +878,8 @@ export default class OpenCodeService implements AgentServiceInterface {
             recordMainDiagnostic(options?.diagnosticId, 'runtime', 'native-retry', { attempt: next.attempt })
           }
           if (next?.type === 'idle' && admitted && observedBusy) {
-            // Native completion can overtake the local HTTP acknowledgement
-            // of an answer. Settle those replies before reconciling this idle.
-            await Promise.all([...permissionTasks])
-            if (permissionError) throw permissionError
-            turnInput?.ready(false)
-            completed = await reconcile(true)
-            if (!completed && !awaitingNativeRun)
-              throw new Error('The new assistant returned an empty or incomplete result')
+            clearRetryBudget()
+            noteIdle()
           }
         }
         const chunks = state.consume(event)
@@ -886,9 +916,7 @@ export default class OpenCodeService implements AgentServiceInterface {
           )
             consecutiveOverflows = 0
           transportFailure = undefined
-          clearTimeout(retryTimeout)
-          retryTimeout = undefined
-          retryStarted.at = 0
+          clearRetryBudget()
         }
         for (const chunk of chunks) emit(chunk)
       }
@@ -920,19 +948,45 @@ export default class OpenCodeService implements AgentServiceInterface {
       while (!completed) {
         let semanticFailure = false
         try {
-          for await (const event of iterator) {
-            try {
-              await handle(event)
-            } catch (error) {
+          let nextEvent: ReturnType<typeof iterator.next> | undefined
+          while (!completed) {
+            if (idlePending && !permissionTasks.size) {
               semanticFailure = true
-              throw error
+              await settleIdle()
+              if (completed) break
+              if (!idlePending && !awaitingNativeRun)
+                throw new Error('The new assistant returned an empty or incomplete result')
+              semanticFailure = false
             }
-            if (completed) break
+            nextEvent ??= iterator.next()
+            // Admission waits for child completion events. Continue consuming SSE while
+            // waiting for replies, and wake here even if the acknowledgement is the last activity.
+            let next: Awaited<typeof nextEvent> | undefined
+            if (idlePending) {
+              const idleReady = new Promise<undefined>((resolve) => {
+                wakeIdle = () => resolve(undefined)
+              })
+              try {
+                next = await Promise.race([nextEvent, idleReady])
+              } finally {
+                wakeIdle = undefined
+              }
+              if (!next) continue
+            } else next = await nextEvent
+            nextEvent = undefined
+            if (next.done) throw new Error('OpenCode event stream ended before task completion')
+            semanticFailure = true
+            await handle(next.value)
+            semanticFailure = false
           }
-          if (!completed) throw new Error('OpenCode event stream ended before task completion')
+          eventController.abort('event observation complete')
+          await iterator.return(undefined)
         } catch (error) {
-          if (permissionError) throw permissionError
-          if (signal.aborted || semanticFailure || eventController.signal.aborted) throw admissionError || error
+          if (permissionError || signal.aborted || semanticFailure || eventController.signal.aborted) {
+            eventController.abort('event observation stopped')
+            await iterator.return(undefined).catch(() => undefined)
+            throw permissionError || admissionError || error
+          }
           // A broken local event connection is not a failed upstream task.
           // Reattach to that SAME task; never submit prompt_async a second time.
           const nativeStatus = await runtime.client.request<Record<string, { type: string }>>(
@@ -942,11 +996,13 @@ export default class OpenCodeService implements AgentServiceInterface {
             signal
           )
           if (nativeStatus[nativeId]?.type === 'idle' || !nativeStatus[nativeId]) {
-            turnInput?.ready(false)
-            completed = await reconcile(true)
+            noteIdle()
+            // With no unfinished child, pending replies cannot depend on more child events.
+            if (!subagents.unfinished) await Promise.all([...permissionTasks])
+            await settleIdle()
             if (completed) break
-            if (!awaitingNativeRun) throw admissionError || error
-          }
+            if (!idlePending && !awaitingNativeRun) throw admissionError || error
+          } else idlePending = false
           if (eventReconnects >= 2) throw error
           eventReconnects++
           iterator = runtime.client.events(AbortSignal.any([signal, eventController.signal]))
@@ -976,11 +1032,11 @@ export default class OpenCodeService implements AgentServiceInterface {
             )
             observedBusy = true
             if (!after[nativeId] || after[nativeId].type === 'idle') {
-              turnInput?.ready(false)
-              completed = await reconcile(true)
-              if (!completed && !awaitingNativeRun)
+              noteIdle()
+              await settleIdle()
+              if (!completed && !idlePending && !awaitingNativeRun)
                 throw new Error('The new assistant returned an empty or incomplete result')
-            }
+            } else idlePending = false
             recordMainDiagnostic(options?.diagnosticId, 'runtime', 'event-stream-reconnected', {
               runtime: 'opencode',
               attempt: eventReconnects
@@ -1075,8 +1131,11 @@ export default class OpenCodeService implements AgentServiceInterface {
       eventController.abort('turn finished')
       signal.removeEventListener('abort', cancel)
       runtime?.setProgressListener(undefined)
-      await runtime?.finishTurn?.()
-      runtime?.release()
+      try {
+        await runtime?.finishTurn?.()
+      } finally {
+        runtime?.release()
+      }
     }
   }
 

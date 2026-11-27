@@ -32,6 +32,9 @@ const appWindowIcon = nativeImage.createFromPath(iconPath)
 export class WindowService {
   private static instance: WindowService | null = null
   private mainWindow: BrowserWindow | null = null
+  private mainWindowInitializer?: (window: BrowserWindow) => void
+  private showOnMainWindowReady = false
+  private contextMenuListenerRegistered = false
   private miniWindow: BrowserWindow | null = null
   private isPinnedMiniWindow: boolean = false
   //hacky-fix: store the focused status of mainWindow before miniWindow shows
@@ -44,6 +47,10 @@ export class WindowService {
       WindowService.instance = new WindowService()
     }
     return WindowService.instance
+  }
+
+  public setMainWindowInitializer(initialize: (window: BrowserWindow) => void): void {
+    this.mainWindowInitializer = initialize
   }
 
   public createMainWindow(): BrowserWindow {
@@ -130,6 +137,7 @@ export class WindowService {
     this.setupWebContentsHandlers(mainWindow)
     this.setupWindowLifecycleEvents(mainWindow)
     this.setupMainWindowMonitor(mainWindow)
+    this.mainWindowInitializer?.(mainWindow)
     this.loadMainWindowContent(mainWindow)
   }
 
@@ -177,11 +185,13 @@ export class WindowService {
   }
 
   private setupContextMenu(mainWindow: BrowserWindow) {
-    contextMenu.contextMenu(mainWindow.webContents)
-    // setup context menu for all webviews like miniapp
-    app.on('web-contents-created', (_, webContents) => {
-      contextMenu.contextMenu(webContents)
-    })
+    if (!this.contextMenuListenerRegistered) {
+      this.contextMenuListenerRegistered = true
+      contextMenu.contextMenu(mainWindow.webContents)
+      app.on('web-contents-created', (_, webContents) => {
+        contextMenu.contextMenu(webContents)
+      })
+    }
 
     if (hotpatchService.secure) {
       mainWindow.webContents.on('will-attach-webview', (_event, preferences) => {
@@ -209,8 +219,9 @@ export class WindowService {
       mainWindow.webContents.setZoomFactor(configManager.getZoomFactor())
 
       // show window only when laucn to tray not set
-      const isLaunchToTray = configManager.getLaunchToTray()
-      if (!isLaunchToTray) {
+      const showWindow = this.showOnMainWindowReady || !configManager.getLaunchToTray()
+      this.showOnMainWindowReady = false
+      if (showWindow) {
         //[mac]hacky-fix: miniWindow set visibleOnFullScreen:true will cause dock icon disappeared
         void app.dock?.show()
         mainWindow.show()
@@ -358,28 +369,6 @@ export class WindowService {
 
       return { action: 'deny' }
     })
-
-    this.setupWebRequestHeaders(mainWindow)
-  }
-
-  private setupWebRequestHeaders(mainWindow: BrowserWindow) {
-    // Downloaded code must never erase the base CSP or weaken third-party frame isolation.
-    if (hotpatchService.secure) return
-    mainWindow.webContents.session.webRequest.onHeadersReceived({ urls: ['*://*/*'] }, (details, callback) => {
-      if (details.responseHeaders?.['X-Frame-Options']) {
-        delete details.responseHeaders['X-Frame-Options']
-      }
-      if (details.responseHeaders?.['x-frame-options']) {
-        delete details.responseHeaders['x-frame-options']
-      }
-      if (details.responseHeaders?.['Content-Security-Policy']) {
-        delete details.responseHeaders['Content-Security-Policy']
-      }
-      if (details.responseHeaders?.['content-security-policy']) {
-        delete details.responseHeaders['content-security-policy']
-      }
-      callback({ cancel: false, responseHeaders: details.responseHeaders })
-    })
   }
 
   private loadMainWindowContent(mainWindow: BrowserWindow) {
@@ -449,7 +438,7 @@ export class WindowService {
     })
 
     mainWindow.on('closed', () => {
-      this.mainWindow = null
+      if (this.mainWindow === mainWindow) this.mainWindow = null
     })
 
     mainWindow.on('show', () => {
@@ -519,7 +508,8 @@ export class WindowService {
         this.mainWindow.setVisibleOnAllWorkspaces(false)
       }
     } else {
-      this.mainWindow = this.createMainWindow()
+      this.showOnMainWindowReady = true
+      if (this.mainWindowInitializer) this.createMainWindow()
     }
   }
 
@@ -587,7 +577,7 @@ export class WindowService {
         sandbox: false,
         webSecurity: false,
         ...hotpatchWindowPreferences(hotpatchService.secure),
-        webviewTag: true
+        webviewTag: false
       }
     })
 

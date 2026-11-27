@@ -111,6 +111,14 @@ afterEach(() => {
 })
 
 describe('DSH stored workspace isolation', () => {
+  it('allows reading archived history and rejects new exchange writes from renderer IPC', async () => {
+    const id = sessionId('legacy-agent')
+    await expect(
+      agentMessageRepository.persistExchange({ sessionId: id, user: { payload: payload() } }, true)
+    ).rejects.toMatchObject({ code: 'legacy_assistant_read_only' })
+    expect(await agentMessageRepository.getSessionHistory(id)).toEqual([])
+  })
+
   it.each(['list-agents', 'get-agent', 'list-sessions', 'get-session', 'create-session'])(
     'rejects locked %s without allowing a direct service bypass',
     async (action) => {

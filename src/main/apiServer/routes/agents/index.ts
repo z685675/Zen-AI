@@ -3,7 +3,6 @@ import express from 'express'
 import { agentHandlers, messageHandlers, sessionHandlers } from './handlers'
 import { checkAgentExists, handleValidationErrors } from './middleware'
 import {
-  validateAgent,
   validateAgentId,
   validateAgentReplace,
   validateAgentUpdate,
@@ -385,25 +384,14 @@ const agentsRouter: express.Router = express.Router()
 
 /**
  * @swagger
- * /agents:
+ * /v1/agents:
  *   post:
- *     summary: Create a new agent
+ *     summary: Create a legacy assistant (retired)
  *     tags: [Agents]
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             $ref: '#/components/schemas/CreateAgentRequest'
+ *     deprecated: true
  *     responses:
- *       201:
- *         description: Agent created successfully
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/AgentEntity'
- *       400:
- *         description: Invalid request body
+ *       410:
+ *         description: Legacy assistants are read-only
  *         content:
  *           application/json:
  *             schema:
@@ -413,7 +401,7 @@ const agentsRouter: express.Router = express.Router()
 agentsRouter.put('/reorder', agentHandlers.reorderAgents)
 
 // Agent CRUD routes
-agentsRouter.post('/', validateAgent, handleValidationErrors, agentHandlers.createAgent)
+agentsRouter.post('/', agentHandlers.createAgent)
 
 agentsRouter.get('/sessions/search', validateSessionSearch, handleValidationErrors, sessionHandlers.searchAllSessions)
 
@@ -629,7 +617,7 @@ const createSessionsRouter = (): express.Router => {
    * @swagger
    * /agents/{agentId}/sessions:
    *   post:
-   *     summary: Create a new session for an agent
+   *     summary: Create a new session for an active assistant
    *     tags: [Sessions]
    *     parameters:
    *       - in: path
@@ -659,6 +647,12 @@ const createSessionsRouter = (): express.Router => {
    *               $ref: '#/components/schemas/ErrorResponse'
    *       404:
    *         description: Agent not found
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/ErrorResponse'
+   *       410:
+   *         description: Legacy assistants are read-only
    *         content:
    *           application/json:
    *             schema:

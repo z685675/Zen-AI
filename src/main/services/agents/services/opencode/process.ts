@@ -43,7 +43,8 @@ const processes = new Map<string, OpenCodeProcess>()
 const retiring = new Map<string, Promise<void>>()
 const reservations = new Set<string>()
 let skillMutation = false
-let shuttingDown = false
+const shutdownController = new AbortController()
+let shutdown: Promise<void> | undefined
 const hash = (value: string) => createHash('sha256').update(value).digest('hex')
 
 function isLightweightConfig(config: unknown): boolean {
@@ -87,6 +88,8 @@ export class OpenCodeProcess {
   private child?: ChildProcess
   private childExited = false
   private closed = false
+  private readonly startupController = new AbortController()
+  private startup?: Promise<void>
   private idleTimer?: ReturnType<typeof setTimeout>
   private gateway?: Awaited<ReturnType<typeof createOpenCodeGateway>>
   private progressListener?: (event: string, details: Record<string, unknown>) => void
@@ -148,20 +151,25 @@ export class OpenCodeProcess {
     dailyModel?: string,
     integrationIds: string[] = []
   ): Promise<void> {
+    const startupSignal = AbortSignal.any([signal, this.startupController.signal])
+    const startup = this.startNative(config, allowedRoots, startupSignal, dailyModel, integrationIds)
+    this.startup = startup
     try {
-      await this.startNative(config, allowedRoots, signal, dailyModel, integrationIds)
+      await startup
     } catch (error) {
       this.flushDiagnostic()
       this.recordDiagnostic('failed', {
-        startup: !signal.aborted,
-        cancelled: signal.aborted,
+        startup: !startupSignal.aborted,
+        cancelled: startupSignal.aborted,
         phase: this.startupPhase,
         error
       })
-      this.stop(signal.aborted ? 'startup-cancelled' : 'startup-failed')
-      if (!signal.aborted && error instanceof Error)
+      if (!startupSignal.aborted && error instanceof Error)
         Object.assign(error, { zenFailureStage: 'runtime-startup', zenRuntimeId: 'opencode' })
+      this.stop(startupSignal.aborted ? 'startup-cancelled' : 'startup-failed')
       throw error
+    } finally {
+      this.startup = undefined
     }
   }
 
@@ -210,6 +218,7 @@ export class OpenCodeProcess {
     this.stage('workspace')
     signal.throwIfAborted()
     await fs.access(this.directory)
+    signal.throwIfAborted()
     const productConfig = config as { permission?: Record<string, unknown> }
     const lightweight = isLightweightConfig(config)
     const readOnly = !lightweight && productConfig.permission?.edit === 'deny'
@@ -232,6 +241,7 @@ export class OpenCodeProcess {
         ? path.join(process.resourcesPath, 'opencode-runtime')
         : toAsarUnpackedPath(path.join(getResourcePath(), 'opencode-runtime'))
     )
+    signal.throwIfAborted()
     this.turnSignal = signal
     const getTurnSignal = () => this.turnSignal
     const fileChangeToken = randomBytes(32).toString('hex')
@@ -284,6 +294,7 @@ export class OpenCodeProcess {
       searchBinary ? path.dirname(searchBinary) : undefined,
       temporaryDirectory
     )
+    signal.throwIfAborted()
     if (!lightweight) env.OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS = 'true'
     this.recordDiagnostic('search-tool-resolved', {
       bundledSearchAvailable: Boolean(searchBinary)
@@ -303,7 +314,7 @@ export class OpenCodeProcess {
     const providerOptions = expected.provider[OPENCODE_PROVIDER_ID].options
     const providerHost = providerOptions.baseURL as string
     this.stage('local-gateway')
-    this.gateway = await createOpenCodeGateway(
+    const gateway = await createOpenCodeGateway(
       providerOptions.baseURL,
       (id, event, details) => {
         const progressLogAt =
@@ -329,7 +340,12 @@ export class OpenCodeProcess {
           ? String(expected.model).slice(`${OPENCODE_PROVIDER_ID}/`.length)
           : undefined)
     )
-    providerOptions.baseURL = this.gateway.baseURL
+    if (signal.aborted) {
+      gateway.stop()
+      signal.throwIfAborted()
+    }
+    this.gateway = gateway
+    providerOptions.baseURL = gateway.baseURL
     let auditClientId = ''
     try {
       auditClientId = configManager.getClientId()
@@ -482,9 +498,6 @@ export class OpenCodeProcess {
       signal.throwIfAborted()
       this.stage('ready')
       logger.info('OpenCode local runtime ready', { version: OPENCODE_VERSION })
-    } catch (error) {
-      this.stop(signal.aborted ? 'startup-cancelled' : 'startup-failed')
-      throw error
     } finally {
       signal.removeEventListener('abort', stopOnAbort)
     }
@@ -514,9 +527,10 @@ export class OpenCodeProcess {
     this.nativeSessionId = id
   }
 
-  async stopAndWait(): Promise<void> {
-    this.stop()
-    await waitForRetirement(this.key)
+  async stopAndWait(reason?: string): Promise<void> {
+    const startup = this.startup
+    this.stop(reason)
+    await Promise.all([startup?.catch(() => undefined), waitForRetirement(this.key)])
   }
 
   release() {
@@ -565,6 +579,7 @@ export class OpenCodeProcess {
     if (this.closed) return
     this.stopReason = reason
     this.closed = true
+    this.startupController.abort(new DOMException('OpenCode process stopped', 'AbortError'))
     this.progressListener = undefined
     this.gateway?.stop()
     clearTimeout(this.idleTimer)
@@ -573,7 +588,7 @@ export class OpenCodeProcess {
     if (processes.get(this.key) === this) processes.delete(this.key)
     const child = this.child
     const pid = child?.pid
-    if (!pid || this.childExited || child.exitCode !== null || child.signalCode !== null) return
+    if (!child || !pid || this.childExited || child.exitCode !== null || child.signalCode !== null) return
     const exited = new Promise<void>((resolve) => child.once('exit', () => resolve()))
     retiring.set(this.key, exited)
     void exited.then(() => {
@@ -581,7 +596,13 @@ export class OpenCodeProcess {
     })
     if (process.platform === 'win32') {
       const killer = spawn('taskkill', ['/PID', String(pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' })
-      killer.on('error', () => this.child?.kill())
+      const fallbackKill = () => {
+        if (!this.childExited) child.kill()
+      }
+      killer.once('error', fallbackKill)
+      killer.once('exit', (code) => {
+        if (code !== 0) fallbackKill()
+      })
     } else {
       try {
         process.kill(-pid, 'SIGTERM')
@@ -613,7 +634,8 @@ export async function getOpenCodeProcess(
   integrationIds: string[] = []
 ): Promise<OpenCodeProcess> {
   assertAssistantDataAvailable()
-  if (shuttingDown) throw new Error('Zen AI is shutting down')
+  const shutdownSignal = shutdownController.signal
+  shutdownSignal.throwIfAborted()
   if (skillMutation) throw new Error('Skill files are being updated; start the task after the update finishes')
   if (reservations.has(key) || processes.get(key)?.active)
     throw Object.assign(new Error('This new assistant session already has an active task'), {
@@ -638,7 +660,8 @@ export async function getOpenCodeProcess(
       runtime = undefined
     }
     if (!runtime) {
-      await waitForRetirement(key, signal)
+      await waitForRetirement(key, AbortSignal.any([signal, shutdownSignal]))
+      shutdownSignal.throwIfAborted()
       signal.throwIfAborted()
       if (processes.size >= 4) {
         const idle = [...processes.values()].find((candidate) => !candidate.active)
@@ -656,6 +679,7 @@ export async function getOpenCodeProcess(
         throw error
       }
     }
+    shutdownSignal.throwIfAborted()
     runtime.setDiagnosticOperation(diagnosticId, signal)
     runtime.activate()
     touchAssistantMcpContext(key)
@@ -666,9 +690,16 @@ export async function getOpenCodeProcess(
   }
 }
 
-export function stopOpenCodeProcesses(): void {
-  shuttingDown = true
-  for (const runtime of processes.values()) runtime.stop('app-shutdown')
+export function stopOpenCodeProcesses(): Promise<void> {
+  if (shutdown) return shutdown
+  shutdownController.abort(new DOMException('Zen AI is shutting down', 'AbortError'))
+  const retiringProcesses = [...retiring.keys()].map((key) => waitForRetirement(key))
+  const stoppingProcesses = [...processes.values()].map((runtime) => runtime.stopAndWait('app-shutdown'))
+  shutdown = Promise.allSettled([...retiringProcesses, ...stoppingProcesses]).then((results) => {
+    const failures = results.flatMap((result) => (result.status === 'rejected' ? [result.reason] : []))
+    if (failures.length) throw new AggregateError(failures, 'OpenCode shutdown did not finish')
+  })
+  return shutdown
 }
 
 export function flushOpenCodeDiagnostic(id: string): void {

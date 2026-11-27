@@ -4,6 +4,7 @@ import path from 'path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { resolveFilesystemBaseDir } from '../config'
+import { handleDeleteTool } from '../tools/delete'
 import { handleGlobTool } from '../tools/glob'
 import { handleGrepTool } from '../tools/grep'
 import { handleLsTool } from '../tools/ls'
@@ -75,6 +76,31 @@ describe('filesystem MCP security', () => {
     }
 
     await expect(validatePath(symlinkPath, workspaceRoot)).rejects.toThrow('outside the configured workspace root')
+  })
+
+  it('fails closed when a missing real path still has a filesystem entry', async () => {
+    const workspaceRoot = await createTempDir('filesystem-entry-root-')
+    const requested = path.join(workspaceRoot, 'unresolved.txt')
+    const realpath = fs.realpath.bind(fs)
+    vi.spyOn(fs, 'realpath').mockImplementation((value, options) =>
+      value === requested
+        ? Promise.reject(Object.assign(new Error('not resolved'), { code: 'ENOENT' }))
+        : realpath(value, options)
+    )
+    vi.spyOn(fs, 'lstat').mockResolvedValueOnce({ isSymbolicLink: () => true } as Awaited<ReturnType<typeof fs.lstat>>)
+    await expect(validatePath(requested, workspaceRoot)).rejects.toThrow(
+      'Could not resolve an existing filesystem entry'
+    )
+  })
+
+  it('allows new paths and protects the workspace root from deletion', async () => {
+    const workspaceRoot = await createTempDir('filesystem-protected-root-')
+    const remove = vi.spyOn(fs, 'rm').mockResolvedValue(undefined)
+    await expect(validatePath('new/report.txt', workspaceRoot)).resolves.toBe(
+      path.join(workspaceRoot, 'new/report.txt')
+    )
+    await expect(handleDeleteTool({ path: '.', recursive: true }, workspaceRoot)).rejects.toThrow('workspace root')
+    expect(remove).not.toHaveBeenCalled()
   })
 
   it('rejects relative path traversal outside the configured root', async () => {

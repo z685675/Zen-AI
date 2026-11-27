@@ -1,17 +1,19 @@
-import { lookup } from 'node:dns/promises'
-
 import type { ImageCanvasProgress, ImageCanvasProvider, ImageCanvasRequest } from '@shared/config/imageCanvas'
 import { validateImageCapabilities } from '@shared/config/imageCapabilities'
 import { isZenManagedApiHost } from '@shared/config/zenProvider'
-import ipaddr from 'ipaddr.js'
+import { discardResponseBody } from '@shared/modelTransport'
 import sharp from 'sharp'
 
+import { parsePublicWebUrl } from '../../mcpServers/publicWebNetwork'
 import type { CanvasRemoteJob } from './studio'
 import type { StudioAssets } from './StudioAssetCache'
 
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024
 export const imageCanvasTimeout = 12 * 60 * 1000
-export type ImageFetch = typeof fetch
+export type ImageFetch = (
+  input: Parameters<typeof fetch>[0],
+  init?: RequestInit & { publicImageResult?: true }
+) => Promise<Response>
 
 export function decodeImage(data: string): { mime: string; bytes: Buffer } {
   const match = /^data:(image\/(?:png|jpeg|webp));base64,([A-Za-z0-9+/=]+)$/.exec(data)
@@ -268,7 +270,10 @@ export async function generateCanvasImages(
     signal: AbortSignal.timeout(imageCanvasTimeout)
   })
   // Do not echo upstream responses: they may contain secrets, HTML or signed URLs.
-  if (!response.ok) throw new Error(`upstream_http_${response.status}`)
+  if (!response.ok) {
+    discardResponseBody(response)
+    throw new Error(`upstream_http_${response.status}`)
+  }
   progress('decoding')
   const payload = JSON.parse(await limitedText(response, 115 * 1024 * 1024))
   const values: string[] =
@@ -308,18 +313,22 @@ export async function resolveImageResults(
         return Buffer.from(raw, 'base64')
       }
       progress('downloading')
-      const url = new URL(value)
-      if (url.protocol !== 'https:' || url.username || url.password) throw new Error('invalid_result_url')
-      const addresses = await lookup(url.hostname.replace(/^\[|\]$/g, ''), { all: true })
-      if (!addresses.length || addresses.some(({ address }) => ipaddr.process(address).range() !== 'unicast'))
+      let url: URL
+      try {
+        url = parsePublicWebUrl(value, ['https:'])
+      } catch {
         throw new Error('invalid_result_url')
+      }
       const result = await request(url.toString(), {
+        publicImageResult: true,
         redirect: 'error',
         credentials: 'omit',
         signal: AbortSignal.timeout(60000)
       })
-      if (!result.ok || !/^image\/(png|jpeg|webp)(;|$)/.test(result.headers.get('content-type') || ''))
+      if (!result.ok || !/^image\/(png|jpeg|webp)(;|$)/.test(result.headers.get('content-type') || '')) {
+        discardResponseBody(result)
         throw new Error('invalid_result_image')
+      }
       return Buffer.from(await limitedBytes(result, MAX_IMAGE_BYTES))
     })
   )

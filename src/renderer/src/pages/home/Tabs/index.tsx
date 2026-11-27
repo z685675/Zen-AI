@@ -6,15 +6,12 @@ import { EVENT_NAMES, EventEmitter } from '@renderer/services/EventService'
 import type { Assistant, Topic } from '@renderer/types'
 import type { Tab } from '@renderer/types/chat'
 import { classNames, uuid } from '@renderer/utils'
-import { Tooltip } from 'antd'
-import { PanelLeftClose } from 'lucide-react'
 import type { FC } from 'react'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import styled from 'styled-components'
 
 import Assistants from './AssistantsTab'
-import ConversationHistoryList from './components/ConversationHistoryList'
 import Topics from './TopicsTab'
 
 interface Props {
@@ -25,10 +22,7 @@ interface Props {
   setActiveTopic: (topic: Topic) => void
   position: 'left' | 'right'
   forceToSeeAllTab?: boolean
-  mode?: 'default' | 'conversations-only' | 'topics-only'
-  onOpenTopics?: () => void
-  onCreateConversation?: () => void
-  onCollapseConversationHistory?: () => void
+  mode?: 'default' | 'topics-only'
   style?: React.CSSProperties
 }
 
@@ -43,8 +37,6 @@ const HomeTabs: FC<Props> = ({
   position,
   forceToSeeAllTab,
   mode = 'default',
-  onCreateConversation,
-  onCollapseConversationHistory,
   style
 }) => {
   const { addAssistant } = useAssistants()
@@ -59,11 +51,9 @@ const HomeTabs: FC<Props> = ({
   )
   const borderStyle = '0.5px solid var(--color-border)'
   const border =
-    mode === 'conversations-only'
-      ? {}
-      : position === 'left'
-        ? { borderRight: isLeftNavbar ? borderStyle : 'none' }
-        : { borderLeft: isLeftNavbar ? borderStyle : 'none', borderTopLeftRadius: 0 }
+    position === 'left'
+      ? { borderRight: isLeftNavbar ? borderStyle : 'none' }
+      : { borderLeft: isLeftNavbar ? borderStyle : 'none', borderTopLeftRadius: 0 }
 
   if (mode === 'default' && position === 'left' && topicPosition === 'left') {
     _tab = tab
@@ -113,23 +103,8 @@ const HomeTabs: FC<Props> = ({
 
   return (
     <Container
-      $isConversationOnly={mode === 'conversations-only'}
       style={{ ...border, ...style }}
       className={classNames('home-tabs', { right: position === 'right' && topicPosition === 'right' })}>
-      {mode === 'conversations-only' && (
-        <PanelHeader>
-          <PanelTitle>对话记录</PanelTitle>
-          <Tooltip title={t('navbar.hide_sidebar')} mouseEnterDelay={0.5}>
-            <PanelActionButton
-              type="button"
-              aria-label={t('navbar.hide_sidebar')}
-              onClick={onCollapseConversationHistory}>
-              <PanelLeftClose size={16} />
-            </PanelActionButton>
-          </Tooltip>
-        </PanelHeader>
-      )}
-
       {mode === 'topics-only' && (
         <PanelHeader>
           <PanelTitle>{t('common.topics')}</PanelTitle>
@@ -148,24 +123,16 @@ const HomeTabs: FC<Props> = ({
       )}
 
       <TabContent className="home-tabs-content">
-        {(mode === 'conversations-only' || tab === 'assistants') &&
-          mode !== 'topics-only' &&
-          (mode === 'conversations-only' ? (
-            <ConversationHistoryList
-              activeTopic={activeTopic}
-              setActiveTopic={setActiveTopic}
-              onCreateConversation={onCreateConversation || onCreateDefaultAssistant}
-            />
-          ) : (
-            <Assistants
-              visibleAssistants={visibleAssistants}
-              activeAssistant={activeAssistant}
-              setActiveAssistant={setActiveAssistant}
-              onCreateAssistant={onCreateAssistant}
-              onCreateDefaultAssistant={onCreateDefaultAssistant}
-            />
-          ))}
-        {(mode === 'topics-only' || tab === 'topic') && mode !== 'conversations-only' && (
+        {tab === 'assistants' && mode !== 'topics-only' && (
+          <Assistants
+            visibleAssistants={visibleAssistants}
+            activeAssistant={activeAssistant}
+            setActiveAssistant={setActiveAssistant}
+            onCreateAssistant={onCreateAssistant}
+            onCreateDefaultAssistant={onCreateDefaultAssistant}
+          />
+        )}
+        {(mode === 'topics-only' || tab === 'topic') && (
           <Topics
             assistant={activeAssistant}
             activeTopic={activeTopic}
@@ -178,24 +145,19 @@ const HomeTabs: FC<Props> = ({
   )
 }
 
-const Container = styled.div<{ $isConversationOnly: boolean }>`
+const Container = styled.div`
   display: flex;
   flex-direction: column;
-  width: ${({ $isConversationOnly }) =>
-    $isConversationOnly ? 'var(--conversation-history-width)' : 'var(--assistants-width)'};
+  width: var(--assistants-width);
   transition: width 0.3s;
   height: calc(100vh - var(--navbar-height));
   position: relative;
-  background: #ffffff;
-  box-shadow: -8px 0 24px rgba(15, 23, 42, 0.025);
+  background: var(--zen-bg-sidebar);
 
   &.right {
     height: calc(100vh - var(--navbar-height));
   }
 
-  [navbar-position='left'] & {
-    background-color: #ffffff;
-  }
   [navbar-position='top'] & {
     height: calc(100vh - var(--navbar-height));
   }
@@ -238,26 +200,7 @@ const PanelHeader = styled.div`
 const PanelTitle = styled.div`
   font-size: 13px;
   font-weight: 600;
-  color: #1f2329;
-`
-
-const PanelActionButton = styled.button`
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  border: none;
-  border-radius: 7px;
-  background: transparent;
-  color: var(--color-text-2);
-  cursor: pointer;
-
-  &:hover {
-    background: var(--color-background-mute);
-    color: var(--color-text);
-  }
+  color: var(--zen-text-1);
 `
 
 const TabItem = styled.button<{ active: boolean }>`

@@ -196,6 +196,17 @@ describe('base-owned startup coordinator and trusted IPC', () => {
     expect(mocks.check).not.toHaveBeenCalled()
     service.stop()
   })
+  it('keeps checking after a cancelled quit and stops after quitting is committed', async () => {
+    const { event } = await setup()
+    await mocks.handlers.get(HOTPATCH_IPC.healthy)!(event, 'secret-startup-challenge')
+    mocks.events.get('before-quit')?.({ preventDefault() {} })
+    await vi.advanceTimersByTimeAsync(30000)
+    expect(mocks.check).toHaveBeenCalledOnce()
+    mocks.events.get('will-quit')!()
+    await vi.advanceTimersByTimeAsync(3600000)
+    expect(mocks.check).toHaveBeenCalledOnce()
+  })
+
   it('does not reschedule after quitting while a background check is still resolving', async () => {
     const { service, event } = await setup()
     let finish!: () => void

@@ -70,7 +70,13 @@ export function registerModelTransportIpc() {
     broker.start(guard(event), request)
   )
   ipcMain.handle(MODEL_TRANSPORT_IPC.pull, (event, id: string) => broker.pull(guard(event), id))
-  ipcMain.handle(MODEL_TRANSPORT_IPC.cancel, (event, id: string) => broker.cancel(guard(event), id))
+  ipcMain.handle(MODEL_TRANSPORT_IPC.cancel, (event, id: string, reason: unknown) =>
+    broker.cancel(
+      guard(event),
+      id,
+      reason === 'timeout' ? new DOMException('Model request timed out', 'TimeoutError') : undefined
+    )
+  )
   app.once('will-quit', () => {
     clearInterval(refresh)
     broker.stop()

@@ -1,3 +1,4 @@
+import { SIDEBAR_RESIZED } from '@renderer/context/SidebarSlotProvider'
 import { useTheme } from '@renderer/context/ThemeProvider'
 import { useProviders } from '@renderer/hooks/useProvider'
 import { useAppSelector } from '@renderer/store'
@@ -6,13 +7,26 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { imageCanvasProviders } from './imageCanvasProviders'
+import { legacyImageRecords } from './legacyImageRecords'
 
 export default function ImageCanvasPage({ active = true, menuOpen = false }: { active?: boolean; menuOpen?: boolean }) {
   const { t, i18n } = useTranslation()
-  const { theme } = useTheme()
+  const { theme, preset } = useTheme()
   const { providers } = useProviders()
   const userFontFamily = useAppSelector((state) => state.settings.userTheme.userFontFamily)
+  const legacy = useAppSelector((state) => state.paintings)
   const catalog = useMemo(() => imageCanvasProviders(providers), [providers])
+  const appearance = useMemo(
+    () => ({
+      theme,
+      themePreset: preset,
+      language: i18n.language,
+      userFontFamily
+    }),
+    [i18n.language, preset, theme, userFontFamily]
+  )
+  const latestAppearance = useRef(appearance)
+  latestAppearance.current = appearance
   const latest = useRef(catalog)
   latest.current = catalog
   const container = useRef<HTMLDivElement>(null)
@@ -21,9 +35,32 @@ export default function ImageCanvasPage({ active = true, menuOpen = false }: { a
   const updateView = useRef<() => void>(() => undefined)
   const [state, setState] = useState<'opening' | 'ready' | 'error'>('opening')
   const [attempt, setAttempt] = useState(0)
+  const [migrationIssue, setMigrationIssue] = useState(false)
+  useEffect(() => {
+    if (state !== 'ready' || !legacy || !window.api.imageCanvas.importLegacy) return
+    let cancelled = false
+    const records = legacyImageRecords(legacy)
+    const migrate = async () => {
+      let missing = 0
+      for (let offset = 0; offset < records.length && !cancelled; offset += 20) {
+        missing += await window.api.imageCanvas.importLegacy(records.slice(offset, offset + 20))
+        if (!cancelled && missing > 0) setMigrationIssue(true)
+      }
+      if (!cancelled) setMigrationIssue(missing > 0)
+    }
+    void migrate().catch(() => {
+      if (!cancelled) setMigrationIssue(true)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [legacy, state])
   useEffect(() => {
     if (state === 'ready') void window.api.imageCanvas.sync(catalog)
   }, [catalog, state])
+  useEffect(() => {
+    if (state === 'ready') void window.api.imageCanvas.setAppearance?.(appearance)
+  }, [appearance, state])
   useEffect(() => {
     updateView.current()
   }, [active, menuOpen])
@@ -45,11 +82,19 @@ export default function ImageCanvasPage({ active = true, menuOpen = false }: { a
         !display.current.menuOpen &&
         ![
           ...document.querySelectorAll(
-            '[role="dialog"],.ant-select-dropdown:not(.ant-select-dropdown-hidden),.ant-dropdown:not(.ant-dropdown-hidden)'
+            '[role="dialog"],.ant-select-dropdown:not(.ant-select-dropdown-hidden),.ant-dropdown:not(.ant-dropdown-hidden),.ant-popover:not(.ant-popover-hidden),.ant-tooltip:not(.ant-tooltip-hidden)'
           )
         ].some((node) => {
           const rect = node.getBoundingClientRect()
-          return rect.width > 0 && rect.height > 0
+          const canvas = element.getBoundingClientRect()
+          return (
+            rect.width > 0 &&
+            rect.height > 0 &&
+            rect.left < canvas.right &&
+            rect.right > canvas.left &&
+            rect.top < canvas.bottom &&
+            rect.bottom > canvas.top
+          )
         })
       if (visible !== lastVisible) {
         lastVisible = visible
@@ -79,14 +124,13 @@ export default function ImageCanvasPage({ active = true, menuOpen = false }: { a
       update()
     })
     observer.observe(element)
+    window.addEventListener(SIDEBAR_RESIZED, update)
     setState('opening')
     void window.api.imageCanvas
       .open({
         providers: latest.current,
         bounds: bounds(),
-        theme: theme === 'dark' ? 'dark' : 'light',
-        language: i18n.language,
-        userFontFamily
+        ...latestAppearance.current
       })
       .then(async (result) => {
         if (cancelled) return
@@ -103,23 +147,31 @@ export default function ImageCanvasPage({ active = true, menuOpen = false }: { a
       cancelled = true
       updateView.current = () => undefined
       observer.disconnect()
+      window.removeEventListener(SIDEBAR_RESIZED, update)
       overlays.disconnect()
       if (frame !== undefined) cancelAnimationFrame(frame)
       void window.api.imageCanvas.close()
     }
-  }, [attempt, theme, i18n.language, userFontFamily])
+  }, [attempt])
   return (
-    <div
-      ref={container}
-      aria-hidden={!active}
-      style={{ flex: 1, minHeight: 0, display: active ? 'grid' : 'none', placeItems: 'center' }}>
-      {state === 'opening' && <Spin tip={t('image_studio.opening')} />}
-      {state === 'error' && (
-        <div style={{ maxWidth: 480, padding: 32, textAlign: 'center' }}>
-          <p>{t('image_studio.workbench_unavailable')}</p>
-          <Button onClick={() => setAttempt((value) => value + 1)}>{t('image_studio.reconnect')}</Button>
-        </div>
+    <>
+      {migrationIssue && (
+        <p role="status" style={{ margin: 0, padding: '8px 16px', color: 'var(--color-text-secondary)' }}>
+          {t('image_studio.legacy_import_incomplete')}
+        </p>
       )}
-    </div>
+      <div
+        ref={container}
+        aria-hidden={!active}
+        style={{ flex: 1, minHeight: 0, display: active ? 'grid' : 'none', placeItems: 'center' }}>
+        {state === 'opening' && <Spin tip={t('image_studio.opening')} />}
+        {state === 'error' && (
+          <div style={{ maxWidth: 480, padding: 32, textAlign: 'center' }}>
+            <p>{t('image_studio.workbench_unavailable')}</p>
+            <Button onClick={() => setAttempt((value) => value + 1)}>{t('image_studio.reconnect')}</Button>
+          </div>
+        )}
+      </div>
+    </>
   )
 }

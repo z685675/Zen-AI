@@ -14,7 +14,7 @@
  * - v2 Refactor PR   : https://github.com/CherryHQ/cherry-studio/pull/10162
  * --------------------------------------------------------------------------
  */
-import { type Client, createClient } from '@libsql/client'
+import { type Client, createClient, type TransactionMode } from '@libsql/client'
 import { loggerService } from '@logger'
 import { isDev } from '@main/constant'
 import type { LibSQLDatabase } from 'drizzle-orm/libsql'
@@ -35,6 +35,73 @@ function getOldDbPath() {
 }
 
 const logger = loggerService.withContext('DatabaseManager')
+
+function serializeClientOperations(client: Client): void {
+  const execute = client.execute.bind(client)
+  const batch = client.batch.bind(client)
+  const executeMultiple = client.executeMultiple.bind(client)
+  const begin = client.transaction.bind(client)
+  let tail = Promise.resolve()
+  const exclusive = <T>(operation: () => Promise<T>): Promise<T> => {
+    const result = tail.then(operation)
+    tail = result.then(
+      () => {},
+      () => {}
+    )
+    return result
+  }
+
+  // libSQL is synchronous underneath these promises. Running another writer
+  // while an async transaction owns the lock would block its own commit.
+  client.execute = (statement) => exclusive(() => execute(statement))
+  client.batch = (statements, mode) => exclusive(() => batch(statements, mode))
+  client.executeMultiple = (sql) => exclusive(() => executeMultiple(sql))
+  client.transaction = (mode?: TransactionMode) => {
+    const opened = Promise.withResolvers<Awaited<ReturnType<Client['transaction']>>>()
+    const released = Promise.withResolvers<void>()
+    const hold = exclusive(async () => {
+      const tx = await begin(mode)
+      const commit = tx.commit.bind(tx)
+      const rollback = tx.rollback.bind(tx)
+      const close = tx.close.bind(tx)
+      tx.commit = async () => {
+        try {
+          await commit()
+        } finally {
+          if (tx.closed) released.resolve()
+        }
+      }
+      tx.rollback = async () => {
+        try {
+          await rollback()
+        } finally {
+          if (tx.closed) released.resolve()
+          else tx.close()
+        }
+      }
+      tx.close = () => {
+        try {
+          close()
+        } finally {
+          released.resolve()
+        }
+      }
+      try {
+        // Local transactions detach the underlying connection. The replacement
+        // inherits WAL from the database, but not connection-local PRAGMAs.
+        await execute('PRAGMA busy_timeout = 5000')
+        await execute('PRAGMA foreign_keys = ON')
+        opened.resolve(tx)
+        await released.promise
+      } catch (error) {
+        tx.close()
+        throw error
+      }
+    })
+    void hold.catch(opened.reject)
+    return opened.promise
+  }
+}
 
 /**
  * Database initialization state
@@ -178,12 +245,18 @@ export class DatabaseManager {
         intMode: 'number'
       })
 
-      // Create drizzle instance
+      await this.client.execute('PRAGMA busy_timeout = 5000')
+      await this.client.execute('PRAGMA journal_mode = WAL')
+
+      // Rebuilding tables keeps legacy orphan rows and existing references intact.
+      await this.client.execute('PRAGMA foreign_keys = OFF')
       this.db = drizzle(this.client, { schema })
 
       // Run schema migrations
       const migrationService = new MigrationService(this.db, this.client)
       await migrationService.runMigrations()
+      await this.client.execute('PRAGMA foreign_keys = ON')
+      serializeClientOperations(this.client)
 
       // Run data migrations (must run after schema migrations)
       const dataMigrationService = new DataMigrationService(this.db, this.client)

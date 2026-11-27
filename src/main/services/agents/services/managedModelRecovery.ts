@@ -6,6 +6,7 @@ import {
   type ModelRecoveryIntent,
   selectRecoverableModel
 } from '@shared/config/modelRecovery'
+import { isVideoOnlyEndpointModel } from '@shared/config/videoGeneration'
 import { isZenManagedApiHost } from '@shared/config/zenProvider'
 import type { ApiModel, Provider } from '@types'
 
@@ -78,6 +79,7 @@ export function resolveManagedSessionModel(
       model.provider === providerId &&
       model.endpoint_type !== 'image-generation' &&
       model.endpoint_type !== 'jina-rerank' &&
+      !isVideoOnlyEndpointModel(model) &&
       isTextFallbackIdentifier(model.provider_model_id || model.id) &&
       isAssistantModelAllowed(model, configManager.getEnableDeveloperMode(), policy)
   )

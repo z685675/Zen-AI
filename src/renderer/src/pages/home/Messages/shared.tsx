@@ -1,12 +1,13 @@
 import Scrollbar from '@renderer/components/Scrollbar'
 import styled from 'styled-components'
 
-export const ScrollContainer = styled.div`
+export const ScrollContainer = styled.div<{ $hasPrompt?: boolean }>`
   display: flex;
   flex-direction: column-reverse;
-  padding: 10px 10px 20px;
+  gap: 14px;
+  padding: ${({ $hasPrompt }) => ($hasPrompt ? '14px' : '68px')} 0 var(--zen-composer-inset, 152px);
   .multi-select-mode & {
-    padding-bottom: 60px;
+    padding-bottom: calc(var(--zen-composer-inset, 152px) + 52px);
   }
 `
 
@@ -16,6 +17,8 @@ interface ContainerProps {
 
 export const MessagesContainer = styled(Scrollbar)<ContainerProps>`
   display: flex;
+  flex: 1;
+  min-height: 0;
   flex-direction: column-reverse;
   overflow-x: hidden;
   z-index: 1;

@@ -166,9 +166,9 @@ async function main() {
       })
     assert.equal(child.exitCode, 0, 'Isolated product crashed during shutdown')
   }
-  const start = async (expected: 'builtin' | 'active') => {
+  const start = async (expected: 'builtin' | 'active' | 'disabled') => {
     const application = await _electron.launch({
-      args: [entry],
+      args: expected === 'disabled' ? [entry, '--zen-safe-mode'] : [entry],
       cwd: root,
       env: env as Record<string, string>,
       timeout: 60000
@@ -195,7 +195,17 @@ async function main() {
       assert.equal(status.status, expected)
       assert.equal(status.startup, expectedStartup, 'Product did not acknowledge successful startup')
       assert.equal(await page.locator('meta[name="zen-hotpatch-product-proof"]').count(), expected === 'active' ? 1 : 0)
-      evidence.push({ expected, status, url: page.url() })
+      const fonts = await page.evaluate(async () => {
+        const families = ['Geist', 'Geist Mono', 'IBM Plex Sans', 'IBM Plex Mono']
+        return Promise.all(
+          families.map(async (family) => {
+            const faces = await document.fonts.load(`400 14px "${family}"`, 'Zen AI 123')
+            if (!faces.some((face) => face.status === 'loaded')) throw new Error(`Bundled font missing: ${family}`)
+            return family
+          })
+        )
+      })
+      evidence.push({ expected, status, url: page.url(), fonts })
       return { application, page }
     } catch (error) {
       await application.close().catch(() => {})
@@ -324,6 +334,10 @@ async function main() {
     running = undefined
     const recovered = await HotpatchStateStore.load(storage, base.baseBuildId)
     assert(recovered.snapshot.quarantined.some((item) => item.target.patchId === artifact.patchId))
+    running = await start('disabled')
+    assert.deepEqual(await probe(running.page), expected)
+    await closeProduct(running.application)
+    running = undefined
     assert.equal(sha256(await readFile(archive)), immutable, 'Immutable ASAR changed')
     await writeFile(
       path.join(work, 'proof.json'),

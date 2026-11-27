@@ -220,7 +220,18 @@ const QuickAssistantLibraryModal: FC<Props> = ({ open, onClose }) => {
         onCancel={onClose}
         footer={null}
         width={960}
-        styles={{ body: { padding: 0, overflow: 'hidden' } }}>
+        centered
+        styles={{
+          content: {
+            padding: 0,
+            overflow: 'hidden',
+            borderRadius: 'var(--zen-radius-xl)',
+            background: 'var(--zen-glass-rail)',
+            backdropFilter: 'blur(36px) saturate(165%)',
+            boxShadow: 'var(--zen-shadow-composer)'
+          },
+          body: { padding: 0, overflow: 'hidden' }
+        }}>
         <ModalShell>
           <ModalHeader>
             <HeaderLeft>
@@ -231,21 +242,25 @@ const QuickAssistantLibraryModal: FC<Props> = ({ open, onClose }) => {
           </ModalHeader>
 
           <Toolbar>
-            <Input
+            <SearchInput
               allowClear
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              prefix={<Search size={14} color="var(--color-icon)" />}
+              prefix={<Search size={14} />}
               placeholder="搜索角色名称、描述或提示词"
             />
             <ToolbarActions>
-              <Button icon={<Import size={16} />} onClick={() => void handleImportAssistants()}>
+              <Button shape="round" icon={<Import size={14} />} onClick={() => void handleImportAssistants()}>
                 {t('assistants.presets.import.title')}
               </Button>
-              <Button icon={<Settings2 size={16} />} onClick={handleManageAssistants}>
+              <Button shape="round" icon={<Settings2 size={14} />} onClick={handleManageAssistants}>
                 {t('assistants.presets.manage.title')}
               </Button>
-              <Button type="primary" icon={<Plus size={16} />} onClick={() => void handleCreateAssistant()}>
+              <Button
+                type="primary"
+                shape="round"
+                icon={<Plus size={14} />}
+                onClick={() => void handleCreateAssistant()}>
                 {t('assistants.presets.add.title')}
               </Button>
             </ToolbarActions>
@@ -256,10 +271,11 @@ const QuickAssistantLibraryModal: FC<Props> = ({ open, onClose }) => {
               {filteredGroups.map((group) => (
                 <CategoryItem
                   key={group.key}
+                  type="button"
                   className={group.key === currentGroup?.key ? 'active' : undefined}
                   onClick={() => setActiveCategory(group.key)}>
-                  <span>{group.label}</span>
-                  <Tag bordered={false}>{group.presets.length}</Tag>
+                  <CategoryLabel>{group.label}</CategoryLabel>
+                  <CountPill>{group.presets.length}</CountPill>
                 </CategoryItem>
               ))}
             </CategoryRail>
@@ -269,7 +285,7 @@ const QuickAssistantLibraryModal: FC<Props> = ({ open, onClose }) => {
                 <>
                   <GroupHeader>
                     <span>{currentGroup.label}</span>
-                    <Tag bordered={false}>{currentGroup.presets.length}</Tag>
+                    <CountPill>{currentGroup.presets.length}</CountPill>
                   </GroupHeader>
 
                   <GroupGrid>
@@ -286,14 +302,19 @@ const QuickAssistantLibraryModal: FC<Props> = ({ open, onClose }) => {
                               />
                               <PresetTitleText>
                                 <span>{preset.name}</span>
-                                {userPresets.some((item) => item.id === preset.id) && <Tag color="gold">我的</Tag>}
+                                {userPresets.some((item) => item.id === preset.id) && (
+                                  <Tag bordered={false} color="gold">
+                                    {t('chat.quick_roles.mine')}
+                                  </Tag>
+                                )}
                               </PresetTitleText>
                             </PresetTitle>
-                            <Button
-                              type={existsInQuickDeck ? 'default' : 'primary'}
+                            <PresetActionButton
+                              type="button"
+                              $added={existsInQuickDeck}
                               onClick={() => void handleTogglePreset(preset)}>
                               {existsInQuickDeck ? '取消添加' : '添加'}
-                            </Button>
+                            </PresetActionButton>
                           </PresetTop>
 
                           <PresetDescription title={preset.description || preset.prompt || ''}>
@@ -332,63 +353,91 @@ const QuickAssistantLibraryModal: FC<Props> = ({ open, onClose }) => {
 const ModalShell = styled.div`
   display: flex;
   flex-direction: column;
-  height: 72vh;
-  max-height: 72vh;
+  height: 74vh;
+  max-height: 74vh;
   overflow: hidden;
-  background:
-    radial-gradient(circle at top left, rgba(0, 185, 107, 0.08), transparent 30%),
-    linear-gradient(180deg, var(--color-background), var(--color-background-soft));
+  background: var(--zen-window-canvas);
+  color: var(--zen-text-1);
 `
 
 const ModalHeader = styled.div`
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 24px 72px 14px 24px;
-  border-bottom: 1px solid var(--color-border);
+  padding: 20px 56px 14px 24px;
+  border-bottom: 0.5px solid var(--zen-border);
 `
 
 const HeaderLeft = styled.div`
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 4px;
 `
 
 const ModalTitle = styled.div`
-  font-size: 22px;
-  font-weight: 700;
-  color: var(--color-text);
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--zen-text-1);
 `
 
 const ModalSubtitle = styled.div`
   max-width: 540px;
   font-size: 13px;
-  line-height: 1.7;
-  color: var(--color-text-2);
+  line-height: 1.55;
+  color: var(--zen-text-2);
 `
 
 const HeaderMeta = styled.div`
-  position: relative;
-  top: 6px;
-  right: 4px;
-  font-size: 15px;
-  font-weight: 600;
-  color: #374151;
-  padding-top: 6px;
+  flex: none;
+  padding: 4px 12px;
+  border-radius: var(--zen-radius-pill);
+  background: var(--zen-glass-pill);
+  box-shadow: var(--zen-shadow-pill);
+  font-size: 12px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--zen-text-2);
 `
 
 const Toolbar = styled.div`
-  padding: 16px 24px;
-  border-bottom: 1px solid var(--color-border);
+  padding: 12px 24px;
+  border-bottom: 0.5px solid var(--zen-border);
   display: flex;
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
+`
 
-  > .ant-input-affix-wrapper {
+const SearchInput = styled(Input)`
+  &&& {
     flex: 1 1 280px;
     min-width: 220px;
+    height: 36px;
+    padding: 0 14px;
+    border: 0;
+    border-radius: var(--zen-radius-pill);
+    background: var(--zen-glass-pill);
+    box-shadow: var(--zen-shadow-pill);
+    color: var(--zen-text-1);
+
+    &:hover,
+    &.ant-input-affix-wrapper-focused {
+      background: var(--zen-glass-pill-hover);
+      box-shadow: var(--zen-shadow-pill-hover);
+    }
+
+    .ant-input-prefix {
+      color: var(--zen-text-3);
+      margin-inline-end: 8px;
+    }
+
+    input {
+      background: transparent;
+      color: var(--zen-text-1);
+      font-size: 13px;
+    }
   }
 `
 
@@ -400,24 +449,26 @@ const ToolbarActions = styled.div`
 
   .ant-btn {
     white-space: nowrap;
+    height: 34px;
+    font-size: 12.5px;
   }
 `
 
 const LibraryBody = styled.div`
   display: grid;
-  grid-template-columns: 180px 1fr;
+  grid-template-columns: 186px 1fr;
   min-height: 0;
   flex: 1;
   overflow: hidden;
 `
 
 const CategoryRail = styled.div`
-  border-right: 1px solid var(--color-border);
-  padding: 16px 12px;
+  border-right: 0.5px solid var(--zen-border);
+  padding: 14px 10px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  background: rgba(255, 255, 255, 0.35);
+  gap: 4px;
+  background: var(--zen-bg-subtle);
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
@@ -434,26 +485,59 @@ const CategoryItem = styled.button`
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  gap: 8px;
   width: 100%;
-  padding: 10px 12px;
-  border-radius: 12px;
-  color: var(--color-text-2);
-  background: var(--color-background);
-  border: 1px solid var(--color-border);
+  height: 36px;
+  padding: 0 11px;
+  border-radius: var(--zen-radius-sm);
+  color: var(--zen-text-2);
+  background: transparent;
+  border: 0;
   font-size: 13px;
+  font-weight: 400;
   cursor: pointer;
   text-align: left;
+  transition:
+    background 150ms ease,
+    color 150ms ease,
+    box-shadow 160ms ease;
+
+  &:hover {
+    color: var(--zen-text-1);
+    background: var(--zen-bg-hover);
+  }
 
   &.active {
-    color: var(--color-text);
-    border-color: var(--color-primary);
-    background: var(--color-background-soft);
+    color: var(--zen-text-1);
+    font-weight: 500;
+    background: var(--zen-glass-active);
+    box-shadow: var(--zen-shadow-active);
   }
 `
 
+const CategoryLabel = styled.span`
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+`
+
+const CountPill = styled.span`
+  flex: none;
+  min-width: 22px;
+  padding: 1px 7px;
+  border-radius: var(--zen-radius-pill);
+  background: var(--zen-bg-hover);
+  color: var(--zen-text-3);
+  font-family: var(--code-font-family);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.45;
+  text-align: center;
+`
+
 const CategoryContent = styled.div`
-  padding: 16px 18px 18px;
+  padding: 16px 20px 20px;
   min-height: 0;
   height: 100%;
   overflow-y: auto;
@@ -468,7 +552,7 @@ const GroupHeader = styled.div`
   gap: 12px;
   font-size: 14px;
   font-weight: 600;
-  color: var(--color-text);
+  color: var(--zen-text-1);
   margin-bottom: 14px;
 `
 
@@ -480,49 +564,97 @@ const GroupGrid = styled.div`
 `
 
 const PresetCard = styled.div`
-  border: 1px solid var(--color-border);
-  border-radius: 18px;
-  background: var(--color-background);
-  padding: 15px;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.03);
+  border: 0;
+  border-radius: var(--zen-radius-md);
+  background: var(--zen-glass-card);
+  backdrop-filter: blur(22px) saturate(160%);
+  padding: 14px 15px;
+  box-shadow: var(--zen-shadow-card);
+  transition:
+    background 160ms ease,
+    box-shadow 180ms ease,
+    transform 150ms ease;
+
+  &:hover {
+    background: var(--zen-glass-pill-hover);
+    box-shadow: var(--zen-shadow-pill-hover);
+    transform: translateY(-0.5px);
+  }
 `
 
 const PresetTop = styled.div`
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 10px;
 `
 
 const PresetTitle = styled.div`
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 9px;
   min-width: 0;
 `
 
 const PresetTitleText = styled.div`
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   min-width: 0;
 
   span {
     font-size: 14px;
     font-weight: 600;
-    color: var(--color-text);
+    color: var(--zen-text-1);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 `
 
-const PresetDescription = styled.div`
-  margin-top: 12px;
-  min-height: 44px;
+const PresetActionButton = styled.button<{ $added?: boolean }>`
+  flex: none;
+  height: 29px;
+  padding: 0 13px;
+  border: 0;
+  border-radius: var(--zen-radius-pill);
   font-size: 12px;
-  line-height: 1.75;
-  color: var(--color-text-2);
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background 150ms ease,
+    color 150ms ease,
+    box-shadow 160ms ease,
+    transform 130ms ease;
+
+  ${({ $added }) =>
+    $added
+      ? `
+    background: var(--zen-bg-subtle);
+    color: var(--zen-text-2);
+    &:hover {
+      background: var(--zen-bg-hover);
+      color: var(--zen-text-1);
+    }
+  `
+      : `
+    background: var(--color-primary);
+    color: var(--color-primary-foreground);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+    &:hover {
+      opacity: 0.9;
+      transform: translateY(-0.5px);
+    }
+  `}
+`
+
+const PresetDescription = styled.div`
+  margin-top: 10px;
+  min-height: 40px;
+  font-size: 12.5px;
+  line-height: 1.65;
+  color: var(--zen-text-2);
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
@@ -531,26 +663,31 @@ const PresetDescription = styled.div`
 
 const PresetPrompt = styled.button`
   width: 100%;
-  border: none;
-  margin-top: 14px;
-  border-radius: 14px;
-  background: var(--color-background-soft);
-  padding: 12px;
+  border: 0;
+  margin-top: 12px;
+  border-radius: var(--zen-radius-sm);
+  background: var(--zen-bg-subtle);
+  padding: 10px 12px;
   text-align: left;
   cursor: pointer;
+  transition: background 150ms ease;
+
+  &:hover {
+    background: var(--zen-bg-hover);
+  }
 `
 
 const PromptLabel = styled.div`
   font-size: 11px;
   font-weight: 600;
-  color: var(--color-text-3);
-  margin-bottom: 8px;
+  color: var(--zen-text-3);
+  margin-bottom: 5px;
 `
 
 const PromptText = styled.div`
   font-size: 12px;
-  line-height: 1.7;
-  color: var(--color-text-2);
+  line-height: 1.65;
+  color: var(--zen-text-2);
   display: -webkit-box;
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
@@ -561,7 +698,7 @@ const EmptyState = styled.div`
   padding: 48px 0 32px;
   text-align: center;
   font-size: 13px;
-  color: var(--color-text-3);
+  color: var(--zen-text-3);
 `
 
 export default QuickAssistantLibraryModal

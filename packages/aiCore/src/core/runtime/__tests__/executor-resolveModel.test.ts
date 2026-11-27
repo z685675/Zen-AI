@@ -77,6 +77,16 @@ describe('RuntimeExecutor - Model Resolution', () => {
     } as any)
   })
 
+  it('keeps image and text resolvers local when reusing an executor', async () => {
+    const before = executor.pluginEngine.getPlugins()
+    await executor.generateText({ model: 'gpt-4', messages: [] })
+    await executor.generateImage({ model: 'dall-e-3', prompt: 'fixture' })
+    await executor.generateText({ model: 'gpt-4', messages: [] })
+    expect(mockProvider.languageModel).toHaveBeenCalledTimes(2)
+    expect(mockProvider.imageModel).toHaveBeenCalledExactlyOnceWith('dall-e-3')
+    expect(executor.pluginEngine.getPlugins()).toEqual(before)
+  })
+
   describe('Language Model Resolution (String modelId)', () => {
     it('should resolve string modelId through provider', async () => {
       await executor.generateText({

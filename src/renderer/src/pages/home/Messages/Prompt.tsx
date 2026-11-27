@@ -73,17 +73,33 @@ const Prompt: FC<Props> = ({ assistant, topic }) => {
 }
 
 const Container = styled.div<{ $isDark: boolean }>`
-  padding: 11px 16px;
-  border-radius: 10px;
+  width: 100%;
+  max-width: 100%;
+  padding: 11px 18px;
+  border-radius: var(--zen-radius-md);
   cursor: pointer;
-  border: 0.5px solid var(--color-border);
-  margin: 15px 20px;
-  margin-bottom: 0;
+  border: 0;
+  background: var(--zen-glass-card);
+  backdrop-filter: blur(24px) saturate(165%);
+  -webkit-backdrop-filter: blur(24px) saturate(165%);
+  box-shadow: var(--zen-shadow-card);
+  margin: 66px auto 0;
+  text-align: center;
+  transition:
+    background 160ms ease,
+    box-shadow 180ms ease;
+
+  &:hover {
+    background: var(--zen-glass-pill-hover);
+    box-shadow: var(--zen-shadow-pill-hover);
+  }
 `
 
 const Text = styled.div<{ $isVisible: boolean }>`
-  color: var(--color-text-2);
+  color: var(--zen-text-2);
   font-size: 12px;
+  line-height: 1.6;
+  text-align: center;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;

@@ -1,6 +1,5 @@
 import { HolderOutlined } from '@ant-design/icons'
 import { loggerService } from '@logger'
-import { ActionIconButton } from '@renderer/components/Buttons'
 import type { QuickPanelTriggerInfo } from '@renderer/components/QuickPanel'
 import { QuickPanelReservedSymbol, QuickPanelView, useQuickPanel } from '@renderer/components/QuickPanel'
 import TranslateButton from '@renderer/components/TranslateButton'
@@ -15,12 +14,11 @@ import { setSearching } from '@renderer/store/runtime'
 import type { FileMetadata } from '@renderer/types'
 import { classNames } from '@renderer/utils'
 import { formatQuotedText } from '@renderer/utils/formats'
-import { isSendMessageKeyPressed } from '@renderer/utils/input'
+import { getSendMessageShortcutLabel, isSendMessageKeyPressed } from '@renderer/utils/input'
 import { IpcChannel } from '@shared/IpcChannel'
-import { Tooltip } from 'antd'
 import TextArea from 'antd/es/input/TextArea'
 import type { TextAreaRef } from 'antd/lib/input/TextArea'
-import { CirclePause, Languages } from 'lucide-react'
+import { Languages } from 'lucide-react'
 import type { FC } from 'react'
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -67,6 +65,8 @@ export interface InputbarCoreProps {
 
   // Preview sections (attachments, mentions, etc.)
   topContent?: React.ReactNode
+  composerTopBar?: React.ReactNode
+  statusContent?: React.ReactNode
 
   // Pinned content that floats above the inputbar (uses absolute positioning)
   pinnedContent?: React.ReactNode
@@ -76,7 +76,6 @@ export interface InputbarCoreProps {
   // Disable only '/' menus, keeping resource mentions and explicit buttons available.
   enableRootMenuTrigger?: boolean
   minimal?: boolean
-  layoutMaxWidth?: string
   sendDisabled?: boolean
 }
 
@@ -122,11 +121,12 @@ export const InputbarCore: FC<InputbarCoreProps> = ({
   leftToolbar,
   rightToolbar,
   topContent,
+  composerTopBar,
+  statusContent,
   pinnedContent,
   forceEnableQuickPanelTriggers,
   enableRootMenuTrigger = true,
   minimal = false,
-  layoutMaxWidth,
   sendDisabled = false
 }) => {
   const config = useMemo(() => getInputbarConfig(scope), [scope])
@@ -618,42 +618,20 @@ export const InputbarCore: FC<InputbarCoreProps> = ({
     }
   }, [])
 
-  const rightSectionExtras = useMemo(() => {
-    const extras: React.ReactNode[] = []
-    extras.push(
-      <TranslateButton
-        key="translate"
-        text={text}
-        disabled={isSendDisabled}
-        onTranslated={onTranslated}
-        isLoading={isTranslating}
-      />
-    )
-    extras.push(<SendMessageButton sendMessage={handleSendMessage} disabled={isSendDisabled} />)
-
-    if (isLoading) {
-      extras.push(
-        <Tooltip key="pause" placement="top" title={t('chat.input.pause')} mouseLeaveDelay={0} arrow>
-          <ActionIconButton onClick={onPause} style={{ marginRight: -2 }}>
-            <CirclePause size={20} color="var(--color-error)" />
-          </ActionIconButton>
-        </Tooltip>
-      )
-    }
-
-    return <>{extras}</>
-  }, [text, onTranslated, isTranslating, handleSendMessage, isSendDisabled, isLoading, t, onPause])
-
   const quickPanelElement = config.enableQuickPanel ? <QuickPanelView setInputText={setText} /> : null
+  const shortcut = getSendMessageShortcutLabel(sendMessageShortcut).replace(' + ', '+').replace('Enter', '↵')
+  const showStop = isLoading && Boolean(onPause)
 
   return (
-    <NarrowLayout style={{ width: '100%' }} contentMaxWidth={layoutMaxWidth}>
+    <NarrowLayout reading contentMaxWidth="calc(var(--zen-composer-width) + 64px)" className="shrink-0">
+      {statusContent}
       <Container
         onDragEnter={handleDragEnter}
         onDragLeave={handleDragLeave}
         onDragOver={handleDragOver}
         onDrop={handleDrop}
         className={classNames('inputbar')}>
+        {composerTopBar && <ComposerTopBar $centered={minimal}>{composerTopBar}</ComposerTopBar>}
         {pinnedContent}
         {quickPanelElement}
         <InputBarContainer
@@ -662,7 +640,8 @@ export const InputbarCore: FC<InputbarCoreProps> = ({
             'inputbar-container',
             isDragging && 'file-dragging',
             isExpanded && 'expanded',
-            minimal && 'minimal'
+            minimal && 'minimal',
+            (text.length > 0 || files.length > 0) && 'has-content'
           )}>
           {!minimal && (
             <DragHandle onMouseDown={handleDragStart}>
@@ -686,18 +665,12 @@ export const InputbarCore: FC<InputbarCoreProps> = ({
             autoFocus
             variant="borderless"
             spellCheck={enableSpellCheck}
-            rows={2}
-            autoSize={height ? false : { minRows: 2, maxRows: 20 }}
-            styles={{
-              textarea: {
-                paddingLeft: 0,
-                padding: minimal ? '8px 22px 4px' : '6px 15px 0px'
-              }
-            }}
+            rows={minimal ? 3 : 2}
+            autoSize={height ? false : { minRows: minimal ? 3 : 2, maxRows: 10 }}
             style={{
-              fontSize: minimal ? fontSize + 1 : fontSize,
-              height: height,
-              minHeight: minimal ? '84px' : '30px'
+              fontSize:
+                fontSize === 12 ? 'var(--zen-reading-size)' : `calc(var(--zen-reading-size) + ${fontSize - 12}px)`,
+              height
             }}
             disabled={isTranslating || searching}
             onClick={() => {
@@ -710,7 +683,19 @@ export const InputbarCore: FC<InputbarCoreProps> = ({
             <LeftSection>{leftToolbar}</LeftSection>
             <RightSection>
               {rightToolbar}
-              {rightSectionExtras}
+              <TranslateButton
+                text={text}
+                disabled={isSendDisabled}
+                onTranslated={onTranslated}
+                isLoading={isTranslating}
+              />
+              {(!showStop || allowSendWhileLoading) && (
+                <>
+                  <ShortcutHint aria-hidden="true">{shortcut}</ShortcutHint>
+                  <SendMessageButton sendMessage={handleSendMessage} disabled={isSendDisabled} />
+                </>
+              )}
+              {showStop && onPause && <SendMessageButton stop sendMessage={onPause} />}
             </RightSection>
           </BottomBar>
         </InputBarContainer>
@@ -750,148 +735,135 @@ const Container = styled.div`
   flex-direction: column;
   position: relative;
   z-index: 2;
-  padding: 0 18px 18px 18px;
+  margin-top: 0;
+  margin-bottom: 16px;
+`
 
-  [navbar-position='top'] & {
-    padding: 0 18px 10px 18px;
-  }
+const ComposerTopBar = styled.div<{ $centered?: boolean }>`
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: ${({ $centered }) => ($centered ? 'center' : 'flex-start')};
+  margin-bottom: ${({ $centered }) => ($centered ? '14px' : '8px')};
 `
 
 const InputBarContainer = styled.div`
-  transition: all 0.2s ease;
   position: relative;
-  border-radius: 17px;
-  padding-top: 8px;
-  border: none;
-  background: #ffffff;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
+  background: var(--zen-glass-composer);
+  backdrop-filter: blur(36px) saturate(145%);
+  -webkit-backdrop-filter: blur(36px) saturate(145%);
+  border: 0;
+  border-radius: var(--zen-radius-xl);
+  box-shadow: var(--zen-composer-ring);
+  transition: box-shadow 220ms cubic-bezier(0.22, 1, 0.36, 1);
 
-  &.minimal {
-    border-radius: 26px;
-    padding-top: 10px;
-    background: #ffffff;
-    box-shadow:
-      0 6px 20px rgba(0, 0, 0, 0.055),
-      0 1px 0 rgba(255, 255, 255, 0.75) inset;
+  /* GPU-composited opacity backing: thickens frosted glass only when typing, zero re-blur overhead */
+  &::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: var(--zen-glass-composer-solid);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 180ms ease;
+    z-index: 0;
+  }
+
+  &.has-content::before {
+    opacity: 1;
+  }
+
+  > :not(${DragHandle}) {
+    position: relative;
+    z-index: 1;
+  }
+
+  &:focus-within {
+    box-shadow: var(--zen-composer-ring-focus);
   }
 
   &.file-dragging {
-    border: 2px dashed #2ecc71;
+    outline: 2px dashed var(--zen-accent);
+    outline-offset: 2px;
+  }
 
-    &::before {
-      content: '';
-      position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      background-color: rgba(46, 204, 113, 0.03);
-      border-radius: 14px;
-      z-index: 5;
-      pointer-events: none;
-    }
+  &.expanded textarea {
+    max-height: 70vh !important;
+  }
+
+  &.minimal textarea.ant-input {
+    min-height: 88px !important;
+    padding: 18px 22px 10px;
   }
 `
 
 const Textarea = styled(TextArea)`
-  padding: 0;
-  border-radius: 0;
-  display: flex;
-  resize: none !important;
-  overflow: auto;
-  width: 100%;
-  box-sizing: border-box;
-  transition: none !important;
   &.ant-input {
-    line-height: 1.4;
-  }
-
-  .inputbar-container.minimal &.ant-input {
-    padding-top: 4px;
-    line-height: 1.72;
-    font-weight: 400;
+    display: block;
+    width: 100%;
+    min-height: 70px !important;
+    max-height: 240px !important;
+    padding: 16px 20px 8px;
+    color: var(--zen-text-1);
+    font-family: var(--font-family);
+    line-height: var(--zen-reading-line-height);
+    resize: none !important;
+    overflow-y: auto !important;
+    background: transparent;
+    border-radius: var(--zen-radius-xl) var(--zen-radius-xl) 0 0;
+    transition: none !important;
   }
 
   &.ant-input::placeholder {
-    color: #a8afb8;
-  }
-
-  &::-webkit-scrollbar {
-    width: 3px;
+    color: var(--zen-text-3);
   }
 `
 
 const BottomBar = styled.div`
   display: flex;
-  flex-direction: row;
-  justify-content: space-between;
-  padding: 5px 8px;
-  height: 40px;
-  gap: 16px;
-  position: relative;
-  z-index: 2;
   flex-shrink: 0;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 48px;
+  padding: 4px 14px 10px 14px;
+  gap: 12px;
 
-  .inputbar-container.minimal & {
-    height: 50px;
-    padding: 6px 14px 12px;
+  .ant-btn-text {
+    color: var(--zen-text-2);
+  }
+
+  .ant-btn-text:hover {
+    color: var(--zen-text-1);
+    background: var(--zen-bg-hover);
   }
 `
 
 const LeftSection = styled.div`
   display: flex;
-  align-items: center;
   flex: 1;
   min-width: 0;
+  align-items: center;
+  overflow-x: auto;
+  scrollbar-width: none;
 
-  .inputbar-container.minimal & {
-    gap: 0;
-  }
-
-  .inputbar-container.minimal & .ant-btn,
-  .inputbar-container.minimal & button {
-    transform: scale(0.92);
-    opacity: 1;
-  }
-
-  .ant-btn-text {
-    color: #768293;
-  }
-
-  .ant-btn-text .anticon,
-  .ant-btn-text .iconfont,
-  .ant-btn-text .lucide {
-    color: inherit !important;
-  }
-
-  .ant-btn-text:hover {
-    color: #253244;
-    background: rgba(15, 23, 42, 0.05);
+  &::-webkit-scrollbar {
+    display: none;
   }
 `
 
 const RightSection = styled.div`
   display: flex;
-  flex-direction: row;
   align-items: center;
   gap: 6px;
+  min-width: 0;
+  flex-shrink: 0;
+`
 
-  .inputbar-container.minimal & {
-    gap: 4px;
-  }
-
-  .ant-btn-text {
-    color: #768293;
-  }
-
-  .ant-btn-text .anticon,
-  .ant-btn-text .iconfont,
-  .ant-btn-text .lucide {
-    color: inherit !important;
-  }
-
-  .ant-btn-text:hover {
-    color: #253244;
-    background: rgba(15, 23, 42, 0.05);
-  }
+const ShortcutHint = styled.kbd`
+  color: var(--zen-text-3);
+  font-family: var(--code-font-family);
+  font-size: 11px;
+  white-space: nowrap;
 `

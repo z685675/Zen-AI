@@ -1347,6 +1347,12 @@ const updateExistingMessageAndBlocksInDB = async (
   try {
     // Always update blocks if provided
     if (updatedBlocks.length > 0) {
+      await Promise.all(
+        updatedBlocks.map(({ id }) => {
+          cancelThrottledBlockUpdate(id)
+          return throttledBlockWrites.get(id)
+        })
+      )
       await updateBlocks(updatedBlocks)
     }
 
@@ -1402,9 +1408,11 @@ const blockUpdateRafs = new LRUCache<string, number>({
 /**
  * 获取或创建消息块专用的节流函数。
  */
+const throttledBlockWrites = new Map<string, Promise<void>>()
+
 const getBlockThrottler = (id: string) => {
   if (!blockUpdateThrottlers.has(id)) {
-    const throttler = throttle(async (blockUpdate: any) => {
+    const throttler = throttle((blockUpdate: any) => {
       const existingRAF = blockUpdateRafs.get(id)
       if (existingRAF) {
         cancelAnimationFrame(existingRAF)
@@ -1416,7 +1424,14 @@ const getBlockThrottler = (id: string) => {
       })
 
       blockUpdateRafs.set(id, rafId)
-      await updateSingleBlock(id, blockUpdate)
+      const write = (throttledBlockWrites.get(id) ?? Promise.resolve())
+        .then(() => updateSingleBlock(id, blockUpdate))
+        .then(() => undefined)
+        .catch((error) => logger.error('Failed to persist streaming block', { id, error }))
+      throttledBlockWrites.set(id, write)
+      void write.then(() => {
+        if (throttledBlockWrites.get(id) === write) throttledBlockWrites.delete(id)
+      })
     }, 150)
 
     blockUpdateThrottlers.set(id, throttler)

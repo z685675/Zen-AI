@@ -40,8 +40,9 @@ ipcMain.handle = (channel: string, handler: (...args: any[]) => Promise<any>) =>
       app.isPackaged &&
       HOTPATCH_PRODUCTION_ENABLED &&
       Object.keys(HOTPATCH_PRODUCTION_TRUST).length &&
-      BrowserWindow.fromWebContents(event.sender)?.webContents === event.sender &&
-      !trustedHotpatchFrame(event, path.join(__dirname, '../renderer'))
+      (event.sender.getType() === 'webview' ||
+        (BrowserWindow.fromWebContents(event.sender)?.webContents === event.sender &&
+          !trustedHotpatchFrame(event, path.join(__dirname, '../renderer'))))
     ) {
       throw new Error('Untrusted renderer IPC sender')
     }

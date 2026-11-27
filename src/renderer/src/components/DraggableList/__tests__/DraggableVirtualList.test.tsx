@@ -1,4 +1,5 @@
-import { render, screen } from '@testing-library/react'
+import { useVirtualizer } from '@tanstack/react-virtual'
+import { act, render, screen, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import { DraggableVirtualList } from '../'
@@ -39,12 +40,12 @@ vi.mock('@hello-pangea/dnd', () => ({
 }))
 
 vi.mock('@tanstack/react-virtual', () => ({
-  useVirtualizer: ({ count, getScrollElement }) => ({
+  useVirtualizer: vi.fn(({ count, getScrollElement, scrollMargin }) => ({
     getVirtualItems: () =>
       Array.from({ length: count }, (_, index) => ({
         index,
         key: index,
-        start: index * 50,
+        start: scrollMargin + index * 50,
         size: 50
       })),
     getTotalSize: () => count * 50,
@@ -55,7 +56,7 @@ vi.mock('@tanstack/react-virtual', () => ({
     measure: vi.fn(),
     resizeItem: vi.fn(),
     getVirtualIndexes: () => Array.from({ length: count }, (_, i) => i)
-  })
+  }))
 }))
 
 vi.mock('@renderer/components/Scrollbar', () => ({
@@ -105,6 +106,47 @@ describe('DraggableVirtualList', () => {
     )
 
     expect(screen.queryAllByTestId('test-item')).toHaveLength(0)
+  })
+
+  it('keeps the header first and adjusts the virtual scroll origin when the header grows', () => {
+    let resizeHeader = () => {}
+    const offsetTop = vi.spyOn(HTMLElement.prototype, 'offsetTop', 'get').mockReturnValue(40)
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        constructor(callback: () => void) {
+          resizeHeader = callback
+        }
+        observe() {}
+        disconnect() {}
+      }
+    )
+
+    try {
+      render(
+        <DraggableVirtualList list={sampleList} header={<button type="button">Folder</button>}>
+          {(item) => <button type="button">{item.name}</button>}
+        </DraggableVirtualList>
+      )
+
+      const scroller = within(screen.getByTestId('scrollbar'))
+      expect(scroller.getAllByRole('button').map((button) => button.textContent)).toEqual([
+        'Folder',
+        'Item A',
+        'Item B',
+        'Item C'
+      ])
+      expect(useVirtualizer).toHaveBeenLastCalledWith(expect.objectContaining({ scrollMargin: 40 }))
+      offsetTop.mockReturnValue(160)
+      act(() => resizeHeader())
+      expect(useVirtualizer).toHaveBeenLastCalledWith(expect.objectContaining({ scrollMargin: 160 }))
+      expect(scroller.getByRole('button', { name: 'Item B' }).closest('.draggable-item')).toHaveStyle({
+        transform: 'translateY(50px)'
+      })
+    } finally {
+      offsetTop.mockRestore()
+      vi.unstubAllGlobals()
+    }
   })
 
   it('calls onUpdate with the reordered list after drag end', () => {

@@ -38,7 +38,7 @@ export class PluginEngine<T extends string = RegisteredProviderId> {
     private readonly providerId: T,
     plugins: AiPlugin[] = []
   ) {
-    this.basePlugins = plugins
+    this.basePlugins = [...plugins]
   }
 
   /**
@@ -110,30 +110,22 @@ export class PluginEngine<T extends string = RegisteredProviderId> {
     // ✅ 创建类型化的 manager（逆变安全）
     const manager = new PluginManager<TParams, TResult>(this.basePlugins as AiPlugin<TParams, TResult>[])
 
-    // ✅ 递归调用泛型化，增加深度限制
+    const inheritedMiddlewares = context.middlewares?.slice()
     context.recursiveCall = async <R = TResult>(newParams: Partial<TParams>): Promise<R> => {
       if (context.recursiveDepth >= context.maxRecursiveDepth) {
         throw new RecursiveDepthError(context.requestId, context.recursiveDepth, context.maxRecursiveDepth)
       }
 
-      const previousDepth = context.recursiveDepth
-      const wasRecursive = context.isRecursiveCall
-
-      try {
-        context.recursiveDepth = previousDepth + 1
-        context.isRecursiveCall = true
-
-        return (await this.executeWithPlugins(
-          methodName,
-          { ...params, ...newParams } as TParams,
-          executor,
-          context
-        )) as unknown as R
-      } finally {
-        // ✅ finally 确保状态恢复
-        context.recursiveDepth = previousDepth
-        context.isRecursiveCall = wasRecursive
+      const nestedParams = { ...params, ...newParams } as TParams
+      const nestedContext: AiRequestContext<TParams, TResult> = {
+        ...context,
+        model: nestedParams.model,
+        originalParams: nestedParams,
+        isRecursiveCall: true,
+        recursiveDepth: context.recursiveDepth + 1,
+        middlewares: inheritedMiddlewares?.slice()
       }
+      return (await this.executeWithPlugins(methodName, nestedParams, executor, nestedContext)) as unknown as R
     }
 
     try {
@@ -216,30 +208,22 @@ export class PluginEngine<T extends string = RegisteredProviderId> {
     // ✅ 创建类型化的 manager（逆变安全）
     const manager = new PluginManager<TParams, TResult>(this.basePlugins as AiPlugin<TParams, TResult>[])
 
-    // ✅ 递归调用泛型化，增加深度限制
+    const inheritedMiddlewares = context.middlewares?.slice()
     context.recursiveCall = async <R = TResult>(newParams: Partial<TParams>): Promise<R> => {
       if (context.recursiveDepth >= context.maxRecursiveDepth) {
         throw new RecursiveDepthError(context.requestId, context.recursiveDepth, context.maxRecursiveDepth)
       }
 
-      const previousDepth = context.recursiveDepth
-      const wasRecursive = context.isRecursiveCall
-
-      try {
-        context.recursiveDepth = previousDepth + 1
-        context.isRecursiveCall = true
-
-        return (await this.executeImageWithPlugins(
-          methodName,
-          { ...params, ...newParams } as TParams,
-          executor,
-          context
-        )) as unknown as R
-      } finally {
-        // ✅ finally 确保状态恢复
-        context.recursiveDepth = previousDepth
-        context.isRecursiveCall = wasRecursive
+      const nestedParams = { ...params, ...newParams } as TParams
+      const nestedContext: AiRequestContext<TParams, TResult> = {
+        ...context,
+        model: nestedParams.model,
+        originalParams: nestedParams,
+        isRecursiveCall: true,
+        recursiveDepth: context.recursiveDepth + 1,
+        middlewares: inheritedMiddlewares?.slice()
       }
+      return (await this.executeImageWithPlugins(methodName, nestedParams, executor, nestedContext)) as unknown as R
     }
 
     try {
@@ -311,30 +295,22 @@ export class PluginEngine<T extends string = RegisteredProviderId> {
     // ✅ 创建类型化的 manager（逆变安全）
     const manager = new PluginManager<TParams, TResult>(this.basePlugins as AiPlugin<TParams, TResult>[])
 
-    // ✅ 递归调用泛型化，增加深度限制
+    const inheritedMiddlewares = context.middlewares?.slice()
     context.recursiveCall = async <R = TResult>(newParams: Partial<TParams>): Promise<R> => {
       if (context.recursiveDepth >= context.maxRecursiveDepth) {
         throw new RecursiveDepthError(context.requestId, context.recursiveDepth, context.maxRecursiveDepth)
       }
 
-      const previousDepth = context.recursiveDepth
-      const wasRecursive = context.isRecursiveCall
-
-      try {
-        context.recursiveDepth = previousDepth + 1
-        context.isRecursiveCall = true
-
-        return (await this.executeStreamWithPlugins(
-          methodName,
-          { ...params, ...newParams } as TParams,
-          executor,
-          context
-        )) as unknown as R
-      } finally {
-        // ✅ finally 确保状态恢复
-        context.recursiveDepth = previousDepth
-        context.isRecursiveCall = wasRecursive
+      const nestedParams = { ...params, ...newParams } as TParams
+      const nestedContext: AiRequestContext<TParams, TResult> = {
+        ...context,
+        model: nestedParams.model,
+        originalParams: nestedParams,
+        isRecursiveCall: true,
+        recursiveDepth: context.recursiveDepth + 1,
+        middlewares: inheritedMiddlewares?.slice()
       }
+      return (await this.executeStreamWithPlugins(methodName, nestedParams, executor, nestedContext)) as unknown as R
     }
 
     try {

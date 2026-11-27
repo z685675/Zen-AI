@@ -231,7 +231,7 @@ const AnnouncementsPage: FC = () => {
   return (
     <PageContainer>
       <Navbar>
-        <NavbarCenter>{t('announcements.title')}</NavbarCenter>
+        <NavbarCenter />
       </Navbar>
       <Content>
         <Header>
@@ -290,14 +290,14 @@ const PageContainer = styled.div`
   flex-direction: column;
   width: 100%;
   height: 100%;
-  background: var(--color-background);
+  background: transparent;
 `
 
 const Content = styled.div`
   flex: 1;
   overflow: auto;
-  padding: 34px 42px 48px;
-  max-width: 1120px;
+  padding: 28px 36px 48px;
+  max-width: 980px;
   width: 100%;
   margin: 0 auto;
   box-sizing: border-box;
@@ -313,24 +313,27 @@ const Header = styled.div`
 const HeaderIcon = styled.div`
   width: 44px;
   height: 44px;
-  border-radius: 14px;
+  border-radius: var(--zen-radius-md);
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--color-primary);
-  background: color-mix(in srgb, var(--color-primary) 12%, transparent);
+  color: var(--zen-text-1);
+  background: var(--zen-glass-pill);
+  backdrop-filter: blur(24px) saturate(160%);
+  box-shadow: var(--zen-shadow-pill);
 `
 
 const Title = styled.div`
-  font-size: 22px;
-  font-weight: 700;
-  color: var(--color-text-1);
+  font-size: 21px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--zen-text-1);
 `
 
 const Subtitle = styled.div`
-  margin-top: 4px;
+  margin-top: 3px;
   font-size: 13px;
-  color: var(--color-text-3);
+  color: var(--zen-text-3);
 `
 
 const List = styled.div`
@@ -349,37 +352,51 @@ const DiffChunk = styled.div<{ $kind: 'same' | 'added' | 'removed' }>`
   ${({ $kind }) =>
     $kind === 'added' &&
     `
-      color: #cf1322;
-      border-left: 3px solid #ff4d4f;
+      color: var(--zen-danger);
+      border-left: 3px solid var(--zen-danger);
       padding-left: 10px;
-      background: color-mix(in srgb, #ff4d4f 7%, transparent);
+      border-radius: 0 6px 6px 0;
+      background: color-mix(in srgb, var(--zen-danger) 8%, transparent);
 
       strong {
-        color: #cf1322;
+        color: var(--zen-danger);
       }
     `}
 
   ${({ $kind }) =>
     $kind === 'removed' &&
     `
-      color: color-mix(in srgb, #cf1322 82%, var(--color-text-2));
-      border-left: 3px solid color-mix(in srgb, #cf1322 48%, transparent);
+      color: color-mix(in srgb, var(--zen-danger) 78%, var(--zen-text-2));
+      border-left: 3px solid color-mix(in srgb, var(--zen-danger) 45%, transparent);
       padding-left: 10px;
-      background: color-mix(in srgb, #cf1322 4%, transparent);
+      border-radius: 0 6px 6px 0;
+      background: color-mix(in srgb, var(--zen-danger) 4%, transparent);
       text-decoration: line-through;
       text-decoration-thickness: 1px;
 
       strong {
-        color: color-mix(in srgb, #cf1322 82%, var(--color-text-2));
+        color: color-mix(in srgb, var(--zen-danger) 78%, var(--zen-text-2));
       }
     `}
 `
 
 const AnnouncementCard = styled.div`
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--color-background-soft) 82%, transparent);
-  padding: 18px 20px;
+  border: 0;
+  border-radius: var(--zen-radius-md);
+  background: var(--zen-glass-card);
+  backdrop-filter: blur(24px) saturate(160%);
+  -webkit-backdrop-filter: blur(24px) saturate(160%);
+  box-shadow: var(--zen-shadow-card);
+  padding: 20px 22px;
+  transition:
+    background 160ms ease,
+    box-shadow 180ms ease,
+    transform 150ms ease;
+
+  &:hover {
+    background: var(--zen-glass-pill-hover);
+    box-shadow: var(--zen-shadow-pill-hover);
+  }
 `
 
 const CardHeader = styled.div`
@@ -402,21 +419,25 @@ const UpdatedDot = styled.span`
   flex: 0 0 auto;
   width: 7px;
   height: 7px;
-  border-radius: 999px;
-  background: #ff4d4f;
+  border-radius: var(--zen-radius-pill);
+  background: var(--zen-danger);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--zen-danger) 18%, transparent);
 `
 
 const CardTitle = styled.div`
   font-size: 16px;
-  font-weight: 700;
-  color: var(--color-text-1);
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  color: var(--zen-text-1);
   min-width: 0;
 `
 
 const CardTime = styled.div<{ $highlight: boolean }>`
   flex: 0 0 auto;
-  font-size: 12px;
-  color: ${({ $highlight }) => ($highlight ? '#ff4d4f' : 'var(--color-text-3)')};
+  font-family: var(--code-font-family);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  color: ${({ $highlight }) => ($highlight ? 'var(--zen-danger)' : 'var(--zen-text-3)')};
   font-weight: ${({ $highlight }) => ($highlight ? 600 : 400)};
   white-space: nowrap;
 `
@@ -424,7 +445,9 @@ const CardTime = styled.div<{ $highlight: boolean }>`
 const CardContent = styled.div<{ $expanded: boolean; $showFade: boolean }>`
   position: relative;
   margin-top: 12px;
-  color: var(--color-text-2);
+  color: var(--zen-text-2);
+  font-size: 13.5px;
+  line-height: 1.72;
   user-select: text;
   max-height: ${({ $expanded }) => ($expanded ? 'none' : '180px')};
   overflow: hidden;
@@ -438,12 +461,12 @@ const CardContent = styled.div<{ $expanded: boolean; $showFade: boolean }>`
         left: 0;
         right: 0;
         bottom: 0;
-        height: 42px;
+        height: 44px;
         pointer-events: none;
         background: linear-gradient(
           to bottom,
-          color-mix(in srgb, var(--color-background-soft) 0%, transparent),
-          color-mix(in srgb, var(--color-background-soft) 82%, transparent)
+          transparent,
+          color-mix(in srgb, var(--zen-bg-elevated) 86%, transparent)
         );
       }
     `}
@@ -455,6 +478,10 @@ const CardActions = styled.div`
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+
+  .ant-btn {
+    border-radius: var(--zen-radius-pill);
+  }
 `
 
 const EmptyWrapper = styled.div`
@@ -462,6 +489,9 @@ const EmptyWrapper = styled.div`
   display: flex;
   align-items: center;
   justify-content: center;
+  border-radius: var(--zen-radius-md);
+  background: var(--zen-glass-card);
+  box-shadow: var(--zen-shadow-card);
 `
 
 export default AnnouncementsPage

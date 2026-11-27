@@ -104,7 +104,7 @@ const ToolbarButton = styled(Button)`
     background-color: var(--color-primary) !important;
     .anticon,
     .iconfont {
-      color: var(--color-white-soft);
+      color: var(--color-primary-foreground);
     }
     &:hover {
       background-color: var(--color-primary);

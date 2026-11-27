@@ -739,7 +739,7 @@ const TranslatePage: FC = () => {
     return (
       <Container id="translate-page">
         <Navbar>
-          <NavbarCenter style={{ borderRight: 'none', gap: 10 }}>{t('translate.title')}</NavbarCenter>
+          <NavbarCenter style={{ borderRight: 'none', gap: 10 }} />
         </Navbar>
         <div id="content-container" className="h-[calc(100vh-var(--navbar-height))]">
           <ModelSetupGuide />
@@ -756,7 +756,7 @@ const TranslatePage: FC = () => {
       onDragOver={handleDragOver}
       onDrop={preventDrop}>
       <Navbar>
-        <NavbarCenter style={{ borderRight: 'none', gap: 10 }}>{t('translate.title')}</NavbarCenter>
+        <NavbarCenter style={{ borderRight: 'none', gap: 10 }} />
       </Navbar>
       <ContentContainer id="content-container" ref={contentContainerRef} $historyDrawerVisible={historyDrawerVisible}>
         <TranslateHistoryList
@@ -909,6 +909,11 @@ const TranslatePage: FC = () => {
 
 const Container = styled.div`
   flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: transparent;
 `
 
 const ContentContainer = styled.div<{ $historyDrawerVisible: boolean }>`
@@ -916,32 +921,44 @@ const ContentContainer = styled.div<{ $historyDrawerVisible: boolean }>`
   width: 100%;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 12px;
   flex: 1;
-  padding: 12px;
+  min-height: 0;
+  padding: 10px 18px 16px;
   position: relative;
-  [navbar-position='left'] & {
-    padding: 12px 16px;
-  }
 `
 
 const AreaContainer = styled.div`
   display: grid;
   grid-template-columns: 1fr 1fr;
   flex: 1;
-  gap: 8px;
+  min-height: 0;
+  gap: 14px;
 `
 
 const InputContainer = styled.div`
   position: relative;
   display: flex;
   flex: 1;
+  min-height: 0;
   flex-direction: column;
-  padding: 10px 5px;
-  border: 1px solid var(--color-border-soft);
-  border-radius: 10px;
-  height: calc(100vh - var(--navbar-height) - 70px);
+  padding: 14px 8px 10px;
+  border: 0;
+  border-radius: var(--zen-radius-lg);
+  background: var(--zen-glass-card);
+  backdrop-filter: blur(26px) saturate(160%);
+  -webkit-backdrop-filter: blur(26px) saturate(160%);
+  box-shadow: var(--zen-shadow-card);
   overflow: hidden;
+  transition:
+    background 180ms ease,
+    box-shadow 200ms ease;
+
+  &:focus-within {
+    background: var(--zen-glass-composer-solid);
+    box-shadow: var(--zen-composer-ring-focus);
+  }
+
   .float-button {
     opacity: 0;
     transition: opacity 0.2s ease-in-out;
@@ -964,16 +981,23 @@ const InputContainerDraggingHintContainer = styled.div`
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  color: var(--color-text-3);
+  background: var(--zen-glass-pill-hover);
+  color: var(--zen-text-2);
+  z-index: 5;
 `
 
 const Textarea = styled(TextArea)`
   display: flex;
   flex: 1;
+  min-height: 0;
   border-radius: 0;
   .ant-input {
     resize: none;
-    padding: 5px 16px;
+    padding: 6px 16px;
+    background: transparent;
+    color: var(--zen-text-1);
+    font-size: var(--zen-reading-size);
+    line-height: var(--zen-reading-line-height);
   }
   .ant-input-clear-icon {
     font-size: 16px;
@@ -986,6 +1010,7 @@ const Footer = styled.div`
   align-items: center;
   justify-content: flex-end;
   gap: 10px;
+  padding: 4px 10px 0;
 `
 
 const OutputContainer = styled.div`
@@ -994,14 +1019,17 @@ const OutputContainer = styled.div`
   flex-direction: column;
   min-height: 0;
   position: relative;
-  background-color: var(--color-background-soft);
-  border-radius: 10px;
-  padding: 10px 5px;
-  height: calc(100vh - var(--navbar-height) - 70px);
+  border: 0;
+  background: var(--zen-glass-card);
+  backdrop-filter: blur(26px) saturate(160%);
+  -webkit-backdrop-filter: blur(26px) saturate(160%);
+  box-shadow: var(--zen-shadow-card);
+  border-radius: var(--zen-radius-lg);
+  padding: 14px 8px 10px;
   overflow: hidden;
 
   & > div > .markdown > pre {
-    background-color: var(--color-background-mute) !important;
+    background-color: var(--zen-code-bg) !important;
   }
 
   &:hover .copy-button {
@@ -1012,11 +1040,14 @@ const OutputContainer = styled.div`
 
 const CopyButton = styled(Button)`
   position: absolute;
-  top: 8px;
-  right: 8px;
+  top: 10px;
+  right: 10px;
   z-index: 10;
   opacity: 0;
   visibility: hidden;
+  border-radius: var(--zen-radius-pill);
+  background: var(--zen-glass-pill);
+  box-shadow: var(--zen-shadow-active);
   transition:
     opacity 0.2s ease-in-out,
     visibility 0.2s ease-in-out;
@@ -1025,8 +1056,11 @@ const CopyButton = styled(Button)`
 const OutputText = styled.div`
   min-height: 0;
   flex: 1;
-  padding: 5px 16px;
+  padding: 6px 16px;
   overflow-y: auto;
+  color: var(--zen-text-1);
+  font-size: var(--zen-reading-size);
+  line-height: var(--zen-reading-line-height);
 
   .plain {
     white-space: pre-wrap;
@@ -1067,12 +1101,12 @@ const TranslateButton = ({
         </div>
       }>
       {!translating && (
-        <Button type="primary" onClick={onTranslate} disabled={!couldTranslate} icon={<SendOutlined />}>
+        <Button shape="round" type="primary" onClick={onTranslate} disabled={!couldTranslate} icon={<SendOutlined />}>
           {t('translate.button.translate')}
         </Button>
       )}
       {translating && (
-        <Button danger type="primary" onClick={onAbort} icon={<CirclePause size={14} />}>
+        <Button shape="round" danger type="primary" onClick={onAbort} icon={<CirclePause size={14} />}>
           {t('common.stop')}
         </Button>
       )}
@@ -1081,11 +1115,14 @@ const TranslateButton = ({
 }
 
 const BidirectionalLanguageDisplay = styled.div`
-  padding: 4px 11px;
-  border-radius: 6px;
-  background-color: var(--color-background);
-  border: 1px solid var(--color-border);
-  font-size: 14px;
+  padding: 5px 14px;
+  border-radius: var(--zen-radius-pill);
+  background: var(--zen-glass-pill);
+  box-shadow: var(--zen-shadow-active);
+  color: var(--zen-text-1);
+  border: 0;
+  font-size: 13px;
+  font-weight: 500;
   width: 100%;
   text-align: center;
 `
@@ -1095,8 +1132,13 @@ const OperationBar = styled.div`
   flex-direction: row;
   align-items: center;
   justify-content: space-between;
-  gap: 4px;
-  padding-bottom: 4px;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: var(--zen-radius-md);
+  background: var(--zen-glass-card);
+  backdrop-filter: blur(24px) saturate(160%);
+  -webkit-backdrop-filter: blur(24px) saturate(160%);
+  box-shadow: var(--zen-shadow-card);
 `
 
 const InnerOperationBar = styled.div`

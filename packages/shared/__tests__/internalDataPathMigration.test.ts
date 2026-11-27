@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { migrateInternalDataPathsDeep, migrateInternalDataPathsInString } from '../utils/internalDataPathMigration'
+import { migrateInternalDataPath, migrateInternalDataPathsInString } from '../utils/internalDataPathMigration'
 
 const currentUserData = 'C:\\Users\\admin\\AppData\\Roaming\\zen-ai'
 
@@ -25,14 +25,14 @@ describe('internal data path migration', () => {
     expect(result.value).toBe('["C:\\\\Users\\\\admin\\\\AppData\\\\Roaming\\\\zen-ai\\\\Data\\\\Agents\\\\n-default"]')
   })
 
-  it('migrates file URLs while preserving the URL prefix', () => {
+  it('normalizes legacy Windows file URLs', () => {
     const result = migrateInternalDataPathsInString(
       'file://C:\\Users\\zen\\AppData\\Roaming\\zen-ai\\Data\\Files\\image.png',
       currentUserData
     )
 
     expect(result.changed).toBe(true)
-    expect(result.value).toBe('file://C:\\Users\\admin\\AppData\\Roaming\\zen-ai\\Data\\Files\\image.png')
+    expect(result.value).toBe('file:///C:/Users/admin/AppData/Roaming/zen-ai/Data/Files/image.png')
   })
 
   it('does not migrate external user file paths', () => {
@@ -51,35 +51,43 @@ describe('internal data path migration', () => {
     expect(result.value).toBe(largeContent)
   })
 
-  it('migrates nested objects', () => {
-    const result = migrateInternalDataPathsDeep(
-      {
-        file: {
-          path: 'C:/Users/zen_z/AppData/Roaming/zen-ai/Data/Files/a.png'
-        }
-      },
-      currentUserData
-    )
-
-    expect(result.changed).toBe(true)
-    expect(result.value.file.path).toBe('C:/Users/admin/AppData/Roaming/zen-ai/Data/Files/a.png')
+  it('migrates complete structured paths and preserves a literal dollar in the destination', () => {
+    const destination = 'C:\\Users\\admin$&\\AppData\\Roaming\\zen-ai'
+    const original = 'C:\\Users\\old\\AppData\\Roaming\\zen-ai\\Data\\Files\\a.png'
+    const result = migrateInternalDataPath(original, destination)
+    expect(result).toEqual({ value: destination + '\\Data\\Files\\a.png', changed: true })
+    expect(migrateInternalDataPath(result.value, destination).changed).toBe(false)
   })
 
-  it('preserves non-plain objects while migrating surrounding paths', () => {
-    const createdAt = new Date('2026-06-19T00:00:00.000Z')
-    const result = migrateInternalDataPathsDeep(
-      {
-        createdAt,
-        file: {
-          path: 'C:/Users/zen_z/AppData/Roaming/zen-ai/Data/Files/a.png'
-        }
-      },
-      currentUserData
-    )
+  it('accepts apostrophes in previously stored Windows profile paths', () => {
+    const path = "C:\\Users\\O'Brien\\AppData\\Roaming\\zen-ai\\Data\\Files\\a.png"
+    expect(migrateInternalDataPath(path, currentUserData).value).toBe(currentUserData + '\\Data\\Files\\a.png')
+  })
 
-    expect(result.changed).toBe(true)
-    expect(result.value.createdAt).toBe(createdAt)
-    expect(result.value.file.path).toBe('C:/Users/admin/AppData/Roaming/zen-ai/Data/Files/a.png')
+  it('migrates file URLs and native paths across platforms', () => {
+    const mac = '/Users/new/Library/Application Support/zen-ai'
+    expect(
+      migrateInternalDataPath(
+        'file:///Users/old/Library/Application%20Support/Cherry%20Studio/Data/Files/a.png',
+        currentUserData
+      ).value
+    ).toBe('file:///C:/Users/admin/AppData/Roaming/zen-ai/Data/Files/a.png')
+    expect(
+      migrateInternalDataPath('C:\\Users\\old\\AppData\\Roaming\\zen-ai\\Data\\Files\\with (a)\\image.png', mac).value
+    ).toBe(mac + '/Data/Files/with (a)/image.png')
+    expect(
+      migrateInternalDataPath('\\Users\\old\\Library\\Application Support\\zen-ai\\Data\\Files\\image.png', mac).value
+    ).toBe(mac + '/Data/Files/image.png')
+  })
+
+  it('rewrites Data roots before JSON quotes and Markdown closing parentheses', () => {
+    const json = JSON.stringify(['C:\\Users\\old\\AppData\\Roaming\\zen-ai\\Data'])
+    expect(JSON.parse(migrateInternalDataPathsInString(json, currentUserData).value)).toEqual([
+      currentUserData + '\\Data'
+    ])
+    expect(migrateInternalDataPathsInString('[Data](file:///Users/old/zen-ai/Data)', currentUserData).value).toBe(
+      '[Data](file:///C:/Users/admin/AppData/Roaming/zen-ai/Data)'
+    )
   })
 
   it('migrates POSIX internal Data paths', () => {
@@ -89,7 +97,7 @@ describe('internal data path migration', () => {
     )
 
     expect(result.changed).toBe(true)
-    expect(result.value).toBe('file:///Users/new/Library/Application Support/zen-ai/Data/Files/a.png')
+    expect(result.value).toBe('file:///Users/new/Library/Application%20Support/zen-ai/Data/Files/a.png')
   })
 
   it('migrates dev app data directory paths', () => {

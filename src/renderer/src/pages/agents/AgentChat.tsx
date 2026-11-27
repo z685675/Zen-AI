@@ -1,9 +1,11 @@
 import { loggerService } from '@logger'
 import { DEFAULT_SESSION_PAGE_SIZE } from '@renderer/api/agent'
-import EmojiIcon from '@renderer/components/EmojiIcon'
+import ModelStatusPills from '@renderer/components/app/ModelStatusPills'
+import { Navbar } from '@renderer/components/app/Navbar'
 import { QuickPanelProvider } from '@renderer/components/QuickPanel'
 import { isAssistantModelAllowed, resolveAssistantFallbackModel } from '@renderer/config/agentModelPolicy'
 import { useAgentWorkspace } from '@renderer/context/AgentWorkspaceProvider'
+import { useSidebarActiveModel } from '@renderer/context/SidebarSlotProvider'
 import { useActiveAgent } from '@renderer/hooks/agents/useActiveAgent'
 import { useAgentClient } from '@renderer/hooks/agents/useAgentClient'
 import { useAgents } from '@renderer/hooks/agents/useAgents'
@@ -12,9 +14,8 @@ import { useSession } from '@renderer/hooks/agents/useSession'
 import { useUpdateSession } from '@renderer/hooks/agents/useUpdateSession'
 import { useTopicMessages } from '@renderer/hooks/useMessageOperations'
 import { useRuntime } from '@renderer/hooks/useRuntime'
-import { useEnableDeveloperMode, useNavbarPosition, useSettings } from '@renderer/hooks/useSettings'
+import { useEnableDeveloperMode, useSettings } from '@renderer/hooks/useSettings'
 import { useShortcut } from '@renderer/hooks/useShortcuts'
-import { useShowAssistants } from '@renderer/hooks/useStore'
 import { cleanupAgentSessionAttachmentDirectory } from '@renderer/services/AgentAttachmentService'
 import { DbService } from '@renderer/services/db/DbService'
 import store, { useAppDispatch, useAppSelector } from '@renderer/store'
@@ -26,13 +27,17 @@ import { cn } from '@renderer/utils'
 import { buildAgentSessionTopicId } from '@renderer/utils/agentSession'
 import { clearAgentSessionDraft, getAgentSessionDraft } from '@renderer/utils/agentSessionDraft'
 import { isUnnamedAgentSessionName } from '@renderer/utils/agentSessionTitle'
-import { shouldDiscardEmptyConversation } from '@renderer/utils/conversationDraft'
-import { getAgentAvatar } from '@shared/config/agents'
+import {
+  consumeLocallyVerifiedEmptyConversation,
+  isLocallyVerifiedEmptyConversation,
+  shouldDiscardEmptyConversation
+} from '@renderer/utils/conversationDraft'
+import { isAssistantExecutionAllowed } from '@shared/agents/assistantAvailability'
+import { isNewAssistantAgentId } from '@shared/config/agents'
 import { isZenManagedApiHost } from '@shared/config/zenProvider'
-import { Alert, Spin, Tooltip } from 'antd'
-import { FolderOpen, ListTodo, PanelLeftOpen, ScrollText, Search } from 'lucide-react'
-import type { PropsWithChildren, ReactNode } from 'react'
-import { useCallback, useEffect, useMemo, useRef } from 'react'
+import { Alert, Spin } from 'antd'
+import type { CSSProperties, PropsWithChildren } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import styled from 'styled-components'
 import { mutate } from 'swr'
@@ -42,6 +47,10 @@ import { PinnedTodoPanel } from '../home/Inputbar/components/PinnedTodoPanel'
 import ChatNavigation from '../home/Messages/ChatNavigation'
 import NarrowLayout from '../home/Messages/NarrowLayout'
 import AgentChatNavbar from './components/AgentChatNavbar'
+import OpenExternalAppButton from './components/AgentChatNavbar/OpenExternalAppButton'
+import SessionInspectionMenu from './components/AgentChatNavbar/SessionInspectionMenu'
+import SessionWorkspaceMeta from './components/AgentChatNavbar/SessionWorkspaceMeta'
+import AgentTools from './components/AgentChatNavbar/Tools'
 import AgentQuickEntries from './components/AgentQuickEntries'
 import AgentSessionInputbar from './components/AgentSessionInputbar'
 import AgentSessionMessages from './components/AgentSessionMessages'
@@ -52,13 +61,6 @@ import LegacyAssistantInputbar from './components/LegacyAssistantInputbar'
 import SessionDeliverables from './components/SessionDeliverables'
 import SessionFileChanges from './components/SessionFileChanges'
 import SessionModelSelectButton from './components/SessionModelSelectButton'
-
-type CapabilityCardItem = {
-  key: string
-  title: string
-  description: string
-  icon: ReactNode
-}
 
 type TrackedAgentSession = {
   agentId: string
@@ -75,7 +77,6 @@ const AgentChat = () => {
   const { messageNavigation, messageStyle } = useSettings()
   const workspace = useAgentWorkspace()
   const { enableDeveloperMode } = useEnableDeveloperMode()
-  const { showAssistants, setShowAssistants } = useShowAssistants()
   const dispatch = useAppDispatch()
   const { chat } = useRuntime()
   const { activeAgentId, activeSessionIdMap, isMultiSelectMode } = chat
@@ -97,11 +98,50 @@ const AgentChat = () => {
   )
   const modelPolicy = useAppSelector((state) => state.llm.modelPolicy)
   const providers = useAppSelector((state) => state.llm.providers)
-  const isWelcomeState = hasLoadedSessionMessages && messages.length === 0
-  const isSessionMessagesBootstrapping = !!activeSessionId && !!sessionTopicId && !hasLoadedSessionMessages
+  const activeSidebarModel = useMemo(() => {
+    const raw = activeSession?.model
+    if (!raw) return undefined
+    const sep = raw.indexOf(':')
+    const providerId = sep > 0 ? raw.slice(0, sep) : undefined
+    const modelId = sep > 0 ? raw.slice(sep + 1) : raw
+    const matchedModel = providers
+      .find((provider) => (providerId ? provider.id === providerId : provider.enabled))
+      ?.models.find((model) => model.id === modelId)
+    return {
+      id: modelId,
+      name: matchedModel?.name ?? modelId,
+      provider: providerId ?? matchedModel?.provider
+    }
+  }, [activeSession?.model, providers])
+  useSidebarActiveModel(activeSidebarModel)
+  const isKnownEmptySession = Boolean(sessionTopicId && isLocallyVerifiedEmptyConversation(sessionTopicId))
+  const isWelcomeState =
+    messages.length === 0 && (isKnownEmptySession || (hasLoadedSessionMessages && !isActiveSessionLoading))
+
+  useEffect(() => {
+    if (sessionTopicId && messages.length > 0 && isLocallyVerifiedEmptyConversation(sessionTopicId)) {
+      consumeLocallyVerifiedEmptyConversation(sessionTopicId)
+    }
+  }, [messages.length, sessionTopicId])
   const trackedSessionRef = useRef<TrackedAgentSession | undefined>(undefined)
   const sessionsBeingDiscardedRef = useRef(new Set<string>())
   const modelRepairAttemptsRef = useRef(new Set<string>())
+  const floatingDockRef = useRef<HTMLDivElement>(null)
+  const [composerInset, setComposerInset] = useState(160)
+
+  useEffect(() => {
+    const dock = floatingDockRef.current
+    if (!dock || isWelcomeState) return
+    const update = () => {
+      const next = Math.max(132, Math.round(dock.getBoundingClientRect().height + 14))
+      setComposerInset((prev) => (Math.abs(prev - next) > 2 ? next : prev))
+    }
+    update()
+    if (typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(update)
+    observer.observe(dock)
+    return () => observer.disconnect()
+  }, [isWelcomeState])
 
   const discardAbandonedSession = useCallback(
     async ({ agentId, session }: TrackedAgentSession) => {
@@ -354,43 +394,13 @@ const AgentChat = () => {
     void dispatch(loadTopicMessagesThunk(sessionTopicId))
   }, [activeSessionId, dispatch, sessionTopicId])
 
-  const capabilityItems = useMemo<CapabilityCardItem[]>(
-    () => [
-      {
-        key: 'search',
-        title: t('agent.welcome.capabilities.search', '搜索资料'),
-        description: t('agent.welcome.capabilities.search_desc', '先帮你查找信息，再提炼重点和结论。'),
-        icon: <Search size={16} />
-      },
-      {
-        key: 'summary',
-        title: t('agent.welcome.capabilities.summary', '整理总结'),
-        description: t('agent.welcome.capabilities.summary_desc', '把零散内容整理成清晰、可继续使用的结果。'),
-        icon: <ScrollText size={16} />
-      },
-      {
-        key: 'files',
-        title: t('agent.welcome.capabilities.files', '处理文件'),
-        description: t('agent.welcome.capabilities.files_desc', '可结合文件、目录和工作区内容一起完成任务。'),
-        icon: <FolderOpen size={16} />
-      },
-      {
-        key: 'tasks',
-        title: t('agent.welcome.capabilities.tasks', '连续任务'),
-        description: t('agent.welcome.capabilities.tasks_desc', '适合需要多步推进、持续执行的复杂工作。'),
-        icon: <ListTodo size={16} />
-      }
-    ],
-    [t]
-  )
-
   useShortcut(
     'new_topic',
     () => {
       void createDefaultSession()
     },
     {
-      enabled: workspace !== 'legacy',
+      enabled: workspace === 'dsh',
       preventDefault: true,
       enableOnFormTags: true
     }
@@ -398,7 +408,6 @@ const AgentChat = () => {
 
   const isInitializing =
     isAgentsLoading || isAgentLoading || !isSessionInitialized || !agents || (!activeAgentId && agents.length > 0)
-  const brandAvatar = getAgentAvatar(activeAgentId, activeAgent?.configuration?.avatar)
 
   if (isInitializing) {
     return (
@@ -433,18 +442,10 @@ const AgentChat = () => {
     )
   }
 
-  if (isSessionMessagesBootstrapping) {
-    return (
-      <Container className="flex flex-1 flex-col items-center justify-center">
-        <Spin />
-      </Container>
-    )
-  }
-
   return (
     <Container className={cn(messageStyle, { 'multi-select-mode': isMultiSelectMode })}>
       <QuickPanelProvider>
-        <div className="flex min-w-0 flex-1 flex-col">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
           {(workspace === 'legacy' ||
             messages.some((message) => Boolean(message.providerMetadata?.legacyContinuation))) && (
             <AssistantTransitionBanner
@@ -454,344 +455,191 @@ const AgentChat = () => {
               running={isActiveSessionLoading}
             />
           )}
-          <div className="flex h-fit w-full min-w-0">
-            {!isWelcomeState && activeAgent && <AgentChatNavbar className="min-w-0" activeAgent={activeAgent} />}
-            {!isWelcomeState && workspace !== 'legacy' && (
-              <div className="flex shrink-0 items-center pr-2">
-                <SessionDeliverables key={sessionTopicId} topicId={sessionTopicId} />
-                {workspace === 'opencode' && activeSession && (
-                  <SessionFileChanges
-                    key={activeSession.id}
-                    sessionId={activeSession.id}
-                    topicId={sessionTopicId}
-                    running={isActiveSessionLoading}
-                  />
-                )}
-              </div>
-            )}
-          </div>
+          <Navbar>{activeAgent && <AgentChatNavbar activeAgent={activeAgent} />}</Navbar>
 
-          <div className="translate-z-0 relative flex w-full flex-1 flex-col justify-between overflow-y-auto overflow-x-hidden">
-            {isWelcomeState ? (
+          {isWelcomeState ? (
+            <div className="zen-view-enter translate-z-0 relative flex min-h-0 w-full flex-1 flex-col overflow-hidden">
               <WelcomeState>
-                {!showAssistants && (
-                  <Tooltip title={t('navbar.show_sidebar')} mouseEnterDelay={0.5}>
-                    <WelcomeSidebarToggle
-                      type="button"
-                      aria-label={t('navbar.show_sidebar')}
-                      onClick={() => setShowAssistants(true)}>
-                      <PanelLeftOpen size={17} />
-                    </WelcomeSidebarToggle>
-                  </Tooltip>
-                )}
                 <WelcomeInner>
-                  <BrandHeader>
-                    <BrandMark>
-                      <EmojiIcon emoji={brandAvatar} size={30} className="h-[30px] w-[30px]" />
-                      <BrandText
-                        style={workspace !== 'legacy' ? undefined : { color: 'var(--color-deprecated-assistant)' }}>
-                        {t(workspace !== 'legacy' ? 'new_assistant.title' : 'agent.sidebar_title')}
-                      </BrandText>
-                    </BrandMark>
-                  </BrandHeader>
                   <WelcomeTitle>
                     {t(workspace === 'legacy' ? 'assistant_transition.legacy_read_only' : 'agent.welcome.title')}
                   </WelcomeTitle>
-                  {workspace !== 'legacy' && (
-                    <CapabilityGrid>
-                      {capabilityItems.map((item) => (
-                        <CapabilityCard key={item.key}>
-                          <CapabilityIcon>{item.icon}</CapabilityIcon>
-                          <CapabilityContent>
-                            <CapabilityTitle>{item.title}</CapabilityTitle>
-                            <CapabilityDescription>{item.description}</CapabilityDescription>
-                          </CapabilityContent>
-                        </CapabilityCard>
-                      ))}
-                    </CapabilityGrid>
-                  )}
-                  <WelcomeComposer>
-                    {workspace !== 'legacy' && activeSession && (
-                      <WelcomeModelRow>
-                        <WelcomeModelLabel>{t('agent.welcome.model_label', '本次对话模型')}</WelcomeModelLabel>
-                        <SessionModelSelectButton
-                          agentId={activeAgentId}
-                          session={activeSession}
-                          persistAsDefault
-                          className="min-w-0 max-w-full"
-                          buttonStyle={{
-                            minHeight: 32,
-                            maxWidth: '100%',
-                            padding: '4px 10px',
-                            border: '1px solid var(--color-border)'
-                          }}
-                        />
-                      </WelcomeModelRow>
+                  {workspace !== 'legacy' &&
+                    activeSession &&
+                    activeAgent &&
+                    isAssistantExecutionAllowed(activeAgent.id) && (
+                      <WelcomeSelectors>
+                        <SessionModelSelectButton agentId={activeAgentId} session={activeSession} persistAsDefault />
+                        <ModelStatusPills />
+                      </WelcomeSelectors>
                     )}
+                  <WelcomeComposer>
                     <AgentSessionInputbar agentId={activeAgentId} sessionId={activeSessionId} variant="hero" />
                   </WelcomeComposer>
                   <AgentQuickEntries />
                 </WelcomeInner>
               </WelcomeState>
-            ) : (
-              <>
-                <AgentSessionMessages key={activeSessionId} agentId={activeAgentId} sessionId={activeSessionId} />
-                <div className="mt-auto px-4.5 pb-2">
-                  <NarrowLayout contentMaxWidth="960px">
-                    <AgentTaskStatusBar topicId={buildAgentSessionTopicId(activeSessionId)} />
-                    <PinnedTodoPanel topicId={buildAgentSessionTopicId(activeSessionId)} />
-                  </NarrowLayout>
-                </div>
+            </div>
+          ) : (
+            <div
+              className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
+              style={{ '--zen-composer-inset': `${composerInset}px` } as CSSProperties}>
+              {activeAgent && activeSession && (
+                <WorkspaceTopBar>
+                  <WorkspaceSelectors>
+                    {isAssistantExecutionAllowed(activeAgent.id) ? (
+                      <SessionModelSelectButton
+                        agentId={activeAgentId}
+                        session={activeSession}
+                        persistAsDefault={false}
+                      />
+                    ) : (
+                      <span className="truncate font-mono text-(--zen-text-2) text-xs">{activeSession.model}</span>
+                    )}
+                    <ModelStatusPills />
+                    <SessionWorkspaceMeta agent={activeAgent} session={activeSession} />
+                  </WorkspaceSelectors>
+                  <div className="pointer-events-auto flex shrink-0 items-center gap-1.5">
+                    {workspace !== 'legacy' && (
+                      <>
+                        <SessionDeliverables key={sessionTopicId} topicId={sessionTopicId} />
+                        {workspace === 'opencode' && (
+                          <SessionFileChanges
+                            key={activeSession.id}
+                            sessionId={activeSession.id}
+                            topicId={sessionTopicId}
+                            running={isActiveSessionLoading}
+                          />
+                        )}
+                      </>
+                    )}
+                    {activeSession.accessible_paths?.[0] && (
+                      <OpenExternalAppButton workdir={activeSession.accessible_paths[0]} />
+                    )}
+                    {isAssistantExecutionAllowed(activeAgent.id) && <AgentTools />}
+                    {isNewAssistantAgentId(activeAgent.id) && <SessionInspectionMenu session={activeSession} />}
+                  </div>
+                </WorkspaceTopBar>
+              )}
+              <div
+                key={activeSessionId}
+                className={cn(
+                  'relative flex min-h-0 w-full flex-1 flex-col overflow-hidden',
+                  hasLoadedSessionMessages || messages.length > 0 ? 'zen-content-enter' : 'opacity-0'
+                )}>
+                <AgentSessionMessages agentId={activeAgentId} sessionId={activeSessionId} />
                 {messageNavigation === 'buttons' && <ChatNavigation containerId="messages" />}
-              </>
-            )}
-          </div>
-
-          {workspace !== 'legacy' && <AgentSessionPermissions sessionId={activeSessionId} />}
-          {!isWelcomeState && <AgentSessionInputbar agentId={activeAgentId} sessionId={activeSessionId} />}
+              </div>
+              <FloatingComposerDock ref={floatingDockRef}>
+                <FloatingComposerInner>
+                  <div className="shrink-0 pb-1.5">
+                    <NarrowLayout reading>
+                      <AgentTaskStatusBar topicId={buildAgentSessionTopicId(activeSessionId)} />
+                      <PinnedTodoPanel topicId={buildAgentSessionTopicId(activeSessionId)} />
+                    </NarrowLayout>
+                  </div>
+                  {workspace !== 'legacy' && <AgentSessionPermissions sessionId={activeSessionId} />}
+                  <AgentSessionInputbar agentId={activeAgentId} sessionId={activeSessionId} />
+                </FloatingComposerInner>
+              </FloatingComposerDock>
+            </div>
+          )}
         </div>
       </QuickPanelProvider>
     </Container>
   )
 }
 
+const WorkspaceTopBar = styled.div`
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 24px 18px;
+  background: var(--zen-veil-top);
+  pointer-events: none;
+`
+
+const WorkspaceSelectors = styled.div`
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  min-width: 0;
+  pointer-events: auto;
+`
+
+const FloatingComposerDock = styled.div`
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 20;
+  padding-top: 22px;
+  background: var(--zen-veil-bottom);
+  pointer-events: none;
+`
+
+const FloatingComposerInner = styled.div`
+  pointer-events: auto;
+`
+
+const WelcomeSelectors = styled.div`
+  width: calc(100% + 64px);
+  max-width: var(--zen-composer-width);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 20px;
+`
+
 const WelcomeState = styled.div`
   display: flex;
   flex: 1;
-  align-items: flex-start;
   justify-content: center;
-  padding: 26px 26px 22px;
+  padding: 48px 36px 56px;
   position: relative;
-  overflow: hidden;
-
-  @media (max-height: 880px) {
-    padding: 14px 24px 12px;
-    overflow-x: hidden;
-    overflow-y: auto;
-  }
-
-  &::before {
-    content: '';
-    position: absolute;
-    inset: -120px auto auto -120px;
-    width: 320px;
-    height: 320px;
-    border-radius: 50%;
-    background: radial-gradient(circle, rgba(255, 221, 226, 0.7) 0%, rgba(255, 221, 226, 0) 72%);
-    pointer-events: none;
-  }
-
-  &::after {
-    content: '';
-    position: absolute;
-    right: -120px;
-    bottom: -140px;
-    width: 360px;
-    height: 360px;
-    border-radius: 50%;
-    background: radial-gradient(circle, rgba(255, 240, 204, 0.58) 0%, rgba(255, 240, 204, 0) 72%);
-    pointer-events: none;
-  }
-`
-
-const WelcomeSidebarToggle = styled.button`
-  position: absolute;
-  top: 12px;
-  left: 12px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 30px;
-  height: 30px;
-  padding: 0;
-  border: none;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--color-text-2);
-  cursor: pointer;
-
-  &:hover {
-    background: var(--color-background-mute);
-    color: var(--color-text);
-  }
+  overflow-x: hidden;
+  overflow-y: auto;
 `
 
 const WelcomeInner = styled.div`
   width: 100%;
-  max-width: 1120px;
+  max-width: var(--zen-composer-width);
+  margin: auto 0;
   display: flex;
   flex-direction: column;
   align-items: center;
   position: relative;
   z-index: 1;
-  padding: 18px 0 40px;
-
-  @media (max-height: 880px) {
-    padding: 8px 0 18px;
-  }
-`
-
-const BrandHeader = styled.div`
-  width: 100%;
-  max-width: 1040px;
-  display: flex;
-  justify-content: flex-start;
-`
-
-const BrandMark = styled.div`
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 14px 10px 10px;
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.64);
-  border: 1px solid rgba(255, 255, 255, 0.72);
-  box-shadow:
-    0 12px 28px rgba(15, 23, 42, 0.04),
-    0 1px 0 rgba(255, 255, 255, 0.85) inset;
-  backdrop-filter: blur(10px);
-`
-
-const BrandText = styled.span`
-  font-size: 18px;
-  line-height: 1;
-  font-weight: 600;
-  color: #d9485f;
+  padding: 12px 0 24px;
 `
 
 const WelcomeTitle = styled.h1`
-  margin: 28px 0 0;
-  font-size: 32px;
-  line-height: 1.18;
+  margin: 0;
+  font-size: 28px;
+  line-height: 1.25;
   font-weight: 500;
-  color: #2b2f36;
+  color: var(--zen-text-1);
   text-align: center;
-  letter-spacing: -0.03em;
-
-  @media (max-height: 880px) {
-    margin-top: 16px;
-    font-size: 28px;
-  }
-`
-
-const CapabilityGrid = styled.div`
-  width: 100%;
-  max-width: 940px;
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
-  margin-top: 30px;
-
-  @media (max-height: 880px) {
-    gap: 10px;
-    margin-top: 18px;
-  }
-
-  @media (max-width: 820px) {
-    grid-template-columns: 1fr;
-  }
-`
-
-const CapabilityCard = styled.div`
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  padding: 13px 15px;
-  border-radius: 22px;
-  background: rgba(255, 255, 255, 0.46);
-  border: 1px solid rgba(255, 255, 255, 0.62);
-  box-shadow:
-    0 8px 22px rgba(15, 23, 42, 0.03),
-    0 1px 0 rgba(255, 255, 255, 0.78) inset;
-  backdrop-filter: blur(10px);
-
-  @media (max-height: 880px) {
-    gap: 10px;
-    padding: 10px 13px;
-  }
-`
-
-const CapabilityIcon = styled.div`
-  width: 34px;
-  height: 34px;
-  min-width: 34px;
-  border-radius: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: rgba(226, 93, 116, 0.82);
-  background: linear-gradient(135deg, rgba(255, 235, 239, 0.72), rgba(255, 245, 228, 0.72));
-`
-
-const CapabilityContent = styled.div`
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-`
-
-const CapabilityTitle = styled.div`
-  font-size: 13px;
-  font-weight: 600;
-  color: rgba(48, 54, 66, 0.9);
-`
-
-const CapabilityDescription = styled.div`
-  margin-top: 4px;
-  font-size: 12px;
-  line-height: 1.65;
-  color: rgba(138, 146, 160, 0.88);
-
-  @media (max-height: 880px) {
-    line-height: 1.42;
-  }
+  letter-spacing: -0.025em;
 `
 
 const WelcomeComposer = styled.div`
-  width: 100%;
-  max-width: 1040px;
-  margin-top: 28px;
-
-  @media (max-height: 880px) {
-    margin-top: 18px;
-  }
+  width: calc(100% + 64px);
+  margin-inline: -32px;
+  margin-top: 18px;
 `
 
-const WelcomeModelRow = styled.div`
-  display: flex;
-  min-width: 0;
-  min-height: 34px;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
-  padding: 0 10px;
-  margin-bottom: 8px;
-
-  & > button {
-    min-width: 0;
-    max-width: min(420px, 72%);
-  }
-`
-
-const WelcomeModelLabel = styled.span`
-  flex-shrink: 0;
-  color: var(--color-text-2);
-  font-size: 12px;
-  line-height: 1.4;
-`
-
-const Container = ({ children, className }: PropsWithChildren<{ className?: string }>) => {
-  const { isTopNavbar } = useNavbarPosition()
-
-  return (
-    <div
-      className={cn(
-        'flex flex-1 overflow-hidden',
-        isTopNavbar && 'rounded-tl-[10px] rounded-bl-[10px] bg-(--color-background)',
-        className
-      )}>
-      {children}
-    </div>
-  )
-}
+const Container = ({ children, className }: PropsWithChildren<{ className?: string }>) => (
+  <div className={cn('flex h-full min-h-0 min-w-0 flex-1 overflow-hidden', className)}>{children}</div>
+)
 
 export default AgentChat

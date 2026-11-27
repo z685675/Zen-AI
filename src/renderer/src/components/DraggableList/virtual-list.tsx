@@ -9,7 +9,7 @@ import { DragDropContext, Draggable, Droppable } from '@hello-pangea/dnd'
 import Scrollbar from '@renderer/components/Scrollbar'
 import { droppableReorder } from '@renderer/utils'
 import { type ScrollToOptions, useVirtualizer, type VirtualItem } from '@tanstack/react-virtual'
-import { type Key, memo, useCallback, useImperativeHandle, useRef } from 'react'
+import { type Key, memo, useCallback, useImperativeHandle, useLayoutEffect, useRef, useState } from 'react'
 
 export interface DraggableVirtualListRef {
   measure: () => void
@@ -100,14 +100,33 @@ function DraggableVirtualList<T>({
 
   // 虚拟列表滚动容器的 ref
   const parentRef = useRef<HTMLDivElement>(null)
+  const headerRef = useRef<HTMLDivElement>(null)
+  const rowsRef = useRef<HTMLDivElement>(null)
+  const [scrollMargin, setScrollMargin] = useState(0)
+  const hasHeader = header != null && typeof header !== 'boolean'
 
   const virtualizer = useVirtualizer({
     count: list?.length ?? 0,
     getScrollElement: useCallback(() => parentRef.current, []),
     getItemKey: itemKey,
     estimateSize: useCallback((index) => _estimateSize?.(index) ?? 50, [_estimateSize]),
-    overscan
+    overscan,
+    scrollMargin
   })
+
+  useLayoutEffect(() => {
+    const headerElement = headerRef.current
+    if (!headerElement) {
+      setScrollMargin(0)
+      return
+    }
+
+    const updateScrollMargin = () => setScrollMargin(rowsRef.current?.offsetTop ?? 0)
+    updateScrollMargin()
+    const observer = new ResizeObserver(updateScrollMargin)
+    observer.observe(headerElement)
+    return () => observer.disconnect()
+  }, [hasHeader])
 
   useImperativeHandle(
     ref,
@@ -167,8 +186,13 @@ function DraggableVirtualList<T>({
                   overflowY: 'auto',
                   position: 'relative'
                 }}>
-                {header}
+                {hasHeader && (
+                  <div ref={headerRef} className="flow-root">
+                    {header}
+                  </div>
+                )}
                 <div
+                  ref={rowsRef}
                   className="virtual-list"
                   style={{
                     height: `${virtualizer.getTotalSize()}px`,
@@ -182,6 +206,7 @@ function DraggableVirtualList<T>({
                       list={list}
                       itemStyle={itemStyle}
                       itemContainerStyle={itemContainerStyle}
+                      scrollMargin={scrollMargin}
                       virtualizer={virtualizer}
                       children={children}
                       disabled={disabled}
@@ -201,7 +226,7 @@ function DraggableVirtualList<T>({
  * 渲染单个可拖拽的虚拟列表项，高度为动态测量
  */
 const VirtualRow = memo(
-  ({ virtualItem, list, children, itemStyle, itemContainerStyle, virtualizer, disabled }: any) => {
+  ({ virtualItem, list, children, itemStyle, itemContainerStyle, scrollMargin, virtualizer, disabled }: any) => {
     const item = list[virtualItem.index]
     const draggableId = String(virtualItem.key)
     return (
@@ -217,7 +242,7 @@ const VirtualRow = memo(
           }
 
           const dndStyle = provided.draggableProps.style
-          const virtualizerTransform = `translateY(${virtualItem.start}px)`
+          const virtualizerTransform = `translateY(${virtualItem.start - scrollMargin}px)`
 
           // dnd 的 transform 负责拖拽时的位移和让位动画，
           // virtualizer 的 translateY 负责将项定位到虚拟列表的正确位置，

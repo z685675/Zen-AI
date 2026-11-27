@@ -109,11 +109,12 @@ const MessageHeader: FC<Props> = memo(({ assistant, model, message, topic, isGro
       ) : (
         <>
           {isEmoji(avatar) ? (
-            <EmojiAvatar onClick={() => UserPopup.show()} size={35} fontSize={20}>
+            <EmojiAvatar className="message-user-avatar" onClick={() => UserPopup.show()} size={35} fontSize={20}>
               {avatar}
             </EmojiAvatar>
           ) : (
             <Avatar
+              className="message-user-avatar"
               src={avatar}
               size={35}
               style={{ borderRadius: '25%', cursor: 'pointer' }}
@@ -127,9 +128,7 @@ const MessageHeader: FC<Props> = memo(({ assistant, model, message, topic, isGro
           alignItems="center"
           justifyContent={userNameJustifyContent}
           style={{ flexWrap: 'wrap', columnGap: 8, rowGap: 4 }}>
-          <UserName isBubbleStyle={isBubbleStyle} theme={theme}>
-            {username}
-          </UserName>
+          <UserName className={isUserMessage ? 'message-user-name' : undefined}>{username}</UserName>
           {isGroupContextMessage && (
             <Tooltip title={t('chat.message.useful.tip')}>
               <Sparkle fill="var(--color-primary)" strokeWidth={0} size={18} />
@@ -187,11 +186,11 @@ const InfoWrap = styled.div`
   gap: 4px;
 `
 
-const UserName = styled.span<{ isBubbleStyle?: boolean; theme?: string }>`
+const UserName = styled.span`
   font-size: 14px;
   font-weight: 600;
   overflow-wrap: anywhere;
-  color: ${(props) => (props.isBubbleStyle && props.theme === 'dark' ? 'white' : 'var(--color-text)')};
+  color: var(--zen-text-1);
 `
 
 const MessageTime = styled.div`
