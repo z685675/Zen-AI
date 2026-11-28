@@ -63,8 +63,17 @@ export async function studioJson<T>(
     const started = performance.now()
     let response: Response | undefined
     let readingBody = false
+    let serviceCode: string | undefined
     try {
       response = await request(url, { method, headers, body, redirect: 'error', credentials: 'omit', signal })
+      if (operation === 'job-submit' && response.status === 400) {
+        try {
+          const payload = JSON.parse(new TextDecoder().decode(await limitedBytes(response, 4096)))
+          if (payload?.message === 'model_price_not_configured') serviceCode = 'studio_model_price_not_configured'
+        } catch {
+          // Fall back to the HTTP status when the server did not return a known code.
+        }
+      }
       if (!response.ok) throw new Error('http')
       readingBody = true
       const headersReceived = performance.now()
@@ -122,7 +131,7 @@ export async function studioJson<T>(
       const willRetry = retryable && attempt < maxAttempts
       // Keep useful transport evidence, but never headers, URLs, bodies or raw exception messages.
       logger.warn('Image studio request failed', { taskId, ...failure, willRetry })
-      if (!willRetry) throw new ImageStudioRequestError(failure)
+      if (!willRetry) throw new ImageStudioRequestError(failure, serviceCode)
       await new Promise((resolve) => setTimeout(resolve, attempt * 1000))
     }
   }

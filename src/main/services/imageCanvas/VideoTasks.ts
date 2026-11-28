@@ -16,7 +16,7 @@ import {
 } from '@shared/config/videoGeneration'
 import { splitApiKeyString } from '@shared/utils/apiKeys'
 
-import { decodeImage, imageEndpoint } from './protocol'
+import { decodeImage, imageEndpoint, limitedBytes } from './protocol'
 
 const logger = loggerService.withContext('VideoTasks')
 const maxVideoBytes = 150 * 1024 * 1024
@@ -212,9 +212,14 @@ export class VideoTasks {
     this.active.add(task.id)
     void this.run(task, connection, body)
       .catch((error) => {
-        const code = error instanceof Error && /^video_http_\d{3}$/.test(error.message) ? error.message : undefined
+        const code =
+          error instanceof Error && /^(?:video_http_\d{3}|model_price_not_configured)$/.test(error.message)
+            ? error.message
+            : undefined
         const rejected =
-          !task.remoteId && code?.startsWith('video_http_4') && !['video_http_408', 'video_http_429'].includes(code)
+          !task.remoteId &&
+          (code === 'model_price_not_configured' ||
+            (code?.startsWith('video_http_4') && !['video_http_408', 'video_http_429'].includes(code)))
         this.update(task, {
           status: rejected ? 'failed' : 'uncertain',
           recoverable: !!task.remoteId,
@@ -237,7 +242,20 @@ export class VideoTasks {
       signal: AbortSignal.timeout(35_000)
     })
     if (!response.ok) {
-      await response.body?.cancel()
+      if (body && response.status === 400) {
+        const bytes = await limitedBytes(response, 4096).catch(() => undefined)
+        if (bytes) {
+          let code: unknown
+          try {
+            code = JSON.parse(new TextDecoder().decode(bytes))?.code
+          } catch {
+            // Fall back to the HTTP status for other responses.
+          }
+          if (code === 'model_price_not_configured') throw new Error(code)
+        }
+      } else {
+        await response.body?.cancel()
+      }
       throw new Error(`video_http_${response.status}`)
     }
     const result: VideoResponse = await response.json()

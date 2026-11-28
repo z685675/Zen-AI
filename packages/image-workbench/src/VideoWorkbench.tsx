@@ -27,6 +27,7 @@ const durationPresets = [4, 6, 8, 10, 12]
 const videoErrorCodes = [
   'invalid_image',
   'model_unavailable',
+  'model_price_not_configured',
   'provider_key_missing',
   'provider_configuration_changed',
   'provider_unavailable',

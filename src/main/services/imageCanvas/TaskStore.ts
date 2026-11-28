@@ -588,11 +588,16 @@ export class ImageCanvasTaskStore {
       }
     } catch (error) {
       const code = error instanceof Error ? error.message : ''
+      if (code === 'studio_model_price_not_configured') {
+        task.remote = undefined
+        if (task.diagnostics) task.diagnostics.generationSubmitted = false
+      }
       const notSubmitted = task.diagnostics?.generationSubmitted === false && !task.remote
       if (error instanceof ImageStudioRequestError && task.diagnostics)
         task.diagnostics.requestFailure = { ...error.failure }
       task.status =
         notSubmitted ||
+        code === 'studio_model_price_not_configured' ||
         /^(?:upstream_http_4(?!08|09|29)\d\d|studio_upgrade_required|studio_model_unavailable|studio_reference_limit|studio_parameters_unsupported|studio_generation_failed|studio_http_40[013]|gemini_size_unsupported|image_dimensions_unsupported|invalid_image)$/.test(
           code
         ) ||
@@ -603,6 +608,7 @@ export class ImageCanvasTaskStore {
           : 'uncertain'
       // Only stable codes cross the bridge; never include request headers or response bodies.
       task.error =
+        code === 'studio_model_price_not_configured' ||
         /^(upstream_http_\d{3}|studio_(?:server_[a-z_]+|http_\d{3}|upgrade_required|model_unavailable|reference_limit|parameters_unsupported|generation_failed|result_pending|download_failed|job_unavailable|invalid_result)|gemini_size_unsupported|no_image_result|invalid_result_image|invalid_result_url|result_too_large|provider_key_missing|background_unsupported|invalid_image|image_dimensions_unsupported|image_reference_or_count_unsupported|references_too_large|invalid_request|image_storage_failed|invalid_mask|invalid_expansion|invalid_workflow|dashscope_model_unsupported|external_job_(?:failed|pending|invalid))$/.test(
           code
         )

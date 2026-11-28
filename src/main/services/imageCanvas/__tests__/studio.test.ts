@@ -401,6 +401,17 @@ describe('background Zen image jobs', () => {
     expect(request.mock.calls.some(([url]) => url.includes('/images/generations'))).toBe(false)
   })
 
+  it('reports an unpriced model without attempting to recover a nonexistent job', async () => {
+    const request = vi
+      .fn()
+      .mockResolvedValueOnce(bootstrap())
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ success: false, message: 'model_price_not_configured' }), { status: 400 })
+      )
+    await expect(generateCanvasImages(provider, input(), request)).rejects.toThrow('studio_model_price_not_configured')
+    expect(request).toHaveBeenCalledTimes(2)
+  })
+
   it('recovers a lost creation response by submission identity without another generation POST', async () => {
     const request = vi.fn().mockImplementation(async (url) => {
       if (url.endsWith('/bootstrap')) return bootstrap()

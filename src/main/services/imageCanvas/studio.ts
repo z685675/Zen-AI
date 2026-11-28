@@ -303,7 +303,8 @@ export async function generateStudioImages(
       { operation: 'job-submit', taskId: input.id }
     )
   } catch (error) {
-    if (error instanceof Error && /^studio_http_4\d\d$/.test(error.message)) throw error
+    if (error instanceof Error && /^(?:studio_http_4\d\d|studio_model_price_not_configured)$/.test(error.message))
+      throw error
     // The server may already own this task. Look up the same submission key.
   }
   return readStudioImages(provider, remote, request, initial, progress, studioAssets)

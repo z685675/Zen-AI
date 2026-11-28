@@ -66,6 +66,7 @@ const zh = {
     errors: {
       invalid_image: '请选择 20 MB 以内的 PNG、JPEG 或 WebP 图片。',
       model_unavailable: '所选视频模型不可用，请检查服务商设置。',
+      model_price_not_configured: '未配置价格',
       provider_key_missing: '请在服务商设置中添加有效密钥。',
       provider_configuration_changed: '服务商配置已变更，请恢复提交时的地址和密钥后查询。',
       provider_unavailable: '视频任务原来的服务商不可用。',
@@ -341,6 +342,7 @@ const zh = {
     model_unavailable: '模型已不可用，请重新选择。',
     draft_storage_failed: '草稿保存失败，请检查本地存储空间；离开前请保留重要输入。',
     studio_model_unavailable: '当前密钥没有可用的此图片模型，请刷新或检查权限。',
+    studio_model_price_not_configured: '未配置价格',
     studio_reference_limit: '参考图数量超出服务端限制。',
     studio_parameters_unsupported: '服务端不支持所选参数，请刷新模型能力。',
     studio_generation_failed: '上游任务明确失败，请检查渠道记录。',
@@ -490,6 +492,7 @@ const en = {
     errors: {
       invalid_image: 'Choose a PNG, JPEG, or WebP image under 20 MB.',
       model_unavailable: 'This video model is unavailable. Check provider settings.',
+      model_price_not_configured: 'Price not configured',
       provider_key_missing: 'Add a valid provider key in settings.',
       provider_configuration_changed: 'Restore the original provider URL and credentials before retrieving this task.',
       provider_unavailable: 'The original provider is unavailable.',
@@ -718,6 +721,7 @@ const en = {
     model_unavailable: 'This model is no longer available. Choose another model.',
     draft_storage_failed: 'Draft storage failed. Check local disk space and preserve important input before leaving.',
     studio_model_unavailable: 'This key cannot access the image model. Refresh or check permissions.',
+    studio_model_price_not_configured: 'Price not configured',
     studio_reference_limit: 'Reference count exceeds the server limit.',
     studio_parameters_unsupported: 'The server does not support these parameters. Refresh model capabilities.',
     studio_generation_failed: 'The upstream task failed. Check channel records.',
